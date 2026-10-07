@@ -841,7 +841,7 @@ An operator can't yet assert a fact the schema doesn't state, such as "a content
 
 ### llm-rewrites. LLM rewrites.
 
-Give the LLM the redacted query and annotated plan from redact, plus the schema subset from schema-dump, trimmed the way llm-index-ideas trims it, to the query's own tables without pg_dump's noise. `quaacks rewrite-payload` sends these with the placeholders and stats, as llm-index-ideas' payload does, less `mechanical_results`. Its stats are cut the same way, to the columns the qualified query references. No other LLM step sends stats. Require each rewrite candidate to state two things:
+Give the LLM the redacted query and annotated plan from redact, plus the schema subset from schema-dump, trimmed the way llm-index-ideas trims it, to the query's own tables without pg_dump's noise. `quaacks rewrite-payload` sends these with the placeholders and stats, as llm-index-ideas' payload does, less `mechanical_results`. Its stats are cut the same way, to the columns the qualified query references. No other LLM step sends stats. It also sends `rule_rewrites`: each rewrite rewrite-rules stored, as its SQL, with the original's placeholders, and its rule names, never its transformation or assumptions. A rule's SQL comes from the redacted query, so it holds no literal value; still, one holding a constant that neither the redacted query nor a rule writes (`1` and `true`) isn't sent. Tell the LLM those are already covered, so it should only propose rewrites that aren't on that list, as llm-index-ideas does with `mechanical_results`. Require each rewrite candidate to state two things:
 
 - The transformation it applied.
 - Every assumption it relies on, such as a column being `NOT NULL` or a key being unique.

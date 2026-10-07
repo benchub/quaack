@@ -110,8 +110,12 @@ module Quaack
       # entries maps each of a fixed list of entry names to true or false.
       status: %i[entries].freeze,
       # DESIGN.md's llm-rewrites payload, from `quaacks rewrite-payload`: the same
-      # shape-class fields as index_payload, without mechanical_results.
-      rewrite_payload: %i[query placeholders plan schema stats].freeze,
+      # shape-class fields as index_payload, without mechanical_results, plus
+      # rule_rewrites: each rule-made rewrite's SQL, with the original's $n
+      # placeholders, and its rule names, QUAACK's own constants. Its values
+      # are nested and go out unchecked, so the enclave's RewritePayload step
+      # is where this is reviewed.
+      rewrite_payload: %i[query placeholders plan schema rule_rewrites stats].freeze,
       # What `quaacks rewrite-check` made of one rewrite (llm-rewrites or operator-rewrites), or
       # `quaacks rewrite-rules` of one rule-made rewrite (rewrite-rules), never its SQL
       # or its statements. index is its 1-based position in
