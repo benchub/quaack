@@ -763,6 +763,7 @@ The 20260930-9 builder listed catalog relations and functions the enclave still 
 - **Came from:** The build of 20260930-9.
 - **Design:** What goes into the enclave.
 - **Decided by the user (2026-10-07):** Qualify every catalog relation, function, operator, and cast the enclave reads, arena reads included. Add a spec that flags unqualified catalog names in enclave SQL, so new code can't slip back.
+- **Scoped by the user (2026-10-07):** A survey found 77 SQL sites with 493 unqualified names across about 45 enclave files. Most are bare operators and casts. Build this in stages. This task covers the production and racetrack reads, about 20 sites, plus the spec. The spec allowlists the files not yet fixed and fails if a file is added to that list. Arena reads go to 20261007-9. The survey script is in the build-20260930-14 scratch folder.
 - **Status:** todo
 
 ### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID.
@@ -2376,4 +2377,13 @@ From the review of 20261001-13.
 - **Depends on:** 20261001-13.
 - **Came from:** The review of 20261001-13.
 - **Design:** Transport, progress lines.
+- **Status:** todo
+
+### 20261007-9. Qualify catalog names in the enclave's arena reads (stage 2 of 20260930-14).
+
+20260930-14 qualifies the production and racetrack reads and adds a spec that allowlists the remaining files. This task qualifies every catalog relation, function, operator, and cast in the rest of the enclave's SQL: the arena, arena schema, scenarios, insert checks, rewrite-rules catalog, assumption checks, volatility checks, and so on. Shrink the spec's allowlist to empty. Forms that can't take an `OPERATOR(...)` prefix need restructuring: `IN (list)`, `IS [NOT] DISTINCT FROM`, `NULLIF`, `LIKE`, and simple `CASE`. Arena objects come from the production schema dump, so a planted operator can shadow there too.
+
+- **Depends on:** 20260930-14.
+- **Came from:** The user's scoping of 20260930-14, 2026-10-07.
+- **Design:** trust boundary.
 - **Status:** todo
