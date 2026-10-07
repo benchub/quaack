@@ -413,15 +413,6 @@ RSpec.describe "quaacks index-build, against a real server" do
       expect(count).to eq("1")
     end
 
-    it "returns the orphans it cancelled, once each" do
-      orphaned = orphan(@monitor, configure: false)
-      conn = production.connect
-
-      expect(Quaack::Enclave::BuildConnection.cancel_orphans(conn, name)).to eq([orphaned])
-    ensure
-      conn&.close
-    end
-
     # 20261006-15: a role that can see the orphan's query (pg_read_all_stats)
     # but can't signal it, since a superuser owns it.
     context "when the build role can't signal the orphan" do
@@ -454,6 +445,11 @@ RSpec.describe "quaacks index-build, against a real server" do
         expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "index-build")))
           .to eq("type" => "error", "step" => "index-build", "rule" => "index_build_orphan_cancel_denied")
         expect([orphaned.class, builders(@monitor).include?(orphaned)]).to eq([Integer, true])
+
+        # Ends the orphan here, so it can't build once after closes the
+        # locker (20261006-25).
+        @monitor.exec_params("SELECT pg_terminate_backend($1)", [orphaned])
+        expect(wait_for(5) { !builders(@monitor).include?(orphaned) }).to be(true)
       end
     end
 
@@ -542,6 +538,18 @@ RSpec.describe "quaacks index-build, against a real server" do
         .to raise_error(Quaack::Enclave::IndexBuild::Error, "index_build_orphan_running")
       expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be_between(1, 5)
       expect(activity(@admin, pid)["state"]).to eq("active")
+    ensure
+      conn&.close
+    end
+
+    # 20261006-25: the backend outlasts three rounds of cancels, so it's
+    # cancelled four times but returned once.
+    it "returns the orphans it cancelled, once each, though it cancelled them more than once" do
+      name, pid = stubborn(3)
+      conn = production.connect
+
+      expect(Quaack::Enclave::BuildConnection.cancel_orphans(conn, name)).to eq([pid])
+      expect(activity(@admin, pid)["state"]).not_to eq("active")
     ensure
       conn&.close
     end
