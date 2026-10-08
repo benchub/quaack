@@ -95,6 +95,35 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
     expect(%w[a b d e v].map { met?(unique("public.people", it)) }).to eq([true, false, true, true, true])
   end
 
+  # Task 20261007-43: the = is the column's type's own. A text class on a
+  # citext column compares as text does, case and all, so it lets in both
+  # 'Ann' and 'ann', which citext's = calls equal, even the default
+  # text_ops. A domain's type is its base type's. A type with no default
+  # class of its own, as varchar, takes the class's, as Postgres does.
+  it "meets a unique set only when its index's = is the column's type's own" do
+    conn.exec(<<~SQL)
+      CREATE EXTENSION citext SCHEMA public;
+      CREATE DOMAIN public.loud AS public.citext;
+      CREATE DOMAIN public.louder AS public.loud;
+      CREATE TABLE public.names (p public.citext NOT NULL, q public.citext NOT NULL, r public.citext NOT NULL,
+                                 l public.loud NOT NULL, m public.louder NOT NULL, k public.loud NOT NULL,
+                                 v varchar(9) NOT NULL, w varchar(9) NOT NULL);
+      CREATE UNIQUE INDEX ON public.names (p text_pattern_ops);
+      CREATE UNIQUE INDEX ON public.names (q text_ops);
+      CREATE UNIQUE INDEX ON public.names (r);
+      CREATE UNIQUE INDEX ON public.names (l text_ops);
+      CREATE UNIQUE INDEX ON public.names (m text_ops);
+      CREATE UNIQUE INDEX ON public.names (k);
+      CREATE UNIQUE INDEX ON public.names (v text_ops);
+      CREATE UNIQUE INDEX ON public.names (w varchar_pattern_ops);
+      INSERT INTO public.names VALUES ('Ann', 'Ann', 'Ann', 'Ann', 'Ann', 'Ann', 'Ann', 'Ann'),
+                                      ('ann', 'ann', 'x', 'ann', 'ann', 'x', 'x', 'x');
+    SQL
+
+    expect(%w[p q r l m k v w].map { met?(unique("public.names", it)) })
+      .to eq([false, false, true, false, false, true, true, true])
+  end
+
   # Task 20261007-43: a class whose = isn't the default class's may call
   # two rows unequal that the column's = calls equal. record_image_ops's *=
   # compares bytes, so it lets in 1.0 and 1.00, which record_ops's = calls
