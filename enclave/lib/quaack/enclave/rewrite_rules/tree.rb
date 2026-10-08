@@ -20,10 +20,14 @@ module Quaack
                      JOIN_FULL: [true, true] }.freeze
 
         # Hands out aliases that no name in the tree uses, and that it
-        # hasn't handed out before.
+        # hasn't handed out before. The names are every String node, which
+        # covers columns' names, and the table and alias names a FROM
+        # brings in, which a column may never mention.
         class Names
           def initialize(tree)
             @taken = Tree.find(tree, PgQuery::String).to_set(&:sval)
+            @taken.merge(Tree.find(tree, PgQuery::RangeVar).map(&:relname))
+            @taken.merge(Tree.find(tree, PgQuery::Alias).map(&:aliasname))
           end
 
           def fresh(base) = (1..).lazy.map { "#{base}_#{it}" }.find { @taken.add?(it) }

@@ -44,7 +44,10 @@ module Quaack
       #   since NOT IN doesn't count rows. Its select list is only name2.y,
       #   where name2 is a table in the subquery's own FROM that
       #   Tree.plain_table_named accepts.
-      # - The catalog proves x and y not null (see Catalog).
+      # - The catalog proves x and y not null (see Catalog). A column whose
+      #   type is a domain with NOT NULL doesn't count: Postgres lets such a
+      #   column hold NULL, as when an INSERT copies a scalar subquery
+      #   that found no row.
       # - The correlation can read the outer row. If the subquery's FROM
       #   has an item under the outer table's name, as an ORM that never
       #   aliases a table writes, that item gets an alias no name in the

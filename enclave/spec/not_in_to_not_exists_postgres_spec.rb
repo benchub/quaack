@@ -223,6 +223,67 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
       expect(same_rows(sql, rewrites)).to eq([["1"], ["4"], ["5"]])
     end
 
+    it "states the one column both sides read once" do
+      expect(rule.rewrites(PgQuery.parse(shadowed), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "not_null", "table" => "public.users", "column" => "id" }]]
+      )
+    end
+
+    it "picks an alias no column in the query names" do
+      sql = "SELECT users.id FROM public.users WHERE users.id NOT IN " \
+            "(SELECT users.id FROM public.users JOIN public.memberships users_1 ON users_1.user_id = users.id " \
+            "WHERE users_1.group_id = 7)"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.users users_2 " \
+         "JOIN public.memberships users_1 ON users_1.user_id = users_2.id " \
+         "WHERE users_1.group_id = 7 AND users.id = users_2.id)"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([["2"], ["3"], ["5"]])
+    end
+
+    it "picks an alias no FROM item in the query has, even one no column names" do
+      sql = "SELECT users.id FROM public.users WHERE users.id NOT IN " \
+            "(SELECT users.id FROM public.users CROSS JOIN public.groups users_1 WHERE users.account_id = 1)"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.users users_2 " \
+         "CROSS JOIN public.groups users_1 WHERE users_2.account_id = 1 AND users.id = users_2.id)"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([["4"]])
+    end
+
+    it "picks an alias no table in the query is named, even one no column names" do
+      conn.exec("CREATE TABLE public.users_1 (id int PRIMARY KEY); INSERT INTO public.users_1 VALUES (1)")
+      sql = "SELECT users.id FROM public.users WHERE users.id NOT IN " \
+            "(SELECT users.id FROM public.users CROSS JOIN public.users_1 WHERE users.account_id = 1)"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.users users_2 " \
+         "CROSS JOIN public.users_1 WHERE users_2.account_id = 1 AND users.id = users_2.id)"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([["4"]])
+    end
+
+    it "keeps the column names an alias gives when it renames the alias" do
+      sql = "SELECT u.id FROM public.users u WHERE u.id NOT IN (SELECT m.user_id FROM public.memberships m, " \
+            "public.groups u (gid, gkind) WHERE u.gid = m.group_id AND u.gkind = 'b')"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT u.id FROM public.users u WHERE NOT EXISTS (SELECT 1 FROM public.memberships m, " \
+         "public.groups u_1(gid, gkind) WHERE u_1.gid = m.group_id AND u_1.gkind = 'b' AND u.id = m.user_id)"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([["1"], ["4"], ["5"]])
+    end
+
     it "would be wrong without the alias: the correlation would compare the subquery's column with itself" do
       unaliased = "SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.users " \
                   "JOIN public.memberships ON memberships.user_id = users.id " \
@@ -256,6 +317,20 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
         expect(rewritten(sql)).to eq([])
       end
     end
+  end
+
+  it "doesn't fire on a column whose domain is NOT NULL, since such a column can hold NULL" do
+    conn.exec(<<~SQL)
+      CREATE DOMAIN public.user_ref AS int NOT NULL;
+      CREATE TABLE public.notes (id int PRIMARY KEY, user_id public.user_ref);
+      INSERT INTO public.notes VALUES (1, 1);
+      INSERT INTO public.notes VALUES (2, (SELECT n.user_id FROM public.notes n WHERE false));
+    SQL
+    sql = "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT notes.user_id FROM public.notes)"
+
+    expect(rows("SELECT notes.id FROM public.notes WHERE notes.user_id IS NULL")).to eq([["2"]])
+    expect(rows(sql)).to eq([])
+    expect(rewritten(sql)).to eq([])
   end
 
   it "gives one rewrite per NOT IN, and the generator's second pass rewrites both" do
