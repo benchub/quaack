@@ -71,6 +71,22 @@ RSpec.shared_examples "an Anthropic API's error detail" do
     expect(seen.map { error_text(it) }.join).not_to include("gateway.example.test")
   end
 
+  it "scrubs a base_url query value as written and decoded, with ; as a separator too" do
+    gateway = "https://gateway.example.test/anthropic?token=SENTINEL%2BENCODED;auth=SENTINEL-AFTER-SEMICOLON"
+    client = fake.client(burndown:, settings: fake.class.settings("base_url" => gateway), max_retries: 0)
+    echo = "saw SENTINEL%2BENCODED, SENTINEL+ENCODED, and SENTINEL-AFTER-SEMICOLON"
+    fake.error_body("llm-index-ideas", status: 400, body: { error: { message: echo } })
+
+    e = begin
+      client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10)
+    rescue Quaack::Driver::LLM::Error => e
+      e
+    end
+
+    expect(without_sizes(e.message)).to eq("llm_bad_request: the API answered 400: saw [key], [key], and [key]")
+    expect(error_text(e)).not_to include("SENTINEL")
+  end
+
   it "shows a top-level message, the way Bedrock sends one, scrubbed" do
     fake.error_body("llm-index-ideas", status: 400, body: { message: "bad input for SENTINEL-OWN-KEY", other: "x" })
 

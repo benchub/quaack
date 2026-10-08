@@ -206,6 +206,41 @@ RSpec.describe "the bedrock adapter" do
       expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
     end
 
+    # Task 20261007-54: a gateway's body can echo any credential, so each
+    # one is scrubbed from an error detail.
+    describe "in an error detail" do
+      def echoed_error(credential)
+        fake.error_body("llm-rewrites", status: 400, body: { message: "saw #{credential}" })
+        ask_with(build)
+        raise "expected an LLM::Error"
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      def expect_scrubbed(error)
+        expect(sans_sizes(error.message)).to eq("llm_bad_request: the API answered 400: saw [key]")
+        expect(error_text(error)).not_to include("SENTINEL")
+      end
+
+      it "scrub the Bedrock API key" do
+        ENV["AWS_BEARER_TOKEN_BEDROCK"] = "SENTINEL-BEDROCK-KEY"
+        expect_scrubbed(echoed_error("SENTINEL-BEDROCK-KEY"))
+      end
+
+      it "scrub the access key ID" do
+        ENV["AWS_ACCESS_KEY_ID"] = "AKIASENTINELKEYID01"
+        ENV["AWS_SECRET_ACCESS_KEY"] = "quaack-spec-env-secret"
+        expect_scrubbed(echoed_error("AKIASENTINELKEYID01"))
+      end
+
+      it "scrub the session token" do
+        ENV["AWS_ACCESS_KEY_ID"] = "ASIAQUAACKSPECTEMP01"
+        ENV["AWS_SECRET_ACCESS_KEY"] = "quaack-spec-env-secret"
+        ENV["AWS_SESSION_TOKEN"] = "SENTINEL-SESSION-TOKEN"
+        expect_scrubbed(echoed_error("SENTINEL-SESSION-TOKEN"))
+      end
+    end
+
     describe "a Bedrock API key in AWS_BEARER_TOKEN_BEDROCK" do
       it "is sent as a bearer token, over the AWS chain" do
         ENV["AWS_BEARER_TOKEN_BEDROCK"] = "SENTINEL-BEDROCK-KEY"
