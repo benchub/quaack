@@ -13,7 +13,8 @@ module Quaack
     # transport, each with only the run. server holds the run-server flags
     # given, by option name: host, port, racetrack-db, and arena-db. Only
     # run-server gets them, and only those given, so `quaacks run-server`
-    # takes the rest from its run_server_command.
+    # takes the rest from its run_server_command. Once run-server is done,
+    # it's skipped, flags and all, with a note naming the flags it ignores.
     #
     # It resumes. entries are what `quaacks status` says the store holds
     # (Pipeline.status), and a step whose output is there is skipped. Each
@@ -45,13 +46,33 @@ module Quaack
       def done?(entries) = STEPS.all? { entries[it.output] }
 
       def run(transport:, run_id:, entries:, server: {}, progress: Progress::NULL)
+        flags = server.slice(*SERVER_OPTIONS).compact
         STEPS.each do |step|
-          next progress.skip(step.subcommand, step.say) if entries[step.output]
+          next skip(step, flags, progress) if entries[step.output]
 
           args = { run: run_id }
-          args.merge!(server.slice(*SERVER_OPTIONS).compact) if step.subcommand == "run-server"
+          args.merge!(flags) if step.subcommand == "run-server"
           progress.step(step.subcommand, step.say) { transport.call(step.subcommand, args:) }
         end
+      end
+
+      # What to say when run-server is done, so the run-server flags in
+      # server go unused, naming only the flags, not their values, or nil
+      # when none are given.
+      def ignored(server)
+        names = server.slice(*SERVER_OPTIONS).compact.keys.map { "--#{it}" }
+        return if names.empty?
+
+        names = names.size > 1 ? "#{names[..-2].join(", ")} and #{names.last}" : names.first
+        "Ignoring #{names}, since the run already checked its run server. " \
+          "To use another run server, start a new run with `quaack start`"
+      end
+
+      # Skips step, saying so, and for run-server, which flags go unused.
+      def skip(step, flags, progress)
+        progress.skip(step.subcommand, step.say)
+        message = ignored(flags) if step.subcommand == "run-server"
+        progress.step_note(step.subcommand, message) if message
       end
     end
   end

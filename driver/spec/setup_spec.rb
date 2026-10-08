@@ -70,6 +70,38 @@ RSpec.describe Quaack::Driver::Setup do
     expect(subcommands).to eq(order.drop(3) - ["literals"])
   end
 
+  it "skips the last step, racetrack-setup, when the store holds its output" do
+    entries["racetrack_setup"] = true
+
+    run
+
+    expect(subcommands).to eq(order - ["racetrack-setup"])
+    expect(io.string.lines.last)
+      .to start_with("quaack: [11/11] Already done, skipping: Setting up the racetrack")
+  end
+
+  it "warns, naming only the flags, that the run-server flags it's given go unused once run-server is done" do
+    entries["run_server"] = true
+
+    run(server: { "host" => "rs-1", "port" => "6432", "racetrack-db" => nil })
+
+    expect(subcommands).not_to include("run-server")
+    expect(io.string.lines.grep(/run-server\)$/)).to eq(
+      ["quaack: [2/11] Already done, skipping: Checking the run server (run-server)\n",
+       "quaack: [2/11] Ignoring --host and --port, since the run already checked its run server. " \
+       "To use another run server, start a new run with `quaack start` (run-server)\n"]
+    )
+    expect(io.string).not_to include("rs-1", "6432")
+  end
+
+  it "doesn't warn when run-server is done and no run-server flags are given" do
+    entries["run_server"] = true
+
+    run(server: { "host" => nil })
+
+    expect(io.string).not_to include("Ignoring")
+  end
+
   it "says it's done only when the store holds every step's output" do
     expect(described_class.done?(outputs.to_h { [it, true] })).to be(true)
     outputs.each do |missing|

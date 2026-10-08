@@ -410,6 +410,24 @@ RSpec.describe "quaack run" do
     )
   end
 
+  # Task 20261003-22: run-server flags given to a run that's had setup go
+  # unused, so it says so, naming only the flags.
+  it "warns that the run-server flags go unused when the run has had setup" do
+    status = cli.run(["run", "--run", run_id, "--out", out, "--arena-db", "ar", "--host", "rs-1"])
+
+    expect(status).to eq(0)
+    expect(transport.calls.map(&:first)).not_to include("run-server")
+    expect(errors).to eq(
+      "quaack: Ignoring --host and --arena-db, since the run already checked its run server. " \
+      "To use another run server, start a new run with `quaack start`\n#{torn}"
+    )
+  end
+
+  it "doesn't warn about run-server flags when none are given to a run that's had setup" do
+    expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+    expect(errors).to eq(torn)
+  end
+
   # Task 20261004-17: the note names the jump host and production server
   # from the laptop's record of the run, and what to do next once the run
   # is torn down.

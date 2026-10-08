@@ -502,7 +502,7 @@ module Quaack
         entries = self.class.status(@transport, @run_id)
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
-        Setup.run(transport: @transport, run_id: @run_id, entries:, server: @setup, progress: @progress) if setup
+        set_up(setup, entries)
         STAGES.each do |stage|
           stage.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites,
                     progress: @progress)
@@ -512,6 +512,15 @@ module Quaack
       end
 
       private
+
+      # Runs setup when setup says to. A run that's had all of setup skips
+      # it, so it says which run-server flags given go unused (Setup.ignored).
+      def set_up(setup, entries)
+        return Setup.run(transport: @transport, run_id: @run_id, entries:, server: @setup, progress: @progress) if setup
+
+        ignored = @setup && Setup.ignored(@setup)
+        @stderr&.print("quaack: #{ignored}\n") if ignored
+      end
 
       # With stderr, a Progress there, which the client is given too.
       def progress(setup)
