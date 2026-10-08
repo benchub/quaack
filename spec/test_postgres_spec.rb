@@ -284,6 +284,39 @@ RSpec.describe TestPostgres do
       end
     end
 
+    def pgbouncer_pids(container_id)
+      out, = Open3.capture2("docker", "exec", container_id, "sh", "-c",
+                            "for p in /proc/[0-9]*; do grep -qx pgbouncer $p/comm 2>/dev/null && " \
+                            "echo ${p#/proc/}; done")
+      out.split
+    end
+
+    # A start that failed partway, such as on the readiness timeout, leaves
+    # PgBouncer running and the port unknown, so the next call starts again.
+    it "starts again cleanly when an earlier start left one running" do
+      server = TestPostgres.server
+      port = server.pgbouncer_port
+
+      expect(TestPostgres::PgBouncer.start(server.container_id)).to eq(port)
+      expect(pgbouncer_pids(server.container_id).size).to eq(1)
+      conn = through_pgbouncer(test_database)
+      expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+    ensure
+      conn&.close
+    end
+
+    it "stops the PgBouncer it started when the start fails partway" do
+      server = TestPostgres.server
+      server.pgbouncer_port
+      allow(TestPostgres::PgBouncer).to receive(:wait_until_ready).and_raise("not ready")
+
+      expect { TestPostgres::PgBouncer.start(server.container_id) }.to raise_error("not ready")
+      expect(pgbouncer_pids(server.container_id)).to eq([])
+    ensure
+      RSpec::Mocks.space.proxy_for(TestPostgres::PgBouncer).reset
+      TestPostgres::PgBouncer.start(server.container_id)
+    end
+
     it "keeps a closed client's server backend in its pool" do
       conn = through_pgbouncer(test_database)
       server_pid = conn.exec("SELECT pg_backend_pid()").getvalue(0, 0)
