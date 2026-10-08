@@ -39,7 +39,7 @@ module Quaack
           # parses as SELECT NULL::int does, with only the type changed.
           # That's how to_regtype reads it.
           def type_syntax?(type)
-            parsed = PgQuery.parse("SELECT NULL::#{type}").tree
+            parsed = PgQuery.parse(format("SELECT NULL::%s", type)).tree
             cast = Tree.find(parsed, PgQuery::TypeCast).first
             return false unless cast
 

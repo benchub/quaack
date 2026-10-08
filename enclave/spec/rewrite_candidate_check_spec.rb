@@ -2,6 +2,7 @@
 
 require "quaack/enclave/rewrite_candidate_check"
 require "quaack/enclave/error_filter"
+require_relative "support/catalog_shadow"
 
 # Every example runs against real Postgres, since the relation and
 # volatility checks read the production catalog. Each one gets a fresh copy
@@ -225,6 +226,21 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         expect { check(sql, original: mixed) }
           .to rejected("not_a_table", "not_a_table: public.order_view has relkind v, not r")
       end
+    end
+
+    # Task 20261007-9: public's comparisons, ahead of pg_catalog's on the
+    # search_path, say no (see CatalogShadow), so an unqualified relkind
+    # read would find no relation at all.
+    it "reads the relkind when public's comparison operators shadow pg_catalog's" do
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :operators)
+      ordered, viewed = %w[orders order_view].map do |name|
+        described_class::Original.new(relations: [table_name("public", name)], placeholders: 0)
+      end
+
+      expect(check("SELECT id FROM public.orders", original: ordered).sql).to eq("SELECT id FROM public.orders")
+      expect { check("SELECT id FROM public.order_view", original: viewed) }
+        .to rejected("not_a_table", "not_a_table: public.order_view has relkind v, not r")
     end
 
     it "refuses a relation the original names that doesn't exist" do

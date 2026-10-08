@@ -86,6 +86,18 @@ module Quaack
         nil
       end
 
+      # Each type oid's catalog name (format_type), in order.
+      def format_types(connection, oids)
+        sql = "SELECT pg_catalog.format_type($1::pg_catalog.oid, NULL)"
+        oids.map { connection.exec_params(sql, [it]).getvalue(0, 0) }
+      end
+
+      # Each type oid's regtype text, in order.
+      def type_names(connection, oids)
+        sql = "SELECT pg_catalog.unnest($1::pg_catalog.oid[])::pg_catalog.regtype::pg_catalog.text"
+        connection.exec_params(sql, ["{#{oids.map { Integer(it) }.join(",")}}"]).column_values(0)
+      end
+
       def param_oids(description) = Array.new(description.nparams) { |i| description.paramtype(i) }
 
       # The block's result for the prepared statement's description, or nil

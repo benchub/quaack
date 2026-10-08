@@ -529,27 +529,28 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
   # Task 20260930-14: HypoPG lives in its own schema, and the search_path
   # puts a schema ahead of it whose hypopg_relation_size and hypopg_reset
   # lie. The run calls HypoPG's own, in the schema the extension is in.
+  # Task 20261007-9: that schema's name needs quoting.
   it "calls HypoPG's functions in the extension's schema, not ones the search path finds first" do
     conn.exec(<<~SQL)
       DROP EXTENSION hypopg;
-      CREATE SCHEMA hypo;
-      CREATE EXTENSION hypopg SCHEMA hypo;
+      CREATE SCHEMA "Hypo";
+      CREATE EXTENSION hypopg SCHEMA "Hypo";
       CREATE SCHEMA shadow;
       CREATE FUNCTION shadow.hypopg_relation_size(pg_catalog.oid) RETURNS pg_catalog.int8
         LANGUAGE sql AS $$ SELECT 7::pg_catalog.int8 $$;
       CREATE FUNCTION shadow.hypopg_reset() RETURNS pg_catalog.void LANGUAGE sql AS $$ SELECT $$;
-      SET search_path = shadow, hypo, public, pg_catalog;
+      SET search_path = shadow, "Hypo", public, pg_catalog;
     SQL
     used = candidate(key: ["a"])
-    oid = conn.exec_params("SELECT indexrelid FROM hypo.hypopg_create_index($1)", [used.to_ddl]).getvalue(0, 0)
-    size = conn.exec_params("SELECT hypo.hypopg_relation_size($1)", [oid]).getvalue(0, 0).to_i
-    conn.exec("SELECT hypo.hypopg_reset()")
+    oid = conn.exec_params(%(SELECT indexrelid FROM "Hypo".hypopg_create_index($1)), [used.to_ddl]).getvalue(0, 0)
+    size = conn.exec_params(%(SELECT "Hypo".hypopg_relation_size($1)), [oid]).getvalue(0, 0).to_i
+    conn.exec(%(SELECT "Hypo".hypopg_reset()))
 
     report = run("SELECT * FROM public.t WHERE a = $1", { slow: ["5"] }, [used, candidate(key: ["c"])])
 
     expect(report.results.first.size).to eq(size)
     expect(report.results.map(&:size)).not_to include(7)
-    expect(conn.exec("SELECT pg_catalog.count(*) FROM hypo.hypopg_list_indexes").getvalue(0, 0)).to eq("0")
+    expect(conn.exec(%(SELECT pg_catalog.count(*) FROM "Hypo".hypopg_list_indexes)).getvalue(0, 0)).to eq("0")
   end
 
   # HypoPG isn't installed, so start fails, and then cleanup fails the

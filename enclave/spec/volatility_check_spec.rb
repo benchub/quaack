@@ -584,7 +584,6 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
     end
   end
 
-  # t.f calls the function f on t's row, when t has no column f.
   # Task 20260930-14: the session's search_path puts public ahead of
   # pg_catalog, and public's comparisons say no (see CatalogShadow), so an
   # unqualified one would find no volatile function anywhere.
@@ -610,6 +609,7 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
     end
   end
 
+  # t.f calls the function f on t's row, when t has no column f.
   describe "attribute notation" do
     before do
       function("public.bumpo(public.orders)", "VOLATILE")

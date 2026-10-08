@@ -16,17 +16,21 @@ module Quaack
           # window function.
           FUNCTIONS = <<~SQL
             SELECT EXISTS (
-              SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-              WHERE p.proname = $1 AND ($2::text IS NULL OR n.nspname = $2) AND (p.proretset OR p.prokind <> 'f'))
+              SELECT 1 FROM pg_catalog.pg_proc p
+              JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+              WHERE p.proname OPERATOR(pg_catalog.=) $1
+                AND ($2::pg_catalog.text IS NULL OR n.nspname OPERATOR(pg_catalog.=) $2)
+                AND (p.proretset OR p.prokind OPERATOR(pg_catalog.<>) 'f'))
           SQL
 
           # An operator of the name, likewise, whose function returns a set.
           OPERATORS = <<~SQL
             SELECT EXISTS (
               SELECT 1 FROM pg_catalog.pg_operator o
-              JOIN pg_catalog.pg_namespace n ON n.oid = o.oprnamespace
-              JOIN pg_catalog.pg_proc p ON p.oid = o.oprcode
-              WHERE o.oprname = $1 AND ($2::text IS NULL OR n.nspname = $2) AND p.proretset)
+              JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) o.oprnamespace
+              JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) o.oprcode
+              WHERE o.oprname OPERATOR(pg_catalog.=) $1
+                AND ($2::pg_catalog.text IS NULL OR n.nspname OPERATOR(pg_catalog.=) $2) AND p.proretset)
           SQL
 
           # Whether every function and operator nodes call, by FunctionCalls,

@@ -35,48 +35,52 @@ module Quaack
     # names as quoted identifiers, and a stated CHECK expression is only
     # parsed, never run.
     module AssumptionCheck
-      RELATION = <<~SQL
-        (SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = $1 AND c.relname = $2)
+      EQ = "OPERATOR(pg_catalog.=)"
+
+      RELATION = <<~SQL.freeze
+        (SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid #{EQ} c.relnamespace
+         WHERE n.nspname #{EQ} $1 AND c.relname #{EQ} $2)
       SQL
+
+      # A NOT NULL or primary key constraint.
+      NOT_NULL_KIND = "(c.contype #{EQ} 'n' OR c.contype #{EQ} 'p')".freeze
 
       NOT_NULL = <<~SQL.freeze
         SELECT 1 FROM pg_catalog.pg_constraint c
-        JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
-        WHERE c.conrelid = #{RELATION} AND c.contype IN ('n', 'p') AND c.convalidated AND a.attname = $3
+        JOIN pg_catalog.pg_attribute a ON a.attrelid #{EQ} c.conrelid AND a.attnum #{EQ} ANY (c.conkey)
+        WHERE c.conrelid #{EQ} #{RELATION} AND #{NOT_NULL_KIND} AND c.convalidated AND a.attname #{EQ} $3
       SQL
 
       UNIQUE = <<~SQL.freeze
         SELECT 1 FROM pg_catalog.pg_index i
-        WHERE i.indrelid = #{RELATION} AND i.indisunique AND i.indisvalid
+        WHERE i.indrelid #{EQ} #{RELATION} AND i.indisunique AND i.indisvalid
           AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indimmediate
           AND (i.indnullsnotdistinct OR NOT EXISTS (
-            SELECT 1 FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS u(k, n)
-            WHERE u.n <= i.indnkeyatts AND NOT EXISTS (
+            SELECT 1 FROM pg_catalog.unnest(i.indkey::pg_catalog.int2[]) WITH ORDINALITY AS u(k, n)
+            WHERE u.n OPERATOR(pg_catalog.<=) i.indnkeyatts AND NOT EXISTS (
               SELECT 1 FROM pg_catalog.pg_constraint c
-              WHERE c.conrelid = i.indrelid AND c.contype IN ('n', 'p') AND c.convalidated AND u.k = ANY (c.conkey))))
+              WHERE c.conrelid #{EQ} i.indrelid AND #{NOT_NULL_KIND} AND c.convalidated AND u.k #{EQ} ANY (c.conkey))))
           AND NOT EXISTS (
-            SELECT 1 FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS u(k, n)
-            JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.k
-            WHERE u.n <= i.indnkeyatts AND a.attname <> ALL ($3::text[]))
+            SELECT 1 FROM pg_catalog.unnest(i.indkey::pg_catalog.int2[]) WITH ORDINALITY AS u(k, n)
+            JOIN pg_catalog.pg_attribute a ON a.attrelid #{EQ} i.indrelid AND a.attnum #{EQ} u.k
+            WHERE u.n OPERATOR(pg_catalog.<=) i.indnkeyatts AND a.attname OPERATOR(pg_catalog.<>) ALL ($3::pg_catalog.text[]))
       SQL
 
+      # ROWS FROM, since only an unqualified unnest takes two arrays.
       FOREIGN_KEY = <<~SQL.freeze
-        SELECT array_to_json(ARRAY(
-                 SELECT ARRAY[a.attname::text, r.attname::text]
-                 FROM unnest(c.conkey, c.confkey) AS u(k, f)
-                 JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.k
-                 JOIN pg_catalog.pg_attribute r ON r.attrelid = c.confrelid AND r.attnum = u.f))::text
+        SELECT pg_catalog.array_to_json(ARRAY(
+                 SELECT ARRAY[a.attname::pg_catalog.text, r.attname::pg_catalog.text]
+                 FROM ROWS FROM (pg_catalog.unnest(c.conkey), pg_catalog.unnest(c.confkey)) AS u(k, f)
+                 JOIN pg_catalog.pg_attribute a ON a.attrelid #{EQ} c.conrelid AND a.attnum #{EQ} u.k
+                 JOIN pg_catalog.pg_attribute r ON r.attrelid #{EQ} c.confrelid AND r.attnum #{EQ} u.f))::pg_catalog.text
         FROM pg_catalog.pg_constraint c
-        WHERE c.conrelid = #{RELATION} AND c.contype = 'f' AND c.convalidated
-          AND c.confrelid = (SELECT c2.oid FROM pg_catalog.pg_class c2
-                             JOIN pg_catalog.pg_namespace n2 ON n2.oid = c2.relnamespace
-                             WHERE n2.nspname = $3 AND c2.relname = $4)
+        WHERE c.conrelid #{EQ} #{RELATION} AND c.contype #{EQ} 'f' AND c.convalidated
+          AND c.confrelid #{EQ} #{RELATION.sub("$1", "$3").sub("$2", "$4")}
       SQL
 
       CHECK = <<~SQL.freeze
         SELECT pg_catalog.pg_get_constraintdef(c.oid) FROM pg_catalog.pg_constraint c
-        WHERE c.conrelid = #{RELATION} AND c.contype = 'c' AND c.convalidated
+        WHERE c.conrelid #{EQ} #{RELATION} AND c.contype #{EQ} 'c' AND c.convalidated
       SQL
 
       module_function

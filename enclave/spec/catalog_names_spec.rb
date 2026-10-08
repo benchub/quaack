@@ -11,9 +11,8 @@ require_relative "support/catalog_names"
 RSpec.describe "catalog names in the enclave's SQL" do
   root = File.join(GEM_ROOT, "lib")
 
-  # The files whose SQL isn't qualified yet, arena reads and some racetrack
-  # reads, for task
-  # 20261007-9. The list may only shrink: a file on it with nothing left
+  # The files whose SQL isn't qualified yet, all arena reads, for what's
+  # left of task 20261007-9. The list may only shrink: a file on it with nothing left
   # to qualify fails, as does a file off it with something to qualify, or
   # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
   # doesn't have.
@@ -25,27 +24,16 @@ RSpec.describe "catalog names in the enclave's SQL" do
     quaack/enclave/arena_schema.rb
     quaack/enclave/arena_schema/domain_checks.rb
     quaack/enclave/arena_schema/unique_indexes.rb
-    quaack/enclave/assumption_check.rb
-    quaack/enclave/assumption_check/denormalized_equal.rb
     quaack/enclave/clock_defaults.rb
     quaack/enclave/counterexamples/evaluated.rb
     quaack/enclave/denormalized_fixture.rb
     quaack/enclave/insert_check.rb
     quaack/enclave/insert_clock_words.rb
     quaack/enclave/insert_values.rb
-    quaack/enclave/result_comparison/tiebreaker.rb
-    quaack/enclave/rewrite_candidate_check.rb
-    quaack/enclave/rewrite_rules/catalog.rb
-    quaack/enclave/rewrite_rules/catalog/calls.rb
-    quaack/enclave/rewrite_rules/catalog/foreign_keys.rb
-    quaack/enclave/rewrite_rules/catalog/types.rb
     quaack/enclave/rewrite_rules/existence_in_flip.rb
     quaack/enclave/scenarios/ties.rb
     quaack/enclave/scenarios/types.rb
     quaack/enclave/scenarios/values.rb
-    quaack/enclave/server_clock.rb
-    quaack/enclave/steps/index_search.rb
-    quaack/enclave/steps/rewrite_check.rb
     quaack/enclave/value_pools.rb
   ].freeze
 

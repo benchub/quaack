@@ -352,8 +352,6 @@ RSpec.describe "quaacks index-build, against a real server" do
     conn&.close
   end
 
-  # 20261006-9: a build whose client was killed, as the driver's timeout
-  # kills ssh, while its CREATE INDEX waits on a lock another session holds.
   # Task 20260930-14: the build connection's search_path puts public ahead
   # of pg_catalog, and public's comparisons say no (see CatalogShadow).
   # The catalog reads and the indisvalid update still find QUAACK's index.
@@ -382,6 +380,8 @@ RSpec.describe "quaacks index-build, against a real server" do
     end
   end
 
+  # 20261006-9: a build whose client was killed, as the driver's timeout
+  # kills ssh, while its CREATE INDEX waits on a lock another session holds.
   context "with an orphaned build of the same index" do
     let(:ddl) { "CREATE INDEX ON public.orders (note)" }
     let(:name) { Quaack::Enclave::IndexBuild.name(ddl) }

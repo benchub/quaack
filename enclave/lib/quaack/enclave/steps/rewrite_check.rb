@@ -186,8 +186,7 @@ module Quaack
                                             param_types: context[:param_types])
           raise Rejected, reason.to_s if reason
 
-          oids = context[:expected].map { Integer(it) }
-          connection.exec_params("SELECT unnest($1::oid[])::regtype::text", ["{#{oids.join(",")}}"]).column_values(0)
+          StructuralDiscard.type_names(connection, context[:expected])
         end
 
         def unmet(assumptions, connection)

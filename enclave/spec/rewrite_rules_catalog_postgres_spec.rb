@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/rewrite_rules/catalog"
+require_relative "support/catalog_shadow"
 require_relative "support/production_server"
 
 # The columns rewrite-rules' Catalog lists for a table, and which of them a
@@ -101,6 +102,37 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
       "SELECT t.id FROM public.t FOR UPDATE" => true
     }.each do |sql, volatile|
       expect(catalog.calls_volatile?(sql)).to be(volatile), sql
+    end
+  end
+
+  # Task 20261007-9: rewrite-rules reads the racetrack's catalog, where
+  # public's comparisons, ahead of pg_catalog's on the search_path, say no
+  # (see CatalogShadow). The reads still find what's there.
+  describe "when public's comparison operators shadow pg_catalog's" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.parent (id date PRIMARY KEY);
+        CREATE TABLE public.child (pid date REFERENCES public.parent (id));
+        CREATE FUNCTION public.many(integer, integer) RETURNS SETOF integer LANGUAGE sql AS 'SELECT 1';
+        CREATE OPERATOR public.### (LEFTARG = integer, RIGHTARG = integer, FUNCTION = public.many);
+        SET search_path = public, pg_catalog;
+      SQL
+    end
+
+    def calls(sql) = [PgQuery.parse(sql).tree]
+
+    it "lists columns, names their types, and finds foreign keys, set-returning calls, and btree families",
+       :aggregate_failures do
+      CatalogShadow.plant(conn, :operators)
+
+      expect([columns("t").keys, columns("t")["born"], catalog.column_info("public", "t", "born")&.type])
+        .to eq([%w[id name born doc docb tags mood pair size nick plain key], true, "timestamp with time zone"])
+      expect([catalog.referenced_tables("public", "child", "pid"),
+              catalog.strict_foreign_key?(%w[public child], %w[public parent], [%w[pid id]])]).to eq([["parent"], true])
+      expect([catalog.row_wise?(calls("SELECT unnest(ARRAY[1])")), catalog.row_wise?(calls("SELECT 1 ### 2")),
+              catalog.row_wise?(calls("SELECT lower('a')"))]).to eq([false, false, true])
+      expect([catalog.default_btree?("public", "t", "born"), catalog.default_btree?("public", "t", "doc")])
+        .to eq([true, false])
     end
   end
 end

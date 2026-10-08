@@ -26,7 +26,7 @@ module Quaack
     # - settings, the Settings hash from the input plan's EXPLAIN
     #   (SETTINGS), or nil, as RelationQualifier takes it. Its search_path
     #   is used only to look up unqualified function and operator names.
-    # - connection, a PG connection to the production database. Only the
+    # - connection, a PG connection to the arena (Counterexamples). Only the
     #   catalog is read, with plain SELECTs.
     #
     # A plain insert is INSERT INTO <subset table> (<columns>) VALUES (...),

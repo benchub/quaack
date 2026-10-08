@@ -55,7 +55,8 @@ module CatalogNames
     ["quaack/enclave/insert_check.rb", "WITH"] => "the name of a refused form",
     ["quaack/enclave/steps/index_build.rb", "CREATE INDEX "] => "a replacement String#sub writes into DDL",
     ["quaack/enclave/clock_defaults.rb", "TABLE ONLY "] => "the middle of an ALTER TABLE built in pieces",
-    ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces"
+    ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces",
+    ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run"
   }.freeze
 
   # The 29 files catalog_names_spec's list of files not yet qualified held
