@@ -7344,3 +7344,17 @@ Minor findings from the first review of 20260929-5:
 - **Design:** input.
 - **Status:** done
 - **Landed:** 2026-10-08, the test and comment items, after one review with no blocking findings. Specs pin `quaack start`'s laptop-home refusal (home itself, `..` and `.` forms, a trailing slash, a path beside home, and `~/` sent as a literal) and intake's ENOTDIR as missing; comments in `error_filter.rb` and `transport/error_fields.rb` are fixed. Code is unchanged. The two items that need an enclave or protocol change moved to 20261007-64.
+
+### 20260929-14. pg_dump finder: minor findings.
+
+Minor findings from the first review of 20260929-9.
+
+- When no pg_dump of the server's major is found, three examples fail, not one: the replay gate, `TestPgDump.bin`'s own example, and the `PromptPack.with_env` example. CLAUDE.md says the replay spec "fails once". Gate the two finder examples the same way, or reword CLAUDE.md.
+- Three pieces of code have no automated test: the load-time gate in `spec/pipeline_replay_spec.rb`, which was only checked by hand; `E2ERun.with_env`'s PATH change; and `TestPgDump.version`'s exit-status check. Ignoring the exit status survives the specs.
+- If `QUAACK_TEST_PG_BIN` holds a pg_dump of the wrong major, the harness quietly falls back to the Homebrew keg. That matches the user's answer, "checks first", and the not-found message lists what each directory held. Consider saying so when it happens.
+
+- **Depends on:** 20260929-9.
+- **Came from:** Review of 20260929-9, round one.
+- **Design:** none. Test harness only.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. CLAUDE.md now says every spec that runs `quaacks` fails without a matching pg_dump, with the replay and scenario-refusal specs each failing as one example, through one shared `TestPgDump.examples` gate. Specs cover the gate, `with_env`'s PATH for PromptPack and E2ERun, and `version`'s exit status, and `find` warns on stderr when it skips a directory holding pg_dump of another major.

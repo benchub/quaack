@@ -565,18 +565,7 @@ Still open from the build and reviews of 20260922-25:
 
 ### 20260929-13. Build the prompt-pack database once per spec process. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-14. pg_dump finder: minor findings.
-
-Minor findings from the first review of 20260929-9.
-
-- When no pg_dump of the server's major is found, three examples fail, not one: the replay gate, `TestPgDump.bin`'s own example, and the `PromptPack.with_env` example. CLAUDE.md says the replay spec "fails once". Gate the two finder examples the same way, or reword CLAUDE.md.
-- Three pieces of code have no automated test: the load-time gate in `spec/pipeline_replay_spec.rb`, which was only checked by hand; `E2ERun.with_env`'s PATH change; and `TestPgDump.version`'s exit-status check. Ignoring the exit status survives the specs.
-- If `QUAACK_TEST_PG_BIN` holds a pg_dump of the wrong major, the harness quietly falls back to the Homebrew keg. That matches the user's answer, "checks first", and the not-found message lists what each directory held. Consider saying so when it happens.
-
-- **Depends on:** 20260929-9.
-- **Came from:** Review of 20260929-9, round one.
-- **Design:** none. Test harness only.
-- **Status:** todo
+### 20260929-14. pg_dump finder: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-15. `TestPgDump.server_major`'s regex is under-tested. Done, see BACKLOG-COMPLETE.md.
 
@@ -2221,4 +2210,13 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 - **Depends on:** 20261003-7.
 - **Came from:** The builder of 20261003-7, 2026-10-08.
 - **Design:** intake, trust boundary.
+- **Status:** todo
+
+### 20261007-65. pg_dump finder: pin the no-warning case.
+
+From the review of 20260929-14. Removing `if found[dir]` from the warning loop in `spec/support/test_pg_dump.rb` `find` stays green, though it would warn about a `QUAACK_TEST_PG_BIN` holding no pg_dump ("which holds , not pg_dump 18"). Add `warn_to:` to the "skips a directory with no pg_dump in it" example and assert nothing is printed.
+
+- **Depends on:** 20260929-14.
+- **Came from:** The review of 20260929-14.
+- **Design:** Development.
 - **Status:** todo
