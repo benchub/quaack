@@ -380,7 +380,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "an arm has a scalar subquery" =>
         "SELECT a.id FROM_ WHERE s.flag OR a.loose = (SELECT cp.user_id FROM public.cp WHERE cp.s_id = s.id)",
       "an arm's subquery casts a column" =>
-        "SELECT a.id FROM_ WHERE s.flag OR EXISTS (SELECT 1 FROM public.cp WHERE cp.s_id::text = '1')"
+        "SELECT a.id FROM_ WHERE s.flag OR EXISTS (SELECT 1 FROM public.cp WHERE cp.s_id::text = '1')",
+      "an arm's LIKE pattern is NULL" => "SELECT a.id FROM_ WHERE s.flag OR a.title LIKE NULL",
+      "an arm uses an operator from a schema, though its schema is named like a comparison" =>
+        'SELECT a.id FROM_ WHERE s.flag OR a.loose OPERATOR("=".=) 3'
     }.each do |why, sql|
       it "doesn't fire when #{why}" do
         expect(rewritten("SELECT a.id, a.title #{from} WHERE s.flag OR a.loose = 3").size).to eq(1)
@@ -403,16 +406,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
   # Postgres runs an OR's arms left to right and stops at the first true
   # one, so an earlier arm can guard a later one that would raise. Split,
   # every arm runs on its own rows, and the guarded one raises (task
-  # 20261002-5). Order 1 is 'n' kind, a VIP, and its item's qty is 0 and
-  # its val isn't a number. Order 2's item is ordinary.
+  # 20261002-5). Order 1 is 'n' kind, a VIP, and its item's qty is 0, its
+  # val isn't a number, its pat is a LIKE pattern that ends in the escape
+  # character, and its big doesn't fit an int. Order 2's item is ordinary.
   context "with orders and their items, where an arm guards another" do
     before do
       conn.exec(<<~SQL)
         CREATE TABLE public.o (id int PRIMARY KEY, vip boolean NOT NULL, kind text NOT NULL);
         CREATE TABLE public.i (id int PRIMARY KEY, order_id int NOT NULL, qty int NOT NULL, total int NOT NULL,
-                               val text NOT NULL);
+                               val text NOT NULL, pat text NOT NULL, big bigint NOT NULL);
         INSERT INTO public.o VALUES (1, true, 'n'), (2, false, 'm');
-        INSERT INTO public.i VALUES (10, 1, 0, 50, 'abc'), (20, 2, 1, 50, '9');
+        INSERT INTO public.i VALUES (10, 1, 0, 50, 'abc', 'ab\\', 3000000000), (20, 2, 1, 50, '9', '%', 1);
       SQL
     end
 
@@ -421,18 +425,37 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
     {
       "a cast" => "o.kind = 'n' OR i.val::int > 5",
       "a division" => "o.vip OR i.total / i.qty > 10",
-      "a division guarded by an arm on its own table" => "i.qty = 0 OR i.total / i.qty > 10 OR o.vip"
+      "a division guarded by an arm on its own table" => "i.qty = 0 OR i.total / i.qty > 10 OR o.vip",
+      "a LIKE whose pattern is a column" => "o.vip OR i.val LIKE i.pat",
+      "an ILIKE whose pattern is a column" => "o.vip OR i.val ILIKE i.pat",
+      "a NOT LIKE whose pattern is a constant that ends in the escape character" =>
+        "o.vip OR o.kind = 'm' OR i.val NOT LIKE 'ab\\'",
+      "a LIKE whose pattern is a parameter" => "o.vip OR o.kind = 'm' OR i.val LIKE $1",
+      "an index into a value by a column" => "o.vip OR (ARRAY[1, 2])[i.big] = 1"
     }.each do |what, where|
       it "refuses an OR with #{what} an earlier arm guards, which the original runs" do
         sql = "SELECT o.id, i.id AS item #{from} WHERE #{where}"
 
-        expect(conn.exec(sql).values.sort).to eq([%w[1 10], %w[2 20]])
+        params = sql.include?("$1") ? ["ab\\"] : []
+
+        expect(conn.exec_params(sql, params).values.sort).to eq([%w[1 10], %w[2 20]])
         expect(rewritten(sql)).to eq([])
       end
     end
 
     it "still splits an OR with no such arm, and a cast with no column in it" do
       sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.total > '10'::int"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[1 10], %w[2 20]])
+    end
+
+    it "would be wrong on a LIKE whose pattern is a column: the arm, run on its own, raises" do
+      expect { conn.exec("SELECT o.id #{from} WHERE i.val LIKE i.pat") }
+        .to raise_error(PG::InvalidEscapeSequence, /LIKE pattern must not end with escape character/)
+    end
+
+    it "still splits an OR with a LIKE or ILIKE whose pattern is a constant that doesn't end in the escape character" do
+      sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val LIKE '9%' OR i.val ILIKE 'Z\\\\'"
 
       expect(same_rows(sql, rewritten(sql))).to eq([%w[1 10], %w[2 20]])
     end

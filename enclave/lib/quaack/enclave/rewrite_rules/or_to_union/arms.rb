@@ -29,8 +29,9 @@ module Quaack
           # of the built-in types QUAACK sees.
           COMPARISONS = %w[= <> != < <= > >=].freeze
           OPERATOR_KINDS = %i[AEXPR_OP AEXPR_OP_ANY AEXPR_OP_ALL].freeze
-          SAFE_KINDS = %i[AEXPR_IN AEXPR_LIKE AEXPR_ILIKE AEXPR_DISTINCT AEXPR_NOT_DISTINCT AEXPR_NULLIF
+          SAFE_KINDS = %i[AEXPR_IN AEXPR_DISTINCT AEXPR_NOT_DISTINCT AEXPR_NULLIF
                           AEXPR_BETWEEN AEXPR_NOT_BETWEEN AEXPR_BETWEEN_SYM AEXPR_NOT_BETWEEN_SYM].freeze
+          LIKE_KINDS = %i[AEXPR_LIKE AEXPR_ILIKE].freeze
           SAFE_SUBLINKS = %i[EXISTS_SUBLINK ANY_SUBLINK ALL_SUBLINK].freeze
 
           module_function
@@ -76,6 +77,12 @@ module Quaack
           # where it would raise. Split, every arm runs on its own, so the
           # rule leaves these alone. One with no column in it gives the
           # same value on every row, so it raises in the original too.
+          #
+          # A LIKE or ILIKE raises when its pattern ends in the escape
+          # character, and its column keeps Postgres from working that out
+          # before it reads rows. So one is safe only when its pattern is a
+          # string constant that doesn't end that way: not a column, and
+          # not a parameter, whose value the rule doesn't see.
           def raises?(node)
             all_nodes(node).any? do |inner|
               case inner
@@ -88,9 +95,19 @@ module Quaack
           end
 
           def safe?(expr)
+            return valid_pattern?(expr.rexpr) if LIKE_KINDS.include?(expr.kind)
             return SAFE_KINDS.include?(expr.kind) unless OPERATOR_KINDS.include?(expr.kind)
 
             expr.name.size == 1 && COMPARISONS.include?(expr.name.first.string.sval)
+          end
+
+          # Whether pattern is a string constant whose trailing
+          # backslashes, the escape character, pair off.
+          def valid_pattern?(pattern)
+            return false unless pattern.node == :a_const
+
+            constant = pattern.a_const
+            constant.val == :sval && constant.sval.sval[/\\*\z/].size.even?
           end
 
           def columns?(node) = !Tree.find(node, PgQuery::ColumnRef).empty?

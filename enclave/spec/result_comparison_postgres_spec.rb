@@ -843,8 +843,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
     # or_to_union keeps the LIMIT outside its UNION, so the rewrite can
     # keep other rows than the original does. That's a valid answer, so
-    # rewrite-test and counterexamples, which compare this way, don't call
-    # it a rule bug (task 20261002-5).
+    # compare_in_both_orders calls it a match (task 20261002-5). This
+    # checks that call only, not rewrite-test or counterexamples, which
+    # call it too.
     it "matches an or_to_union rewrite that keeps other rows under the LIMIT" do
       original = "SELECT items.id, items.grp FROM public.items WHERE items.id IN (SELECT 5) OR items.grp = 1 LIMIT 2"
       rewrite = Quaack::Enclave::RewriteRules::OrToUnion.new
