@@ -148,6 +148,32 @@ RSpec.describe Quaack::Driver::Provenance do
     expect(saved["providers"].map { it["down"] }).to eq(["llm_auth", nil])
   end
 
+  # DESIGN.md, "Several LLM providers" (Routing, Provenance).
+  it "records each failed fan-out branch's step, entry, and rule once, keeping them across a resume" do
+    groq = { "step" => "llm-rewrites", "entry" => "groq", "rule" => "llm_rate_limited" }
+    opus = { "step" => "llm-index-ideas", "entry" => "opus", "rule" => "llm_bad_response" }
+    gpt = { "step" => "rewrite-llm-index-ideas", "entry" => "gpt", "rule" => "llm_auth" }
+    provenance.failed_branches!([groq]).failed_branches!([groq, opus]).save
+    described_class.open(@home, run_id).failed_branches!([opus, gpt]).save
+
+    expect(saved["failed_branches"]).to eq([groq, opus, gpt])
+  end
+
+  it "keeps a failed branch only with a fan-out step, an entry's name, and a rule that fails over" do
+    good = { "step" => "llm-rewrites", "entry" => "groq", "rule" => "llm_unavailable" }
+    provenance.failed_branches!([good, good.merge("step" => "llm-counterexamples"), good.merge("entry" => "Bad Name"),
+                                 good.merge("rule" => "llm_bad_request"), good.merge("reason" => "SELECT 1"),
+                                 good.merge("rule" => nil), "llm-rewrites"]).save
+
+    expect(saved["failed_branches"]).to eq([good])
+  end
+
+  it "fails over, and fans out, by the router's own lists" do
+    require "quaack/driver/llm"
+    expect([described_class::Shape::FAILS_OVER, described_class::Shape::FAN_OUT_STEPS])
+      .to eq([Quaack::Driver::LLM::Router::FAILS_OVER, Quaack::Driver::LLM::RoutingChecks::FAN_OUT_STEPS])
+  end
+
   it "keeps the record across a resume, adding new entries and keeping the old ones" do
     provenance.providers!([{ "name" => "groq", "provider" => "openai_compatible", "model" => "llama" }])
     provenance.rewrites!([{ "index" => 1, "outcome" => "accepted", "rewrite" => "rewrite_1" }], entries: %w[groq])
@@ -177,12 +203,20 @@ RSpec.describe Quaack::Driver::Provenance do
                        "rewrites" => { "rewrite_1" => "groq", "SELECT 1" => "groq", "rewrite_2" => 5 },
                        "rewrites_proposed" => { "groq" => -1 },
                        "operator_inference" => ["groq"],
+                       "failed_branches" => [{ "step" => "llm-rewrites", "entry" => "groq", "rule" => "llm_auth" },
+                                             { "step" => "llm-rewrites", "entry" => "groq", "rule" => "llm_auth",
+                                               "reason" => "SELECT secret" },
+                                             { "step" => "SELECT secret", "entry" => "groq", "rule" => "llm_auth" },
+                                             { "step" => "llm-rewrites", "entry" => "groq",
+                                               "rule" => "SELECT_secret" },
+                                             { "step" => "llm-rewrites", "entry" => "groq" }, "SELECT secret"],
                        "extra" => "SELECT secret"
                      ))
 
     expect(provenance.record).to eq(
       "providers" => [{ "name" => "groq", "provider" => "openai_compatible", "model" => "llama" }],
-      "rewrites" => { "rewrite_1" => "groq" }
+      "rewrites" => { "rewrite_1" => "groq" },
+      "failed_branches" => [{ "step" => "llm-rewrites", "entry" => "groq", "rule" => "llm_auth" }]
     )
   end
 

@@ -244,6 +244,10 @@
 </tbody></table>
 <p class="note">Names come from your own <code>~/.quaack/driver.json</code>. Calls are this run of quaack's, as below.</p>
 <% end %>
+<% unless failed_branch_lines.empty? %>
+<p>Fan-out steps, which ask each healthy provider in turn, dropped these providers:</p>
+<ul id="llm-failed-branches"><% failed_branch_lines.each do |line| %><li><%= h line %></li><% end %></ul>
+<% end %>
 </section>
 <section id="burndown"><h2>Burndown: how much QUAACK did, and where ideas dropped out</h2>
 <% [["index", "Index ideas for your query", index_rows], ["rewrite", "Rewrites", rewrite_rows]].each do |id, title, rows| %>

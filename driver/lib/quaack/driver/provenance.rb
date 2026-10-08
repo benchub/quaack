@@ -40,6 +40,8 @@ module Quaack
     #   then entry, how many statements it wrote and its index_outcomes'
     #   counts by outcome and by rule; and skipped, each replacement round
     #   skipped, with its entry and rule.
+    # - failed_branches: each fan-out branch dropped, once each: its step,
+    #   its entry, and the rule it failed with, never the reason.
     # - operator_inference: the entry that inferred the operator rewrites'
     #   transformations and assumptions.
     #
@@ -67,7 +69,7 @@ module Quaack
 
       # A callable, given a block, that has the block record what an LLM
       # step did in provenance, with the router's (client's) entries, the
-      # providers it marked down or dropped, and those it asked and didn't,
+      # fan-out branches it dropped, the providers it marked down or dropped, and those it asked and didn't,
       # whose earlier downs it clears (up!), then saves the record
       # whole. Each LLM step calls it once it's done. NONE without
       # provenance.
@@ -77,6 +79,7 @@ module Quaack
         lambda do |&block|
           provenance.providers!(client.entries)
           block&.call(provenance)
+          provenance.failed_branches!(client.failed_branches)
           provenance.down!(client.down).up!(client.burndown.llm_calls_by_provider.keys - client.down.keys).save
         end
       end
@@ -177,6 +180,16 @@ module Quaack
         return self unless named?(entry) && RULE.match?(rule.to_s)
 
         search(search)&.then { (it["skipped"] ||= []) << { "entry" => entry, "rule" => rule } }
+        self
+      end
+
+      # branches are fan-out branches the router dropped, each { "step",
+      # "entry", "rule" }: each is added once, after those already recorded.
+      def failed_branches!(branches)
+        branches.filter_map { Shape.branch(it) }.each do |branch|
+          list = (@record["failed_branches"] ||= [])
+          list << branch unless list.include?(branch)
+        end
         self
       end
 
