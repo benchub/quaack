@@ -7388,3 +7388,23 @@ From the review of 20260929-14. Removing `if found[dir]` from the warning loop i
 - **Design:** Development.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The finder's "skips a directory with no pg_dump in it" example asserts nothing is printed. Specs only.
+
+### 20261007-38. `not_in_to_not_exists`: extensions.
+
+From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-operation subqueries, `NOT IN` outside the top-level WHERE, and `<> ALL`. Ask the user which are worth building before starting; each must stay sound.
+
+- **Depends on:** 20261002-3.
+- **Came from:** 20261002-3.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08. Split by the user's decision into one task per extension: 20261008-2 to -5.
+
+### 20261007-47. `or_to_union`: extensions.
+
+From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins, and a bare `*`. Ask the user which are worth building; each must stay sound.
+
+- **Depends on:** 20261002-5.
+- **Came from:** 20261002-5.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08. Split by the user's decision into one task per extension: 20261008-6 to -9.

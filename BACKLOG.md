@@ -811,6 +811,7 @@ INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow prod
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
 - **Design:** What goes into the enclave, and input.
+- **Decided by the user (2026-10-08):** hold; a v2 feature.
 - **Status:** todo
 
 ### 20260923-42. Support SELECT INTO and locking clauses.
@@ -820,6 +821,7 @@ INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow prod
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
 - **Design:** What goes into the enclave, and input.
+- **Decided by the user (2026-10-08):** hold; a v2 feature.
 - **Status:** todo
 
 ### 20260923-43. Support TABLESAMPLE.
@@ -1443,6 +1445,7 @@ Minor findings from the build and review of 20260928-1:
 - **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
 - **Landed (2026-10-08), items 2 and 4:** after one review with no blocking findings. When the run server is already checked, `quaack setup` (and `quaack run`, whether or not it runs setup) prints a line naming the run-server flags it ignores, never their values; a unit case covers skipping racetrack-setup. Still open: item 1, which needs an enclave rule (`run_server_unspecified` is decided on the jump server, so it goes in the batch), and item 3, which changes the teardown policy and needs the user: keep the run after a setup failure under `quaack run` (nothing expensive has run, and the operator may only need different flags), or tear it down (a permanent failure such as `volatile_function` leaves no run server or data copy behind).
 - **Landed (2026-10-08), item 1:** after one review with no blocking findings. With run-server flags missing and no `run_server_command`, the enclave refuses as `run_server_unspecified` (exit 70, no value in the line), and the driver adds a fixed note saying what to give. Still open: item 3, for the user. When it lands, also: under `quaack run` without `--keep` the run is torn down, so the note's "give the flags" fix needs a new `quaack start` that the line doesn't say (append `Teardown.next_step` for this rule, or keep the run); and DESIGN.md (~285) says a failed setup step prints only its rule, but rules with a fixed note print `<rule>: <note>`.
+- **Decided by the user (2026-10-08):** item 3: keep the run after a setup failure under `quaack run`, for debugging, and put the teardown command in the error.
 - **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
@@ -1716,6 +1719,7 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 - **Came from:** The review of 20261004-23, and its builder.
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Decided by the user (2026-10-06):** the user will provide a profile later. Do items 4-7 now, and leave items 1-3 open in a follow-up task.
+- **Decided by the user (2026-10-08):** hold until the user sends a CPU profile.
 - **Status:** todo (item 1 needs the user)
 
 ### 20261004-28. Timeout checks on the enclave's clock: RunDiscipline and ArenaRunner. Done, see BACKLOG-COMPLETE.md.
@@ -2083,6 +2087,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 - **Depends on:** 20260926-56.
 - **Came from:** 20260926-56.
 - **Design:** input.
+- **Decided by the user (2026-10-08):** draft the wording yourself and build it; the user will review it in the report.
 - **Status:** todo
 
 ### 20261007-30. NameQualifier: test gaps and two edge cases. Done, see BACKLOG-COMPLETE.md.
@@ -2101,14 +2106,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 
 ### 20261007-37. Report: the went-on "not recorded" cell uses the number style. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-38. `not_in_to_not_exists`: extensions.
-
-From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-operation subqueries, `NOT IN` outside the top-level WHERE, and `<> ALL`. Ask the user which are worth building before starting; each must stay sound.
-
-- **Depends on:** 20261002-3.
-- **Came from:** 20261002-3.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261007-38. `not_in_to_not_exists`: extensions. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-39. denormalized_equal: accept same-type arrays, ranges, and composites. Done, see BACKLOG-COMPLETE.md.
 
@@ -2133,14 +2131,7 @@ From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept
 
 ### 20261007-46. `or_to_union` and `Tree::Names`: minors from 20261002-5. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-47. `or_to_union`: extensions.
-
-From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins, and a bare `*`. Ask the user which are worth building; each must stay sound.
-
-- **Depends on:** 20261002-5.
-- **Came from:** 20261002-5.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261007-47. `or_to_union`: extensions. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-48. OpenAI-compatible replies: minors from 20261007-36. Done, see BACKLOG-COMPLETE.md.
 
@@ -2160,6 +2151,7 @@ From the builder and review of 20261007-46.
 - **Depends on:** 20261007-46.
 - **Came from:** The builder and review of 20261007-46.
 - **Design:** rewrite-rules.
+- **Decided by the user (2026-10-08):** item 1: allow parameter LIKE patterns in or_to_union, with no caveat in the report. Items 2 and 3 stay as listed.
 - **Status:** todo
 
 ### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
@@ -2208,3 +2200,84 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 ### 20261007-65. pg_dump finder: pin the no-warning case. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-66. `max_retries`: pin the burndown count per attempt. Done, see BACKLOG-COMPLETE.md.
+
+### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers.
+
+The user confirmed them all on 2026-10-08: failover-mode units don't move the round_robin cursor; a lone `llm` block keeps its first-round index ideas when the replacement round fails; a resumed run clears an earlier "marked down" for any provider it called; per-provider "planner ignored or couldn't try" stays "not recorded"; and `max_retries` takes 0 to 10. Remove each marker from DESIGN.md and the matching code comments, and leave the text otherwise as it is.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-08.
+- **Design:** Several LLM providers, LLM client.
+- **Status:** todo
+
+### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to row-valued `NOT IN` (`(a, b) NOT IN (SELECT x, y ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-3. `not_in_to_not_exists`: support a subquery that is a set operation.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to a subquery that is a set operation (`NOT IN (SELECT ... UNION SELECT ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to `NOT IN` outside the top-level WHERE (in a JOIN ON, a HAVING, or a nested subquery). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-5. `not_in_to_not_exists`: support `<> ALL`.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to `<> ALL (SELECT ...)`, which means the same as `NOT IN`. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-6. `or_to_union`: support composite keys.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to composite keys (a UNION that dedupes on a key of several columns). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-7. `or_to_union`: support a query with GROUP BY.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to a query with GROUP BY. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-8. `or_to_union`: support outer joins.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to outer joins. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-9. `or_to_union`: support a bare `*` in the select list.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to a bare `*` in the select list. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
