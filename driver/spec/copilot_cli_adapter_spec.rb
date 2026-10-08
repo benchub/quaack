@@ -249,6 +249,26 @@ RSpec.describe "the copilot_cli adapter" do
     }
   end
 
+  it "keeps quoted bearer tokens and a session token with only tid= out of a failure's stderr tail" do
+    command = File.join(@dir, "fake-copilot")
+    script(command, <<~'RUBY')
+      warn "double Bearer \"SENTINELL\" single Bearer 'SENTINELM' colon Bearer: \"SENTINELN\""
+      warn "short tid=SENTINELO;exp=1 end"
+      exit 7
+    RUBY
+    template = [command, "{prompt_file}", "{model}"]
+
+    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+      expect(e.rule).to eq("llm_unavailable")
+      expect(sans_sizes(e.message)).to eq(
+        "llm_unavailable: copilot_cli exited with status 7: " \
+        "double Bearer \"[token]\" single Bearer '[token]' colon Bearer: \"[token]\"\n" \
+        "short [token] end"
+      )
+      expect(error_text(e)).not_to include("SENTINEL")
+    }
+  end
+
   it "maps a non-zero status to llm_unavailable with a short stderr tail" do
     command = File.join(@dir, "fake-copilot")
     record_cwd_script(command, '100.times { |i| warn "line " + i.to_s }; exit 7')
