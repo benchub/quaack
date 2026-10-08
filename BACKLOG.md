@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261001-4 (refused candidates never best in the index payload).
 - 20261007-9 (racetrack catalog names qualified; denormalized-equal uses each type's own `=`).
 - 20261007-22 (an unreachable rescue removed).
+- 20261007-30 (HypoPG in the quaack schema; stored search_path without unusable schemas).
 
 ## How this file works.
 
@@ -2274,24 +2275,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 - **Design:** input.
 - **Status:** todo
 
-### 20261007-30. NameQualifier: test gaps and two edge cases.
-
-From the review of 20260926-56's qualification. These pieces have no test that goes red when they break:
-1. The USAGE filter in the Catalog SQL (`has_schema_privilege(n.oid, 'USAGE')`). The test role is a superuser. Use a non-superuser role and a schema it can't use.
-2. The `"$user"` substitution in `steps/qualify.rb` `written_path`. The stored-path spec uses `sales, public`.
-3. Lowercasing unquoted regclass names in `RegLiteral.identifier` (`'ORDERS'::regclass`).
-4. The regtype round-trip check `same?`.
-5. The collation encoding filter (`EXTRA`).
-6. The `OPERATOR_KINDS` filter changes nothing today: the keyword operators all exist in pg_catalog. Keep it as defense, and say so, or drop it.
-
-Edge cases:
-7. Racetrack setup's `CREATE EXTENSION IF NOT EXISTS hypopg` now follows the stored path, so it fails when the path names only schemas the dump didn't restore (`search_path = reporting` with a query on `public.orders`). Use `WITH SCHEMA`, or refuse the run.
-8. The rewrite candidate check qualifies candidates on the racetrack, so `"$user"` and USAGE come from the run server's role, while the original was qualified on production. A function production has but the racetrack subset lacks would stay bare in a candidate.
-
-- **Depends on:** 20260926-56.
-- **Came from:** The review of 20260926-56's qualification.
-- **Design:** qualify.
-- **Status:** todo
+### 20261007-30. NameQualifier: test gaps and two edge cases. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-31. Qualify catalog names in the enclave's arena reads (stage 3 of 20260930-14).
 
@@ -2328,4 +2312,13 @@ From the review of 20261007-13.
 - **Depends on:** 20261007-13.
 - **Came from:** The review of 20261007-13.
 - **Design:** Several LLM providers.
+- **Status:** todo
+
+### 20261007-34. index-test: resolve `"$user"` with the production role.
+
+From the review of 20261007-30. `IndexDdlCheck`'s volatility check gets the plan's settings from `steps/index_test.rb` but runs on the racetrack connection, so `"$user"` there means the run server's role, while the hypothetical index is built in a session that uses the stored path. They disagree only when the racetrack has a schema named for one of those roles holding a function of the same name. Pass `RunServer.plan_settings(store)` there, as rewrite-check now does, and check the other racetrack users of the plan's settings. Also: the item-5 test of 20261007-30 fakes a collation's encoding with a direct `pg_catalog.pg_collation` UPDATE, which is fragile; find a sturdier setup if there is one.
+
+- **Depends on:** 20261007-30.
+- **Came from:** The review of 20261007-30.
+- **Design:** qualify, index-test.
 - **Status:** todo

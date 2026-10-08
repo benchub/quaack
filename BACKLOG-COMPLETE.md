@@ -6749,3 +6749,23 @@ Parse and check `llms` and `llm_routing` in `~/.quaack/driver.json`, as DESIGN.m
 - **Design:** Where QUAACK runs, Several LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. `LLM.providers` (`driver/lib/quaack/driver/llm/providers.rb`) parses and checks `llms` and `llm_routing` as DESIGN.md says; an `llm` block or no block is a one-entry list named after its provider, with its overrides unchanged; `QUAACK_LLM` picks entries, and the three old override variables are refused with `llms`. `quaack run` builds every entry's client before it touches the jump server, naming the entry in a failure, and routing is still the first entry only. The builder's choices, not yet in DESIGN.md: positions count from 0; `QUAACK_LLM` applies to a lone block by its provider name; a pinned step's pool is its pinned names in pinned order, less what `QUAACK_LLM` drops, and an empty pool is a usage error; `fan_out` is refused on other steps even when false. They're in 20261007-33.
+
+### 20261007-30. NameQualifier: test gaps and two edge cases.
+
+From the review of 20260926-56's qualification. These pieces have no test that goes red when they break:
+1. The USAGE filter in the Catalog SQL (`has_schema_privilege(n.oid, 'USAGE')`). The test role is a superuser. Use a non-superuser role and a schema it can't use.
+2. The `"$user"` substitution in `steps/qualify.rb` `written_path`. The stored-path spec uses `sales, public`.
+3. Lowercasing unquoted regclass names in `RegLiteral.identifier` (`'ORDERS'::regclass`).
+4. The regtype round-trip check `same?`.
+5. The collation encoding filter (`EXTRA`).
+6. The `OPERATOR_KINDS` filter changes nothing today: the keyword operators all exist in pg_catalog. Keep it as defense, and say so, or drop it.
+
+Edge cases:
+7. Racetrack setup's `CREATE EXTENSION IF NOT EXISTS hypopg` now follows the stored path, so it fails when the path names only schemas the dump didn't restore (`search_path = reporting` with a query on `public.orders`). Use `WITH SCHEMA`, or refuse the run.
+8. The rewrite candidate check qualifies candidates on the racetrack, so `"$user"` and USAGE come from the run server's role, while the original was qualified on production. A function production has but the racetrack subset lacks would stay bare in a candidate.
+
+- **Depends on:** 20260926-56.
+- **Came from:** The review of 20260926-56's qualification.
+- **Design:** qualify.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. Items 1 to 5 have tests that go red under their mutations; item 6's filter stays as a commented defense. Item 7: racetrack setup creates the `quaack` schema first and installs HypoPG `WITH SCHEMA quaack` (an existing install stays where it is), and the quaack-schema check allows only the hypopg extension and its members besides `clock_anchor()`. Item 8: qualify's stored search_path drops schemas the operator's role can't use, and rewrite-check qualifies candidates with `RunServer.plan_settings`, so they resolve with production's `"$user"` and USAGE. Enclave change, unreleased until the next batch bump.
