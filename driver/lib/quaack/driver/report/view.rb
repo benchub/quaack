@@ -114,7 +114,7 @@ module Quaack
           return %(<td colspan="6" class="missing">#{Words::MISSING}</td>) unless record
 
           [num(record["in"]), "<td>#{h breakdown(record["added"], rules: stage == "rewrite-rules")}</td>",
-           "<td>#{h breakdown(record["dropped"], stage:)}</td>", num(record["set_aside"]), num(record["out"] || Words::MISSING),
+           "<td>#{h breakdown(record["dropped"], stage:)}</td>", num(record["set_aside"]), count_cell(record["out"]),
            "<td>#{h breakdown(record["extra"])}</td>"].join
         end
 
