@@ -51,7 +51,7 @@ module Quaack
         def initialize = super(DRIVER_ERROR)
       end
 
-      def self.around(transport:, run_id:, stderr:, keep: false, jump:, &)
+      def self.around(transport:, run_id:, stderr:, jump:, keep: false, &)
         new(transport, run_id, stderr, jump:).around(keep:, &)
       end
 
