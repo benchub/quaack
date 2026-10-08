@@ -17,8 +17,13 @@ module Quaack
         # wasn't QUAACK's statement_timeout, such as an operator's
         # pg_cancel_backend. It says nothing about the query, so rewrite-test
         # and counterexamples raise it, ending the step, instead of recording
-        # a verdict (DESIGN.md's rewrite-test).
-        def foreign?(error) = error.rule == :statement_canceled && error.step == :query
+        # a verdict (DESIGN.md's rewrite-test). That holds for a cancel of the
+        # BEGIN, SET, or ROLLBACK around the query too, which has no clock
+        # reading, so it's never QUAACK's timeout. A cancel while the fixture
+        # loads stays a load failure.
+        def foreign?(error) = error.rule == :statement_canceled && FOREIGN_STEPS.include?(error.step)
+
+        FOREIGN_STEPS = %i[query begin rollback transaction].freeze
 
         # started is the server's clock, in ms, read in the statement's own
         # pipeline just before it (see Pipeline), or nil for a call with no
