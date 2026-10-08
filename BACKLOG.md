@@ -1274,14 +1274,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261007-14. The router: sessions, failover, round-robin, and pinning. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-15. A later turn that fails.
-
-Add DESIGN.md's softer handling of a later ask that fails with a rule that fails over. llm-index-ideas and rewrite-llm-index-ideas keep their first-round ideas and skip the replacement round. llm-counterexamples starts the rewrite's remaining rounds fresh on another provider from its pool, less those its rounds already failed on: one user message with the payload as the first round sent it, then each earlier round's inserts and that round's feedback, in the words already sent, under "Earlier rounds, run by another model." Never as the model's own turns. Rounds count on, so no rewrite gets more than three. The step fails when no provider is left. `llm_bad_request` still fails the step. Add their progress lines. Test with sentinels that the fresh start's prompt holds only the payload, the earlier inserts, and the feedback text, and that the enclave sees no new input. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
-
-- **Depends on:** 20261007-14.
-- **Came from:** The split of 20260929-2, and the user's answer on 2026-10-07 to take the softer option in v1.
-- **Design:** Several LLM providers (Routing), llm-index-ideas, llm-counterexamples.
-- **Status:** todo
+### 20261007-15. A later turn that fails. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-16. Provenance and the report.
 
@@ -2322,4 +2315,13 @@ From the review of 20261007-36.
 - **Depends on:** 20261007-36.
 - **Came from:** The review of 20261007-36.
 - **Design:** LLM providers.
+- **Status:** todo
+
+### 20261007-49. A lone `llm` block: keep the API's detail after a skipped replacement round.
+
+From the review of 20261007-15. With a lone `llm` block, an `llm_rate_limited`, `llm_unavailable`, or `llm_auth` at the replacement round now marks the provider down, so the next ask (llm-index-refine) fails at once without a call: `llm_rate_limited: every LLM provider llm-index-refine may use failed: anthropic (llm_rate_limited). <sizes>`. In `Router#exhausted` (~229), `tried.last.last` is the down rule's string, not an `Error`. That names the provider and uses the list form, which a lone block shouldn't, and the API's own detail (a retry hint, say) never reaches the operator, since the going-on line drops it. Before 20261007-15 the run failed one step earlier with the detail. For a lone block, fail the later unit with the stored original `Error`, or keep the detail in the going-on line. Also: DESIGN.md should describe the lone-block going-on lines and that a lone block now keeps first-round ideas, once the user confirms; and a pipeline spec should pin the enclave's round numbers 1, 2, 3 across a fresh start.
+
+- **Depends on:** 20261007-15.
+- **Came from:** The review of 20261007-15.
+- **Design:** Several LLM providers.
 - **Status:** todo
