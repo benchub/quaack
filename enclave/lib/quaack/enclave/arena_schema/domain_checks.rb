@@ -8,8 +8,9 @@ module Quaack
       # Domain CHECKs, as CHECKs on the columns of the domain's type.
       module DomainChecks
         # Each column's domain CHECKs, from its domain and the domains that
-        # domain is built on, as column name and pg_get_constraintdef.
-        QUERY = <<~SQL
+        # domain is built on, as column name, pg_get_constraintdef, and
+        # whether it uses a foreign operator (FOREIGN_OPERATOR_SQL).
+        QUERY = <<~SQL.freeze
           WITH RECURSIVE d(attname, typid) AS (
             SELECT a.attname, a.atttypid FROM pg_catalog.pg_attribute a
             WHERE a.attrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND a.attnum OPERATOR(pg_catalog.>) 0
@@ -18,7 +19,7 @@ module Quaack
             SELECT d.attname, t.typbasetype FROM d JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) d.typid
             WHERE t.typtype OPERATOR(pg_catalog.=) 'd'
           )
-          SELECT d.attname, pg_catalog.pg_get_constraintdef(c.oid)
+          SELECT d.attname, pg_catalog.pg_get_constraintdef(c.oid), #{FOREIGN_OPERATOR_SQL}
           FROM d JOIN pg_catalog.pg_constraint c ON c.contypid OPERATOR(pg_catalog.=) d.typid
           WHERE c.contype OPERATOR(pg_catalog.=) 'c' AND c.convalidated
           ORDER BY d.attname, c.conname
@@ -26,12 +27,13 @@ module Quaack
 
         module_function
 
-        # A domain CHECK tests VALUE. Each becomes a CHECK on its column.
+        # A domain CHECK tests VALUE. Each becomes a CHECK on its column,
+        # paired with whether it uses a foreign operator ("t" or "f").
         def read(conn, regclass)
-          conn.exec_params(QUERY, [regclass]).values.map do |column, definition|
+          conn.exec_params(QUERY, [regclass]).values.map do |column, definition, foreign|
             tree = PgQuery.parse("SELECT 1 WHERE #{definition.delete_prefix("CHECK ")}").tree
             rename_value(tree, column)
-            "CHECK (#{PgQuery.deparse(tree).sub(/\ASELECT 1 WHERE /, "")})"
+            ["CHECK (#{PgQuery.deparse(tree).sub(/\ASELECT 1 WHERE /, "")})", foreign]
           end
         end
 

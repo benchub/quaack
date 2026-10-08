@@ -12,7 +12,10 @@ module Quaack
       # = ANY (ARRAY[...]) (how Postgres prints IN), an IN list, BETWEEN,
       # or IS [NOT] NULL. Anything else, such as lo < hi, an OR, or a
       # function of the column, raises Error(:complex_check), so the query
-      # is refused. Postgres evaluates each condition, as for the pools.
+      # is refused, as does a CHECK whose operator the catalog says is
+      # another schema's and no extension's (Constraints#foreign_operator),
+      # however it prints. Postgres evaluates each condition, as for the
+      # pools.
       class Checks
         OPERATORS = %w[= <> < <= > >=].freeze
         KINDS = %i[AEXPR_OP AEXPR_OP_ANY AEXPR_IN AEXPR_BETWEEN AEXPR_NOT_BETWEEN].freeze
@@ -21,9 +24,7 @@ module Quaack
           @conn = conn
           @schema = schema
           @nodes = Hash.new { |h, k| h[k] = [] }
-          schema.tables.each do |table|
-            schema.constraints(table).checks.each { |definition| add(table, definition) }
-          end
+          schema.tables.each { |table| add_table(table, schema.constraints(table)) }
           @probes = {}
           @own_values = {}
           @shared = {}
@@ -69,6 +70,12 @@ module Quaack
           @own_values[[table, col.name]] ||= @nodes[[table, col.name]].zip(probes(table, col)).flat_map do |n, p|
             @sorted[[p, col.nullable]] ||= ValuePools.sorted(@conn, n, col, p)[:satisfying]
           end
+        end
+
+        def add_table(table, constraints)
+          raise Error, :complex_check if constraints.foreign_operator
+
+          constraints.checks.each { |definition| add(table, definition) }
         end
 
         def add(table, definition)
