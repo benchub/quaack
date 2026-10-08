@@ -400,6 +400,45 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       end
     end
 
+    # The refusal mustn't tell the LLM what a schema named for a role holds
+    # (20260923-57's review): a name the original doesn't use is refused the
+    # same way whether a role's schema has it or nothing does. The same goes
+    # for a function only a role's schema has.
+    describe 'with "$user" in the search path' do
+      let(:role) { "sentinelrole_#{SecureRandom.hex(4)}" }
+      let(:path) { { "search_path" => '"$user", public' } }
+
+      before do
+        conn.exec(<<~SQL)
+          CREATE ROLE "#{role}"; CREATE SCHEMA "#{role}";
+          CREATE TABLE "#{role}".secret_sentinel (id int);
+          CREATE TABLE public.secret_sentinel (id int);
+          CREATE TABLE public.other_sentinel (id int);
+          CREATE FUNCTION "#{role}".secret_fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$;
+        SQL
+      end
+
+      after do
+        conn.exec(%(SET client_min_messages = warning; DROP SCHEMA IF EXISTS "#{role}" CASCADE; DROP ROLE "#{role}"))
+      end
+
+      def rule_for(sql)
+        check(sql, path)
+        "accepted"
+      rescue described_class::Error => e
+        e.rule
+      end
+
+      it "refuses a relation a role's schema holds as it refuses one that's missing" do
+        rules = %w[secret_sentinel other_sentinel nothere_sentinel].map { rule_for("SELECT id FROM #{it}") }
+        expect(rules).to eq(%w[unknown_relation unknown_relation unknown_relation])
+      end
+
+      it "treats a function only a role's schema has as it treats one that's missing" do
+        expect(rule_for("SELECT secret_fn() FROM orders")).to eq(rule_for("SELECT nothere_fn() FROM orders"))
+      end
+    end
+
     it "is accepted, literals and all, when nothing is wrong" do
       expect(check(self.class.planted(sentinel)).sql).to include(sentinel)
     end

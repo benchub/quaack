@@ -48,12 +48,14 @@ module Quaack
     #    read, and unknown_relation if a relation doesn't resolve, isn't one
     #    the original uses, or doesn't exist, in that order. A candidate may
     #    leave out relations the original uses, since a rewrite can
-    #    eliminate a join. Then each relation, and each inheritance
+    #    eliminate a join. UserSchema's ambiguous_user_schema doesn't
+    #    apply, since its rule would say what a role's schema holds (see
+    #    Relations). Then each relation, and each inheritance
     #    descendant it scans, must be a plain table (relkind r), refused
     #    with Relations' rule for its kind, such as view_relation, since a
     #    view's body can call a volatile function that the volatility
     #    check, below, never sees. Relations' other refusals apply too:
-    #    ambiguous_user_schema, user_function_in_from, the name qualifier's
+    #    user_function_in_from, the name qualifier's
     #    rules, and deparse_mismatch if the qualified candidate, as pg_query
     #    deparses it, doesn't parse back to the tree it came from (see
     #    Deparse). So Accepted's parse is the candidate's own parse with
@@ -131,9 +133,14 @@ module Quaack
       end
 
       # The candidate qualified, and its parse, once Relations accepts its
-      # relations.
+      # relations. Each must be one the original uses, checked as soon as
+      # it resolves, so the rule never depends on what else the catalog
+      # holds.
       def relations!(sql, allowed, settings, connection)
-        result = Relations.check(sql, settings, connection, allowed:)
+        result = Relations.check(sql, settings, connection) do |tables|
+          unknown = tables.find { !allowed.include?(it) }
+          raise Error.new("unknown_relation", "#{unknown} isn't a relation the original uses") if unknown
+        end
         Accepted.new(sql: result.sql, parse: result.parse)
       rescue Relations::Error => e
         raise Error.from(e), cause: nil
