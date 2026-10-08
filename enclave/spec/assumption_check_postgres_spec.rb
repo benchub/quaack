@@ -76,22 +76,74 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
   # columns", by the column's own =. An index that compares more finely
   # than that lets two rows the column calls equal both in: under a
   # case-blind collation, b's 'Ann' and 'ann'. A deterministic collation's
-  # = is byte equality, so two of those agree, as on d. A non-default
-  # operator class is refused even where it agrees, as text_pattern_ops
-  # does on e, since one such as record_image_ops compares more finely.
+  # = is byte equality, so two of those agree, as on d. Task 20261007-43:
+  # a non-default operator class is met when its = is the default class's,
+  # as text_pattern_ops's and varchar_pattern_ops's are, on e and v.
   it "meets a unique set only when its index compares as the column does" do
     conn.exec(<<~SQL)
       CREATE COLLATION public.blind (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
       CREATE TABLE public.people (a text COLLATE public.blind NOT NULL, b text COLLATE public.blind NOT NULL,
-                                  d text NOT NULL, e text NOT NULL);
+                                  d text NOT NULL, e text NOT NULL, v varchar(9) NOT NULL);
       CREATE UNIQUE INDEX ON public.people (a);
       CREATE UNIQUE INDEX ON public.people (b COLLATE "C");
       CREATE UNIQUE INDEX ON public.people (d COLLATE "C");
       CREATE UNIQUE INDEX ON public.people (e text_pattern_ops);
-      INSERT INTO public.people VALUES ('Ann', 'Ann', 'Ann', 'Ann'), ('x', 'ann', 'x', 'x');
+      CREATE UNIQUE INDEX ON public.people (v varchar_pattern_ops);
+      INSERT INTO public.people VALUES ('Ann', 'Ann', 'Ann', 'Ann', 'Ann'), ('x', 'ann', 'x', 'x', 'x');
     SQL
 
-    expect(%w[a b d e].map { met?(unique("public.people", it)) }).to eq([true, false, true, false])
+    expect(%w[a b d e v].map { met?(unique("public.people", it)) }).to eq([true, false, true, true, true])
+  end
+
+  # Task 20261007-43: the = is the column's type's own. A text class on a
+  # citext column compares as text does, case and all, so it lets in both
+  # 'Ann' and 'ann', which citext's = calls equal, even the default
+  # text_ops. A domain's type is its base type's. A type with no default
+  # class of its own, as varchar, takes the class's, as Postgres does.
+  it "meets a unique set only when its index's = is the column's type's own" do
+    conn.exec(<<~SQL)
+      CREATE EXTENSION citext SCHEMA public;
+      CREATE DOMAIN public.loud AS public.citext;
+      CREATE DOMAIN public.louder AS public.loud;
+      CREATE TABLE public.names (p public.citext NOT NULL, q public.citext NOT NULL, r public.citext NOT NULL,
+                                 l public.loud NOT NULL, m public.louder NOT NULL, k public.loud NOT NULL,
+                                 v varchar(9) NOT NULL, w varchar(9) NOT NULL);
+      CREATE UNIQUE INDEX ON public.names (p text_pattern_ops);
+      CREATE UNIQUE INDEX ON public.names (q text_ops);
+      CREATE UNIQUE INDEX ON public.names (r);
+      CREATE UNIQUE INDEX ON public.names (l text_ops);
+      CREATE UNIQUE INDEX ON public.names (m text_ops);
+      CREATE UNIQUE INDEX ON public.names (k);
+      CREATE UNIQUE INDEX ON public.names (v text_ops);
+      CREATE UNIQUE INDEX ON public.names (w varchar_pattern_ops);
+      INSERT INTO public.names VALUES ('Ann', 'Ann', 'Ann', 'Ann', 'Ann', 'Ann', 'Ann', 'Ann'),
+                                      ('ann', 'ann', 'x', 'ann', 'ann', 'x', 'x', 'x');
+    SQL
+
+    expect(%w[p q r l m k v w].map { met?(unique("public.names", it)) })
+      .to eq([false, false, true, false, false, true, true, true])
+  end
+
+  # Task 20261007-43: a class whose = isn't the default class's may call
+  # two rows unequal that the column's = calls equal. record_image_ops's *=
+  # compares bytes, so it lets in 1.0 and 1.00, which record_ops's = calls
+  # equal; the planted class's = says no to everything.
+  it "doesn't meet a unique set whose index's operator class has another =" do
+    conn.exec(<<~SQL)
+      CREATE TYPE public.amount AS (n numeric);
+      CREATE FUNCTION public.never(int, int) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT false';
+      CREATE OPERATOR public.=== (LEFTARG = int, RIGHTARG = int, FUNCTION = public.never);
+      CREATE OPERATOR CLASS public.never_ops FOR TYPE int USING btree
+        AS OPERATOR 3 public.=== (int, int), FUNCTION 1 pg_catalog.btint4cmp(int, int);
+      CREATE TABLE public.ledger (r public.amount NOT NULL, s public.amount NOT NULL, n int NOT NULL, m int NOT NULL);
+      CREATE UNIQUE INDEX ON public.ledger (r);
+      CREATE UNIQUE INDEX ON public.ledger (s record_image_ops);
+      CREATE UNIQUE INDEX ON public.ledger (n);
+      CREATE UNIQUE INDEX ON public.ledger (m public.never_ops);
+      INSERT INTO public.ledger VALUES (ROW(1.0), ROW(1.0), 1, 1), (ROW(2), ROW(1.00), 2, 2);
+    SQL
+
+    expect(%w[r s n m].map { met?(unique("public.ledger", it)) }).to eq([true, false, true, false])
   end
 
   it "meets a CHECK despite the casts Postgres adds, and one marked NO INHERIT" do
@@ -118,21 +170,32 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
   # search_path, say no or say yes (see CatalogShadow). The catalog reads
   # still find what's there, and only that.
   describe "when public's comparison operators shadow pg_catalog's" do
-    before { conn.exec("SET search_path = public, pg_catalog") }
+    # Task 20261007-43: shaped's operator classes' = are compared by
+    # pg_catalog's = too.
+    before do
+      conn.exec(<<~SQL)
+        CREATE TYPE public.amount AS (n numeric);
+        CREATE TABLE public.shaped (e text NOT NULL, s public.amount NOT NULL);
+        CREATE UNIQUE INDEX ON public.shaped (e text_pattern_ops);
+        CREATE UNIQUE INDEX ON public.shaped (s record_image_ops);
+        SET search_path = public, pg_catalog;
+      SQL
+    end
 
     it "still meets what's met, when they say no" do
       CatalogShadow.plant(conn, :operators)
 
       expect([met?(not_null("id")), met?(unique("public.orders", "id")), met?(unique("public.items", "code")),
-              met?(fk("customer_id")), met?(check("total >= 0"))]).to eq([true, true, true, true, true])
+              met?(fk("customer_id")), met?(check("total >= 0")), met?(unique("public.shaped", "e"))])
+        .to eq([true, true, true, true, true, true])
     end
 
     it "still doesn't meet what isn't, when they say yes" do
       CatalogShadow.plant(conn, :yes_operators)
 
       expect([met?(not_null("total")), met?(unique("public.orders", "note")), met?(unique("public.items", "sku")),
-              met?(fk("customer_id", ["public.orders", "id"])), met?(check("qty > 0"))])
-        .to eq([false, false, false, false, false])
+              met?(fk("customer_id", ["public.orders", "id"])), met?(check("qty > 0")),
+              met?(unique("public.shaped", "s"))]).to eq([false, false, false, false, false, false])
     end
   end
 
