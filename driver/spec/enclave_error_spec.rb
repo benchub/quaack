@@ -85,6 +85,32 @@ RSpec.describe Quaack::Driver::EnclaveError, "#rule_with_note" do
                          "#{resume}")
     end
 
+    # Task 20261008-51: the run records quaack start --database, so the
+    # note names it, and doesn't say it comes from libpq.
+    it "names the database the run recorded, and gives it to psql as -d" do
+      note = error("production_connection_failed", exit_status: 70)
+             .rule_with_note(next_step: "resume with `quaack setup --run R1`", jump: "jump-1", server: "prod-1",
+                             port: "6543", database: "app")
+
+      expect(note).to eq("production_connection_failed: couldn't connect to production at prod-1, port 6543, " \
+                         "database app. QUAACK gives libpq only that host, port, and database. The user and " \
+                         "password come from #{libpq} Test it with " \
+                         "`ssh jump-1 'psql -h prod-1 -p 6543 -d app -c \"select 1\"'`. If production listens on " \
+                         "another port, start a new run with `quaack start --port <n>`. #{resume}")
+    end
+
+    it "names a recorded database without a port" do
+      note = error("production_connection_failed", exit_status: 70)
+             .rule_with_note(next_step: "resume with `quaack setup --run R1`", jump: "jump-1", server: "prod-1",
+                             database: "app")
+
+      expect(note).to eq("production_connection_failed: couldn't connect to production at prod-1, database app. " \
+                         "QUAACK gives libpq only that host and database. The port, user, and password come from " \
+                         "#{libpq} Test it with `ssh jump-1 'psql -h prod-1 -d app -c \"select 1\"'`. If " \
+                         "production listens on another port than your libpq setup gives, start a new run with " \
+                         "`quaack start --port <n>`. #{resume}")
+    end
+
     # Task 20261004-40: with the server unknown, -p would leave the test
     # command half filled in, so it gives psql neither.
     it "leaves -p out of the test command when it doesn't know the server" do

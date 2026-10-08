@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg"
+require "quaack/protocol/database_name"
 require "quaack/protocol/port"
 require_relative "connections"
 require_relative "intake"
@@ -66,7 +67,7 @@ module Quaack
         end
       end
 
-      DATABASE = /\A[A-Za-z0-9_][A-Za-z0-9_-]{0,62}\z/
+      DATABASE = Protocol::DatabaseName::PATTERN
       DATABASES = { racetrack: "racetrack_db", arena: "arena_db" }.freeze
       ARENA_TIME_ZONE_SQL = "SELECT pg_catalog.set_config('TimeZone', $1, false)"
 

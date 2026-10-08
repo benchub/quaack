@@ -76,10 +76,12 @@ module Quaack
         module_function
 
         # The run's production connection parameters: its server as host,
-        # and its production_port as port, if intake stored one.
+        # its production_port as port, and its production_database as
+        # dbname, each only if intake stored one.
         def params(store)
           port = store.read("production_port") if store.entry?("production_port")
-          { host: store.read("server"), **(port ? { port: } : {}) }
+          dbname = store.read("production_database") if store.entry?("production_database")
+          { host: store.read("server"), **(port ? { port: } : {}), **(dbname ? { dbname: } : {}) }
         end
 
         # A connection with params, its notices dropped (see Connections).

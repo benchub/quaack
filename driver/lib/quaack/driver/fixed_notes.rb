@@ -40,6 +40,8 @@ module Quaack
         "bad_server" => "--server must be a host name or a service name: letters, digits, dots, hyphens, and " \
                         "underscores, starting with a letter or digit, at most 253 characters. #{GO_ON}",
         "bad_port" => "--port must be a whole number from 1 to 65535, with no leading zero. #{GO_ON}",
+        "bad_database" => "--database must be letters, digits, underscores, and hyphens, starting with a " \
+                          "letter, digit, or underscore, at most 63 characters. #{GO_ON}",
         # intake refused quaack start's --captured-at.
         "bad_captured_at" => "--captured-at must be an ISO-8601 time with a zone, such as 2026-10-01T09:30:00Z " \
                              "or 2026-10-01T09:30:00-04:00, no earlier than 1970 and no more than one day ahead " \

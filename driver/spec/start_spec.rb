@@ -28,7 +28,7 @@ RSpec.describe Quaack::Driver::Start do
   def remote_intake(run_id: self.run_id, version: nil)
     body = "File.write(#{File.join(dir, "got").inspect}, JSON.generate(inputs[:options])); " \
            "[{ type: :run, run_id: #{run_id.inspect} }]"
-    options = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value,
+    options = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value, "database" => :value,
                 "captured-at" => :value }
     command = EnclaveCommands.probe(dir, body, options:)
     # The probe step answers as intake: the wrapper swaps the subcommand.
@@ -61,8 +61,9 @@ RSpec.describe Quaack::Driver::Start do
   # start's optional flags, port: and captured_at:, go to call when given,
   # and the other options to new.
   def start(server: "prod-1", query: "/q q.sql", plan: "/p.json", **options)
-    flags = options.slice(:port, :captured_at).compact
-    described_class.new(home:, ssh:, **options.except(:port, :captured_at)).call(server:, query:, plan:, **flags)
+    flags = options.slice(:port, :database, :captured_at).compact
+    described_class.new(home:, ssh:, **options.except(:port, :database, :captured_at)).call(server:, query:, plan:,
+                                                                                            **flags)
   end
 
   it "runs intake on the host jump_command prints for the server, and records the run's jump host" do
@@ -118,6 +119,42 @@ RSpec.describe Quaack::Driver::Start do
         .to raise_error(Quaack::Driver::Start::UsageError, "--port must be a whole number from 1 to 65535"), port
     end
     expect(File.exist?(File.join(dir, "got"))).to be(false)
+  end
+
+  # Task 20261008-51.
+  it "passes production's database to intake as --database, given one, and records it" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(database: "app_db", port: "6543")).to eq(run_id)
+    expect(JSON.parse(File.read(File.join(dir, "got"))))
+      .to eq("query" => "/q q.sql", "plan" => "/p.json", "server" => "prod-1", "port" => "6543",
+             "database" => "app_db")
+    expect(Quaack::Driver::Runs.new(home).where(run_id))
+      .to eq(jump: "jump-1", server: "prod-1", port: "6543", database: "app_db")
+  end
+
+  it "refuses a database that isn't a plain name before ssh" do
+    configure("echo jump-1")
+    remote_intake
+
+    ["", "-app", "a b", "a=b", "postgres://h/db", "a" * 64, "äpp"].each do |database|
+      expect { start(database:) }
+        .to raise_error(Quaack::Driver::Start::UsageError,
+                        "--database must be letters, digits, underscores, and hyphens, starting with a letter, " \
+                        "digit, or underscore, at most 63 characters"), database
+    end
+    expect(File.exist?(File.join(dir, "got"))).to be(false)
+  end
+
+  it "reads back no database for a record whose database isn't one, so a note never shows it" do
+    ["a b", "app'; rm -rf ~", 5, ["app"]].each do |database|
+      FileUtils.mkdir_p(File.join(home, ".quaack", "runs"))
+      File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"),
+                 JSON.generate("jump_host" => "jump-1", "server" => "prod-1", "database" => database))
+
+      expect(Quaack::Driver::Runs.new(home).where(run_id)[:database]).to be_nil, database.inspect
+    end
   end
 
   it "passes the server to jump_command as one quoted shell word" do
@@ -442,7 +479,8 @@ RSpec.describe Quaack::Driver::Start do
     remote_intake
 
     expect(start(server: "prod-1", port: "6543")).to eq(run_id)
-    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: "6543")
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: "6543",
+                                                               database: nil)
   end
 
   it "records no port when the operator gave none" do
@@ -450,7 +488,8 @@ RSpec.describe Quaack::Driver::Start do
     remote_intake
 
     expect(start(server: "prod-1")).to eq(run_id)
-    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: nil)
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: nil,
+                                                               database: nil)
   end
 
   it "reads back no port for a run recorded without one, as an older driver did" do
@@ -458,7 +497,8 @@ RSpec.describe Quaack::Driver::Start do
     File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"),
                JSON.generate("jump_host" => "jump-1", "server" => "prod-1"))
 
-    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: nil)
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: nil,
+                                                               database: nil)
   end
 
   it "reads back no port for a record whose port isn't one, so a note never shows it" do
@@ -467,8 +507,8 @@ RSpec.describe Quaack::Driver::Start do
       File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"),
                  JSON.generate("jump_host" => "jump-1", "server" => "prod-1", "port" => port))
 
-      expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq({ jump: "jump-1", server: "prod-1", port: nil }),
-                                                              port.inspect
+      expect(Quaack::Driver::Runs.new(home).where(run_id))
+        .to eq({ jump: "jump-1", server: "prod-1", port: nil, database: nil }), port.inspect
     end
   end
 
@@ -483,7 +523,8 @@ RSpec.describe Quaack::Driver::Start do
     path = File.join(home, ".quaack", "runs", "#{run_id}.json")
     allow(File).to receive(:read).and_call_original
 
-    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: "6543")
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: "6543",
+                                                               database: nil)
     expect(File).to have_received(:read).with(path).once
   end
 

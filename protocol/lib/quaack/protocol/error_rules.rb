@@ -9,8 +9,9 @@ module Quaack
     module ErrorRules
       NAMES = %w[alias already_in_transaction ambiguous_user_schema arena_database_foreign arena_dump_load_failed
                  arena_setup_no_run_server bad_captured_at bad_config bad_conninfo_key bad_input bad_literal
-                 bad_literal_sets bad_placeholder bad_placeholder_map bad_port bad_run bad_run_server_database
-                 bad_run_server_host bad_run_server_port bad_search_path bad_server bad_statistics bad_store_base
+                 bad_literal_sets bad_placeholder bad_placeholder_map bad_database bad_port bad_run
+                 bad_run_server_database bad_run_server_host bad_run_server_port bad_search_path bad_server
+                 bad_statistics bad_store_base
                  bad_type bad_value begin_failed cleanup_failed clock_anchor_in_query clock_function_search_path
                  clock_literal column_statistics_hidden complex_check composite_type_relation concurrently
                  connection_unusable
