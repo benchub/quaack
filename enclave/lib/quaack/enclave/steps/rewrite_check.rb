@@ -109,8 +109,9 @@ module Quaack
 
         # What every rewrite of a call is checked with.
         def context(store, connection, source)
-          { store:, connection:, source:, inferred: source == "operator", original: original(store),
-            settings: Enclave::RunServer.plan_settings(store), **structure(store, connection) }
+          structure = structure(store, connection)
+          { store:, connection:, source:, inferred: source == "operator", original: original(store, structure),
+            settings: Enclave::RunServer.plan_settings(store), **structure }
         end
 
         def rewrites(input)
@@ -138,9 +139,10 @@ module Quaack
           { expected:, param_types:, literals: IndexSearch.values(LiteralSet.load(store).sets).fetch("slow") }
         end
 
-        def original(store)
+        def original(store, structure)
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
-          RewriteCandidateCheck::Original.new(relations:, placeholders: store.read("placeholder_shapes").size)
+          RewriteCandidateCheck::Original.new(relations:, placeholders: store.read("placeholder_shapes").size,
+                                              sql: store.read("redacted_query"), param_types: structure[:param_types])
         end
 
         def outcome(index, rewrite, context)

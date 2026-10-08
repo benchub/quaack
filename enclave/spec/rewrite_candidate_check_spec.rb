@@ -345,7 +345,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
   # would say whether the name exists. The original's literals are
   # redacted, so the LLM keeps one as its $n.
   describe "reg literals" do
-    let(:message) { "unsupported_reg_literal: a reg literal isn't allowed in a rewrite candidate in v1" }
+    let(:message) { "unsupported_reg_literal: a reg type's value can come only from the original's $n in v1" }
 
     %w[regclass regtype regproc regprocedure regoper regoperator regnamespace regrole regcollation regconfig
        regdictionary].each do |type|
@@ -374,6 +374,133 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     it "accepts a literal cast to a type that isn't a reg type" do
       expect(check("SELECT 'public.orders'::text, 'x'::name FROM orders").sql)
         .to eq("SELECT 'public.orders'::text, 'x'::name FROM public.orders")
+    end
+  end
+
+  # Task 20261008-31's fix round: a reg value that doesn't come from a
+  # direct cast of a literal. Each form names a relation that exists but
+  # the original doesn't use, and one that's missing, and gets the same
+  # refusal for both, before anything evaluates it.
+  describe "reg values from elsewhere" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA hidden_sentinel; CREATE TABLE hidden_sentinel.secret_sentinel (id int);
+        CREATE DOMAIN public.reg_dom AS regclass
+      SQL
+    end
+
+    let(:names) { %w[hidden_sentinel.secret_sentinel hidden_sentinel.nothere_sentinel] }
+
+    # The outcome of the form with each name in place of X, once it's
+    # checked to be the same for both, and to name neither.
+    def same_outcome(form, original: self.original)
+      outcomes = names.map { outcome(form.gsub("X", it), original) }
+      expect(outcomes.uniq.size).to eq(1), "#{form}: #{outcomes.inspect}"
+      expect(outcomes.first.to_s).not_to include("sentinel")
+      outcomes.first
+    end
+
+    def outcome(sql, original)
+      check(sql, original:)
+      "accepted"
+    rescue described_class::Error => e
+      [e.rule, e.message, e.cause]
+    end
+
+    reg_message = "a reg type's value can come only from the original's $n in v1"
+
+    {
+      "a function's regclass argument" => "SELECT pg_relation_filenode('X') FROM orders",
+      "COALESCE with a $n" => "SELECT COALESCE($1::regclass, 'X') FROM orders",
+      "CASE with a $n" => "SELECT CASE WHEN id > 0 THEN $1::regclass ELSE 'X' END FROM orders",
+      "GREATEST with a $n" => "SELECT GREATEST($1::regclass, 'X') FROM orders",
+      "VALUES with a $n" => "SELECT v FROM orders, (VALUES ($1::regclass), ('X')) AS w(v)",
+      "a UNION with a $n" => "SELECT $1::regclass FROM orders UNION SELECT 'X' FROM orders",
+      "a function's regconfig argument" => "SELECT to_tsvector('X', status) FROM orders",
+      "an array of regclass" => "SELECT array_cat(ARRAY[$1::regclass], '{X}') FROM orders",
+      "a cast to a domain over regclass" => "SELECT 'X'::public.reg_dom FROM orders",
+      "a cast through text" => "SELECT 'X'::text::regclass FROM orders",
+      "a cast through varchar and text" => "SELECT CAST('X' AS varchar)::text::regclass FROM orders",
+      "a column cast" => "SELECT status::regclass FROM orders WHERE status = 'X'",
+      "a cast function" => "SELECT regclass('X'::text) FROM orders",
+      "pg_catalog's cast function" => "SELECT pg_catalog.regtype('X'::text) FROM orders"
+    }.each do |form, sql|
+      it "refuses #{form} the same way whatever it names" do
+        expect(same_outcome(sql)).to eq(["unsupported_reg_literal", "unsupported_reg_literal: #{reg_message}", nil])
+      end
+    end
+
+    {
+      "has_table_privilege" => "SELECT has_table_privilege('X', 'SELECT') FROM orders",
+      "to_regclass" => "SELECT id FROM orders WHERE to_regclass('X') IS NULL",
+      "pg_get_serial_sequence" => "SELECT pg_catalog.pg_get_serial_sequence('X', 'id') FROM orders",
+      "pg_input_is_valid" => "SELECT pg_input_is_valid('X', 'regclass') FROM orders"
+    }.each do |function, sql|
+      it "refuses a call to #{function} the same way whatever it names" do
+        expect(same_outcome(sql)).to eq(
+          ["name_lookup_function",
+           "name_lookup_function: #{function} looks up a name, and the original doesn't make the same call", nil]
+        )
+      end
+    end
+
+    it "refuses a string literal whose type Postgres can't work out the same way whatever it holds" do
+      expect(same_outcome("SELECT id FROM orders WHERE 'X' IS NULL")).to eq(
+        ["untyped_literal", "untyped_literal: the candidate doesn't prepare with its string literals as parameters",
+         nil]
+      )
+    end
+
+    it "accepts a name lookup the original makes, as the original makes it" do
+      original = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT id FROM public.orders WHERE to_regclass($1) IS NULL"
+      )
+      expect(check("SELECT id FROM orders WHERE to_regclass($1) IS NULL", original:).sql)
+        .to eq("SELECT id FROM public.orders WHERE to_regclass($1) IS NULL")
+      expect(same_outcome("SELECT id FROM orders WHERE to_regclass('X') IS NULL", original:).first)
+        .to eq("name_lookup_function")
+    end
+
+    it "types the original's $n as the original does" do
+      original = described_class::Original.new(relations:, placeholders: 1, param_types: [25])
+      expect(check("SELECT $1 IS NULL, 'x' FROM orders", original:).sql)
+        .to eq("SELECT $1 IS NULL, 'x' FROM public.orders")
+      expect { check("SELECT $1 IS NULL, 'x' FROM orders") }.to rejected("untyped_literal")
+    end
+
+    # These read X as an oid, not a name, so they fail the same way for
+    # both names, and needn't be refused.
+    [
+      "SELECT id FROM orders WHERE 'X' = $1::regclass",
+      "SELECT id FROM orders WHERE $1::regclass = ANY('{X}')",
+      "SELECT id FROM orders WHERE $1::regclass IN ('X')",
+      "SELECT NULLIF($1::regclass, 'X') FROM orders",
+      "SELECT id FROM orders WHERE tableoid = 'X'"
+    ].each do |sql|
+      it "accepts #{sql}, which fails to plan the same way whatever X names" do
+        outcomes = names.map do |name|
+          accepted = check(sql.gsub("X", name))
+          conn.exec("EXPLAIN #{accepted.sql.gsub("$1", "'public.orders'::text")}")
+          "plans"
+        rescue PG::Error => e
+          e.result.error_field(PG::PG_DIAG_SQLSTATE)
+        end
+        expect(outcomes).to eq(%w[22P02 22P02])
+      end
+    end
+
+    it "accepts a candidate whose string literals are ordinary text" do
+      sql = "SELECT id, 'x' AS label, COALESCE(status, '') FROM orders WHERE status LIKE 'a%' " \
+            "AND created_at > now() - interval '1 day' AND created_at AT TIME ZONE 'UTC' < $2"
+      expect(check(sql).sql).to eq(
+        "SELECT id, 'x' AS label, COALESCE(status, '') FROM public.orders WHERE status LIKE 'a%' " \
+        "AND created_at > (now() - '1 day'::interval) AND created_at AT TIME ZONE 'UTC' < $2"
+      )
+    end
+
+    it "accepts EXTRACT, whose field is a string literal" do
+      expect(check("SELECT EXTRACT(year FROM created_at) FROM orders").sql)
+        .to eq("SELECT extract ('year' FROM created_at) FROM public.orders")
     end
   end
 

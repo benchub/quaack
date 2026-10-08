@@ -29,7 +29,8 @@ module Quaack
                  index_test_no_index_search index_test_unknown_round index_test_unknown_search indexes_hidden
                  inheritance_parent input_too_large insert_failed insert_select internal_error
                  interval_field_qualifier invalid_index_candidate matview_relation memory_command_bad_output
-                 memory_command_failed memory_command_timed_out missing_columns natural_join_unreplaceable
+                 memory_command_failed memory_command_timed_out missing_columns name_lookup_function
+                 natural_join_unreplaceable
                  not_a_query_parse not_a_table
                  not_create_index not_immutable not_insert not_one_select not_plain_value nulls_not_distinct
                  on_conflict on_only parse_error partitioned_relation pg_dump_failed pg_dump_missing pg_dump_too_old
@@ -51,7 +52,8 @@ module Quaack
                  statistics_bad_shape storage_options store_error tablespace teardown_failed toast_relation
                  transaction_closed transaction_ended unique unknown_column unknown_placeholder unknown_relation
                  unparsable unqualified_table unresolved_relation unsatisfiable_check unsupported_construct
-                 unsupported_production_version unsupported_reg_literal unsupported_type usage user_function_in_from
+                 unsupported_production_version unsupported_reg_literal unsupported_type untyped_literal usage
+                 user_function_in_from
                  using_column_unreplaceable view_relation volatile_function volatility_not_passed
                  with].map(&:freeze).freeze
 
