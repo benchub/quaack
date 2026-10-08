@@ -54,6 +54,23 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
     expect(columns("missing")).to eq({})
   end
 
+  # Task 20261007-43: an INCLUDE column isn't part of the key, so a key
+  # needn't be selected with it, nor it be not null.
+  it "lists a unique index's key columns as a candidate key, without its INCLUDE columns" do
+    conn.exec("CREATE TABLE public.inc (a int, b int, c int, UNIQUE (a) INCLUDE (b), UNIQUE (c, a) INCLUDE (b))")
+
+    expect(catalog.keys("public", "inc")).to eq([["a"], %w[c a]])
+  end
+
+  it "reads a table's keys once" do
+    conn.exec("CREATE TABLE public.once (a int, CONSTRAINT once_a UNIQUE (a))")
+    first = catalog.keys("public", "once")
+    conn.exec("ALTER TABLE public.once DROP CONSTRAINT once_a")
+
+    expect([first, catalog.keys("public", "once"), described_class.new(conn).keys("public", "once")])
+      .to eq([[["a"]], [["a"]], []])
+  end
+
   it "says whether a query analyzes on its own, with placeholders Postgres types or makes text", :aggregate_failures do
     {
       "SELECT t.id FROM public.t WHERE t.id = $2" => true,
