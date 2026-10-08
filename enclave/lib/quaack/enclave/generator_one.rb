@@ -38,10 +38,14 @@ module Quaack
     # unqualified when the subquery's FROM is only plain tables and none
     # has it; one that an inner table has resolves to it, as in Postgres)
     # is held to one value, as by
-    # = const. A reference to a CTE isn't a table. A subquery or function
+    # = const. A reference to a CTE isn't a table, and neither is a table
+    # with a column alias list, AS o(a, b), which renames its first
+    # columns: it's read like a subquery. A subquery or function
     # in FROM has no table's columns, so its columns are skipped in the
-    # query it's in, but a join to one still counts for the table on the
-    # other side.
+    # query it's in. A join condition to one touches only the table on the
+    # other side, so it counts as that table's ON conjunct does (see Outer
+    # joins): always for an inner join, but for an outer join only when
+    # that table is on the side that isn't preserved.
     #
     # Which columns. A column qualified by an alias, a table name without an
     # alias, or schema and table belongs to that table. An unqualified one
@@ -61,14 +65,18 @@ module Quaack
     # such as now(), $1 - interval '1 day', or a column of a
     # subquery, a function, or an outer query.
     #
-    # Outer joins. An outer join makes a table nullable when the table is on
-    # its nullable side, at any depth: the right of LEFT, the left of RIGHT,
-    # or either side of FULL. Every predicate read here is strict except IS
-    # NULL. When a strict qual above an outer join rejects the nulls on its
+    # Outer joins. First comes join reduction, as Postgres does it. When a
+    # strict qual above an outer join rejects the nulls of a table on its
     # nullable side, Postgres turns a LEFT or RIGHT JOIN inner, and a FULL
-    # JOIN into a LEFT or RIGHT JOIN that keeps the qual's side, then
-    # pushes the qual down to that side's scan. So an IS NULL
-    # that touches a table made nullable by an outer join below it is
+    # JOIN into a LEFT or RIGHT JOIN that keeps the qual's side, or inner
+    # when quals reject both sides. A qual is above the join when it's in
+    # WHERE, in the ON of an inner join over it, or in the ON of an outer
+    # join whose nullable side it's under, with no FULL JOIN between. Only
+    # plainly strict conjuncts reduce (see Strict). Then an outer join
+    # makes a table nullable when the table is on its nullable side, at
+    # any depth: the right of LEFT, the left of RIGHT, or either side of
+    # FULL. Every predicate read here is strict except IS NULL, so an IS
+    # NULL that touches a table made nullable by an outer join below it is
     # skipped: in WHERE, by any outer join; in an ON, by an outer join
     # under that join. An anti-join's IS NULL is the usual case. Other
     # conjuncts count, in WHERE or in an inner join's ON. An outer join's
@@ -86,9 +94,12 @@ module Quaack
     #   SYMMETRIC) with value bounds, and col LIKE 'constant' when the
     #   pattern isn't empty and its first character isn't %, _, or a
     #   backslash. A LIKE with ESCAPE doesn't count. A btree only serves that
-    #   LIKE under the C collation or text_pattern_ops, which this shape
-    #   can't express, so index-test finds out whether the planner uses it. A
-    #   column with both an equality and a range predicate is equality.
+    #   LIKE under the C collation or text_pattern_ops, so when it's the
+    #   range column, there's also a key with it under text_pattern_ops,
+    #   unless the LIKE is under COLLATE "C" or "POSIX". The plain key stays,
+    #   for a database whose collation is C, and index-test finds out which
+    #   the planner uses. A column with both an equality and a range
+    #   predicate is equality.
     #
     # - Keyset: a row comparison, (a, b) < ($1, $2) with <, <=, >, or >=,
     #   whose one row is bare columns of one table and whose other row is
@@ -114,7 +125,10 @@ module Quaack
     # columns that aren't equality columns, so the scan comes out grouped.
     # It stands alone when there's nothing else after the equality
     # columns. An unqualified JOIN ... USING column in ORDER BY or GROUP BY
-    # counts as the column of each table that has it.
+    # counts as the column of each table that has it. On a table an outer
+    # join makes nullable, ORDER BY and GROUP BY join only a key with
+    # equality columns: one without them can't seek, and the join's output
+    # doesn't come out in the table's order.
     #
     # Join columns. Each table's keys are built twice: once with its join
     # columns (a join condition or USING) counted as equality columns, and
@@ -301,11 +315,13 @@ module Quaack
           @statistics = statistics
           @tables = []
           @joins = []
+          @join_of = {}.compare_by_identity
           @using = []
-          @nullable = Set.new.compare_by_identity
           @names = []
           @opaque = false
           select.from_clause.each { |item| read_item(item) }
+          Reduction.new(self, @join_of).run(select)
+          @nullable = nullable_tables
         end
 
         # On the nullable side of some outer join.
@@ -365,12 +381,17 @@ module Quaack
         def read_item(item)
           @names << item_name(item)
           if item.join_expr then read_join(item.join_expr)
-          elsif item.range_var && !item.range_var.schemaname.empty? then [add_table(item.range_var)]
+          elsif table?(item.range_var) then [add_table(item.range_var)]
           else
             @opaque = true
             []
           end
         end
+
+        # A plain table: schema qualified, so not a CTE, and with no column
+        # alias list, AS o(a, b), which renames its first columns. Anything
+        # else in FROM is opaque, like a subquery.
+        def table?(range) = range && !range.schemaname.empty? && range.alias&.colnames.to_a.empty?
 
         def item_name(item)
           node = item.range_var || item.range_subselect || item.range_function || item.join_expr
@@ -380,15 +401,18 @@ module Quaack
         def read_join(join)
           left = read_item(join.larg)
           right = read_item(join.rarg)
-          add_join(join, left, right)
+          @joins << (@join_of[join] = Join.new(join.jointype, join.quals, left, right, []))
           join.using_clause.each { |name| @using << [name.string.sval, left, right] }
           left + right
         end
 
-        def add_join(join, left, right)
-          below = (left + right).select { |table| nullable?(table) }
-          @joins << Join.new(join.jointype, join.quals, left, right, below)
-          @nullable.merge(@joins.last.nullable)
+        # Bottom up, once Reduction has set the join types: the tables an
+        # outer join below each join made nullable, and every nullable table.
+        def nullable_tables
+          @joins.each_with_object(Set.new.compare_by_identity) do |join, nullable|
+            join.nullable_below = (join.left + join.right).select { |table| nullable.include?(table) }
+            nullable.merge(join.nullable)
+          end
         end
 
         def add_table(range)
@@ -442,6 +466,96 @@ module Quaack
 
           !(node.a_const || node.param_ref).nil?
         end
+      end
+
+      # Join reduction, as Postgres does it, top down from WHERE. rejected
+      # is the tables whose nulls a strict qual above a FROM item rejects
+      # (see Strict). An outer join keeps a side nullable only while no
+      # table under it is rejected, so LEFT or RIGHT becomes inner, and
+      # FULL becomes LEFT or RIGHT, or inner when both sides are rejected.
+      # Below it, an inner join's children get what its parent rejects and
+      # what its own ON rejects. An outer join's preserved side gets what
+      # its parent rejects, and its nullable side what its own ON rejects.
+      # A FULL JOIN's children get nothing.
+      class Reduction
+        # Which sides stay nullable => the join type.
+        TYPES = { [false, false] => :JOIN_INNER, [false, true] => :JOIN_LEFT, [true, false] => :JOIN_RIGHT,
+                  [true, true] => :JOIN_FULL }.freeze
+
+        def initialize(scope, join_of)
+          @scope = scope
+          @join_of = join_of
+        end
+
+        def run(select)
+          rejected = rejected(select.where_clause)
+          select.from_clause.each { |item| reduce(item, rejected) }
+        end
+
+        private
+
+        def reduce(item, rejected)
+          return unless item.join_expr
+
+          join = @join_of[item.join_expr]
+          join.type = reduced_type(join, rejected)
+          left, right = passed(join.type, rejected, rejected(join.quals))
+          reduce(item.join_expr.larg, left)
+          reduce(item.join_expr.rarg, right)
+        end
+
+        def passed(type, rejected, local)
+          { JOIN_INNER: [rejected + local] * 2, JOIN_LEFT: [rejected, local], JOIN_RIGHT: [local, rejected] }
+            .fetch(type, [[], []])
+        end
+
+        def reduced_type(join, rejected)
+          left = %i[JOIN_RIGHT JOIN_FULL].include?(join.type) && !rejects?(join.left, rejected)
+          right = %i[JOIN_LEFT JOIN_FULL].include?(join.type) && !rejects?(join.right, rejected)
+          TYPES.fetch([left, right])
+        end
+
+        def rejects?(side, rejected) = side.any? { |t| rejected.any? { |r| r.equal?(t) } }
+
+        def rejected(node)
+          Uses.conjuncts(node).flat_map { |c| Strict.columns(c) }.filter_map { |ref| @scope.column(ref)&.first }
+        end
+      end
+
+      # Which columns a conjunct rejects the nulls of, for join reduction.
+      # Only the plainly strict forms count, each with a bare column (or
+      # one under COLLATE) as an operand: =, <>, <, <=, >, >=, IN, NOT IN,
+      # = ANY, BETWEEN, LIKE, ILIKE, and IS NOT NULL. A row comparison, a
+      # cast, an expression, OR, NOT, and IS NULL don't, so a join they'd
+      # reduce stays outer, which only costs a candidate.
+      module Strict
+        OPERATORS = %w[= <> < <= > >= ~~ !~~ ~~* !~~*].freeze
+        KINDS = %i[AEXPR_OP AEXPR_IN AEXPR_OP_ANY AEXPR_LIKE AEXPR_ILIKE].freeze
+        BETWEEN = %i[AEXPR_BETWEEN AEXPR_NOT_BETWEEN AEXPR_BETWEEN_SYM AEXPR_NOT_BETWEEN_SYM].freeze
+
+        module_function
+
+        # The ColumnRefs a conjunct rejects the nulls of.
+        def columns(node)
+          if node.null_test then node.null_test.nulltesttype == :IS_NOT_NULL ? [bare(node.null_test.arg)].compact : []
+          elsif node.a_expr then expression(node.a_expr)
+          else []
+          end
+        end
+
+        def expression(expr)
+          return [bare(expr.lexpr)].compact if BETWEEN.include?(expr.kind)
+          return [] unless strict_operator?(expr)
+
+          sides = expr.kind == :AEXPR_OP ? [expr.lexpr, expr.rexpr] : [expr.lexpr]
+          sides.filter_map { |side| bare(side) }
+        end
+
+        def strict_operator?(expr)
+          KINDS.include?(expr.kind) && OPERATORS.include?(expr.name.map { |n| n.string.sval }.join("."))
+        end
+
+        def bare(node) = node.column_ref || node.collate_clause&.arg&.column_ref
       end
 
       # Each table's columns in some role, in query order, once each.
@@ -677,6 +791,7 @@ module Quaack
         end
 
         def initialize(select, scope, arm = nil)
+          @scope = scope
           @predicates = Predicates.new(scope)
           @arm = arm
           read_predicates(select, scope)
@@ -702,6 +817,9 @@ module Quaack
         # The range columns without the prefix LIKEs, which BRIN can't serve.
         def comparison_range(table) = @predicates.range[table] - equality(table)
 
+        # The prefix LIKE column that range puts first, or nil.
+        def prefix_like(table) = (range(table).first if comparison_range(table).empty?)
+
         # Held to one value, by = const or IN with one item. Postgres drops
         # such a column from a sort. It doesn't for IS NULL.
         def pinned?(table, name) = @predicates.kinds(table, name).include?(:one)
@@ -711,6 +829,9 @@ module Quaack
 
         # Named only by join conditions and USING.
         def join_only?(table, name) = @predicates.kinds(table, name).uniq == [:join]
+
+        # On the nullable side of an outer join that wasn't reduced.
+        def nullable?(table) = @scope.nullable?(table)
 
         # Select-list and GROUP BY columns.
         def covered(table) = @covered[table]
@@ -966,7 +1087,18 @@ module Quaack
           range = range_columns(equality_names)
           range_tail = range.map { |name| key_column(name) }
           order_tail = order_columns(equality_names)
-          with_group(range_tail, order_tail, range, equality_names)
+          with_group(range_tail, order_tail, range, equality_names) + pattern_tails(range)
+        end
+
+        # When the range column is a prefix LIKE, a key with it under
+        # text_pattern_ops too, since a plain btree serves that LIKE only
+        # under the C collation. Not when the LIKE is under C or POSIX.
+        def pattern_tails(range)
+          like = @uses.prefix_like(@table)
+          collation = @uses.collation(@table, like)
+          return [] if like.nil? || range != [like] || %w[C POSIX].include?(collation&.last)
+
+          [[IndexCandidate::KeyColumn.new(name: like, opclass: "text_pattern_ops", collation:)]]
         end
 
         def with_group(range_tail, order_tail, range, equality_names)
@@ -987,6 +1119,8 @@ module Quaack
         # The GROUP BY columns that aren't equality columns, so a scan on
         # the key comes out grouped.
         def group_columns(equality_names)
+          return [] if unseekable?(equality_names)
+
           (@uses.group(@table).to_a - equality_names).map { |name| IndexCandidate::KeyColumn.new(name:) }
         end
 
@@ -1001,11 +1135,16 @@ module Quaack
 
         def order_columns(equality_names)
           items = @uses.order(@table)
-          return nil if items.nil?
+          return nil if items.nil? || unseekable?(equality_names)
 
           items = items.reject { |name, _, _| @uses.pinned?(@table, name) }
           OrderTail.new(items, equality_names.reject { |name| @uses.pinned?(@table, name) }).columns
         end
+
+        # A key with no equality columns on a table that an outer join makes
+        # nullable can't seek, and the join's output doesn't come out in
+        # its order, so ORDER BY and GROUP BY add nothing to it.
+        def unseekable?(equality_names) = equality_names.empty? && @uses.nullable?(@table)
 
         def ranked_equality
           @uses.equality(@table).each_with_index.sort_by do |name, position|
@@ -1062,8 +1201,8 @@ module Quaack
         end
       end
 
-      private_constant :Input, :Table, :Join, :Scope, :Keyset, :Columns, :Values, :Predicates, :Uses, :ColumnRefs,
-                       :OrderBy, :GroupBy, :OrderTail, :TableCandidates
+      private_constant :Input, :Table, :Join, :Scope, :Reduction, :Strict, :Keyset, :Columns, :Values, :Predicates,
+                       :Uses, :ColumnRefs, :OrderBy, :GroupBy, :OrderTail, :TableCandidates
     end
   end
 end

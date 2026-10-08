@@ -506,6 +506,188 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                                                 ["customers", %w[name id], []]])
     end
 
+    it "treats every table under the left of a RIGHT JOIN as nullable" do
+      sql = "SELECT 1 FROM (public.orders o JOIN public.orders p ON p.parent_id = o.id) " \
+            "RIGHT JOIN public.customers c ON o.customer_id = c.id WHERE o.region IS NULL AND p.total IS NULL"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["orders", %w[customer_id id], []],
+                                                ["orders", %w[parent_id], []], ["customers", %w[id], []]])
+    end
+
+    it "treats every table under either side of a FULL JOIN as nullable" do
+      sql = "SELECT 1 FROM (public.orders o JOIN public.orders p ON p.parent_id = o.id) " \
+            "FULL JOIN (public.customers c JOIN public.customers d ON d.id = c.id) ON o.customer_id = c.id " \
+            "WHERE p.total IS NULL AND d.name IS NULL"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["orders", %w[customer_id id], []],
+                                                ["orders", %w[parent_id], []], ["customers", %w[id], []]])
+    end
+
+    it "skips an IS NULL in a higher ON on a table a lower RIGHT or FULL JOIN made nullable" do
+      %w[RIGHT FULL].each do |type|
+        sql = "SELECT 1 FROM public.orders o #{type} JOIN public.customers c ON o.customer_id = c.id " \
+              "JOIN public.customers i ON i.id = c.id AND o.region IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["customers", %w[id], []]]), type
+      end
+    end
+
+    it "always counts USING, on both sides of an outer join" do
+      %w[LEFT RIGHT FULL].each do |type|
+        sql = "SELECT 1 FROM public.orders o #{type} JOIN public.customers c USING (region)"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[region], []], ["customers", %w[region], []]]), type
+      end
+    end
+
+    describe "join reduction" do
+      it "makes a LEFT JOIN inner when a strict WHERE conjunct rejects its nullable side, so IS NULL counts" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+              "WHERE o.region = 3 AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region total], []])
+      end
+
+      it "counts a reduced LEFT JOIN's ON conjunct on the preserved side" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id AND c.region = 5 " \
+              "WHERE o.status = 1"
+
+        expect(keys(generate(sql, stats))).to include(["customers", %w[region], []])
+      end
+
+      it "makes a FULL JOIN a LEFT JOIN when WHERE rejects its left side's nulls" do
+        sql = "SELECT 1 FROM public.orders o FULL JOIN public.customers c " \
+              "ON o.customer_id = c.id AND o.region = 2 AND c.region = 5 WHERE o.status = 1 AND c.name IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id status], []], ["orders", %w[status], []],
+                                                  ["customers", %w[id], []],
+                                                  ["customers", %w[id region], []], ["customers", %w[region], []]])
+      end
+
+      it "makes a FULL JOIN a RIGHT JOIN when WHERE rejects its right side's nulls" do
+        sql = "SELECT 1 FROM public.orders o FULL JOIN public.customers c " \
+              "ON o.customer_id = c.id AND o.region = 2 AND c.region = 5 WHERE c.name = 'x' AND o.status IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id region], []], ["orders", %w[region], []],
+                                                  ["customers", %w[id], []],
+                                                  ["customers", %w[id name], []], ["customers", %w[name], []]])
+      end
+
+      it "makes a FULL JOIN inner when WHERE rejects both sides' nulls" do
+        sql = "SELECT 1 FROM public.orders o FULL JOIN public.customers c " \
+              "ON o.customer_id = c.id AND o.region = 2 AND c.region = 5 WHERE c.name = 'x' AND o.status = 1"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region status], []],
+                                                      ["customers", %w[name region], []])
+      end
+
+      it "reduces a lower outer join by a strict conjunct in a higher inner join's ON" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+              "JOIN public.customers i ON i.id = c.id AND o.region = 7 WHERE o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region total], []])
+      end
+
+      it "reduces an outer join under a LEFT JOIN's nullable side by that LEFT JOIN's ON" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN " \
+              "(public.orders o LEFT JOIN public.orders p ON p.parent_id = o.id) " \
+              "ON o.customer_id = c.id AND p.status = 1 AND p.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[status total], []])
+      end
+
+      it "doesn't reduce an outer join under a LEFT JOIN's preserved side by that LEFT JOIN's ON" do
+        sql = "SELECT 1 FROM (public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id) " \
+              "LEFT JOIN public.orders p ON p.id = o.parent_id AND o.status = 1 WHERE o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["customers", %w[id], []], ["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id parent_id], []], ["orders", %w[id], []]])
+      end
+
+      it "doesn't reduce an outer join by its own ON, an IS NULL, or a conjunct that isn't plainly strict" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id AND o.status = 1 " \
+              "WHERE coalesce(o.region, 0) = 0 AND o.parent_id IS NULL AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["customers", %w[id], []], ["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id status], []], ["orders", %w[status], []]])
+      end
+
+      it "doesn't reduce a FULL JOIN's children by its ON" do
+        sql = "SELECT 1 FROM (public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id) " \
+              "FULL JOIN public.orders p ON p.id = o.parent_id AND o.region = 1 WHERE o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["customers", %w[id], []], ["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id parent_id], []], ["orders", %w[id], []]])
+      end
+
+      it "makes a RIGHT JOIN inner when a strict WHERE conjunct rejects its left side" do
+        sql = "SELECT 1 FROM public.orders o RIGHT JOIN public.customers c ON o.customer_id = c.id " \
+              "WHERE o.region = 3 AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region total], []])
+      end
+
+      it "reduces an outer join under a RIGHT JOIN's nullable side by its ON, but not under its preserved side" do
+        nullable = "SELECT 1 FROM (public.orders o LEFT JOIN public.orders p ON p.parent_id = o.id) " \
+                   "RIGHT JOIN public.customers c ON o.customer_id = c.id AND p.status = 1 AND p.total IS NULL"
+        preserved = "SELECT 1 FROM public.orders p RIGHT JOIN " \
+                    "(public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id) " \
+                    "ON p.id = o.parent_id AND o.status = 1 WHERE o.total IS NULL"
+
+        expect(keys(generate(nullable, stats))).to include(["orders", %w[status total], []])
+        expect(keys(generate(preserved, stats)).flat_map { |_, key, _| key }).not_to include("total", "status")
+      end
+
+      it "doesn't reduce by <> ALL, which an empty array makes true for a null" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+              "WHERE o.region <> ALL('{1}') AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).not_to include("total")
+      end
+
+      it "reads each strict form: IS NOT NULL, <>, BETWEEN, IN, = ANY, LIKE, and a join condition" do
+        ["o.region IS NOT NULL", "o.region <> 1", "3 < o.region", "o.region BETWEEN 1 AND 2", "o.region IN (1, 2)",
+         "o.region = ANY('{1}')", "o.region LIKE 'a%'", "o.parent_id = c.id"].each do |conjunct|
+          sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+                "WHERE #{conjunct} AND o.total IS NULL"
+
+          expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).to include("total"), conjunct
+        end
+      end
+    end
+
+    # Such a key can't seek, and the join's output order isn't the table's.
+    it "leaves out an ORDER BY or GROUP BY key with no equality columns on a nullable side's table" do
+      join = "FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id"
+
+      expect(keys(generate("SELECT 1 #{join} ORDER BY o.region", stats)))
+        .to eq([["customers", %w[id], []], ["orders", %w[customer_id], []]])
+      expect(keys(generate("SELECT o.region #{join} GROUP BY o.region", stats)))
+        .to eq([["customers", %w[id], []], ["orders", %w[customer_id], %w[region]], ["orders", %w[customer_id], []],
+                ["orders", %w[customer_id region], []]])
+    end
+
+    it "keeps ORDER BY and GROUP BY on a preserved side's table, or on a table whose join was reduced" do
+      join = "FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id"
+
+      expect(keys(generate("SELECT 1 #{join} ORDER BY c.region", stats))).to include(["customers", %w[region], []])
+      expect(keys(generate("SELECT 1 #{join} GROUP BY c.region", stats))).to include(["customers", %w[region], []])
+      expect(keys(generate("SELECT 1 #{join} WHERE o.status = 1 ORDER BY o.region", stats)))
+        .to include(["orders", %w[status region], []])
+    end
+
+    it "gives a table with a column alias list no candidates, since the list renames its columns" do
+      # AS o(region) renames orders' first column, status, so o.region is
+      # status and orders' own region is hidden.
+      sql = "SELECT 1 FROM public.orders AS o(region) JOIN public.customers c ON c.id = o.customer_id " \
+            "WHERE o.region = 1 AND c.name = 'x'"
+
+      expect(keys(generate(sql, stats)))
+        .to eq([["customers", %w[id], []], ["customers", %w[id name], []], ["customers", %w[name], []]])
+    end
+
     it "doesn't resolve schema and table name once the table has an alias" do
       expect(generate("SELECT 1 FROM public.orders o WHERE public.orders.status = 1", stats)).to eq([])
     end
@@ -545,6 +727,15 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(keys(generate(sql, stats)))
         .to eq([["orders", %w[customer_id], []], ["customers", %w[region], %w[id]], ["customers", %w[region id], []],
                 ["customers", %w[region], []]])
+    end
+
+    it "counts an outer join to a subquery only for a table on the join's nullable side" do
+      subquery = "(SELECT id FROM public.customers) s"
+      preserved = "SELECT 1 FROM public.orders o LEFT JOIN #{subquery} ON s.id = o.customer_id"
+      nullable = "SELECT 1 FROM #{subquery} LEFT JOIN public.orders o ON o.customer_id = s.id"
+
+      expect(keys(generate(preserved, stats))).to eq([])
+      expect(keys(generate(nullable, stats))).to eq([["orders", %w[customer_id], []]])
     end
 
     it "gives the tables inside a CTE their own candidates, before the query, a set operation read per branch" do
@@ -735,6 +926,31 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
     it "counts LIKE with a constant pattern that doesn't start with a wildcard as a range predicate" do
       expect(equality_columns("note LIKE 'abc%'")).to eq(%w[note])
+    end
+
+    describe "text_pattern_ops" do
+      def key_column(name, **) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, **)
+
+      def keys_of(where) = generate("SELECT 1 FROM public.orders WHERE #{where}", stats).map(&:key)
+
+      it "also keys a prefix LIKE range column with text_pattern_ops, which serves it under any collation" do
+        expect(keys_of("a = 1 AND note LIKE 'abc%'"))
+          .to eq([[key_column("a")], [key_column("a"), key_column("note")],
+                  [key_column("a"), key_column("note", opclass: "text_pattern_ops")]])
+      end
+
+      it "keeps a COLLATE other than C on the text_pattern_ops key column" do
+        expect(keys_of("note COLLATE \"en-x-icu\" LIKE 'abc%'"))
+          .to eq([[key_column("note", collation: "en-x-icu")],
+                  [key_column("note", collation: "en-x-icu", opclass: "text_pattern_ops")]])
+      end
+
+      it "leaves text_pattern_ops out for a LIKE under C or POSIX, or when a comparison or keyset is the range" do
+        ["note COLLATE \"POSIX\" LIKE 'abc%'", "note COLLATE pg_catalog.\"C\" LIKE 'abc%'",
+         "note LIKE 'abc%' AND r > $1", "note LIKE 'abc%' AND (r, s) > ($1, $2)"].each do |where|
+          expect(keys_of(where).flatten.map(&:opclass)).to all(be_nil), where
+        end
+      end
     end
 
     it "doesn't count a LIKE that starts with a wildcard or an escape, or isn't a constant, or ILIKE" do
@@ -1265,8 +1481,32 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         ["WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1", refused]
       ]
       cases.each do |sql, error|
-        expect { generate(sql, stats) }.to raise_error(error) { |e| expect(e.message).not_to include(sentinel) }
+        expect { generate(sql, stats) }.to raise_error(error) { |e| expect(error_leaks?(e)).to be(false) }
       end
+    end
+
+    # The error's message and its full_message, which takes in its
+    # detailed_message and every cause's.
+    def error_leaks?(error) = [error.message, error.full_message(highlight: false)].join.include?(sentinel)
+
+    it "catches a sentinel planted in an error's message, full_message, or cause, so the check above works" do
+      wrap = lambda do |inner_message|
+        raise ArgumentError, inner_message
+      rescue ArgumentError
+        raise KeyError, "outer"
+      end
+      caught = lambda do |&block|
+        block.call
+      rescue StandardError => e
+        e
+      end
+      planted = sentinel
+      detailed = Class.new(StandardError) { define_method(:detailed_message) { |**| "x #{planted}" } }
+
+      expect(error_leaks?(caught.call { raise ArgumentError, sentinel })).to be(true)
+      expect(error_leaks?(caught.call { wrap.call(sentinel) })).to be(true)
+      expect(error_leaks?(caught.call { raise detailed, "plain" })).to be(true)
+      expect(error_leaks?(caught.call { wrap.call("clean") })).to be(false)
     end
   end
 
