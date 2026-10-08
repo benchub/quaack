@@ -6682,3 +6682,13 @@ Minor findings from the review of 20260930-11:
 - **Landed (2026-10-07):** the shared parse helper (`PlanExpression.parse_bare`, used by `CanonicalPlan#fingerprint`) and the error rules (`PredicateAtoms::Error` with `not_a_query_parse` and `using_column_unreplaceable`; `IndexCandidate::Error`, rule `invalid_index_candidate`, rescued by its callers), after one review with no blocking findings. The qualification landed later the same day (see below). "Operator messages" moved to 20261007-29. Enclave change, unreleased until the next batch bump.
 - **Status:** done
 - **Landed:** 2026-10-07, the qualification, after one review with no blocking findings. NameQualifier qualifies relations, types, collations, and regclass and regtype literals exactly, and a function or explicit operator only when exactly one schema on the path other than pg_catalog has it. qualify stores the plan's search_path, with "$user" as the production role, and RunServer.connect sets it on every racetrack and arena connection. regproc, regprocedure, regoper, and regoperator literals are refused as unsupported_reg_literal. Rewrite candidates get the same treatment. Earlier the same day: the shared parse helper and the error rules. Operator messages were left for the user, as 20261007-29. Enclave change, unreleased until the next batch bump.
+
+### 20261007-19. Deploy diagnosis: sentence order in the not-installed message.
+
+From the review of 20261003-13. In the `not_installed` message (`driver/lib/quaack/driver/deploy_diagnosis.rb`), "Then run `quaack deploy` again." now comes before "The quaacks on PATH there, <path>, is another one, ...". Move the other-quaacks sentence before the advice, so the message ends with what to do.
+
+- **Depends on:** 20261003-13.
+- **Came from:** The review of 20261003-13.
+- **Design:** Deploy.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. The not-installed message gives the other-quaacks sentence before the advice, so it ends with what to do, and all four not-installed examples match the whole message.

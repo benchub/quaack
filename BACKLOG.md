@@ -2211,14 +2211,7 @@ Also from the review of 20260930-14 stage 1:
 
 ### 20261007-12. LLM adapters: findings from 20260929-1. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-19. Deploy diagnosis: sentence order in the not-installed message.
-
-From the review of 20261003-13. In the `not_installed` message (`driver/lib/quaack/driver/deploy_diagnosis.rb`), "Then run `quaack deploy` again." now comes before "The quaacks on PATH there, <path>, is another one, ...". Move the other-quaacks sentence before the advice, so the message ends with what to do.
-
-- **Depends on:** 20261003-13.
-- **Came from:** The review of 20261003-13.
-- **Design:** Deploy.
-- **Status:** todo
+### 20261007-19. Deploy diagnosis: sentence order in the not-installed message. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-20. Measurement: pin which run a stable set keeps.
 
