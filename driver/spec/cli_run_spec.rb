@@ -373,7 +373,9 @@ RSpec.describe "quaack run" do
     record = JSON.parse(File.read(File.join(home, ".quaack", "runs", "#{run_id}.llm.json")))
     expect(record).to eq("providers" => [{ "name" => "anthropic", "provider" => "anthropic",
                                            "model" => Quaack::Driver::LLM::DEFAULT_MODEL }],
-                         "operator_inference" => "anthropic")
+                         "operator_inference" => "anthropic",
+                         "llm_calls" => { "steps" => { "operator-rewrites" => 1 },
+                                          "providers" => { "anthropic" => { "operator-rewrites" => 1 } } })
   end
 
   it "prints the run ID and done on success" do
