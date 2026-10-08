@@ -375,28 +375,21 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
     # The timeout is armed for each statement only, after the clock is read,
     # so a clock read that's slow, as on a loaded server, isn't canceled by
-    # it and still dates the statement. A clock_timestamp() earlier on the
-    # search_path than pg_catalog's plants a read slower than the timeout.
+    # it and still dates the statement. slow_clock_read plants a read slower
+    # than the timeout.
     describe "a clock read slower than the timeout" do
-      before do
-        conn.exec(<<~SQL)
-          CREATE SCHEMA slow_clock;
-          CREATE FUNCTION slow_clock.clock_timestamp() RETURNS timestamptz LANGUAGE sql
-            AS 'SELECT pg_catalog.clock_timestamp() FROM pg_catalog.pg_sleep(0.3)';
-          SET search_path = slow_clock, pg_catalog, public;
-        SQL
-      end
+      let(:slow) { slow_clock_read(conn) }
 
       it "is slower than the timeout on its own" do
         conn.transaction do
           conn.exec("SET LOCAL statement_timeout = 100")
-          expect { conn.exec(Quaack::Enclave::ServerClock::NOW_SQL) }
+          expect { slow.exec(Quaack::Enclave::ServerClock::NOW_SQL) }
             .to raise_error(PG::QueryCanceled) { expect(it.result.error_field(67)).to eq("57014") }
         end
       end
 
       it "doesn't keep a timed-out statement from reading as statement_timeout" do
-        error = run_error(described_class.new(conn, statement_timeout_ms: 100)) { |tx| tx.query("SELECT pg_sleep(5)") }
+        error = run_error(described_class.new(slow, statement_timeout_ms: 100)) { |tx| tx.query("SELECT pg_sleep(5)") }
 
         expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
         expect_nothing_persisted
@@ -409,17 +402,8 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     # that read and turn a timeout into statement_canceled, nor stay changed
     # afterwards. The slow clock read is planted as above.
     describe "a nonzero session default" do
-      before do
-        conn.exec(<<~SQL)
-          CREATE SCHEMA slow_clock;
-          CREATE FUNCTION slow_clock.clock_timestamp() RETURNS timestamptz LANGUAGE sql
-            AS 'SELECT pg_catalog.clock_timestamp() FROM pg_catalog.pg_sleep(0.3)';
-        SQL
-      end
-
       def timed_out_on(connection)
-        connection.exec("SET search_path = slow_clock, pg_catalog, public")
-        runner = described_class.new(connection, statement_timeout_ms: 100)
+        runner = described_class.new(slow_clock_read(connection), statement_timeout_ms: 100)
         error = run_error(runner) { |tx| tx.query("SELECT pg_sleep(5)") }
         [error.rule, error.sqlstate, error.step, error.index, connection.transaction_status]
       end

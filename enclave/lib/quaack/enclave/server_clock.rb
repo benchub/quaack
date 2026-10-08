@@ -26,7 +26,7 @@ module Quaack
     # statement, and names READ_ERRORS rather than a PG constant.
     module ServerClock
       SAVEPOINT = "quaack_server_clock"
-      NOW_SQL = "SELECT extract(epoch FROM clock_timestamp()) * 1000"
+      NOW_SQL = "SELECT extract(epoch FROM pg_catalog.clock_timestamp()) OPERATOR(pg_catalog.*) 1000"
       # What a failed read of the clock raises, as when the connection
       # drops. Anything else, such as a NoMethodError, or Float's
       # ArgumentError when what's read isn't a clock, is a bug in the

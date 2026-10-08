@@ -43,7 +43,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
     quaack/enclave/scenarios/ties.rb
     quaack/enclave/scenarios/types.rb
     quaack/enclave/scenarios/values.rb
-    quaack/enclave/server_clock.rb
     quaack/enclave/steps/index_search.rb
     quaack/enclave/steps/rewrite_check.rb
     quaack/enclave/value_pools.rb
