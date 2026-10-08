@@ -20,6 +20,9 @@ module Quaack
     module GeneratorTwoPatterns
       SCAN_QUALS = ["Filter", "Index Cond", "Recheck Cond"].freeze
 
+      # See ScanPatterns#unlisted_in_full_mcvs?.
+      MCV_COVERAGE = 0.99
+
       module ScanPatterns
         # Seq Scan whose Filter removes most rows: a btree on the Filter's
         # constant equality columns, most selective first. The plan can't
@@ -29,8 +32,11 @@ module Quaack
         # an MCV, and the estimate for other values otherwise. A literal
         # value_frequency can't estimate (nil) gets no partial index. The
         # literal is looked up as pg_stats text, so see value_frequency for
-        # the spellings that miss. index-dedupe drops partials on columns that aren't
-        # low-cardinality, such as one on a unique column's value.
+        # the spellings that miss. A literal that misses on a column whose
+        # MCVs and nulls cover at least MCV_COVERAGE of the rows gets none
+        # either, since it's most likely a common value spelled another way.
+        # A bare boolean column or NOT one reads as `= true` or `= false`.
+        # index-dedupe drops partials on columns that aren't low-cardinality, such as one on a unique column's value.
         # Each one gets a partial index WHERE that conjunct, keyed on the
         # Filter's other columns, constant equality columns first. With no
         # other columns there's no partial index, because the plain btree on
@@ -75,8 +81,21 @@ module Quaack
           return false unless text
 
           column = conjunct.columns.first
-          frequency = column.table.value_frequency(column.name, text)
+          frequency = column.table.value_frequency(column.name, text) unless unlisted_in_full_mcvs?(column, text)
           at_least?(frequency && (1 - frequency), :most_rows_removed)
+        end
+
+        # Whether the literal isn't an MCV, though the MCVs and nulls cover at
+        # least MCV_COVERAGE of the rows. Such a literal is most likely an MCV
+        # spelled another way, such as 1.5 for a numeric pg_stats prints as
+        # 1.50, so its frequency is unknown, not the estimate for a rare
+        # value.
+        def unlisted_in_full_mcvs?(column, text)
+          return false unless column.table.column?(column.name)
+
+          stats = column.table.column(column.name)
+          freqs = stats.most_common_freqs
+          !freqs.nil? && stats.mcv_frequency(text).nil? && freqs.sum + stats.null_frac >= MCV_COVERAGE
         end
 
         # Index Scan or Bitmap Heap Scan whose Filter and recheck remove many

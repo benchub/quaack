@@ -829,7 +829,7 @@ Use the production plan from input, not a plain `EXPLAIN` from the racetrack. Th
 
 Each problem pattern in the plan points to a potentially-helpful index:
 
-- **Seq Scan whose filter removes most rows:** a btree on the filter's equality columns. If the filter includes a constant predicate that removes most rows on its own, also try a partial index.
+- **Seq Scan whose filter removes most rows:** a btree on the filter's equality columns. If the filter includes a constant predicate that removes most rows on its own, also try a partial index. A predicate's share of the rows comes from the column's MCV frequencies in `pg_stats`, matched by text. Postgres prints `b = true` as `b` and `b = false` as `NOT b`, so those count as equalities too. A literal that isn't an MCV, on a column whose MCVs and nulls cover at least 99% of the rows, gets no partial index. It's most likely a common value spelled another way, such as `1.5` for a numeric that `pg_stats` prints as `1.50`, so its share is unknown.
 - **Index Scan or Bitmap Heap Scan with a Filter or Recheck that removes many rows:** extend the index in use with the filtering columns, or add them as `INCLUDE` columns.
 - **Sort, especially an external merge or a Sort under a Limit:** an index whose key has the sort keys after the equality columns, so the scan comes out already sorted.
 - **Nested Loop with an expensive inner side:** an index on the inner table's join key plus its filter columns.

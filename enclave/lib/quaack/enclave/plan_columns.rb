@@ -26,7 +26,7 @@ module Quaack
       Column = Data.define(:alias_name, :table, :name)
 
       # One conjunct of a condition. kind is :constant (a column = a literal
-      # or a parameter), :join (a column = a column under another alias), or
+      # or a parameter, or a bare boolean column or NOT one), :join (a column = a column under another alias), or
       # :other. columns are the mapped columns it uses.
       #
       # The node holds the conjunct's literal, so this is a plain class, not
@@ -120,7 +120,7 @@ module Quaack
       def conjunct(node, default_alias)
         sides = PlanExpression.equality_sides(node)
         columns = sides&.map { |side| column(side, default_alias) }
-        join(node, columns) || constant(node, sides, columns) ||
+        join(node, columns) || constant(node, sides, columns) || boolean(node, default_alias) ||
           Conjunct.new(node:, kind: :other,
                        columns: PlanExpression.column_refs(node).filter_map { |p| resolve(p, default_alias) })
       end
@@ -129,6 +129,12 @@ module Quaack
         return nil unless columns&.all? && columns.map(&:alias_name).uniq.size == 2
 
         Conjunct.new(node:, kind: :join, columns:)
+      end
+
+      # A bare boolean column, or NOT one: `b = true` or `b = false`.
+      def boolean(node, default_alias)
+        column = PlanExpression.boolean_column(node)&.then { column(it, default_alias) }
+        Conjunct.new(node:, kind: :constant, columns: [column]) if column
       end
 
       def constant(node, sides, columns)
