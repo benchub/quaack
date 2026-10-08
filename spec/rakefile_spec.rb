@@ -525,5 +525,16 @@ RSpec.describe "the Rakefile" do
       expect(out).to include("Can't read the driver version from driver/lib/quaack/driver/version.rb")
       expect(stamp).to be_nil
     end
+
+    # The full replay takes most of an hour, so an unreadable version must
+    # stop it before RuboCop or the specs start, not after they finish.
+    it "checks the versions before it runs RuboCop or the specs" do
+      out, status, = run_full(versions: { enclave: "" })
+
+      expect(status).not_to be_success, out
+      expect(out).to include("Can't read the enclave version from enclave/lib/quaack/enclave/version.rb")
+      expect(out).not_to include("rubocop")
+      expect(out).not_to include("spec full=")
+    end
   end
 end
