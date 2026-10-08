@@ -194,16 +194,35 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(sans_sizes(ask_error.message)).to match(/\Allm_bad_request: .*sentinel reason\z/)
     end
 
-    it "puts the whole JSON body in the detail when its error has no message" do
-      fake.error_body("llm-index-ideas", status: 400, body: { error: { type: "sentinel_type" } })
+    # A body with no message can hold anything a gateway echoes, so it's
+    # left out, as the Anthropic adapter leaves it out.
+    it "shows only the status when the body has no message, never the body or the URL" do
+      fake.error_body("llm-index-ideas", status: 400, body: { error: { type: "SENTINEL-TYPE" }, debug: "SENTINEL" })
+          .error_body("llm-index-ideas", status: 500, body: "<html>SENTINEL text body</html>")
+          .error_body("llm-index-ideas", status: 502, body: { error: { message: ["SENTINEL-NOT-TEXT"] } })
+          .error_body("llm-index-ideas", status: 422, body: { error: { message: "" } })
+          .error_body("llm-index-ideas", status: 404, body: { detail: "SENTINEL-DETAIL" })
+      client = fake.client(burndown:, max_retries: 0)
 
-      expect(sans_sizes(ask_error.message)).to end_with(JSON.generate("error" => { "type" => "sentinel_type" }))
+      seen = Array.new(5) do
+        client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(seen.map { sans_sizes(it.message) })
+        .to eq(["llm_bad_request: the API answered 400", "llm_unavailable: the API answered 500",
+                "llm_unavailable: the API answered 502", "llm_bad_request: the API answered 422",
+                "llm_bad_request: the API answered 404"])
+      expect(seen.map { error_text(it) }.join).not_to include("SENTINEL", "llm.example.com")
     end
 
-    it "puts a text body in the detail as it is" do
-      fake.error_body("llm-index-ideas", status: 400, body: "sentinel text body")
+    it "asks again without response_format when a body with no message names it" do
+      fake.error_body("llm-index-ideas", status: 400, body: "response_format isn't supported")
+          .reply("llm-index-ideas", { "ddl" => [] })
 
-      expect(sans_sizes(ask_error.message)).to end_with("sentinel text body")
+      expect(ask(schema: schema)).to eq("ddl" => [])
+      expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, false])
     end
 
     # A gateway's error body can carry more than its message, such as the
@@ -278,6 +297,23 @@ RSpec.describe "the OpenAI-compatible adapter" do
         raise "expected an LLM::Error, got #{error.inspect}"
       end
 
+      it "scrubs OPENAI_CUSTOM_HEADERS' values, which go only to OpenAI's API" do
+        header = "SENTINEL-HEADER-0123456789"
+        other = "SENTINEL-OTHER-HEADER-0123"
+        settings = Quaack::Driver::LLM.settings({ "provider" => "openai_compatible", "model" => "m" }, env: {})
+        client = with_env("OPENAI_CUSTOM_HEADERS" => "X-Gateway-Key: #{header}\nX-Other:#{other}") do
+          Quaack::Driver::LLM::Client.new(settings:, api_key: "k", burndown:, transport: fake, max_retries: 0)
+        end
+        fake.error_body("llm-index-ideas", status: 429, body: { error: { message: "saw #{header} and #{other}" } })
+
+        error = client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        expect(error_text(e)).not_to include(header, other)
+        expect(e.reason).to eq("the API answered 429: saw [key] and [key]")
+      else
+        raise "expected an LLM::Error, got #{error.inspect}"
+      end
+
       it "would show the secret if the body echoed one that isn't the adapter's" do
         fake.error_body("llm-index-ideas", status: 429, body: { error: { message: "other SENTINEL-OTHER-0123456789" } })
 
@@ -301,6 +337,44 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
       expect(ask_error.rule).to eq("llm_bad_request")
       expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
+    end
+  end
+
+  # With no answer from the API, there's no status or body, so the detail is
+  # the gem's own sentence, scrubbed like any other.
+  describe "a failure with no answer" do
+    let(:key) { "SENTINELKEY0123456789" }
+    let(:client) { fake.client(burndown:, max_retries: 0, api_key: key) }
+
+    it "gives a dropped connection's message as the detail" do
+      fake.drop("llm-index-ideas")
+
+      error = ask_error
+      expect(error.rule).to eq("llm_unavailable")
+      expect(error.reason).to eq("fake dropped connection")
+      expect(sans_sizes(error.message)).to eq("llm_unavailable: fake dropped connection")
+    end
+
+    it "gives the gem's sentence for a timeout as the detail" do
+      fake.timeout("llm-index-ideas")
+
+      error = ask_error
+      expect(error.rule).to eq("llm_unavailable")
+      expect(sans_sizes(error.message)).to eq("llm_unavailable: Request timed out.")
+    end
+
+    it "scrubs the key from a connection error's message" do
+      fake.drop("llm-index-ideas", message: "refused, key #{key}")
+
+      error = ask_error
+      expect(error_text(error)).not_to include(key)
+      expect(error.reason).to eq("refused, key [key]")
+    end
+
+    it "would show a secret that isn't the adapter's" do
+      fake.drop("llm-index-ideas", message: "refused, key SENTINEL-OTHER-0123456789")
+
+      expect(ask_error.reason).to eq("refused, key SENTINEL-OTHER-0123456789")
     end
   end
 
