@@ -2088,6 +2088,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 - **Came from:** 20260926-56.
 - **Design:** input.
 - **Decided by the user (2026-10-08):** draft the wording yourself and build it; the user will review it in the report.
+- **Decided by the user (2026-10-08), on the builder's survey (170 to 200 sendable rules):** specific messages only for the rules an operator can act on (input, intake, config, connections, run server, arena and racetrack setup, pg_dump, store, run state); every other rule gets one shared line: "QUAACK hit an internal check it can't recover from. This is a QUAACK bug: report the rule name and the step." The enclave publishes its list of sendable rules, and a spec checks every rule is either messaged or marked internal. The list is an enclave change, so it goes in the next batch.
 - **Status:** todo
 
 ### 20261007-30. NameQualifier: test gaps and two edge cases. Done, see BACKLOG-COMPLETE.md.
