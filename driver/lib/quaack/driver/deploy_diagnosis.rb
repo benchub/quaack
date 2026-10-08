@@ -94,8 +94,8 @@ module Quaack
 
       def not_installed(facts, shell, found, bin)
         "quaacks isn't installed for the ruby on PATH for non-interactive ssh on #{@host}: it isn't in #{bin}, " \
-          "that Ruby's user gem bin directory. #{where_it_went(facts, shell)} The quaacks on PATH there, " \
-          "#{found}, is another one, which may belong to another Ruby or gem directory."
+          "that Ruby's user gem bin directory. The quaacks on PATH there, #{found}, is another one, which may " \
+          "belong to another Ruby or gem directory. #{where_it_went(facts, shell)}"
       end
 
       def where_it_went(facts, shell)
