@@ -49,8 +49,8 @@ RSpec.describe "catalog names in the enclave's SQL" do
     expect(skipped.uniq).to match_array(CatalogNames::SKIP.keys)
   end
 
-  it "finds every FORMAT_TYPE_HOLES entry's interpolation in its file" do
-    missing = CatalogNames::FORMAT_TYPE_HOLES.keys.reject { |file, source| File.read(File.join(root, file)).include?("\#{#{source}}") }
+  it "finds every TYPE_NAME_HOLES entry's interpolation in its file" do
+    missing = CatalogNames::TYPE_NAME_HOLES.keys.reject { |file, source| File.read(File.join(root, file)).include?("\#{#{source}}") }
     expect(missing).to eq([])
   end
 
@@ -100,13 +100,23 @@ RSpec.describe "catalog names in the enclave's SQL" do
       expect(scan(%(A = "UPDATE \#{t} SET a = 1 " \\\n  "WHERE b = 2"\n))).to eq(["line 1: operator ="])
     end
 
-    it "reads a FORMAT_TYPE_HOLES interpolation as a qualified type, only in its file, and flags any other" do
+    it "reads a TYPE_NAME_HOLES interpolation as a qualified type, only in its file, and flags any other" do
       source = %(A = "SELECT CAST($1 AS \#{col.type})::\#{other.type}"\n)
-      stub_const("CatalogNames::FORMAT_TYPE_HOLES", { ["x.rb", "col.type"] => "a test" })
+      stub_const("CatalogNames::TYPE_NAME_HOLES", { ["x.rb", "col.type"] => "a test" })
 
       expect(scan(source)).to eq(["line 1: type quaack_x"])
       File.write(File.join(dir, "y.rb"), source)
       expect(CatalogNames.scan(dir).fetch("y.rb")).to eq(["line 1: type quaack_x", "line 1: type quaack_x"])
+    end
+
+    # Task 20261007-41: a cast built on its own, such as scenarios/row_set.rb's.
+    it "reads a string that starts with a placeholder cast as an expression, and not one with no cast" do
+      source = <<~RUBY
+        A = "$1::text"
+        B = "$\#{i + 1}::\#{t}, $1::pg_catalog.text"
+        C = "$\#{n} \#{why}"
+      RUBY
+      expect(scan(source)).to eq(["line 1: type text", "line 2: type quaack_x"])
     end
 
     it "flags a loaded constant built from others, which the source scan sees only in pieces" do

@@ -13,8 +13,9 @@ require "pg_query"
 #
 # scan reads the source (Source): every Ruby string literal, plain or
 # interpolated, heredocs included, that starts with an upper-case SQL
-# keyword (SQL_START). An interpolation of a constant that the same file
-# assigns a plain string is inlined, and one on FORMAT_TYPE_HOLES is a
+# keyword (SQL_START), or that starts with a placeholder and casts
+# (CAST_START), read after SELECT. An interpolation of a constant that the same file
+# assigns a plain string is inlined, and one on TYPE_NAME_HOLES is a
 # qualified type name. Any other interpolation stands for an identifier, a
 # SELECT, a number, a string literal, nothing, or an assignment, whichever
 # first lets the whole string parse. Adjacent literals are one string. A
@@ -24,8 +25,8 @@ require "pg_query"
 # like SQL (Loaded), so it finds SQL a constant builds from others, such as
 # with String#sub, which the source holds only in pieces.
 #
-# Neither finds SQL a method builds from pieces that don't start with a
-# keyword, or SQL built by deparsing a tree.
+# Neither finds SQL a method builds from other pieces that don't start with
+# a keyword, or SQL built by deparsing a tree.
 #
 # Flagged:
 # - relation: a pg_ relation with no schema.
@@ -42,6 +43,11 @@ module CatalogNames
   SQL_START = /\A\s*(?:SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|SHOW|EXPLAIN|PREPARE|EXECUTE|
                  DEALLOCATE|TRUNCATE|COPY|ANALYZE|VACUUM|LOCK|DECLARE|FETCH|RESET|DO|GRANT|REVOKE|COMMENT|
                  SAVEPOINT|RELEASE|BEGIN|COMMIT|ROLLBACK|VALUES|TABLE)\b/x
+
+  # A string that starts with a placeholder, $ or $n, and casts somewhere,
+  # such as scenarios/row_set.rb's "$#{i + 1}::#{type}", is an expression
+  # SQL is built from (task 20261007-41). The scan reads it after SELECT.
+  CAST_START = /\A\$(?:\d|\z)/
 
   # What an interpolation can stand for, tried in order.
   STAND_INS = ["quaack_x", "SELECT 1", "1", "'x'", "", "quaack_x = 1"].freeze
@@ -60,17 +66,22 @@ module CatalogNames
     ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run"
   }.freeze
 
-  # Interpolations that hold a type's name as pg_catalog.format_type printed
-  # it on the same connection, by file and the interpolation's Ruby source,
-  # with why (task 20261007-31). format_type puts the schema on a name that
-  # connection's search_path wouldn't find as that type, pg_catalog's
-  # included, so the name reads back there as the same type. The scan reads
-  # each as a schema-qualified name.
-  FORMAT_TYPE_HOLES = {
+  # Interpolations that hold a type's name that reads back as that type
+  # whatever the search_path has, by file and the interpolation's Ruby
+  # source, with why (tasks 20261007-31 and 20261007-41). Most are names as
+  # pg_catalog.format_type printed them on the same connection: it puts the
+  # schema on a name that connection's search_path wouldn't find as that
+  # type, pg_catalog's included. The scan reads each as a schema-qualified
+  # name.
+  TYPE_NAME_HOLES = {
     ["quaack/enclave/value_pools.rb", "col.type"] => "an ArenaSchema column's type, read on the arena connection",
-    ["quaack/enclave/value_pools.rb", "@col.type"] => "an ArenaSchema column's type, read on the arena connection"
+    ["quaack/enclave/value_pools.rb", "@col.type"] => "an ArenaSchema column's type, read on the arena connection",
+    ["quaack/enclave/scenarios/row_set.rb", "@schema.column(table, c).type"] =>
+      "an ArenaSchema column's type, read on the arena connection",
+    ["quaack/enclave/assumption_check/denormalized_equal.rb", "kind.type_name"] =>
+      "schema.name, both quote_ident'd, from Equality.base"
   }.freeze
-  FORMAT_TYPE_STAND_IN = "pg_catalog.quaack_type"
+  TYPE_NAME_STAND_IN = "pg_catalog.quaack_type"
 
   # The 29 files catalog_names_spec's list of files not yet qualified held
   # when task 20260930-14 made it. That list may only shrink, so it must
@@ -157,6 +168,7 @@ module CatalogNames
 
     def site(file, node, constants)
       texts = texts(node, constants, file)
+      texts = texts.map { "SELECT #{it}" } if cast?(node, texts)
       return unless texts.first.match?(SQL_START)
 
       label = "line #{node.location.start_line}"
@@ -164,6 +176,12 @@ module CatalogNames
       raise "#{file}, #{label}: SQL that parses with no stand-in and isn't on SKIP" unless parse || skip?(file, texts)
 
       Site.new(file:, label:, text: texts.first, parse:)
+    end
+
+    def cast?(node, texts)
+      pieces = node.is_a?(Prism::StringNode) ? [node] : parts(node)
+      !texts.first.match?(SQL_START) && pieces.first.is_a?(Prism::StringNode) &&
+        pieces.first.unescaped.match?(CAST_START) && pieces.grep(Prism::StringNode).any? { it.unescaped.include?("::") }
     end
 
     def skip?(file, texts) = SKIP.keys.any? { |f, start| f == file && texts.first.start_with?(start) }
@@ -210,7 +228,7 @@ module CatalogNames
 
     def stand_ins(file, hole)
       source = hole.is_a?(Prism::EmbeddedStatementsNode) && hole.statements&.slice
-      FORMAT_TYPE_HOLES.key?([file, source]) ? [FORMAT_TYPE_STAND_IN] : STAND_INS
+      TYPE_NAME_HOLES.key?([file, source]) ? [TYPE_NAME_STAND_IN] : STAND_INS
     end
 
     def fill(parts, picks) = parts.map { it.is_a?(Prism::StringNode) ? it.unescaped : picks.shift }.join
