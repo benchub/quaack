@@ -251,6 +251,40 @@ RSpec.describe Quaack::Driver::Start do
     expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config: #{path}: can't read it")
   end
 
+  # Reading a FIFO would block until something writes to it. After a few
+  # seconds the thread opens it for writing and closes it, which ends a
+  # blocked read, so the example ends even if the check is gone.
+  it "refuses a driver.json that's a FIFO without reading it" do
+    path = File.join(home, ".quaack", "driver.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.mkfifo(path)
+    unblock = Thread.new do
+      sleep 3
+      begin
+        File.open(path, File::WRONLY | File::NONBLOCK, &:close)
+      rescue Errno::ENXIO
+        sleep 0.1
+        retry
+      end
+    end
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config: #{path}: can't read it")
+  ensure
+    unblock&.kill
+  end
+
+  # A symlink to a moved file isn't taken for a missing config. The message
+  # names the config path but not where the link points.
+  it "refuses a driver.json symlink whose target is missing" do
+    path = File.join(home, ".quaack", "driver.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    target = File.join(home, "moved-away", "driver.json")
+    File.symlink(target, path)
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{path}: it's a symlink to a missing file")
+  end
+
   it "counts a ~/.quaack without a driver.json, or that isn't a directory, as no config" do
     quaack = File.join(home, ".quaack")
     FileUtils.mkdir_p(quaack)
