@@ -2141,17 +2141,7 @@ The review of 20260923-30 found these minor issues:
 - **Design:** vacuity-guard.
 - **Status:** todo
 
-### 20261008-27. Burndown refusals: minors from 20260924-8.
-
-The review of 20260924-8 found these minor issues:
-
-1. **DESIGN.md overstates the once-per-search refusal.** Production never calls `record_dedupe` or `record_single_candidate_test`. It records through `record_once`, which quietly skips a second record rather than refusing it, so the refusal guards only the adapter API. DESIGN.md's new sentence reads as if the step itself refuses. Reword it.
-2. **No test pins the `dedupe:` pass-through.** Nothing in `index_burndown_spec.rb` checks that `IndexBurndown.record_search` passes its `dedupe:` through. Replacing the call with a bare `tested_counts` record keeps that spec green.
-
-- **Depends on:** 20260924-8.
-- **Came from:** The review of 20260924-8, 2026-10-08.
-- **Design:** burndown.
-- **Status:** todo
+### 20261008-27. Burndown refusals: minors from 20260924-8. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-28. Boolean folding in index-dedupe: minors from 20260923-36.
 
@@ -2381,19 +2371,14 @@ The review of 20261001-10 found these minor issues:
 - **Design:** schema-dump.
 - **Status:** todo
 
-### 20261008-49. Teardown message fallback when no jump host is known.
-
-From the review of 20261008-17. When `jump` is nil, `TeardownMessages.run` and `command` still fall back to "run this on the jump server: quaacks teardown --run <ID>", but DESIGN.md now describes only the `ssh -- <jump>` form. Check whether `@jump` can ever be nil. If it can't, remove the fallback. If it can, mention it in DESIGN.md.
-
-- **Depends on:** 20261008-17.
-- **Came from:** The review of 20261008-17, 2026-10-08.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261008-49. Teardown message fallback when no jump host is known. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-50. Orphan index-build notes: advice that's moot after teardown.
 
 From the review of 20261008-16. `index_build_orphan_running` and `index_build_orphan_cancel_denied` fire in index-build during `quaack run`, and that run is torn down, often along with the run server. The note's "wait for it or cancel it yourself, then resume" advice only applies with `--keep`, or when teardown fails. Word these notes like the stale-statistics note, or make the advice depend on the run being kept.
 
+
+Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/quaack/driver/teardown.rb:12` doesn't show the now-required `jump:`. And DESIGN.md's "the burndown's own calls that record one stage at a time" should name `record_dedupe` and `record_single_candidate_test`.
 - **Depends on:** 20261008-16.
 - **Came from:** The review of 20261008-16, 2026-10-08.
 - **Design:** Where QUAACK runs.

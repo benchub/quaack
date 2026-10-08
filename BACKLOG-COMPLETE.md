@@ -7940,3 +7940,26 @@ The review of 20261007-29 found these minor issues:
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-16 (commit f158d2c2). Review had no blocking findings; its minor went to 20261008-50.
+
+### 20261008-49. Teardown message fallback when no jump host is known.
+
+From the review of 20261008-17. When `jump` is nil, `TeardownMessages.run` and `command` still fall back to "run this on the jump server: quaacks teardown --run <ID>", but DESIGN.md now describes only the `ssh -- <jump>` form. Check whether `@jump` can ever be nil. If it can't, remove the fallback. If it can, mention it in DESIGN.md.
+
+- **Depends on:** 20261008-17.
+- **Came from:** The review of 20261008-17, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-49 (commits b45dacc4, 4fda3d85). Review clean; a stale usage comment went to 20261008-50.
+
+### 20261008-27. Burndown refusals: minors from 20260924-8.
+
+The review of 20260924-8 found these minor issues:
+
+1. **DESIGN.md overstates the once-per-search refusal.** Production never calls `record_dedupe` or `record_single_candidate_test`. It records through `record_once`, which quietly skips a second record rather than refusing it, so the refusal guards only the adapter API. DESIGN.md's new sentence reads as if the step itself refuses. Reword it.
+2. **No test pins the `dedupe:` pass-through.** Nothing in `index_burndown_spec.rb` checks that `IndexBurndown.record_search` passes its `dedupe:` through. Replacing the call with a bare `tested_counts` record keeps that spec green.
+
+- **Depends on:** 20260924-8.
+- **Came from:** The review of 20260924-8, 2026-10-08.
+- **Design:** burndown.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-49 (commits f42c5c55, 6c2b6292). Review clean; the mutation was confirmed red. A wording nit went to 20261008-50.
