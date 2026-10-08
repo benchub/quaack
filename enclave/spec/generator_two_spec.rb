@@ -639,6 +639,18 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(expression.conjuncts("(id = (InitPlan 1).col1)")).to eq([])
     end
 
+    # Task 20260926-56: CanonicalPlan's fingerprint and parse_select share this.
+    it "parses a bare SELECT into its parse result and that SELECT, or nothing" do
+      result, select = expression.parse_bare("SELECT WHERE a = 1")
+      expect(result).to be_a(PgQuery::ParserResult)
+      expect(select).to equal(result.tree.stmts.first.stmt.select_stmt)
+      expect(select.where_clause.a_expr.name.first.string.sval).to eq("=")
+      expect(expression.parse_bare("SELECT ORDER BY a")).not_to be_nil
+      expect(expression.parse_bare("SELECT WHERE a = 1 ORDER BY b")).to be_nil
+      expect(expression.parse_bare("SELECT WHERE (")).to be_nil
+      expect(expression.parse_bare("SELECT WHERE a; SELECT WHERE b")).to be_nil
+    end
+
     it "splits only a top-level AND" do
       expect(expression.conjuncts("((a = 1) AND (b = 2))").size).to eq(2)
       expect(expression.conjuncts("((a = 1) OR (b = 2))").size).to eq(1)

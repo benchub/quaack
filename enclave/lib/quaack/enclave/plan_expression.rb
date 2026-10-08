@@ -39,13 +39,18 @@ module Quaack
          { SORTBY_NULLS_FIRST: :first, SORTBY_NULLS_LAST: :last }[sort_by.sortby_nulls]]
       end
 
+      # The SELECT of parse_bare, or nil.
+      def parse_select(sql) = parse_bare(sql)&.last
+
       # Parses SQL that must be one SELECT with nothing but a WHERE clause or
-      # a one-key ORDER BY. Anything else, including a string that closes the
-      # clause and adds more, gives nil.
-      def parse_select(sql)
-        stmts = PgQuery.parse(sql).tree.stmts
+      # a one-key ORDER BY, into [the parse result, that SELECT]. Anything
+      # else, including a string that closes the clause and adds more, gives
+      # nil. CanonicalPlan uses the result for its fingerprint.
+      def parse_bare(sql)
+        result = PgQuery.parse(sql)
+        stmts = result.tree.stmts
         select = stmts.first.stmt.select_stmt if stmts.size == 1
-        select if select && bare?(select)
+        [result, select] if select && bare?(select)
       rescue PgQuery::ParseError
         nil
       end
