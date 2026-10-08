@@ -2253,19 +2253,7 @@ Notes from the 20261007-9 builder: a `#{X}` interpolation is inlined by the scan
 - **Design:** trust boundary.
 - **Status:** todo
 
-### 20261007-32. Racetrack qualification: minors from 20261007-9.
-
-From the reviews of 20261007-9.
-1. No test covers the both-NULL case of the IS DISTINCT FROM rewrite in `denormalized_equal.rb` (`COALESCE(..., a IS NULL AND b IS NULL)` to `COALESCE(..., false)` stays green).
-2. The arena runner's slow clock-read behavior specs ("doesn't keep a timed-out statement...", both "nonzero session default" examples) pass with a fast clock, on main before this change too. Make them need the slow clock.
-3. No shadow tests for the `pg_trigger.tgenabled` rewrite in `rewrite_rules/catalog/foreign_keys.rb` or the `pg_range.rngsubtype = ANY` rewrite in the tiebreaker. Only the static spec covers them.
-4. `AssumptionCheck::Equality` refuses copy and parent columns whose types share no btree `=` (char(n) with text, int4 with numeric, float8 with int4, arrays), where a bare `=` used to accept them. The direction is safe. List it in DESIGN.md as unsupported in v1, or add a cast fallback that keeps citext right.
-5. No test covers `Equality.base` following domains (domain columns would silently refuse), the `$1::type` cast, or the `rows.size == 1` guard.
-
-- **Depends on:** 20261007-9.
-- **Came from:** The reviews of 20261007-9, rounds one and two.
-- **Design:** trust boundary.
-- **Status:** todo
+### 20261007-32. Racetrack qualification: minors from 20261007-9. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-33. The `llms` list: minors from 20261007-13.
 
@@ -2331,4 +2319,13 @@ From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-oper
 - **Depends on:** 20261002-3.
 - **Came from:** 20261002-3.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261007-39. denormalized_equal: accept same-type arrays, ranges, and composites.
+
+From the review of 20261007-32. `AssumptionCheck::Equality` refuses two columns of the same array, range, multirange, or composite type, since their default btree opclasses take polymorphic input types. That's a false refusal in the safe direction, and rare, since denormalized_equal compares an id copy, a join key, and a type column. Accept the polymorphic `array_ops`, `range_ops`, `multirange_ops`, and `record_ops` `=` when both sides have exactly the same type, and drop them from DESIGN.md's v1-unsupported list.
+
+- **Depends on:** 20261007-32.
+- **Came from:** The review of 20261007-32.
+- **Design:** trust boundary, assumption checks.
 - **Status:** todo

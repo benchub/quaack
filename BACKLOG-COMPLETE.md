@@ -6814,3 +6814,18 @@ Minor findings from both reviews of 20261001-25:
 - **Design:** assumption-check, rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. Item 1 was a real bug (`FROM public.users users_1 CROSS JOIN public.groups users_1`): the shared `Tree::Names` now also takes every table and alias name in the query, so every rule that makes fresh aliases avoids them. Item 2's lines have tests. Item 3 won't be done: a NOT NULL domain column can still hold NULL, so counting the domain would be unsound; a test pins the refusal and the rule's header says why. Item 4 was stale (the header already states it). Item 5's extensions are new features, filed as 20261007-38. The review noted that a 62- or 63-character base name plus `_N` passes Postgres's 63-byte limit, already listed in 20261002-5 for or_to_union but true of every rule using `Tree::Names`. Enclave change, unreleased until the next batch bump.
+
+### 20261007-32. Racetrack qualification: minors from 20261007-9.
+
+From the reviews of 20261007-9.
+1. No test covers the both-NULL case of the IS DISTINCT FROM rewrite in `denormalized_equal.rb` (`COALESCE(..., a IS NULL AND b IS NULL)` to `COALESCE(..., false)` stays green).
+2. The arena runner's slow clock-read behavior specs ("doesn't keep a timed-out statement...", both "nonzero session default" examples) pass with a fast clock, on main before this change too. Make them need the slow clock.
+3. No shadow tests for the `pg_trigger.tgenabled` rewrite in `rewrite_rules/catalog/foreign_keys.rb` or the `pg_range.rngsubtype = ANY` rewrite in the tiebreaker. Only the static spec covers them.
+4. `AssumptionCheck::Equality` refuses copy and parent columns whose types share no btree `=` (char(n) with text, int4 with numeric, float8 with int4, arrays), where a bare `=` used to accept them. The direction is safe. List it in DESIGN.md as unsupported in v1, or add a cast fallback that keeps citext right.
+5. No test covers `Equality.base` following domains (domain columns would silently refuse), the `$1::type` cast, or the `rows.size == 1` guard.
+
+- **Depends on:** 20261007-9.
+- **Came from:** The reviews of 20261007-9, rounds one and two.
+- **Design:** trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. Specs pin the both-NULL IS DISTINCT FROM rewrite, make the slow-clock arena runner examples need the slow clock (`SlowClockRead`), shadow-test the `tgenabled` and `rngsubtype = ANY` rewrites, and cover `Equality`'s domains, its cast's schema, and both one-operator guards. No cast fallback: DESIGN.md's denormalized_equal paragraph now lists the type pairs refused in v1 (mixed numeric kinds, char(n) or citext with text, and any arrays, ranges, multiranges, or composites, even of one type). Specs and docs only.
