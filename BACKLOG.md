@@ -23,6 +23,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-34 (statistics: hidden_statistics in the report, row_security_statistics_hidden).
 - 20261008-32 (rewrite candidates: only the original's names and pg_catalog's; unknown_name).
 - 20260927-18 (rewrite-test: scenarios load with generated columns and = exclusions; exclusion_constraint refused).
+- 20261001-10 (schema-dump: pg_depend walk, extra_dump_schemas, dump_object_unreadable with a tables field).
 
 ## How this file works.
 
@@ -1119,19 +1120,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261001-9. The full schema dump always includes the `dba` schema. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-10. The full schema dump finds the schemas its objects reference, and takes overrides.
-
-Replaces the hard-coded `dba` of 20261001-9. Objects in the dumped namespaces, such as functions, can reference schemas that weren't dumped, and then arena won't load. Find those schemas and add them to the dump, for example by parsing the dump with pg_query and collecting the schemas named in function bodies, defaults, types, and the like, then dumping again until nothing new turns up. Also let the operator name extra schemas to include, for example a list in the `quaacks` config. Settle the details with the user before building: which references count, whether a dependency query against the catalog (`pg_depend`) beats parsing, and where the override lives.
-
-Also add an arena spec that loads a dump whose function references `dba` objects, end to end. That was the original `arena_dump_load_failed` symptom, and the review of 20261001-9 found no test covering it.
-
-Handle objects the operator can't read. Including the `dba` schema made pg_dump fail with `pg_dump_failed`, because the operator's role had no read access to two of its tables. pg_dump locks every table it dumps, so one unreadable table fails the whole dump. Dump only the objects the dumped namespaces actually depend on, not whole extra schemas, and then decide what to do about a needed object that still can't be read. For example, check privileges first with `has_table_privilege` and refuse with a rule that names the problem (`dump_object_unreadable`) and counts the unreadable tables, rather than letting pg_dump fail with no reason. Settle this with the user too.
-
-- **Depends on:** 20261001-9.
-- **Came from:** The user, 2026-10-01.
-- **Design:** schema-dump, arena-setup.
-- **Decided by the user (2026-10-08):** Find the extra objects by walking pg_depend from the dumped objects. The operator names extra schemas in an `extra_dump_schemas` list in ~/.quaack/config.json. When a needed table can't be read, refuse with `dump_object_unreadable` before running pg_dump, and name the unreadable tables. They go to the operator only, through the error line's checked fields, the way `fk_cycle` names its tables, and never to the LLM.
-- **Status:** todo
+### 20261001-10. The full schema dump finds the schemas its objects reference, and takes overrides. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-11. Progress output: minor findings. Done, see BACKLOG-COMPLETE.md.
 
@@ -2431,4 +2420,19 @@ The review of 20260927-18 found these minor issues:
 - **Depends on:** 20260927-18.
 - **Came from:** The review of 20260927-18, 2026-10-08.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261008-48. Schema dump dependency walk: minors from 20261001-10.
+
+The review of 20261001-10 found these minor issues:
+
+1. **Mixed-case or non-ASCII names drop every table name.** If one unreadable table's name fails the shape check (mixed case, Unicode, or a quote), the whole `tables` field is dropped. The operator then gets "can't read these tables" with no tables named. Keep the names that pass, widen the shape so quoted identifiers can be shown safely, or word the note so it doesn't promise names when none come through.
+2. **The `a` (auto) dependency has no test.** A sequence owned by a column in another schema relies on it, and removing it from the walk keeps every test green. Add a spec where `A.seq OWNED BY B.t.col` and the dump loads.
+3. **`--exclude-table` has no cap.** It adds one argument per unneeded relation in each added schema. A schema with thousands of tables could approach ARG_MAX. Cap it, or refuse cleanly past the limit.
+4. **A misspelled extra schema gets a vague error.** A nonexistent `extra_dump_schemas` name fails as `pg_dump_failed`. Pre-check it against pg_namespace and give it a rule that tells the operator to fix the config.
+5. **Children outside the dump aren't pulled in.** A partition or inheritance child in a schema outside the dump is missed, because the walk follows dependencies in one direction only.
+
+- **Depends on:** 20261001-10.
+- **Came from:** The review of 20261001-10, 2026-10-08.
+- **Design:** schema-dump.
 - **Status:** todo

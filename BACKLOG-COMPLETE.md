@@ -7875,3 +7875,18 @@ Also: fixture-compare still disproves every candidate when a scenario won't load
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260927-18 (commits c0a0ca54, bfc015d2). Review had no blocking findings; its minors went to 20261008-47.
+
+### 20261001-10. The full schema dump finds the schemas its objects reference, and takes overrides.
+
+Replaces the hard-coded `dba` of 20261001-9. Objects in the dumped namespaces, such as functions, can reference schemas that weren't dumped, and then arena won't load. Find those schemas and add them to the dump, for example by parsing the dump with pg_query and collecting the schemas named in function bodies, defaults, types, and the like, then dumping again until nothing new turns up. Also let the operator name extra schemas to include, for example a list in the `quaacks` config. Settle the details with the user before building: which references count, whether a dependency query against the catalog (`pg_depend`) beats parsing, and where the override lives.
+
+Also add an arena spec that loads a dump whose function references `dba` objects, end to end. That was the original `arena_dump_load_failed` symptom, and the review of 20261001-9 found no test covering it.
+
+Handle objects the operator can't read. Including the `dba` schema made pg_dump fail with `pg_dump_failed`, because the operator's role had no read access to two of its tables. pg_dump locks every table it dumps, so one unreadable table fails the whole dump. Dump only the objects the dumped namespaces actually depend on, not whole extra schemas, and then decide what to do about a needed object that still can't be read. For example, check privileges first with `has_table_privilege` and refuse with a rule that names the problem (`dump_object_unreadable`) and counts the unreadable tables, rather than letting pg_dump fail with no reason. Settle this with the user too.
+
+- **Depends on:** 20261001-9.
+- **Came from:** The user, 2026-10-01.
+- **Design:** schema-dump, arena-setup.
+- **Decided by the user (2026-10-08):** Find the extra objects by walking pg_depend from the dumped objects. The operator names extra schemas in an `extra_dump_schemas` list in ~/.quaack/config.json. When a needed table can't be read, refuse with `dump_object_unreadable` before running pg_dump, and name the unreadable tables. They go to the operator only, through the error line's checked fields, the way `fk_cycle` names its tables, and never to the LLM.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261001-10 (commits d67a882a, 9c094ed7). Review had no blocking findings; its minors went to 20261008-48.
