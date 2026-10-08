@@ -2257,14 +2257,7 @@ What the 20261007-24 attempt learned, on branch `task/20261007-24` (commits aeb1
 - **Design:** LLM providers.
 - **Status:** todo
 
-### 20261007-37. Report: the went-on "not recorded" cell uses the number style.
-
-From the review of 20261004-79. The new went-on cell renders `<td class="num">not recorded</td>`, while every other "not recorded" cell uses `class="missing"` through `count_cell` (`driver/lib/quaack/driver/report/view.rb`). Use `count_cell(record["out"])` there and update the spec at `driver/spec/report_spec.rb` (~1570).
-
-- **Depends on:** 20261004-79.
-- **Came from:** The review of 20261004-79.
-- **Design:** report.
-- **Status:** todo
+### 20261007-37. Report: the went-on "not recorded" cell uses the number style. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-38. `not_in_to_not_exists`: extensions.
 

@@ -6896,3 +6896,13 @@ Add the router and its sessions, and move every LLM caller onto them, so each mu
 - **Design:** Several LLM providers (Asks, units, and sessions; Routing; Accounting; Progress and failure messages), llm-index-refine.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. `LLM::Router` (`driver/lib/quaack/driver/llm/router.rb`) hands out a session per unit and keeps every ask in it on one provider. Each step's pool comes from pinning, and its mode from the step or the run (round_robin with one cursor, or failover). At a unit's first ask, `llm_rate_limited` and `llm_unavailable` mark a provider down, `llm_auth` drops it with a loud line, `llm_bad_response` moves on, and `llm_bad_request` fails the step; a later ask that fails marks or drops its provider and fails the step (20261007-15 softens that). Every LLM caller runs through it, the burndown counts calls per provider, and progress lines name the provider for an `llms` list. A lone `llm` block or no block reads exactly as before. The refine prompt says "An LLM already proposed candidates" and "The candidates' results", and the 14 corpus `prompt.md` files for both refine steps were edited to match while their replies stay, as 20261001-28 and 20261004-95 did. For the user to confirm: failover-mode units don't move the round_robin cursor.
+
+### 20261007-37. Report: the went-on "not recorded" cell uses the number style.
+
+From the review of 20261004-79. The new went-on cell renders `<td class="num">not recorded</td>`, while every other "not recorded" cell uses `class="missing"` through `count_cell` (`driver/lib/quaack/driver/report/view.rb`). Use `count_cell(record["out"])` there and update the spec at `driver/spec/report_spec.rb` (~1570).
+
+- **Depends on:** 20261004-79.
+- **Came from:** The review of 20261004-79.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. The burndown table's went-on cell uses `count_cell`, so a missing count renders `<td class="missing">not recorded</td>` like every other one, and numbers render as before.
