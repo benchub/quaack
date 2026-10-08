@@ -282,8 +282,9 @@ RSpec.describe Quaack::Driver::Teardown do
     end
 
     # Task 20261008-12, item 1: every one of setup's steps, not only some.
-    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
-       racetrack-setup].each do |subcommand|
+    # Task 20261008-13, item 1: loop over STEPS itself, so a new step
+    # can't be left out.
+    Quaack::Driver::Setup::STEPS.map(&:subcommand).each do |subcommand|
       it "keeps the run after #{subcommand} fails" do
         teardown = described_class.new(transport, run_id, stderr)
         error = Quaack::Driver::EnclaveError.new(subcommand:, rule: "some_rule", exit_status: 70)
@@ -303,7 +304,7 @@ RSpec.describe Quaack::Driver::Teardown do
       expect([File.exist?(store), teardown.kept_after_setup?]).to eq([true, true])
       expect(stderr.string).to eq("quaack: kept run #{run_id}, since a signal interrupted a setup step. To go on, " \
                                   "resume with `quaack run --run #{run_id}`, or tear the run down by running: " \
-                                  "ssh jump-1 quaacks teardown --run #{run_id}\n")
+                                  "ssh -- jump-1 quaacks teardown --run #{run_id}\n")
     end
 
     it "tears down after a signal outside setup" do
@@ -321,7 +322,7 @@ RSpec.describe Quaack::Driver::Teardown do
   # Task 20261008-12, item 3: given the run's jump host, each message's
   # teardown command is one to run from the laptop.
   context "with the jump host" do
-    let(:later) { "To tear it down later, run: ssh jump-1 quaacks teardown --run #{run_id}\n" }
+    let(:later) { "To tear it down later, run: ssh -- jump-1 quaacks teardown --run #{run_id}\n" }
 
     def around_jump(keep: false, &) = described_class.around(transport:, run_id:, stderr:, keep:, jump: "jump-1", &)
 
@@ -352,8 +353,16 @@ RSpec.describe Quaack::Driver::Teardown do
       expect { teardown.around { raise volatile } }.to raise_error(volatile)
       expect(described_class.next_step(teardown, run_id)).to eq(
         "resume with `quaack run --run #{run_id}`, or tear the run down by running: " \
-        "ssh jump-1 quaacks teardown --run #{run_id}"
+        "ssh -- jump-1 quaacks teardown --run #{run_id}"
       )
+    end
+
+    # Task 20261008-13, item 3: the printed command quotes the jump host
+    # for the shell, and ends ssh's options with `--`.
+    it "quotes the jump host, after --" do
+      described_class.around(transport:, run_id:, stderr:, keep: true, jump: "ops@jump 1;x") { :result }
+      expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run: " \
+                                  "ssh -- ops@jump\\ 1\\;x quaacks teardown --run #{run_id}\n")
     end
   end
 
