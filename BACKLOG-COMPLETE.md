@@ -7566,3 +7566,15 @@ From the builder of 20261007-12. Ollama's OpenAI-compatible API ignores `max_com
 - **Design:** LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261007-25 (commit ecd65fb1). Review had no blocking findings; its minor went to 20261008-19.
+
+### 20261007-29. Operator messages for enclave rules.
+
+The last item left from 20260926-56: a driver-side table that maps enclave rules to text for operators. The texts need the user's decision. Draft them for the rules that reach an operator and show the user before building.
+
+- **Depends on:** 20260926-56.
+- **Came from:** 20260926-56.
+- **Design:** input.
+- **Decided by the user (2026-10-08):** draft the wording yourself and build it; the user will review it in the report.
+- **Decided by the user (2026-10-08), on the builder's survey (170 to 200 sendable rules):** specific messages only for the rules an operator can act on (input, intake, config, connections, run server, arena and racetrack setup, pg_dump, store, run state); every other rule gets one shared line: "QUAACK hit an internal check it can't recover from. This is a QUAACK bug: report the rule name and the step." The enclave publishes its list of sendable rules, and a spec checks every rule is either messaged or marked internal. The list is an enclave change, so it goes in the next batch.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261007-29 (commits 50277436, 9c05724c, f8196ad6, bd584376) after a fix round. The second review was clean; the minors from both reviews are in 20261008-16.

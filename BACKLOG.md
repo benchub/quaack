@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-11 (or_to_union: LIKE minors, collation check skips dropped columns).
 - 20261007-44 (distinct_join_to_exists: subqueries in conditions on the kept table).
 - 20261008-6 (or_to_union: composite keys).
+- 20261007-29 (protocol: Protocol::ErrorRules, the published list of enclave rules).
 
 ## How this file works.
 
@@ -2055,16 +2056,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-28. Bedrock region and override checks: minors from 20261001-16. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-29. Operator messages for enclave rules.
-
-The last item left from 20260926-56: a driver-side table that maps enclave rules to text for operators. The texts need the user's decision. Draft them for the rules that reach an operator and show the user before building.
-
-- **Depends on:** 20260926-56.
-- **Came from:** 20260926-56.
-- **Design:** input.
-- **Decided by the user (2026-10-08):** draft the wording yourself and build it; the user will review it in the report.
-- **Decided by the user (2026-10-08), on the builder's survey (170 to 200 sendable rules):** specific messages only for the rules an operator can act on (input, intake, config, connections, run server, arena and racetrack setup, pg_dump, store, run state); every other rule gets one shared line: "QUAACK hit an internal check it can't recover from. This is a QUAACK bug: report the rule name and the step." The enclave publishes its list of sendable rules, and a spec checks every rule is either messaged or marked internal. The list is an enclave change, so it goes in the next batch.
-- **Status:** todo
+### 20261007-29. Operator messages for enclave rules. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-30. NameQualifier: test gaps and two edge cases. Done, see BACKLOG-COMPLETE.md.
 
@@ -2260,6 +2252,9 @@ The review of 20261007-29 found these minor issues:
 4. **Rule classes.** Two rules could move out of INTERNAL:
    - `index_build_orphan_running`: after a driver timeout kill, the operator can wait and then resume, so it could get a note.
    - `plan_gate_not_comparable`: arguably a v1 limit rather than a bug.
+
+5. **Advice after teardown, from the second review.** The `plan_gate_mismatch_likely_stale_statistics` note says "Restore a fresh backup on the run server, or run ANALYZE in the racetrack database". The plan gate fails during index-search, though, so teardown has already run, and with `destroy_command` set, that run server is gone. Better: make sure the backup the next run server restores from is fresh and analyzed.
+6. **`index_build_orphan_cancel_denied` is borderline INTERNAL** (`enclave/lib/quaack/enclave/build_connection.rb:60`). The operator could cancel the CREATE INDEX backend by hand and resume.
 
 - **Depends on:** 20261007-29.
 - **Came from:** The review of 20261007-29, 2026-10-08.
