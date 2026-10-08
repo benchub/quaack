@@ -65,6 +65,10 @@ module Quaack
     # A function in FROM that isn't pg_catalog's is refused as
     # user_function_in_from (see FromFunctions).
     #
+    # A relation in a system schema, such as pg_catalog.pg_class or a
+    # pg_toast table, is refused as system_relation before its relkind is
+    # read.
+    #
     # The other refusals: parse_error, unsupported_construct, bad_search_path
     # (the Settings' search_path doesn't read), ambiguous_user_schema (see
     # UserSchema), unknown_relation (a name doesn't resolve, or a qualified
@@ -173,9 +177,11 @@ module Quaack
         raise Error.from(e), cause: nil
       end
 
-      # The block, given the relations as they resolve, or else UserSchema.
+      # The block, given the relations as they resolve, or else UserSchema,
+      # then the system schema check.
       def resolved!(tree, resolved, settings, connection, listed)
         listed ? listed.call(tables(tree).keys) : UserSchema.check!(tree, resolved, settings, connection)
+        system!(tree)
       end
 
       # Each relation in a qualified tree, once, in the order the query's
@@ -190,6 +196,17 @@ module Quaack
           found[table] = found.fetch(table, false) || range.inh
         end
       end
+
+      # Refuses the first relation, in the query's text, that's in a system
+      # schema: pg_catalog, information_schema, pg_toast, a pg_temp_ schema,
+      # or any other pg_ name, which only Postgres can make. QUAACK can't
+      # tune a query on the system catalogs, and schema-dump can't dump them.
+      def system!(tree)
+        table = tables(tree).keys.find { system_schema?(it.schema) }
+        raise Error.new("system_relation", "#{table} is in a system schema"), cause: nil if table
+      end
+
+      def system_schema?(name) = name == "information_schema" || name.start_with?("pg_")
 
       def functions!(tree, settings, connection)
         return unless FromFunctions.user_function?(tree, settings, connection)

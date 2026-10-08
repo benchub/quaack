@@ -31,13 +31,32 @@ module TestPostgres
     module_function
 
     # Returns its port on the host. It won't run as root, so it runs as
-    # postgres, in the background (-d).
+    # postgres, in the background (-d). It first stops one an earlier start
+    # left, and stops its own if it fails partway, such as on the readiness
+    # timeout, so a later call can start cleanly.
     def start(container_id)
+      stop(container_id)
       write(container_id, "pgbouncer.ini", CONFIG)
       write(container_id, "userlist.txt", %("#{USER}" "#{PASSWORD}"\n))
       TestPostgres.docker("exec", "-u", "postgres", container_id, "pgbouncer", "-d", "#{DIR}/pgbouncer.ini")
       wait_until_ready(container_id)
       Integer(TestPostgres.docker("port", container_id, "#{PORT}/tcp").lines.first.strip.split(":").last)
+    rescue StandardError
+      stop(container_id)
+      raise
+    end
+
+    # Kills the PgBouncer the pidfile names, if any, waits for it to exit,
+    # and removes the pidfile. It sends TERM, which PgBouncer exits 0 on,
+    # never KILL: Postgres is the container's pid 1, so it reaps PgBouncer,
+    # and a child killed by a signal makes it restart every backend.
+    def stop(container_id)
+      TestPostgres.docker("exec", "-u", "postgres", container_id, "sh", "-c", <<~SH)
+        pid=$(cat #{DIR}/pgbouncer.pid 2>/dev/null) || exit 0
+        kill -TERM "$pid" 2>/dev/null
+        while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
+        rm -f #{DIR}/pgbouncer.pid
+      SH
     end
 
     # pg_isready stops at PgBouncer's password request, so it opens no

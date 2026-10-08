@@ -145,11 +145,32 @@ RSpec.describe Quaack::Enclave::Relations do
       end
     end
 
-    it "is refused as toast_relation when it's a toast table" do
+    it "is refused as system_relation when it's a toast table, since toast tables live in pg_toast" do
       schema, name = toast_table
       expect { check("SELECT chunk_id FROM #{schema}.#{name}") }
-        .to rejected("toast_relation",
-                     "toast_relation: #{schema}.#{name} is a toast table (relkind t), not a plain table")
+        .to rejected("system_relation", "system_relation: #{schema}.#{name} is in a system schema")
+    end
+
+    {
+      "pg_catalog.pg_namespace" => "pg_catalog.pg_namespace",
+      "pg_class" => "pg_catalog.pg_class",
+      "information_schema.tables" => "information_schema.tables"
+    }.each do |written, qualified|
+      it "is refused as system_relation when it's #{written}, in a system schema" do
+        expect { check("SELECT * FROM orders, #{written}") }
+          .to rejected("system_relation", "system_relation: #{qualified} is in a system schema")
+      end
+    end
+
+    it "is refused as system_relation when it's a temporary table, in a pg_temp schema" do
+      conn.exec("CREATE TEMP TABLE scratch (id int)")
+      schema = conn.exec("SELECT nspname FROM pg_namespace WHERE oid = pg_my_temp_schema()").getvalue(0, 0)
+      expect { check("SELECT id FROM #{schema}.scratch") }
+        .to rejected("system_relation", "system_relation: #{schema}.scratch is in a system schema")
+    end
+
+    it "is system_relation before another kind's rule, when the system relation comes first" do
+      expect { check("SELECT 1 FROM pg_catalog.pg_class, public.order_view") }.to rejected("system_relation")
     end
 
     it "is refused after plain tables that come before it" do
@@ -393,10 +414,10 @@ RSpec.describe Quaack::Enclave::Relations do
         .to eq([table_name("public", "orders")])
     end
 
-    it "passes when the name resolved to pg_catalog first, but not when the path lists \"$user\" before it" do
+    it "leaves a name resolved to pg_catalog first to system_relation, but not with \"$user\" before it" do
       conn.exec(%(CREATE TABLE "#{role}".pg_class (oid oid)))
 
-      expect(check("SELECT oid FROM pg_class").relations).to eq([table_name("pg_catalog", "pg_class")])
+      expect { check("SELECT oid FROM pg_class") }.to rejected("system_relation")
       expect { check("SELECT oid FROM pg_class", { "search_path" => '"$user", pg_catalog' }) }
         .to user_schema_refusal(role, "a relation named pg_class")
     end
