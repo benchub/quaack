@@ -55,20 +55,22 @@ module Quaack
         # a domain.
         CATALOG_ORDERABLE_SQL = <<~SQL
           WITH faithful AS (
-            SELECT oid FROM pg_type WHERE typtype = 'e'
+            SELECT oid FROM pg_catalog.pg_type WHERE typtype OPERATOR(pg_catalog.=) 'e'
             UNION ALL
-            SELECT rngtypid FROM pg_range WHERE rngsubtype IN (%<known>s)
+            SELECT rngtypid FROM pg_catalog.pg_range
+            WHERE rngsubtype OPERATOR(pg_catalog.=) ANY ('{%<known>s}'::pg_catalog.oid[])
           )
           SELECT t.oid::int
-          FROM pg_type t
-          WHERE t.oid IN (%<types>s)
-            AND (t.oid IN (SELECT oid FROM faithful)
-              OR t.typelem IN (SELECT oid FROM faithful)
-              OR (t.typtype = 'c' AND NOT EXISTS (
-                SELECT FROM pg_attribute a
-                WHERE a.attrelid = t.typrelid AND NOT a.attisdropped
-                  AND a.atttypid NOT IN (%<known>s)
-                  AND a.atttypid NOT IN (SELECT oid FROM pg_type WHERE typtype = 'e'))))
+          FROM pg_catalog.pg_type t
+          WHERE t.oid OPERATOR(pg_catalog.=) ANY ('{%<types>s}'::pg_catalog.oid[])
+            AND (t.oid OPERATOR(pg_catalog.=) ANY (SELECT oid FROM faithful)
+              OR t.typelem OPERATOR(pg_catalog.=) ANY (SELECT oid FROM faithful)
+              OR (t.typtype OPERATOR(pg_catalog.=) 'c' AND NOT EXISTS (
+                SELECT FROM pg_catalog.pg_attribute a
+                WHERE a.attrelid OPERATOR(pg_catalog.=) t.typrelid AND NOT a.attisdropped
+                  AND a.atttypid OPERATOR(pg_catalog.<>) ALL ('{%<known>s}'::pg_catalog.oid[])
+                  AND a.atttypid OPERATOR(pg_catalog.<>) ALL (
+                    SELECT oid FROM pg_catalog.pg_type WHERE typtype OPERATOR(pg_catalog.=) 'e'))))
         SQL
 
         # A nondeterministic collation that a column, domain, or range uses, or that
@@ -76,20 +78,21 @@ module Quaack
         # compares equal, such as 'a' and 'A', can print differently, and a
         # result can't say which columns use it.
         NONDETERMINISTIC_COLLATION_SQL = <<~SQL
-          SELECT count(*)::int FROM pg_collation c
+          SELECT pg_catalog.count(*)::int FROM pg_catalog.pg_collation c
           WHERE NOT c.collisdeterministic
-            AND (c.oid IN (SELECT attcollation FROM pg_attribute)
-              OR c.oid IN (SELECT typcollation FROM pg_type)
-              OR c.oid IN (SELECT rngcollation FROM pg_range)
-              OR c.collname IN (%<names>s))
+            AND (c.oid OPERATOR(pg_catalog.=) ANY (SELECT attcollation FROM pg_catalog.pg_attribute)
+              OR c.oid OPERATOR(pg_catalog.=) ANY (SELECT typcollation FROM pg_catalog.pg_type)
+              OR c.oid OPERATOR(pg_catalog.=) ANY (SELECT rngcollation FROM pg_catalog.pg_range)
+              OR c.collname OPERATOR(pg_catalog.=) ANY ('{%<names>s}'::pg_catalog.name[]))
         SQL
 
         module_function
 
-        # names are the collations the queries' COLLATE clauses name.
+        # names are the collations the queries' COLLATE clauses name. They
+        # go in as an array literal's elements, quoted.
         def nondeterministic_collation?(transaction, names)
-          names = names.uniq.map { |name| "'#{name.gsub("'", "''")}'" }
-          sql = format(NONDETERMINISTIC_COLLATION_SQL, names: names.empty? ? "NULL" : names.join(", "))
+          names = names.uniq.map { |name| %("#{name.gsub(/["\\]/) { "\\#{it}" }}") }.join(",").gsub("'", "''")
+          sql = format(NONDETERMINISTIC_COLLATION_SQL, names:)
           transaction.query(sql).rows.first.first != "0"
         end
 

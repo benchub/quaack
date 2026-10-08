@@ -33,16 +33,25 @@ module Quaack
           false
         end
 
+        # Every comparison is pg_catalog's, so one planted ahead of it on
+        # the search_path can't hide a row; a column type with no
+        # pg_catalog = is an error, so unmet. IS DISTINCT FROM is written
+        # out, since it can't name its operator.
         def sql(assumption, connection)
           name = ->(key) { connection.quote_ident(assumption[key]) }
           <<~SQL
             SELECT EXISTS (
               SELECT 1 FROM #{table(assumption["table"], connection)} c
               JOIN #{table(assumption["references_table"], connection)} p
-                ON c.#{name.call("join_column")} = p.#{name.call("references_column")}
-              WHERE p.#{name.call("type_column")} = $1
-                AND c.#{name.call("column")} IS DISTINCT FROM p.#{name.call("id_column")})
+                ON c.#{name.call("join_column")} OPERATOR(pg_catalog.=) p.#{name.call("references_column")}
+              WHERE p.#{name.call("type_column")} OPERATOR(pg_catalog.=) $1
+                AND #{distinct("c.#{name.call("column")}", "p.#{name.call("id_column")}")})
           SQL
+        end
+
+        # left IS DISTINCT FROM right, by pg_catalog.=.
+        def distinct(left, right)
+          "NOT COALESCE(#{left} OPERATOR(pg_catalog.=) #{right}, #{left} IS NULL AND #{right} IS NULL)"
         end
 
         def table(name, connection) = RewriteAssumptions.split(name).map { connection.quote_ident(it) }.join(".")

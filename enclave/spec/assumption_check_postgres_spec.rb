@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/assumption_check"
+require_relative "support/catalog_shadow"
 require_relative "support/production_server"
 
 # DESIGN.md's assumption-check: each stated assumption, checked against pg_constraint and
@@ -91,6 +92,28 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       .to eq([true, true, true, false])
   end
 
+  # Task 20261007-9: public's comparisons, ahead of pg_catalog's on the
+  # search_path, say no or say yes (see CatalogShadow). The catalog reads
+  # still find what's there, and only that.
+  describe "when public's comparison operators shadow pg_catalog's" do
+    before { conn.exec("SET search_path = public, pg_catalog") }
+
+    it "still meets what's met, when they say no" do
+      CatalogShadow.plant(conn, :operators)
+
+      expect([met?(not_null("id")), met?(unique("public.orders", "id")), met?(unique("public.items", "code")),
+              met?(fk("customer_id")), met?(check("total >= 0"))]).to eq([true, true, true, true, true])
+    end
+
+    it "still doesn't meet what isn't, when they say yes" do
+      CatalogShadow.plant(conn, :yes_operators)
+
+      expect([met?(not_null("total")), met?(unique("public.orders", "note")), met?(unique("public.items", "sku")),
+              met?(fk("customer_id", ["public.orders", "id"])), met?(check("qty > 0"))])
+        .to eq([false, false, false, false, false])
+    end
+  end
+
   it "doesn't meet an assumption about a table that doesn't exist" do
     expect(met?(not_null("id").merge("table" => "public.nowhere"))).to be(false)
   end
@@ -124,6 +147,20 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       conn.exec("UPDATE public.submissions SET course_id = NULL WHERE id = 3")
 
       expect([differs, met?(assumption)]).to eq([false, false])
+    end
+
+    # Task 20261007-9: public's comparisons, ahead of pg_catalog's on the
+    # search_path, say no (see CatalogShadow), so an unqualified join would
+    # find no rows, and nothing to contradict the assumption.
+    it "still checks the data when public's comparison operators shadow pg_catalog's" do
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :operators)
+      met = met?(assumption)
+      conn.exec("UPDATE public.submissions SET course_id = 21 WHERE id OPERATOR(pg_catalog.=) 3")
+      differs = met?(assumption)
+      conn.exec("UPDATE public.submissions SET course_id = NULL WHERE id OPERATOR(pg_catalog.=) 3")
+
+      expect([met, differs, met?(assumption)]).to eq([true, false, false])
     end
 
     it "checks only rows of the stated type" do
