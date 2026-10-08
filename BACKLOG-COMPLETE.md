@@ -7963,3 +7963,19 @@ The review of 20260924-8 found these minor issues:
 - **Design:** burndown.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-49 (commits f42c5c55, 6c2b6292). Review clean; the mutation was confirmed red. A wording nit went to 20261008-50.
+
+### 20261008-51. `quaack start --database`: name production's database.
+
+The user is blocked (2026-10-08): `PGDATABASE` lives in their login profile on the jump server, and a non-interactive ssh session doesn't load it, so the production connection goes to the wrong database. Add an optional `--database <name>` to `quaack start` and `quaacks intake`, mirroring `--port`:
+
+- Check it the same way as a run-server database name.
+- Record it as a `production_database` entry, kept beside `server` and `production_port`, and also in the driver's run record.
+- Use it in every production connection (inventory, qualify, statistics, volatility, and the schema-dump catalog reads) and in pg_dump's `--dbname`.
+
+Without the flag, nothing changes, and libpq's setup picks the database, as today. The database name is the operator's own configuration, like the server name, and it never goes out. Update the connection-failure note, which today says the database comes from libpq, and DESIGN.md.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-08, blocked on a run.
+- **Design:** input, inventory.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-51 (commit aa62fb90). Review had no blocking findings; its minors went to 20261008-52.

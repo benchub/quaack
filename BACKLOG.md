@@ -7,6 +7,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 
+- 20261008-51 (quaack start --database; bad_database; Protocol::DatabaseName).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -2384,17 +2386,14 @@ Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/q
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20261008-51. `quaack start --database`: name production's database.
+### 20261008-51. `quaack start --database`: name production's database. Done, see BACKLOG-COMPLETE.md.
 
-The user is blocked (2026-10-08): `PGDATABASE` lives in their login profile on the jump server, and a non-interactive ssh session doesn't load it, so the production connection goes to the wrong database. Add an optional `--database <name>` to `quaack start` and `quaacks intake`, mirroring `--port`:
+### 20261008-52. `--database` and system relations: follow-ups.
 
-- Check it the same way as a run-server database name.
-- Record it as a `production_database` entry, kept beside `server` and `production_port`, and also in the driver's run record.
-- Use it in every production connection (inventory, qualify, statistics, volatility, and the schema-dump catalog reads) and in pg_dump's `--dbname`.
+1. **From the review of 20261008-51:** confirm that a driver spec goes red when `database` is dropped from the `Runs#record` hash. The reviewer's run of that mutation loaded no specs. Also check whether run-server's database check uses only the bare `Protocol::DatabaseName::PATTERN` regex, without the encoding and ASCII guard that `DatabaseName` adds. If it does, use the full check.
+2. **From the builder of 20260929-22:** a query that names no relation at all, such as one that only selects from `generate_series`, and has no extension outside a system schema, still gives the full dump no `--schema` flags, so pg_dump dumps every schema. Refuse that case, or pass an explicit empty schema set.
 
-Without the flag, nothing changes, and libpq's setup picks the database, as today. The database name is the operator's own configuration, like the server name, and it never goes out. Update the connection-failure note, which today says the database comes from libpq, and DESIGN.md.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-08, blocked on a run.
-- **Design:** input, inventory.
+- **Depends on:** 20261008-51, 20260929-22.
+- **Came from:** The review of 20261008-51 and the builder of 20260929-22, 2026-10-08.
+- **Design:** input, schema-dump.
 - **Status:** todo
