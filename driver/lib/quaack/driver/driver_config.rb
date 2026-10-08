@@ -31,10 +31,13 @@ module Quaack
       end
 
       # Whether something is at path. Unlike File.exist?, it raises Bad
-      # when it can't tell, or when what's there isn't a file.
+      # when it can't tell, when what's there isn't a file (a FIFO would
+      # block the read), or when it's a symlink whose target is missing.
       def self.there?(path)
         File.stat(path).file? or raise Bad.new(path, "can't read it")
       rescue Errno::ENOENT, Errno::ENOTDIR
+        raise Bad.new(path, "it's a symlink to a missing file") if dangling_symlink?(path)
+
         false
       rescue Errno::EACCES
         raise Bad.new(path, "can't read it (permission denied)")
@@ -42,6 +45,13 @@ module Quaack
         raise Bad.new(path, "can't read it")
       end
       private_class_method :there?
+
+      def self.dangling_symlink?(path)
+        File.lstat(path).symlink?
+      rescue SystemCallError
+        false
+      end
+      private_class_method :dangling_symlink?
 
       # The file's JSON, or Bad if it isn't JSON.
       def self.parse(path)

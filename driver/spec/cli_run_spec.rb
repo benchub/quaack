@@ -819,7 +819,7 @@ RSpec.describe "quaack run" do
         .to eq([64, "", "quaack run: bad_driver_config: #{config_path}: can't read it (permission denied)\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     ensure
-      File.chmod(0o700, locked)
+      File.chmod(0o700, locked) if locked
     end
 
     it "gives the client openai_compatible settings" do
