@@ -11,7 +11,8 @@ module Quaack
     # provider's API. Callers see nothing of either SDK.
     #
     # Which provider and model come from the llm block of the driver config,
-    # ~/.quaack/driver.json, with environment overrides. See `settings`. The
+    # ~/.quaack/driver.json, with environment overrides. See `settings`, and
+    # `providers` for the llms list that may replace the block. The
     # providers are anthropic (the Anthropic API), openai_compatible (any
     # OpenAI-compatible Chat Completions API), bedrock (Anthropic models on
     # AWS Bedrock), and copilot_cli (a local `copilot` command).
@@ -107,12 +108,15 @@ module Quaack
       # are meant for its own provider, and that provider's credentials must
       # never go to them. The model and base_url then come only from
       # QUAACK_MODEL and QUAACK_LLM_BASE_URL, or the new provider's defaults.
-      def self.settings(block = nil, env: ENV)
-        block, provider, switched = for_provider(check_block(block), env)
+      #
+      # at is where the block sits in the file, for messages, such as
+      # llms[2] for an entry of the llms list (see `providers`).
+      def self.settings(block = nil, env: ENV, at: BLOCK)
+        block, provider, switched = for_provider(check_block(block, at), env, at)
         model = pick(env, block, "model") || DEFAULT_MODELS[provider]
-        model or raise ConfigError, no_model(provider, switched)
+        model or raise ConfigError, no_model(provider, switched, at)
         base_url = pick(env, block, "base_url")
-        check_applies({ "base_url" => base_url }, provider, "base_url" => BASE_URL_ENV) if from_env?(env, "base_url")
+        check_applies({ "base_url" => base_url }, provider, at, VARIABLES) if from_env?(env, "base_url")
         Settings.new(provider:, model:, base_url:, api_key_env: block["api_key_env"],
                      aws_region: block["aws_region"], aws_profile: block["aws_profile"],
                      command_template: block["command_template"], timeout_seconds: block["timeout_seconds"])
@@ -122,42 +126,42 @@ module Quaack
       def self.adapter(provider) = const_get(ADAPTERS.fetch(provider))
 
       # block as a Hash with only known keys, each well formed, or raises.
-      def self.check_block(block)
+      def self.check_block(block, at)
         return {} if block.nil?
-        raise ConfigError, "#{BLOCK} in #{FILE} must be an object" unless block.is_a?(Hash)
+        raise ConfigError, "#{at} in #{FILE} must be an object" unless block.is_a?(Hash)
 
         block.each do |name, value|
           unless KEYS.include?(name)
-            raise ConfigError, "#{key(name)} isn't a setting: use #{KEYS[0..-2].join(", ")}, or #{KEYS.last}"
+            raise ConfigError, "#{key(name, at)} isn't a setting: use #{KEYS[0..-2].join(", ")}, or #{KEYS.last}"
           end
 
-          check(key(name), name, value)
+          check(key(name, at), name, value)
         end
       end
 
       # The provider in effect, the block for it, and whether
       # QUAACK_LLM_PROVIDER switched from the block's own provider. A switch
       # gives an empty block. Otherwise it raises unless every key applies.
-      def self.for_provider(block, env)
+      def self.for_provider(block, env, at)
         provider = pick(env, block, "provider") || "anthropic"
         return [{}, provider, true] if provider != block.fetch("provider", "anthropic")
 
-        check_applies(block, provider)
+        check_applies(block, provider, at)
         [block, provider, false]
       end
 
-      def self.no_model(provider, switched)
+      def self.no_model(provider, switched, at)
         return "#{MODEL_ENV} is required when #{PROVIDER_ENV} switches to #{provider}" if switched
 
-        "#{key("model")} is required unless the provider is anthropic"
+        "#{key("model", at)} is required unless the provider is anthropic"
       end
 
       # Raises unless every key of block applies to provider.
-      def self.check_applies(block, provider, labels = {})
+      def self.check_applies(block, provider, at, labels = {})
         block.each_key do |name|
           next if applies?(name, provider)
 
-          raise ConfigError, "#{labels.fetch(name, key(name))} doesn't apply to provider #{provider}"
+          raise ConfigError, "#{labels.fetch(name, key(name, at))} doesn't apply to provider #{provider}"
         end
       end
 
@@ -185,7 +189,7 @@ module Quaack
         value
       end
 
-      def self.key(name) = "#{BLOCK}.#{name} in #{FILE}"
+      def self.key(name, at) = "#{at}.#{name} in #{FILE}"
 
       def self.command_template?(value)
         return false unless value.is_a?(Array) && value.any? && value.all? { it.is_a?(String) && !it.empty? }
@@ -201,4 +205,5 @@ end
 
 require_relative "llm/error"
 require_relative "llm/client"
+require_relative "llm/providers"
 require_relative "llm/copilot_cli_adapter"

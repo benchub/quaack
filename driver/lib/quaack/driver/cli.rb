@@ -116,10 +116,11 @@ module Quaack
       # DESIGN.md setup first, as Setup, unless the store says the
       # run has had them, then index-search onward, with operator-rewrites after llm-rewrites if
       # there's a rewrites file, then prints the run ID and done. The file
-      # is read and the LLM client built first, from the llm block of
-      # ~/.quaack/driver.json, so a bad file, a bad block, or missing
-      # credentials fail before the jump server is touched. A bad block is
-      # a usage error naming the key. An LLM failure prints its whole
+      # is read and the LLM clients built first, one per entry of the llms
+      # list, or from the llm block, of ~/.quaack/driver.json (see
+      # LLM.providers), so a bad file, a bad block or entry, or missing
+      # credentials fail before the jump server is touched. A bad block or
+      # entry is a usage error naming the key. An LLM failure prints its whole
       # message, rule and detail, since the detail is the provider's own
       # error text. Any other failure prints only its rule, as for start.
       # What to do next says to resume the run only while its store is left
@@ -160,7 +161,9 @@ module Quaack
         return if rewrites && !sqls
 
         config = DriverConfig.read(@home)
-        [sqls, @client.call(LLM.settings(config&.fetch("llm", nil))),
+        # A client for every entry, so a bad one stops the run before
+        # anything runs. Every ask still goes to the first.
+        [sqls, LLM.providers(config).build { @client.call(it) }.first,
          DriverConfig.enclave_timeout(config, flag, Transport::Base::DEFAULT_TIMEOUT)]
       rescue DriverConfig::Bad, DriverConfig::BadFlag, LLM::ConfigError => e
         @problem = e.message

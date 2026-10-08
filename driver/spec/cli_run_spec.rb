@@ -947,7 +947,9 @@ RSpec.describe "quaack run" do
                                 t
                               })
     end
-    let(:overrides) { { "QUAACK_MODEL" => nil, "QUAACK_LLM_PROVIDER" => nil, "QUAACK_LLM_BASE_URL" => nil } }
+    let(:overrides) do
+      { "QUAACK_MODEL" => nil, "QUAACK_LLM_PROVIDER" => nil, "QUAACK_LLM_BASE_URL" => nil, "QUAACK_LLM" => nil }
+    end
 
     def write_config(text)
       FileUtils.mkdir_p(File.join(home, ".quaack"))
@@ -1097,6 +1099,90 @@ RSpec.describe "quaack run" do
                                         command_template: template, timeout_seconds: 123 }])
     end
 
+    describe "an llms list" do
+      let(:other) { FakeLLM.new }
+      let(:build_client) do
+        lambda do |settings|
+          seen << settings
+          (seen.size == 1 ? fake : other).client(burndown: Quaack::Driver::Burndown.new, model: settings.model)
+        end
+      end
+      let(:llms) do
+        [{ "name" => "first", "provider" => "copilot_cli", "model" => "model-one" },
+         { "name" => "second", "provider" => "copilot_cli", "model" => "model-two" },
+         { "name" => "third", "provider" => "copilot_cli", "model" => "model-three" }]
+      end
+
+      def run_rewrites(env = {})
+        file = File.join(home, "rewrites.sql")
+        File.write(file, "SELECT 2 WHERE $1;\n")
+        with_env(overrides.merge(env)) do
+          cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
+        end
+      end
+
+      it "builds a client for every entry, in order, and sends every ask to the first" do
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms))
+        fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+
+        expect([run_rewrites, errors]).to eq([0, torn])
+        expect(seen.map(&:model)).to eq(%w[model-one model-two model-three])
+        expect([fake.asks.map(&:step), other.asks]).to eq([["operator-rewrites"], []])
+      end
+
+      it "builds only the entries QUAACK_LLM keeps, in its order" do
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms))
+        fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+
+        expect(run_rewrites("QUAACK_LLM" => "third,first")).to eq(0)
+        expect(seen.map(&:model)).to eq(%w[model-three model-one])
+      end
+
+      it "fails with a usage error for a bad entry, naming its position, before touching the jump server" do
+        write_config(JSON.generate("jump_command" => "echo jump-1",
+                                   "llms" => [*llms, { "name" => "SENTINEL-VALUE" }]))
+
+        expect([run_rewrites, stdout.string, errors])
+          .to eq([64, "", "quaack run: llms[3].name in ~/.quaack/driver.json must be 1 to 32 lowercase letters, " \
+                          "digits, _, or -\n"])
+        expect([hosts, transport.calls, seen]).to eq([[], [], []])
+      end
+
+      it "fails with a usage error for QUAACK_MODEL with llms, before touching the jump server" do
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms))
+
+        expect([run_rewrites("QUAACK_MODEL" => "m"), errors])
+          .to eq([64, "quaack run: QUAACK_MODEL doesn't apply to llms in ~/.quaack/driver.json: use QUAACK_LLM " \
+                      "instead\n"])
+        expect([hosts, seen]).to eq([[], []])
+      end
+
+      it "fails with a usage error for bad llm_routing, before touching the jump server" do
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms,
+                                   "llm_routing" => { "mode" => "SENTINEL-VALUE" }))
+
+        expect([run_rewrites, errors])
+          .to eq([64, "quaack run: llm_routing.mode in ~/.quaack/driver.json must be round_robin or failover\n"])
+        expect([hosts, seen]).to eq([[], []])
+      end
+
+      it "stops at an entry whose client can't be built, naming it, after building those before it" do
+        failing_build = lambda do |settings|
+          seen << settings
+          raise Quaack::Driver::LLM::Error.new("llm_auth", "SOME_KEY isn't set") if settings.model == "model-two"
+
+          fake.client(burndown: Quaack::Driver::Burndown.new)
+        end
+        cli = Quaack::Driver::CLI.new(stdout:, stderr:, home:, client: failing_build, transport: ->(*, **) { raise })
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms))
+        status = with_env(overrides) { cli.run(["run", "--run", run_id, "--out", out]) }
+
+        expect([status, stdout.string, errors])
+          .to eq([1, "", "quaack run failed: llm_auth: second: SOME_KEY isn't set\n"])
+        expect(seen.map(&:model)).to eq(%w[model-one model-two])
+      end
+    end
+
     # The CLI's own client builder, not a spec's. build_client takes a
     # transport, so the first example checks what reaches the request. In
     # the second, the CLI builds it with none: the block names a key
@@ -1184,6 +1270,19 @@ RSpec.describe "quaack run" do
         expect([hosts, transport.calls]).to eq([[], []])
       end
 
+      it "fails the same way for an llms entry, naming it, even when the entry before it is fine" do
+        llms = [{ "name" => "opus", "api_key_env" => "QUAACK_SPEC_KEY" },
+                { "name" => "groq", "provider" => "openai_compatible", "model" => "m",
+                  "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }]
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms))
+        env = { "QUAACK_SPEC_KEY" => "fake-key", "QUAACK_SPEC_UNSET_KEY" => nil, "OPENAI_API_KEY" => "SENTINEL-KEY" }
+        status = without_anthropic_credentials(env) { run_with }
+
+        expect([status, stdout.string, errors])
+          .to eq([1, "", "quaack run failed: llm_auth: groq: QUAACK_SPEC_UNSET_KEY isn't set\n"])
+        expect([hosts, transport.calls]).to eq([[], []])
+      end
+
       describe "for bedrock" do
         include AWSCredentials
 
@@ -1207,6 +1306,17 @@ RSpec.describe "quaack run" do
           expect([status, stdout.string, stderr.string])
             .to eq([64, "", "quaack run: no AWS region for Bedrock: set llm.aws_region in ~/.quaack/driver.json, " \
                             "AWS_REGION, or a region in the AWS profile\n"])
+          expect([hosts, transport.calls]).to eq([[], []])
+        end
+
+        it "names the llms entry in a usage error from building its client" do
+          write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => [block.merge("name" => "bed")]))
+          env = { "AWS_ACCESS_KEY_ID" => "AKIAQUAACKSPECENV001", "AWS_SECRET_ACCESS_KEY" => "s" }
+          status = without_aws_credentials(env) { run_with }
+
+          expect([status, stdout.string, stderr.string])
+            .to eq([64, "", "quaack run: bed: no AWS region for Bedrock: set llm.aws_region in " \
+                            "~/.quaack/driver.json, AWS_REGION, or a region in the AWS profile\n"])
           expect([hosts, transport.calls]).to eq([[], []])
         end
       end

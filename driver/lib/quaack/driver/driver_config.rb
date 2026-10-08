@@ -6,7 +6,7 @@ module Quaack
   module Driver
     # The driver config on the laptop, ~/.quaack/driver.json: a JSON object.
     # `quaack start` reads its jump_command, and `quaack run` its llm block
-    # (see LLM.settings). Both, and `quaack setup`, read
+    # or llms list (see LLM.providers). Both, and `quaack setup`, read
     # enclave_timeout_seconds, if it's there:
     # how long each enclave call may run, in seconds, before the driver
     # kills it (Transport::Base::DEFAULT_TIMEOUT without it).
