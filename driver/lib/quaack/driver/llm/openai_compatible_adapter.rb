@@ -92,7 +92,7 @@ module Quaack
           # the key, so an llm_auth doesn't keep it as the cause.
           rule = rule_for(e)
           raise Error.new(rule, detail(e)), cause: (e unless rule == "llm_auth")
-        rescue ::OpenAI::Errors::Error, TypeError, JSON::ParserError, Unreadable
+        rescue ::OpenAI::Errors::Error, JSON::ParserError, Unreadable
           # A reply the gem can't read raises from its parsing, some of these
           # quoting the body, so they aren't kept as the cause.
           raise Error.new("llm_bad_response", "the reply couldn't be read as a message"), cause: nil
@@ -144,13 +144,24 @@ module Quaack
           end
 
           # A JSON object whose choices, if there are any, are objects the
-          # gem can walk. Choices that are null or missing it reports
-          # itself, or reply_text does.
+          # gem can walk, holding no number past a float's range. Choices
+          # that are null or missing it reports itself, or reply_text does.
+          # A body that isn't JSON raises a JSON::ParserError, which reply
+          # rescues.
           def completion?(body)
             parsed = JSON.parse(body)
-            parsed.is_a?(Hash) && objects?(parsed["choices"]) { choice?(it) }
-          rescue JSON::ParserError
-            false
+            parsed.is_a?(Hash) && objects?(parsed["choices"]) { choice?(it) } && finite?(parsed)
+          end
+
+          # JSON reads a number past a float's range as Infinity, which the
+          # gem's coercion to an integer raises a FloatDomainError on.
+          def finite?(value)
+            case value
+            when Hash then value.each_value.all? { finite?(it) }
+            when Array then value.all? { finite?(it) }
+            when Float then value.finite?
+            else true
+            end
           end
 
           # Every choice has a message, so reply_text can read the first.
@@ -159,10 +170,10 @@ module Quaack
             message.is_a?(Hash) && objects?(message["tool_calls"]) { tool_call?(it) }
           end
 
-          # The gem passes over a custom tool call and reads any other's
-          # function name.
+          # The gem passes over a custom tool call, whatever its custom
+          # holds, and reads any other's function name.
           def tool_call?(call)
-            return call["custom"].is_a?(Hash) if call["type"] == "custom"
+            return true if call["type"] == "custom"
 
             call["function"].is_a?(Hash) && call["function"].key?("name")
           end

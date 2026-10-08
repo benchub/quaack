@@ -416,7 +416,11 @@ RSpec.describe "the OpenAI-compatible adapter" do
       "a tool call with no function" => [:tool_call, {}],
       "a tool call whose function has no name" => [:tool_call, { function: { arguments: "{}" } }],
       "a tool call of another type with no function" => [:tool_call, { type: "SENTINEL-TEXT" }],
-      "a custom tool call whose custom is a string" => [:tool_call, { type: "custom", custom: "SENTINEL-TEXT" }]
+      # The gem reads a number past a float's range as Infinity, then raises
+      # a FloatDomainError coercing it to an integer.
+      "a number too big for a float" => [completion([choice(assistant)]).sub('"created":0', '"created":1e400')],
+      "a negative number too big for a float, in a choice" =>
+        [completion([choice(assistant)]).sub('"index":0', '"index":-1e400')]
     }.each do |what, (body, detail)|
       it "fails with llm_bad_response on #{what}, keeping no cause" do
         text, type = case body
@@ -453,6 +457,12 @@ RSpec.describe "the OpenAI-compatible adapter" do
         [:tool_calls, [{ id: "call_1", type: "function", function: { name: "f", arguments: "{}" } }], "SENTINEL-TEXT"],
       "a custom tool call alongside the text" =>
         [:tool_calls, [{ id: "call_1", type: "custom", custom: { name: "f", input: "x" } }], "SENTINEL-TEXT"],
+      # The gem passes over a custom tool call without reading its custom.
+      "a custom tool call whose custom is a string" =>
+        [:tool_calls, [{ id: "call_1", type: "custom", custom: "x" }], "SENTINEL-TEXT"],
+      "a custom tool call with no custom" => [:tool_calls, [{ id: "call_1", type: "custom" }], "SENTINEL-TEXT"],
+      "a custom tool call whose custom is null" =>
+        [:tool_calls, [{ id: "call_1", type: "custom", custom: nil }], "SENTINEL-TEXT"],
       "several choices, using the first" =>
         [completion([choice(assistant), choice(assistant(content: "second"))]), FakeOpenAI::JSON_TYPE, "SENTINEL-TEXT"],
       "Unicode text" => [completion([choice(assistant(content: "café ✓ 😀"))]), FakeOpenAI::JSON_TYPE, "café ✓ 😀"]
@@ -489,6 +499,17 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
     expect { client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10) }
       .to raise_error(NoMethodError, /planted_transport_bug/)
+  end
+
+  it "lets a TypeError from the transport surface as itself" do
+    buggy = Object.new
+    def buggy.call(_request, step:) = step + 1
+
+    client = Quaack::Driver::LLM::Client.new(api_key: "fake-key", model: FakeOpenAI::MODEL,
+                                             settings: FakeOpenAI.settings, burndown: burndown, transport: buggy)
+
+    expect { client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10) }
+      .to raise_error(TypeError, /no implicit conversion of Integer into String/)
   end
 
   describe "the credentials" do
