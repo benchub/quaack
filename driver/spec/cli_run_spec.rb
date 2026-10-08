@@ -1320,6 +1320,25 @@ RSpec.describe "quaack run" do
         expect(stdout.string + stderr.string).not_to include("SENTINEL")
       end
 
+      # Task 20261007-54: a gateway's body can echo the key, the URL, or
+      # anything else, so only its error message prints, keys scrubbed.
+      it "prints only a gateway's error message, with no key, body, or URL" do
+        gateway = "https://gateway.example.test/anthropic?key=SENTINEL-URL-KEY"
+        write_config(JSON.generate("jump_command" => "echo jump-1",
+                                   "llm" => { "api_key_env" => "QUAACK_SPEC_KEY", "base_url" => gateway }))
+        body = { error: { message: "no route for SENTINEL-KEY at #{gateway}" }, echoed: "SENTINEL-BODY" }
+        fake.error_body("operator-rewrites", status: 400, body: body)
+        status = without_anthropic_credentials("QUAACK_SPEC_KEY" => "SENTINEL-KEY") do
+          with_env(overrides) { cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out]) }
+        end
+
+        expect(status).to eq(1)
+        expect(errors).to include("quaack run failed: llm_bad_request: the API answered 400: no route for [key] at " \
+                                  "https://gateway.example.test/anthropic?key=[key] [step operator-rewrites")
+        expect(stdout.string + stderr.string).not_to include("SENTINEL")
+        expect(stdout.string + stderr.string).not_to include("/v1/messages")
+      end
+
       it "fails the same way for openai_compatible when the variable api_key_env names is unset" do
         block = { "provider" => "openai_compatible", "model" => "m", "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }
         write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
