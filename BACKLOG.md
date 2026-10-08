@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
 - 20260924-26 (statistics: column_statistics_hidden, UTF-8, non-comma array delimiters skipped).
 - 20260924-28 (literals: cast placeholders get statistics values; statistics records column_types).
+- 20260924-3 (intake: orphan sweep, plan_statement_mismatch; qualify: plan_table_mismatch).
 
 ## How this file works.
 
@@ -263,18 +264,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260924-2. Pin hidden_differences? for every row in a tie group. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-3. Intake loose ends.
-
-Still open from the reviews of 20260922-13:
-- **Orphaned partial runs.** SIGKILL, an OOM kill, or SIGXFSZ during intake can leave a 0700 run directory holding production literals, and print no run ID. Tiny signal windows around `Store.create` and after `done` do the same. Add a sweeper, such as `quaacks teardown --orphans`, or have intake sweep old runs with no finished marker.
-- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type.
-
-- **Depends on:** 20260922-13.
-- **Came from:** Both reviews of 20260922-13.
-- **Design:** input.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-08):** Intake sweeps old orphans on its own: each `quaacks start` deletes run directories older than about a day that never finished intake. Intake also refuses a plan whose statement type differs from the query's, or whose tables differ from the query's in either direction.
-- **Status:** todo
+### 20260924-3. Intake loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
 
@@ -2386,4 +2376,13 @@ The review of 20260924-28 found these minor issues:
 - **Depends on:** 20260924-28.
 - **Came from:** The review of 20260924-28, 2026-10-08.
 - **Design:** literals.
+- **Status:** todo
+
+### 20261008-37. Plan table check: RLS policies that read other tables.
+
+The review of 20260924-3 found this. A table whose RLS policy queries another table, such as a membership lookup for multi-tenancy, gets that table's scan added to the plan, so qualify refuses it as `plan_table_mismatch`. That refusal is wrong. List RLS policies that reference other tables as unsupported in v1 in DESIGN.md, or refuse them earlier with a clearer rule.
+
+- **Depends on:** 20260924-3.
+- **Came from:** The review of 20260924-3, 2026-10-08.
+- **Design:** input.
 - **Status:** todo

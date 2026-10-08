@@ -7759,3 +7759,17 @@ Still open from the build and reviews of 20260922-21:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-28 (commit a6c46854). Review had no blocking findings; its minors went to 20261008-36.
+
+### 20260924-3. Intake loose ends.
+
+Still open from the reviews of 20260922-13:
+- **Orphaned partial runs.** SIGKILL, an OOM kill, or SIGXFSZ during intake can leave a 0700 run directory holding production literals, and print no run ID. Tiny signal windows around `Store.create` and after `done` do the same. Add a sweeper, such as `quaacks teardown --orphans`, or have intake sweep old runs with no finished marker.
+- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type.
+
+- **Depends on:** 20260922-13.
+- **Came from:** Both reviews of 20260922-13.
+- **Design:** input.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-08):** Intake sweeps old orphans on its own: each `quaacks start` deletes run directories older than about a day that never finished intake. Intake also refuses a plan whose statement type differs from the query's, or whose tables differ from the query's in either direction.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-3 (commit 0996366c). Review had no blocking findings. The table check runs in qualify, since intake can't see the catalog. The RLS minor went to 20261008-37.
