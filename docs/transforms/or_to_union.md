@@ -16,6 +16,7 @@ It leaves a query alone when:
 - Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column or a bare `*`, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
 - A select-list entry with no `AS` has a column in it but isn't a column, a function call, or an operator, such as a cast, a `COALESCE`, or a `CASE` over a column. A cast takes its name from its column, which the `UNION` renames, so the rule leaves all of these alone.
 - It uses a column of a type `UNION` can't compare, such as `json`.
+- A `FROM` table has no key the catalog proves: a unique index, of one column or several, with no predicate and no expression, whose columns are all `NOT NULL` and of types `UNION` compares. A key with a nullable column doesn't count, even under `NULLS NOT DISTINCT`.
 - An arm has a `LIKE` or `ILIKE` and the database has a column, domain, or range with a nondeterministic collation, or the `LIKE` names a collation with `COLLATE`. `ILIKE` raises on a nondeterministic collation, and so does `LIKE` before Postgres 18, only as it reads a row.
 - An arm has a `LIKE` or `ILIKE` whose constant pattern has a backslash in it, and `standard_conforming_strings` is off on the racetrack session. The server then reads the backslashes otherwise than QUAACK's parser does. The rule reads that setting on the racetrack session only. It doesn't check production's, and nothing records it. Unsupported in v1: QUAACK reads every query as `standard_conforming_strings = on` reads it.
 - An arm of the `OR`, its subqueries included, has something that can raise an error on some rows: a cast, a function call, or an operator other than a comparison (such as `/` or `%`) over a column, an index into a column, or a subquery used as a value. One with no column in it, such as `'10'::int`, is fine. So is a `LIKE` or `ILIKE` whose pattern is a parameter, or a string constant that doesn't end in the escape character, `\`. A column pattern may end in it, and Postgres raises on that only when it reads a row, so a column pattern keeps the `OR` from splitting, and so do `NULL` and `ESCAPE`.
@@ -30,7 +31,9 @@ Arms with no subquery that read the same tables stay together in one query of th
 
 ## What it rests on.
 
-A unique, not-null key of every `FROM` table, one column each, so `UNION` removes exactly the rows both arms return. The rule fires only when it can prove this, and it states the catalog facts it relies on as assumptions, which assumption-check checks again like anyone else's.
+A unique key of every `FROM` table, of one column or several, each not null, so `UNION` removes exactly the rows both arms return. The rule fires only when it can prove this, and it states the catalog facts it relies on as assumptions, which assumption-check checks again like anyone else's.
+
+A key of several columns works like one of one column: each arm selects every column of it, so two rows of the join that differ in any of them stay apart, and the key's unique index must compare each column as the column's own `=` does. Every column must be `NOT NULL`, since `UNION` treats two `NULL`s as the same, and two rows of a unique index can both have `NULL` in a column. Where a table has more than one key, the rule takes a key of one column if there is one, the first in the table's order, and otherwise the key of the fewest columns, then the index made first. For a key `(a_id, n)` it states: `public.pair (a_id, n)` is unique; `public.pair.a_id` and `public.pair.n` are not null.
 
 Here it states: `public.users (id)` is unique; `public.users.id` is not null.
 

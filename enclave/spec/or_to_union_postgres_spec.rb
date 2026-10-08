@@ -76,7 +76,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         CREATE UNIQUE INDEX nndkey_id ON public.nndkey (id) NULLS NOT DISTINCT;
         CREATE TABLE public.jsonkey (id jsonb PRIMARY KEY, a_id int);
         CREATE TABLE public."my s" (id int PRIMARY KEY, a_id int);
-        CREATE TABLE public.pair (a_id int, n int, PRIMARY KEY (a_id, n));
         CREATE SCHEMA other;
         CREATE TABLE other.a (id int PRIMARY KEY, title text, loose int);
         INSERT INTO public.a VALUES (1, 'one', '{}', 'a', 1), (2, 'two', '{}', 'b', 1), (3, 'same', '{}', NULL, 3),
@@ -89,7 +88,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         INSERT INTO public.nullkey VALUES (NULL, 1), (NULL, 1), (2, 2);
         INSERT INTO public.jsonkey VALUES ('1', 1);
         INSERT INTO public."my s" VALUES (1, 1);
-        INSERT INTO public.pair VALUES (1, 1), (1, 2);
       SQL
     end
 
@@ -317,8 +315,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         "SELECT a.id FROM public.a JOIN public.nullkey s ON s.a_id = a.id WHERE s.id IS NULL OR a.loose = 3",
       "a table's only unique key is NULLS NOT DISTINCT, but nullable" =>
         "SELECT a.id FROM public.a JOIN public.nndkey s ON s.a_id = a.id WHERE s.id IS NULL OR a.loose = 3",
-      "a table's only key has two columns" =>
-        "SELECT a.id FROM public.a JOIN public.pair s ON s.a_id = a.id WHERE s.n = 1 OR a.loose = 3",
       "a table's only key is of a type the rule doesn't know UNION compares" =>
         "SELECT a.id FROM public.a JOIN public.jsonkey s ON s.a_id = a.id WHERE s.a_id = 1 OR a.loose = 3",
       "an assumption can't name a table" =>
@@ -400,6 +396,106 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         expect([conn.exec("SELECT a.id #{from} WHERE #{arm} OR a.loose = 1").ntuples, conn.exec(union).ntuples])
           .to eq([3, 2])
       end
+    end
+  end
+
+  # Tables whose only keys have several columns (task 20261008-6). Each
+  # joins to a, whose row 1 has loose 1. pair's rows (1, 1) and (1, 2)
+  # both join to a's row 1 and give the same select list, so only a UNION
+  # that carries the whole key keeps them apart. pair's row (3, 5) has a
+  # NULL note.
+  context "with tables whose keys have several columns" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.a (id int PRIMARY KEY, loose int NOT NULL);
+        CREATE TABLE public.pair (a_id int, n int, note text, PRIMARY KEY (a_id, n));
+        CREATE TABLE public.triple (a_id int NOT NULL, n int NOT NULL, m int NOT NULL, x int NOT NULL,
+          UNIQUE (a_id, n, m), UNIQUE (a_id, x));
+        CREATE TABLE public.single (id int NOT NULL UNIQUE, a_id int, n int, PRIMARY KEY (a_id, n));
+        CREATE TABLE public.pairnull (a_id int NOT NULL, n int, UNIQUE (a_id, n));
+        CREATE TABLE public.pairnnd (a_id int NOT NULL, n int, UNIQUE NULLS NOT DISTINCT (a_id, n));
+        CREATE TABLE public.pairjson (a_id int, d jsonb, PRIMARY KEY (a_id, d));
+        CREATE TABLE public.pairpartial (a_id int NOT NULL, n int NOT NULL);
+        CREATE UNIQUE INDEX pairpartial_key ON public.pairpartial (a_id, n) WHERE n > 0;
+        INSERT INTO public.a VALUES (1, 1), (2, 2), (3, 3);
+        INSERT INTO public.pair VALUES (1, 1, 'x'), (1, 2, 'x'), (2, 1, 'y'), (3, 5, NULL);
+        INSERT INTO public.triple VALUES (1, 1, 1, 1), (1, 1, 2, 2), (2, 1, 1, 1);
+        INSERT INTO public.single VALUES (1, 1, 1), (2, 1, 2), (3, 2, 1);
+        INSERT INTO public.pairnull VALUES (1, NULL), (1, NULL), (2, 1);
+        INSERT INTO public.pairjson VALUES (1, '1'), (1, '2');
+        INSERT INTO public.pairpartial VALUES (1, 1), (1, 2);
+      SQL
+    end
+
+    let(:sql) { "SELECT a.id, s.note FROM public.a JOIN public.pair s ON s.a_id = a.id WHERE s.n = 1 OR a.loose = 1" }
+
+    it "carries every column of the key through each arm, and keeps rows that differ only in the key" do
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT arms_1.id_1 AS id, arms_1.note_1 AS note FROM " \
+         "(SELECT a.id AS id_1, s.note AS note_1, s.a_id AS a_id_1, s.n AS n_1 " \
+         "FROM public.a JOIN public.pair s ON s.a_id = a.id WHERE s.n = 1 " \
+         "UNION SELECT a.id AS id_1, s.note AS note_1, s.a_id AS a_id_1, s.n AS n_1 " \
+         "FROM public.a JOIN public.pair s ON s.a_id = a.id WHERE a.loose = 1) arms_1"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([%w[1 x], %w[1 x], %w[2 y]])
+    end
+
+    it "states the whole key unique and each of its columns not null" do
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "unique", "table" => "public.a", "columns" => ["id"] },
+          { "kind" => "not_null", "table" => "public.a", "column" => "id" },
+          { "kind" => "unique", "table" => "public.pair", "columns" => %w[a_id n] },
+          { "kind" => "not_null", "table" => "public.pair", "column" => "a_id" },
+          { "kind" => "not_null", "table" => "public.pair", "column" => "n" }]]
+      )
+    end
+
+    it "would be wrong carrying only part of the key: the UNION merges rows the original returns twice" do
+      from = "FROM public.a JOIN public.pair s ON s.a_id = a.id"
+      partial = "SELECT u.x FROM (SELECT a.id AS x, s.a_id AS y #{from} WHERE s.n = 1 " \
+                "UNION SELECT a.id AS x, s.a_id AS y #{from} WHERE a.loose = 1) u"
+
+      expect([conn.exec(sql).ntuples, conn.exec(partial).ntuples]).to eq([3, 2])
+    end
+
+    it "keeps a row once when one arm is NULL and the other true, and drops it when neither is true" do
+      nulls = "SELECT a.id FROM public.a JOIN public.pair s ON s.a_id = a.id WHERE s.note <> 'x' OR a.loose = 1"
+
+      expect(same_rows(nulls, rewritten(nulls))).to eq([["1"], ["1"], ["2"]])
+    end
+
+    it "prefers a key of fewer columns, and a one-column key over any other" do
+      triple = "SELECT a.id FROM public.a JOIN public.triple s ON s.a_id = a.id WHERE s.n = 1 OR a.loose = 1"
+      single = "SELECT a.id FROM public.a JOIN public.single s ON s.a_id = a.id WHERE s.n = 1 OR a.loose = 1"
+
+      expect(rewritten(triple).first).to include("SELECT a.id AS id_1, s.a_id AS a_id_1, s.x AS x_1 FROM")
+      expect(same_rows(triple, rewritten(triple))).to eq([["1"], ["1"], ["2"]])
+      expect(rewritten(single).first).to include("SELECT a.id AS id_1, s.id AS id_2 FROM")
+      expect(same_rows(single, rewritten(single))).to eq([["1"], ["1"], ["2"]])
+    end
+
+    {
+      "a column of the only key is nullable" => "pairnull",
+      "a column of the only key is nullable, though the key is NULLS NOT DISTINCT" => "pairnnd",
+      "a column of the only key is of a type the rule doesn't know UNION compares" => "pairjson",
+      "the only key's index is partial" => "pairpartial"
+    }.each do |why, table|
+      it "doesn't fire when #{why}" do
+        expect(rewritten(sql).size).to eq(1)
+        expect(rewritten("SELECT a.id FROM public.a JOIN public.#{table} s ON s.a_id = a.id " \
+                         "WHERE s.a_id = 2 OR a.loose = 1")).to eq([])
+      end
+    end
+
+    it "would be wrong on a nullable key: a UNION on it merges rows the original returns twice" do
+      from = "FROM public.a JOIN public.pairnull s ON s.a_id = a.id"
+      union = "SELECT u.x FROM (SELECT a.id AS x, s.a_id AS y, s.n AS z #{from} WHERE s.n IS NULL " \
+              "UNION SELECT a.id AS x, s.a_id AS y, s.n AS z #{from} WHERE a.loose = 1) u"
+
+      expect([conn.exec("SELECT a.id #{from} WHERE s.n IS NULL OR a.loose = 1").ntuples, conn.exec(union).ntuples])
+        .to eq([2, 1])
     end
   end
 
