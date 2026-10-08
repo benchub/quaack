@@ -64,6 +64,15 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(builder.pools).to eq({})
   end
 
+  # Task 20260926-56: PredicateAtoms refuses to replace it with its own Error.
+  it "reports a JOIN ... USING column untested, since it can't be replaced by TRUE" do
+    builder, result = guard("SELECT o.id FROM fx.orders o JOIN fx.customers c USING (id) WHERE o.status = 'open'")
+    expect(builder.atoms.map(&:replaceable)).to eq([true, false]).or eq([false, true])
+    using = builder.atoms.index { !it.replaceable }
+    expect(result.untested_atoms).to include(using)
+    expect(result.untested).to include(builder.atoms[using].shape)
+  end
+
   it "retries a vacuous atom three times, then reports it untested by its redacted shape" do
     # No row can fail either kind test, since the CHECKs forbid it.
     sql = "SELECT o.id FROM fx.orders o WHERE o.kind = 'SENTINEL_9c' AND o.status = 'open'"

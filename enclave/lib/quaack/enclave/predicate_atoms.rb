@@ -21,8 +21,8 @@ module Quaack
     # unqualified relation here is taken to be a CTE, with unknown columns.
     # column_names gives each plain table's columns, keyed by TableName, so
     # an unqualified column can find its table. A plain table missing from
-    # it raises KeyError. Bad input raises ArgumentError. No message quotes
-    # the SQL. The result is in query order, and the same input always gives
+    # it raises KeyError. Anything but a pg_query parse raises Error, rule
+    # not_a_query_parse. No message quotes the SQL. The result is in query order, and the same input always gives
     # the same result.
     #
     # Where atoms come from. Everywhere: WHERE, every JOIN ... ON, HAVING,
@@ -83,8 +83,9 @@ module Quaack
     # simple CASE becomes a searched one, CASE WHEN x = v ..., so one WHEN
     # can be TRUE. A USING column can't be replaced, because USING also
     # merges the two columns into one, so replaceable is false and with_true
-    # raises ArgumentError. The deparsed SQL must parse back to the changed
-    # tree, or with_true raises Deparse::Error (rule deparse_mismatch).
+    # raises Error, rule using_column_unreplaceable. The deparsed SQL must
+    # parse back to the changed tree, or with_true raises Deparse::Error
+    # (rule deparse_mismatch).
     # Deparse::Parentheses puts back the parentheses the deparser leaves
     # out. A construct it still deparses differently, such as 't'::boolean,
     # is refused that way for every atom but those that replace it whole.
@@ -104,6 +105,19 @@ module Quaack
       end
       Column = Data.define(:table, :refname, :name)
 
+      # What PredicateAtoms raises for bad input, with the rule it broke, for
+      # ErrorFilter's error line. No message quotes the SQL.
+      class Error < StandardError
+        attr_reader :rule
+
+        def initialize(rule, message)
+          @rule = rule
+          super(message)
+        end
+      end
+
+      USING_UNREPLACEABLE = "a JOIN ... USING column can't be replaced by TRUE"
+
       module_function
 
       def extract(parse, column_names:)
@@ -112,7 +126,7 @@ module Quaack
       end
 
       def select_tree(parse)
-        raise ArgumentError, "expected a pg_query parse result" unless parse.is_a?(PgQuery::ParserResult)
+        raise Error.new("not_a_query_parse", "expected a pg_query parse result") unless parse.is_a?(PgQuery::ParserResult)
 
         SupportedSql.check!(parse)
         parse.tree
@@ -121,7 +135,7 @@ module Quaack
       # The query with this one atom replaced by TRUE, deparsed. The parse
       # must be the one the atom came from, and it isn't changed.
       def with_true(parse, atom)
-        raise ArgumentError, "a JOIN ... USING column can't be replaced by TRUE" unless atom.replaceable
+        raise Error.new("using_column_unreplaceable", USING_UNREPLACEABLE) unless atom.replaceable
 
         tree = Tree.copy(parse.tree)
         case_expr = Tree.simple_case(tree, atom.path)
