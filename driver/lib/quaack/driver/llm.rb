@@ -92,7 +92,6 @@ module Quaack
         "command_template" => [->(v) { command_template?(v) },
                                "must be an argv array with {prompt_file} and {model} placeholders"],
         "timeout_seconds" => [->(v) { v.is_a?(Numeric) && v.positive? && v.finite? }, "must be a positive number"],
-        # The cap of 10 is pending the user's confirmation.
         "max_retries" => [->(v) { v.is_a?(Integer) && v.between?(0, 10) }, "must be a whole number from 0 to 10"]
       }.freeze
       KEYS = CHECKS.keys.freeze
