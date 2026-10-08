@@ -6,25 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261006-19 (one stored plan per measurement).
-- 20260926-56 (the shared parse helper, the error rules, and NameQualifier with the stored search_path).
-- 20261007-3 (statistics hardening).
-- 20261001-4 (refused candidates never best in the index payload).
-- 20261007-9 (racetrack catalog names qualified; denormalized-equal uses each type's own `=`).
-- 20261007-22 (an unreachable rescue removed).
-- 20261007-30 (HypoPG in the quaack schema; stored search_path without unusable schemas).
-- 20261002-3 (fresh aliases avoid every table and alias name).
-- 20261007-26 (outbound statistics per-column counts).
-- 20261007-34 (index-test and counterexample-round check volatility on the stored path).
-- 20261007-31 (arena catalog names qualified; the allowlist is empty).
-- 20261002-4 (composite keys; unique checks compare opclass and collation).
-- 20261007-39 (same-type arrays, ranges, and composites compare in denormalized_equal).
-- 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
-- 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
-- 20261007-45 (Equality refuses when an exact-type `=` exists outside the family).
-- 20261007-46 (or_to_union refuses LIKE patterns that can raise).
-- 20261007-43 (unique checks compare with the column's own type's `=`; fixes citext with text classes).
-- 20261003-22, item 1 (`run_server_unspecified`).
+- None. The last batch closed at 0.1.22 on 2026-10-08.
 
 ## How this file works.
 
