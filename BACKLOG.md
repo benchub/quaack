@@ -1308,14 +1308,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20260929-2. Several LLM providers in one run. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-13. The `llms` list and its config.
-
-Parse and check `llms` and `llm_routing` in `~/.quaack/driver.json`, as DESIGN.md's "Several LLM providers" says: names, per-entry keys with their position, the list's size, both `llm` and `llms`, and `llm_routing` without `llms`. Keep `llm` working as a one-entry list, and no block as Anthropic named `anthropic`. Add `QUAACK_LLM`, and refuse `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` with `llms`. Build every entry's client before touching the jump server, so a bad entry or startup `llm_auth` stops the run, naming the entry. Check `llm_routing`'s keys too (modes, pinned names, `fan_out` only on its three steps, `counterexample_pairing`'s values, and `require_different` with fewer than two providers), even though nothing acts on them yet. Routing is "always the first entry," so behavior doesn't change yet. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
-
-- **Depends on:** 20260928-4.
-- **Came from:** The split of 20260929-2.
-- **Design:** Where QUAACK runs, Several LLM providers.
-- **Status:** todo
+### 20261007-13. The `llms` list and its config. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-14. The router: sessions, failover, round-robin, and pinning.
 
@@ -2323,4 +2316,16 @@ From the reviews of 20261007-9.
 - **Depends on:** 20261007-9.
 - **Came from:** The reviews of 20261007-9, rounds one and two.
 - **Design:** trust boundary.
+- **Status:** todo
+
+### 20261007-33. The `llms` list: minors from 20261007-13.
+
+From the review of 20261007-13.
+1. `QUAACK_LLM` with a lone `llm` block refuses a name that isn't the block's, but no spec covers it (dropping `picked` from `one_provider` stays green). Its message says "different names from llms in ~/.quaack/driver.json" when the file has no `llms`. Add the spec and fix the wording.
+2. The Bedrock adapter's build-time messages hardcode `llm.aws_region` and `llm.aws_profile` (`bedrock_adapter.rb` ~48–55), so an `llms` entry is told to set the wrong key. Name `llms[i].aws_region` for an entry, and update the cli spec that locks the old wording in.
+3. Write the builder's choices into DESIGN.md's "Several LLM providers": positions count from 0 (`llms[0]`); `QUAACK_LLM` applies to a lone `llm` block by its provider name, including after a `QUAACK_LLM_PROVIDER` switch; a pinned step's pool is its pinned names in pinned order, less the entries `QUAACK_LLM` drops, and an empty one is a usage error; pinned names are checked against every entry; `"fan_out": false` is refused on the other steps too; and `"llm": null` beside `llms` counts as both.
+
+- **Depends on:** 20261007-13.
+- **Came from:** The review of 20261007-13.
+- **Design:** Several LLM providers.
 - **Status:** todo

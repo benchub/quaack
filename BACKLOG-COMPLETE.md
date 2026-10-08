@@ -6739,3 +6739,13 @@ From the review of 20260926-56. In `enclave/lib/quaack/enclave/castless_index.rb
 - **Design:** input.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. The IndexCandidate::Error rescue in `CastlessIndex.predicate` was unreachable: every candidate's predicate comes through the constructor's normalization, which already round-trips the exact text `parse_predicate` reads. It's removed; `Deparse::Error` stays. Enclave change (dead code only), unreleased until the next batch bump.
+
+### 20261007-13. The `llms` list and its config.
+
+Parse and check `llms` and `llm_routing` in `~/.quaack/driver.json`, as DESIGN.md's "Several LLM providers" says: names, per-entry keys with their position, the list's size, both `llm` and `llms`, and `llm_routing` without `llms`. Keep `llm` working as a one-entry list, and no block as Anthropic named `anthropic`. Add `QUAACK_LLM`, and refuse `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` with `llms`. Build every entry's client before touching the jump server, so a bad entry or startup `llm_auth` stops the run, naming the entry. Check `llm_routing`'s keys too (modes, pinned names, `fan_out` only on its three steps, `counterexample_pairing`'s values, and `require_different` with fewer than two providers), even though nothing acts on them yet. Routing is "always the first entry," so behavior doesn't change yet. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20260928-4.
+- **Came from:** The split of 20260929-2.
+- **Design:** Where QUAACK runs, Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `LLM.providers` (`driver/lib/quaack/driver/llm/providers.rb`) parses and checks `llms` and `llm_routing` as DESIGN.md says; an `llm` block or no block is a one-entry list named after its provider, with its overrides unchanged; `QUAACK_LLM` picks entries, and the three old override variables are refused with `llms`. `quaack run` builds every entry's client before it touches the jump server, naming the entry in a failure, and routing is still the first entry only. The builder's choices, not yet in DESIGN.md: positions count from 0; `QUAACK_LLM` applies to a lone block by its provider name; a pinned step's pool is its pinned names in pinned order, less what `QUAACK_LLM` drops, and an empty pool is a usage error; `fan_out` is refused on other steps even when false. They're in 20261007-33.
