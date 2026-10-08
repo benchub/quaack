@@ -2039,14 +2039,7 @@ From the reviews and builder of 20261004-95.
 
 ### 20261006-23. Parallel suites: minors from 20261006-12. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-24. index-rank: cover a non-zero `combined` count with a real run.
-
-Set aside from 20261006-13. No realistic index-rank run in the specs gives a non-zero `combined` (the number of indexes in the best combination), so only a direct unit test of the count function covers it. Add a Postgres fixture where a combination of two indexes beats the best single index, and assert the step_counts line's `combined`.
-
-- **Depends on:** 20261006-13.
-- **Came from:** The builder and review of 20261004-1, then 20261006-13.
-- **Design:** index-rank, progress lines for `quaack run`.
-- **Status:** todo
+### 20261006-24. index-rank: cover a non-zero `combined` count with a real run. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-25. Orphan cancel: two test nits from 20261006-15. Done, see BACKLOG-COMPLETE.md.
 

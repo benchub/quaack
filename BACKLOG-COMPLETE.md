@@ -7183,3 +7183,13 @@ From the review of 20261007-45. `EXACT_SQL` looks only for an `=` taking exactly
 - **Design:** trust boundary, assumption checks.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. `Equality` refuses when any `=`, in any schema, matches the column types exactly in more argument positions than the family's `=` does, since Postgres keeps the candidates with the most exact matches first; so `=(pair, record)`, `=(varchar, text)`, and `=(mood, anyenum)` now refuse. Probes of 60 and 33 realistic type pairs with common extensions show nothing newly refused. Enclave change, unreleased until the next batch bump.
+
+### 20261006-24. index-rank: cover a non-zero `combined` count with a real run.
+
+Set aside from 20261006-13. No realistic index-rank run in the specs gives a non-zero `combined` (the number of indexes in the best combination), so only a direct unit test of the count function covers it. Add a Postgres fixture where a combination of two indexes beats the best single index, and assert the step_counts line's `combined`.
+
+- **Depends on:** 20261006-13.
+- **Came from:** The builder and review of 20261004-1, then 20261006-13.
+- **Design:** index-rank, progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. A real index-search run on a self-join of orders produces a three-index combination that beats the best single index, and the spec checks `combined: 3` in step_counts, the combination's DDLs, and no leaks. Test only; ten runs gave the same order, since index-rank breaks every tie on the DDL.
