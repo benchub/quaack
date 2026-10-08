@@ -140,7 +140,7 @@ module Quaack
         where = SetupCommand.where(@home, run, @stderr, "run") or return EX_USAGE
         sqls, router, timeout = prepare(rewrites, timeout) || (return usage_error(@problem))
 
-        teardown = Teardown.new(checked(where[:jump], timeout), run, @stderr)
+        teardown = Teardown.new(checked(where[:jump], timeout), run, @stderr, jump: where[:jump])
         drive(teardown, router, run, sqls, options)
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch, Teardown::DriverError => e
         @stderr.print "quaack run failed: #{Teardown.failure(e, teardown, run, **where)}\n"

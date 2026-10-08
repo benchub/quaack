@@ -410,6 +410,27 @@ RSpec.describe Quaack::Driver::Transport do
       expect([error.rule, error.signal]).to eq(%w[timeout KILL])
     end
 
+    # A run can end between the call's check that it's still running and
+    # the kill, before the waiter thread has reaped it. Then its group holds
+    # only a zombie, and on macOS signalling the group fails with EPERM,
+    # not ESRCH. The spawned child here stays a zombie until it's waited
+    # for, which makes that window last as long as the test needs.
+    it "signals a run that has ended but hasn't been reaped yet without raising" do
+      pid = Process.spawn("true", pgroup: true)
+      state = nil
+      50.times do
+        state = IO.popen(["ps", "-o", "stat=", "-p", pid.to_s], &:read).strip
+        break if state.start_with?("Z")
+
+        sleep 0.1
+      end
+      expect(state).to start_with("Z"), "the child never became a zombie, so this proves nothing"
+
+      expect(%w[TERM KILL].map { Quaack::Driver::Transport::Child.signal(pid, it) }).to eq([nil, nil])
+    ensure
+      Process.wait(pid) if pid
+    end
+
     it "times out a run that closes its stdout and keeps going" do
       step = local.new(command: EnclaveCommands.raw("STDOUT.reopen(File::NULL); sleep 30"), timeout: 0.5)
       error = nil

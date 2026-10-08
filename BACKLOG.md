@@ -6,7 +6,10 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- None. The last batch closed at 0.1.23 on 2026-10-08.
+- 20261007-52 (or_to_union: parameter LIKE patterns, and LIKE edge cases refused).
+- 20261008-2 (not_in_to_not_exists: row-valued NOT IN).
+- 20261008-11 (or_to_union: LIKE minors, collation check skips dropped columns).
+- 20261007-44 (distinct_join_to_exists: subqueries in conditions on the kept table).
 
 ## How this file works.
 
@@ -981,15 +984,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-31. Minimax and operator rewrite loose ends. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260926-32. Measurement test gaps.
-
-- No real-Postgres test produces an unstable literal. Making block counts move between runs deterministically, inside a read-only transaction, was hard, so only the `summarize` unit test covers that path.
-
-- **Depends on:** 20260926-27, 20260926-31.
-- **Came from:** Their build.
-- **Design:** baseline.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260926-32. Measurement test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
 
@@ -1431,22 +1426,7 @@ From the build of 20261002-9:
 
 ### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-22. `quaack setup`: loose ends.
-
-Minor findings from the build and review of 20260928-1:
-
-- **No run-server flags and no `run_server_command` fails as `usage`.** `quaacks run-server` refuses with `usage` (`run_server.rb:52`), so the operator sees `quaack setup failed: usage` and can't tell why. Under `quaack run` without `--keep`, the run, intake included, is then torn down. Give it its own rule, such as `run_server_unspecified`, add it to README's "Common rules" table, and say in README run-server that the flags or the config are required.
-- **Flags given after run-server has passed are silently ignored.** If the database given was wrong but passed the check, the only fix is a new run. Warn when flags are given and run-server is skipped.
-- **A setup failure under `quaack run` tears the run down, but under `quaack setup` it's kept.** Pick one behavior, probably keep, since nothing expensive has run yet and the operator may just need different flags.
-- **The driver's unit specs don't cover skipping a late step.** Only `spec/setup_postgres_spec.rb` catches a broken skip of `racetrack-setup`. Add a unit case.
-
-- **Depends on:** 20260928-1.
-- **Came from:** The build and review of 20260928-1, 2026-10-03.
-- **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
-- **Landed (2026-10-08), items 2 and 4:** after one review with no blocking findings. When the run server is already checked, `quaack setup` (and `quaack run`, whether or not it runs setup) prints a line naming the run-server flags it ignores, never their values; a unit case covers skipping racetrack-setup. Still open: item 1, which needs an enclave rule (`run_server_unspecified` is decided on the jump server, so it goes in the batch), and item 3, which changes the teardown policy and needs the user: keep the run after a setup failure under `quaack run` (nothing expensive has run, and the operator may only need different flags), or tear it down (a permanent failure such as `volatile_function` leaves no run server or data copy behind).
-- **Landed (2026-10-08), item 1:** after one review with no blocking findings. With run-server flags missing and no `run_server_command`, the enclave refuses as `run_server_unspecified` (exit 70, no value in the line), and the driver adds a fixed note saying what to give. Still open: item 3, for the user. When it lands, also: under `quaack run` without `--keep` the run is torn down, so the note's "give the flags" fix needs a new `quaack start` that the line doesn't say (append `Teardown.next_step` for this rule, or keep the run); and DESIGN.md (~285) says a failed setup step prints only its rule, but rules with a fixed note print `<rule>: <note>`.
-- **Decided by the user (2026-10-08):** item 3: keep the run after a setup failure under `quaack run`, for debugging, and put the teardown command in the error.
-- **Status:** todo
+### 20261003-22. `quaack setup`: loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-28. `shared_scan_cte`: widenings.
 
@@ -1877,6 +1857,7 @@ From the builder and review of 20261004-80.
 - **Depends on:** 20261004-80.
 - **Came from:** The builder and review of 20261004-80.
 - **Design:** report, burndown.
+- **Landed so far:** item 1, 2026-10-08 (task/20261004-89, commit 835eb325; review clean). Items 2 and 3 wait on a user decision, since DESIGN.md keeps both cells "not recorded" on purpose. Item 2 would add a `sources` list to each `indexes` entry in the payload, checked on the way out, and the user would also choose what the cell says for a rewrite with new indexes. Item 3 would record index-dedupe's and index-test's drops by generator in the burndown, which changes its shape.
 - **Status:** todo
 
 ### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values. Done, see BACKLOG-COMPLETE.md.
@@ -2119,14 +2100,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 
 ### 20261007-43. Unique keys: minors from 20261002-4. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table.
-
-From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept table. Allowing it needs the column resolver to understand subquery scopes, so inner columns aren't resolved against outer tables. Must stay sound; refuse anything unclear.
-
-- **Depends on:** 20261002-4.
-- **Came from:** The builder of 20261002-4.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-45. denormalized_equal: minors from 20261007-39. Done, see BACKLOG-COMPLETE.md.
 
@@ -2142,18 +2116,7 @@ From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept
 
 ### 20261007-51. Equality: refuse a half-exact `=` too. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns.
-
-From the builder and review of 20261007-46.
-1. **Needs the user:** an OR with a LIKE arm no longer splits, since its pattern is a parameter by the time the rule runs, and a parameter ending in a lone backslash raises only in the rewrite. Ask whether to accept that risk for parameter patterns (a one-line change) or keep refusing.
-2. With `standard_conforming_strings = off`, pg_query reads `'ab\\'` as two backslashes while the server reads one, so the parity rule misjudges it. Refuse cleanly, or list the setting as unsupported in v1.
-3. ILIKE on a column with a nondeterministic collation raises only when its arm runs (`b OR v ILIKE 'x'` returns rows; the arm alone raises). Refuse it, or note it as unsupported.
-
-- **Depends on:** 20261007-46.
-- **Came from:** The builder and review of 20261007-46.
-- **Design:** rewrite-rules.
-- **Decided by the user (2026-10-08):** item 1: allow parameter LIKE patterns in or_to_union, and document the behavior in `docs/transforms/or_to_union.md` and DESIGN.md: the rewrite raises where the original might not if the app passes a pattern ending in a lone backslash, since the original's other arm can skip the LIKE for a row and the UNION's branch can't. No caveat in the report itself. Items 2 and 3 stay as listed.
-- **Status:** todo
+### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
 
@@ -2202,28 +2165,16 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 
 ### 20261007-66. `max_retries`: pin the burndown count per attempt. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers.
+### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers. Done, see BACKLOG-COMPLETE.md.
 
-The user confirmed them all on 2026-10-08: failover-mode units don't move the round_robin cursor; a lone `llm` block keeps its first-round index ideas when the replacement round fails; a resumed run clears an earlier "marked down" for any provider it called; per-provider "planner ignored or couldn't try" stays "not recorded"; and `max_retries` takes 0 to 10. Remove each marker from DESIGN.md and the matching code comments, and leave the text otherwise as it is.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-08.
-- **Design:** Several LLM providers, LLM client.
-- **Status:** todo
-
-### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`.
-
-One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to row-valued `NOT IN` (`(a, b) NOT IN (SELECT x, y ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-38.
-- **Came from:** The split of 20261007-38, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-3. `not_in_to_not_exists`: support a subquery that is a set operation.
 
 One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to a subquery that is a set operation (`NOT IN (SELECT ... UNION SELECT ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
 
+
+Also, from the review of 20261008-2: (a) a row comparison on a type whose `=` isn't a btree operator (such as `box`) errors in Postgres but the NOT EXISTS rewrite returns rows, so refuse a row-valued NOT IN unless every pair's `=` is a btree operator; (b) add a test with a second shadowing FROM item that isn't a table (`public.grants u, generate_series(1, 2) g` tested by `(u.id, g.x)`).
 - **Depends on:** 20261007-38.
 - **Came from:** The split of 20261007-38, 2026-10-08.
 - **Design:** rewrite-rules.
@@ -2281,4 +2232,71 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 - **Depends on:** 20261007-47.
 - **Came from:** The split of 20261007-47, 2026-10-08.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-10. Deflake `transport_spec.rb:630` (EPERM from Process.kill). Done, see BACKLOG-COMPLETE.md.
+
+### 20261008-11. or_to_union LIKE checks: minors from 20261007-52. Done, see BACKLOG-COMPLETE.md.
+
+### 20261008-12. Setup failures: minors from 20261003-22 item 3. Done, see BACKLOG-COMPLETE.md.
+
+### 20261008-13. Setup failure messages: minors from 20261008-12.
+
+The review of 20261008-12 found these minor issues.
+
+1. `driver/spec/teardown_spec.rb` hard-codes the 11 setup subcommands. A new step added to `Setup::STEPS` but left out of that list would stay green. Assert that the list equals `Setup::STEPS.map(&:subcommand)`, or loop over `STEPS` directly.
+2. In README.md, the `driver_error` row at about line 771 still says the message "gives the teardown command to run on the jump server". Under `quaack run`, it now gives `ssh <jump> quaacks teardown ...` to run from the laptop.
+3. The printed teardown command shows the jump host as is: no shell quoting, no `--`, and none of the ssh options the transport adds. Quote it, or say in the docs that it's the plain form. The jump host comes from the operator's own config, so the risk is low.
+4. A DESIGN.md sentence about a signal during setup ("keeps the run the same way, as `quaack setup` does: it prints ...") reads as if `quaack setup` prints the line. Only `quaack run` does.
+
+- **Depends on:** 20261008-12.
+- **Came from:** The review of 20261008-12, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261008-14. `Child.signal` fallback: untested branches from 20261008-10.
+
+The review of 20261008-10 found that two branches of the EPERM fallback in `driver/lib/quaack/driver/transport/child.rb` have no test:
+
+1. The fallback's own `Process.kill(name, pid)` still raises EPERM for a live process the driver can't signal. Replacing it with `nil` keeps every test green. A test needs a process the driver can't signal. If there's no clean way to get one, a test that fakes `Process.kill` at the edge, so the group signal and the pid signal both raise EPERM, is enough.
+2. The ESRCH rescue on the second kill, for a child reaped between the two kills.
+
+- **Depends on:** 20261008-10.
+- **Came from:** The review of 20261008-10, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261008-15. `distinct_join_to_exists` subqueries: minors from 20261007-44.
+
+The review of 20261007-44 found these minor issues:
+
+1. Four mutations of the new resolver in `columns.rb` survive. None changes the result for valid SQL, but each leaves a line untested:
+   - dropping `own?` in `inner_qualified`;
+   - reversing the scope order;
+   - dropping `scopes.first.any?` in `inner_star`;
+   - removing `select.limit_offset` from the `from` check (no test has a subquery in `OFFSET`, though the docs say it's refused).
+
+   Add tests that pin each line, or remove the ones that can't matter.
+2. The docs page says "a column it reads from outside itself must be the kept table's". It doesn't say that the kept table's `a.*` inside a subquery is refused too, or that `ONLY` and column aliases in the subquery's `FROM` are refused.
+3. `EXISTS (SELECT 1 FROM public.comments c WHERE ROW(c.id, a.id) IS NOT NULL)` is refused even though it only reads the kept table. It's a missed rewrite, not a correctness problem.
+
+- **Depends on:** 20261007-44.
+- **Came from:** The review of 20261007-44, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-16. Operator messages: minors from 20261007-29.
+
+The review of 20261007-29 found these minor issues:
+
+1. **The scan allows dynamic raises by file, not by site.** `enclave/spec/error_rules_spec.rb` approves a whole file, so a new dynamic raise in an approved file goes unnoticed. For example, `r = "run_server_dyn" + "x"; fail!(r, ...)` in `run_server_check.rb` passed. Track dynamic raise sites individually (by method, or by a count per file), so a new one fails until someone reviews it.
+2. **Leftover periods.** `INTERNAL_NOTE` still ends in ".", though every other note dropped its final period. When only teardown is left and the rule is INTERNAL, `Teardown.failure` prints "...and the step.. To go on, ...".
+3. **Capitalization.** New notes start with a capital after "rule: ", but the older ones start lowercase. Pick one style.
+4. **Rule classes.** Two rules could move out of INTERNAL:
+   - `index_build_orphan_running`: after a driver timeout kill, the operator can wait and then resume, so it could get a note.
+   - `plan_gate_not_comparable`: arguably a v1 limit rather than a bug.
+
+- **Depends on:** 20261007-29.
+- **Came from:** The review of 20261007-29, 2026-10-08.
+- **Design:** Where QUAACK runs.
 - **Status:** todo

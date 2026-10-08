@@ -356,8 +356,7 @@ RSpec.describe Quaack::Driver::Provenance do
       expect(saved["providers"]).to eq([groq])
     end
 
-    # DESIGN.md, "Several LLM providers" (Provenance), pending the user's
-    # confirmation.
+    # DESIGN.md, "Several LLM providers" (Provenance).
     it "clears an earlier run's down for a provider this run asked without marking it down" do
       opus = { "name" => "opus", "provider" => "anthropic", "model" => "claude-opus-5-5" }
       provenance.providers!([groq, opus]).down!("groq" => "llm_rate_limited", "opus" => "llm_auth").save

@@ -66,8 +66,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
   it "has a name and a description that are QUAACK's own constants" do
     expect([rule.name, rule.description]).to eq(
       ["not_in_to_not_exists",
-       "A NOT IN subquery whose tested column and selected column are both not null becomes a NOT EXISTS " \
-       "correlated on the two."]
+       "A NOT IN subquery whose tested columns and selected columns are all not null becomes a NOT EXISTS " \
+       "correlated on each pair."]
     )
   end
 
@@ -398,9 +398,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     "the query is a UNION" =>
       "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id FROM public.memberships) " \
       "UNION ALL SELECT groups.id FROM public.groups",
-    "the tested expression is a row" =>
-      "SELECT users.id FROM public.users WHERE (users.id, users.account_id) NOT IN " \
-      "(SELECT memberships.user_id, memberships.group_id FROM public.memberships)",
     "the tested column isn't qualified" =>
       "SELECT users.id FROM public.users WHERE id NOT IN (SELECT memberships.user_id FROM public.memberships)",
     "the tested expression isn't a column" =>
@@ -517,6 +514,158 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     it "doesn't fire when #{why}" do
       expect(rewritten(fires).size).to eq(1)
       expect(rewritten(sql)).to eq([])
+    end
+  end
+
+  # Each grant gives a user an account. The pairs (user_id, account_id) are
+  # (1, 1) twice, (4, 1), (2, 2), and (5, 1). Grant 2 has no
+  # loose_account_id, and grant 5 no loose_user_id.
+  context "with a row on the left" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.grants (id int PRIMARY KEY, user_id int NOT NULL, account_id int NOT NULL,
+                                    loose_user_id int, loose_account_id int);
+        INSERT INTO public.grants VALUES (1, 1, 1, 1, 1), (2, 4, 1, 4, NULL), (3, 2, 2, 2, 2), (4, 1, 1, 1, 1),
+                                         (5, 5, 1, NULL, 1);
+      SQL
+    end
+
+    let(:row) do
+      "SELECT users.id FROM public.users WHERE (users.id, users.account_id) NOT IN " \
+        "(SELECT grants.user_id, grants.account_id FROM public.grants WHERE grants.id < $1)"
+    end
+
+    it "correlates each column of the row with the column the subquery selects in its place" do
+      expect(rewritten(row)).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.grants WHERE grants.id < $1 " \
+         "AND users.id = grants.user_id AND users.account_id = grants.account_id)"]
+      )
+    end
+
+    it "returns the same rows with matches, a match on one column only, and an empty subquery" do
+      rewrites = rewritten(row)
+
+      expect(same_rows(row, rewrites, [99]).map(&:first)).to eq(%w[2 3 4])
+      expect(same_rows(row, rewrites, [5]).map(&:first)).to eq(%w[2 3 4 5])
+      expect(same_rows(row, rewrites, [0]).map(&:first)).to eq(%w[1 2 3 4 5])
+    end
+
+    it "states every column on both sides not null, pair by pair" do
+      expect(rule.rewrites(PgQuery.parse(row), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "not_null", "table" => "public.users", "column" => "id" },
+          { "kind" => "not_null", "table" => "public.grants", "column" => "user_id" },
+          { "kind" => "not_null", "table" => "public.users", "column" => "account_id" },
+          { "kind" => "not_null", "table" => "public.grants", "column" => "account_id" }]]
+      )
+    end
+
+    it "takes ROW(...), and a row of one column" do
+      explicit = row.sub("(users.id, users.account_id)", "ROW(users.id, users.account_id)")
+      single = "SELECT users.id FROM public.users WHERE ROW(users.id) NOT IN (SELECT grants.user_id FROM public.grants)"
+
+      expect(rewritten(single)).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.grants " \
+         "WHERE users.id = grants.user_id)"]
+      )
+      expect(same_rows(explicit, rewritten(explicit), [99]).map(&:first)).to eq(%w[2 3 4])
+      expect(same_rows(single, rewritten(single)).map(&:first)).to eq(%w[3])
+    end
+
+    it "takes an unqualified column in the subquery's WHERE, when no subquery table has an outer name" do
+      sql = "SELECT users.id FROM public.users WHERE (users.id, users.account_id) NOT IN " \
+            "(SELECT grants.user_id, grants.account_id FROM public.grants WHERE loose_user_id IS NOT NULL)"
+
+      expect(rewritten(sql)).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.grants WHERE " \
+         "loose_user_id IS NOT NULL AND users.id = grants.user_id AND users.account_id = grants.account_id)"]
+      )
+      expect(same_rows(sql, rewritten(sql)).map(&:first)).to eq(%w[2 3 4 5])
+    end
+
+    it "takes a row whose columns are different outer tables'" do
+      sql = "SELECT users.id FROM public.users, public.users other WHERE other.id = users.id AND " \
+            "(users.id, other.account_id) NOT IN (SELECT grants.user_id, grants.account_id FROM public.grants)"
+
+      expect(rewritten(sql)).to eq(
+        ["SELECT users.id FROM public.users, public.users other WHERE other.id = users.id AND NOT EXISTS " \
+         "(SELECT 1 FROM public.grants WHERE users.id = grants.user_id AND other.account_id = grants.account_id)"]
+      )
+      expect(same_rows(sql, rewritten(sql)).map(&:first)).to eq(%w[2 3 4])
+    end
+
+    it "gives a fresh alias to each subquery table under the name of a table the row reads" do
+      sql = "SELECT u.id FROM public.users u, public.grants g WHERE g.id = 1 AND (u.id, g.account_id) NOT IN " \
+            "(SELECT u.user_id, g.account_id FROM public.grants u, public.users g WHERE g.id = u.user_id)"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT u.id FROM public.users u, public.grants g WHERE g.id = 1 AND NOT EXISTS (SELECT 1 " \
+         "FROM public.grants u_1, public.users g_1 WHERE g_1.id = u_1.user_id AND u.id = u_1.user_id " \
+         "AND g.account_id = g_1.account_id)"]
+      )
+      expect(same_rows(sql, rewrites).map(&:first)).to eq(%w[3 4])
+    end
+
+    # Each is the row query changed in one way that makes it unsafe or
+    # unproven.
+    {
+      "the row's first column is nullable" => ["(users.id, users.account_id)", "(users.ref, users.account_id)"],
+      "the row's second column is nullable" => ["(users.id, users.account_id)", "(users.id, users.ref)"],
+      "the first selected column is nullable" => ["grants.user_id, grants.account_id",
+                                                  "grants.loose_user_id, grants.account_id"],
+      "the second selected column is nullable" => ["grants.user_id, grants.account_id",
+                                                   "grants.user_id, grants.loose_account_id"],
+      "a column of the row isn't qualified" => ["(users.id, users.account_id)", "(users.id, account_id)"],
+      "a column of the row is an expression" => ["(users.id, users.account_id)", "(users.id, users.account_id + 0)"],
+      "a selected column is an expression" => ["grants.user_id, grants.account_id",
+                                               "grants.user_id, grants.account_id + 0"],
+      "the subquery selects fewer columns than the row has" => ["grants.user_id, grants.account_id",
+                                                                "grants.user_id"],
+      "the subquery selects more columns than the row has" => ["grants.user_id, grants.account_id",
+                                                               "grants.user_id, grants.account_id, grants.id"],
+      "the row is empty" => ["(users.id, users.account_id) NOT IN (SELECT grants.user_id, grants.account_id",
+                             "ROW() NOT IN (SELECT"],
+      "a column of the row is on the nullable side of a LEFT JOIN" =>
+        ["FROM public.users WHERE (users.id, users.account_id)",
+         "FROM public.users LEFT JOIN public.groups ON groups.id = users.id + 6 WHERE (users.id, groups.id)"]
+    }.each do |why, (from, to)|
+      it "doesn't fire when #{why}" do
+        sql = row.sub(from, to)
+
+        expect(sql).not_to eq(row)
+        expect(rewritten(row).size).to eq(1)
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
+    # What the rule would write on the row query, with the given columns,
+    # if it fired anyway.
+    def forced_row(tested, selected)
+      equalities = tested.zip(selected).map { "#{it.first} = #{it.last}" }.join(" AND ")
+      "SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.grants WHERE #{equalities})"
+    end
+
+    def original_row(tested, selected)
+      "SELECT users.id FROM public.users WHERE (#{tested.join(", ")}) NOT IN " \
+        "(SELECT #{selected.join(", ")} FROM public.grants)"
+    end
+
+    {
+      "a nullable column of the row, when the other column matches" =>
+        [%w[users.id users.ref], %w[grants.user_id grants.account_id], [["3"], ["4"]], [["3"], ["4"], ["5"]]],
+      "a nullable second selected column, when the first matches" =>
+        [%w[users.id users.account_id], %w[grants.user_id grants.loose_account_id], [["2"], ["3"]],
+         [["2"], ["3"], ["4"]]],
+      "a nullable first selected column, when the second matches" =>
+        [%w[users.id users.account_id], %w[grants.loose_user_id grants.account_id], [["4"]],
+         [["2"], ["3"], ["4"], ["5"]]]
+    }.each do |why, (tested, selected, not_in, not_exists)|
+      it "would be wrong on #{why}: the row comparison is unknown, so NOT IN drops the row" do
+        expect(rows(original_row(tested, selected))).to eq(not_in)
+        expect(rows(forced_row(tested, selected))).to eq(not_exists)
+        expect(rewritten(original_row(tested, selected))).to eq([])
+      end
     end
   end
 

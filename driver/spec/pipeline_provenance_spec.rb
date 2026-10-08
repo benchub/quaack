@@ -321,8 +321,7 @@ RSpec.describe "The pipeline's provenance record" do
     end
   end
 
-  # DESIGN.md, "Several LLM providers" (Provenance), pending the user's
-  # confirmation.
+  # DESIGN.md, "Several LLM providers" (Provenance).
   it "clears an earlier run's down for a provider this run asked without marking it down" do
     Quaack::Driver::Provenance.open(@home, run_id)
                               .providers!([{ "name" => "old", "provider" => "anthropic", "model" => "m" },

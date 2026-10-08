@@ -237,6 +237,81 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     expect(same_rows(sql, rewrites)).to eq([["5"], ["6"]])
   end
 
+  # A subquery in a condition on the kept table alone stays in the WHERE,
+  # unchanged, beside the EXISTS. Its own tables' columns are its own, so a
+  # name it shares with a removed table doesn't make it read that table.
+  describe "a subquery in a condition on the kept table" do
+    {
+      "an uncorrelated IN" =>
+        ["#{fires} AND a.id IN (SELECT x.a_id FROM public.submissions x WHERE x.state = 'draft')",
+         "a.id IN (SELECT x.a_id FROM public.submissions x WHERE x.state = 'draft')",
+         [%w[2 two]]],
+      "an EXISTS that reads no outer table" =>
+        ["#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE c.body = 'no')",
+         "EXISTS (SELECT 1 FROM public.comments c WHERE c.body = 'no')",
+         [%w[1 one], %w[2 two], %w[5 twin], %w[6 twin]]],
+      "a NOT EXISTS correlated with the kept table" =>
+        ["#{fires} AND NOT EXISTS (SELECT * FROM public.submissions x WHERE x.a_id = a.id AND x.state = 'draft')",
+         "NOT EXISTS (SELECT * FROM public.submissions x WHERE x.a_id = a.id AND x.state = 'draft')",
+         [%w[1 one], %w[5 twin], %w[6 twin]]],
+      "a NOT IN whose subquery gives a NULL" =>
+        ["#{fires} AND a.ctx NOT IN (SELECT x.a_id FROM public.submissions x)",
+         "NOT a.ctx IN (SELECT x.a_id FROM public.submissions x)",
+         []],
+      "a NOT IN of a NULL column" =>
+        ["#{fires} AND a.code NOT IN (SELECT c.body FROM public.comments c)",
+         "NOT a.code IN (SELECT c.body FROM public.comments c)",
+         [%w[1 one], %w[2 two]]],
+      "a scalar subquery that gives NULL" =>
+        ["#{fires} AND a.tag IS DISTINCT FROM (SELECT x.state FROM public.submissions x WHERE x.id = 0)",
+         "a.tag IS DISTINCT FROM (SELECT x.state FROM public.submissions x WHERE x.id = 0)",
+         [%w[1 one], %w[2 two], %w[5 twin], %w[6 twin]]],
+      "bare columns of its own table, one a name both outer tables have" =>
+        ["#{fires} AND a.id IN (SELECT a_id FROM public.submissions x WHERE id > 200 AND state = 'done')",
+         "a.id IN (SELECT a_id FROM public.submissions x WHERE id > 200 AND state = 'done')",
+         [%w[2 two], %w[5 twin], %w[6 twin]]],
+      "its own table under a removed table's name" =>
+        ["#{fires} AND a.id IN (SELECT s.a_id FROM public.submissions s WHERE s.state = 'draft')",
+         "a.id IN (SELECT s.a_id FROM public.submissions s WHERE s.state = 'draft')",
+         [%w[2 two]]],
+      "a nested subquery correlated with the kept table and its parent" =>
+        ["#{fires} AND EXISTS (SELECT 1 FROM public.submissions x WHERE x.a_id = a.id AND " \
+         "EXISTS (SELECT c.* FROM public.comments c WHERE c.s_id = x.id AND c.body = 'hi' AND a.ctx = 10))",
+         "EXISTS (SELECT 1 FROM public.submissions x WHERE x.a_id = a.id AND " \
+         "EXISTS (SELECT c.* FROM public.comments c WHERE c.s_id = x.id AND c.body = 'hi' AND a.ctx = 10))",
+         [%w[1 one], %w[2 two], %w[5 twin]]],
+      "a bare column only the kept table has, inside the subquery" =>
+        ["#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE c.s_id = 101 AND title = 'one')",
+         "EXISTS (SELECT 1 FROM public.comments c WHERE c.s_id = 101 AND title = 'one')",
+         [%w[1 one]]]
+    }.each do |what, (sql, kept, expected)|
+      it "keeps #{what} in the WHERE, and gives the same rows" do
+        rewrites = rewritten(sql)
+
+        expect(rewrites).to eq(
+          ["SELECT a.id, a.title FROM public.assignments a WHERE a.ctx = 10 AND #{kept} AND " \
+           "EXISTS (SELECT 1 FROM public.submissions s WHERE s.a_id = a.id AND s.state = 'done')"]
+        )
+        expect(same_rows(sql, rewrites)).to eq(expected)
+      end
+    end
+
+    it "keeps one in a join condition in the WHERE" do
+      sql = "SELECT DISTINCT a.id, a.title FROM public.assignments a JOIN public.submissions s " \
+            "ON s.a_id = a.id AND a.id IN (SELECT x.a_id FROM public.submissions x WHERE x.state = 'draft') " \
+            "WHERE s.state = 'done'"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT a.id, a.title FROM public.assignments a WHERE " \
+         "a.id IN (SELECT x.a_id FROM public.submissions x WHERE x.state = 'draft') AND " \
+         "EXISTS (SELECT 1 FROM public.submissions s WHERE s.a_id = a.id AND s.state = 'done')"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([%w[2 two]])
+    end
+  end
+
   it "leaves an EXISTS with no condition for a join that has none" do
     sql = "SELECT DISTINCT p.x, p.y, p.x FROM public.pairs p CROSS JOIN public.comments c"
     keyed = "SELECT DISTINCT a.id FROM public.assignments a CROSS JOIN public.comments c WHERE a.ctx = 11"
@@ -527,8 +602,44 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     "a condition has a whole-row reference" => "SELECT DISTINCT a.id, a.title #{from} WHERE s.* IS NOT NULL",
     "a condition has a subquery" =>
       "SELECT DISTINCT a.id, a.title #{from} WHERE s.id IN (SELECT 101)",
-    "a condition on the kept table has a subquery" =>
-      "SELECT DISTINCT a.id, a.title #{from} WHERE a.id IN (SELECT 1)",
+    "a condition's subquery reads a removed table by name" =>
+      "#{fires} AND a.id IN (SELECT c.id FROM public.comments c WHERE c.s_id = s.id)",
+    "a condition's subquery reads a column only a removed table has, unqualified" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE c.s_id = a_id)",
+    "a condition's subquery reads a removed table from a nested subquery" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE c.id = a.id AND " \
+      "EXISTS (SELECT 1 FROM public.comments d WHERE d.s_id = s.id))",
+    "a condition's subquery reads a removed table by a name its own table's alias hides" =>
+      "SELECT DISTINCT a.id FROM public.assignments a JOIN public.submissions ON submissions.a_id = a.id " \
+      "WHERE EXISTS (SELECT 1 FROM public.submissions x WHERE x.id = submissions.id)",
+    "a condition's subquery reads a removed table's whole row" =>
+      "#{fires} AND EXISTS (SELECT s.* FROM public.comments c)",
+    "a condition's subquery reads the kept table's whole row" =>
+      "#{fires} AND EXISTS (SELECT a.* FROM public.comments c)",
+    "a condition's subquery has a column no table has" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE missing = 1)",
+    "a condition's subquery has a column two of its tables have" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c, public.submissions x WHERE c.s_id = x.id AND id = 1)",
+    "a condition's subquery has a three-part column" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE public.c.id = a.id)",
+    "a condition's subquery joins its tables" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c JOIN public.submissions x ON x.id = c.s_id " \
+      "WHERE x.a_id = a.id)",
+    "a condition's subquery reads a subquery" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM (SELECT * FROM public.comments) c WHERE c.id = a.id)",
+    "a condition's subquery reads a table that isn't schema-qualified" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM comments c WHERE c.id = a.id)",
+    "a condition's subquery has a WITH" =>
+      "#{fires} AND EXISTS (WITH w AS (SELECT 1) SELECT 1 FROM public.comments c WHERE c.id = a.id)",
+    "a condition's subquery is a UNION" => "#{fires} AND a.id IN (SELECT 1 UNION SELECT 2)",
+    "a condition's subquery reads, by no column, a table that isn't schema-qualified" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM comments c)",
+    "a condition's subquery calls a volatile function" =>
+      "#{fires} AND a.id IN (SELECT x.a_id FROM public.submissions x WHERE random() < 2)",
+    "a subquery's test reads a removed table" =>
+      "#{fires} AND s.id IN (SELECT x.id FROM public.submissions x WHERE x.a_id = a.id)",
+    "the ORDER BY has a subquery" => "#{fires} ORDER BY a.title, (SELECT 1)",
+    "the LIMIT has a subquery" => "#{fires} ORDER BY a.id LIMIT (SELECT 1)",
     "a join condition has a subquery" =>
       "SELECT DISTINCT a.id, a.title FROM public.assignments a JOIN public.submissions s " \
       "ON s.a_id = a.id AND s.id IN (SELECT 101)",

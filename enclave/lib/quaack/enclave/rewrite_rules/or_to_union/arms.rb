@@ -36,17 +36,17 @@ module Quaack
 
           module_function
 
-          def splittable(select)
+          def splittable(select, catalog)
             names = Tree.from_items(select.from_clause).map(&:name)
             conditions = Tree.conjuncts(select.where_clause)
-            conditions.each_index.select { split?(conditions[it], names) }
+            conditions.each_index.select { split?(conditions[it], names, catalog) }
           end
 
-          def split?(condition, names)
+          def split?(condition, names, catalog)
             return false unless condition.node == :bool_expr && condition.bool_expr.boolop == :OR_EXPR
 
             arms = condition.bool_expr.args.map { reads(it, names) }
-            arms.all? && (arms.any?(&:last) || arms.uniq.size > 1) && !raises?(condition)
+            arms.all? && (arms.any?(&:last) || arms.uniq.size > 1) && !raises?(condition, catalog)
           end
 
           # The OR's arm indexes, in groups (see above), in the order each
@@ -81,33 +81,51 @@ module Quaack
           # A LIKE or ILIKE raises when its pattern ends in the escape
           # character, and its column keeps Postgres from working that out
           # before it reads rows. So one is safe only when its pattern is a
-          # string constant that doesn't end that way: not a column, and
-          # not a parameter, whose value the rule doesn't see.
-          def raises?(node)
+          # string constant that doesn't end that way, or a parameter. A
+          # parameter's value the rule doesn't see, and one that ends in a
+          # lone backslash raises in the rewrite where the original's other
+          # arms can skip the LIKE: the user accepted that risk (task
+          # 20261007-52), and the rule's page says so. A column pattern
+          # still refuses. With standard_conforming_strings off, the server
+          # reads a constant's backslashes otherwise than pg_query does, so
+          # a constant with one refuses. A LIKE or ILIKE also raises on a
+          # nondeterministic collation (ILIKE always, LIKE before Postgres
+          # 18), so neither is safe when the database uses one, or when it
+          # names a collation with COLLATE.
+          def raises?(node, catalog)
             all_nodes(node).any? do |inner|
               case inner
               when PgQuery::SubLink then !SAFE_SUBLINKS.include?(inner.sub_link_type)
               when PgQuery::TypeCast, PgQuery::FuncCall, PgQuery::A_Indirection then columns?(inner)
-              when PgQuery::A_Expr then !safe?(inner) && columns?(inner)
+              when PgQuery::A_Expr then !safe?(inner, catalog) && columns?(inner)
               else false
               end
             end
           end
 
-          def safe?(expr)
-            return valid_pattern?(expr.rexpr) if LIKE_KINDS.include?(expr.kind)
+          def safe?(expr, catalog)
+            return like_safe?(expr, catalog) if LIKE_KINDS.include?(expr.kind)
             return SAFE_KINDS.include?(expr.kind) unless OPERATOR_KINDS.include?(expr.kind)
 
             expr.name.size == 1 && COMPARISONS.include?(expr.name.first.string.sval)
           end
 
-          # Whether pattern is a string constant whose trailing
-          # backslashes, the escape character, pair off.
-          def valid_pattern?(pattern)
+          def like_safe?(expr, catalog)
+            valid_pattern?(expr.rexpr, catalog) && Tree.find(expr, PgQuery::CollateClause).empty? &&
+              !catalog.nondeterministic_collations?
+          end
+
+          # Whether pattern is a parameter, or a string constant whose
+          # trailing backslashes, the escape character, pair off.
+          def valid_pattern?(pattern, catalog)
+            return true if pattern.node == :param_ref
             return false unless pattern.node == :a_const
 
             constant = pattern.a_const
-            constant.val == :sval && constant.sval.sval[/\\*\z/].size.even?
+            return false unless constant.val == :sval
+
+            text = constant.sval.sval
+            catalog.standard_strings? ? text[/\\*\z/].size.even? : !text.include?("\\")
           end
 
           def columns?(node) = !Tree.find(node, PgQuery::ColumnRef).empty?
