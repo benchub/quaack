@@ -78,7 +78,15 @@ module Quaack
       # The literal in an `a = literal` conjunct, as text, the way pg_stats
       # would print it, or nil if there's no literal. The text is a real
       # value: pass it to TableStatistics#value_frequency and nowhere else.
+      #
+      # Postgres prints `b = true` as the bare column b, and `b = false` as
+      # (NOT b), so those read as "true" and "false".
       def literal_text(node)
+        boolean = boolean_value(node)
+        boolean.nil? ? equality_literal_text(node) : boolean.to_s
+      end
+
+      def equality_literal_text(node)
         sides = equality_sides(node) || []
         value = sides.map { |side| uncast(side) }.find { |side| side.node == :a_const }&.a_const
         LITERAL_TEXT[value.val]&.call(value) if value
@@ -96,6 +104,23 @@ module Quaack
       def uncast(node)
         node = node.type_cast.arg while node.node == :type_cast
         node
+      end
+
+      # The column of a conjunct that is a bare column, or NOT a bare column,
+      # as Postgres prints `b = true` and `b = false`. Otherwise nil. A
+      # column on its own as a condition can only be a boolean.
+      def boolean_column(node) = boolean_form(node)&.first
+
+      # true for a bare column, false for NOT one, and nil otherwise.
+      def boolean_value(node) = boolean_form(node)&.last
+
+      def boolean_form(node)
+        return [node, true] if node.node == :column_ref
+
+        expr = node.bool_expr if node.node == :bool_expr
+        return nil unless expr&.boolop == :NOT_EXPR && expr.args.size == 1 && expr.args.first.node == :column_ref
+
+        [expr.args.first, false]
       end
 
       # The two sides of an `a = b` conjunct, or nil for anything else.

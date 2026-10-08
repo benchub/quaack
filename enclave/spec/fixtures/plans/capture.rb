@@ -3,7 +3,9 @@
 # Regenerates the plan fixtures in this directory. It isn't part of the test
 # suite. Run it by hand, with Docker running:
 #
-#   ruby enclave/spec/fixtures/plans/capture.rb
+#   ruby enclave/spec/fixtures/plans/capture.rb [name ...]
+#
+# With names, it writes only those plans, and leaves statistics.txt alone.
 #
 # It starts a throwaway postgres:18 container with its own name, loads
 # the test harness's sample schema and rows (spec/support/postgres/schema.sql
@@ -202,6 +204,25 @@ PLANS = {
     [], "SELECT c.name FROM public.customers c " \
         "WHERE c.id = (SELECT o.customer_id FROM public.orders o WHERE o.total_cents = 5100 LIMIT 1)"
   ],
+  # Postgres prints a boolean equality as the bare column, or as NOT the
+  # column. The table is made in the transaction, like the lossy bitmap's:
+  # deleted is true in 1% of the rows, and active false in 1%.
+  "seq_scan_boolean" => [
+    [], "SELECT f.id FROM public.flags f WHERE f.deleted AND f.kind = 3",
+    "CREATE TABLE public.flags AS SELECT i AS id, i % 7 AS kind, i % 100 = 0 AS deleted, i % 100 <> 0 AS active " \
+    "FROM generate_series(1, 20000) AS i; ANALYZE public.flags"
+  ],
+  "seq_scan_not_boolean" => [
+    [], "SELECT f.id FROM public.flags f WHERE NOT f.active AND f.kind = 3",
+    "CREATE TABLE public.flags AS SELECT i AS id, i % 7 AS kind, i % 100 = 0 AS deleted, i % 100 <> 0 AS active " \
+    "FROM generate_series(1, 20000) AS i; ANALYZE public.flags"
+  ],
+  # The Sort's equality column is in a scan two levels down, under the join.
+  "sort_deeper_scan" => [
+    ["enable_indexscan = off", "enable_bitmapscan = off"],
+    "SELECT o.id, c.name FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
+    "WHERE o.status = 'failed' ORDER BY o.created_at"
+  ],
   "sub_plan" => [
     [], "SELECT c.name, (SELECT count(*) FROM public.orders o WHERE o.customer_id = c.id AND o.total_cents > 40000) " \
         "FROM public.customers c WHERE c.id < 200"
@@ -250,13 +271,16 @@ begin
   %w[schema.sql data.sql].each { |sql| psql(File.read(File.join(SAMPLE, sql))) }
   psql("ANALYZE;")
 
-  PLANS.each do |name, (settings, query, setup)|
+  wanted = ARGV.empty? ? PLANS : PLANS.slice(*ARGV)
+  raise "no plans named #{(ARGV - PLANS.keys).join(", ")}" unless (ARGV - PLANS.keys).empty?
+
+  wanted.each do |name, (settings, query, setup)|
     sets = settings.map { |s| "SET LOCAL #{s};\n" }.join
     explain = name.end_with?("_verbose") ? VERBOSE_EXPLAIN : EXPLAIN
     json = psql("BEGIN;\n#{sets}#{setup && "#{setup};\n"}#{explain} #{query};\nROLLBACK;\n")
     File.write(File.join(DIR, "#{name}.json"), "#{JSON.pretty_generate(JSON.parse(json))}\n")
   end
-  File.write(File.join(DIR, "statistics.txt"), psql(STATISTICS))
+  File.write(File.join(DIR, "statistics.txt"), psql(STATISTICS)) if ARGV.empty?
 ensure
   Open3.capture3("docker", "rm", "-f", CONTAINER)
 end

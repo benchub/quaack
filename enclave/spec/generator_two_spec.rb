@@ -4,6 +4,7 @@ require "json"
 require "pp"
 require "quaack/enclave/generator_two"
 require "quaack/enclave/pg_array"
+require "quaack/enclave/plain_data"
 
 # The plans are real Postgres 18 output, captured from the test harness's
 # sample data by spec/fixtures/plans/capture.rb. The statistics are read from
@@ -166,6 +167,71 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       stats = enclave::Statistics.new(tables: [no_stats, customers_stats])
       expect(ddl("seq_scan_most_rows", stats:)).to eq([btree("orders", "status, total_cents")])
     end
+
+    # 20260923-24: a literal that isn't an MCV, on a column whose MCVs and
+    # nulls cover nearly every row, is most likely an MCV spelled another way
+    # (1.5 for a numeric printed as 1.50), so its frequency is unknown.
+    describe "a literal that isn't an MCV" do
+      def status_stats(freqs, null_frac: 0.0)
+        values = %w[delivered shipped pending cancelled returned].first(freqs.size)
+        status = enclave::ColumnStatistics.new(n_distinct: 6, null_frac:, correlation: nil,
+                                               most_common_vals: values, most_common_freqs: freqs)
+        enclave::Statistics.new(tables: [orders_stats.with(columns: orders_stats.columns.merge("status" => status)),
+                                         customers_stats])
+      end
+
+      let(:partial) { btree("orders", "total_cents", " WHERE status = 'failed'::text") }
+
+      it "gets no partial index when the MCVs cover at least 99% of the rows" do
+        expect(ddl("seq_scan_rare_value", stats: status_stats([0.99]))).to eq([btree("orders", "status")])
+        expect(ddl("seq_scan_rare_value", stats: status_stats([0.71, 0.12, 0.09, 0.04, 0.035])))
+          .to eq([btree("orders", "status")])
+      end
+
+      it "counts the nulls toward that coverage" do
+        expect(ddl("seq_scan_rare_value", stats: status_stats([0.96], null_frac: 0.03)))
+          .to eq([btree("orders", "status")])
+      end
+
+      it "still gets a partial index by the estimate when the MCVs cover less" do
+        expect(ddl("seq_scan_rare_value", stats: status_stats([0.98]))).to include(partial)
+        expect(ddl("seq_scan_rare_value", stats: status_stats([0.95], null_frac: 0.03))).to include(partial)
+      end
+    end
+
+    # Postgres prints b = true as the bare column, and b = false as NOT the
+    # column. The flags table's statistics are written by hand, as pg_stats
+    # gives them for capture.rb's table: deleted is true in 1% of the rows,
+    # and active false in 1%.
+    describe "on a boolean column" do
+      let(:flags) do
+        boolean = lambda do |common, rare|
+          enclave::ColumnStatistics.new(n_distinct: 2, null_frac: 0, correlation: nil,
+                                        most_common_vals: [common, rare], most_common_freqs: [0.99, 0.01])
+        end
+        kind = enclave::ColumnStatistics.new(n_distinct: 7, null_frac: 0, correlation: nil,
+                                             most_common_vals: %w[0 1 2 3 4 5 6], most_common_freqs: [1.0 / 7] * 7)
+        table = enclave::TableStatistics.new(
+          name: table_name("flags"), reltuples: 20_000, column_names: %w[id kind deleted active], indexes: {},
+          columns: { "kind" => kind, "deleted" => boolean.call("f", "t"), "active" => boolean.call("t", "f") }
+        )
+        enclave::Statistics.new(tables: [table])
+      end
+
+      it "keys on a bare boolean column and makes it a partial predicate when it's rare" do
+        # Filter (deleted AND (kind = 3)).
+        expect(ddl("seq_scan_boolean", stats: flags)).to eq(
+          [btree("flags", "kind, deleted"), btree("flags", "kind", " WHERE deleted")]
+        )
+      end
+
+      it "keys on NOT a boolean column and makes it a partial predicate when it's rare" do
+        # Filter ((NOT active) AND (kind = 3)).
+        expect(ddl("seq_scan_not_boolean", stats: flags)).to eq(
+          [btree("flags", "kind, active"), btree("flags", "kind", " WHERE NOT active")]
+        )
+      end
+    end
   end
 
   describe "an Index Scan or Bitmap Heap Scan whose filter removes many rows" do
@@ -290,6 +356,12 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
 
     it "treats an Incremental Sort the same way" do
       expect(ddl("incremental_sort")).to eq([btree("orders", "status, total_cents")])
+    end
+
+    it "finds the equality columns in a scan more than one level below the Sort" do
+      # Sort on o.created_at, over a Hash Join whose outer Seq Scan on
+      # orders has Filter (status = 'failed').
+      expect(ddl("sort_deeper_scan")).to eq([btree("orders", "status, created_at"), btree("orders", "status")])
     end
 
     it "stops the sort keys at the first one from another table" do
@@ -470,8 +542,12 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("seq_scan_most_rows", stats:)).to eq([])
     end
 
-    it "skips a relation with no statistics" do
+    it "skips a relation with no statistics, and keeps the others' candidates" do
       expect(ddl("init_plan", stats: enclave::Statistics.new(tables: [customers_stats]))).to eq([])
+      expect(ddl("hash_aggregate_two_tables", stats: enclave::Statistics.new(tables: [customers_stats])))
+        .to eq([btree("customers", "name")])
+      expect(ddl("hash_aggregate_two_tables", stats: enclave::Statistics.new(tables: [orders_stats])))
+        .to eq([btree("orders", "status")])
     end
 
     it "uses the one table with the name, even when schemas doesn't list its schema" do
@@ -485,6 +561,21 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(first).to be_frozen
       expect(generate("nested_loop_inner")).to eq(first)
     end
+  end
+
+  # 20260923-24: the store and intake read a plan up to PlainData::MAX_DEPTH
+  # levels deep, so the generator has to walk one that deep without running
+  # out of stack. Each node takes two levels: its Hash and its Plans Array.
+  it "walks a plan as deep as the store keeps" do
+    leaf = plan("seq_scan_rare_value").first["Plan"]
+    root = (1..((enclave::PlainData::MAX_DEPTH / 2) - 3)).reduce(leaf) do |child, _|
+      { "Node Type" => "Limit", "Actual Rows" => 1.0, "Actual Loops" => 1, "Plans" => [child] }
+    end
+    text = JSON.generate([{ "Plan" => root }], max_nesting: false)
+    explain = JSON.parse(text, max_nesting: enclave::PlainData::MAX_DEPTH)
+    expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq(
+      [btree("orders", "status"), btree("orders", "total_cents", " WHERE status = 'failed'::text")]
+    )
   end
 
   describe "its thresholds" do
@@ -664,6 +755,15 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(expression.literal_text(expression.conjuncts("(x = false)").first)).to eq("false")
     end
 
+    it "reads a bare boolean column as true, and NOT one as false" do
+      text = ->(sql) { expression.literal_text(expression.conjuncts(sql).first) }
+      expect(text.call("deleted")).to eq("true")
+      expect(text.call("o.deleted")).to eq("true")
+      expect(text.call("(NOT deleted)")).to eq("false")
+      expect(text.call("(NOT (NOT deleted))")).to be_nil
+      expect(text.call("(NOT lower(x))")).to be_nil
+    end
+
     it "reads a cast literal on either side, and nothing for NULL, a parameter, or a column" do
       text = ->(sql) { expression.literal_text(expression.conjuncts(sql).first) }
       expect(text.call("('-5'::integer = x)")).to eq("-5")
@@ -700,6 +800,14 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(kinds.call("(total_cents = customer_id)")).to eq([[:other, %w[total_cents customer_id]]])
       expect(kinds.call("(status = ANY ('{a,b}'::text[]))")).to eq([[:other, ["status"]]])
       expect(kinds.call("(o.status.x = 'x'::text)")).to eq([[:other, []]])
+      # Columns inside function arguments still count.
+      expect(kinds.call("(date_trunc('day'::text, created_at) = '2026-02-01'::timestamp with time zone)"))
+        .to eq([[:other, ["created_at"]]])
+      expect(kinds.call("(lower(upper(status)) = 'x'::text)")).to eq([[:other, ["status"]]])
+      # A bare boolean column, or NOT one, is a constant equality.
+      expect(kinds.call("(status AND (NOT o.total_cents))"))
+        .to eq([[:constant, ["status"]], [:constant, ["total_cents"]]])
+      expect(kinds.call("(NOT (status AND total_cents))")).to eq([[:other, %w[status total_cents]]])
       # A column of an alias the plan has no scan for isn't a constant.
       expect(kinds.call("(total_cents = z.id)")).to eq([[:other, ["total_cents"]]])
     end
