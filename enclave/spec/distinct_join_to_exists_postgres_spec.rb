@@ -241,7 +241,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     sql = "SELECT DISTINCT p.x, p.y, p.x FROM public.pairs p CROSS JOIN public.comments c"
     keyed = "SELECT DISTINCT a.id FROM public.assignments a CROSS JOIN public.comments c WHERE a.ctx = 11"
 
-    expect(rewritten(sql)).to eq([])
+    expect(rewritten(sql)).to eq(
+      ["SELECT p.x, p.y, p.x FROM public.pairs p WHERE EXISTS (SELECT 1 FROM public.comments c)"]
+    )
+    expect(same_rows(sql, rewritten(sql))).to eq([%w[1 1 1], %w[1 2 1]])
     expect(rewritten(keyed)).to eq(
       ["SELECT a.id FROM public.assignments a WHERE a.ctx = 11 AND EXISTS (SELECT 1 FROM public.comments c)"]
     )
@@ -269,6 +272,65 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
        { "kind" => "not_null", "table" => "public.assignments", "column" => "slug" }]
     )
     expect(same_ordered_rows(sql, rewrites).map(&:first)).to eq(%w[6 5])
+  end
+
+  # Task 20261002-4: pairs' key is (x, y), and pair 1 has three submissions.
+  describe "with a key of several columns" do
+    pairs = "FROM public.pairs p JOIN public.submissions s ON s.a_id = p.x"
+
+    it "takes it when the select list holds every column of it, and states each not null" do
+      sql = "SELECT DISTINCT p.y, p.x #{pairs}"
+
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "unique", "table" => "public.pairs", "columns" => %w[x y] },
+          { "kind" => "not_null", "table" => "public.pairs", "column" => "x" },
+          { "kind" => "not_null", "table" => "public.pairs", "column" => "y" }]]
+      )
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[1 1], %w[2 1]])
+    end
+
+    it "takes a star whose table has no key of one column" do
+      sql = "SELECT DISTINCT p.* #{pairs}"
+
+      expect(rewritten(sql)).to eq(
+        ["SELECT p.* FROM public.pairs p WHERE EXISTS (SELECT 1 FROM public.submissions s WHERE s.a_id = p.x)"]
+      )
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[1 1], %w[1 2]])
+    end
+
+    it "prefers a key of fewer columns, even one later in the select list or made later" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.trios (x int NOT NULL, y int NOT NULL, z int NOT NULL);
+        CREATE UNIQUE INDEX ON public.trios (x, y);
+        CREATE UNIQUE INDEX ON public.trios (z);
+      SQL
+      sql = "SELECT DISTINCT t.x, t.y, t.z FROM public.trios t JOIN public.submissions s ON s.a_id = t.x"
+
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "unique", "table" => "public.trios", "columns" => ["z"] },
+          { "kind" => "not_null", "table" => "public.trios", "column" => "z" }]]
+      )
+    end
+
+    it "takes a LIMIT when the ORDER BY holds every column of it" do
+      sql = "SELECT DISTINCT p.x, p.y #{pairs} ORDER BY p.x, p.y DESC LIMIT 1"
+
+      expect(same_ordered_rows(sql, rewritten(sql))).to eq([%w[1 2]])
+    end
+  end
+
+  it "reads a table's keys once, however many columns its star stands for" do
+    conn.exec("CREATE TABLE public.narrow (a int, b int)")
+    conn.exec("CREATE TABLE public.wide (a int, b int, c int, d int, e int, f int, g int, h int)")
+    reads = %w[narrow wide].map do |table|
+      count = 0
+      allow(conn).to(receive(:exec_params).and_wrap_original { |original, *args| (count += 1) && original.call(*args) })
+      sql = "SELECT DISTINCT t.* FROM public.#{table} t JOIN public.submissions s ON s.a_id = t.a"
+      expect(rule.rewrites(PgQuery.parse(sql), Quaack::Enclave::RewriteRules::Catalog.new(conn))).to eq([])
+      count
+    end
+
+    expect(reads.first).to eq(reads.last)
   end
 
   # Each fires, and is the twin of a refusal below.
@@ -415,10 +477,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     "the only unique column selected is NULLS NOT DISTINCT, but nullable" =>
       "SELECT DISTINCT a.tag, a.title #{from} #{where}",
     "the only not-null column selected isn't unique" => "SELECT DISTINCT a.loose, a.title #{from} #{where}",
-    "the key is of several columns" =>
-      "SELECT DISTINCT p.x, p.y FROM public.pairs p JOIN public.submissions s ON s.a_id = p.x",
-    "a star's table has only a key of several columns" =>
-      "SELECT DISTINCT p.* FROM public.pairs p JOIN public.submissions s ON s.a_id = p.x",
+    "the select list holds only part of a key of several columns" =>
+      "SELECT DISTINCT p.x FROM public.pairs p JOIN public.submissions s ON s.a_id = p.x",
+    "it has a LIMIT and the ORDER BY holds only part of a key of several columns" =>
+      "SELECT DISTINCT p.x, p.y FROM public.pairs p JOIN public.submissions s ON s.a_id = p.x ORDER BY p.x LIMIT 1",
     "an assumption can't name the kept table" =>
       %(SELECT DISTINCT a.id, a.title FROM public."my a" a JOIN public.submissions s ON s.a_id = a.id),
     "the select list reads another table too" => "SELECT DISTINCT a.id, s.state #{from} #{where}",

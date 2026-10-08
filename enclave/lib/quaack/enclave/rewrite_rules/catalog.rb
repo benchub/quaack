@@ -5,6 +5,7 @@ require_relative "../rewrite_assumptions"
 require_relative "catalog/btree"
 require_relative "catalog/calls"
 require_relative "catalog/foreign_keys"
+require_relative "catalog/keys"
 require_relative "catalog/standalone"
 require_relative "catalog/types"
 
@@ -60,6 +61,7 @@ module Quaack
         include Btree
         include Calls
         include ForeignKeys
+        include Keys
         include Types
 
         Column = Data.define(:name, :comparable)

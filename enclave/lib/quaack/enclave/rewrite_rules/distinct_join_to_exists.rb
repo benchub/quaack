@@ -36,9 +36,11 @@ module Quaack
       # (see Columns), so in the EXISTS no inner table has it unless it was
       # that table's, and outside it only the kept table is left.
       #
-      # It gives one rewrite, stating the key unique and not null. The key
-      # is the first selected column the catalog proves both of (see
-      # Catalog); a star stands for the table's columns, in order.
+      # It gives one rewrite, stating the key unique and each of its
+      # columns not null. The key is one the catalog proves both of, all
+      # of its columns selected (see Query#key): the fewest columns, then
+      # the one that ends first in the select list. A star stands for the
+      # table's columns, in order.
       #
       # It's conservative. It fires only when all of this holds, and
       # otherwise gives nothing:
@@ -61,15 +63,14 @@ module Quaack
       #   which DISTINCT merges.
       # - Nothing in the query could call a volatile function
       #   (Catalog#calls_volatile?): the rewrite calls it for other rows.
-      # - With a LIMIT or OFFSET, the ORDER BY holds the key by
-      #   name.column. That makes the order total, so both queries give the
+      # - With a LIMIT or OFFSET, the ORDER BY holds every column of the key
+      #   by name.column. That makes the order total, so both queries give the
       #   same rows. Without it the original may give any of several
       #   answers, and a test that compares the two would call a sound
       #   rewrite wrong. A bare name there may be an output column's, as in
       #   ORDER BY x for SELECT a.title AS x, so it doesn't count.
       # - Every column in the conditions is name.column or a bare column
       #   of one FROM table, never a star, and nowhere is there a subquery.
-      # - A key of one column. A key of several isn't looked for in v1.
       class DistinctJoinToExists
         def name = "distinct_join_to_exists"
 

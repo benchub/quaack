@@ -6,13 +6,13 @@ It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](.
 
 ## What it does.
 
-`SELECT DISTINCT` of one table's columns over a join becomes that table with `EXISTS` on the others, and no `DISTINCT`. The select list and `ORDER BY` read only that table: its columns, its `*`, or expressions of them such as a `COLLATE`, a cast, or a function call, written `t.col` or as a bare column only that table has. No call may be volatile, set-returning, an aggregate, or a window function. The joins are all inner, and the other tables go in one `EXISTS` with every condition that reads them. `ORDER BY`, `LIMIT`, and `OFFSET` carry over unchanged; with a `LIMIT` or `OFFSET`, the `ORDER BY` must hold the key as `t.col`, so the order is total.
+`SELECT DISTINCT` of one table's columns over a join becomes that table with `EXISTS` on the others, and no `DISTINCT`. The select list and `ORDER BY` read only that table: its columns, its `*`, or expressions of them such as a `COLLATE`, a cast, or a function call, written `t.col` or as a bare column only that table has. No call may be volatile, set-returning, an aggregate, or a window function. The joins are all inner, and the other tables go in one `EXISTS` with every condition that reads them. `ORDER BY`, `LIMIT`, and `OFFSET` carry over unchanged; with a `LIMIT` or `OFFSET`, the `ORDER BY` must hold every column of the key as `t.col`, so the order is total.
 
 ## What it rests on.
 
-The select list holds a unique, not-null key of the kept table, of one column. The rule fires only when it can prove this, and it states the catalog facts it relies on as assumptions, which assumption-check checks again like anyone else's.
+The select list holds every column of a unique key of the kept table, each column not null. The key may be of several columns. The rule fires only when it can prove this, and it states the catalog facts it relies on as assumptions, which assumption-check checks again like anyone else's.
 
-Here it states: `public.users (id)` is unique; `public.users.id` is not null.
+Here it states: `public.users (id)` is unique; `public.users.id` is not null. For a key of several columns, it states each one not null.
 
 ## Example.
 
