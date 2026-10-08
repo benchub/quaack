@@ -102,21 +102,27 @@ module Quaack
         # The = between values of left and right, both base type oids, or
         # nil.
         def operator(connection, left, right)
-          left_in = btree_type(connection, left)
-          right_in = btree_type(connection, right)
-          left_in = right_in = polymorphic(connection, left) if left == right && !left_in
-          return unless left_in && right_in
-          return if [left_in, right_in] != [left, right] && exact?(connection, left, right)
+          inputs = input_types(connection, left, right) or return
 
-          rows = connection.exec_params(EQUALITY_SQL, [left_in, right_in]).values
+          rows = connection.exec_params(EQUALITY_SQL, inputs).values
           schema, name = rows.first
           "OPERATOR(#{schema}.#{name})" if rows.size == 1 && name.match?(OPERATOR_NAME)
         end
 
-        # Whether an = takes exactly left and right. A bare = picks it over
-        # one that takes the types they coerce to, such as anyenum or record.
-        def exact?(connection, left, right)
-          connection.exec_params(EXACT_SQL, [left, right]).values.dig(0, 0) == "t"
+        # The btree input types whose = compares left and right, or nil.
+        def input_types(connection, left, right)
+          left_in = btree_type(connection, left)
+          right_in = btree_type(connection, right)
+          left_in = right_in = polymorphic(connection, left) if left == right && !left_in
+          return unless left_in && right_in
+
+          [left_in, right_in] unless shadowed?(connection, [left, right], [left_in, right_in])
+        end
+
+        # Whether an = takes exactly the types when the family's takes
+        # others, such as anyenum or record: a bare = picks it over those.
+        def shadowed?(connection, types, inputs)
+          inputs != types && connection.exec_params(EXACT_SQL, types).values.dig(0, 0) == "t"
         end
 
         # The polymorphic type a type's default opclass takes, or nil.
