@@ -7161,3 +7161,15 @@ Write `~/.quaack/runs/<run ID>.llm.json` as DESIGN.md's Provenance says: mode 06
 - **Design:** Several LLM providers (Provenance), report, burndown.
 - **Status:** done
 - **Landed:** 2026-10-08, after a review with one blocking finding (a partly vacuous test), a fix round, a clean second review, and a merge of main. The driver keeps `~/.quaack/runs/<run ID>.llm.json` (mode 0600, written to a temporary file and renamed) with which provider and model wrote each rewrite, ran each rewrite's counterexample rounds, and wrote each round of index ideas, plus the providers marked down. It holds names, models, store names, rules, and counts only, and is read back through a strict shape check. The report shows each LLM rewrite's provider and model, who wrote each round of test data, per-provider rows in the who-proposed tables ("not recorded" when they don't add up), an LLM providers table, and LLM calls by step and provider. Nothing new crosses the trust boundary. For the user: per-provider "planner ignored or couldn't try" stays "not recorded" (it would need an enclave change); a resumed run keeps an entry's model as first recorded.
+
+### 20261007-54. Anthropic and Bedrock error details print the whole response body.
+
+From the builder of 20261007-40. For rules other than llm_auth, the Anthropic adapter's detail (and so Bedrock's) is the gem's own message, which is `{url:, status:, body:}`, so the whole error body prints. Anthropic's own bodies hold only a type, a message, and a request ID, but a `base_url` can point at a gateway or proxy (LiteLLM, a corporate gateway) whose 4xx or 5xx body could echo a key or other secret. The OpenAI-compatible adapter shows only `error.message`, or the body when it has none. Show only the body's `error.message` for Anthropic and Bedrock too, and scrub the adapter's own key from any detail, with sentinel tests through a fake gateway that echoes the key in a 400 and a 500 body.
+
+The URL prints too, so also scrub a key in a `base_url` query string (from the review of 20261007-40).
+
+- **Depends on:** 20261007-40.
+- **Came from:** The builder of 20261007-40, 2026-10-08.
+- **Design:** LLM providers, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after a review with one blocking finding (untested scrub entries), a fix round, and a clean second review. Anthropic and Bedrock errors other than llm_auth read `the API answered <status>: <message>`, with the body's `error.message` (or Bedrock's top-level `message`), never the gem's `{url:, status:, body:}`; with no usable message, only the status. Every detail has the adapter's own credentials (Anthropic `api_key` and `auth_token`; Bedrock's bearer token and AWS access key, secret key, and session token) and each `base_url` query value of eight characters or more, raw and decoded, replaced with `[key]`. Each scrub entry has a sentinel test through a fake gateway that echoes it.

@@ -2239,16 +2239,7 @@ From the builder and review of 20261007-46.
 
 ### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-54. Anthropic and Bedrock error details print the whole response body.
-
-From the builder of 20261007-40. For rules other than llm_auth, the Anthropic adapter's detail (and so Bedrock's) is the gem's own message, which is `{url:, status:, body:}`, so the whole error body prints. Anthropic's own bodies hold only a type, a message, and a request ID, but a `base_url` can point at a gateway or proxy (LiteLLM, a corporate gateway) whose 4xx or 5xx body could echo a key or other secret. The OpenAI-compatible adapter shows only `error.message`, or the body when it has none. Show only the body's `error.message` for Anthropic and Bedrock too, and scrub the adapter's own key from any detail, with sentinel tests through a fake gateway that echoes the key in a 400 and a 500 body.
-
-The URL prints too, so also scrub a key in a `base_url` query string (from the review of 20261007-40).
-
-- **Depends on:** 20261007-40.
-- **Came from:** The builder of 20261007-40, 2026-10-08.
-- **Design:** LLM providers, trust boundary.
-- **Status:** todo
+### 20261007-54. Anthropic and Bedrock error details print the whole response body. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps. Done, see BACKLOG-COMPLETE.md.
 
@@ -2265,4 +2256,18 @@ From the reviews of 20261007-16.
 - **Depends on:** 20261007-16.
 - **Came from:** The reviews of 20261007-16.
 - **Design:** Several LLM providers, report.
+- **Status:** todo
+
+### 20261007-57. Error-detail scrub: minors from 20261007-54.
+
+From the builder and reviews of 20261007-54.
+1. A token from an `ant auth login` profile isn't scrubbed, though it's sent as `Authorization: Bearer` like `auth_token`, so a gateway could echo it. Unusual (a profile with a gateway `base_url`), and the token rotates. Scrub the profile's current token too, read when the error happens.
+2. A non-secret query value of eight characters or more (`?provider=anthropic`) is replaced everywhere in the message, so "anthropic" becomes `[key]`. Scrub only whole tokens, or only values that look like secrets.
+3. A very short own key (a one-character test secret) wrecks the message (`the API an[key]wered`). Real keys are long; scrub own keys only above a minimum length or at token boundaries.
+4. A password in the `base_url` itself (`https://user:pass@host`) and a key in the `base_url` path aren't scrubbed. Scrub them, or list them as unsupported in DESIGN.md.
+5. `APIErrorDetail.query_values`'s `rescue URI::InvalidURIError` is untested, and `LLM::URL` allows strings `URI.parse` rejects. Add a test.
+
+- **Depends on:** 20261007-54.
+- **Came from:** The builder and reviews of 20261007-54.
+- **Design:** LLM providers, trust boundary.
 - **Status:** todo
