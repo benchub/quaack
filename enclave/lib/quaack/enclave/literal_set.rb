@@ -119,14 +119,19 @@ module Quaack
       end
 
       # "$n" => Feed, or a Symbol for why it feeds no column predicate,
-      # for each placeholder in parse. ClockLiterals takes it too.
+      # for each placeholder in parse.
       def feeds(parse, column_names) = Feeds.new(parse, column_names).feeds
+
+      # "$n" => [Feed, ...], one for each place $n appears, for each
+      # placeholder every one of whose places feeds a column predicate.
+      # ClockLiterals takes it.
+      def column_feeds(parse, column_names) = Feeds.new(parse, column_names).columns
 
       # The feeds, with each clock literal clock-anchor anchors kept slow.
       def feeds_for(parse, tables, map, statistics)
-        feeds = feeds(parse, tables.column_names)
-        clock = ClockLiterals.find(map, statistics) { feeds }.types.keys
-        feeds.merge(clock.to_h { ["$#{it}", :clock_literal] })
+        found = Feeds.new(parse, tables.column_names)
+        clock = ClockLiterals.find(map, statistics) { found.columns }.types.keys
+        found.feeds.merge(clock.to_h { ["$#{it}", :clock_literal] })
       end
 
       def load(store)
@@ -180,19 +185,31 @@ module Quaack
         def initialize(parse, column_names)
           @parse = parse
           @feeds = {}
+          @fed = Hash.new { |hash, key| hash[key] = [] }
           @ranges = Hash.new { |hash, key| hash[key] = [] }
           PredicateAtoms.extract(parse, column_names:).each { atom(it) }
           pair_ranges
           shared.each { @feeds["$#{it}"] = :shared_placeholder }
         end
 
+        # "$n" => [Feed, ...] for each placeholder that feeds a column
+        # predicate everywhere it appears, one Feed per place.
+        def columns
+          @fed.select { |number, fed| fed.size == counts[Integer(number.delete_prefix("$"), 10)] }
+        end
+
         private
 
         # The placeholder numbers the query holds more than once.
-        def shared
-          counts = Hash.new(0)
-          @parse.walk! { |_parent, _field, node, _location| counts[node.number] += 1 if node.is_a?(PgQuery::ParamRef) }
-          counts.select { |_number, count| count > 1 }.keys
+        def shared = counts.select { |_number, count| count > 1 }.keys
+
+        # How many times the query holds each placeholder number.
+        def counts
+          @counts ||= Hash.new(0).tap do |counts|
+            @parse.walk! do |_parent, _field, node, _location|
+              counts[node.number] += 1 if node.is_a?(PgQuery::ParamRef)
+            end
+          end
         end
 
         def atom(atom)
@@ -209,6 +226,7 @@ module Quaack
         def feed(column, sides, conjunction)
           sides&.each do |number, role, index, count|
             @feeds[number] = Feed.new(table: column.table, column: column.name, role:, index:, count:)
+            @fed[number] << @feeds[number]
             @ranges[[conjunction, column.table, column.name]] << number if conjunction && %i[below above].include?(role)
           end
         end
