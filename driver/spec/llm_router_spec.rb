@@ -3,6 +3,7 @@
 require "quaack/driver/burndown"
 require "quaack/driver/llm"
 require_relative "support/fake_llm"
+require_relative "support/fake_openai"
 
 # The router and its sessions (DESIGN.md, "Several LLM providers": Asks,
 # units, and sessions; Routing; Accounting; Progress and failure messages).
@@ -660,7 +661,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
 
         expect([failure.rule, sans_sizes(failure.message)])
           .to eq(["llm_rate_limited", "llm_rate_limited: every LLM provider llm-counterexamples may use failed: " \
-                                      "a (llm_rate_limited), b (llm_rate_limited), c (llm_rate_limited)."])
+                                      "a (llm_rate_limited: #{rate_limited}); b (llm_rate_limited: " \
+                                      "#{rate_limited}); c (llm_rate_limited: #{rate_limited})."])
       end
     end
 
@@ -795,6 +797,78 @@ RSpec.describe Quaack::Driver::LLM::Router do
       router.ask(step: "llm-rewrites", system: "you are sentinel-model-one", messages:, max_tokens: 10)
 
       expect(sent).to include("sentinel")
+    end
+  end
+
+  # A gateway at an OpenAI-compatible base_url can echo the provider's key
+  # in its error body, and a reason goes in every line and list. Each
+  # provider here is an OpenAI-compatible client whose key is a sentinel.
+  describe "an OpenAI-compatible provider's reasons" do
+    let(:key) { "SENTINELKEY0123456789" }
+    let(:fakes) { names.to_h { [it, FakeOpenAI.new] } }
+    let(:routing) { { "mode" => "failover" } }
+    let(:echo) { "slow down, key #{key}" }
+    let(:router) do
+      clients = names.map { fakes.fetch(it).client(burndown: Quaack::Driver::Burndown.new, max_retries: 0, api_key: key) }
+      described_class.for(providers, clients).tap do |router|
+        seen = notes
+        router.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
+      end
+    end
+
+    def shown(error = nil) = [*notes, error&.message].compact.join("\n")
+
+    it "scrubs the key from a failover line" do
+      fakes["a"].error("llm-rewrites", status: 429, message: echo)
+      fakes["b"].reply("llm-rewrites", "b")
+
+      expect(ask).to eq("b")
+      expect(shown).not_to include(key)
+      expect(notes).to include("a is rate limited (the API answered 429: slow down, key [key]), so the rest of " \
+                               "this run skips it; trying b (llm-rewrites)")
+    end
+
+    it "scrubs the key from a going-on line" do
+      fakes["a"].reply("llm-index-ideas", "1").error("llm-index-ideas", status: 503, message: echo)
+      session = router.session
+      ask(session, "llm-index-ideas")
+      router.going_on(llm_error { ask(session, "llm-index-ideas") }, "going on without replacement ideas")
+
+      expect(shown).not_to include(key)
+      expect(notes.last).to start_with("a is unavailable (the API answered 503: slow down, key [key])")
+    end
+
+    context "in a fan-out step" do
+      let(:routing) { { "steps" => { "llm-rewrites" => { "fan_out" => true } } } }
+
+      it "scrubs the key from a branch's line" do
+        fakes["a"].error("llm-rewrites", status: 500, message: echo)
+        %w[b c].each { fakes[it].reply("llm-rewrites", it) }
+
+        expect(router.branches(step: "llm-rewrites", messages:, max_tokens: 100).map(&:last)).to eq(%w[b c])
+        expect(shown).not_to include(key)
+        expect(notes).to include("a failed with llm_unavailable: the API answered 500: slow down, key [key]; going " \
+                                 "on with the others (llm-rewrites)")
+      end
+    end
+
+    it "scrubs the key from the list of what was tried" do
+      names.each { fakes[it].error("llm-rewrites", status: 429, message: echo) }
+
+      error = llm_error { ask }
+      expect(shown(error)).not_to include(key)
+      each = "(llm_rate_limited: the API answered 429: slow down, key [key])"
+      expect(sans_sizes(error.message)).to eq("llm_rate_limited: every LLM provider llm-rewrites may use failed: " \
+                                              "a #{each}; b #{each}; c #{each}.")
+    end
+
+    it "would catch the key if a line held it" do
+      fakes["a"].error("llm-rewrites", status: 429, message: echo)
+      fakes["b"].reply("llm-rewrites", "b")
+      ask
+      notes << "planted #{key}"
+
+      expect(shown).to include(key)
     end
   end
 

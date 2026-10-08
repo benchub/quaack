@@ -3,6 +3,7 @@
 require "json"
 require "openai"
 require "uri"
+require_relative "api_error_detail"
 require_relative "error"
 
 module Quaack
@@ -76,7 +77,7 @@ module Quaack
           @schema_mode = true
           @attempts = Attempts.new(transport)
           api_key ||= named_key(settings.api_key_env || DEFAULT_KEY_ENV)
-          base_url = settings.base_url || OPENAI_BASE_URL
+          @base_url = base_url = settings.base_url || OPENAI_BASE_URL
           @openai = ::OpenAI::Client.new(api_key:, max_retries:, http_client: @attempts, base_url:,
                                          **openai_only(base_url))
         end
@@ -250,15 +251,29 @@ module Quaack
         end
 
         # Some APIs quote part of a refused key back, so an llm_auth message
-        # is only the status. Any other message is the gem's, which holds
-        # only the status and URL, then the provider's explanation from the
-        # body.
+        # is only the status. Any other answer from the API gives its status
+        # and the provider's explanation from the body, never the gem's
+        # message, which holds the URL. With no answer, such as a dropped
+        # connection, it's the gem's message, a fixed sentence. Either way,
+        # the key, OpenAI's organization and project, and what base_url
+        # holds are scrubbed out (APIErrorDetail), since a gateway or proxy
+        # at base_url can echo any of them.
         def detail(error)
           return "the API refused the key (#{error.status})" if rule_for(error) == "llm_auth"
 
-          explanation = body_text(error.respond_to?(:body) ? error.body : nil)
-          explanation ? "#{error.message}: #{explanation}" : error.message
+          APIErrorDetail.scrub(answered(error), APIErrorDetail.secrets(@base_url, own_keys))
         end
+
+        def answered(error)
+          return error.message unless error.status
+
+          explanation = body_text(error.respond_to?(:body) ? error.body : nil)
+          explanation ? "the API answered #{error.status}: #{explanation}" : "the API answered #{error.status}"
+        end
+
+        # The keys the detail scrubs: the key, and the organization and
+        # project the gem sends to OpenAI's own API.
+        def own_keys = [@openai.api_key, @openai.organization, @openai.project].compact
 
         # The error object's message from a JSON body, the whole body as
         # JSON without one, or a text body as it is.
