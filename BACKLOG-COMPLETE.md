@@ -7853,3 +7853,13 @@ The second review of 20260923-57 found these. Both are already true on main.
 - **Decided by the user (2026-10-08):** Lock it down and document it. Candidates may use only the original's functions, types, collations, and operators, plus pg_catalog's. If a rewrite needs a new user-defined function to be faster, that function isn't coming from the mechanical rewrite rules, and an LLM can't be trusted blindly to provide one.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-32 (commits 7a43f6f0, 53e6c5c7, ea55fa63) after a fix round. The second review was clean. Minors from both rounds are in 20261008-41.
+
+### 20261001-5. An LLM error reads the reason out of a JSON array body.
+
+Gemini's OpenAI-compatible endpoint answered a 503 and QUAACK printed no reason. Its error body seems to be a JSON array, such as `[{"error": {"message": "..."}}]`, which isn't confirmed. The detail code from 20261001-1 only reads a Hash or a String. When the body is an array, take the error message from its first element the same way. If no message is there, give the whole body as JSON. `llm_auth` stays status-only.
+
+- **Depends on:** 20261001-1.
+- **Came from:** The user, 2026-10-01, a Gemini 503 with no reason shown.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261001-5 (commits 077e202a, aa03a92b). Review had no blocking findings; its minor went to 20261008-43.

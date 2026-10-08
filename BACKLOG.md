@@ -1117,14 +1117,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261001-4. Payload trimming: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-5. An LLM error reads the reason out of a JSON array body.
-
-Gemini's OpenAI-compatible endpoint answered a 503 and QUAACK printed no reason. Its error body seems to be a JSON array, such as `[{"error": {"message": "..."}}]`, which isn't confirmed. The detail code from 20261001-1 only reads a Hash or a String. When the body is an array, take the error message from its first element the same way. If no message is there, give the whole body as JSON. `llm_auth` stays status-only.
-
-- **Depends on:** 20261001-1.
-- **Came from:** The user, 2026-10-01, a Gemini 503 with no reason shown.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261001-5. An LLM error reads the reason out of a JSON array body. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-6. The `llm` block in driver.json takes an optional `max_retries`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2392,4 +2385,44 @@ The review of 20261008-34 found these minor issues:
 - **Depends on:** 20261008-34.
 - **Came from:** The review of 20261008-34, 2026-10-08.
 - **Design:** statistics, report.
+- **Status:** todo
+
+### 20261008-43. Error-detail scrub misses keys that encode unreserved characters.
+
+The review of 20261001-5 found this gap. It was already on main. `APIErrorDetail`'s `char_pattern` never treats `A-Za-z0-9_.~-` as encodable, so a key echoed with one of those characters percent-encoded, such as `sk%2D...`, passes through unscrubbed. Now that the JSON fallback lets more of the raw body into the detail, the gap has a little more exposure. Match `%XX` for every character of a secret, and add a sentinel test.
+
+- **Depends on:** 20261001-5.
+- **Came from:** The review of 20261001-5, 2026-10-08.
+- **Design:** LLM client.
+- **Status:** todo
+
+### 20261008-44. Qualifying overloaded names: keyword forms (part 2 of 20261007-21).
+
+Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, and USING and NATURAL joins have no qualified spelling. When several schemas on the path define the operator they use, rewrite each one into an equivalent explicit form that can be qualified, or refuse it cleanly, and list it as unsupported in v1. See also 20261008-41 item 1.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The split of 20261007-21, 2026-10-08.
+- **Design:** qualify.
+- **Status:** todo
+
+### 20261008-45. Qualifying overloaded names: reg literals (part 3 of 20261007-21).
+
+Split from 20261007-21. `regproc`, `regprocedure`, `regoper`, and `regoperator` literals in the original are still refused as `unsupported_reg_literal`. Resolve and qualify them, or keep refusing them, and document the choice.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The split of 20261007-21, 2026-10-08.
+- **Design:** qualify.
+- **Status:** todo
+
+### 20261008-46. Probing to qualify overloaded names: minors from 20261007-21 part 1.
+
+The review of 20261007-21 part 1 found these minor issues:
+
+1. **Constant folding can name the wrong winning schema.** With GENERIC_PLAN, two overloads that fold to the same constant give the same plan. The outcome is harmless, since the plan is the same, but the chosen schema can be the wrong one in name.
+2. **Planning runs user code on production.** It evaluates immutable functions on constants, and the probes can evaluate overloads the real query never calls. A read-only transaction stops writes, but not side effects outside the database, such as dblink. Document this in DESIGN.md as a known risk.
+3. **No test covers a probe that errors.** Nothing tests a probe that errors while the baseline plans, or the error-swallowing in general.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The review of 20261007-21 part 1, 2026-10-08.
+- **Design:** qualify.
 - **Status:** todo

@@ -272,7 +272,7 @@ module Quaack
         def detail(error)
           return "the API refused the key (#{error.status})" if rule_for(error) == "llm_auth"
 
-          APIErrorDetail.scrub(answered(error), APIErrorDetail.secrets(@base_url, own_keys))
+          APIErrorDetail.cut(APIErrorDetail.scrub(answered(error), APIErrorDetail.secrets(@base_url, own_keys)))
         end
 
         def answered(error)
@@ -282,8 +282,13 @@ module Quaack
         end
 
         # The body's message as APIErrorDetail reads it, or, as servers such
-        # as Hugging Face TGI send it, a non-empty string error.
+        # as Hugging Face TGI send it, a non-empty string error. A body that's
+        # a JSON array, as Gemini seems to send, gives its first element's
+        # message, or with none there, the whole body as JSON (task
+        # 20261001-5). detail scrubs it and cuts it to APIErrorDetail::DETAIL_MAX.
         def body_message(body)
+          return APIErrorDetail.array_message(body) { body_message(it) } if body.is_a?(Array)
+
           inner = body[:error] if body.is_a?(Hash)
           inner.is_a?(String) && !inner.empty? ? inner : APIErrorDetail.body_message(body)
         end
