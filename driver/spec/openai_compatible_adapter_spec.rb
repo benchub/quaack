@@ -39,6 +39,26 @@ RSpec.describe "the OpenAI-compatible adapter" do
   def response_format = { type: "json_schema", json_schema: { name: "reply", schema: schema } }
   def no_match = "llm_bad_response: the reply didn't match the schema"
 
+  # Task 20261001-6: the gem's default is two retries.
+  describe "the settings' max_retries" do
+    it "retries only that many times" do
+      fake.error("llm-rewrites", status: 503).error("llm-rewrites", status: 503).reply("llm-rewrites", "ok")
+      fewer = fake.client(burndown:, settings: FakeOpenAI.settings("max_retries" => 1))
+
+      expect { fewer.ask(step: "llm-rewrites", messages:, max_tokens: 10) }
+        .to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_unavailable") }
+      expect(fake.asks.size).to eq(2)
+    end
+
+    it "retries more than the gem's default when it's larger" do
+      3.times { fake.error("llm-rewrites", status: 503) }
+      fake.reply("llm-rewrites", "ok")
+      more = fake.client(burndown:, settings: FakeOpenAI.settings("max_retries" => 3))
+
+      expect([more.ask(step: "llm-rewrites", messages:, max_tokens: 10), fake.asks.size]).to eq(["ok", 4])
+    end
+  end
+
   describe "the request" do
     it "sends the model, the system prompt as the first message, the messages, and the token limit" do
       fake.reply("llm-rewrites", "ok")

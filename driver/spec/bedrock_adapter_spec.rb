@@ -106,6 +106,24 @@ RSpec.describe "the bedrock adapter" do
       expect(fake.auths.map { scope(it) }).to eq([[FakeBedrock::ACCESS_KEY, "us-west-2", "bedrock"]] * 2)
     end
 
+    # Task 20261001-6: the gem's default is two retries.
+    it "retries only as many times as the settings' max_retries" do
+      fake.error("llm-rewrites", status: 503).error("llm-rewrites", status: 503).reply("llm-rewrites", "ok")
+      fewer = fake.client(burndown:, settings: FakeBedrock.settings("max_retries" => 1))
+
+      expect { fewer.ask(step: "llm-rewrites", messages:, max_tokens: 10) }
+        .to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_unavailable") }
+      expect(fake.asks.size).to eq(2)
+    end
+
+    it "retries more than the gem's default with a larger max_retries" do
+      3.times { fake.error("llm-rewrites", status: 503) }
+      fake.reply("llm-rewrites", "ok")
+      more = fake.client(burndown:, settings: FakeBedrock.settings("max_retries" => 3))
+
+      expect([more.ask(step: "llm-rewrites", messages:, max_tokens: 10), fake.asks.size]).to eq(["ok", 4])
+    end
+
     it "goes to the settings' base URL when there is one" do
       fake.reply("llm-rewrites", "ok")
       settings = FakeBedrock.settings("base_url" => "https://bedrock.example.com")

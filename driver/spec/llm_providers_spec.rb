@@ -69,6 +69,12 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
       )
     end
 
+    it "gives each entry its own max_retries, or none" do
+      two = [{ "name" => "a", "max_retries" => 5 }, { "name" => "b", "provider" => "anthropic" }]
+
+      expect(providers({ "llms" => two }).entries.map { it.settings.max_retries }).to eq([5, nil])
+    end
+
     it "lets a provider type appear more than once" do
       two = [{ "name" => "a", "provider" => "copilot_cli" }, { "name" => "b", "provider" => "copilot_cli" }]
 
@@ -117,7 +123,10 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
       "an entry's key that doesn't apply" => [[{ "name" => "a", "provider" => "copilot_cli",
                                                  "base_url" => "https://SENTINEL-VALUE" }],
                                               "llms[0].base_url in ~/.quaack/driver.json doesn't apply to " \
-                                              "provider copilot_cli"]
+                                              "provider copilot_cli"],
+      "an entry's bad max_retries" => [[{ "name" => "a" }, { "name" => "b", "max_retries" => "SENTINEL-VALUE" }],
+                                       "llms[1].max_retries in ~/.quaack/driver.json must be a whole number " \
+                                       "from 0 to 10"]
     }.each do |what, (llms, message)|
       it "refuses #{what}, never quoting a value" do
         error = config_error({ "llms" => llms })
