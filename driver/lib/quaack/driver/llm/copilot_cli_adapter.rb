@@ -20,10 +20,13 @@ module Quaack
         TASK_WAIT_ENV = "COPILOT_TASK_WAIT_TIMEOUT_SECONDS"
         STDERR_TAIL_LINES = 20
         # A token the command's stderr could quote: a GitHub token, by its
-        # prefix, or whatever follows "Bearer". A failure's stderr tail
-        # shows each as [token]. A login failure's message quotes none of
-        # its stderr.
-        TOKEN = /\b(?:gh[opsur]_[A-Za-z0-9]+|github_pat_\w+)|(?<=Bearer )\S+/i
+        # prefix; whatever follows "Bearer", past any spaces, tabs, and a
+        # colon or equals sign; or a Copilot API session token, which has
+        # no prefix but is a run of fields such as tid=...;exp=...;8kp=1:...,
+        # up to a space or quote. A failure's stderr tail shows each as
+        # [token]. A login failure's message quotes none of its stderr.
+        TOKEN = /\b(?:gh[opsur]_[A-Za-z0-9]+|github_pat_\w+)|\bBearer\b[ \t]*[:=]?[ \t]*\K[^\s"']+|
+                 [^\s"']*\b(?:tid|8kp)=[^\s"']*/ix
         READ_CHUNK_BYTES = 16_384
         READ_POLL_SECONDS = 0.01
 
