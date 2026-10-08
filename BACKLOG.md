@@ -2284,3 +2284,19 @@ The review of 20261007-44 found these minor issues:
 - **Came from:** The review of 20261007-44, 2026-10-08.
 - **Design:** rewrite-rules.
 - **Status:** todo
+
+### 20261008-16. Operator messages: minors from 20261007-29.
+
+The review of 20261007-29 found these minor issues:
+
+1. **The scan allows dynamic raises by file, not by site.** `enclave/spec/error_rules_spec.rb` approves a whole file, so a new dynamic raise in an approved file goes unnoticed. For example, `r = "run_server_dyn" + "x"; fail!(r, ...)` in `run_server_check.rb` passed. Track dynamic raise sites individually (by method, or by a count per file), so a new one fails until someone reviews it.
+2. **Leftover periods.** `INTERNAL_NOTE` still ends in ".", though every other note dropped its final period. When only teardown is left and the rule is INTERNAL, `Teardown.failure` prints "...and the step.. To go on, ...".
+3. **Capitalization.** New notes start with a capital after "rule: ", but the older ones start lowercase. Pick one style.
+4. **Rule classes.** Two rules could move out of INTERNAL:
+   - `index_build_orphan_running`: after a driver timeout kill, the operator can wait and then resume, so it could get a note.
+   - `plan_gate_not_comparable`: arguably a v1 limit rather than a bug.
+
+- **Depends on:** 20261007-29.
+- **Came from:** The review of 20261007-29, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
