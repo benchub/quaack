@@ -2239,14 +2239,7 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261008-10. Deflake `transport_spec.rb:630` (EPERM from Process.kill).
-
-`driver/spec/transport_spec.rb:630` ("lets an error in reading a progress line end the call…") fails now and then with `Errno::EPERM` from `Process.kill` in `driver/lib/quaack/driver/transport/child.rb` (~92). It's been seen in four builders' per-commit checks on 2026-10-08 under load, and each passed on rerun. Find the race (likely signalling a child that has exited and whose pid was reused, or a process group that's gone) and fix it in the code if the code is wrong, else in the spec, so it can't fail on timing.
-
-- **Depends on:** none.
-- **Came from:** Per-commit checks on 2026-10-08.
-- **Design:** Development, driver transport.
-- **Status:** todo
+### 20261008-10. Deflake `transport_spec.rb:630` (EPERM from Process.kill). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-11. or_to_union LIKE checks: minors from 20261007-52. Done, see BACKLOG-COMPLETE.md.
 
@@ -2263,5 +2256,17 @@ The review of 20261008-12 found these minor issues.
 
 - **Depends on:** 20261008-12.
 - **Came from:** The review of 20261008-12, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261008-14. `Child.signal` fallback: untested branches from 20261008-10.
+
+The review of 20261008-10 found that two branches of the EPERM fallback in `driver/lib/quaack/driver/transport/child.rb` have no test:
+
+1. The fallback's own `Process.kill(name, pid)` still raises EPERM for a live process the driver can't signal. Replacing it with `nil` keeps every test green. A test needs a process the driver can't signal. If there's no clean way to get one, a test that fakes `Process.kill` at the edge, so the group signal and the pid signal both raise EPERM, is enough.
+2. The ESRCH rescue on the second kill, for a child reaped between the two kills.
+
+- **Depends on:** 20261008-10.
+- **Came from:** The review of 20261008-10, 2026-10-08.
 - **Design:** Where QUAACK runs.
 - **Status:** todo

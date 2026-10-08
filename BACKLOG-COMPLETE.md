@@ -7498,3 +7498,13 @@ From the review of 20261003-22 item 3.
 - **Design:** `quaack setup`, teardown.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-12 (commit 60cd36c8). Review had no blocking findings; its minors went to 20261008-13.
+
+### 20261008-10. Deflake `transport_spec.rb:630` (EPERM from Process.kill).
+
+`driver/spec/transport_spec.rb:630` ("lets an error in reading a progress line end the call…") fails now and then with `Errno::EPERM` from `Process.kill` in `driver/lib/quaack/driver/transport/child.rb` (~92). It's been seen in four builders' per-commit checks on 2026-10-08 under load, and each passed on rerun. Find the race (likely signalling a child that has exited and whose pid was reused, or a process group that's gone) and fix it in the code if the code is wrong, else in the spec, so it can't fail on timing.
+
+- **Depends on:** none.
+- **Came from:** Per-commit checks on 2026-10-08.
+- **Design:** Development, driver transport.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-10 (commit c61b34c7). Review had no blocking findings; its minors went to 20261008-14.
