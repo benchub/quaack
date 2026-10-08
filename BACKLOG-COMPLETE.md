@@ -7450,3 +7450,13 @@ Minor findings from the build and review of 20260928-1:
 - **Decided by the user (2026-10-08):** item 3: keep the run after a setup failure under `quaack run`, for debugging, and put the teardown command in the error.
 - **Status:** done
 - **Landed:** 2026-10-08, item 3, after one review with no blocking findings, as the user decided: when a setup step fails under `quaack run`, the run is kept for debugging and the failure line says to resume with `quaack run --run <ID>` or tear it down with `quaacks teardown --run <ID>` on the jump server. `--keep` and `ssh_failed` behave as before, and later steps' failures still tear down. DESIGN.md says a failed setup step prints `<rule>` or `<rule>: <note>`. All four items are done.
+
+### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to row-valued `NOT IN` (`(a, b) NOT IN (SELECT x, y ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `(t.a, t.b) NOT IN (SELECT s.x, s.y ...)` becomes a NOT EXISTS correlated on each pair, when it's a top-level WHERE conjunct and the catalog proves every column on both sides not null; it states those assumptions per pair and refuses a nullable column, an unqualified or expression column, a column-count mismatch, an empty row, and a row column on the nullable side of a LEFT JOIN. A reviewer's 22 real-Postgres probes found no case where the rewrite returns different rows. Enclave change, unreleased until the next batch bump.

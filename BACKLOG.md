@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261007-52 (or_to_union: parameter LIKE patterns, and LIKE edge cases refused).
+- 20261008-2 (not_in_to_not_exists: row-valued NOT IN).
 
 ## How this file works.
 
@@ -2178,19 +2179,14 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 
 ### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`.
-
-One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to row-valued `NOT IN` (`(a, b) NOT IN (SELECT x, y ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-38.
-- **Came from:** The split of 20261007-38, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-3. `not_in_to_not_exists`: support a subquery that is a set operation.
 
 One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to a subquery that is a set operation (`NOT IN (SELECT ... UNION SELECT ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
 
+
+Also, from the review of 20261008-2: (a) a row comparison on a type whose `=` isn't a btree operator (such as `box`) errors in Postgres but the NOT EXISTS rewrite returns rows, so refuse a row-valued NOT IN unless every pair's `=` is a btree operator; (b) add a test with a second shadowing FROM item that isn't a table (`public.grants u, generate_series(1, 2) g` tested by `(u.id, g.x)`).
 - **Depends on:** 20261007-38.
 - **Came from:** The split of 20261007-38, 2026-10-08.
 - **Design:** rewrite-rules.
