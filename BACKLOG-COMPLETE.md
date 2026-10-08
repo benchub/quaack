@@ -7731,3 +7731,18 @@ Still open from the reviews of 20260922-10:
 - **Decided by the user (2026-10-05):** Fix self-referencing FKs (reverse them level by level, or keep such tables in forward order, whichever is sound) and add a third load order.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-9 (commit 59b1b63b). Review had no blocking findings; its minors and cost note went to 20261008-33.
+
+### 20260924-26. statistics loose ends.
+
+Still open from the build and reviews of 20260922-19:
+- pg_stats and pg_stats_ext silently hide columns the operator can't SELECT, so a role with limited privileges gets missing statistics with no error. Detect it, and refuse or record it.
+- Values and names aren't converted to UTF-8, unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
+- The pg_stats inherited-filter mutant is killed only by luck, since row order decides which duplicate wins.
+- A column type whose array delimiter isn't a comma, such as `box`, makes PgArray raise and abort statistics. List it as unsupported in v1, or skip it.
+
+- **Depends on:** 20260922-19.
+- **Came from:** The build and reviews of 20260922-19.
+- **Design:** statistics.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-26 (commit 73dbb2f2). Review had no blocking findings. Hidden table columns are refused as column_statistics_hidden. What non-owner roles still lose (pg_stats_ext, expression-index statistics, row security) went to 20261008-34.

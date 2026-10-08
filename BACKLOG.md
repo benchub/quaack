@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-24 (inventory: production read timeout, null config commands refused, memory cap, ShellCommand drain).
 - 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
 - 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
+- 20260924-26 (statistics: column_statistics_hidden, UTF-8, non-comma array delimiters skipped).
 
 ## How this file works.
 
@@ -339,19 +340,7 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-26. statistics loose ends.
-
-Still open from the build and reviews of 20260922-19:
-- pg_stats and pg_stats_ext silently hide columns the operator can't SELECT, so a role with limited privileges gets missing statistics with no error. Detect it, and refuse or record it.
-- Values and names aren't converted to UTF-8, unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
-- The pg_stats inherited-filter mutant is killed only by luck, since row order decides which duplicate wins.
-- A column type whose array delimiter isn't a comma, such as `box`, makes PgArray raise and abort statistics. List it as unsupported in v1, or skip it.
-
-- **Depends on:** 20260922-19.
-- **Came from:** The build and reviews of 20260922-19.
-- **Design:** statistics.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-26. statistics loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2360,4 +2349,21 @@ The review of 20260924-9 found these:
 - **Depends on:** 20260924-9.
 - **Came from:** The review of 20260924-9, 2026-10-08.
 - **Design:** fixture-compare.
+- **Status:** todo
+
+### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security.
+
+The build and review of 20260924-26 found these on real Postgres 18. Nothing refuses or records them today.
+
+1. **Expression-index statistics are hidden from non-owners.** A role with table-level SELECT that doesn't own the table gets no pg_stats rows for an expression index. The index's `columns` comes back `{}`.
+2. **Extended statistics are hidden from non-owners.** That role's `pg_stats_ext` rows are hidden too, so every `extended_statistics` data field is nil. That looks the same as "not analyzed yet".
+3. **Row security hides every row.** On a table with row-level security enabled, a non-owner role with SELECT gets no pg_stats rows at all. The run passes with `columns=[]`, and the `has_column_privilege` fallback doesn't catch it. A `row_security_active(oid)` check would.
+
+A read-only production role is usually a non-owner, so items 1 and 2 hit the most common setup. **Needs a decision:** refuse (as with `column_statistics_hidden`, which would refuse most read-only roles whenever the query's tables have extended statistics or expression indexes), or record what's missing in the report and go on. Item 3 hides all column statistics, so refusing seems right there.
+
+Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `ORDER BY ..., s.inherited` next to `AND NOT s.inherited`, change nothing in normal runs. Drop them, or leave them as guards.
+
+- **Depends on:** 20260924-26.
+- **Came from:** The builder and review of 20260924-26, 2026-10-08.
+- **Design:** statistics.
 - **Status:** todo
