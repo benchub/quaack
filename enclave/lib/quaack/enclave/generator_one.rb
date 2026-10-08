@@ -120,7 +120,10 @@ module Quaack
     # columns that aren't equality columns, so the scan comes out grouped.
     # It stands alone when there's nothing else after the equality
     # columns. An unqualified JOIN ... USING column in ORDER BY or GROUP BY
-    # counts as the column of each table that has it.
+    # counts as the column of each table that has it. On a table an outer
+    # join makes nullable, ORDER BY and GROUP BY join only a key with
+    # equality columns: one without them can't seek, and the join's output
+    # doesn't come out in the table's order.
     #
     # Join columns. Each table's keys are built twice: once with its join
     # columns (a join condition or USING) counted as equality columns, and
@@ -778,6 +781,7 @@ module Quaack
         end
 
         def initialize(select, scope, arm = nil)
+          @scope = scope
           @predicates = Predicates.new(scope)
           @arm = arm
           read_predicates(select, scope)
@@ -812,6 +816,9 @@ module Quaack
 
         # Named only by join conditions and USING.
         def join_only?(table, name) = @predicates.kinds(table, name).uniq == [:join]
+
+        # On the nullable side of an outer join that wasn't reduced.
+        def nullable?(table) = @scope.nullable?(table)
 
         # Select-list and GROUP BY columns.
         def covered(table) = @covered[table]
@@ -1088,6 +1095,8 @@ module Quaack
         # The GROUP BY columns that aren't equality columns, so a scan on
         # the key comes out grouped.
         def group_columns(equality_names)
+          return [] if unseekable?(equality_names)
+
           (@uses.group(@table).to_a - equality_names).map { |name| IndexCandidate::KeyColumn.new(name:) }
         end
 
@@ -1102,11 +1111,16 @@ module Quaack
 
         def order_columns(equality_names)
           items = @uses.order(@table)
-          return nil if items.nil?
+          return nil if items.nil? || unseekable?(equality_names)
 
           items = items.reject { |name, _, _| @uses.pinned?(@table, name) }
           OrderTail.new(items, equality_names.reject { |name| @uses.pinned?(@table, name) }).columns
         end
+
+        # A key with no equality columns on a table that an outer join makes
+        # nullable can't seek, and the join's output doesn't come out in
+        # its order, so ORDER BY and GROUP BY add nothing to it.
+        def unseekable?(equality_names) = equality_names.empty? && @uses.nullable?(@table)
 
         def ranked_equality
           @uses.equality(@table).each_with_index.sort_by do |name, position|

@@ -658,6 +658,26 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       end
     end
 
+    # Such a key can't seek, and the join's output order isn't the table's.
+    it "leaves out an ORDER BY or GROUP BY key with no equality columns on a nullable side's table" do
+      join = "FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id"
+
+      expect(keys(generate("SELECT 1 #{join} ORDER BY o.region", stats)))
+        .to eq([["customers", %w[id], []], ["orders", %w[customer_id], []]])
+      expect(keys(generate("SELECT o.region #{join} GROUP BY o.region", stats)))
+        .to eq([["customers", %w[id], []], ["orders", %w[customer_id], %w[region]], ["orders", %w[customer_id], []],
+                ["orders", %w[customer_id region], []]])
+    end
+
+    it "keeps ORDER BY and GROUP BY on a preserved side's table, or on a table whose join was reduced" do
+      join = "FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id"
+
+      expect(keys(generate("SELECT 1 #{join} ORDER BY c.region", stats))).to include(["customers", %w[region], []])
+      expect(keys(generate("SELECT 1 #{join} GROUP BY c.region", stats))).to include(["customers", %w[region], []])
+      expect(keys(generate("SELECT 1 #{join} WHERE o.status = 1 ORDER BY o.region", stats)))
+        .to include(["orders", %w[status region], []])
+    end
+
     it "doesn't resolve schema and table name once the table has an alias" do
       expect(generate("SELECT 1 FROM public.orders o WHERE public.orders.status = 1", stats)).to eq([])
     end
