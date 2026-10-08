@@ -6531,3 +6531,16 @@ Ideas to settle before building:
 - **Design landed:** DESIGN.md's "Several LLM providers," under "Where QUAACK runs," with edits to the LLM client and `llm` block paragraphs, llm-index-ideas, llm-index-refine, llm-rewrites, operator-rewrites, llm-counterexamples, rewrite-index-ideas, report, and burndown.
 - **Status:** done
 - **Landed:** Split into 20261007-13, 20261007-14, 20261007-15, 20261007-16, 20261007-17, and 20261007-18; design landed in DESIGN.md.
+
+### 20261006-19. Measured plans: minor findings from 20261004-86.
+
+From the review of 20261004-86.
+1. `View::NO_MEASURED_PLAN` (`driver/lib/quaack/driver/report/view.rb` ~36) blames an older measurement run for every nil plan. That's the only path to a nil plan today, but a new path would make the sentence wrong. Tie the wording to the cause, or check it when one is added.
+2. An unstable set stores its most-blocks plan twice, in `"plan"` and in `"plans"` (`enclave/lib/quaack/enclave/measurement.rb` ~105-106). The storage cost is small.
+
+- **Depends on:** 20261004-86.
+- **Came from:** The review of 20261004-86.
+- **Design:** report, measure.
+- **Landed (2026-10-07), item 1:** `View::NO_MEASURED_PLAN` now names no cause: "QUAACK has no measured plan for the winner, so the blocks it read at each step aren't recorded." Item 2 is still open (enclave storage, which needs a version bump).
+- **Status:** done
+- **Landed:** 2026-10-07, item 2, after one review with no blocking findings. Each measurement stores its plans once, under "plans" (every run's for an unstable set, the first run's for a stable one), and every reader goes through `Measurement.plan`, which returns the most-blocks run's plan. A store written by an older enclave keeps a stable set's plan under "plan", which the new reader doesn't read, so a run resumed across a redeploy reports no measured plan for such a set: no crash and no leak, and the report's existing fallback says so. Enclave change, unreleased until the next batch bump.

@@ -6,7 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- None.
+- 20261006-19 (one stored plan per measurement).
+- 20260926-56, partly (the shared parse helper and the error rules).
 
 ## How this file works.
 
@@ -1214,6 +1215,8 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Decided by the user (2026-10-05):** Rewrite them (schema-qualify functions, types, operators and names inside string literals).
 - **Decided by the user (2026-10-07):** Give IndexCandidate its own error class, `IndexCandidate::Error`, with a fixed rule name, and update callers to rescue it.
+- **Decided by the user (2026-10-07), on the builder's finding:** the general version needs a type checker, so qualify only what's exact for now. Qualify relations, types, collations, and `regclass` and `regtype` literals exactly. Qualify a function or explicit operator only when exactly one schema on the path other than pg_catalog has that name. Leave names found only in pg_catalog bare. Names that several schemas define (the citext `=` case) stay bare, and later steps run with the plan's `search_path`. Refuse `regproc`, `regprocedure`, `regoper`, and `regoperator` literals as unsupported in v1. The full version is 20261007-21.
+- **Landed (2026-10-07):** the shared parse helper (`PlanExpression.parse_bare`, used by `CanonicalPlan#fingerprint`) and the error rules (`PredicateAtoms::Error` with `not_a_query_parse` and `using_column_unreplaceable`; `IndexCandidate::Error`, rule `invalid_index_candidate`, rescued by its callers), after one review with no blocking findings. Still open: the qualification above, and "Operator messages", whose texts need the user. Enclave change, unreleased until the next batch bump.
 - **Status:** todo
 
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
@@ -2201,17 +2204,7 @@ From the reviews and builder of 20261004-95.
 
 ### 20261006-18. `unused_join_removal`: minor findings from 20261001-27. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-19. Measured plans: minor findings from 20261004-86.
-
-From the review of 20261004-86.
-1. `View::NO_MEASURED_PLAN` (`driver/lib/quaack/driver/report/view.rb` ~36) blames an older measurement run for every nil plan. That's the only path to a nil plan today, but a new path would make the sentence wrong. Tie the wording to the cause, or check it when one is added.
-2. An unstable set stores its most-blocks plan twice, in `"plan"` and in `"plans"` (`enclave/lib/quaack/enclave/measurement.rb` ~105-106). The storage cost is small.
-
-- **Depends on:** 20261004-86.
-- **Came from:** The review of 20261004-86.
-- **Design:** report, measure.
-- **Landed (2026-10-07), item 1:** `View::NO_MEASURED_PLAN` now names no cause: "QUAACK has no measured plan for the winner, so the blocks it read at each step aren't recorded." Item 2 is still open (enclave storage, which needs a version bump).
-- **Status:** todo
+### 20261006-19. Measured plans: minor findings from 20261004-86. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-20. Picker CHECK values: minor findings from 20261004-4. Done, see BACKLOG-COMPLETE.md.
 
@@ -2331,4 +2324,31 @@ From the review of 20261003-13. In the `not_installed` message (`driver/lib/quaa
 - **Depends on:** 20261003-13.
 - **Came from:** The review of 20261003-13.
 - **Design:** Deploy.
+- **Status:** todo
+
+### 20261007-20. Measurement: pin which run a stable set keeps.
+
+From the review of 20261006-19. Changing `runs.take(1)` to `runs.last(1)` in `enclave/lib/quaack/enclave/measurement.rb` keeps every spec green: the only stable fixture is three identical runs. Give the stable fixture different Execution Times and assert the first run's plan is the one stored.
+
+- **Depends on:** 20261006-19.
+- **Came from:** The review of 20261006-19.
+- **Design:** measure.
+- **Status:** todo
+
+### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification).
+
+20260926-56 qualifies only what's exact without knowing the query's types (the user's choice, 2026-10-07). This task does the rest: resolve each function and operator call's argument types the way Postgres does, so QUAACK can tell which schema's overload wins when several schemas on the path define the name (citext, hstore, postgis, and ltree in `public` all define `=`), and qualify it with that schema. It also covers the keyword forms with no qualified syntax (IN, BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, USING and NATURAL joins) and `regproc`, `regprocedure`, `regoper`, and `regoperator` literals, which v1 refuses. It's large: split it further when it's picked up, for example type resolution first, then each keyword form.
+
+- **Depends on:** 20260926-56.
+- **Came from:** The 20260926-56 builder's report and the user's decision, 2026-10-07.
+- **Design:** qualify.
+- **Status:** todo
+
+### 20261007-22. `CastlessIndex`: the IndexCandidate::Error rescue is untested.
+
+From the review of 20260926-56. In `enclave/lib/quaack/enclave/castless_index.rb`, narrowing the rescue to `Deparse::Error` alone breaks no spec. It looks unreachable, since the predicate comes from a candidate that already passed `parse_predicate`. Prove it unreachable and drop the rescue, or add a spec that reaches it.
+
+- **Depends on:** 20260926-56.
+- **Came from:** The review of 20260926-56.
+- **Design:** input.
 - **Status:** todo
