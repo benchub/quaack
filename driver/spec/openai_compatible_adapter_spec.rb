@@ -11,7 +11,6 @@ require_relative "support/llm_client_examples"
 RSpec.describe "the OpenAI-compatible adapter" do
   it_behaves_like "an LLM client" do
     let(:fake) { FakeOpenAI.new }
-    let(:refused_key_error) { { message: "Incorrect API key provided: SENTINEL-KEY" } }
   end
 
   let(:burndown) { Quaack::Driver::Burndown.new }

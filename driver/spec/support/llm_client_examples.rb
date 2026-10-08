@@ -16,10 +16,6 @@ RSpec.shared_examples "an LLM client" do
   let(:burndown) { Quaack::Driver::Burndown.new }
   let(:client) { fake.client(burndown: burndown) }
   let(:messages) { [{ role: "user", content: "Propose indexes for this shape." }] }
-  # More options for the fake's scripted 401, for an API that quotes a
-  # refused key back, such as OpenAI's: a fake that takes a message can
-  # plant SENTINEL-KEY in it.
-  let(:refused_key_error) { {} }
   let(:schema) do
     { type: "object", properties: { ddl: { type: "array", items: { type: "string" } } }, required: ["ddl"],
       additionalProperties: false }
@@ -278,7 +274,8 @@ RSpec.shared_examples "an LLM client" do
 
     it "keeps the API key out of its error messages" do
       client = fake.client(burndown: burndown, api_key: "SENTINEL-KEY")
-      fake.error("llm-index-ideas", status: 401, **refused_key_error)
+      # Some APIs, such as OpenAI's, quote a refused key back in the body.
+      fake.error("llm-index-ideas", status: 401, message: "Incorrect API key provided: SENTINEL-KEY")
       [400, 429, 429, 429].each { fake.error("llm-index-ideas", status: it) }
 
       seen = Array.new(3) do
