@@ -8022,3 +8022,29 @@ Minor findings from the review of 20260929-8.
 - **Design:** run-server.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260929-22 (commit 11f6b224). Review had no blocking findings; its minors went to 20261008-54.
+
+### 20260930-12. Anthropic credential wording nits.
+
+Minor findings from the review of 20260930-8:
+
+- In DESIGN.md's LLM client section, "So an empty value there is `llm_auth`" leans on "there" to mean the first of the two variables that's set. Say it outright.
+- The class comment in driver/lib/quaack/driver/llm/anthropic_adapter.rb still uses semicolons ("wins; then ... not empty; else ..."). Split it into sentences.
+
+- **Depends on:** 20260930-8.
+- **Came from:** Review of 20260930-8, round one.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260930-12 (commit a50504d8). Review clean.
+
+### 20260930-13. Run server check shadowing: one untested qualification, and operators.
+
+Minor findings from the review of 20260930-9:
+
+- In `RunServerCheck::PLANNER_SQL`, the second `pg_catalog.pg_settings_get_flags(name)`, the one in the WHERE clause, has no test that fails when it's unqualified. Under `search_path = public, pg_catalog`, a `public.pg_settings_get_flags` returning `'{}'` drops every EXPLAIN-flagged setting outside Query Tuning. A run server with `SET effective_io_concurrency = 7` then passes when it should fail with `run_server_guc_mismatch`. Add that example to the "a search_path whose public schema shadows the catalog" group. The reviewer confirmed it goes red with the qualifier removed.
+- Operators (`=`, `<>`, `LIKE`, `= ANY`) in the check's SQL aren't qualified. Exploiting that needs a deliberately built operator in `public`, and a blunt one breaks the planner check first. List it as unsupported in v1 in DESIGN.md's run-server, or qualify with `OPERATOR(pg_catalog.=)`.
+
+- **Depends on:** 20260930-9.
+- **Came from:** Review of 20260930-9, round one.
+- **Design:** run-server.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260930-12 (commit 14a33cbb). Review clean; the operators had already been qualified by earlier work.
