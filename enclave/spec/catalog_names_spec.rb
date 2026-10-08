@@ -11,9 +11,8 @@ require_relative "support/catalog_names"
 RSpec.describe "catalog names in the enclave's SQL" do
   root = File.join(GEM_ROOT, "lib")
 
-  # The files whose SQL isn't qualified yet, arena reads and some racetrack
-  # reads, for task
-  # 20261007-9. The list may only shrink: a file on it with nothing left
+  # The files whose SQL isn't qualified yet, all arena reads, for what's
+  # left of task 20261007-9. The list may only shrink: a file on it with nothing left
   # to qualify fails, as does a file off it with something to qualify, or
   # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
   # doesn't have.
