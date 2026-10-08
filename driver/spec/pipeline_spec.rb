@@ -393,6 +393,25 @@ RSpec.describe Quaack::Driver::Pipeline do
       expect(fake.asks.first.body[:messages].first[:content]).to include(%("original":"SELECT 1"))
     end
 
+    context "with two providers, when a later round's ask fails" do
+      let(:other) { FakeLLM.new }
+      let(:client) { router_over({ "a" => fake, "b" => other }, routing: { "mode" => "failover" }, max_retries: 0) }
+
+      it "numbers the enclave's rounds 1, 2, and 3 across the fresh start" do
+        status.merge!(rewrite(1, tested: true))
+        fake.reply("llm-counterexamples", { "inserts" => ["INSERT 1"] }).error("llm-counterexamples", status: 429)
+        other.reply("llm-counterexamples", { "inserts" => ["INSERT 2"] })
+             .reply("llm-counterexamples", { "inserts" => ["INSERT 3"] })
+
+        run
+
+        rounds = transport.calls.select { it.first == "counterexample-round" }
+        expect(rounds.map { it.last[:args][:round] }).to eq(%w[1 2 3])
+        expect(rounds.map { it.last[:input] }).to eq([1, 2, 3].map { { "inserts" => ["INSERT #{it}"] } })
+        expect(other.asks.size).to eq(2)
+      end
+    end
+
     it "fails with a clean rule when a reply lacks the message it expects" do
       status.merge!(rewrite(1))
       replies = { "status" => [{ "type" => "status", "entries" => status }], "index-feedback" => [feedback] }

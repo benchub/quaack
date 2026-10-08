@@ -457,6 +457,26 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(fake.asks.size).to eq(2)
     end
 
+    # The replacement round's failure skips the round, so the next unit,
+    # with no provider left, fails as the run did before the round was
+    # skipped: with the API's own detail, and no list. llm_auth's detail is
+    # the client's own words, not the API's.
+    { 429 => "retry in 30s", 503 => "retry in 30s", 401 => "refused the key" }.each do |status, detail|
+      it "fails the next unit with the skipped round's own failure after a #{status}" do
+        fake.reply("llm-index-ideas", "1").error("llm-index-ideas", status:, message: "retry in 30s")
+        session = router.session
+        ask(session, "llm-index-ideas")
+        later = llm_error { ask(session, "llm-index-ideas") }
+        router.going_on(later, "going on without replacement ideas")
+
+        failure = llm_error { ask(router, "llm-index-refine") }
+        expect(failure.rule).to eq(later.rule)
+        expect(failure.message).to eq(later.message).and include(detail)
+        expect(failure.message).not_to include("anthropic:", "anthropic (", "every LLM provider")
+        expect(fake.asks.size).to eq(2)
+      end
+    end
+
     {
       429 => "The LLM is rate limited, so the rest of this run skips it; going on without replacement ideas " \
              "(llm-index-ideas)",
