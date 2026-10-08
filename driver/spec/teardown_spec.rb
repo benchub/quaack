@@ -258,6 +258,36 @@ RSpec.describe Quaack::Driver::Teardown do
     end
   end
 
+  # Task 20261003-22, item 3: nothing expensive has run yet, and the
+  # operator may only need other flags, so a run whose setup step failed is
+  # kept for debugging.
+  context "after a run whose setup step failed" do
+    let(:volatile) do
+      Quaack::Driver::EnclaveError.new(subcommand: "volatility", rule: "volatile_function", exit_status: 70)
+    end
+
+    it "keeps the run without calling the jump server, re-raises, and says why" do
+      teardown = described_class.new(transport, run_id, stderr)
+      expect { teardown.around { raise volatile } }.to raise_error(volatile)
+      expect(File.exist?(store)).to be(true)
+      expect([teardown.kept_after_setup?, teardown.deleted?]).to eq([true, false])
+      expect(stderr.string).to eq("quaack: kept run #{run_id}, since a setup step failed.\n")
+    end
+
+    it "tears down after a later step's failure" do
+      teardown = described_class.new(transport, run_id, stderr)
+      later = Quaack::Driver::EnclaveError.new(subcommand: "index-build", rule: "volatile_function", exit_status: 70)
+      expect { teardown.around { raise later } }.to raise_error(later)
+      expect([File.exist?(store), teardown.kept_after_setup?]).to eq([false, false])
+    end
+
+    it "says only what keep says, with keep" do
+      expect { around_run(keep: true) { raise volatile } }.to raise_error(volatile)
+      expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
+                                  "quaacks teardown --run #{run_id}\n")
+    end
+  end
+
   # Task 20261004-26: the caller says "resume" only when the store is left.
   describe "#deleted?" do
     let(:teardown) { described_class.new(transport, run_id, stderr) }

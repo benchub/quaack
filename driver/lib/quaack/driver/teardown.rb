@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "enclave_error"
+require_relative "setup"
 
 module Quaack
   module Driver
@@ -18,7 +19,10 @@ module Quaack
     # its error only when the run itself succeeded. With keep, it skips
     # teardown and prints the command to run later. It skips it the same
     # way after a run that failed as ssh_failed: ssh is down, so the call
-    # would only fail too, after another connect timeout and probe.
+    # would only fail too, after another connect timeout and probe. And it
+    # keeps a run whose setup step failed (Setup.failed?), for debugging:
+    # nothing expensive has run yet, and the operator may only need other
+    # run-server flags. Then the run's error says how to tear it down.
     #
     # A signal during teardown, such as a second Ctrl-C, still ends the
     # process: its SignalException goes on and replaces the run's error. So
@@ -33,7 +37,7 @@ module Quaack
     # Messages go to stderr and name only the run ID, which the driver
     # already has, and the enclave's shaped rule. The enclave never sends
     # the store's path, so the message builds the default one from the ID.
-    class Teardown
+    class Teardown # rubocop:disable Metrics/ClassLength
       # The rules for a run's store the enclave wouldn't or couldn't delete.
       BY_HAND = %w[bad_run bad_store_base teardown_failed].freeze
 
@@ -71,18 +75,22 @@ module Quaack
         return START_OVER if teardown&.deleted?
         return TEARDOWN_LEFT if teardown&.only_teardown_left?
 
-        "resume with `quaack run --run #{run_id}`"
+        tear = ", or tear the run down by running this on the jump server: #{command(run_id)}" if
+          teardown&.kept_after_setup?
+        "resume with `quaack run --run #{run_id}`#{tear}"
       end
 
       # What `quaack run --run <run_id>` prints after its name when it
       # failed: EnclaveError.shown, with next_step. When only teardown
       # failed, a rule whose note has no next step of its own, such as
       # teardown_failed, still gets one, so it doesn't read as the run's
-      # own failure. So does a DriverError.
+      # own failure. So does a DriverError. So does a failed setup step's
+      # rule, whose run was kept, so it says how to tear the run down.
       def self.failure(error, teardown, run_id, **where)
         step = next_step(teardown, run_id)
         shown = EnclaveError.shown(error, step, **where)
-        return shown unless teardown&.only_teardown_left? && !(error.is_a?(EnclaveError) && error.to_go_on?)
+        added = teardown&.only_teardown_left? || teardown&.kept_after_setup?
+        return shown unless added && !(error.is_a?(EnclaveError) && error.to_go_on?)
 
         "#{shown}. To go on, #{step}"
       end
@@ -99,6 +107,7 @@ module Quaack
         @stderr = stderr
         @deleted = false
         @only_teardown_left = false
+        @kept_after_setup = false
       end
 
       # As self.around, for a caller that then asks deleted?.
@@ -111,10 +120,7 @@ module Quaack
         run_error = e
         raise
       ensure
-        if keep then @stderr.print(self.class.kept(@run_id))
-        elsif ssh_failed?(run_error) then @stderr.print(skipped)
-        else finish(run_error)
-        end
+        ended(keep, run_error)
       end
 
       # Whether teardown deleted the run's store, so there's nothing left
@@ -124,6 +130,10 @@ module Quaack
 
       # Whether the run succeeded and then its teardown failed.
       def only_teardown_left? = @only_teardown_left
+
+      # Whether teardown was skipped, without keep, since a setup step
+      # failed.
+      def kept_after_setup? = @kept_after_setup
 
       # Tears down, and raises the teardown's error only when the run itself
       # succeeded, so it never masks the run's own error: its EnclaveError,
@@ -156,6 +166,18 @@ module Quaack
       end
 
       private
+
+      # Keeps or tears down the run, once the block has ended with
+      # run_error, or nil.
+      def ended(keep, run_error)
+        if keep then @stderr.print(self.class.kept(@run_id))
+        elsif ssh_failed?(run_error) then @stderr.print(skipped)
+        elsif Setup.failed?(run_error)
+          @kept_after_setup = true
+          @stderr.print("quaack: kept run #{@run_id}, since a setup step failed.\n")
+        else finish(run_error)
+        end
+      end
 
       def teardown_line
         line = @transport.call("teardown", args: { run: @run_id }).messages.find { it["type"] == "teardown" }
