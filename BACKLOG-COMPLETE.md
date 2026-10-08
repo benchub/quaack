@@ -7590,3 +7590,23 @@ Also, from the review of 20261008-2: (a) a row comparison on a type whose `=` is
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-3 (commits 43300055, b8fab7f4, 658b557b). Review had no blocking findings; its minors went to 20261008-20.
+
+### 20261008-15. `distinct_join_to_exists` subqueries: minors from 20261007-44.
+
+The review of 20261007-44 found these minor issues:
+
+1. Four mutations of the new resolver in `columns.rb` survive. None changes the result for valid SQL, but each leaves a line untested:
+   - dropping `own?` in `inner_qualified`;
+   - reversing the scope order;
+   - dropping `scopes.first.any?` in `inner_star`;
+   - removing `select.limit_offset` from the `from` check (no test has a subquery in `OFFSET`, though the docs say it's refused).
+
+   Add tests that pin each line, or remove the ones that can't matter.
+2. The docs page says "a column it reads from outside itself must be the kept table's". It doesn't say that the kept table's `a.*` inside a subquery is refused too, or that `ONLY` and column aliases in the subquery's `FROM` are refused.
+3. `EXISTS (SELECT 1 FROM public.comments c WHERE ROW(c.id, a.id) IS NOT NULL)` is refused even though it only reads the kept table. It's a missed rewrite, not a correctness problem.
+
+- **Depends on:** 20261007-44.
+- **Came from:** The review of 20261007-44, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-15 (commit 09f8bf96). Review clean. Item 3 (ROW(...) in a subquery) stays refused by SupportedSql, which 20260923-48 covers; the implicit row-comparison form fires and is tested.

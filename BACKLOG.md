@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-6 (or_to_union: composite keys).
 - 20261007-29 (protocol: Protocol::ErrorRules, the published list of enclave rules).
 - 20261008-3 (not_in_to_not_exists: UNION subqueries, btree check on row pairs).
+- 20261008-15 (distinct_join_to_exists: a function written as a column, and subquery minors).
 
 ## How this file works.
 
@@ -2215,24 +2216,7 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 
 ### 20261008-14. `Child.signal` fallback: untested branches from 20261008-10. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-15. `distinct_join_to_exists` subqueries: minors from 20261007-44.
-
-The review of 20261007-44 found these minor issues:
-
-1. Four mutations of the new resolver in `columns.rb` survive. None changes the result for valid SQL, but each leaves a line untested:
-   - dropping `own?` in `inner_qualified`;
-   - reversing the scope order;
-   - dropping `scopes.first.any?` in `inner_star`;
-   - removing `select.limit_offset` from the `from` check (no test has a subquery in `OFFSET`, though the docs say it's refused).
-
-   Add tests that pin each line, or remove the ones that can't matter.
-2. The docs page says "a column it reads from outside itself must be the kept table's". It doesn't say that the kept table's `a.*` inside a subquery is refused too, or that `ONLY` and column aliases in the subquery's `FROM` are refused.
-3. `EXISTS (SELECT 1 FROM public.comments c WHERE ROW(c.id, a.id) IS NOT NULL)` is refused even though it only reads the kept table. It's a missed rewrite, not a correctness problem.
-
-- **Depends on:** 20261007-44.
-- **Came from:** The review of 20261007-44, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-15. `distinct_join_to_exists` subqueries: minors from 20261007-44. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-16. Operator messages: minors from 20261007-29.
 
