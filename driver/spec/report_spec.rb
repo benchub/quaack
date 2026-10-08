@@ -511,7 +511,8 @@ RSpec.describe Quaack::Driver::Report do
           "unsupported_type" => "a column has a type QUAACK can't fill",
           "expression_unique_index" => "a unique index on an expression calls a function QUAACK can't trust",
           "unsatisfiable_check" => "no value QUAACK tried passes a CHECK constraint on its tables",
-          "domain_check" => "a column's domain rejects every value QUAACK tried"
+          "domain_check" => "a column's domain rejects every value QUAACK tried",
+          "exclusion_constraint" => "an exclusion constraint on its tables has no = column"
         }.each do |rule, words|
           expect(fate("rewrite_test_untested", rule:)).to include(esc("for your query, because #{words}, so it never"))
         end

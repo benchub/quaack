@@ -13,7 +13,9 @@ module Quaack
       # per distinct row. Any other
       # column with a default is left to it, and the rest get a boundary
       # value, for a boundary group, or the type's typical value,
-      # whichever the column's CHECKs allow. A nullable column whose type
+      # whichever the column's CHECKs allow. A table with a generated
+      # column gets no boundary values, since its expression could
+      # overflow on them (price * qty), and the row wouldn't load. A nullable column whose type
       # has no such value is left NULL when Nulls allows it.
       class FreeValues
         UNIQUE = Object.new.freeze
@@ -41,7 +43,8 @@ module Quaack
         def unique_value(table, col) = null?(table, col) && !@values.distinct?(col) ? nil : UNIQUE
 
         def plain_value(table, col, mode)
-          boundaries = Scenarios.boundaries(col.type, mode).select { @values.readable?(col, it) }
+          boundaries = generates?(table) ? [] : Scenarios.boundaries(col.type, mode)
+          boundaries = boundaries.select { @values.readable?(col, it) }
           typical = @values.typical(col)
           # A type with no typical value is refused if no CHECK gives one.
           @checks.satisfying(table, col, boundaries + [typical], (@values.refusal(col, table) unless typical))
@@ -52,6 +55,8 @@ module Quaack
         end
 
         def null?(table, col) = @nulls.allowed?(table, col)
+
+        def generates?(table) = @schema.columns(table).any? { it.default == "generated" }
 
         def varying(table)
           @varying[table] ||= @schema.constraints(table).varying(

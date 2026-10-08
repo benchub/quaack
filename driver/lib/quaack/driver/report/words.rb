@@ -34,7 +34,8 @@ module Quaack
                      "expression_unique_index" => "a unique index on an expression calls a function QUAACK " \
                                                   "can't trust",
                      "unsupported_type" => "a column has a type QUAACK can't fill",
-                     "domain_check" => "a column's domain rejects every value QUAACK tried" }.freeze
+                     "domain_check" => "a column's domain rejects every value QUAACK tried",
+                     "exclusion_constraint" => "an exclusion constraint on its tables has no = column" }.freeze
 
         # Where a rule_bugs entry's rewrite was proved wrong.
         BUG_STEPS = { "rewrite-test" => "on made-up test data",

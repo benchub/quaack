@@ -68,7 +68,9 @@ module Quaack
     # unique too, and RowSet evaluates the index's keys in Postgres to catch
     # rows whose expression values still collide (lower('A') = lower('a')).
     # An expression unique index that calls a function outside pg_catalog
-    # raises Error(:expression_unique_index). Another column with a DEFAULT (or
+    # raises Error(:expression_unique_index). An exclusion constraint
+    # counts as a unique key over its = columns; one with none raises
+    # Error(:exclusion_constraint). Another column with a DEFAULT (or
     # an identity) is left out, so the default
     # applies. The rest take the type's typical value (0, '', the epoch),
     # or a value that satisfies the column's CHECKs. S1 has no NULLs but
@@ -217,6 +219,7 @@ module Quaack
 
         def refuse_user_functions
           raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
+          raise Error, :exclusion_constraint if @schema.tables.any? { |t| @schema.constraints(t).unequal_exclusion }
         end
 
         # The pools and the picker share these, so each asks once per value.

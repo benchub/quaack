@@ -91,7 +91,7 @@ module Quaack
 
         # Scenarios::Error's rules: why rewrite-test couldn't build scenarios.
         REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
-                      domain_check].freeze
+                      domain_check exclusion_constraint].freeze
 
         # result-comparison's failing rules that compare nothing.
         PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
