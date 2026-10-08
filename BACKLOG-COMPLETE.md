@@ -7241,3 +7241,15 @@ From the review of 20261007-17.
 - **Design:** Several LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. A spec pins that `require_different` with no recorded author fails with the usual every-provider error, and another pins the pairing warning's capital after an earlier warning. DESIGN.md's provenance section says the record can't tell a rule-made or operator rewrite from an LLM rewrite with no recorded author, so unless the pairing is `any` (wording fixed at landing) it records both as couldn't be checked, and the report tells them apart by source.
+
+### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys.
+
+From the review of 20261007-57.
+1. A `base_url` with an invalid UTF-8 percent sequence (`?k=SECRET%E2`, `/SECRETPATHKEY0123%E2/`) passes `LLM::URL`, but decoding it gives an invalid byte string, and `APIErrorDetail.scrub` then raises a `RegexpError` whose message quotes the secret, escaping `detail` with the SDK's error as its implicit cause. Main already had this for query values; 20261007-57 extended it to path segments. Drop decoded values that aren't valid encoding, or refuse such a `base_url` in the settings, with a sentinel test.
+2. A URL-encoded echo of a Bedrock bearer token or AWS session token (base64, with `+`, `/`, `=` as `%2B`, `%2F`, `%3D`) isn't scrubbed, since own keys get no encoded form. Scrub the encoded form too, or list it as unsupported in v1.
+
+- **Depends on:** 20261007-57.
+- **Came from:** The review of 20261007-57.
+- **Design:** LLM providers, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The error-detail scrub turns the text and every secret into valid UTF-8 first and never raises (a seeded fuzz of random bytes and encodings pins it), keeps a `base_url` value that decodes to invalid UTF-8 in dropped and replaced forms, and matches every secret as written or URL-encoded per character, in either hex case, so an encoded echo of a Bedrock bearer token or session token is scrubbed. It stays linear on a megabyte of text. Not filed: three edge cases with secrets that are themselves invalid UTF-8, and double-encoded echoes.

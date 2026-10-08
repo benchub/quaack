@@ -2257,13 +2257,4 @@ From the builder and review of 20261007-18.
 - **Design:** Several LLM providers, report.
 - **Status:** todo
 
-### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys.
-
-From the review of 20261007-57.
-1. A `base_url` with an invalid UTF-8 percent sequence (`?k=SECRET%E2`, `/SECRETPATHKEY0123%E2/`) passes `LLM::URL`, but decoding it gives an invalid byte string, and `APIErrorDetail.scrub` then raises a `RegexpError` whose message quotes the secret, escaping `detail` with the SDK's error as its implicit cause. Main already had this for query values; 20261007-57 extended it to path segments. Drop decoded values that aren't valid encoding, or refuse such a `base_url` in the settings, with a sentinel test.
-2. A URL-encoded echo of a Bedrock bearer token or AWS session token (base64, with `+`, `/`, `=` as `%2B`, `%2F`, `%3D`) isn't scrubbed, since own keys get no encoded form. Scrub the encoded form too, or list it as unsupported in v1.
-
-- **Depends on:** 20261007-57.
-- **Came from:** The review of 20261007-57.
-- **Design:** LLM providers, trust boundary.
-- **Status:** todo
+### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys. Done, see BACKLOG-COMPLETE.md.
