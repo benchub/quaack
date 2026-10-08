@@ -6,14 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261007-52 (or_to_union: parameter LIKE patterns, and LIKE edge cases refused).
-- 20261008-2 (not_in_to_not_exists: row-valued NOT IN).
-- 20261008-11 (or_to_union: LIKE minors, collation check skips dropped columns).
-- 20261007-44 (distinct_join_to_exists: subqueries in conditions on the kept table).
-- 20261008-6 (or_to_union: composite keys).
-- 20261007-29 (protocol: Protocol::ErrorRules, the published list of enclave rules).
-- 20261008-3 (not_in_to_not_exists: UNION subqueries, btree check on row pairs).
-- 20261008-15 (distinct_join_to_exists: a function written as a column, and subquery minors).
 - 20260923-24 (index-from-plan: MCV coverage rule, boolean partials).
 
 ## How this file works.
