@@ -67,8 +67,9 @@ module Quaack
       # would 404.
       ENDPOINT = %r{/chat/completions/?\z}
       NOT_ROOT = "must be the API root, such as https://api.groq.com/openai/v1, without /chat/completions"
-      # An AWS region's name, such as us-east-1 or us-gov-west-1.
-      REGION = /\A[a-z]{2}(-[a-z]+)+-\d+\z/
+      # An AWS region's name, such as us-east-1, us-gov-west-1, or
+      # eusc-de-east-1.
+      REGION = /\A[a-z]{2,4}(-[a-z]+)+-\d+\z/
 
       # Each key of the block: whether a value is good, and what a bad one
       # is told.
@@ -100,13 +101,16 @@ module Quaack
       # and QUAACK_LLM_BASE_URL override the block, and an empty one counts
       # as unset. With neither, it's Anthropic with DEFAULT_MODEL. Raises
       # ConfigError for a bad value, or a key that doesn't apply to the
-      # provider.
+      # provider. When QUAACK_LLM_PROVIDER switches to another provider than
+      # the block's, every key of the block is checked and then ignored, so
+      # the switch works for one run: the block's base_url and api_key_env
+      # are meant for its own provider, and that provider's credentials must
+      # never go to them. The model and base_url then come only from
+      # QUAACK_MODEL and QUAACK_LLM_BASE_URL, or the new provider's defaults.
       def self.settings(block = nil, env: ENV)
-        block = check_block(block)
-        provider = pick(env, block, "provider") || "anthropic"
-        check_applies(block, provider)
+        block, provider, switched = for_provider(check_block(block), env)
         model = pick(env, block, "model") || DEFAULT_MODELS[provider]
-        model or raise ConfigError, "#{key("model")} is required unless the provider is anthropic"
+        model or raise ConfigError, no_model(provider, switched)
         base_url = pick(env, block, "base_url")
         check_applies({ "base_url" => base_url }, provider, "base_url" => BASE_URL_ENV) if from_env?(env, "base_url")
         Settings.new(provider:, model:, base_url:, api_key_env: block["api_key_env"],
@@ -131,14 +135,33 @@ module Quaack
         end
       end
 
+      # The provider in effect, the block for it, and whether
+      # QUAACK_LLM_PROVIDER switched from the block's own provider. A switch
+      # gives an empty block. Otherwise it raises unless every key applies.
+      def self.for_provider(block, env)
+        provider = pick(env, block, "provider") || "anthropic"
+        return [{}, provider, true] if provider != block.fetch("provider", "anthropic")
+
+        check_applies(block, provider)
+        [block, provider, false]
+      end
+
+      def self.no_model(provider, switched)
+        return "#{MODEL_ENV} is required when #{PROVIDER_ENV} switches to #{provider}" if switched
+
+        "#{key("model")} is required unless the provider is anthropic"
+      end
+
       # Raises unless every key of block applies to provider.
       def self.check_applies(block, provider, labels = {})
         block.each_key do |name|
-          next if ONLY.fetch(name, [provider]).include?(provider)
+          next if applies?(name, provider)
 
           raise ConfigError, "#{labels.fetch(name, key(name))} doesn't apply to provider #{provider}"
         end
       end
+
+      def self.applies?(name, provider) = ONLY.fetch(name, [provider]).include?(provider)
 
       # The overriding variable's value if it's set and not empty, else the
       # block's.
@@ -170,7 +193,8 @@ module Quaack
         value.any? { it.include?("{prompt_file}") } && value.any? { it.include?("{model}") }
       end
 
-      private_class_method :check_block, :check_applies, :pick, :from_env?, :check, :key, :command_template?
+      private_class_method :check_block, :for_provider, :no_model, :check_applies, :applies?, :pick, :from_env?,
+                           :check, :key, :command_template?
     end
   end
 end

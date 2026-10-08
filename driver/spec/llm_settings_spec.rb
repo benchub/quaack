@@ -68,6 +68,35 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(settings(block, env:).provider).to eq("anthropic")
     end
 
+    # Each host and key variable in the block is meant for the block's
+    # provider, so a switch for one run takes none of them.
+    it "takes nothing from the block when QUAACK_LLM_PROVIDER switches from openai_compatible to anthropic" do
+      block = { "provider" => "openai_compatible", "model" => "llama-3", "base_url" => "https://api.groq.com/openai/v1",
+                "api_key_env" => "GROQ_KEY" }
+
+      expect(fields(settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })))
+        .to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil, api_key_env: nil, aws_region: nil,
+               aws_profile: nil, command_template: nil, timeout_seconds: nil)
+    end
+
+    it "takes nothing from the block when QUAACK_LLM_PROVIDER switches from anthropic to openai_compatible" do
+      block = { "model" => "claude-x", "base_url" => "https://gateway.example.com", "api_key_env" => "GATEWAY_KEY" }
+      env = { "QUAACK_LLM_PROVIDER" => "openai_compatible", "QUAACK_MODEL" => "gpt-5" }
+
+      expect(fields(settings(block, env:)))
+        .to eq(provider: "openai_compatible", model: "gpt-5", base_url: nil, api_key_env: nil, aws_region: nil,
+               aws_profile: nil, command_template: nil, timeout_seconds: nil)
+      expect(config_error(block, env: env.except("QUAACK_MODEL")).message)
+        .to eq("QUAACK_MODEL is required when QUAACK_LLM_PROVIDER switches to openai_compatible")
+    end
+
+    it "takes QUAACK_LLM_BASE_URL when QUAACK_LLM_PROVIDER switches provider" do
+      block = { "provider" => "openai_compatible", "model" => "m", "base_url" => "https://api.groq.com/openai/v1" }
+      env = { "QUAACK_LLM_PROVIDER" => "anthropic", "QUAACK_LLM_BASE_URL" => "https://env.example.com" }
+
+      expect(settings(block, env:).base_url).to eq("https://env.example.com")
+    end
+
     it "counts an empty variable as unset" do
       env = { "QUAACK_MODEL" => "", "QUAACK_LLM_BASE_URL" => "", "QUAACK_LLM_PROVIDER" => "" }
 
@@ -250,7 +279,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     end
 
     it "takes each region form AWS uses" do
-      %w[us-east-1 eu-central-1 ap-southeast-2 us-gov-west-1 ca-west-1].each do |region|
+      %w[us-east-1 eu-central-1 ap-southeast-2 us-gov-west-1 ca-west-1 eusc-de-east-1].each do |region|
         expect(settings(block.merge("aws_region" => region)).aws_region).to eq(region)
       end
     end
@@ -288,13 +317,33 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       end
     end
 
-    it "judges which keys apply by the provider QUAACK_LLM_PROVIDER picks" do
-      e = config_error(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+    # The block's base_url is a host meant for bedrock, so anthropic's
+    # credentials must never go there.
+    it "ignores the whole block when QUAACK_LLM_PROVIDER switches to another provider for one run" do
+      result = settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
 
-      expect(e.message).to eq("llm.aws_region in ~/.quaack/driver.json doesn't apply to provider anthropic")
-      expect(settings({ "aws_region" => "us-west-2" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock",
-                                                              "QUAACK_MODEL" => "m" }).aws_region)
-        .to eq("us-west-2")
+      expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
+                                   api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                   command_template: nil, timeout_seconds: nil)
+    end
+
+    it "takes no block key, not even bedrock's own, when QUAACK_LLM_PROVIDER switches to bedrock" do
+      result = settings({ "aws_region" => "us-west-2", "model" => "claude-x" },
+                        env: { "QUAACK_LLM_PROVIDER" => "bedrock", "QUAACK_MODEL" => "m" })
+
+      expect([result.model, result.aws_region]).to eq(["m", nil])
+    end
+
+    it "needs QUAACK_MODEL when QUAACK_LLM_PROVIDER switches to bedrock" do
+      e = config_error({ "model" => "claude-x" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock" })
+
+      expect(e.message).to eq("QUAACK_MODEL is required when QUAACK_LLM_PROVIDER switches to bedrock")
+    end
+
+    it "still refuses a key that doesn't apply when QUAACK_LLM_PROVIDER names the block's own provider" do
+      e = config_error(block.merge("api_key_env" => "SENTINEL_VALUE"), env: { "QUAACK_LLM_PROVIDER" => "bedrock" })
+
+      expect(e.message).to eq("llm.api_key_env in ~/.quaack/driver.json doesn't apply to provider bedrock")
     end
   end
 
@@ -321,20 +370,28 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(e.message).not_to include("sentinel")
     end
 
-    it "refuses a block base_url when QUAACK_LLM_PROVIDER switches to copilot_cli" do
-      e = config_error({ "base_url" => "https://sentinel.example" },
-                       env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
+    it "ignores a block base_url and api_key_env when QUAACK_LLM_PROVIDER switches to copilot_cli" do
+      result = settings({ "base_url" => "https://sentinel.example", "api_key_env" => "MY_KEY" },
+                        env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
 
-      expect(e.message).to eq("llm.base_url in ~/.quaack/driver.json doesn't apply to provider copilot_cli")
-      expect(e.message).not_to include("sentinel")
+      expect([result.provider, result.base_url, result.api_key_env]).to eq(["copilot_cli", nil, nil])
     end
 
-    it "refuses copilot-only block keys when QUAACK_LLM_PROVIDER switches away" do
+    it "ignores copilot-only block keys when QUAACK_LLM_PROVIDER switches away" do
       template = ["copilot", "{prompt_file}", "{model}"]
-      e = config_error({ "provider" => "copilot_cli", "command_template" => template },
+      result = settings({ "provider" => "copilot_cli", "command_template" => template, "timeout_seconds" => 5 },
+                        env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+
+      expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
+                                   api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                   command_template: nil, timeout_seconds: nil)
+    end
+
+    it "still checks the ignored keys' values" do
+      e = config_error({ "provider" => "copilot_cli", "timeout_seconds" => -1 },
                        env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
 
-      expect(e.message).to eq("llm.command_template in ~/.quaack/driver.json doesn't apply to provider anthropic")
+      expect(e.message).to eq("llm.timeout_seconds in ~/.quaack/driver.json must be a positive number")
     end
 
     it "takes its command template and timeout" do

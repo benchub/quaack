@@ -33,7 +33,9 @@ module Quaack
       # AWS_DEFAULT_REGION, then the profile's. With a Bedrock API key the
       # gem looks up nothing, so it's llm.aws_region, AWS_REGION, or
       # AWS_DEFAULT_REGION. No region is a usage error, before any attempt,
-      # unless there's a base URL, which a key needs no region for.
+      # unless there's a base URL, which a key needs no region for. So is a
+      # bad AWS_REGION or AWS_DEFAULT_REGION, when there's no llm.aws_region,
+      # checked as llm.aws_region is, and named, not quoted.
       #
       # `transport` gets each attempt as it would go out, rewritten and
       # signed, as the gem's Anthropic::APIRequest, plus the step, and
@@ -98,7 +100,7 @@ module Quaack
           raise Error.new("llm_auth", "#{BEARER_ENV} is set but empty") if ENV[BEARER_ENV].empty?
           raise ConfigError, BOTH if settings.aws_profile
 
-          region = settings.aws_region || REGION_VARIABLES.map { ENV.fetch(it, nil) }.find { !it.to_s.empty? }
+          region = settings.aws_region || env_region
           raise ConfigError, NO_REGION unless region || settings.base_url
 
           { aws_region: region }
@@ -107,11 +109,23 @@ module Quaack
         # The client's options for signing: the region and credentials the
         # AWS SDK finds, or the keys given.
         def signing(settings, given)
+          env_region unless settings.aws_region
           region, credentials = aws(settings, given)
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials&.set?
 
           { aws_region: region, aws_access_key: credentials.access_key_id,
             aws_secret_key: credentials.secret_access_key, aws_session_token: credentials.session_token }
+        end
+
+        # The first of REGION_VARIABLES that's set and not empty, or nil.
+        # Raises if it isn't a region.
+        def env_region
+          name = REGION_VARIABLES.find { !ENV[it].to_s.empty? } or return
+          region = ENV.fetch(name)
+          ok, problem = CHECKS.fetch("aws_region")
+          raise ConfigError, "#{name} #{problem}" unless ok.call(region)
+
+          region
         end
 
         # The region and credentials the AWS SDK finds for the settings, as
