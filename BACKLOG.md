@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261007-51 (Equality refuses a half-exact `=`).
+- None. The last batch closed at 0.1.23 on 2026-10-08.
 
 ## How this file works.
 
