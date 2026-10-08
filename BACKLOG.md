@@ -19,6 +19,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-31 (arena catalog names qualified; the allowlist is empty).
 - 20261002-4 (composite keys; unique checks compare opclass and collation).
 - 20261007-39 (same-type arrays, ranges, and composites compare in denormalized_equal).
+- 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
 
 ## How this file works.
 
@@ -830,25 +831,7 @@ Minor findings from the build and both reviews of 20261001-23:
 
 ### 20261002-4. `distinct_join_to_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-5. `or_to_union`: minor findings.
-
-Minor findings from both reviews of 20261001-24:
-
-- **A clock literal outside the OR isn't anchored.** In `WHERE c.due >= 'today' AND (o.note = 'x' OR c.archived)`, the conjunct is copied into each arm, so its `$n` appears twice. `LiteralSet::Feeds` (`literal_set.rb:186`) then marks it `:shared_placeholder`, `ClockLiterals.implicit_types` finds no type, and the rewrite reads the real clock while the original reads the anchor. rewrite-test, counterexamples or result-comparison could then report a sound rewrite as a rule bug. Fix in clock-anchor: type a placeholder when every occurrence feeds a column of the same date type.
-- **Guarding arms can raise.** Split arms are all evaluated, so `i.qty = 0 OR i.total / i.qty > 10 OR o.vip` raises division by zero where the original returns rows. Never wrong rows. Refuse, or note it in DESIGN.md.
-- With LIMIT and no ORDER BY, the rewrite returns a different but valid set of rows. Confirm rewrite-test and counterexamples don't report that as a rule bug.
-- Test gaps: the `@columns` cache key's schema part (`catalog.rb`); column names of 62 or 63 characters, which the `_1` suffix pushes past Postgres's limit (no rewrite results, but untested).
-- DESIGN.md's row leaves out several refusals: a subquery in the select list or ORDER BY; unqualified columns, a bare `*`, or ORDER BY an output name; an unnamed cast, COALESCE or CASE over a column; NATURAL or USING joins; ONLY; column aliases.
-- Extensions for later: composite keys, GROUP BY, outer joins, a bare `*`.
-
-- **Depends on:** 20261001-24.
-- **Came from:** Both reviews of 20261001-24.
-- **Design:** clock-anchor, rewrite-rules.
-- **Status:** todo
-
-## After version 1.
-
-These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
+### 20261002-5. `or_to_union`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-6. Test the runtime check's environment scrubbing. Done, see BACKLOG-COMPLETE.md.
 
@@ -2316,4 +2299,28 @@ From the review of 20261007-39.
 - **Depends on:** 20261007-39.
 - **Came from:** The review of 20261007-39.
 - **Design:** trust boundary, assumption checks.
+- **Status:** todo
+
+### 20261007-46. `or_to_union` and `Tree::Names`: minors from 20261002-5.
+
+From the reviews of 20261002-5.
+1. LIKE or ILIKE whose pattern is a column can raise only in the rewrite (`o.vip OR i.name LIKE i.pat` with `pat = 'ab\'`: "LIKE pattern must not end with escape character"). `AEXPR_LIKE` and `AEXPR_ILIKE` sit in `SAFE_KINDS` whatever the pattern is. Treat them as safe only when the pattern side has no column.
+2. No test covers refusing an index into a column (`A_Indirection`) or the `expr.name.size == 1` check in `safe?`. Add tests, or drop what can't raise.
+3. Implicit casts the planner inserts aren't in the parse tree (`numeric_col = real_col` casts to float4, which can overflow). Note it in the rule's page.
+4. `Tree::Names` records taken names as written, but Postgres cuts identifiers over 63 bytes, so a fresh name can equal a taken name's cut form (61 `x`s plus `_1_more` against `fresh("x" * 62)`). Add each taken name's 63-byte cut to the set.
+5. Item 3's test comment says rewrite-test and counterexamples compare this way, but the test exercises only `ResultComparison.compare_in_both_orders`. Reword it.
+6. 20261003-3 says "20261002-5 moves `RuleBugs` onto an allowlist"; that's item 1 of 20261002-2. Fix the reference there.
+
+- **Depends on:** 20261002-5.
+- **Came from:** The builder and reviews of 20261002-5.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261007-47. `or_to_union`: extensions.
+
+From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins, and a bare `*`. Ask the user which are worth building; each must stay sound.
+
+- **Depends on:** 20261002-5.
+- **Came from:** 20261002-5.
+- **Design:** rewrite-rules.
 - **Status:** todo

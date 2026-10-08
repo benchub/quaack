@@ -6947,3 +6947,24 @@ From the review of 20261007-13.
 - **Design:** Several LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. `QUAACK_LLM` with a lone `llm` block or none refuses another name with a message that names the one provider and says the file has no `llms`, never the variable's value. `LLM::Settings` carries `at` (`llm` or `llms[i]`), so the Bedrock build messages name the entry's own key. DESIGN.md's "Several LLM providers" records the choices from 20261007-13: positions from 0, `QUAACK_LLM` with a lone block, pinned pools, `fan_out: false` refused elsewhere, `"llm": null` counting as present, and, pending the user's confirmation, that failover-mode units don't move the round_robin cursor.
+
+### 20261002-5. `or_to_union`: minor findings.
+
+Minor findings from both reviews of 20261001-24:
+
+- **A clock literal outside the OR isn't anchored.** In `WHERE c.due >= 'today' AND (o.note = 'x' OR c.archived)`, the conjunct is copied into each arm, so its `$n` appears twice. `LiteralSet::Feeds` (`literal_set.rb:186`) then marks it `:shared_placeholder`, `ClockLiterals.implicit_types` finds no type, and the rewrite reads the real clock while the original reads the anchor. rewrite-test, counterexamples or result-comparison could then report a sound rewrite as a rule bug. Fix in clock-anchor: type a placeholder when every occurrence feeds a column of the same date type.
+- **Guarding arms can raise.** Split arms are all evaluated, so `i.qty = 0 OR i.total / i.qty > 10 OR o.vip` raises division by zero where the original returns rows. Never wrong rows. Refuse, or note it in DESIGN.md.
+- With LIMIT and no ORDER BY, the rewrite returns a different but valid set of rows. Confirm rewrite-test and counterexamples don't report that as a rule bug.
+- Test gaps: the `@columns` cache key's schema part (`catalog.rb`); column names of 62 or 63 characters, which the `_1` suffix pushes past Postgres's limit (no rewrite results, but untested).
+- DESIGN.md's row leaves out several refusals: a subquery in the select list or ORDER BY; unqualified columns, a bare `*`, or ORDER BY an output name; an unnamed cast, COALESCE or CASE over a column; NATURAL or USING joins; ONLY; column aliases.
+- Extensions for later: composite keys, GROUP BY, outer joins, a bare `*`.
+
+- **Depends on:** 20261001-24.
+- **Came from:** Both reviews of 20261001-24.
+- **Design:** clock-anchor, rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-07, after a review with one blocking finding, a fix round, and a clean second review. Clock anchoring types a placeholder only when every place it appears feeds a column predicate of one date or timestamp type, so a clock literal in each arm of a rewrite is anchored. Fresh aliases from `Tree::Names` fit Postgres's 63-byte limit, for every rule. or_to_union refuses an OR whose arms could raise where the original wouldn't (casts, function calls, or indexing over columns, operators other than comparisons, scalar subqueries), since Postgres evaluates a single OR's arms in order and stops at the first true one; arms reading the same tables stay in one branch. Tests cover the catalog cache key and a LIMITed rewrite that keeps other rows; the rule's page lists every refusal. Enclave change, unreleased until the next batch bump.
+
+## After version 1.
+
+These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
