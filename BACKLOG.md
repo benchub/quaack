@@ -1431,22 +1431,7 @@ From the build of 20261002-9:
 
 ### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-22. `quaack setup`: loose ends.
-
-Minor findings from the build and review of 20260928-1:
-
-- **No run-server flags and no `run_server_command` fails as `usage`.** `quaacks run-server` refuses with `usage` (`run_server.rb:52`), so the operator sees `quaack setup failed: usage` and can't tell why. Under `quaack run` without `--keep`, the run, intake included, is then torn down. Give it its own rule, such as `run_server_unspecified`, add it to README's "Common rules" table, and say in README run-server that the flags or the config are required.
-- **Flags given after run-server has passed are silently ignored.** If the database given was wrong but passed the check, the only fix is a new run. Warn when flags are given and run-server is skipped.
-- **A setup failure under `quaack run` tears the run down, but under `quaack setup` it's kept.** Pick one behavior, probably keep, since nothing expensive has run yet and the operator may just need different flags.
-- **The driver's unit specs don't cover skipping a late step.** Only `spec/setup_postgres_spec.rb` catches a broken skip of `racetrack-setup`. Add a unit case.
-
-- **Depends on:** 20260928-1.
-- **Came from:** The build and review of 20260928-1, 2026-10-03.
-- **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
-- **Landed (2026-10-08), items 2 and 4:** after one review with no blocking findings. When the run server is already checked, `quaack setup` (and `quaack run`, whether or not it runs setup) prints a line naming the run-server flags it ignores, never their values; a unit case covers skipping racetrack-setup. Still open: item 1, which needs an enclave rule (`run_server_unspecified` is decided on the jump server, so it goes in the batch), and item 3, which changes the teardown policy and needs the user: keep the run after a setup failure under `quaack run` (nothing expensive has run, and the operator may only need different flags), or tear it down (a permanent failure such as `volatile_function` leaves no run server or data copy behind).
-- **Landed (2026-10-08), item 1:** after one review with no blocking findings. With run-server flags missing and no `run_server_command`, the enclave refuses as `run_server_unspecified` (exit 70, no value in the line), and the driver adds a fixed note saying what to give. Still open: item 3, for the user. When it lands, also: under `quaack run` without `--keep` the run is torn down, so the note's "give the flags" fix needs a new `quaack start` that the line doesn't say (append `Teardown.next_step` for this rule, or keep the run); and DESIGN.md (~285) says a failed setup step prints only its rule, but rules with a fixed note print `<rule>: <note>`.
-- **Decided by the user (2026-10-08):** item 3: keep the run after a setup failure under `quaack run`, for debugging, and put the teardown command in the error.
-- **Status:** todo
+### 20261003-22. `quaack setup`: loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-28. `shared_scan_cte`: widenings.
 
@@ -2284,4 +2269,17 @@ From the review of 20261007-52.
 - **Depends on:** 20261007-52.
 - **Came from:** The review of 20261007-52.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-12. Setup failures: minors from 20261003-22 item 3.
+
+From the review of 20261003-22 item 3.
+1. Only four of setup's steps have a "kept after failure" test; leaving `racetrack-setup` out of `Setup.failed?` stays green. Add one example that loops over every step's subcommand.
+2. Move `Teardown`'s message builders (`failed`, `done`, `interrupted`, `skipped`, `later`, `kept`) into a small module so the class is back under RuboCop's length limit, and drop the `rubocop:disable`.
+3. Name the jump host in the teardown step (`ssh <jump> quaacks teardown --run <ID>`), since `where[:jump]` is known, here and in the existing kept and skipped messages.
+4. Ctrl-C during a setup step tears the run down under `quaack run` but `quaack setup` keeps it. Pick one, or say in DESIGN.md why they differ.
+
+- **Depends on:** 20261003-22.
+- **Came from:** The review of 20261003-22 item 3.
+- **Design:** `quaack setup`, teardown.
 - **Status:** todo
