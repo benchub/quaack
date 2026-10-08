@@ -112,7 +112,7 @@ module Quaack
           SELECT EXISTS (
             SELECT FROM pg_catalog.pg_collation c
             WHERE NOT c.collisdeterministic
-              AND (c.oid #{EQ} ANY (SELECT attcollation FROM pg_catalog.pg_attribute)
+              AND (c.oid #{EQ} ANY (SELECT attcollation FROM pg_catalog.pg_attribute WHERE NOT attisdropped)
                 OR c.oid #{EQ} ANY (SELECT typcollation FROM pg_catalog.pg_type)
                 OR c.oid #{EQ} ANY (SELECT rngcollation FROM pg_catalog.pg_range)))
         SQL
@@ -153,7 +153,7 @@ module Quaack
         end
 
         # Whether a column, domain, or range in the database uses a
-        # nondeterministic collation.
+        # nondeterministic collation. A dropped column doesn't count.
         def nondeterministic_collations?
           @nondeterministic = @connection.exec(NONDETERMINISTIC).getvalue(0, 0) == "t" if @nondeterministic.nil?
           @nondeterministic
