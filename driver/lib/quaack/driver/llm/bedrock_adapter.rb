@@ -68,13 +68,14 @@ module Quaack
         # The Anthropic adapter's initialize finds Anthropic's credentials,
         # so it isn't called: this sets up the same state from AWS's.
         def initialize(settings:, transport: nil, aws_access_key: nil, aws_secret_key: nil, # rubocop:disable Lint/MissingSuper
-                       max_retries: ::Anthropic::Client::DEFAULT_MAX_RETRIES)
+                       max_retries: nil)
           @model = settings.model
           @at = settings.at
           given = [aws_access_key, aws_secret_key] if aws_access_key
           options = ENV.key?(BEARER_ENV) ? bearer(settings) : signing(settings, given)
           edge = transport && ->(request) { transport.call(request, step: @step) }
-          @anthropic = EdgeClient.new(edge:, base_url: settings.base_url, max_retries:, **options)
+          @anthropic = EdgeClient.new(edge:, base_url: settings.base_url, max_retries: retries(max_retries, settings),
+                                      **options)
           @base_url = settings.base_url
           @own_keys = [ENV.fetch(BEARER_ENV, nil),
                        *options.values_at(:aws_access_key, :aws_secret_key, :aws_session_token)]

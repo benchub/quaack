@@ -23,8 +23,9 @@ module Quaack
       #
       # Retries are the gem's own: it retries a 408, 409, 429, or 5xx
       # (including 529, overloaded) and a dropped connection, up to
-      # `max_retries` times (the gem's default, two), backing off from half a
-      # second up to eight, or as long as the API's retry-after says. With a
+      # `max_retries` times (the settings', else the gem's default, two),
+      # backing off from half a second up to eight, or as long as the API's
+      # retry-after says. A max_retries given to `new` beats both. With a
       # profile's token, it retries a 401 the same way, rereading the token.
       # Every attempt is an API call, so each one is counted, whether it
       # succeeds or not.
@@ -54,12 +55,12 @@ module Quaack
         CREDENTIAL_ERRORS = [::Anthropic::Errors::ConfigurationError,
                              ::Anthropic::Credentials::WorkloadIdentityError].freeze
 
-        def initialize(settings:, transport: nil, api_key: nil, max_retries: ::Anthropic::Client::DEFAULT_MAX_RETRIES)
+        def initialize(settings:, transport: nil, api_key: nil, max_retries: nil)
           @model = settings.model
           @transport = transport
           api_key ||= named_key(settings.api_key_env) if settings.api_key_env
           refuse_empty_default unless api_key
-          @anthropic = anthropic(api_key, settings.base_url, max_retries)
+          @anthropic = anthropic(api_key, settings.base_url, retries(max_retries, settings))
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials?
 
           @base_url = settings.base_url
@@ -90,6 +91,10 @@ module Quaack
         end
 
         private
+
+        # How many times the gem retries: given, else the settings', else the
+        # gem's default.
+        def retries(given, settings) = given || settings.max_retries || ::Anthropic::Client::DEFAULT_MAX_RETRIES
 
         # The request, with structured output that matches schema, if
         # there's one.

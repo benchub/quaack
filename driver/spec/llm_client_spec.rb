@@ -593,6 +593,27 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(fake.asks.map(&:url)).to eq(["https://api.anthropic.com/v1/messages"])
       expect(fake.asks.map(&:url).join).not_to include("sentinel")
     end
+
+    # Task 20261001-6: the gem's default is two retries.
+    it "retry only as many times as the settings' max_retries" do
+      settings = Quaack::Driver::LLM.settings({ "max_retries" => 1 }, env: {})
+      fake.error("llm-rewrites", status: 503).error("llm-rewrites", status: 503).reply("llm-rewrites", "ok")
+      client = described_class.new(settings:, api_key: "k", burndown: burndown, transport: fake)
+
+      expect { client.ask(step: "llm-rewrites", messages: messages, max_tokens: 10) }
+        .to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_unavailable") }
+      expect(fake.asks.size).to eq(2)
+    end
+
+    it "retry more than the gem's default with a larger max_retries" do
+      settings = Quaack::Driver::LLM.settings({ "max_retries" => 3 }, env: {})
+      3.times { fake.error("llm-rewrites", status: 503) }
+      fake.reply("llm-rewrites", "ok")
+      reply = described_class.new(settings:, api_key: "k", burndown: burndown, transport: fake)
+                             .ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
+
+      expect([reply, fake.asks.size]).to eq(["ok", 4])
+    end
   end
 end
 

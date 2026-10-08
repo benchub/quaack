@@ -38,8 +38,9 @@ module Quaack
       #
       # Retries are the gem's own: it retries a 408, 409, 429, or 5xx, and a
       # connection that failed before the request went out, up to
-      # `max_retries` times (the gem's default, two), backing off from half a
-      # second up to eight, or as long as the API's retry-after says. Every
+      # `max_retries` times (the settings', else the gem's default, two),
+      # backing off from half a second up to eight, or as long as the API's
+      # retry-after says. A max_retries given to `new` beats both. Every
       # attempt is an API call, so each one is counted, whether it succeeds
       # or not.
       #
@@ -72,7 +73,8 @@ module Quaack
         # The request parameter a rejection of the schema names.
         SCHEMA_PARAM = "response_format"
 
-        def initialize(settings:, transport: nil, api_key: nil, max_retries: ::OpenAI::Client::DEFAULT_MAX_RETRIES)
+        def initialize(settings:, transport: nil, api_key: nil, max_retries: nil)
+          max_retries ||= settings.max_retries || ::OpenAI::Client::DEFAULT_MAX_RETRIES
           @model = settings.model
           @schema_mode = true
           @attempts = Attempts.new(transport)

@@ -299,6 +299,8 @@ For `"provider": "bedrock"`, the block also takes `aws_region` and `aws_profile`
 
 For `"provider": "copilot_cli"`, the block also takes `command_template` and `timeout_seconds`, and not `base_url`, `api_key_env`, `aws_region`, or `aws_profile`. `command_template` and `timeout_seconds` apply to no other provider. Any mismatch is a usage error naming the key. `QUAACK_LLM_PROVIDER` takes `copilot_cli` too.
 
+For `anthropic`, `openai_compatible`, and `bedrock`, the block also takes `max_retries`: how many times the adapter's gem retries a 408, 409, 429, or 5xx, with its usual backoff, after the first attempt. It's a whole number from 0 to 10, and 0 turns the retries off. Without it, the gem's own default holds, two retries. Anything else, such as a negative number, a float like `2.0`, or a string, is a usage error naming the key, not the value. It doesn't apply to `copilot_cli`, which retries nothing, so there it's a usage error too. An `llms` entry takes it the same way, named by its position, such as `llms[1].max_retries`. Like every key of the block, a `QUAACK_LLM_PROVIDER` switch to another provider checks it and then ignores it, so the new provider gets its gem's default. Pending the user's confirmation: the range of 0 to 10.
+
 Access control comes from ssh. Anyone who can ssh into the jump server already has production access, so they can run the enclave script too. There's no separate login or service to secure.
 
 #### Several LLM providers.

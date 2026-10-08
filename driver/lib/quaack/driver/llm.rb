@@ -58,11 +58,13 @@ module Quaack
       # default. api_key_env is the name of the variable that holds the key,
       # or nil for the provider's usual lookup. aws_region and aws_profile are
       # bedrock's, each nil for the AWS SDK's own lookup. command_template and
-      # timeout_seconds are copilot_cli's, nil for its defaults. at is where
-      # the settings sit in the file, llm or an entry such as llms[2], for an
-      # adapter's messages that name a key.
+      # timeout_seconds are copilot_cli's, nil for its defaults. max_retries
+      # is how many times an SDK adapter's gem retries a 408, 409, 429, or
+      # 5xx, nil for the gem's own default. at is where the settings sit in
+      # the file, llm or an entry such as llms[2], for an adapter's messages
+      # that name a key.
       Settings = Data.define(:provider, :model, :base_url, :api_key_env, :aws_region, :aws_profile,
-                             :command_template, :timeout_seconds, :at)
+                             :command_template, :timeout_seconds, :max_retries, :at)
 
       NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/
       LINE = /\A[^\n\r]*\S[^\n\r]*\z/
@@ -89,16 +91,19 @@ module Quaack
         "aws_profile" => [->(v) { v.is_a?(String) && LINE.match?(v) }, "must be the name of an AWS profile"],
         "command_template" => [->(v) { command_template?(v) },
                                "must be an argv array with {prompt_file} and {model} placeholders"],
-        "timeout_seconds" => [->(v) { v.is_a?(Numeric) && v.positive? && v.finite? }, "must be a positive number"]
+        "timeout_seconds" => [->(v) { v.is_a?(Numeric) && v.positive? && v.finite? }, "must be a positive number"],
+        # The cap of 10 is pending the user's confirmation.
+        "max_retries" => [->(v) { v.is_a?(Integer) && v.between?(0, 10) }, "must be a whole number from 0 to 10"]
       }.freeze
       KEYS = CHECKS.keys.freeze
 
       # The keys that apply only to some providers, and which. bedrock's
-      # credentials come from AWS, so it has no api_key_env.
+      # credentials come from AWS, so it has no api_key_env. copilot_cli runs
+      # a command and retries nothing, so it has no max_retries.
       ONLY = { "base_url" => %w[anthropic openai_compatible bedrock],
                "api_key_env" => %w[anthropic openai_compatible], "aws_region" => %w[bedrock],
                "aws_profile" => %w[bedrock], "command_template" => %w[copilot_cli],
-               "timeout_seconds" => %w[copilot_cli] }.freeze
+               "timeout_seconds" => %w[copilot_cli], "max_retries" => %w[anthropic openai_compatible bedrock] }.freeze
 
       # The variable that overrides each key that has one.
       VARIABLES = { "provider" => PROVIDER_ENV, "model" => MODEL_ENV, "base_url" => BASE_URL_ENV }.freeze
@@ -124,9 +129,8 @@ module Quaack
         model or raise ConfigError, no_model(provider, switched, at)
         base_url = pick(env, block, "base_url")
         check_applies({ "base_url" => base_url }, provider, at, VARIABLES) if from_env?(env, "base_url")
-        Settings.new(provider:, model:, base_url:, api_key_env: block["api_key_env"],
-                     aws_region: block["aws_region"], aws_profile: block["aws_profile"],
-                     command_template: block["command_template"], timeout_seconds: block["timeout_seconds"], at:)
+        # The keys no variable overrides are the block's, nil without them.
+        Settings.new(provider:, model:, base_url:, at:, **(KEYS - VARIABLES.keys).to_h { [it.to_sym, block[it]] })
       end
 
       # The adapter class for a provider that has one.
