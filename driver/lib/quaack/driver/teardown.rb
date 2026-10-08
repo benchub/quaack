@@ -92,7 +92,7 @@ module Quaack
         added = teardown&.only_teardown_left? || teardown&.kept_after_setup?
         return shown unless added && !(error.is_a?(EnclaveError) && error.to_go_on?)
 
-        "#{shown.delete_suffix(".")}. To go on, #{step}"
+        "#{shown}. To go on, #{step}"
       end
 
       def self.kept(run_id)
