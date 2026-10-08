@@ -38,6 +38,14 @@ module Quaack
     # A refusal raises Error, whose message names only the rule and the
     # literal's type, never the literal.
     module NameQualifier
+      # The A_Expr kinds whose name is an operator's, written as one. The
+      # others, written as keywords (IN, LIKE, BETWEEN, IS DISTINCT FROM,
+      # NULLIF, and the like), have no qualified spelling. Today the filter
+      # changes nothing, so no test can fail without it (task 20261007-30):
+      # pg_catalog has every operator those keywords name, so the :only pick
+      # always finds more than one schema, or only pg_catalog, and leaves
+      # them bare. It's kept as a defense, so that a change to how operators
+      # are picked can never put a schema on a keyword's operator.
       OPERATOR_KINDS = %i[AEXPR_OP AEXPR_OP_ANY AEXPR_OP_ALL].freeze
 
       # Each node type's name list, and how its schema is picked: :first,

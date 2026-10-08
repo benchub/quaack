@@ -27,8 +27,17 @@ module Quaack
     # first, and written in a fixed format. A stored anchor that doesn't
     # parse raises racetrack_bad_clock_anchor.
     #
+    # hypopg goes in the quaack schema, unless the racetrack has it already,
+    # wherever that is. The session's search_path is the plan's
+    # (RunServer.connect), which can name only schemas the racetrack doesn't
+    # have, and CREATE EXTENSION would then have nowhere to put it. quaack is
+    # the one schema setup itself makes sure of, and it's on no
+    # application's path. HypoPG is called in its own schema, wherever it is
+    # (SingleCandidateTest::HypoPG).
+    #
     # A quaack schema that's already there must hold nothing but
-    # quaack.clock_anchor() returning timestamptz, or setup raises
+    # quaack.clock_anchor() returning timestamptz, and hypopg and its
+    # objects, or setup raises
     # racetrack_quaack_schema_foreign and changes nothing. What's in the
     # schema is read from pg_depend: every object in a schema, of any kind,
     # has a dependency on it there, which is how DROP SCHEMA CASCADE finds
@@ -57,6 +66,17 @@ module Quaack
                      SELECT oid FROM pg_catalog.pg_proc
                      WHERE oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('quaack.clock_anchor()')
                        AND prorettype OPERATOR(pg_catalog.=) 'pg_catalog.timestamptz'::pg_catalog.regtype), false))
+          AND NOT EXISTS (
+            SELECT FROM pg_catalog.pg_extension e
+            WHERE e.extname OPERATOR(pg_catalog.=) 'hypopg'
+              AND ((d.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_extension'::pg_catalog.regclass
+                    AND d.objid OPERATOR(pg_catalog.=) e.oid)
+                   OR EXISTS (SELECT FROM pg_catalog.pg_depend m
+                              WHERE m.classid OPERATOR(pg_catalog.=) d.classid
+                                AND m.objid OPERATOR(pg_catalog.=) d.objid
+                                AND m.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_extension'::pg_catalog.regclass
+                                AND m.refobjid OPERATOR(pg_catalog.=) e.oid
+                                AND m.deptype OPERATOR(pg_catalog.=) 'e')))
       SQL
 
       module_function
@@ -65,8 +85,8 @@ module Quaack
         literal = anchor_literal(store.read("clock_anchor"))
         raise Error, "racetrack_quaack_schema_foreign" unless connection.exec(FOREIGN_SQL).getvalue(0, 0) == "0"
 
-        connection.exec("CREATE EXTENSION IF NOT EXISTS hypopg")
         create_clock_anchor(connection, literal)
+        connection.exec("CREATE EXTENSION IF NOT EXISTS hypopg WITH SCHEMA quaack")
         nil
       end
 

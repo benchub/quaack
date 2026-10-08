@@ -110,7 +110,7 @@ module Quaack
         # What every rewrite of a call is checked with.
         def context(store, connection, source)
           { store:, connection:, source:, inferred: source == "operator", original: original(store),
-            settings: store.read("plan")[0]["Settings"], **structure(store, connection) }
+            settings: Enclave::RunServer.plan_settings(store), **structure(store, connection) }
         end
 
         def rewrites(input)

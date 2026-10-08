@@ -90,6 +90,35 @@ RSpec.describe "quaacks qualify, against a real server" do
     expect(stored.read("search_path")).to eq(%w[sales public])
   end
 
+  # Task 20261007-30: the stored path is the operator role's, so later
+  # steps, which connect to the run server as another role, search what
+  # qualify did: "$user" is the operator's role, and a schema that role
+  # may not use, which Postgres skips, is left out.
+  context "when the operator's role isn't the run server's" do
+    let(:role) { "operator_#{SecureRandom.hex(4)}" }
+    let(:plan_settings) { { "search_path" => %("$user", locked, nowhere, public) } }
+
+    before do
+      production.server.admin.exec(%(CREATE ROLE "#{role}" LOGIN PASSWORD '#{production.password}'))
+      conn = production.connect
+      conn.exec("CREATE SCHEMA locked")
+      conn.close
+      pgpass(user: role)
+    end
+
+    after { production.server.admin.exec(%(DROP ROLE IF EXISTS "#{role}")) }
+
+    it "stores the path with \"$user\" as the operator's role" do
+      expect(qualify(env: operator_env(PGUSER: role)).stdout).to eq(done)
+      expect(stored.read("search_path").first).to eq(role)
+    end
+
+    it "leaves out a schema the operator's role may not use, and keeps one that isn't there" do
+      expect(qualify(env: operator_env(PGUSER: role)).stdout).to eq(done)
+      expect(stored.read("search_path")).to eq([role, "nowhere", "public"])
+    end
+  end
+
   context "with a CTE, a subquery, a quoted name, and an already-qualified one" do
     let(:query) do
       <<~SQL.chomp
