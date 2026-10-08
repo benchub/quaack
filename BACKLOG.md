@@ -2237,16 +2237,13 @@ From the builder and review of 20261007-18.
 
 ### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-62. Router and OpenAI-compatible details: minors from 20261007-42.
+### 20261007-62. Router and OpenAI-compatible details: minors from 20261007-42. Done, see BACKLOG-COMPLETE.md.
 
-From the reviews of 20261007-42.
-1. `Error#naming`'s `reason:` is untested (dropping it stays green), and so is the empty-text guard in `RouterLines.short`. Test them or drop them.
-2. The OpenAI-compatible adapter's status-nil branch (`return error.message unless error.status`) is untested; pin the connection-error and timeout details.
-3. `OPENAI_CUSTOM_HEADERS` values, sent only to OpenAI's own API, aren't in the scrub list.
-4. When an error body has no message, the whole JSON body is shown, scrubbed only of the adapter's own secrets. Show only the status there, or a fixed sentence.
-5. The corpus README's list of hand-edited prompts misses 20260927-24 (commit 22072ed, which changed the counterexample prompts' OVERRIDING sentence after some replies were collected).
+### 20261007-63. OpenAI-compatible details: accept a string `error` as the message.
 
-- **Depends on:** 20261007-42.
-- **Came from:** The builder and reviews of 20261007-42.
-- **Design:** Several LLM providers, LLM providers.
+From the review of 20261007-62. Servers such as Hugging Face TGI send `{"error": "<text>"}`. Before 20261007-62 the whole body showed; now only the status does ("the API answered 404"). Accept a non-empty string `error` as the message, still through the scrub, with a sentinel test.
+
+- **Depends on:** 20261007-62.
+- **Came from:** The review of 20261007-62.
+- **Design:** LLM providers.
 - **Status:** todo

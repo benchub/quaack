@@ -7284,3 +7284,18 @@ From the reviews of 20261007-16.
 - **Design:** Several LLM providers, report.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. Tests now cover the refinement round, the rewrite searches' index ideas, an empty first round, the writer-side filters, keeping an entry as first recorded, the `File::EXCL` guard, and tightening an existing runs directory. When the record doesn't add up, every per-provider count in the rewrites table says "not recorded", as DESIGN.md says. A rerun of llm-index-ideas replaces its rounds and skips instead of appending. A resumed run clears an earlier "marked down" for each provider it asked and didn't mark down (pending the user's confirmation). The template's per-provider note is absent when rows don't split.
+
+### 20261007-62. Router and OpenAI-compatible details: minors from 20261007-42.
+
+From the reviews of 20261007-42.
+1. `Error#naming`'s `reason:` is untested (dropping it stays green), and so is the empty-text guard in `RouterLines.short`. Test them or drop them.
+2. The OpenAI-compatible adapter's status-nil branch (`return error.message unless error.status`) is untested; pin the connection-error and timeout details.
+3. `OPENAI_CUSTOM_HEADERS` values, sent only to OpenAI's own API, aren't in the scrub list.
+4. When an error body has no message, the whole JSON body is shown, scrubbed only of the adapter's own secrets. Show only the status there, or a fixed sentence.
+5. The corpus README's list of hand-edited prompts misses 20260927-24 (commit 22072ed, which changed the counterexample prompts' OVERRIDING sentence after some replies were collected).
+
+- **Depends on:** 20261007-42.
+- **Came from:** The builder and reviews of 20261007-42.
+- **Design:** Several LLM providers, LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. Tests pin `Error#naming`'s reason, the empty-reason guard, and the OpenAI-compatible detail when the API never answers. `OPENAI_CUSTOM_HEADERS` values are scrubbed. A body with no usable message, or a text body, gives only "the API answered <status>", through the same `APIErrorDetail.answered` as Anthropic. The corpus README's list of replies that answer an older prompt now includes 20260927-24.
