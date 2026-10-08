@@ -363,6 +363,30 @@ RSpec.describe Quaack::Enclave::Redaction do
       end
     end
 
+    it "types an untyped placeholder as text when the server's messages aren't in English" do
+      query = "SELECT concat('x', max(o.status)) FROM public.orders o WHERE o.status = 'shipped'"
+      result = redact(query)
+      bound = described_class.binding(result.query.sql, result.placeholder_map)
+      conn = test_database.connection
+      conn.exec("SET lc_messages = 'de_DE.UTF-8'")
+      expect(bound.prepare(conn, "quaack_de")).to eq(%w[text unknown])
+      expect(bound.execute(conn, "quaack_de").values).to eq(rows(query))
+    ensure
+      conn&.exec("RESET lc_messages")
+    end
+
+    it "fails as prepare_failed with 25P02 in a transaction that has already failed" do
+      result = redact("SELECT o.id FROM public.orders o WHERE o.id = 5")
+      bound = described_class.binding(result.query.sql, result.placeholder_map)
+      conn = test_database.connection
+      conn.transaction do
+        expect { conn.exec("SELECT 1 / 0") }.to raise_error(PG::DivisionByZero)
+        expect { bound.prepare(conn, "quaack_failed_tx") }
+          .to raise_error(described_class::Error) { |e| expect([e.rule, e.sqlstate]).to eq(%w[prepare_failed 25P02]) }
+        conn.exec("ROLLBACK")
+      end
+    end
+
     it "fails where the literal fails, as a polymorphic function of an untyped string does" do
       result = described_class.query(PgQuery.parse("SELECT json_agg('x') FROM public.orders o"))
       bound = described_class.binding(result.sql, result.placeholder_map)
