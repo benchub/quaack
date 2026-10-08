@@ -88,8 +88,19 @@ module Quaack
           waiter.join
         end
 
+        # The child may end between the caller's check and the kill. Once
+        # reaped, its group is gone (ESRCH). Before that, the group holds
+        # only a zombie, and macOS refuses the group signal with EPERM. The
+        # child alone is then signalled instead: that's harmless for a
+        # zombie, and still raises EPERM for a live one this process truly
+        # can't signal. It may be reaped in between, which is ESRCH again.
         def signal(pid, name)
-          Process.kill(name, -pid)
+          begin
+            Process.kill(name, -pid)
+          rescue Errno::EPERM
+            Process.kill(name, pid)
+          end
+          nil
         rescue Errno::ESRCH
           nil
         end
