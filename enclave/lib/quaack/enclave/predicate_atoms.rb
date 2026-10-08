@@ -123,11 +123,6 @@ module Quaack
 
       USING_UNREPLACEABLE = "a JOIN ... USING column can't be replaced by TRUE"
       NATURAL_UNREPLACEABLE = "a NATURAL JOIN's condition can't be replaced by TRUE"
-      # The rule and message with_true raises for each atom it can't replace.
-      UNREPLACEABLE = {
-        "USING" => ["using_column_unreplaceable", USING_UNREPLACEABLE],
-        "NATURAL" => ["natural_join_unreplaceable", NATURAL_UNREPLACEABLE]
-      }.freeze
 
       module_function
 
@@ -148,7 +143,7 @@ module Quaack
       # The query with this one atom replaced by TRUE, deparsed. The parse
       # must be the one the atom came from, and it isn't changed.
       def with_true(parse, atom)
-        raise Error.new(*UNREPLACEABLE.fetch(atom.operator)) unless atom.replaceable
+        unreplaceable!(atom) unless atom.replaceable
 
         tree = Tree.copy(parse.tree)
         case_expr = Tree.simple_case(tree, atom.path)
@@ -156,6 +151,13 @@ module Quaack
         else Tree.set(tree, atom.path, Tree.true_node)
         end
         Deparse.faithfully(tree)
+      end
+
+      # Raises the Error for an atom with_true can't replace.
+      def unreplaceable!(atom)
+        raise Error.new("natural_join_unreplaceable", NATURAL_UNREPLACEABLE) if atom.operator == "NATURAL"
+
+        raise Error.new("using_column_unreplaceable", USING_UNREPLACEABLE)
       end
 
       # The atom's own node in the parse, real constants and all. For a

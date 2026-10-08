@@ -28,7 +28,8 @@ module Quaack
                  index_test_no_index_search index_test_unknown_round index_test_unknown_search indexes_hidden
                  inheritance_parent input_too_large insert_failed insert_select internal_error
                  interval_field_qualifier invalid_index_candidate matview_relation memory_command_bad_output
-                 memory_command_failed memory_command_timed_out missing_columns not_a_query_parse not_a_table
+                 memory_command_failed memory_command_timed_out missing_columns natural_join_unreplaceable
+                 not_a_query_parse not_a_table
                  not_create_index not_immutable not_insert not_one_select not_plain_value nulls_not_distinct
                  on_conflict on_only parse_error partitioned_relation pg_dump_failed pg_dump_missing pg_dump_too_old
                  plan_bad_shape plan_gate_bad_plan plan_gate_mismatch_likely_stale_statistics

@@ -287,7 +287,8 @@ module Quaack
         cleanup_failed prepare_failed execute_failed bad_type not_one_select unknown_placeholder bad_placeholder
         bad_placeholder_map bad_literal bad_literal_sets bad_statistics statistics_bad_shape bad_value
         plan_gate_bad_plan
-        not_a_query_parse using_column_unreplaceable deparse_mismatch parse_error restore_mismatch unparsable
+        not_a_query_parse using_column_unreplaceable natural_join_unreplaceable deparse_mismatch parse_error
+        restore_mismatch unparsable
         bad_conninfo_key secret_in_conninfo
         already_in_transaction connection_unusable begin_failed statement_not_allowed statement_unparsable
         fixture_load_failed reverse_load_failed insert_failed query_failed statement_timeout transaction_ended
