@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "uri"
 
 module Quaack
@@ -24,7 +25,22 @@ module Quaack
         # The encodings whose text is read as UTF-8 bytes, not converted.
         BYTES = [Encoding::UTF_8, Encoding::BINARY].freeze
 
+        # The longest detail, cut after the scrub, so no cut splits a key
+        # and leaves part of it.
+        DETAIL_MAX = 1000
+
         module_function
+
+        # A JSON array body's message: its first element's, as the block
+        # reads a Hash, or with none there, the whole body as JSON.
+        def array_message(body)
+          first = body.first
+          message = yield(first) if first.is_a?(Hash)
+          message || (JSON.generate(body) unless body.empty?)
+        end
+
+        # A scrubbed detail cut to DETAIL_MAX characters.
+        def cut(text) = text.length > DETAIL_MAX ? "#{text[0, DETAIL_MAX - 1]}…" : text
 
         # The status, then the body's message, if it has one. An adapter
         # that reads more body shapes passes its own reason.

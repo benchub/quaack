@@ -321,6 +321,53 @@ RSpec.describe "the OpenAI-compatible adapter" do
         raise "expected an LLM::Error, got #{error.inspect}"
       end
 
+      # Task 20261001-5: Gemini's OpenAI-compatible endpoint seems to send
+      # its error body as a JSON array.
+      it "reads the message from an array body's first element, with the secrets scrubbed" do
+        body = [{ error: { message: "overloaded, key #{key} #{query}" } }, "SENTINEL-2ND"]
+        fake.error_body("llm-index-ideas", status: 503, body:)
+
+        error = echoed_array(fake.client(burndown:, max_retries: 0, api_key: key, settings:))
+
+        expect(error.reason).to eq("the API answered 503: overloaded, key [key] [key]")
+        expect(error_text(error)).not_to include(key, query, "SENTINEL-2ND", "llm.example.com")
+      end
+
+      it "gives an array body with no message there as JSON, with the secrets scrubbed" do
+        fake.error_body("llm-index-ideas", status: 503, body: [{ code: 503, status: "UNAVAILABLE #{key} #{query}" }])
+
+        error = echoed_array(fake.client(burndown:, max_retries: 0, api_key: key, settings:))
+
+        expect(error.reason).to eq('the API answered 503: [{"code":503,"status":"UNAVAILABLE [key] [key]"}]')
+        expect(error_text(error)).not_to include(key, query)
+      end
+
+      it "cuts a long array body's JSON short, after the scrub" do
+        # The key straddles the cut, so a cut before the scrub would leave
+        # part of it.
+        fake.error_body("llm-index-ideas", status: 503, body: [{ status: "#{"x" * 950}#{key}#{"y" * 2000}" }])
+
+        error = echoed_array(fake.client(burndown:, max_retries: 0, api_key: key, settings:))
+
+        expect(error.reason.length).to eq(Quaack::Driver::LLM::APIErrorDetail::DETAIL_MAX)
+        expect(error.reason).to include("x[key]y").and end_with("y…")
+        expect(error_text(error)).not_to include("SENTINEL")
+      end
+
+      it "keeps an llm_auth detail to the status for an array body" do
+        fake.error_body("llm-index-ideas", status: 403, body: [{ error: { message: "key #{key}" } }])
+
+        error = echoed_array(fake.client(burndown:, max_retries: 0, api_key: key, settings:))
+
+        expect(sans_sizes(error.message)).to eq("llm_auth: the API refused the key (403)")
+      end
+
+      def echoed_array(client)
+        client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
       it "scrubs a key from the variable api_key_env names" do
         settings = Quaack::Driver::LLM.settings({ "provider" => "openai_compatible", "model" => "m",
                                                   "base_url" => FakeOpenAI::BASE_URL,
