@@ -98,8 +98,9 @@ module Quaack
       # actual_rows are counts, nil when nothing was counted. For subset,
       # expected_rows is the expected count, not the full result's size. row
       # and column are zero-based positions, or nil. load_order is set only
-      # by ResultComparison.compare_in_both_orders, on a mismatch: :forward
-      # or :reverse, for the fixture load that disproved the candidate. It's
+      # by ResultComparison.compare_in_load_orders, on a mismatch: :forward,
+      # :reverse, or :rotated, for the fixture load that disproved the
+      # candidate. It's
       # nil otherwise, and by default.
       Verdict = Data.define(:match, :mode, :rule, :expected_rows, :actual_rows, :row, :column, :load_order) do
         def initialize(load_order: nil, **fields)
@@ -131,8 +132,8 @@ module Quaack
           f.values_at(:expected_rows, :actual_rows, :row, :column)
            .all? { |n| n.nil? || (n.is_a?(Integer) && !n.negative?) }
         end,
-        "a verdict's load_order must be :forward, :reverse, or nil" =>
-          ->(f) { [nil, :forward, :reverse].include?(f[:load_order]) }
+        "a verdict's load_order must be :forward, :reverse, :rotated, or nil" =>
+          ->(f) { [nil, :forward, :reverse, :rotated].include?(f[:load_order]) }
       }.freeze
 
       module_function

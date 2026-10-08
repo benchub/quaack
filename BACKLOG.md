@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260923-36 (index-dedupe: WITH and NULLS NOT DISTINCT existing indexes cover, boolean folding).
 - 20260924-24 (inventory: production read timeout, null config commands refused, memory cap, ShellCommand drain).
 - 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
+- 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
 
 ## How this file works.
 
@@ -289,18 +290,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 ### 20260924-8. Burndown loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-9. Load-order loose ends.
-
-**Needs a decision,** from the reviews of 20260924-5:
-- A third load order, such as rotating each table's run by one. It would catch a tie pick exactly in the middle of an odd-sized group, and a rare top-N heapsort pick, which both orders agree on today.
-- Self-referencing foreign keys always fail the reverse load, as `reverse_load_failed`, which discards every candidate for tree-shaped tables. Keep such tables in forward order, or reverse them level by level.
-
-- **Depends on:** 20260924-5.
-- **Came from:** Both reviews of 20260924-5.
-- **Design:** fixture-compare.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Fix self-referencing FKs (reverse them level by level, or keep such tables in forward order, whichever is sound) and add a third load order.
-- **Status:** todo
+### 20260924-9. Load-order loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-10. index-rank loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2357,4 +2347,17 @@ The second review of 20260923-57 found these. Both are already true on main.
 - **Depends on:** 20260923-57.
 - **Came from:** The second review of 20260923-57, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run.
+
+The review of 20260924-9 found these:
+
+1. **No spec checks that `self_references` leaves out keys to other tables.** Deleting `AND con.confrelid OPERATOR(pg_catalog.=) con.conrelid` from `SelfReferences::SQL` keeps every spec green. That isn't unsound, but it would quietly weaken the reverse and rotated orders. Add an assertion on `runner.self_references` for a table that has both a self-reference and a reference to another table.
+2. **Three cases have no spec.** Add tests for a composite self-referencing key, a NULL parent key, and a self-referencing table that shows up in more than one run. The review's probes passed for all three, so this is coverage only.
+3. **Cost.** The rotated order adds about 45% to the joins spec. When every run and every level has two rows or fewer, the rotated order is the same as reverse, and with one row it's the same as forward. Skip the rotated load when its order matches one already run.
+
+- **Depends on:** 20260924-9.
+- **Came from:** The review of 20260924-9, 2026-10-08.
+- **Design:** fixture-compare.
 - **Status:** todo

@@ -85,6 +85,7 @@ module Quaack
         # ArenaFixture's failures.
         FAILURES = %w[unsupported_order statement_unparsable statement_not_allowed begin_failed
                       already_in_transaction connection_unusable fixture_load_failed reverse_load_failed
+                      rotated_load_failed
                       insert_failed query_failed transaction_ended rollback_failed statement_timeout
                       statement_canceled].freeze
 

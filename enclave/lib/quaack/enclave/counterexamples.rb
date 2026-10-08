@@ -89,7 +89,7 @@ module Quaack
       Round = Data.define(:match, :rule, :load_order, :covered, :load_failed)
 
       # The runner rules that mean the fixture, not the candidate, failed.
-      LOAD_RULES = %i[fixture_load_failed reverse_load_failed insert_failed].freeze
+      LOAD_RULES = %i[fixture_load_failed reverse_load_failed rotated_load_failed insert_failed].freeze
 
       # The runner steps that load the fixture. A failure in one of them,
       # whatever its rule (a statement_timeout, say), is a load failure.
@@ -98,14 +98,14 @@ module Quaack
       module_function
 
       # counterexample-compare and counterexample-rollback. Runs fixture-compare's comparison on the prepared fixture,
-      # in both load orders (ResultComparison.compare_in_both_orders: the parent rows reverse, the inserts keep their
+      # in every load order (ResultComparison.compare_in_load_orders: the parent rows reorder, the inserts keep their
       # order), then vacuity-guard's test for each untested atom (indexes into atoms, the original's PredicateAtoms),
       # each in its own arena transaction that rolls back. A fixture that fails to load disproves nothing: the round
       # reports the runner's rule, with match nil, load_failed true, and nothing covered. Any other runner failure,
       # such as the candidate failing to run (query_failed), disproves it, with match false. Untested atoms with_true
       # can't replace are skipped.
       def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
-        verdict = ResultComparison.compare_in_both_orders(runner, prepared.rows, original:, candidate:,
+        verdict = ResultComparison.compare_in_load_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)
         Round.new(match: verdict.match?, rule: verdict.rule, load_order: verdict.load_order,
                   covered: covered(runner, prepared, original, atoms, untested), load_failed: false)

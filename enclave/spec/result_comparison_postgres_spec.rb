@@ -843,7 +843,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
     # or_to_union keeps the LIMIT outside its UNION, so the rewrite can
     # keep other rows than the original does. That's a valid answer, so
-    # compare_in_both_orders calls it a match (task 20261002-5). This
+    # compare_in_load_orders calls it a match (task 20261002-5). This
     # checks that call only, not rewrite-test or counterexamples, which
     # call it too.
     it "matches an or_to_union rewrite that keeps other rows under the LIMIT" do
@@ -857,7 +857,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       first, second = raw(original, candidate, rows: backwards)
       expect(first.sort).not_to eq(second.sort)
 
-      verdict = described_class.compare_in_both_orders(runner, backwards, original:, candidate:)
+      verdict = described_class.compare_in_load_orders(runner, backwards, original:, candidate:)
       expect(fields(verdict)).to include(match: true, mode: :subset)
     end
 
