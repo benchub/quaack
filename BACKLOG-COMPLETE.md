@@ -7746,3 +7746,16 @@ Still open from the build and reviews of 20260922-19:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-26 (commit 73dbb2f2). Review had no blocking findings. Hidden table columns are refused as column_statistics_hidden. What non-owner roles still lose (pg_stats_ext, expression-index statistics, row security) went to 20261008-34.
+
+### 20260924-28. literals loose ends.
+
+Still open from the build and reviews of 20260922-21:
+- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which redact turns into cast placeholders, and literals always falls back on those. Handle a cast placeholder whose cast matches the column's type.
+- The boolean `t`/`f` check at `literal_set.rb:326` survives mutation. Pin it with a planted bad value, or drop it.
+
+- **Depends on:** 20260922-21.
+- **Came from:** The build and reviews of 20260922-21.
+- **Design:** literals.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-28 (commit a6c46854). Review had no blocking findings; its minors went to 20261008-36.

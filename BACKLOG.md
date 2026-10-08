@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
 - 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
 - 20260924-26 (statistics: column_statistics_hidden, UTF-8, non-comma array delimiters skipped).
+- 20260924-28 (literals: cast placeholders get statistics values; statistics records column_types).
 
 ## How this file works.
 
@@ -346,17 +347,7 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-28. literals loose ends.
-
-Still open from the build and reviews of 20260922-21:
-- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which redact turns into cast placeholders, and literals always falls back on those. Handle a cast placeholder whose cast matches the column's type.
-- The boolean `t`/`f` check at `literal_set.rb:326` survives mutation. Pin it with a planted bad value, or drop it.
-
-- **Depends on:** 20260922-21.
-- **Came from:** The build and reviews of 20260922-21.
-- **Design:** literals.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-28. literals loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-29. Run server check loose ends.
 
@@ -2382,4 +2373,17 @@ The first review of 20261008-31 found these minor issues:
 - **Depends on:** 20261008-31.
 - **Came from:** The first review of 20261008-31, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-36. Cast placeholders in literals: minors from 20260924-28.
+
+The review of 20260924-28 found these minor issues:
+
+1. **Older entries.** No test covers a statistics entry stored before `column_types` existed.
+2. **DateStyle.** A picked date or timestamp value goes through its cast as text, in the DateStyle that was active when statistics read it. A replay session with another DateStyle could misread the value or fail to bind it. Pin the DateStyle, for example to ISO, wherever the statistics are read and replayed.
+3. **Shadowed type names.** A bare cast like `$1::timestamptz` matches the pg_catalog type by name only, so a type of the same name earlier on the search_path would match too. The worst case is a bind error, not a leak.
+
+- **Depends on:** 20260924-28.
+- **Came from:** The review of 20260924-28, 2026-10-08.
+- **Design:** literals.
 - **Status:** todo
