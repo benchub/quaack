@@ -7408,3 +7408,13 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08. Split by the user's decision into one task per extension: 20261008-6 to -9.
+
+### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers.
+
+The user confirmed them all on 2026-10-08: failover-mode units don't move the round_robin cursor; a lone `llm` block keeps its first-round index ideas when the replacement round fails; a resumed run clears an earlier "marked down" for any provider it called; per-provider "planner ignored or couldn't try" stays "not recorded"; and `max_retries` takes 0 to 10. Remove each marker from DESIGN.md and the matching code comments, and leave the text otherwise as it is.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-08.
+- **Design:** Several LLM providers, LLM client.
+- **Status:** done
+- **Landed:** 2026-10-08. The five markers the user confirmed are gone from DESIGN.md, with the matching comments in `llm.rb` and two specs; nothing else changed. Docs and comments only, so the main session checked the diff instead of a separate review; the per-commit check passed.

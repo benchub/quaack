@@ -2202,14 +2202,7 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 
 ### 20261007-66. `max_retries`: pin the burndown count per attempt. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers.
-
-The user confirmed them all on 2026-10-08: failover-mode units don't move the round_robin cursor; a lone `llm` block keeps its first-round index ideas when the replacement round fails; a resumed run clears an earlier "marked down" for any provider it called; per-provider "planner ignored or couldn't try" stays "not recorded"; and `max_retries` takes 0 to 10. Remove each marker from DESIGN.md and the matching code comments, and leave the text otherwise as it is.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-08.
-- **Design:** Several LLM providers, LLM client.
-- **Status:** todo
+### 20261008-1. DESIGN.md: drop the "pending the user's confirmation" markers. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`.
 
