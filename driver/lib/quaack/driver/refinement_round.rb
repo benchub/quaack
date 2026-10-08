@@ -34,7 +34,11 @@ module Quaack
         This is a second look. An LLM already proposed candidates, and each was tested with HypoPG. The feedback lists them with their redacted DDL, whether the planner used each one, its cost for each literal set next to the baseline cost with no index, its estimated size, its plan, and its shortfall: "unused" if the planner never used it, or "beaten" if the simpler mechanical candidate in beaten_by did at least as well. A partial predicate that doesn't match the query, an operator class that doesn't fit the column's collation, or an expression that doesn't match the query's exactly are the usual reasons. Propose revised candidates for the ones that fell short.
       PROMPT
 
-      Result = Data.define(:ddls, :outcomes)
+      # provider is the entry that wrote the revisions, for the provenance
+      # record.
+      Result = Data.define(:ddls, :outcomes, :provider) do
+        def initialize(ddls:, outcomes:, provider: nil) = super
+      end
 
       def self.index_feedback(transport, run_id:, search: "original")
         lambda do
@@ -62,20 +66,21 @@ module Quaack
         feedback = @index_feedback.call
         return nil if !feedback["revise"] || feedback["refined"]
 
-        ddls = ask(payload, feedback)
-        Result.new(ddls:, outcomes: @index_test.call(ddls, round: "refinement"))
+        session = @client.session
+        ddls = ask(session, payload, feedback)
+        Result.new(ddls:, outcomes: @index_test.call(ddls, round: "refinement"), provider: session.provider)
       end
 
       private
 
-      def ask(payload, feedback)
+      def ask(session, payload, feedback)
         short = feedback["candidates"].count { it["shortfall"] }
         payload = payload.call if payload.respond_to?(:call)
         content = "The payload:\n\n```json\n#{JSON.generate(payload)}\n```\n\n" \
                   "The candidates' results:\n\n```json\n#{JSON.generate(feedback["candidates"])}\n```\n\n" \
                   "Baseline cost per literal set: #{JSON.generate(feedback["baseline"])}\n\n" \
                   "Propose up to #{short} revised candidates. Answer with JSON: {\"indexes\": [...]}."
-        @client.ask(step: @step, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
+        session.ask(step: @step, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
                     schema: GeneratorThree::SCHEMA).fetch("indexes")
       end
     end

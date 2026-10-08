@@ -130,6 +130,12 @@ RSpec.describe Quaack::Driver::GeneratorThree do
         .to eq("a" => %w[llm-index-ideas llm-index-ideas], "b" => %w[llm-rewrites])
     end
 
+    it "says which provider answered the unit and which round each was, for the provenance record" do
+      result = described_class.new(client: router_over({ "a" => fake, "b" => FakeLLM.new }), index_test:).run(payload)
+
+      expect([result.provider, result.rounds.map(&:round), result.skipped]).to eq(["a", %w[first replacement], nil])
+    end
+
     it "tests the replacements, and asks only once even if more are dropped" do
       answers[1] = [dropped(1, "duplicate")]
       result = run
@@ -160,6 +166,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       result = run
 
       expect(result.rounds.map(&:ddls)).to eq([first])
+      expect([result.provider, result.skipped]).to eq(%w[a llm_rate_limited])
       expect(rounds).to eq([first])
       expect(other.asks).to eq([])
       expect(notes.last).to eq("a is rate limited, so the rest of this run skips it; going on without replacement " \

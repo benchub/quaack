@@ -52,7 +52,11 @@ module Quaack
         Answer with JSON, one entry per rewrite in the same order: {"rewrites": [{"transformation": "...", "assumptions": [...]}]}.
       PROMPT
 
-      Result = Data.define(:rewrites, :outcomes)
+      # provider is the entry that inferred the transformations and
+      # assumptions, or nil when nothing was asked.
+      Result = Data.define(:rewrites, :outcomes, :provider) do
+        def initialize(rewrites:, outcomes:, provider: nil) = super
+      end
 
       def self.from_file(path) = statements(File.read(path))
 
@@ -88,19 +92,20 @@ module Quaack
       def run(payload, sqls)
         return Result.new(rewrites: [], outcomes: []) if sqls.empty?
 
-        inferred = infer(payload, sqls)
+        session = @client.session
+        inferred = infer(session, payload, sqls)
         raise Error, "the LLM inferred #{inferred.size} rewrites, not #{sqls.size}" unless inferred.size == sqls.size
 
         rewrites = sqls.zip(inferred).map { |sql, found| { "sql" => sql }.merge(found) }
-        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites))
+        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites), provider: session.provider)
       end
 
       private
 
-      def infer(payload, sqls)
+      def infer(session, payload, sqls)
         body = JSON.generate("payload" => payload, "rewrites" => sqls)
         messages = [{ role: :user, content: "The original and the rewrites:\n\n```json\n#{body}\n```" }]
-        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("rewrites")
+        session.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("rewrites")
       end
     end
   end

@@ -55,7 +55,16 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
     result = run
 
     expect(sent).to eq([[rewrite]])
-    expect(result).to eq(described_class::Result.new(rewrites: [rewrite], outcomes: [outcome]))
+    expect(result).to eq(described_class::Result.new(rewrites: [rewrite], outcomes: [outcome],
+                                                     provider: "anthropic"))
+  end
+
+  it "says which provider wrote the rewrites, for the provenance record" do
+    other = FakeLLM.new.reply("llm-rewrites", { "rewrites" => [] })
+    router = router_over({ "a" => FakeLLM.new, "b" => other }, routing: { "steps" => { "llm-rewrites" =>
+                                                                                       { "providers" => ["b"] } } })
+
+    expect(described_class.new(client: router, rewrite_check:).run(payload).provider).to eq("b")
   end
 
   it "records that llm-rewrites ran, with an empty rewrite-check, when the LLM proposes nothing" do

@@ -75,8 +75,16 @@ module Quaack
         "storage_options" => "it uses WITH (...) storage options"
       }.freeze
 
-      Round = Data.define(:ddls, :outcomes)
-      Result = Data.define(:rounds)
+      # round is "first" or "replacement".
+      Round = Data.define(:ddls, :outcomes, :round) do
+        def initialize(ddls:, outcomes:, round: "first") = super
+      end
+      # provider is the entry that answered the unit, and skipped the rule
+      # its replacement round was skipped for, or nil, for the provenance
+      # record.
+      Result = Data.define(:rounds, :provider, :skipped) do
+        def initialize(rounds:, provider: nil, skipped: nil) = super
+      end
 
       # The index_test callable for run's search, over transport: it sends
       # `quaacks index-test --run RUN --search SEARCH` with {"ddls": [...]}
@@ -100,25 +108,31 @@ module Quaack
         session = @client.session
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
         first = ask(session, messages, "Asking the LLM for index ideas")
-        rounds = test([], first)
+        rounds = test([], first, "first")
         dropped = dropped(rounds.last, first)
-        return Result.new(rounds:) if dropped.empty?
+        return Result.new(rounds:, provider: session.provider) if dropped.empty?
 
-        messages += [{ role: :assistant, content: JSON.generate("indexes" => first) },
-                     { role: :user, content: replacement_ask(dropped) }]
-        Result.new(rounds: test(rounds, replacements(session, messages)))
+        replace(session, messages + [{ role: :assistant, content: JSON.generate("indexes" => first) },
+                                     { role: :user, content: replacement_ask(dropped) }], rounds)
       end
 
       private
 
-      # The replacement round's DDL, or none when its ask failed with a rule
-      # that fails over: the step keeps the first round's ideas and goes on
-      # (DESIGN.md, "Several LLM providers": Routing).
+      # The result once the replacement round, asked with messages, is done
+      # or skipped.
+      def replace(session, messages, rounds)
+        ddls, skipped = replacements(session, messages)
+        Result.new(rounds: test(rounds, ddls, "replacement"), provider: session.provider, skipped:)
+      end
+
+      # The replacement round's DDL, or none and the rule when its ask
+      # failed with a rule that fails over: the step keeps the first round's
+      # ideas and goes on (DESIGN.md, "Several LLM providers": Routing).
       def replacements(session, messages)
-        ask(session, messages, "Asking the LLM again, for replacements for the dropped ideas")
+        [ask(session, messages, "Asking the LLM again, for replacements for the dropped ideas"), nil]
       rescue LLM::Router::LaterError => e
         @client.going_on(e, "going on without replacement ideas")
-        []
+        [[], e.rule]
       end
 
       # purpose is what progress hears the ask is for.
@@ -127,10 +141,10 @@ module Quaack
                .fetch("indexes")
       end
 
-      def test(rounds, ddls)
+      def test(rounds, ddls, round)
         return rounds if ddls.empty?
 
-        rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls))]
+        rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls), round:)]
       end
 
       # The DDL and outcome of each dropped candidate in round, except those

@@ -92,7 +92,7 @@ module Quaack
         # Client per entry, in its order.
         def self.for(providers, clients)
           new(clients: providers.entries.map(&:name).zip(clients).to_h, routing: providers.routing,
-              named: providers.named, kinds: providers.entries.to_h { [it.name, it.settings&.provider] })
+              named: providers.named, settings: providers.entries.to_h { [it.name, it.settings] })
         end
 
         # The router over one client, as from an llm block, named name.
@@ -101,11 +101,13 @@ module Quaack
                                  routing: RoutingChecks.routing(nil, [], [name]), named: false), [client])
         end
 
-        def initialize(clients:, routing:, named:, kinds: {})
+        # settings holds each entry's LLM::Settings, by name, or nil.
+        def initialize(clients:, routing:, named:, settings: {})
           @clients = clients
           @routing = routing
           @named = named
-          @kinds = kinds
+          @kinds = settings.transform_values { it&.provider }
+          @models = settings.transform_values { it&.model }
           @down = {}
           @cursor = nil
         end
@@ -120,6 +122,15 @@ module Quaack
         def burndown = Burndown.sum(@clients.values.map(&:burndown).uniq(&:object_id))
 
         def session = Session.new(self)
+
+        # Each entry's name, provider type, and model, in order, for the
+        # provenance record. Router.one's has neither type nor model.
+        def entries
+          @clients.keys.map { { "name" => it, "provider" => @kinds[it], "model" => @models[it] } }
+        end
+
+        # Each provider marked down or dropped so far, by name, with its rule.
+        def down = @down.transform_values(&:rule)
 
         # A new unit for the asks left after error, a LaterError, started
         # fresh: it skips skip, each provider this work already failed on,
