@@ -1567,6 +1567,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(index_table.scan("not recorded").size).to eq(5)
     end
 
+    it "says not recorded in the went-on cell of a stage that counted what came in but not what went on" do
+      burndown["stages"]["index-test"] = { "original" => rec(3, nil, dropped: { "never_used" => 1 }).except("out") }
+      expect(index_table).to include(row("Asking the planner whether it would use each one", 3, "none",
+                                         "never used by the planner: 1", 0, "not recorded", "none"))
+    end
+
     it "shows the rewrite stages in words, in order, with their other counts" do
       expect(rewrite_table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
         .to eq(["Rewrites from QUAACK&#39;s own rules", "Rewrites from the LLM", "Your own rewrites",
@@ -1953,6 +1959,38 @@ RSpec.describe Quaack::Driver::Report do
       expect(widths(band)).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
       expect(bands(funnel("index")).values_at(4, 5).map { widths(it) })
         .to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
+    end
+
+    # A band's hatch's leftmost and rightmost x.
+    def hatch_span(band)
+      xs = band[/<path class="hatch" d="([^"]+)"/, 1].scan(/[ML]([\d.]+),/).flatten.map(&:to_f)
+      xs.minmax
+    end
+
+    it "paints a partly counted stage and an uncounted one grey, never the blue of a counted band" do
+      stages["index-test"] = { "original" => rec(3, 1).except("out") }
+      index = bands(funnel("index"))
+      grey = Quaack::Driver::Report::Funnel::UNCOUNTED
+      expect(index.values_at(3, 4).map { it[/<polygon [^>]*>/] }).to all(end_with(%( #{grey}/>)))
+      expect(index.values_at(3, 4).join).not_to include(%(fill="#{Quaack::Driver::Report::Funnel::BLUE}"))
+      expect(index[2][/<polygon [^>]*>/]).to include(%(fill="#{Quaack::Driver::Report::Funnel::BLUE}"))
+    end
+
+    it "centres a partly counted stage's solid top, and hatches the whole band, when it came in under the minimum" do
+      stages["index-test"] = { "original" => rec(1, 0).except("out") }
+      band = bands(funnel("index"))[3]
+      middle = Quaack::Driver::Report::Funnel::WIDTH / 2
+      known = known_top(band)
+      expect([known[0], known[2]]).to eq([(middle - (width(1, 6) / 2)).round(2), (middle + (width(1, 6) / 2)).round(2)])
+      unknown = Quaack::Driver::Report::Funnel::UNKNOWN
+      expect(hatch_span(band)).to eq([middle - (unknown / 2), middle + (unknown / 2)])
+    end
+
+    it "names a partly counted stage's drops in that stage's own words beside its band" do
+      stages["rewrite-test"] = { "rewrites" => rec(5, 4, dropped: { "statement_timeout" => 1 }).except("out") }
+      band = bands(funnel("rewrite"))[5]
+      expect(band).to start_with(%(<g class="band partial">))
+      expect(counts(band)).to eq("5 in, out not recorded · dropped: never tested, because a statement timed out: 1")
     end
 
     it "still shows a stage that counted what went on but not what came in as not recorded" do
