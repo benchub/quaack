@@ -518,6 +518,21 @@ RSpec.describe Quaack::Driver::LLM::Router do
                                "(llm-rewrites)")
     end
 
+    it "lists each dropped branch's step, provider, and rule, for the provenance record, and nothing else" do
+      fakes["a"].error("llm-rewrites", status: 529)
+      fakes["b"].cut_short("llm-rewrites", "par")
+      fakes["c"].reply("llm-rewrites", "c")
+      fakes["b"].error("llm-index-ideas", status: 529)
+      fakes["c"].reply("llm-index-ideas", "c")
+      branches
+
+      expect(ask(router, "llm-index-ideas")).to eq("c")
+
+      expect(router.failed_branches).to eq([{ "step" => "llm-rewrites", "entry" => "a", "rule" => "llm_unavailable" },
+                                            { "step" => "llm-rewrites", "entry" => "b",
+                                              "rule" => "llm_bad_response" }])
+    end
+
     it "says loudly when a branch's credentials were refused" do
       fakes["a"].error("llm-rewrites", status: 401)
       fakes["b"].reply("llm-rewrites", "b")

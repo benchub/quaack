@@ -11,14 +11,25 @@ module Quaack
         MOST_ROUNDS = 3
         # A unit's pairing outcomes (LLM::Router::Pairing#outcome).
         PAIRINGS = %w[met not_met not_applicable unchecked].freeze
+        # The steps that fan out (LLM::RoutingChecks::FAN_OUT_STEPS), and the
+        # rules a branch is dropped for (LLM::Router::FAILS_OVER).
+        FAN_OUT_STEPS = %w[llm-rewrites llm-index-ideas rewrite-llm-index-ideas].freeze
+        FAILS_OVER = %w[llm_rate_limited llm_unavailable llm_auth llm_bad_response].freeze
+        BRANCH_KEYS = %w[entry rule step].freeze
 
         module_function
 
         def record(raw)
-          kept = { "providers" => list(raw["providers"]) { provider(it) }, **rewrites(raw),
-                   "counterexamples" => counterexamples(raw["counterexamples"]),
-                   "index_ideas" => index_ideas(raw["index_ideas"]) }.reject { |_, v| v.nil? || v.empty? }
+          kept = { "providers" => list(raw["providers"]) { provider(it) }, **rewrites(raw), **parts(raw) }
+                 .reject { |_, v| v.nil? || v.empty? }
           name?(raw["operator_inference"]) ? kept.merge("operator_inference" => raw["operator_inference"]) : kept
+        end
+
+        # The counterexample rounds, index rounds, and failed branches.
+        def parts(raw)
+          { "counterexamples" => counterexamples(raw["counterexamples"]),
+            "index_ideas" => index_ideas(raw["index_ideas"]),
+            "failed_branches" => list(raw["failed_branches"]) { branch(it) } }
         end
 
         def rewrites(raw)
@@ -32,6 +43,14 @@ module Quaack
 
           down = raw["down"]
           raw.slice("name", "provider", "model").merge(rule?(down) ? { "down" => down } : {})
+        end
+
+        # A failed fan-out branch: its step, one that fans out, its entry,
+        # and its rule, one that drops a branch. No other key.
+        def branch(raw)
+          return unless raw.is_a?(Hash) && raw.keys.sort == BRANCH_KEYS && name?(raw["entry"])
+
+          raw.slice("step", "entry", "rule") if FAN_OUT_STEPS.include?(raw["step"]) && FAILS_OVER.include?(raw["rule"])
         end
 
         # A counterexample unit: its entry, its rounds, one to three, since

@@ -13,6 +13,7 @@ require_relative "plans"
 require_relative "stages"
 require_relative "funnel"
 require_relative "providers"
+require_relative "failed_branches"
 require_relative "cautions"
 
 module Quaack
@@ -32,6 +33,7 @@ module Quaack
         include Stages
         include Funnel
         include Providers
+        include FailedBranches
         include Cautions
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze

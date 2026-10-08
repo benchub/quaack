@@ -27,6 +27,11 @@ module Quaack
                        .uniq { key.call(it.last) }
         end
 
+        # Each fan-out branch this router dropped, in order, for the
+        # provenance record: its step, its provider's name (entry), and the
+        # rule it failed with, never its reason.
+        def failed_branches = @failed_branches.to_a.map(&:dup)
+
         # Whether step fans out.
         def fan_out?(step) = @routing.steps.dig(step, "fan_out") == true
 
@@ -56,7 +61,7 @@ module Quaack
         end
 
         # A branch's error, once its provider, name, is marked down or
-        # dropped as its rule says, and the line says the step goes on with
+        # dropped as its rule says, the branch is listed as failed, and the line says the step goes on with
         # the others, unless last says none is left, when only a dropped
         # provider gets a line. Raises error, named, for a rule that doesn't
         # fail over.
@@ -64,6 +69,7 @@ module Quaack
           raise named(error, name), cause: nil unless Router::FAILS_OVER.include?(error.rule)
 
           failed(name, error)
+          (@failed_branches ||= []) << { "step" => step, "entry" => name, "rule" => error.rule }
           if last
             none_left(name, error, step)
           else

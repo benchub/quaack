@@ -66,12 +66,15 @@ module Quaack
 
         # The LLM rewrites' rows by provider, each kept from kept, under the
         # LLM row, whose proposals were total. Every count in them is not
-        # recorded unless the record's proposals add up to total.
+        # recorded unless the record's proposals add up to total, and then
+        # the row for unrecorded authors, all not recorded too, is left out.
         def llm_rewrite_rows(kept, total)
           return [] unless split?
 
           proposed = llm_record.fetch("rewrites_proposed", {})
-          added_up(provider_rewrite_rows(kept, proposed), proposed.values.sum, total)
+          rows = provider_rewrite_rows(kept, proposed)
+          rows = rows.reject { it.first == unattributed_name } unless proposed.values.sum == total
+          added_up(rows, proposed.values.sum, total)
         end
 
         # A row per provider that wrote one of kept or proposed some, then
@@ -84,6 +87,7 @@ module Quaack
 
         # The row of LLM rewrites whose author the record lacks, if any.
         def unattributed(kept) = kept ? [llm_row(Words::MISSING, kept, nil)] : []
+        def unattributed_name = "The LLM: #{Words::MISSING}"
 
         def llm_row(name, kept, proposed) = ["The LLM: #{name}", *rewrite_counts(kept, proposed)]
 

@@ -266,6 +266,28 @@ RSpec.describe "The pipeline's provenance record" do
     end
   end
 
+  # DESIGN.md, "Several LLM providers" (Routing, Provenance): a dropped
+  # branch is in the record by step, entry, and rule, and in the report.
+  context "when a branch of llm-rewrites fails" do
+    let(:rewrites_routing) { { "fan_out" => true } }
+
+    before do
+      script
+      fa.cut_short("llm-rewrites", "SENTINEL_REASON")
+    end
+
+    it "records the branch's step, entry, and rule only, and the report says so" do
+      out = File.join(@home, "report.html")
+      run(out:)
+
+      expect(JSON.parse(File.read(path))["failed_branches"])
+        .to eq([{ "step" => "llm-rewrites", "entry" => names[0], "rule" => "llm_bad_response" }])
+      expect(found(File.read(path), secret + ["max_tokens"])).to eq([])
+      expect(File.read(out)).to include("<li>Rewrite suggestions: #{names[0]} gave a reply QUAACK couldn&#39;t use, " \
+                                        "so the step went on without it.</li>")
+    end
+  end
+
   # DESIGN.md, "Several LLM providers" (Provenance): the refinement rounds
   # and a rewrite's own index search are recorded too.
   context "with a refinement round, and a rewrite's index search" do
@@ -312,6 +334,26 @@ RSpec.describe "The pipeline's provenance record" do
 
     expect(JSON.parse(File.read(path))["providers"].to_h { [it["name"], it["down"]] })
       .to eq("old" => "llm_unavailable", names[1] => nil, names[0] => "llm_rate_limited")
+  end
+
+  # DESIGN.md, "Several LLM providers" (Provenance): only a provider this
+  # run asked loses an earlier run's down.
+  context "with a third entry this run never asks" do
+    let(:names) { %w[sentinel-name-a sentinel-name-b sentinel-name-c] }
+    let(:models) { %w[SENTINEL_MODEL_A SENTINEL_MODEL_B SENTINEL_MODEL_C] }
+
+    it "keeps that entry's earlier down" do
+      Quaack::Driver::Provenance.open(@home, run_id)
+                                .providers!([{ "name" => names[2], "provider" => "anthropic", "model" => models[2] }])
+                                .down!(names[2] => "llm_unavailable")
+                                .save
+      script
+      run
+
+      expect(fakes[names[2]].asks).to eq([])
+      expect(JSON.parse(File.read(path))["providers"].to_h { [it["name"], it["down"]] })
+        .to eq(names[2] => "llm_unavailable", names[0] => "llm_rate_limited", names[1] => nil)
+    end
   end
 
   it "keeps the record from before a resume, and adds to it" do

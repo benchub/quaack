@@ -180,11 +180,13 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).to include("For each provider, only what it proposed and what already existed are recorded.")
     end
 
-    it "says not recorded for every provider when the record's counts don't add up to the LLM's" do
+    it "says not recorded for every provider, with no row for unrecorded authors, when the record's counts don't " \
+       "add up to the LLM's" do
       record["rewrites_proposed"] = { "groq" => 3 }
       record["index_ideas"].delete("rewrite_1")
       rewrites = rows("accountability-rewrites")
-      expect(rewrites.keys).to include("The LLM: groq", "The LLM: opus", "The LLM: not recorded")
+      expect(rewrites.keys).to include("The LLM: groq", "The LLM: opus")
+      expect(rewrites.keys).not_to include("The LLM: not recorded")
       expect(rewrites.select { |name, _| name.start_with?("The LLM: ") }.values).to all(eq(["not recorded"] * 7))
       expect(rewrites["The LLM"]).to eq(%w[5 2 1 0 1 1 0])
       expect(rows("accountability-indexes")["The LLM: groq"]).to eq(["not recorded"] * 6)
@@ -211,6 +213,33 @@ RSpec.describe Quaack::Driver::Report do
     it "says not recorded for the calls of an entry this run of quaack didn't have" do
       calls.delete("gpt")
       expect(rows("llm-providers")["gpt"][2]).to eq("not recorded")
+    end
+  end
+
+  # DESIGN.md, "Several LLM providers" (Routing): the report says which
+  # fan-out branch was dropped, and why.
+  describe "the fan-out branches dropped" do
+    def dropped = html[%r{<ul id="llm-failed-branches">.*?</ul>}m]&.scan(%r{<li>(.*?)</li>})&.flatten
+
+    it "lists each with its step, provider, and rule, in words, escaped" do
+      record["failed_branches"] = [{ "step" => "llm-rewrites", "entry" => "gpt", "rule" => "llm_auth" },
+                                   { "step" => "rewrite-llm-index-ideas", "entry" => "opus",
+                                     "rule" => "llm_bad_response" }]
+
+      expect(dropped).to eq(["Rewrite suggestions: gpt had its credentials refused, so the step went on without it.",
+                             esc("Index suggestions for the rewrites: opus gave a reply QUAACK couldn't use, so " \
+                                 "the step went on without it.")])
+    end
+
+    it "isn't there when no branch was dropped" do
+      expect(dropped).to be_nil
+    end
+
+    it "isn't there when the record's list isn't well formed" do
+      record["failed_branches"] = [{ "step" => "llm-rewrites", "entry" => "gpt", "rule" => "llm_auth",
+                                     "reason" => "<b>SELECT 1</b>" }]
+      expect(dropped).to be_nil
+      expect(html).not_to include("SELECT 1</b>")
     end
   end
 
