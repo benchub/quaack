@@ -415,7 +415,7 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string, errors]).to eq(
-      [1, "", "#{torn}quaack run failed: run_from_older_version: an older version of QUAACK started this run, " \
+      [1, "", "#{torn}quaack run failed: run_from_older_version: An older version of QUAACK started this run, " \
               "and this version can't resume it. Start a new run with quaack start\n"]
     )
   end
@@ -468,7 +468,7 @@ RSpec.describe "quaack run" do
 
       expect(transport.calls.map(&:first)).not_to include("teardown")
       expect([status, errors]).to eq(
-        [1, "#{kept}quaack run failed: run_server_unspecified: name the run server with --host, --port, " \
+        [1, "#{kept}quaack run failed: run_server_unspecified: Name the run server with --host, --port, " \
             "--racetrack-db, and --arena-db, or set run_server_command in ~/.quaack/config.json on the jump " \
             "server. To go on, #{go_on}"]
       )

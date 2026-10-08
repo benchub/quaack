@@ -137,7 +137,7 @@ RSpec.describe "quaack setup" do
 
     expect(cli.run(["setup", "--run", run_id])).to eq(1)
 
-    expect(errors).to eq("quaack setup failed: run_from_older_version: an older version of QUAACK started this run, " \
+    expect(errors).to eq("quaack setup failed: run_from_older_version: An older version of QUAACK started this run, " \
                          "and this version can't resume it. Start a new run with quaack start\n")
   end
 
@@ -147,7 +147,7 @@ RSpec.describe "quaack setup" do
 
     expect(cli.run(["setup", "--run", run_id])).to eq(1)
 
-    expect(errors).to eq("quaack setup failed: run_server_unspecified: name the run server with --host, --port, " \
+    expect(errors).to eq("quaack setup failed: run_server_unspecified: Name the run server with --host, --port, " \
                          "--racetrack-db, and --arena-db, or set run_server_command in ~/.quaack/config.json " \
                          "on the jump server\n")
   end

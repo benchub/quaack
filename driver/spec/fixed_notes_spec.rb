@@ -27,9 +27,36 @@ RSpec.describe Quaack::Driver::FixedNotes do
     expect(error("plan_gate_mismatch_likely_stale_statistics").rule_with_note(next_step:))
       .to eq("plan_gate_mismatch_likely_stale_statistics: The racetrack's plan for the slow literals doesn't " \
              "match production's plan. The likely cause is that the racetrack's statistics don't match " \
-             "production's, such as a backup older than the statistics QUAACK read from production. Restore a " \
-             "fresh backup on the run server, or run ANALYZE in the racetrack database. To go on, resume with " \
-             "`quaack setup --run R1`")
+             "production's, such as a backup older than the statistics QUAACK read from production. The run " \
+             "server is already torn down, so make sure the backup the next run server restores from is fresh " \
+             "and analyzed. To go on, resume with `quaack setup --run R1`")
+  end
+
+  # 20261008-16: an orphaned build is the operator's to clear.
+  it "says an orphaned build still running after the wait can be waited out" do
+    expect(error("index_build_orphan_running", step: "index-build").rule_with_note(next_step:))
+      .to eq("index_build_orphan_running: A CREATE INDEX from an earlier, timed-out index-build call is still " \
+             "running on the run server, and it didn't stop when QUAACK canceled it. Wait for it to finish " \
+             "or stop it yourself. To go on, resume with `quaack setup --run R1`")
+  end
+
+  it "says an orphaned build QUAACK may not cancel can be canceled by hand" do
+    expect(error("index_build_orphan_cancel_denied", step: "index-build").rule_with_note(next_step:))
+      .to eq("index_build_orphan_cancel_denied: A CREATE INDEX from an earlier, timed-out index-build call is " \
+             "still running on the run server, and QUAACK's role may not cancel it. Cancel that backend " \
+             "yourself, with pg_cancel_backend as a role that may. To go on, resume with `quaack setup --run R1`")
+  end
+
+  it "ends no note with a period, so a caller can add a sentence after it" do
+    notes = described_class::BY_RULE.keys.map { described_class.for(it, "go on") }
+
+    expect([*notes, described_class.internal_line("internal_error", nil)].grep(/\.\z/)).to eq([])
+  end
+
+  it "starts every note with a capital, unless it starts with a flag or a name such as pg_dump" do
+    firsts = described_class::BY_RULE.values.map { it[/\A\S+/] }
+
+    expect(firsts.grep_v(/\A(?:[A-Z]|--|\w*_)/)).to eq([])
   end
 
   it "says a plan the gate can't compare is a query QUAACK v1 can't tune, not a bug" do
@@ -47,13 +74,13 @@ RSpec.describe Quaack::Driver::FixedNotes do
   it "gives an internal rule the shared line, with the step" do
     expect(error("index_build_unique", step: "index-build").rule_with_note(next_step:))
       .to eq("index_build_unique (step index-build): QUAACK hit an internal check it can't recover from. " \
-             "This is a QUAACK bug: report the rule name and the step.")
+             "This is a QUAACK bug: report the rule name and the step")
   end
 
   it "gives an internal rule the shared line without a step when the error line had none" do
     expect(error("internal_error").rule_with_note)
       .to eq("internal_error: QUAACK hit an internal check it can't recover from. " \
-             "This is a QUAACK bug: report the rule name and the step.")
+             "This is a QUAACK bug: report the rule name and the step")
   end
 
   it "gives every missing_<entry> rule the store's words" do
