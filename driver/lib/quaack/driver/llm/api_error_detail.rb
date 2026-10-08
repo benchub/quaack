@@ -26,9 +26,9 @@ module Quaack
 
         module_function
 
-        # The status, then the body's message, if it has one.
-        def answered(status, body)
-          reason = body_message(body)
+        # The status, then the body's message, if it has one. An adapter
+        # that reads more body shapes passes its own reason.
+        def answered(status, body, reason: body_message(body))
           reason ? "the API answered #{status}: #{reason}" : "the API answered #{status}"
         end
 
