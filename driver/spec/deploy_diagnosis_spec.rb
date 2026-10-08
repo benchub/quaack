@@ -274,6 +274,18 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     end
   end
 
+  it "doesn't name the gem and ruby on PATH when the ruby's path isn't plain" do
+    login_shell("/bin/bash")
+    escaped_ruby = directory("other\e[31mruby", "ruby" => RbConfig.ruby)
+    other_ruby = File.join(dir, "other-ruby")
+    executable(File.join(other_ruby, "gem"), "echo gem")
+
+    expect(diagnose(path: [stubs, tools, other_ruby, escaped_ruby])).to eq(<<~MSG.chomp)
+      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
+      #{check}
+    MSG
+  end
+
   # A plain `cd` resolves "link/.." in the text, to "dir", but the kernel
   # follows link first, so the gem's PATH entry is really elsewhere/ruby.
   it "compares the gem's and ruby's directories by their physical paths" do
