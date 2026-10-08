@@ -13,11 +13,7 @@ RSpec.describe PipelineReplay do
   # one, the runs below are one failing example that says what to install
   # or set, rather than every run failing on its own.
   def self.replays(&)
-    TestPgDump.bin
-  rescue TestPgDump::NotFound => e
-    it("replays the prompt pack, with a pg_dump of the test server's major version") { raise e }
-  else
-    class_exec(&)
+    TestPgDump.examples(self, "replays the prompt pack, with a pg_dump of the test server's major version", &)
   end
 
   replays do

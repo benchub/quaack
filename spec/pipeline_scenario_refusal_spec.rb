@@ -68,12 +68,8 @@ module ScenarioRefusalRun
 end
 
 RSpec.describe ScenarioRefusalRun do
-  def self.refusal_spec
-    TestPgDump.bin
-  rescue TestPgDump::NotFound => e
-    it("runs the pipeline, with a pg_dump of the test server's major version") { raise e }
-  else
-    yield
+  def self.refusal_spec(&)
+    TestPgDump.examples(self, "runs the pipeline, with a pg_dump of the test server's major version", &)
   end
 
   refusal_spec do

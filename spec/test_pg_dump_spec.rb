@@ -3,6 +3,7 @@
 require_relative "spec_helper"
 require "fileutils"
 require "open3"
+require "stringio"
 require "tmpdir"
 
 # Task 20260929-9: the harness finds a pg_dump of the test server's major
@@ -55,10 +56,10 @@ RSpec.describe TestPgDump do
     it "skips a pg_dump of another major version, older or newer" do
       fake_pg_dump(given, "pg_dump (PostgreSQL) 14.19 (Homebrew)")
       fake_pg_dump(keg, "pg_dump (PostgreSQL) 18.6")
-      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given))).to eq(keg)
+      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given), warn_to: StringIO.new)).to eq(keg)
 
       fake_pg_dump(given, "pg_dump (PostgreSQL) 19.0")
-      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given))).to eq(keg)
+      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given), warn_to: StringIO.new)).to eq(keg)
     end
 
     it "skips a directory with no pg_dump in it" do
@@ -70,6 +71,31 @@ RSpec.describe TestPgDump do
     it "skips a program that doesn't say its version the way pg_dump does" do
       fake_pg_dump(given, "not pg_dump (PostgreSQL) 18.6")
       expect { described_class.find(18, [given]) }.to raise_error(TestPgDump::NotFound)
+    end
+
+    it "skips a pg_dump that prints the right version but exits non-zero" do
+      FileUtils.mkdir_p(given)
+      File.write(File.join(given, "pg_dump"), "#!/bin/sh\necho 'pg_dump (PostgreSQL) 18.6'\nexit 1\n")
+      File.chmod(0o755, File.join(given, "pg_dump"))
+      fake_pg_dump(keg, "pg_dump (PostgreSQL) 18.2")
+      expect(described_class.version(File.join(given, "pg_dump"))).to be_nil
+      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given), warn_to: StringIO.new)).to eq(keg)
+    end
+
+    it "says so when it skips QUAACK_TEST_PG_BIN's pg_dump for the keg" do
+      fake_pg_dump(given, "pg_dump (PostgreSQL) 17.6")
+      fake_pg_dump(keg, "pg_dump (PostgreSQL) 18.2")
+      warnings = StringIO.new
+      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given), warn_to: warnings)).to eq(keg)
+      expect(warnings.string).to eq("Skipped #{given}, which holds pg_dump (PostgreSQL) 17.6, not pg_dump 18. " \
+                                    "Using #{keg}.\n")
+    end
+
+    it "says nothing when the first directory it checks has the server's major version" do
+      fake_pg_dump(given, "pg_dump (PostgreSQL) 18.2")
+      warnings = StringIO.new
+      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given), warn_to: warnings)).to eq(given)
+      expect(warnings.string).to eq("")
     end
 
     it "says what to install or set when none has the server's major version" do
@@ -115,10 +141,47 @@ RSpec.describe TestPgDump do
   end
 end
 
-# With no pg_dump found, the scripts' with_env says so, and leaves the
-# environment as it was.
+# The load-time gate the replay and scenario-refusal specs use: with a
+# pg_dump, the group gets its examples; without one, it gets a single
+# example that fails with what to install or set.
+RSpec.describe "TestPgDump.examples" do
+  # Stands in for an example group: records what the gate gives it.
+  let(:group) do
+    Class.new do
+      def self.examples = (@examples ||= [])
+      def self.it(description, &block) = examples << [description, block]
+    end
+  end
+
+  it "defines the group's own examples when a pg_dump is found" do
+    TestPgDump.examples(group, "needs pg_dump", find: -> { "/some/bin" }) { it("a run") { :ran } }
+    expect(group.examples.map(&:first)).to eq(["a run"])
+  end
+
+  it "defines one failing example, and none of the group's own, when no pg_dump is found" do
+    find = -> { raise TestPgDump::NotFound, "install pg_dump 18" }
+    TestPgDump.examples(group, "needs pg_dump", find:) { raise "must not run" }
+    expect(group.examples.map(&:first)).to eq(["needs pg_dump"])
+    expect { group.examples.first.last.call }.to raise_error(TestPgDump::NotFound, "install pg_dump 18")
+  end
+end
+
+# The scripts' with_env puts the found pg_dump's directory first on PATH
+# for the block, and puts PATH back after.
 [["PromptPack", -> { PromptPack }], ["E2ERun", -> { E2ERun }]].each do |name, mod|
   RSpec.describe "#{name}.with_env" do
+    it "starts with the found pg_dump's directory inside the block, and is restored after" do
+      # The finder is faked here: what's under test is with_env.
+      allow(TestPgDump).to receive(:bin).and_return("/found/pg/bin")
+      server = Data.define(:host, :port).new(host: "127.0.0.1", port: 5432)
+      before = ENV.fetch("PATH")
+      inside = mod.call.with_env("/nonexistent/home", server, "prod") { ENV.fetch("PATH") }
+      expect(inside).to eq("/found/pg/bin:#{before}")
+      expect(ENV.fetch("PATH")).to eq(before)
+    end
+
+    # With no pg_dump found, with_env says so, and leaves the environment
+    # as it was.
     it "raises the finder's NotFound, not another error, and leaves ENV unchanged, when there's no pg_dump" do
       # The finder is faked here: what's under test is with_env.
       allow(TestPgDump).to receive(:bin).and_raise(TestPgDump::NotFound, "no pg_dump 18")
