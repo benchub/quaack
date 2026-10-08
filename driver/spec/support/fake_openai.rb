@@ -19,6 +19,7 @@ require "quaack/driver/llm"
 #   fake.reply("llm-rewrites", { "rewrites" => [] })            # a Hash or Array goes out as JSON text
 #   fake.error("llm-counterexamples", status: 503)                    # one failed attempt, which the gem may retry
 #   fake.raw("llm-rewrites", "[1]")                             # a 200 whose body isn't a completion
+#   fake.raw("llm-rewrites", "<p>", content_type: "text/html") # ... with another content-type, or nil for none
 #   client = fake.client(burndown: burndown)
 #
 # Each step's answers are used in the order they were scripted, one per
@@ -33,6 +34,9 @@ class FakeOpenAI
 
   MODEL = "fake-model"
   BASE_URL = "https://llm.example.com/v1"
+
+  # The content-type of every reply, unless a raw one names another.
+  JSON_TYPE = "application/json"
 
   # The finish reason of a reply cut short at the token limit.
   CUT_SHORT = "length"
@@ -69,21 +73,22 @@ class FakeOpenAI
   # request parameter the error names, if any, and `message` the body's.
   def error(step, status:, retry_after_ms: "1", param: nil, message: "fake error #{status}")
     body = { error: { message: message, type: "invalid_request_error", param: param, code: nil } }
-    @scripts[step] << [status, { "retry-after-ms" => retry_after_ms }, body]
+    @scripts[step] << [status, { "content-type" => JSON_TYPE, "retry-after-ms" => retry_after_ms }, body]
     self
   end
 
   # Queues one attempt for step that answers status with `body`, a Hash
   # sent as JSON or text sent as it is.
   def error_body(step, status:, body:)
-    @scripts[step] << [status, { "retry-after-ms" => "1" }, body]
+    @scripts[step] << [status, { "content-type" => JSON_TYPE, "retry-after-ms" => "1" }, body]
     self
   end
 
   # Queues one attempt for step that answers 200 with `body`, text sent as
-  # it is, such as a body that isn't a completion.
-  def raw(step, body)
-    @scripts[step] << [200, {}, body]
+  # it is, such as a body that isn't a completion. `content_type` is the
+  # reply's content-type header, or nil for none at all.
+  def raw(step, body, content_type: JSON_TYPE)
+    @scripts[step] << [200, { "content-type" => content_type }.compact, body]
     self
   end
 
@@ -128,7 +133,7 @@ class FakeOpenAI
     end
 
     status, headers, body = scripted
-    OpenAI::HTTPClient::Response.new(status: status, headers: { "content-type" => "application/json", **headers },
+    OpenAI::HTTPClient::Response.new(status: status, headers: headers,
                                      body: body.is_a?(String) ? body : JSON.generate(body))
   end
 
@@ -138,6 +143,6 @@ class FakeOpenAI
     body = { id: "chatcmpl-fake", object: "chat.completion", created: 0, model: MODEL,
              choices: [{ index: 0, message: message, finish_reason: finish_reason, logprobs: nil }],
              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }
-    [200, {}, body]
+    [200, { "content-type" => JSON_TYPE }, body]
   end
 end

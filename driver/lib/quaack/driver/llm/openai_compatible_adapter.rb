@@ -92,7 +92,7 @@ module Quaack
           # the key, so an llm_auth doesn't keep it as the cause.
           rule = rule_for(e)
           raise Error.new(rule, detail(e)), cause: (e unless rule == "llm_auth")
-        rescue ::OpenAI::Errors::Error, TypeError, JSON::ParserError
+        rescue ::OpenAI::Errors::Error, TypeError, JSON::ParserError, Unreadable
           # A reply the gem can't read raises from its parsing, some of these
           # quoting the body, so they aren't kept as the cause.
           raise Error.new("llm_bad_response", "the reply couldn't be read as a message"), cause: nil
@@ -118,9 +118,62 @@ module Quaack
 
           def execute(request)
             @count.call
-            @transport ? @transport.call(request, step: @step) : @http.execute(request)
+            walkable(@transport ? @transport.call(request, step: @step) : @http.execute(request))
           end
+
+          private
+
+          # The gem decodes a 2xx body as JSON only when its content-type
+          # matches the gem's JSON_CONTENT, and then walks its choices, each
+          # choice's message, and each message's tool calls and their
+          # functions before it checks their types. A body that's anything
+          # else would make it raise a NoMethodError or KeyError, which
+          # can't be told from a bug in the driver, so it's Unreadable
+          # here, as the reply comes in. The body is read whole, so the
+          # response handed on is a copy holding it.
+          def walkable(response)
+            return response unless response.status < 300
+
+            body = response.body.to_a.join
+            unless ::OpenAI::Internal::Util::JSON_CONTENT.match?(response.headers["content-type"].to_s) &&
+                   completion?(body)
+              raise Unreadable, "the reply isn't a completion the gem can walk"
+            end
+
+            ::OpenAI::HTTPClient::Response.new(status: response.status, headers: response.headers, body: body)
+          end
+
+          # A JSON object whose choices, if there are any, are objects the
+          # gem can walk. Choices that are null or missing it reports
+          # itself, or reply_text does.
+          def completion?(body)
+            parsed = JSON.parse(body)
+            parsed.is_a?(Hash) && objects?(parsed["choices"]) { choice?(it) }
+          rescue JSON::ParserError
+            false
+          end
+
+          # Every choice has a message, so reply_text can read the first.
+          def choice?(choice)
+            message = choice["message"]
+            message.is_a?(Hash) && objects?(message["tool_calls"]) { tool_call?(it) }
+          end
+
+          # The gem passes over a custom tool call and reads any other's
+          # function name.
+          def tool_call?(call)
+            return call["custom"].is_a?(Hash) if call["type"] == "custom"
+
+            call["function"].is_a?(Hash) && call["function"].key?("name")
+          end
+
+          # Whether value is null, or an array of JSON objects that each pass
+          # the block.
+          def objects?(value, &) = value.nil? || (value.is_a?(Array) && value.all? { it.is_a?(Hash) && yield(it) })
         end
+
+        # A 2xx reply the gem can't walk.
+        class Unreadable < StandardError; end
 
         private
 
@@ -163,14 +216,8 @@ module Quaack
           end
         end
 
-        # One completion. The gem walks a 200's choices before it checks
-        # them, so choices that aren't an array of objects, such as a string
-        # or an array of numbers, raise a NoMethodError from inside it.
-        def create(**)
-          @openai.chat.completions.create(**)
-        rescue NoMethodError
-          raise TypeError, "the reply's choices aren't an array of objects", cause: nil
-        end
+        # One completion. Attempts has checked a 2xx reply's shape first.
+        def create(**) = @openai.chat.completions.create(**)
 
         # Whether a request was rejected for its response_format: the error
         # names it as its param, or, for an API that names none, its body

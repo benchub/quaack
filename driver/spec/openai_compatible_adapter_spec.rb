@@ -360,6 +360,137 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
   end
 
+  # The gem reads a 2xx body as JSON only when its content-type says JSON,
+  # then walks its choices, messages, and tool calls before it checks their
+  # types. So a body of another type, or of the wrong shape, would make it
+  # raise a NoMethodError or KeyError, which can't be told from a bug in the
+  # driver. Each is llm_bad_response, without the body as a cause.
+  describe "a 200 the gem can't walk" do
+    # Bodies, for the tables below and their examples.
+    shapes = Module.new do
+      def completion(choices) = JSON.generate(id: "c", object: "chat.completion", created: 0, choices: choices)
+
+      def choice(message) = { index: 0, message: message, finish_reason: "stop" }
+
+      def assistant(**) = { role: "assistant", content: "SENTINEL-TEXT", ** }
+
+      def tool_calls(calls) = completion([choice(assistant(tool_calls: calls))])
+
+      def tool_call(**) = { id: "call_1", type: "function", ** }
+    end
+    extend shapes
+    include shapes
+
+    let(:valid) { completion([choice(assistant)]) }
+
+    {
+      "an empty body" => [""],
+      "null" => ["null"],
+      "true" => ["true"],
+      "a number" => ["7"],
+      "an array" => ["[1]"],
+      "a JSON string" => ['"SENTINEL-TEXT"'],
+      "HTML sent as JSON" => ["<html>SENTINEL-TEXT</html>"],
+      "HTML" => ["<html>SENTINEL-TEXT</html>", "text/html"],
+      "server-sent events" => [:events, "text/event-stream"],
+      "a completion with trailing junk" => [:junk],
+      "a completion sent as text/plain" => [:valid, "text/plain"],
+      "a completion with no content-type" => [:valid, nil],
+      "a completion sent as JSON lines" => [:valid, "application/jsonl"],
+      "choices that are a string" => [:choices, "SENTINEL-TEXT"],
+      "choices that are an object" => [:choices, { "0" => { "message" => "SENTINEL-TEXT" } }],
+      "choices that are numbers" => [:choices, [7]],
+      "choices that are null" => [:choices, [nil]],
+      "a second choice that's a string" => [:choices, [{ index: 0, message: { role: "assistant", content: "ok" },
+                                                         finish_reason: "stop" }, "SENTINEL-TEXT"]],
+      "a message that's a string" => [:message, "SENTINEL-TEXT"],
+      "a message that's an array" => [:message, ["SENTINEL-TEXT"]],
+      "a message that's a number" => [:message, 7],
+      "a message that's null" => [:message, nil],
+      "a choice with no message" => [:choices, [{ index: 0, finish_reason: "stop" }]],
+      "tool calls that are a string" => [:tool_calls, "SENTINEL-TEXT"],
+      "tool calls that are strings" => [:tool_calls, ["SENTINEL-TEXT"]],
+      "tool calls that are an object" => [:tool_calls, { "0" => "SENTINEL-TEXT" }],
+      "a tool call whose function is a string" => [:tool_call, { function: "SENTINEL-TEXT" }],
+      "a tool call whose function is null" => [:tool_call, { function: nil }],
+      "a tool call with no function" => [:tool_call, {}],
+      "a tool call whose function has no name" => [:tool_call, { function: { arguments: "{}" } }],
+      "a tool call of another type with no function" => [:tool_call, { type: "SENTINEL-TEXT" }],
+      "a custom tool call whose custom is a string" => [:tool_call, { type: "custom", custom: "SENTINEL-TEXT" }]
+    }.each do |what, (body, detail)|
+      it "fails with llm_bad_response on #{what}, keeping no cause" do
+        text, type = case body
+                     when :valid then [valid, detail]
+                     when :events then ["data: #{valid}\n\ndata: [DONE]\n\n", detail]
+                     when :junk then ["#{valid}SENTINEL-TEXT", FakeOpenAI::JSON_TYPE]
+                     when :choices then [completion(detail), FakeOpenAI::JSON_TYPE]
+                     when :message then [completion([choice(detail)]), FakeOpenAI::JSON_TYPE]
+                     when :tool_calls then [tool_calls(detail), FakeOpenAI::JSON_TYPE]
+                     when :tool_call then [tool_calls([tool_call(**detail)]), FakeOpenAI::JSON_TYPE]
+                     else [body, detail || FakeOpenAI::JSON_TYPE]
+                     end
+        fake.raw("llm-index-ideas", text, content_type: type)
+
+        e = ask_error
+
+        expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply couldn't be read as a message")
+        expect(e.cause).to be_nil
+        expect(error_text(e)).not_to include("SENTINEL")
+        expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
+      end
+    end
+
+    # What the gem walks without trouble still reads as it always has.
+    {
+      "a completion" => [:valid, FakeOpenAI::JSON_TYPE, "SENTINEL-TEXT"],
+      "a content-type with a charset" => [:valid, "application/json; charset=utf-8", "SENTINEL-TEXT"],
+      "a JSON content-type with a suffix" => [:valid, "application/vnd.example+json", "SENTINEL-TEXT"],
+      "fields the gem doesn't know" =>
+        [JSON.generate(id: "c", extra: [1], choices: [{ **choice(assistant(extra: { "a" => [1] })), extra: nil }]),
+         FakeOpenAI::JSON_TYPE, "SENTINEL-TEXT"],
+      "null tool calls" => [:tool_calls, nil, "SENTINEL-TEXT"],
+      "a tool call alongside the text" =>
+        [:tool_calls, [{ id: "call_1", type: "function", function: { name: "f", arguments: "{}" } }], "SENTINEL-TEXT"],
+      "a custom tool call alongside the text" =>
+        [:tool_calls, [{ id: "call_1", type: "custom", custom: { name: "f", input: "x" } }], "SENTINEL-TEXT"],
+      "several choices, using the first" =>
+        [completion([choice(assistant), choice(assistant(content: "second"))]), FakeOpenAI::JSON_TYPE, "SENTINEL-TEXT"],
+      "Unicode text" => [completion([choice(assistant(content: "café ✓ 😀"))]), FakeOpenAI::JSON_TYPE, "café ✓ 😀"]
+    }.each do |what, (body, detail, answer)|
+      it "reads #{what}" do
+        text, type = case body
+                     when :valid then [valid, detail]
+                     when :tool_calls then [tool_calls(detail), FakeOpenAI::JSON_TYPE]
+                     else [body, detail]
+                     end
+        fake.raw("llm-index-ideas", text, content_type: type)
+
+        expect(ask).to eq(answer)
+      end
+    end
+
+    it "still fails with its own message on a refusal or on empty choices" do
+      fake.raw("llm-index-ideas", completion([choice({ role: "assistant", content: nil, refusal: "SENTINEL-TEXT" })]))
+      fake.raw("llm-index-ideas", completion([]))
+
+      expect([sans_sizes(ask_error.message), sans_sizes(ask_error.message)])
+        .to eq(["llm_bad_response: the reply was a refusal", "llm_bad_response: the reply had no choices"])
+    end
+  end
+
+  # A bug in the transport, which stands in for the HTTP call, surfaces as
+  # itself, not as a reply that can't be read.
+  it "lets a NoMethodError from the transport surface as itself" do
+    buggy = Object.new
+    def buggy.call(_request, step:) = step.planted_transport_bug
+
+    client = Quaack::Driver::LLM::Client.new(api_key: "fake-key", model: FakeOpenAI::MODEL,
+                                             settings: FakeOpenAI.settings, burndown: burndown, transport: buggy)
+
+    expect { client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10) }
+      .to raise_error(NoMethodError, /planted_transport_bug/)
+  end
+
   describe "the credentials" do
     # FakeOpenAI never records headers, so this transport looks only at the
     # one that carries the key, and answers every attempt.
