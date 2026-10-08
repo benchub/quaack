@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261007-51 (Equality refuses a half-exact `=`).
+- None. The last batch closed at 0.1.23 on 2026-10-08.
 
 ## How this file works.
 
@@ -2230,19 +2230,7 @@ From the reviews of 20261007-16.
 - **Design:** Several LLM providers, report.
 - **Status:** todo
 
-### 20261007-57. Error-detail scrub: minors from 20261007-54.
-
-From the builder and reviews of 20261007-54.
-1. A token from an `ant auth login` profile isn't scrubbed, though it's sent as `Authorization: Bearer` like `auth_token`, so a gateway could echo it. Unusual (a profile with a gateway `base_url`), and the token rotates. Scrub the profile's current token too, read when the error happens.
-2. A non-secret query value of eight characters or more (`?provider=anthropic`) is replaced everywhere in the message, so "anthropic" becomes `[key]`. Scrub only whole tokens, or only values that look like secrets.
-3. A very short own key (a one-character test secret) wrecks the message (`the API an[key]wered`). Real keys are long; scrub own keys only above a minimum length or at token boundaries.
-4. A password in the `base_url` itself (`https://user:pass@host`) and a key in the `base_url` path aren't scrubbed. Scrub them, or list them as unsupported in DESIGN.md.
-5. `APIErrorDetail.query_values`'s `rescue URI::InvalidURIError` is untested, and `LLM::URL` allows strings `URI.parse` rejects. Add a test.
-
-- **Depends on:** 20261007-54.
-- **Came from:** The builder and reviews of 20261007-54.
-- **Design:** LLM providers, trust boundary.
-- **Status:** todo
+### 20261007-57. Error-detail scrub: minors from 20261007-54. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-58. Equality: planted operators on domains and same-signature shadows.
 
@@ -2256,17 +2244,7 @@ From the review of 20261007-51. Neither is new in that task.
 - **Design:** trust boundary, assumption checks.
 - **Status:** todo
 
-### 20261007-59. Pairing: minors from 20261007-17.
-
-From the review of 20261007-17.
-1. No test covers `require_different` with no recorded author: dropping the author nil check from `Pairing#active?` stays green, and would crash with a NoMethodError once every provider fails. Add a test that it falls back to the usual "every LLM provider ... failed" error.
-2. The capitalization of the pairing warning after another warning in `Cautions#warning` has no test.
-3. Rule-made and operator rewrites are recorded as `unchecked`, where DESIGN.md's outcomes imply "not applicable". Update DESIGN.md's provenance section, or tell those rewrites apart in the pipeline (for example, by a missing `rewrites` entry in a record that otherwise has llm-rewrites data).
-
-- **Depends on:** 20261007-17.
-- **Came from:** The review of 20261007-17.
-- **Design:** Several LLM providers.
-- **Status:** todo
+### 20261007-59. Pairing: minors from 20261007-17. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-60. Fan-out: minors from 20261007-18.
 
@@ -2278,3 +2256,5 @@ From the builder and review of 20261007-18.
 - **Came from:** The builder and review of 20261007-18.
 - **Design:** Several LLM providers, report.
 - **Status:** todo
+
+### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys. Done, see BACKLOG-COMPLETE.md.

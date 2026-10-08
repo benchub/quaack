@@ -653,6 +653,15 @@ RSpec.describe Quaack::Driver::LLM::Router do
         expect(failure.message).to end_with("share its model: b (llm_unavailable)")
         expect(fakes["a"].asks).to eq([])
       end
+
+      it "picks as with any when the rewrite's author wasn't recorded, and fails as usual when every provider fails" do
+        names.each { fakes[it].error("llm-counterexamples", status: 429) }
+        failure = llm_error { counter(paired(nil)) }
+
+        expect([failure.rule, sans_sizes(failure.message)])
+          .to eq(["llm_rate_limited", "llm_rate_limited: every LLM provider llm-counterexamples may use failed: " \
+                                      "a (llm_rate_limited), b (llm_rate_limited), c (llm_rate_limited)."])
+      end
     end
 
     context "with any" do

@@ -7213,3 +7213,43 @@ Add `fan_out` for llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas. Ru
 - **Design:** Several LLM providers (Routing, Limits), llm-index-ideas, llm-rewrites.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings, and a merge of main (with 20261007-17). With `"fan_out": true` on llm-rewrites, llm-index-ideas, or rewrite-llm-index-ideas, the step runs its unit on every healthy provider in its pool, one after another. The union goes to the enclave in one interleaved call per round, with exact repeats dropped, so the enclave's cap of five still holds and drops the rest as `too_many`. Each branch asks for its own replacements, a branch whose replacement round fails keeps its first-round ideas, a branch that fails over is dropped with a progress line, and `llm_bad_request` fails the step. Provenance credits each outcome to its branch by position, and the report's per-provider rows read it. Driver only; no enclave or protocol change. This finishes the split of 20260929-2.
+
+### 20261007-57. Error-detail scrub: minors from 20261007-54.
+
+From the builder and reviews of 20261007-54.
+1. A token from an `ant auth login` profile isn't scrubbed, though it's sent as `Authorization: Bearer` like `auth_token`, so a gateway could echo it. Unusual (a profile with a gateway `base_url`), and the token rotates. Scrub the profile's current token too, read when the error happens.
+2. A non-secret query value of eight characters or more (`?provider=anthropic`) is replaced everywhere in the message, so "anthropic" becomes `[key]`. Scrub only whole tokens, or only values that look like secrets.
+3. A very short own key (a one-character test secret) wrecks the message (`the API an[key]wered`). Real keys are long; scrub own keys only above a minimum length or at token boundaries.
+4. A password in the `base_url` itself (`https://user:pass@host`) and a key in the `base_url` path aren't scrubbed. Scrub them, or list them as unsupported in DESIGN.md.
+5. `APIErrorDetail.query_values`'s `rescue URI::InvalidURIError` is untested, and `LLM::URL` allows strings `URI.parse` rejects. Add a test.
+
+- **Depends on:** 20261007-54.
+- **Came from:** The builder and reviews of 20261007-54.
+- **Design:** LLM providers, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The error-detail scrub also covers every bearer token the Anthropic adapter actually sent (so an `ant auth login` profile token too), a password or user in `base_url`, and its path segments of 16 characters or more. Secrets of 16 characters or more are scrubbed anywhere; shorter ones only as whole tokens, so `anthropic-version` stays readable. `LLM::URL` now refuses a `base_url` that `URI.parse` rejects, since the anthropic gem would otherwise raise with the whole URL, key included, in its message. DESIGN.md lists the two cases left unsupported in v1.
+
+### 20261007-59. Pairing: minors from 20261007-17.
+
+From the review of 20261007-17.
+1. No test covers `require_different` with no recorded author: dropping the author nil check from `Pairing#active?` stays green, and would crash with a NoMethodError once every provider fails. Add a test that it falls back to the usual "every LLM provider ... failed" error.
+2. The capitalization of the pairing warning after another warning in `Cautions#warning` has no test.
+3. Rule-made and operator rewrites are recorded as `unchecked`, where DESIGN.md's outcomes imply "not applicable". Update DESIGN.md's provenance section, or tell those rewrites apart in the pipeline (for example, by a missing `rewrites` entry in a record that otherwise has llm-rewrites data).
+
+- **Depends on:** 20261007-17.
+- **Came from:** The review of 20261007-17.
+- **Design:** Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. A spec pins that `require_different` with no recorded author fails with the usual every-provider error, and another pins the pairing warning's capital after an earlier warning. DESIGN.md's provenance section says the record can't tell a rule-made or operator rewrite from an LLM rewrite with no recorded author, so unless the pairing is `any` (wording fixed at landing) it records both as couldn't be checked, and the report tells them apart by source.
+
+### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys.
+
+From the review of 20261007-57.
+1. A `base_url` with an invalid UTF-8 percent sequence (`?k=SECRET%E2`, `/SECRETPATHKEY0123%E2/`) passes `LLM::URL`, but decoding it gives an invalid byte string, and `APIErrorDetail.scrub` then raises a `RegexpError` whose message quotes the secret, escaping `detail` with the SDK's error as its implicit cause. Main already had this for query values; 20261007-57 extended it to path segments. Drop decoded values that aren't valid encoding, or refuse such a `base_url` in the settings, with a sentinel test.
+2. A URL-encoded echo of a Bedrock bearer token or AWS session token (base64, with `+`, `/`, `=` as `%2B`, `%2F`, `%3D`) isn't scrubbed, since own keys get no encoded form. Scrub the encoded form too, or list it as unsupported in v1.
+
+- **Depends on:** 20261007-57.
+- **Came from:** The review of 20261007-57.
+- **Design:** LLM providers, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The error-detail scrub turns the text and every secret into valid UTF-8 first and never raises (a seeded fuzz of random bytes and encodings pins it), keeps a `base_url` value that decodes to invalid UTF-8 in dropped and replaced forms, and matches every secret as written or URL-encoded per character, in either hex case, so an encoded echo of a Bedrock bearer token or session token is scrubbed. It stays linear on a megabyte of text. Not filed: three edge cases with secrets that are themselves invalid UTF-8, and double-encoded echoes.

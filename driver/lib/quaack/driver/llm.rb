@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module Quaack
   module Driver
     # The driver's LLM calls. DESIGN.md, "Where QUAACK runs": the driver makes
@@ -64,7 +66,9 @@ module Quaack
 
       NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/
       LINE = /\A[^\n\r]*\S[^\n\r]*\z/
-      URL = %r{\Ahttps?://[^\s/]+\S*\z}
+      # An http or https URL that URI.parse takes: the gem parses base_url,
+      # and its error would quote the whole URL, a key in it too.
+      URL = [%r{\Ahttps?://[^\s/]+\S*\z}, URI::RFC3986_Parser::RFC3986_URI].freeze
       # A full chat completions endpoint, which provider docs often show. The
       # openai gem adds /chat/completions to base_url itself, so this one
       # would 404.
@@ -79,7 +83,7 @@ module Quaack
       CHECKS = {
         "provider" => [->(v) { PROVIDERS.include?(v) }, "must be #{PROVIDERS[0..-2].join(", ")}, or #{PROVIDERS.last}"],
         "model" => [->(v) { v.is_a?(String) && LINE.match?(v) }, "must be a non-empty string"],
-        "base_url" => [->(v) { v.is_a?(String) && URL.match?(v) }, "must be an http or https URL"],
+        "base_url" => [->(v) { v.is_a?(String) && URL.all? { it.match?(v) } }, "must be an http or https URL"],
         "api_key_env" => [->(v) { v.is_a?(String) && NAME.match?(v) }, "must be the name of an environment variable"],
         "aws_region" => [->(v) { v.is_a?(String) && REGION.match?(v) }, "must be an AWS region, such as us-east-1"],
         "aws_profile" => [->(v) { v.is_a?(String) && LINE.match?(v) }, "must be the name of an AWS profile"],
