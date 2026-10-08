@@ -6783,3 +6783,18 @@ From the reviews of 20261001-14 and 20261001-15.
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Landed:** 2026-10-07, after a review with one blocking finding, a fix round, and a clean second review. Setup reuses the record it read first, so a record that turns unreadable mid-setup no longer crashes it; setup has an unreadable-record spec that runs under root; a record that isn't valid JSON or isn't an object is a usage error naming it by `~` and never its contents; and a dangling `~/.quaack` symlink is refused, while a working symlinked `~/.quaack` (or one to a file) still reads as no config.
+
+### 20261004-79. Funnel partial-band tests, from 20261004-78.
+
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. Tests pin a partly counted band's grey paint, its top line centred on the known count with the hatch at full width, and its stage's own words; a stage with "in" but no "out" says "not recorded" in the burndown table's went-on cell.
+- **Depends on:** 20261004-78 (done)
+- **Came from:** the review of 20261004-78.
+- **Design:** report.
+
+These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goes red when they break:
+1. The grey paint of unknown and partial bands (`UNCOUNTED`). Painting a partial band solid blue, which reads as a made-up "went on" count, stays green.
+2. The partial band's solid top line is centred at `left = (WIDTH - known) / 2`. Changing it to `(WIDTH - width) / 2` stays green, which moves the line off-centre when "came in" is narrower than `UNKNOWN`.
+3. The hatch on a partial band spans the band's full width. Hatching only `known` wide stays green.
+5. From the review of 20261004-69: passing `stage` to a partial band's label (`funnel.rb` ~118) is untested; replacing it with `nil` stays green.
+4. While here: the table's "Went on" cell for a stage with "came in" but no "went on" is an empty `<td>`, not "not recorded".

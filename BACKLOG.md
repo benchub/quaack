@@ -1967,19 +1967,7 @@ From the build and review of 20261004-51:
 ### 20261004-78. Burndown funnel loose ends from 20261004-55. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20261004-79. Funnel partial-band tests, from 20261004-78.
-
-- **Status:** todo
-- **Depends on:** 20261004-78 (done)
-- **Came from:** the review of 20261004-78.
-- **Design:** report.
-
-These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goes red when they break:
-1. The grey paint of unknown and partial bands (`UNCOUNTED`). Painting a partial band solid blue, which reads as a made-up "went on" count, stays green.
-2. The partial band's solid top line is centred at `left = (WIDTH - known) / 2`. Changing it to `(WIDTH - width) / 2` stays green, which moves the line off-centre when "came in" is narrower than `UNKNOWN`.
-3. The hatch on a partial band spans the band's full width. Hatching only `known` wide stays green.
-5. From the review of 20261004-69: passing `stage` to a partial band's label (`funnel.rb` ~118) is untested; replacing it with `nil` stays green.
-4. While here: the table's "Went on" cell for a stage with "came in" but no "went on" is an empty `<td>`, not "not recorded".
+### 20261004-79. Funnel partial-band tests, from 20261004-78. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-80. Indexes table: which source proposed each built index. Done, see BACKLOG-COMPLETE.md.
 
@@ -2337,4 +2325,13 @@ What the 20261007-24 attempt learned, on branch `task/20261007-24` (commits aeb1
 - **Depends on:** 20261007-24.
 - **Came from:** The second review of 20261007-24, 2026-10-07.
 - **Design:** LLM providers.
+- **Status:** todo
+
+### 20261007-37. Report: the went-on "not recorded" cell uses the number style.
+
+From the review of 20261004-79. The new went-on cell renders `<td class="num">not recorded</td>`, while every other "not recorded" cell uses `class="missing"` through `count_cell` (`driver/lib/quaack/driver/report/view.rb`). Use `count_cell(record["out"])` there and update the spec at `driver/spec/report_spec.rb` (~1570).
+
+- **Depends on:** 20261004-79.
+- **Came from:** The review of 20261004-79.
+- **Design:** report.
 - **Status:** todo
