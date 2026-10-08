@@ -2240,31 +2240,9 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 
 ### 20261008-12. Setup failures: minors from 20261003-22 item 3. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-13. Setup failure messages: minors from 20261008-12.
+### 20261008-13. Setup failure messages: minors from 20261008-12. Done, see BACKLOG-COMPLETE.md.
 
-The review of 20261008-12 found these minor issues.
-
-1. `driver/spec/teardown_spec.rb` hard-codes the 11 setup subcommands. A new step added to `Setup::STEPS` but left out of that list would stay green. Assert that the list equals `Setup::STEPS.map(&:subcommand)`, or loop over `STEPS` directly.
-2. In README.md, the `driver_error` row at about line 771 still says the message "gives the teardown command to run on the jump server". Under `quaack run`, it now gives `ssh <jump> quaacks teardown ...` to run from the laptop.
-3. The printed teardown command shows the jump host as is: no shell quoting, no `--`, and none of the ssh options the transport adds. Quote it, or say in the docs that it's the plain form. The jump host comes from the operator's own config, so the risk is low.
-4. A DESIGN.md sentence about a signal during setup ("keeps the run the same way, as `quaack setup` does: it prints ...") reads as if `quaack setup` prints the line. Only `quaack run` does.
-
-- **Depends on:** 20261008-12.
-- **Came from:** The review of 20261008-12, 2026-10-08.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
-
-### 20261008-14. `Child.signal` fallback: untested branches from 20261008-10.
-
-The review of 20261008-10 found that two branches of the EPERM fallback in `driver/lib/quaack/driver/transport/child.rb` have no test:
-
-1. The fallback's own `Process.kill(name, pid)` still raises EPERM for a live process the driver can't signal. Replacing it with `nil` keeps every test green. A test needs a process the driver can't signal. If there's no clean way to get one, a test that fakes `Process.kill` at the edge, so the group signal and the pid signal both raise EPERM, is enough.
-2. The ESRCH rescue on the second kill, for a child reaped between the two kills.
-
-- **Depends on:** 20261008-10.
-- **Came from:** The review of 20261008-10, 2026-10-08.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261008-14. `Child.signal` fallback: untested branches from 20261008-10. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-15. `distinct_join_to_exists` subqueries: minors from 20261007-44.
 
@@ -2298,5 +2276,14 @@ The review of 20261007-29 found these minor issues:
 
 - **Depends on:** 20261007-29.
 - **Came from:** The review of 20261007-29, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261008-17. DESIGN.md: one stale teardown sentence.
+
+The review of 20261008-13 found one stale sentence in DESIGN.md's "Where QUAACK runs", near line 275. It says the operator tears the run down "with `quaacks teardown --run <ID>` on the jump server", and that the driver "prints the teardown command to run later on the jump server". That contradicts the sentence below it. Since 20261008-12 and -13, every printed teardown command is the `ssh -- <jump> quaacks teardown --run <ID>` form, run from the laptop. Reword the stale sentence to match.
+
+- **Depends on:** 20261008-13.
+- **Came from:** The review of 20261008-13, 2026-10-08.
 - **Design:** Where QUAACK runs.
 - **Status:** todo
