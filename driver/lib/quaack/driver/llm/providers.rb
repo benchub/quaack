@@ -157,7 +157,7 @@ module Quaack
 
         refuse_overrides(env)
         entries = list_entries(config[LIST])
-        kept = picked(entries, env)
+        kept = picked(entries, env, named: true)
         Providers.new(entries: kept, routing: RoutingChecks.routing(config[ROUTING], entries.map(&:name),
                                                                     kept.map(&:name)), named: true)
       end
@@ -168,7 +168,7 @@ module Quaack
         end
 
         settings = settings(config[BLOCK], env:)
-        entries = picked([Entry.new(name: settings.provider, settings:)], env)
+        entries = picked([Entry.new(name: settings.provider, settings:)], env, named: false)
         Providers.new(entries:, routing: RoutingChecks.routing(nil, [], entries.map(&:name)), named: false)
       end
 
@@ -207,8 +207,9 @@ module Quaack
         name
       end
 
-      # entries, or only those QUAACK_LLM names, in its order.
-      def self.picked(entries, env)
+      # entries, or only those QUAACK_LLM names, in its order. named says
+      # they came from llms, not the one provider of a lone llm block or none.
+      def self.picked(entries, env, named:)
         value = env[PICK_ENV]
         return entries if value.nil? || value.empty?
 
@@ -216,10 +217,17 @@ module Quaack
         by_name = entries.to_h { [it.name, it] }
         return names.map { by_name[it] } if names.uniq.size == names.size && names.all? { by_name.key?(it) }
 
-        raise ConfigError, "#{PICK_ENV} must be different names from #{LIST} in #{FILE}, separated by commas"
+        raise ConfigError, unpicked(entries, named)
       end
 
-      private_class_method :one_provider, :refuse_overrides, :list_entries, :entry_name, :picked
+      # What a QUAACK_LLM that doesn't pick from entries is told.
+      def self.unpicked(entries, named)
+        return "#{PICK_ENV} must be different names from #{LIST} in #{FILE}, separated by commas" if named
+
+        "#{PICK_ENV} must be #{entries.first.name}, the one provider's name, since #{FILE} has no #{LIST}"
+      end
+
+      private_class_method :one_provider, :refuse_overrides, :list_entries, :entry_name, :picked, :unpicked
     end
   end
 end

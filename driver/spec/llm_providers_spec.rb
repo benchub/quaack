@@ -63,9 +63,9 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
 
       expect([names(result), result.named]).to eq([%w[opus copilot-gpt groq], true])
       expect(result.entries.map { it.settings.to_h }).to eq(
-        [Quaack::Driver::LLM.settings({ "provider" => "anthropic" }, env: {}).to_h,
-         Quaack::Driver::LLM.settings({ "provider" => "copilot_cli", "model" => "gpt-5.5" }, env: {}).to_h,
-         Quaack::Driver::LLM.settings(groq.except("name"), env: {}).to_h]
+        [Quaack::Driver::LLM.settings({ "provider" => "anthropic" }, env: {}, at: "llms[0]").to_h,
+         Quaack::Driver::LLM.settings(list[1].except("name"), env: {}, at: "llms[1]").to_h,
+         Quaack::Driver::LLM.settings(groq.except("name"), env: {}, at: "llms[2]").to_h]
       )
     end
 
@@ -174,6 +174,27 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
 
     it "picks the llm block's one entry by its name" do
       expect(names(providers({ "llm" => {} }, env: { "QUAACK_LLM" => "anthropic" }))).to eq(["anthropic"])
+    end
+
+    it "picks the llm block's one entry by the name of the provider QUAACK_LLM_PROVIDER switches to" do
+      env = { "QUAACK_LLM_PROVIDER" => "copilot_cli", "QUAACK_MODEL" => "m", "QUAACK_LLM" => "copilot_cli" }
+
+      expect(names(providers({ "llm" => {} }, env:))).to eq(["copilot_cli"])
+    end
+
+    [[{ "llm" => {} }, {}, "anthropic"],
+     [nil, {}, "anthropic"],
+     [{ "llm" => { "provider" => "copilot_cli" } }, {}, "copilot_cli"],
+     [{ "llm" => {} }, { "QUAACK_LLM_PROVIDER" => "copilot_cli", "QUAACK_MODEL" => "m" }, "copilot_cli"]]
+      .each do |config, env, name|
+      %w[SENTINEL-VALUE opus anthropic,anthropic].each do |value|
+        it "refuses a QUAACK_LLM of #{value.inspect} without llms, for #{config.inspect} and #{env.keys}" do
+          error = config_error(config, env: { **env, "QUAACK_LLM" => value })
+
+          expect(error.message).to eq("QUAACK_LLM must be #{name}, the one provider's name, since " \
+                                      "~/.quaack/driver.json has no llms")
+        end
+      end
     end
 
     ["SENTINEL-VALUE", "opus,SENTINEL", "opus,,groq", "opus,opus", ","].each do |value|

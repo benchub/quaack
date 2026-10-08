@@ -45,20 +45,29 @@ module Quaack
         BEARER_ENV = "AWS_BEARER_TOKEN_BEDROCK"
         REGION_VARIABLES = %w[AWS_REGION AWS_DEFAULT_REGION].freeze
 
-        NO_CREDENTIALS = "no AWS credentials: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, name a profile in " \
-                         "llm.aws_profile in #{FILE} or AWS_PROFILE, or set #{BEARER_ENV}".freeze
         # The chain's own messages can quote its files and commands, so
         # they're left out.
         UNLOADABLE = "the AWS credentials couldn't be loaded"
-        NO_REGION = "no AWS region for Bedrock: set llm.aws_region in #{FILE}, AWS_REGION, or a region in the " \
-                    "AWS profile".freeze
-        BOTH = "llm.aws_profile in #{FILE} can't be used while #{BEARER_ENV} is set: unset one".freeze
+
+        # The messages that name a key, for settings at `at`: llm, or an
+        # entry such as llms[2].
+        def self.no_credentials(at = BLOCK)
+          "no AWS credentials: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, name a profile in " \
+            "#{at}.aws_profile in #{FILE} or AWS_PROFILE, or set #{BEARER_ENV}"
+        end
+
+        def self.no_region(at = BLOCK)
+          "no AWS region for Bedrock: set #{at}.aws_region in #{FILE}, AWS_REGION, or a region in the AWS profile"
+        end
+
+        def self.both(at = BLOCK) = "#{at}.aws_profile in #{FILE} can't be used while #{BEARER_ENV} is set: unset one"
 
         # The Anthropic adapter's initialize finds Anthropic's credentials,
         # so it isn't called: this sets up the same state from AWS's.
         def initialize(settings:, transport: nil, aws_access_key: nil, aws_secret_key: nil, # rubocop:disable Lint/MissingSuper
                        max_retries: ::Anthropic::Client::DEFAULT_MAX_RETRIES)
           @model = settings.model
+          @at = settings.at
           given = [aws_access_key, aws_secret_key] if aws_access_key
           options = ENV.key?(BEARER_ENV) ? bearer(settings) : signing(settings, given)
           edge = transport && ->(request) { transport.call(request, step: @step) }
@@ -89,14 +98,16 @@ module Quaack
         # describe the request that was signed.
         def refused(status) = "AWS refused the credentials (#{status})"
 
+        def no_region = self.class.no_region(@at)
+
         # The client's options for a Bedrock API key, which the gem reads
         # from BEARER_ENV itself.
         def bearer(settings)
           raise Error.new("llm_auth", "#{BEARER_ENV} is set but empty") if ENV[BEARER_ENV].empty?
-          raise ConfigError, BOTH if settings.aws_profile
+          raise ConfigError, self.class.both(@at) if settings.aws_profile
 
           region = settings.aws_region || env_region
-          raise ConfigError, NO_REGION unless region || settings.base_url
+          raise ConfigError, no_region unless region || settings.base_url
 
           { aws_region: region }
         end
@@ -106,7 +117,7 @@ module Quaack
         def signing(settings, given)
           env_region unless settings.aws_region
           region, credentials = aws(settings, given)
-          raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials&.set?
+          raise Error.new("llm_auth", self.class.no_credentials(@at)) unless credentials&.set?
 
           { aws_region: region, aws_access_key: credentials.access_key_id,
             aws_secret_key: credentials.secret_access_key, aws_session_token: credentials.session_token }
@@ -135,7 +146,7 @@ module Quaack
           config = ::Aws::BedrockRuntime::Client.new(**options).config
           [config.region, config.credentials&.credentials]
         rescue ::Aws::Errors::MissingRegionError
-          raise ConfigError, NO_REGION, cause: nil
+          raise ConfigError, no_region, cause: nil
         rescue StandardError
           raise Error.new("llm_auth", UNLOADABLE), cause: nil
         end

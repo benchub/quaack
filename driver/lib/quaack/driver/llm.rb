@@ -56,9 +56,11 @@ module Quaack
       # default. api_key_env is the name of the variable that holds the key,
       # or nil for the provider's usual lookup. aws_region and aws_profile are
       # bedrock's, each nil for the AWS SDK's own lookup. command_template and
-      # timeout_seconds are copilot_cli's, nil for its defaults.
+      # timeout_seconds are copilot_cli's, nil for its defaults. at is where
+      # the settings sit in the file, llm or an entry such as llms[2], for an
+      # adapter's messages that name a key.
       Settings = Data.define(:provider, :model, :base_url, :api_key_env, :aws_region, :aws_profile,
-                             :command_template, :timeout_seconds)
+                             :command_template, :timeout_seconds, :at)
 
       NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/
       LINE = /\A[^\n\r]*\S[^\n\r]*\z/
@@ -119,7 +121,7 @@ module Quaack
         check_applies({ "base_url" => base_url }, provider, at, VARIABLES) if from_env?(env, "base_url")
         Settings.new(provider:, model:, base_url:, api_key_env: block["api_key_env"],
                      aws_region: block["aws_region"], aws_profile: block["aws_profile"],
-                     command_template: block["command_template"], timeout_seconds: block["timeout_seconds"])
+                     command_template: block["command_template"], timeout_seconds: block["timeout_seconds"], at:)
       end
 
       # The adapter class for a provider that has one.
