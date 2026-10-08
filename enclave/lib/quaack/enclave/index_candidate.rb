@@ -133,7 +133,7 @@ module Quaack
       # A copy of this candidate with the other's sources added. The other
       # must have the same definition.
       def merge_sources(other)
-        raise IndexCandidateError, "can't merge sources from a candidate with a different definition" unless self == other
+        raise IndexCandidateError, "can't merge sources from a different definition" unless self == other
 
         with(sources: sources | other.sources)
       end
@@ -275,8 +275,6 @@ module Quaack
     end
 
     IndexCandidate::KeyColumn::DEFAULT_NULLS = { asc: :last, desc: :first }.freeze
-
-    # See IndexCandidateError.
     IndexCandidate::Error = IndexCandidateError
   end
 end

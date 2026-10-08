@@ -421,7 +421,8 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       parse = PgQuery.parse("SELECT 1 FROM public.orders o JOIN public.customers c USING (id)")
       atom = described_class.extract(parse, column_names:).first
       expect(atom.replaceable).to be(false)
-      expect { described_class.with_true(parse, atom) }.to raise_error(described_class::Error, /USING/) { expect(it.rule).to eq("using_column_unreplaceable") }
+      expect { described_class.with_true(parse, atom) }
+        .to raise_error(described_class::Error, /USING/) { expect(it.rule).to eq("using_column_unreplaceable") }
     end
 
     it "marks every other atom replaceable" do

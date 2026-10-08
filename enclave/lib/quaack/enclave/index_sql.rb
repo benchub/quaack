@@ -118,7 +118,8 @@ module Quaack
 
         raise IndexCandidateError, "from_ddl takes exactly one CREATE INDEX statement"
       rescue PgQuery::ParseError
-        raise IndexCandidateError, "from_ddl takes exactly one CREATE INDEX statement, and this doesn't parse", cause: nil
+        raise IndexCandidateError, "from_ddl takes exactly one CREATE INDEX statement, and this doesn't parse",
+              cause: nil
       end
 
       # Takes only the parts IndexCandidate holds. read_index then checks

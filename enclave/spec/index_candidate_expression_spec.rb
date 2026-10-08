@@ -8,6 +8,7 @@ require "quaack/enclave/index_candidate"
 # them and index-dedupe can compare them.
 RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and collations" do
   let(:key_column) { Quaack::Enclave::IndexCandidate::KeyColumn }
+  let(:invalid) { Quaack::Enclave::IndexCandidate::Error }
   let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
   let(:sentinel) { "SENTINEL-e4b1d0" }
 
@@ -20,7 +21,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
   def message_of
     yield
     raise "expected an error"
-  rescue Quaack::Enclave::IndexCandidate::Error => e
+  rescue invalid => e
     e.full_message(highlight: false)
   end
 
@@ -39,15 +40,15 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
     end
 
     it "needs exactly one of a name and an expression" do
-      expect { key_column.new }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /name or an expression/)
+      expect { key_column.new }.to raise_error(invalid, /name or an expression/)
       expect do
         key_column.new(name: "a", expression: "lower(a)")
-      end.to raise_error(Quaack::Enclave::IndexCandidate::Error, /name or an expression/)
+      end.to raise_error(invalid, /name or an expression/)
     end
 
     it "refuses an expression that isn't one expression, or that Postgres never allows in an index" do
       ["a, b", "lower(a) FROM t", "a + $1", "(SELECT 1)", "count(*)", "", 5, :lower].each do |bad|
-        expect { key_column.new(expression: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /expression/), bad.inspect
+        expect { key_column.new(expression: bad) }.to raise_error(invalid, /expression/), bad.inspect
       end
     end
 
@@ -64,7 +65,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
 
     it "refuses an opclass or collation that isn't a name" do
       [[:opclass, ""], [:opclass, 5], [:collation, []], [:collation, ["a", ""]]].each do |what, bad|
-        expect { key_column.new(name: "a", what => bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /#{what}/), bad.inspect
+        expect { key_column.new(name: "a", what => bad) }.to raise_error(invalid, /#{what}/), bad.inspect
       end
     end
 

@@ -16,7 +16,10 @@ module Quaack
       # A KeyColumn's name and expression, from what it was given: exactly
       # one of them.
       def column_or_expression(name, expression)
-        raise IndexCandidateError, "a key column needs a name or an expression, not both" if name.nil? == expression.nil?
+        if name.nil? == expression.nil?
+          raise IndexCandidateError, "a key column needs a name or an expression, not both"
+        end
+
         return [column_name(name), nil] if expression.nil?
 
         normalize_expression(expression)

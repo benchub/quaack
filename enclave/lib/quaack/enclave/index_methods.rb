@@ -21,7 +21,9 @@ module Quaack
       ONE_KEY_COLUMN = %i[hash spgist].freeze
 
       def check(method, key:, include:, unique:)
-        raise IndexCandidateError, "unique must be true or false, got #{unique.inspect}" unless [true, false].include?(unique)
+        unless [true, false].include?(unique)
+          raise IndexCandidateError, "unique must be true or false, got #{unique.inspect}"
+        end
 
         problem = (btree_only_problem(method, key, unique) unless method == :btree) ||
                   missing_feature_problem(method, key, include)

@@ -126,7 +126,9 @@ module Quaack
       end
 
       def select_tree(parse)
-        raise Error.new("not_a_query_parse", "expected a pg_query parse result") unless parse.is_a?(PgQuery::ParserResult)
+        unless parse.is_a?(PgQuery::ParserResult)
+          raise Error.new("not_a_query_parse", "expected a pg_query parse result")
+        end
 
         SupportedSql.check!(parse)
         parse.tree

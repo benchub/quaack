@@ -7,6 +7,7 @@ require "quaack/enclave/index_candidate"
 
 RSpec.describe Quaack::Enclave::IndexCandidate do
   let(:key_column) { Quaack::Enclave::IndexCandidate::KeyColumn }
+  let(:invalid) { Quaack::Enclave::IndexCandidate::Error }
   let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
 
   def candidate(**overrides)
@@ -28,7 +29,9 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
   # Task 20260926-56.
   it "refuses with its own error, whose rule is fixed, for ErrorFilter" do
     refusals = [-> { candidate(key: []) }, -> { candidate(predicate: "$1 = a") }, -> { key_column.new },
-                -> { candidate(access_method: :hash, key: %w[a b]) }, -> { described_class.from_ddl("SELECT", sources: []) }]
+                -> { candidate(access_method: :hash, key: %w[a b]) }, lambda {
+                                                                        described_class.from_ddl("SELECT", sources: [])
+                                                                      }]
     refusals.each do |refusal|
       expect(&refusal).to raise_error(described_class::Error) { expect(it.rule).to eq("invalid_index_candidate") }
     end
@@ -47,9 +50,9 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     end
 
     it "rejects an unknown direction or nulls ordering" do
-      expect { key_column.new(name: "a", direction: :up) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /direction/)
-      expect { key_column.new(name: "a", nulls: :middle) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /nulls/)
-      expect { key_column.new(name: "") }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /name/)
+      expect { key_column.new(name: "a", direction: :up) }.to raise_error(invalid, /direction/)
+      expect { key_column.new(name: "a", nulls: :middle) }.to raise_error(invalid, /nulls/)
+      expect { key_column.new(name: "") }.to raise_error(invalid, /name/)
     end
 
     it "defaults the method to btree and normalizes it to a lowercase symbol" do
@@ -60,7 +63,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
     it "rejects a method that isn't a plain identifier" do
       ["btree; drop table x", "two words", "", "1abc"].each do |bad|
-        expect { candidate(access_method: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /method/), bad.inspect
+        expect { candidate(access_method: bad) }.to raise_error(invalid, /method/), bad.inspect
       end
     end
 
@@ -90,7 +93,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
     it "requires non-empty String names in INCLUDE" do
       ["", :total, nil].each do |bad|
-        expect { candidate(include: [bad]) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /column name/), bad.inspect
+        expect { candidate(include: [bad]) }.to raise_error(invalid, /column name/), bad.inspect
       end
     end
 
@@ -100,38 +103,38 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     end
 
     it "requires a non-empty key" do
-      expect { candidate(key: []) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /key/)
+      expect { candidate(key: []) }.to raise_error(invalid, /key/)
     end
 
     it "rejects a column that's in both the key and INCLUDE" do
-      expect { candidate(key: %w[a b], include: %w[c b]) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /"b"/)
+      expect { candidate(key: %w[a b], include: %w[c b]) }.to raise_error(invalid, /"b"/)
     end
 
     it "requires a schema-qualified TableName" do
-      expect { candidate(table: "orders") }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /TableName/)
+      expect { candidate(table: "orders") }.to raise_error(invalid, /TableName/)
     end
 
     it "defaults unique to false and accepts only true or false" do
       expect(candidate.unique).to be(false)
       expect(candidate(unique: true).unique).to be(true)
       [nil, "true", 1].each do |bad|
-        expect { candidate(unique: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /unique/), bad.inspect
+        expect { candidate(unique: bad) }.to raise_error(invalid, /unique/), bad.inspect
       end
     end
 
     it "refuses unique on any method but btree, which is the only built-in one that supports it" do
       %i[hash gist my_custom_am].each do |method|
-        expect { candidate(unique: true, access_method: method) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /unique.*btree/)
+        expect { candidate(unique: true, access_method: method) }.to raise_error(invalid, /unique.*btree/)
       end
     end
 
     it "requires the predicate to be SQL text or nil" do
-      expect { candidate(predicate: 1) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate/)
-      expect { candidate(predicate: "  ") }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate/)
+      expect { candidate(predicate: 1) }.to raise_error(invalid, /predicate/)
+      expect { candidate(predicate: "  ") }.to raise_error(invalid, /predicate/)
     end
 
     it "refuses an empty predicate as SQL that doesn't parse, with no check of its own for blankness" do
-      expect { candidate(predicate: "") }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate doesn't parse as SQL/)
+      expect { candidate(predicate: "") }.to raise_error(invalid, /predicate doesn't parse as SQL/)
     end
   end
 
@@ -193,7 +196,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     end
 
     it "refuses a candidate with a different definition" do
-      expect { candidate.merge_sources(candidate(key: ["other"])) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /different/)
+      expect { candidate.merge_sources(candidate(key: ["other"])) }.to raise_error(invalid, /different/)
     end
   end
 
@@ -269,14 +272,14 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     it "refuses one that isn't a single expression, at construction" do
       ["true; DROP TABLE orders", "a = 1 UNION SELECT 1", "a = 1 ORDER BY 1", "a = 1 LIMIT 1",
        "a = 1) OR (true", "a = = 1"].each do |bad|
-        expect { candidate(predicate: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate/), bad.inspect
+        expect { candidate(predicate: bad) }.to raise_error(invalid, /predicate/), bad.inspect
       end
     end
 
     # pg_query deparses 't'::boolean as true, which parses as another tree.
     it "refuses one pg_query would deparse as a different expression, without quoting it" do
       expect { candidate(predicate: "(status = 'SENTINEL-4e1a') IS NOT DISTINCT FROM 't'::boolean") }
-        .to raise_error(Quaack::Enclave::IndexCandidate::Error, "predicate changes meaning when pg_query deparses it") { |e|
+        .to raise_error(invalid, "predicate changes meaning when pg_query deparses it") { |e|
           expect(e.cause).to be_nil
           expect(e.full_message).not_to include("SENTINEL")
         }
@@ -287,7 +290,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     # Dedupe used to meet such a predicate, and dropped it.
     it "refuses one pg_query would deparse to SQL that doesn't parse, without quoting it" do
       expect { candidate(predicate: "status = 'quaack-sentinel-p4rse'::mytype(lower('bob'))") }
-        .to raise_error(Quaack::Enclave::IndexCandidate::Error, "predicate changes meaning when pg_query deparses it") { |e|
+        .to raise_error(invalid, "predicate changes meaning when pg_query deparses it") { |e|
           expect(e.cause).to be_nil
           expect(e.full_message).not_to include("quaack-sentinel")
         }
@@ -303,7 +306,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
     it "refuses parameters, which Postgres can't bind in an index predicate" do
       ["a = $1", "a > 0 AND b = $2"].each do |bad|
-        expect { candidate(predicate: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate can't use a parameter/), bad
+        expect { candidate(predicate: bad) }.to raise_error(invalid, /predicate can't use a parameter/), bad
       end
     end
 
@@ -311,7 +314,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       ["a IN (SELECT 1)", "EXISTS (SELECT 1)", "a = (SELECT 1)", "a = ANY (SELECT 1)",
        "NOT (b > 0 OR EXISTS (SELECT 1))"]
         .each do |bad|
-        expect { candidate(predicate: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate can't use a subquery/), bad
+        expect { candidate(predicate: bad) }.to raise_error(invalid, /predicate can't use a subquery/), bad
       end
     end
 
@@ -322,7 +325,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
        "GROUPING(b) > 0", "my_agg(*) > 0", "my_agg(DISTINCT b) > 0", "JSON_ARRAYAGG(b) IS NOT NULL",
        "JSON_OBJECTAGG(b : c) IS NOT NULL"].each do |bad|
         expect { candidate(predicate: bad) }
-          .to raise_error(Quaack::Enclave::IndexCandidate::Error, /predicate can't use an aggregate, window, or grouping function/), bad
+          .to raise_error(invalid, /predicate can't use an aggregate, window, or grouping function/), bad
       end
     end
 
@@ -336,7 +339,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(names.size).to eq(61)
 
       names.each do |name|
-        expect { candidate(predicate: "#{name}(b) > 0") }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /aggregate/), name
+        expect { candidate(predicate: "#{name}(b) > 0") }.to raise_error(invalid, /aggregate/), name
       end
     end
 
@@ -365,7 +368,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     it "refuses INCLUDE on brin, gin, and hash" do
       %i[brin gin hash].each do |method|
         expect { candidate(access_method: method, include: ["total"]) }
-          .to raise_error(Quaack::Enclave::IndexCandidate::Error, /#{method} doesn't support INCLUDE/)
+          .to raise_error(invalid, /#{method} doesn't support INCLUDE/)
       end
     end
 
@@ -378,7 +381,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     it "refuses more than one key column on hash and spgist" do
       %i[hash spgist].each do |method|
         expect { candidate(access_method: method, key: %w[a b]) }
-          .to raise_error(Quaack::Enclave::IndexCandidate::Error, /#{method} doesn't support more than one key column/)
+          .to raise_error(invalid, /#{method} doesn't support more than one key column/)
       end
     end
 
@@ -400,16 +403,16 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     it "refuses a non-default direction or nulls ordering" do
       expect do
         candidate(access_method: :brin, key: [key_column.new(name: "a", direction: :desc)])
-      end.to raise_error(Quaack::Enclave::IndexCandidate::Error, /btree/)
+      end.to raise_error(invalid, /btree/)
       expect do
         candidate(access_method: :hash, key: [key_column.new(name: "a", nulls: :first)])
-      end.to raise_error(Quaack::Enclave::IndexCandidate::Error, /btree/)
+      end.to raise_error(invalid, /btree/)
     end
 
     it "refuses it on any key column, not just the first" do
       expect do
         candidate(access_method: :gist, key: ["a", key_column.new(name: "b", direction: :desc)])
-      end.to raise_error(Quaack::Enclave::IndexCandidate::Error, /only btree takes a non-default direction/)
+      end.to raise_error(invalid, /only btree takes a non-default direction/)
     end
 
     it "allows the default ordering, even when it's spelled out" do
@@ -443,7 +446,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     def message_of
       yield
       raise "expected an error"
-    rescue Quaack::Enclave::IndexCandidate::Error => e
+    rescue invalid => e
       e.full_message(highlight: false)
     end
 
@@ -649,7 +652,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
     it "raises for anything that isn't one CREATE INDEX" do
       ["SELECT 1", "CREATE INDEX ON public.t (a); CREATE INDEX ON public.t (b)", "CREATE INDEX ON"].each do |bad|
-        expect { from_ddl(bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /CREATE INDEX/), bad
+        expect { from_ddl(bad) }.to raise_error(invalid, /CREATE INDEX/), bad
       end
     end
   end
