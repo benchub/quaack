@@ -137,6 +137,23 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
                "warnings" => [], "result_types" => %w[text text], "source" => "llm")
     end
 
+    # A call that died after storing its rewrites and before its marker
+    # leaves a run the driver sends here again, with the same rewrites.
+    it "stores no rewrite twice when it's run again after a call that died before its marker" do
+      ready
+      stdin = rewrites(rewrite(same, [not_null_id]))
+      rewrite_check(stdin)
+      first = stored.read("rewrite_1")
+      FileUtils.rm_f(File.join(stored.path, "rewrites_generated.json"))
+
+      outcome = rewrite_check(stdin)
+
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
+      expect(stored.entry?("rewrite_2")).to be(false)
+      expect(stored.read("rewrite_1")).to eq(first)
+      expect(stored.entry?("rewrites_generated")).to be(true)
+    end
+
     # Task 20261007-30: the racetrack connects as another role than
     # qualify did, so the plan's path would give another "$user" there.
     # The stored path is the one qualify resolved the original through.
@@ -170,7 +187,8 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       ready
       rewrite_check(rewrites(rewrite(same)))
 
-      expect(lines(rewrite_check(rewrites(rewrite(same)))).first).to eq(outcome_line(1, "accepted", nil, "rewrite_2"))
+      other = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND o.status = $2"
+      expect(lines(rewrite_check(rewrites(rewrite(other)))).first).to eq(outcome_line(1, "accepted", nil, "rewrite_2"))
     end
 
     it "rejects by the inbound check's rule, an unknown assumption kind, and structural-discard" do

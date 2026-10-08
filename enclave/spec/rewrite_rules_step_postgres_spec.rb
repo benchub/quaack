@@ -240,6 +240,44 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(burndown("rewrite-rules")).to eq(six_c(rules.to_h { [it.name, 1] }, 1, failed_checks: 4))
     end
 
+    # Run again after a call that died before its marker (DESIGN.md's rewrite-rules), with two
+    # rule rewrites, both stored or only the first.
+    describe "run again with two rule rewrites" do
+      let(:two) do
+        select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
+        [fake_rule.new(name: "one", sql: select, assumptions: []),
+         fake_rule.new(name: "two", sql: "#{select} AND 2 = 2", assumptions: [])]
+      end
+
+      def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
+
+      def first_call
+        prepare
+        call_step(two)
+        remove("rewrite_rules_applied")
+        [stored.read("rewrite_1"), stored.read("rewrite_2"), Quaack::Enclave::Burndown.read(stored)]
+      end
+
+      it "stores neither again when both were stored" do
+        first = first_call
+
+        expect(outcomes_of(call_step(two)).map { it[:rewrite] }).to eq(%w[rewrite_1 rewrite_2])
+        expect(stored.entry?("rewrite_3")).to be(false)
+        expect([stored.read("rewrite_1"), stored.read("rewrite_2"), Quaack::Enclave::Burndown.read(stored)])
+          .to eq(first)
+      end
+
+      it "stores only the missing one when the call stored only the first" do
+        first = first_call
+        remove("rewrite_2")
+
+        expect(outcomes_of(call_step(two)).map { it[:rewrite] }).to eq(%w[rewrite_1 rewrite_2])
+        expect(stored.entry?("rewrite_3")).to be(false)
+        expect([stored.read("rewrite_1"), stored.read("rewrite_2"), Quaack::Enclave::Burndown.read(stored)])
+          .to eq(first)
+      end
+    end
+
     it "stores a chained rewrite with every rule's name and description, in order, and counts what it dropped" do
       prepare
       first = fake_rule.new(name: "first", sql: "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2",

@@ -93,13 +93,13 @@ module Quaack
         # takes them. If it gives nil, nothing is recorded: that's how
         # rewrite-rules, run again, says an earlier call recorded them all.
         #
-        # stored is { accepted SQL => entry name }, the rewrites an earlier
-        # call already stored. A survivor whose accepted SQL is there keeps
-        # that entry, and nothing new is written for it. That's how rewrite-rules, run
-        # again after a call that died, stores no rewrite twice.
-        def check(store, source:, stored: {}, also: ->(_) { [] })
+        # A survivor whose accepted SQL an earlier call of the same source
+        # already stored (stored) keeps that entry, and nothing new is
+        # written for it. That's how rewrite-rules and rewrite-check, run again
+        # after a call that died before its marker, store no rewrite twice.
+        def check(store, source:, also: ->(_) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
-          context = context(store, connection, source).merge(stored: stored.dup)
+          context = context(store, connection, source).merge(stored: StoredRewrites.call(store, source))
           tagged = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
           RewriteBurndown.record_check(store, source, tagged, also)
           tagged.map(&:first)
@@ -217,6 +217,20 @@ module Quaack
           store = context[:store]
           ClockAnchoring.anchor(sql, context[:settings], placeholder_map: store.read("placeholder_map"),
                                                          statistics: store.read("statistics")).sql
+        end
+      end
+
+      # { accepted SQL => entry name } for the rewrites of source the store
+      # already holds, the earliest of each, for RewriteCheck.check.
+      module StoredRewrites
+        module_function
+
+        def call(store, source)
+          names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
+          names.each_with_object({}) do |name, found|
+            entry = store.read(name)
+            found[entry["sql"]] ||= name if entry["source"] == source
+          end
         end
       end
     end
