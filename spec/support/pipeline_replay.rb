@@ -187,7 +187,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   # teardown, as `quaack run` does it (Driver::Teardown), with its message.
   def pipeline(transport, run_id, query, variant, out)
     stderr = StringIO.new
-    outcome = Quaack::Driver::Teardown.around(transport:, run_id:, stderr:) do
+    outcome = Quaack::Driver::Teardown.around(transport:, run_id:, stderr:, jump: "jump-1") do
       replayed(transport, run_id, query, variant, out)
     end
     outcome.with(teardown: stderr.string)

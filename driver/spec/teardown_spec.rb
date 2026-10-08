@@ -32,7 +32,7 @@ RSpec.describe Quaack::Driver::Teardown do
   end
 
   def around_run(keep: false, &block)
-    described_class.around(transport:, run_id:, stderr:, keep:, &block || -> { :result })
+    described_class.around(transport:, run_id:, stderr:, keep:, jump: "jump-1", &block || -> { :result })
   end
 
   it "deletes the store after a run that succeeds, returns the block's value, and says to destroy the server" do
@@ -73,7 +73,7 @@ RSpec.describe Quaack::Driver::Teardown do
   # Task 20261004-60: failure's words for an error that isn't an
   # EnclaveError, once only teardown is left, name only driver_error.
   describe ".failure" do
-    let(:teardown) { described_class.new(transport, run_id, stderr) }
+    let(:teardown) { described_class.new(transport, run_id, stderr, jump: "jump-1") }
     let(:transport) { Class.new { def call(*, **) = raise(IOError, "sentinel-io-7f3a") }.new }
 
     it "names driver_error and points to teardown's line for a non-EnclaveError teardown failure" do
@@ -119,11 +119,11 @@ RSpec.describe Quaack::Driver::Teardown do
   context "when the call to the enclave fails" do
     let(:transport) { Quaack::Driver::Transport::Local.new(command: EnclaveCommands.raw("exit 3")) }
 
-    it "tells the operator to run teardown on the jump server" do
+    it "tells the operator to run teardown over ssh" do
       expect { around_run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("incomplete") }
       expect(stderr.string).to eq("quaack: couldn't tear down run #{run_id} (incomplete). " \
-                                  "To tear it down later, run this on the jump server: " \
-                                  "quaacks teardown --run #{run_id}\n")
+                                  "To tear it down later, run: " \
+                                  "ssh -- jump-1 quaacks teardown --run #{run_id}\n")
     end
   end
 
@@ -132,7 +132,7 @@ RSpec.describe Quaack::Driver::Teardown do
 
     it "fails the run as no_teardown" do
       expect { around_run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("no_teardown") }
-      expect(stderr.string).to include("(no_teardown). To tear it down later, run this on the jump server")
+      expect(stderr.string).to include("(no_teardown). To tear it down later, run: ssh -- jump-1")
     end
   end
 
@@ -142,7 +142,7 @@ RSpec.describe Quaack::Driver::Teardown do
     let(:transport) { Class.new { def call(*, **) = raise(IOError, "sentinel-io-7f3a") }.new }
     let(:driver_error) do
       "quaack: couldn't tear down run #{run_id} (driver_error). " \
-        "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n"
+        "To tear it down later, run: ssh -- jump-1 quaacks teardown --run #{run_id}\n"
     end
 
     it "never masks the run's own error, and tells the operator how to finish teardown" do
@@ -165,7 +165,7 @@ RSpec.describe Quaack::Driver::Teardown do
     let(:transport) { Class.new { def call(*, **) = raise(LoadError, "sentinel-load-9b2d") }.new }
     let(:driver_error) do
       "quaack: couldn't tear down run #{run_id} (driver_error). " \
-        "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n"
+        "To tear it down later, run: ssh -- jump-1 quaacks teardown --run #{run_id}\n"
     end
 
     it "never masks the run's own error, and tells the operator how to finish teardown" do
@@ -184,7 +184,7 @@ RSpec.describe Quaack::Driver::Teardown do
   context "when a signal interrupts teardown" do
     let(:transport) { Class.new { def call(*, **) = Process.kill("TERM", Process.pid) && sleep(5) }.new }
     # Task 20261004-29: worded like the other teardown hints.
-    let(:finish) { "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" }
+    let(:finish) { "To tear it down later, run: ssh -- jump-1 quaacks teardown --run #{run_id}\n" }
 
     it "lets the signal through, and first prints the run's own error and how to finish teardown" do
       expect { around_run { raise ArgumentError, "boom" } }.to raise_error(SignalException, "SIGTERM")
@@ -221,21 +221,21 @@ RSpec.describe Quaack::Driver::Teardown do
     source = <<~RUBY
       require "quaack/driver/teardown"
       transport = Class.new { def call(*, **) = Process.kill("INT", Process.pid) && sleep(5) }.new
-      Quaack::Driver::Teardown.around(transport:, run_id: ARGV[0], stderr: $stderr) { raise ArgumentError, "boom" }
+      Quaack::Driver::Teardown.around(transport:, run_id: ARGV[0], stderr: $stderr, jump: "jump-1") { raise ArgumentError, "boom" }
       puts "still running"
     RUBY
     out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", source, run_id)
     expect([out, status.termsig]).to eq(["", Signal.list.fetch("INT")])
     expect(err).to start_with("quaack: run #{run_id} failed (ArgumentError: boom), " \
                               "and a signal interrupted its teardown. " \
-                              "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n")
+                              "To tear it down later, run: ssh -- jump-1 quaacks teardown --run #{run_id}\n")
   end
 
   it "skips teardown with keep, and prints the run ID and the command to run later" do
     expect(around_run(keep: true)).to eq(:result)
     expect(File.exist?(store)).to be(true)
-    expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
-                                "quaacks teardown --run #{run_id}\n")
+    expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run: " \
+                                "ssh -- jump-1 quaacks teardown --run #{run_id}\n")
   end
 
   # Task 20261004-26: once ssh is known to be down, teardown's own call
@@ -247,8 +247,8 @@ RSpec.describe Quaack::Driver::Teardown do
       expect { around_run { raise ssh_failed } }.to raise_error(ssh_failed)
       expect(File.exist?(store)).to be(true)
       expect(stderr.string).to eq("quaack: skipped the teardown of run #{run_id}, since ssh to the jump server " \
-                                  "failed. To tear it down later, run this on the jump server: " \
-                                  "quaacks teardown --run #{run_id}\n")
+                                  "failed. To tear it down later, run: " \
+                                  "ssh -- jump-1 quaacks teardown --run #{run_id}\n")
     end
 
     it "still tears down after a run that failed with another rule" do
@@ -267,7 +267,7 @@ RSpec.describe Quaack::Driver::Teardown do
     end
 
     it "keeps the run without calling the jump server, re-raises, and says why" do
-      teardown = described_class.new(transport, run_id, stderr)
+      teardown = described_class.new(transport, run_id, stderr, jump: "jump-1")
       expect { teardown.around { raise volatile } }.to raise_error(volatile)
       expect(File.exist?(store)).to be(true)
       expect([teardown.kept_after_setup?, teardown.deleted?]).to eq([true, false])
@@ -275,7 +275,7 @@ RSpec.describe Quaack::Driver::Teardown do
     end
 
     it "tears down after a later step's failure" do
-      teardown = described_class.new(transport, run_id, stderr)
+      teardown = described_class.new(transport, run_id, stderr, jump: "jump-1")
       later = Quaack::Driver::EnclaveError.new(subcommand: "index-build", rule: "volatile_function", exit_status: 70)
       expect { teardown.around { raise later } }.to raise_error(later)
       expect([File.exist?(store), teardown.kept_after_setup?]).to eq([false, false])
@@ -286,7 +286,7 @@ RSpec.describe Quaack::Driver::Teardown do
     # can't be left out.
     Quaack::Driver::Setup::STEPS.map(&:subcommand).each do |subcommand|
       it "keeps the run after #{subcommand} fails" do
-        teardown = described_class.new(transport, run_id, stderr)
+        teardown = described_class.new(transport, run_id, stderr, jump: "jump-1")
         error = Quaack::Driver::EnclaveError.new(subcommand:, rule: "some_rule", exit_status: 70)
         expect { teardown.around { raise error } }.to raise_error(error)
         expect([File.exist?(store), teardown.kept_after_setup?]).to eq([true, true])
@@ -314,9 +314,19 @@ RSpec.describe Quaack::Driver::Teardown do
 
     it "says only what keep says, with keep" do
       expect { around_run(keep: true) { raise volatile } }.to raise_error(volatile)
-      expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
-                                  "quaacks teardown --run #{run_id}\n")
+      expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run: " \
+                                  "ssh -- jump-1 quaacks teardown --run #{run_id}\n")
     end
+  end
+
+  # Task 20261008-49: every caller knows the run's jump host (Runs#where
+  # raises when the record has none), so there's no fallback command
+  # without one.
+  it "requires the jump host" do
+    expect { described_class.new(transport, run_id, stderr) }.to raise_error(ArgumentError, /jump/)
+    expect { described_class.around(transport:, run_id:, stderr:) { :result } }.to raise_error(ArgumentError, /jump/)
+    expect { Quaack::Driver::TeardownMessages.kept(run_id) }.to raise_error(ArgumentError)
+    expect { Quaack::Driver::TeardownMessages.command(run_id) }.to raise_error(ArgumentError)
   end
 
   # Task 20261008-12, item 3: given the run's jump host, each message's
@@ -368,7 +378,7 @@ RSpec.describe Quaack::Driver::Teardown do
 
   # Task 20261004-26: the caller says "resume" only when the store is left.
   describe "#deleted?" do
-    let(:teardown) { described_class.new(transport, run_id, stderr) }
+    let(:teardown) { described_class.new(transport, run_id, stderr, jump: "jump-1") }
 
     it "is true once teardown deleted the store" do
       teardown.around(keep: false) { :result }

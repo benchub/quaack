@@ -37,8 +37,8 @@ module Quaack
     # the run's error without that line. Closing it would mean masking
     # signals, which isn't worth the complexity for so small a window.
     #
-    # Messages go to stderr (TeardownMessages). Given jump:, the run's jump
-    # host, their teardown command runs it over ssh.
+    # Messages go to stderr (TeardownMessages). jump: is the run's jump
+    # host, which their teardown command runs over ssh.
     class Teardown
       # The rule for a teardown that failed with an error that isn't an
       # EnclaveError.
@@ -51,7 +51,7 @@ module Quaack
         def initialize = super(DRIVER_ERROR)
       end
 
-      def self.around(transport:, run_id:, stderr:, keep: false, jump: nil, &)
+      def self.around(transport:, run_id:, stderr:, keep: false, jump:, &)
         new(transport, run_id, stderr, jump:).around(keep:, &)
       end
 
@@ -92,10 +92,10 @@ module Quaack
         "#{shown}. To go on, #{step}"
       end
 
-      # jump is the run's jump host, or nil.
+      # jump is the run's jump host.
       attr_reader :transport, :jump
 
-      def initialize(transport, run_id, stderr, jump: nil)
+      def initialize(transport, run_id, stderr, jump:)
         @transport = transport
         @jump = jump
         @run_id = run_id

@@ -45,7 +45,7 @@ module ScenarioRefusalRun
     run_id = PromptPack.intake(transport, home, server, QUERY, prod)
     PromptPack.setup(transport, run_id, server, racetrack)
     out = File.join(home, "report.html")
-    Quaack::Driver::Teardown.around(transport:, run_id:, stderr: StringIO.new) do
+    Quaack::Driver::Teardown.around(transport:, run_id:, stderr: StringIO.new, jump: "jump-1") do
       first, second = Array.new(2) { pipeline(transport, run_id, out) }
       read_back(transport, run_id, out, first, second)
     end

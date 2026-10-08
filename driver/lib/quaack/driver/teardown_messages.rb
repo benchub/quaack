@@ -9,21 +9,20 @@ module Quaack
     # which the driver already has, the run's jump host, which the
     # operator gave `quaack start`, and the enclave's shaped rule. The
     # enclave never sends the store's path, so a message builds the
-    # default one from the ID. With the jump host, the teardown command is
-    # one to run from the laptop, over ssh; without it, one to run on the
-    # jump server.
+    # default one from the ID. The teardown command is one to run from the
+    # laptop, over ssh to the jump host.
     module TeardownMessages
       # The rules for a run's store the enclave wouldn't or couldn't delete.
       BY_HAND = %w[bad_run bad_store_base teardown_failed].freeze
 
       module_function
 
-      def command(run_id, jump = nil)
-        "#{"ssh -- #{Shellwords.escape(jump)} " if jump}quaacks teardown --run #{run_id}"
+      def command(run_id, jump)
+        "ssh -- #{Shellwords.escape(jump)} quaacks teardown --run #{run_id}"
       end
 
       # How to run command: "run" followed by it, as in "run: <command>".
-      def run(verb, run_id, jump) = "#{verb}#{" this on the jump server" unless jump}: #{command(run_id, jump)}"
+      def run(verb, run_id, jump) = "#{verb}: #{command(run_id, jump)}"
 
       def later(run_id, jump) = "To tear it down later, #{run("run", run_id, jump)}"
 
@@ -33,7 +32,7 @@ module Quaack
         "resume with `quaack run --run #{run_id}`, or tear the run down by #{run("running", run_id, jump)}"
       end
 
-      def kept(run_id, jump = nil) = "quaack: kept run #{run_id}. #{later(run_id, jump)}\n"
+      def kept(run_id, jump) = "quaack: kept run #{run_id}. #{later(run_id, jump)}\n"
 
       # A run kept since a setup step failed, or a signal interrupted one.
       # After a signal, quaack run prints no failure line, so this says
