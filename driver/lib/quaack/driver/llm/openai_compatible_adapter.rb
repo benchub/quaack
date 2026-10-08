@@ -54,9 +54,6 @@ module Quaack
         # The name the token limit goes under, unless the settings'
         # token_limit_param names another: Ollama reads only max_tokens.
         DEFAULT_TOKEN_LIMIT_PARAM = "max_completion_tokens"
-        # The longest error detail, cut after the scrub, so no cut splits a
-        # key and leaves part of it.
-        DETAIL_MAX = 1000
 
         # The one finish reason of a reply that finished. Any other, such as
         # length, content_filter, tool_calls, or one the gem doesn't know,
@@ -275,8 +272,7 @@ module Quaack
         def detail(error)
           return "the API refused the key (#{error.status})" if rule_for(error) == "llm_auth"
 
-          scrubbed = APIErrorDetail.scrub(answered(error), APIErrorDetail.secrets(@base_url, own_keys))
-          scrubbed.length > DETAIL_MAX ? "#{scrubbed[0, DETAIL_MAX - 1]}…" : scrubbed
+          APIErrorDetail.cut(APIErrorDetail.scrub(answered(error), APIErrorDetail.secrets(@base_url, own_keys)))
         end
 
         def answered(error)
@@ -289,18 +285,12 @@ module Quaack
         # as Hugging Face TGI send it, a non-empty string error. A body that's
         # a JSON array, as Gemini seems to send, gives its first element's
         # message, or with none there, the whole body as JSON (task
-        # 20261001-5). detail scrubs it and cuts it to DETAIL_MAX.
+        # 20261001-5). detail scrubs it and cuts it to APIErrorDetail::DETAIL_MAX.
         def body_message(body)
-          return array_message(body) if body.is_a?(Array)
+          return APIErrorDetail.array_message(body) { body_message(it) } if body.is_a?(Array)
 
           inner = body[:error] if body.is_a?(Hash)
           inner.is_a?(String) && !inner.empty? ? inner : APIErrorDetail.body_message(body)
-        end
-
-        def array_message(body)
-          first = body.first
-          message = first.is_a?(Hash) ? body_message(first) : nil
-          message || (JSON.generate(body) unless body.empty?)
         end
 
         # The keys the detail scrubs: the key, and the organization, project,

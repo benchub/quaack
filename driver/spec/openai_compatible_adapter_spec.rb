@@ -324,8 +324,8 @@ RSpec.describe "the OpenAI-compatible adapter" do
       # Task 20261001-5: Gemini's OpenAI-compatible endpoint seems to send
       # its error body as a JSON array.
       it "reads the message from an array body's first element, with the secrets scrubbed" do
-        fake.error_body("llm-index-ideas", status: 503,
-                                           body: [{ error: { message: "overloaded, key #{key} #{query}" } }, "SENTINEL-2ND"])
+        body = [{ error: { message: "overloaded, key #{key} #{query}" } }, "SENTINEL-2ND"]
+        fake.error_body("llm-index-ideas", status: 503, body:)
 
         error = echoed_array(fake.client(burndown:, max_retries: 0, api_key: key, settings:))
 
@@ -349,7 +349,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
         error = echoed_array(fake.client(burndown:, max_retries: 0, api_key: key, settings:))
 
-        expect(error.reason.length).to eq(Quaack::Driver::LLM::OpenAICompatibleAdapter::DETAIL_MAX)
+        expect(error.reason.length).to eq(Quaack::Driver::LLM::APIErrorDetail::DETAIL_MAX)
         expect(error.reason).to include("x[key]y").and end_with("y…")
         expect(error_text(error)).not_to include("SENTINEL")
       end
