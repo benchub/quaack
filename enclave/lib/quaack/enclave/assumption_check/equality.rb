@@ -22,7 +22,10 @@ module Quaack
       # application's. An array, range, multirange, or composite type's
       # default opclass takes a polymorphic type (anyarray, anyrange,
       # anymultirange, record), whose = is the application's only when
-      # both sides have exactly the same type, so it's taken only then.
+      # both sides have exactly the same type, so it's taken only then. When
+      # the = is one for other types than the columns' own, as these all
+      # are, an = taking exactly the columns' types, in any schema, is what
+      # a bare = would pick instead, so it's nil then too.
       module Equality
         ANYENUM = 3500
         # The polymorphic btree input type of a true array, then by typtype.
@@ -70,6 +73,14 @@ module Quaack
             AND o.amoplefttype OPERATOR(pg_catalog.=) $1 AND o.amoprighttype OPERATOR(pg_catalog.=) $2
         SQL
 
+        # Whether an = takes exactly the two types ($1, $2), in any schema.
+        EXACT_SQL = <<~SQL
+          SELECT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_operator op
+            WHERE op.oprname OPERATOR(pg_catalog.=) '='
+              AND op.oprleft OPERATOR(pg_catalog.=) $1 AND op.oprright OPERATOR(pg_catalog.=) $2)
+        SQL
+
         module_function
 
         # The type oid of table's column, or nil.
@@ -95,10 +106,17 @@ module Quaack
           right_in = btree_type(connection, right)
           left_in = right_in = polymorphic(connection, left) if left == right && !left_in
           return unless left_in && right_in
+          return if [left_in, right_in] != [left, right] && exact?(connection, left, right)
 
           rows = connection.exec_params(EQUALITY_SQL, [left_in, right_in]).values
           schema, name = rows.first
           "OPERATOR(#{schema}.#{name})" if rows.size == 1 && name.match?(OPERATOR_NAME)
+        end
+
+        # Whether an = takes exactly left and right. A bare = picks it over
+        # one that takes the types they coerce to, such as anyenum or record.
+        def exact?(connection, left, right)
+          connection.exec_params(EXACT_SQL, [left, right]).values.dig(0, 0) == "t"
         end
 
         # The polymorphic type a type's default opclass takes, or nil.

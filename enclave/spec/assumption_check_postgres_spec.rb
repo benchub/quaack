@@ -309,6 +309,27 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
           expect([met?(assumption), described_class::Equality.operator(conn, *types)]).to eq([false, nil])
         end
       end
+
+      # Task 20261007-45: a bare = picks an exact-type = on the type over
+      # the polymorphic one, so Equality can't say which the application's
+      # query gets, and refuses.
+      { "public.pair" => "ROW({}::int4, 'z')::public.pair", "int4[]" => "ARRAY[{}::int4]",
+        "public.mood" => "'Foo'::public.mood" }.each do |type, using|
+        it "refuses #{type} when an = of its own is planted outside its btree family" do
+          conn.exec("CREATE TYPE public.mood AS ENUM ('Foo', 'Bar')")
+          retype("submissions", "course_id", type, using)
+          retype("assignments", "context_id", type, using)
+          oid = described_class::Equality.column_type(conn, "public.submissions", "course_id")
+          before = [met?(assumption), described_class::Equality.operator(conn, oid, oid)]
+          conn.exec(<<~SQL)
+            CREATE FUNCTION public.same(#{type}, #{type}) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
+            CREATE OPERATOR public.= (LEFTARG = #{type}, RIGHTARG = #{type}, FUNCTION = public.same);
+          SQL
+
+          expect([*before, met?(assumption), described_class::Equality.operator(conn, oid, oid)])
+            .to eq([true, "OPERATOR(pg_catalog.=)", false, nil])
+        end
+      end
     end
 
     it "checks only rows of the stated type" do

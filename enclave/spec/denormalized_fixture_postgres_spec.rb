@@ -115,8 +115,10 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
       end
     end
 
-    # Equality refuses them (see assumption_check_postgres_spec.rb); the
-    # copy's assignment couldn't cast one to the other either.
+    # Equality refuses them (see assumption_check_postgres_spec.rb). Task
+    # 20261007-45: an assignment cast lets the copy's own assignment through,
+    # so only that refusal fails the load, though record's = would compare
+    # them.
     context "when the copy and the parent's id are different composite types" do
       let(:context_id) { "(50,z)" }
       let(:course_id) { "(1,z)" }
@@ -128,6 +130,7 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
           ALTER TABLE cv.submissions DROP CONSTRAINT submissions_course_id_fkey;
           ALTER TABLE cv.submissions ALTER course_id TYPE cv.pair USING NULL;
           ALTER TABLE cv.assignments ALTER context_id TYPE cv.other_pair USING NULL;
+          CREATE CAST (cv.other_pair AS cv.pair) WITH INOUT AS ASSIGNMENT;
         SQL
 
         expect { copies(described_class.new(conn, [copy])) }
