@@ -73,7 +73,11 @@ module Quaack
         Answer with JSON: {"rewrites": [{"sql": "...", "transformation": "...", "assumptions": [...]}]}.
       PROMPT
 
-      Result = Data.define(:rewrites, :outcomes)
+      # provider is the entry that wrote the rewrites, for the provenance
+      # record.
+      Result = Data.define(:rewrites, :outcomes, :provider) do
+        def initialize(rewrites:, outcomes:, provider: nil) = super
+      end
 
       # The rewrite_check callable for a run, over transport.
       def self.rewrite_check(transport, run_id:)
@@ -90,9 +94,10 @@ module Quaack
 
       def run(payload)
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
-        rewrites = @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA)
+        session = @client.session
+        rewrites = session.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA)
                           .fetch("rewrites")
-        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites))
+        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites), provider: session.provider)
       end
     end
   end

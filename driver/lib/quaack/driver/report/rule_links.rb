@@ -25,6 +25,8 @@ module Quaack
         # Rewrites#source, escaped, with its rules linked, or Words::MISSING
         # if the payload doesn't say.
         def source_html(entry)
+          return llm_source_html(entry) if entry["source"] == "llm"
+
           rules = Array(entry["rules"])
           return Format.h(source(entry) || Words::MISSING) unless entry["source"] == "rule" && rules.any?
 

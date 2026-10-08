@@ -56,6 +56,7 @@ RSpec.describe Quaack::Driver::OperatorCandidates do
     expect(ask.body[:output_config]).to eq(format: { type: :json_schema, schema: described_class::SCHEMA })
     expect(sent).to eq([[{ "sql" => first }.merge(inferred[0]), { "sql" => second }.merge(inferred[1])]])
     expect(result.outcomes).to eq([{ "type" => "rewrite_outcome", "index" => 1 }])
+    expect(result.provider).to eq("anthropic")
   end
 
   it "refuses an LLM answer that doesn't cover each rewrite once, without calling the enclave" do

@@ -70,8 +70,14 @@ module Quaack
       EARLIER = "Earlier rounds, run by another model."
       DIFFERENT = "Write a new set of inserts that tries something different from all of them. #{ANSWER}".freeze
 
-      Round = Data.define(:inserts, :outcome)
-      Result = Data.define(:rounds, :disproved, :covered)
+      # provider is the entry that wrote the inserts, and after, for a fresh
+      # start's first round, the rule that ended the unit before it.
+      Round = Data.define(:inserts, :outcome, :provider, :after) do
+        def initialize(inserts:, outcome:, provider: nil, after: nil) = super
+      end
+      Result = Data.define(:rounds, :disproved, :covered, :units) do
+        def initialize(rounds:, disproved:, covered:, units: []) = super
+      end
 
       # DESIGN.md's llm-counterexamples to counterexample-rollback, up to three rounds. compare stands for the
       # enclave's counterexample-compare and counterexample-rollback over the transport: it takes a round's
@@ -82,6 +88,10 @@ module Quaack
       # that finds a mismatch (match false) disproves the candidate, and no
       # more run. A round whose inserts failed to load (load_failed, match
       # nil) disproves nothing, and the rounds go on.
+      #
+      # The result's units say, for the provenance record, which entry ran
+      # each unit, in order, how many rounds it asked, and, for a fresh
+      # start, after, the rule that ended the unit before it.
       def run(payload, compare:)
         rounds = []
         failed = {}
@@ -98,13 +108,15 @@ module Quaack
 
       def over?(rounds) = rounds.size == ROUNDS || rounds.last&.outcome&.fetch("match") == false
 
-      # One round on unit, a session and the messages it asks with: asks for
-      # the round's inserts, has compare load them, and adds the round to
-      # rounds. Returns the unit for the next round, or, when the ask failed
-      # with a LaterError, the block's, given the error and the session.
-      def turn((session, messages), rounds, compare)
+      # One round on unit, a session, the messages it asks with, and, for a
+      # fresh start's first round, the rule that ended the unit before: asks
+      # for the round's inserts, has compare load them, and adds the round,
+      # with its provider and that rule, to rounds. Returns the unit for the
+      # next round, or, when the ask failed with a LaterError, the block's,
+      # given the error and the session.
+      def turn((session, messages, after), rounds, compare)
         inserts = ask_with(messages, rounds.empty? ? FIRST : AGAIN, session)
-        rounds << Round.new(inserts:, outcome: compare.call(inserts))
+        rounds << Round.new(inserts:, outcome: compare.call(inserts), provider: session.provider, after:)
         [session, messages + follow_up(rounds.last)]
       rescue LLM::Router::LaterError => e
         yield e, session
@@ -114,12 +126,16 @@ module Quaack
       # every provider this rewrite's rounds failed on, which failed
       # collects, session's among them.
       def fresh(error, session, failed, payload, rounds)
-        [@client.fresh(error, skip: failed.merge!(session.failures), label: @label), [fresh_message(payload, rounds)]]
+        [@client.fresh(error, skip: failed.merge!(session.failures), label: @label), [fresh_message(payload, rounds)],
+         error.rule]
       end
 
       def result(rounds)
+        units = rounds.slice_before(&:after).map do |unit|
+          { "entry" => unit.first.provider, "rounds" => unit.size, "after" => unit.first.after }.compact
+        end
         Result.new(rounds:, disproved: rounds.any? { it.outcome["match"] == false },
-                   covered: rounds.flat_map { it.outcome["covered"] }.uniq)
+                   covered: rounds.flat_map { it.outcome["covered"] }.uniq, units:)
       end
 
       def follow_up(round)

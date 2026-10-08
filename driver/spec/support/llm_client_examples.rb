@@ -338,6 +338,32 @@ RSpec.shared_examples "an LLM client" do
 
       expect(error_text(planted)).to include("SENTINEL-KEY")
     end
+
+    # The SDK's errors keep the response's headers out of their message and
+    # inspect, so a header sentinel shows only if error_text reads them.
+    it "checks the headers of each error in the cause chain, so a planted header in a cause would show" do
+      with_headers = Class.new(StandardError) do
+        attr_reader :headers
+
+        def initialize(headers)
+          @headers = headers
+          super("the API said no")
+        end
+
+        def inspect = "#<APIStatusError>"
+      end
+      planted = begin
+        begin
+          raise with_headers.new({ "x-echoed-key" => "SENTINEL-HEADER" })
+        rescue StandardError
+          raise Quaack::Driver::LLM::Error.new("llm_unavailable", "the API failed (500)")
+        end
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(error_text(planted)).to include("SENTINEL-HEADER")
+    end
   end
 
   # A bug in the driver itself, such as in the burndown count, isn't a reply

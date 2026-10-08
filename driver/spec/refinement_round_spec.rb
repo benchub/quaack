@@ -44,6 +44,7 @@ RSpec.describe Quaack::Driver::RefinementRound do
     expect(ask.body[:system]).to include("revise")
     expect(tested).to eq([[["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"], "refinement"]])
     expect(result.outcomes.map { it["outcome"] }).to eq(["accepted"])
+    expect(result.provider).to eq("anthropic")
   end
 
   # One unit on one provider, which may not have written every candidate

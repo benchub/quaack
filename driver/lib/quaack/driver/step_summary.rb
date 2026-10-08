@@ -19,6 +19,16 @@ module Quaack
     module StepSummary
       module_function
 
+      # call, an enclave call that runs under an LLM step's lines, such as
+      # its index-test, with a note of its own under the step name first
+      # each time, on progress, so the LLM's line isn't left open over it.
+      def noting(progress, name, text, call)
+        lambda do |*args, **options|
+          progress.step_note(name, text)
+          call.call(*args, **options)
+        end
+      end
+
       # n and the noun, singular or plural: 1 rewrite, 3 rewrites.
       def count(number, one, many = "#{one}s") = "#{number} #{number == 1 ? one : many}"
 

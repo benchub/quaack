@@ -230,7 +230,8 @@ RSpec.describe Quaack::Driver::Report do
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat your query and " \
          "is ranked below.</span> <span class=\"warn\">Read it with care: the test data left some of its " \
          "conditions untested.</span>",
-         "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM.</span> " \
+         "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM (its " \
+         "model wasn&#39;t recorded).</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
       )
       expect(blocks.map { it.last.scan('<pre class="sql">').size }).to eq([1, 1, 1])
@@ -373,7 +374,8 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says when the LLM suggested it, or it's the operator's own" do
-        expect(source(source: "llm", rules: nil)).to include("Where it came from: suggested by the LLM.")
+        expect(source(source: "llm", rules: nil))
+          .to include("Where it came from: suggested by the LLM (its model wasn&#39;t recorded).")
         expect(source(source: "operator", rules: nil)).to include("Where it came from: your own rewrite.")
       end
 
@@ -1699,13 +1701,12 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "says each LLM call in English, by what it was for" do
-      calls = burndown_section[%r{<ul id="llm-calls">.*?</ul>}m]
-      expect(calls.scan(%r{<li>(.*?)</li>}).flatten)
-        .to eq(["Index suggestions for the original query: 2 calls",
-                "Revised index suggestions for the original query: 1 call", "Rewrite suggestions: 1 call",
-                "Reading your own rewrites: 1 call", "Test data written to break the rewrites: 3 calls",
-                "Index suggestions for the rewrites: 4 calls",
-                "Revised index suggestions for the rewrites: 2 calls"])
+      calls = burndown_section[%r{<table id="llm-calls">.*?</table>}m]
+      expect(calls.scan(%r{<tr><th scope="row">(.*?)</th><td class="num">(.*?)</td></tr>}))
+        .to eq([["Index suggestions for the original query", "2"],
+                ["Revised index suggestions for the original query", "1"], ["Rewrite suggestions", "1"],
+                ["Reading your own rewrites", "1"], ["Test data written to break the rewrites", "3"],
+                ["Index suggestions for the rewrites", "4"], ["Revised index suggestions for the rewrites", "2"]])
     end
 
     # Task 20261003-4: the driver counts its calls in memory, so a resumed
@@ -1713,13 +1714,12 @@ RSpec.describe Quaack::Driver::Report do
     it "says the LLM calls are this run of quaack's, so a resumed run leaves out the earlier ones" do
       note = "<p class=\"note\">These are the calls this run of quaack made. If you resumed the run, they " \
              "leave out the calls made before it stopped.</p>"
-      expect(burndown_section).to include("</ul>\n#{note}")
+      expect(burndown_section).to include("</table>\n#{note}")
       expect(section(html, "burndown")).to include(note)
     end
 
     it "says so when the driver counted no LLM call" do
-      expect(section(html, "burndown")).to include('<ul id="llm-calls"><li>No LLM calls were counted in this run' \
-                                                   ".</li></ul>")
+      expect(section(html, "burndown")).to include('<p id="llm-calls">No LLM calls were counted in this run.</p>')
     end
 
     it "shows the work totals in words, and says not recorded for one the run didn't count" do

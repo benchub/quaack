@@ -7138,3 +7138,26 @@ From the reviews of 20261007-24.
 - **Design:** LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The Copilot CLI stderr redaction also catches `Bearer` with a colon, an equals sign, extra spaces, or a tab, in any case, and Copilot API session tokens with no prefix (`tid=` or `8kp=`); it stays linear on a megabyte of stderr. No API error from the Anthropic, Bedrock, or OpenAI-compatible adapters keeps the SDK's error as its cause, since a gateway's headers or body could echo a key; the visible detail is unchanged. The Anthropic and Bedrock detail itself still prints the whole body and URL: that's 20261007-54.
+
+### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps.
+
+From the review of 20261007-40.
+1. Regression: the old pattern redacted `Bearer "SECRET"` and `Bearer 'SECRET'`; the new `[^\s"']+` can't start at a quote, so those print unredacted. Redact a quoted token too, with tests for both quote kinds.
+2. The shared "keeps no cause on any API error" example plants sentinels in response headers, but `error_text` never reads headers, so that half can't fail. Have `error_text` include `headers.inspect` when the error has headers, and prove it catches a planted header sentinel in a kept cause.
+3. No test has a session token holding `tid=` without `8kp=`, so a mutation to only `8kp=` survives. Add one.
+
+- **Depends on:** 20261007-40.
+- **Came from:** The review of 20261007-40.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The Copilot CLI redaction handles a quoted Bearer token, keeping the quotes, and a token after `Bearer: `, which used to leave the token showing; it stays linear on megabytes of hostile stderr. A test covers a session token with `tid=` and no `8kp=`, and the spec helper `error_text` reads each error's headers, so the no-cause example's header sentinels can fail. Not filed: a Bearer token inside escaped JSON quotes, and one after two quotes, still show; both are unlikely in Copilot stderr.
+
+### 20261007-16. Provenance and the report.
+
+Write `~/.quaack/runs/<run ID>.llm.json` as DESIGN.md's Provenance says: mode 0600, written whole and renamed into place after each LLM step, kept across resumes, with names, models, store names, rules, and counts only. Record the fresh starts and skipped replacement rounds from 20261007-15. Show in the report the provider and model for each rewrite, which providers ran each rewrite's counterexample rounds, the per-provider rows in the who-proposed tables, the "LLM providers" table, and LLM calls by step and provider. Anything the record lacks is "not recorded." Pairing's outcome and warning come in 20261007-17. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-15.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Provenance), report, burndown.
+- **Status:** done
+- **Landed:** 2026-10-08, after a review with one blocking finding (a partly vacuous test), a fix round, a clean second review, and a merge of main. The driver keeps `~/.quaack/runs/<run ID>.llm.json` (mode 0600, written to a temporary file and renamed) with which provider and model wrote each rewrite, ran each rewrite's counterexample rounds, and wrote each round of index ideas, plus the providers marked down. It holds names, models, store names, rules, and counts only, and is read back through a strict shape check. The report shows each LLM rewrite's provider and model, who wrote each round of test data, per-provider rows in the who-proposed tables ("not recorded" when they don't add up), an LLM providers table, and LLM calls by step and provider. Nothing new crosses the trust boundary. For the user: per-provider "planner ignored or couldn't try" stays "not recorded" (it would need an enclave change); a resumed run keeps an entry's model as first recorded.

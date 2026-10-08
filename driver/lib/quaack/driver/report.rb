@@ -39,6 +39,8 @@ module Quaack
     # - Who proposed what (Accountability).
     # - The burndown (burndown, Stages), each table under its funnel
     #   (Funnel), with llm_calls, the driver's own Burndown#llm_calls.
+    # - Which LLM provider did what (Providers), from llm: the driver's own
+    #   provenance record and its calls by provider, never the enclave's.
     #
     # Where the payload doesn't carry a count, the report says "not
     # recorded". It never shows a zero for something that wasn't counted.
@@ -51,13 +53,13 @@ module Quaack
       # The run ID loses its SQL marks (Format.unmarked) before anything
       # uses it, so named and View draw each rewrite's name from the same
       # string.
-      def render(payload, run_id:, llm_calls: {})
+      def render(payload, run_id:, llm_calls: {}, llm: {})
         run_id = Format.unmarked(run_id)
-        View.new(named(payload, run_id), run_id, llm_calls).render
+        View.new(named(payload, run_id), run_id, llm_calls, llm).render
       end
 
-      def write(payload, run_id:, path:, llm_calls: {})
-        File.write(path, render(payload, run_id:, llm_calls:))
+      def write(payload, run_id:, path:, llm_calls: {}, llm: {})
+        File.write(path, render(payload, run_id:, llm_calls:, llm:))
         path
       end
 

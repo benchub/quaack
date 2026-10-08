@@ -74,6 +74,9 @@
 <div class="untested"><p><%= h Rewrites::UNTESTED %> <%= h atoms_note(r) %></p>
 <% if unchecked_atoms(r).empty? %><details class="untested"><summary><%= h "The #{atoms(r).size} conditions" %></summary><% end %><ul><% atoms(r).each do |a| %><li><%= sql_code(a) %><%= h " (#{Rewrites::CHECKED_LATER})" if checked_later(r).include?(a) %></li><% end %></ul><% if unchecked_atoms(r).empty? %></details><% end %></div>
 <% end %>
+<% if (line = counterexample_line(r)) %>
+<p class="counterexamples"><%= h line %></p>
+<% end %>
 </details></article>
 <% end %>
 </section>
@@ -223,8 +226,23 @@
 <p class="note">An index more than one source proposed counts in each of their rows, so the rows by source can add up to more than all sources together.</p>
 <% end %>
 <p class="note">An index counts as not better only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked (it tied with a smaller one, or three others did better), or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.</p>
+<% if index_account.any? { it.first.start_with?("The LLM: ") } %>
+<p class="note"><%= h Providers::PER_PROVIDER %></p>
+<% end %>
 <% if unrecorded? %>
 <p class="note">&ldquo;Not recorded&rdquo; means this run didn't count it. It doesn't mean none.</p>
+<% end %>
+<h3>LLM providers</h3>
+<% if provider_rows.empty? %>
+<p>No LLM provider was recorded for this run.</p>
+<% else %>
+<table id="llm-providers"><thead><tr><th scope="col">Name</th><th scope="col">Provider</th><th scope="col">Model</th><th scope="col" class="num">Calls</th><th scope="col">Marked down or dropped</th></tr></thead>
+<tbody>
+<% provider_rows.each do |name, type, model, calls, down| %>
+<tr><th scope="row"><%= h name %></th><%= type ? "<td>#{h type}</td>" : MISSING %><%= model ? "<td><code>#{h model}</code></td>" : MISSING %><%= count_cell(calls) %><%= down ? "<td>#{h down}</td>" : MISSING %></tr>
+<% end %>
+</tbody></table>
+<p class="note">Names come from your own <code>~/.quaack/driver.json</code>. Calls are this run of quaack's, as below.</p>
 <% end %>
 </section>
 <section id="burndown"><h2>Burndown: how much QUAACK did, and where ideas dropped out</h2>
@@ -239,7 +257,16 @@
 </tbody></table>
 <% end %>
 <h3>LLM calls</h3>
-<ul id="llm-calls"><% llm_lines.each do |line| %><li><%= h line %></li><% end %></ul>
+<% if call_rows.empty? %>
+<p id="llm-calls">No LLM calls were counted in this run.</p>
+<% else %>
+<table id="llm-calls"><thead><tr><th scope="col">What it was for</th><% call_columns.each do |name| %><th scope="col" class="num"><%= h name %></th><% end %><% if call_total? %><th scope="col" class="num"><%= call_columns.empty? ? "Calls" : "All providers" %></th><% end %></tr></thead>
+<tbody>
+<% call_rows.each do |what, *counts| %>
+<tr><th scope="row"><%= h what %></th><%= counts.map { num(it) }.join %></tr>
+<% end %>
+</tbody></table>
+<% end %>
 <p class="note">These are the calls this run of quaack made. If you resumed the run, they leave out the calls made before it stopped.</p>
 <h3>Other work</h3>
 <ul id="burndown-totals"><% total_lines.each do |line| %><li><%= h line %></li><% end %></ul>

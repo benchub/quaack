@@ -1250,14 +1250,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261007-15. A later turn that fails. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-16. Provenance and the report.
-
-Write `~/.quaack/runs/<run ID>.llm.json` as DESIGN.md's Provenance says: mode 0600, written whole and renamed into place after each LLM step, kept across resumes, with names, models, store names, rules, and counts only. Record the fresh starts and skipped replacement rounds from 20261007-15. Show in the report the provider and model for each rewrite, which providers ran each rewrite's counterexample rounds, the per-provider rows in the who-proposed tables, the "LLM providers" table, and LLM calls by step and provider. Anything the record lacks is "not recorded." Pairing's outcome and warning come in 20261007-17. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
-
-- **Depends on:** 20261007-15.
-- **Came from:** The split of 20260929-2.
-- **Design:** Several LLM providers (Provenance), report, burndown.
-- **Status:** todo
+### 20261007-16. Provenance and the report. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-17. Adversarial pairing.
 
@@ -2257,14 +2250,19 @@ The URL prints too, so also scrub a key in a `base_url` query string (from the r
 - **Design:** LLM providers, trust boundary.
 - **Status:** todo
 
-### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps.
+### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps. Done, see BACKLOG-COMPLETE.md.
 
-From the review of 20261007-40.
-1. Regression: the old pattern redacted `Bearer "SECRET"` and `Bearer 'SECRET'`; the new `[^\s"']+` can't start at a quote, so those print unredacted. Redact a quoted token too, with tests for both quote kinds.
-2. The shared "keeps no cause on any API error" example plants sentinels in response headers, but `error_text` never reads headers, so that half can't fail. Have `error_text` include `headers.inspect` when the error has headers, and prove it catches a planted header sentinel in a kept cause.
-3. No test has a session token holding `tid=` without `8kp=`, so a mutation to only `8kp=` survives. Add one.
+### 20261007-56. Provenance: minors from 20261007-16.
 
-- **Depends on:** 20261007-40.
-- **Came from:** The review of 20261007-40.
-- **Design:** LLM providers.
+From the reviews of 20261007-16.
+1. Untested: recording the refinement round (`Provenance#refinement!` and its pipeline call), the rewrite searches' index ideas (`record:` on `RewriteIndexStage`), "records the first round even when it wrote none", and the writer-side filters (`rewrites!`'s `.grep(REWRITE)`, `down!`'s rule check, `Shape.tallies`'s `.slice`).
+2. Untested: "kept as first recorded" on a resume, the `File::EXCL` guard, and tightening an existing looser runs directory to 0700.
+3. DESIGN.md says every per-provider count blanks when the record doesn't add up, but in the rewrites table only proposed and not kept do; the outcome columns, attributed by store name, stay. Fix the wording or the code, and the spec that checks only `.take(2)`.
+4. `skipped!` appends, so a rerun of a search's llm-index-ideas step can repeat a skipped round.
+5. A provider marked down in an earlier run still shows as marked down after a resume where it worked, since `down!` only adds. Decide, and say so in DESIGN.md.
+6. The template's per-provider note shows even when the rows don't split, under mutation; add a test that it's absent.
+
+- **Depends on:** 20261007-16.
+- **Came from:** The reviews of 20261007-16.
+- **Design:** Several LLM providers, report.
 - **Status:** todo

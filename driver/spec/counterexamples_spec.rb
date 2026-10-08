@@ -111,6 +111,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
       result = run
       expect(result.rounds.size).to eq(2)
       expect(result.disproved).to be(true)
+      expect(result.units).to eq([{ "entry" => "anthropic", "rounds" => 2 }])
     end
     it "keeps going after a round whose inserts failed to load, without calling it disproved" do
       3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
@@ -176,7 +177,11 @@ RSpec.describe Quaack::Driver::Counterexamples do
         fakes["c"].reply("llm-counterexamples", inserts("INSERT 2"))
         outcomes.push(clean, clean(covered: ["o.status = $1"]), clean)
 
-        expect(run.rounds.size).to eq(3)
+        result = run
+        expect(result.rounds.size).to eq(3)
+        expect(result.units).to eq([{ "entry" => "a", "rounds" => 1 },
+                                    { "entry" => "b", "rounds" => 1, "after" => "llm_bad_response" },
+                                    { "entry" => "c", "rounds" => 1, "after" => "llm_bad_response" }])
         expect(fakes["c"].asks.first.body[:messages])
           .to eq([{ role: :user, content: fresh_text([["INSERT 0"], same],
                                                      [["INSERT 1"], "#{same}\nThey exercised: o.status = $1."]) }])
@@ -189,7 +194,10 @@ RSpec.describe Quaack::Driver::Counterexamples do
         fakes["b"].reply("llm-counterexamples", inserts("INSERT 2"))
         outcomes.push(clean, clean, clean)
 
-        expect(run.rounds.size).to eq(3)
+        result = run
+        expect(result.rounds.size).to eq(3)
+        expect(result.units).to eq([{ "entry" => "a", "rounds" => 2 },
+                                    { "entry" => "b", "rounds" => 1, "after" => "llm_unavailable" }])
         expect(fakes["b"].asks.size).to eq(1)
       end
 

@@ -63,6 +63,28 @@ RSpec.describe Quaack::Driver::LLM::Router do
     end
   end
 
+  describe "what it tells the provenance record" do
+    let(:routing) { { "mode" => "failover" } }
+
+    it "lists each entry's name, provider type, and model, in order" do
+      expected = names.map { { "name" => it, "provider" => "anthropic", "model" => "claude-opus-5-5" } }
+      expect(router.entries).to eq(expected)
+    end
+
+    it "lists each provider it marked down or dropped, by rule, and none it only moved on from" do
+      fakes["a"].error("llm-rewrites", status: 401)
+      fakes["b"].raw("llm-rewrites", "[1]")
+      fakes["c"].reply("llm-rewrites", "c")
+      fakes["b"].error("llm-rewrites", status: 429)
+      fakes["c"].reply("llm-rewrites", "c")
+
+      ask
+      expect(router.down).to eq("a" => "llm_auth")
+      ask
+      expect(router.down).to eq("a" => "llm_auth", "b" => "llm_rate_limited")
+    end
+  end
+
   describe "round_robin, the default" do
     it "starts each unit on the next provider after the one the last unit started on" do
       %w[a b c].each { fakes[it].reply("llm-rewrites", it).reply("llm-rewrites", it) }
