@@ -8125,3 +8125,14 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260926-42 (commits f2182682, 5ae8fa31). Review had no blocking findings. Item 2 was already done, and item 4 is documented only. The minor went to 20261008-58.
+
+### 20260927-17. Covering-check and volatility-list gaps.
+
+- `ColumnRefs.in` skips subqueries, so an outer-table column read only inside a correlated subquery isn't counted in `read_columns`, and an INCLUDE can look covering when it isn't. This costs performance only.
+- `VOLATILE_FUNCTIONS` in `value?` is a fixed name list matched on the last name only. It misses user-defined volatile functions and wrongly flags a user function with a built-in's name. It's a backstop behind volatility.
+
+- **Depends on:** 20260927-13, -15.
+- **Came from:** Review of 20260927-13 to -16.
+- **Design:** index-from-query.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260927-17 (commit 6b09c8ff). Review had no blocking findings; its minors went to 20261008-59.

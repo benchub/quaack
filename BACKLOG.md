@@ -21,6 +21,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260926-42 (rewrite-test stores dropped; report-payload sends it).
 
+- 20260927-17 and 20260926-55 (index-from-query correlated reads; generated-column expression keys refused).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -832,6 +834,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Came from:** Their build and review.
 - **Design:** rewrite-test.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Landed so far:** 2026-10-08, task/20260927-17 (commit f3598049). A unique expression index that reads a generated column is now refused as `expression_unique_index`. Still open: perturb-and-retry, and the pools (a v1 limit).
 - **Status:** todo
 
 ### 20260926-56. Items left from 20260923-27, -28, -35, -38. Done, see BACKLOG-COMPLETE.md.
@@ -881,15 +884,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260927-16. one_statement? lets data-modifying CTEs and SELECT INTO through. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260927-17. Covering-check and volatility-list gaps.
-
-- `ColumnRefs.in` skips subqueries, so an outer-table column read only inside a correlated subquery isn't counted in `read_columns`, and an INCLUDE can look covering when it isn't. This costs performance only.
-- `VOLATILE_FUNCTIONS` in `value?` is a fixed name list matched on the last name only. It misses user-defined volatile functions and wrongly flags a user function with a built-in's name. It's a backstop behind volatility.
-
-- **Depends on:** 20260927-13, -15.
-- **Came from:** Review of 20260927-13 to -16.
-- **Design:** index-from-query.
-- **Status:** todo
+### 20260927-17. Covering-check and volatility-list gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-18. Make rewrite-test scenarios load instead of skipping them. Done, see BACKLOG-COMPLETE.md.
 
@@ -2368,4 +2363,15 @@ From the review of 20260926-42. The `!dropped.negative?` half of the egress guar
 - **Depends on:** 20260926-42.
 - **Came from:** The review of 20260926-42, 2026-10-08.
 - **Design:** report.
+- **Status:** todo
+
+### 20261008-59. Correlated-subquery read columns: minors from 20260927-17.
+
+1. **Set-operation arms are untested.** The `larg`/`rarg` branch in `OuterRefs.select` can be replaced with `return []` and every spec stays green. Add a test with a correlated `EXISTS (SELECT … UNION SELECT …)`.
+2. **Two behaviors have no spec.** No spec covers an inner alias that shadows an outer one. None checks that a unique index on `lower(email)` is accepted when `email` isn't generated.
+3. **`OuterRefs.in` reaches too far.** It also walks the WITH clause and FROM subqueries, which can add extra read columns. That's conservative, but limit it to the WHERE, select-list, and other SubLinks of the query itself.
+
+- **Depends on:** 20260927-17.
+- **Came from:** The review of 20260927-17, 2026-10-08.
+- **Design:** index-from-query.
 - **Status:** todo
