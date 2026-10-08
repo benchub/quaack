@@ -205,6 +205,14 @@ module Quaack
         "run_server_guc_mismatch" => "A planner setting on the run server isn't production's: one EXPLAIN's " \
                                      "SETTINGS lists, a query tuning setting, TimeZone, DateStyle, or " \
                                      "IntervalStyle. Set the run server's to match. #{GO_ON}",
+        "run_server_tablespace_mismatch" => "A tablespace the production database's tables or indexes use " \
+                                            "is missing on the run server, or its options, such as " \
+                                            "random_page_cost and seq_page_cost, aren't production's. Create " \
+                                            "it, or set its options to match. #{GO_ON}",
+        "run_server_preload_mismatch" => "The run server's shared_preload_libraries doesn't load the same " \
+                                         "plan-changing libraries as production's: pg_hint_plan, " \
+                                         "pg_dbms_stats, plantuner, and aqo. Set it to match, and restart " \
+                                         "the run server. #{GO_ON}",
         "run_server_other_clients" => "Another client is connected to the run server, and QUAACK must be " \
                                       "alone on it. Stop the clients, then {next}.",
         "run_server_cron_elsewhere" => "pg_cron on the run server runs its jobs from another database, so " \
