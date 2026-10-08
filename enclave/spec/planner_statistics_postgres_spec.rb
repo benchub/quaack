@@ -542,6 +542,77 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
     end
   end
 
+  # A role that can SELECT every column but doesn't own the tables, as a
+  # read-only production role usually is. pg_stats hides an expression
+  # index's statistics from it, and pg_stats_ext every extended statistics
+  # object's data. With row security active, pg_stats hides every column.
+  describe "statistics a non-owner role can't see" do
+    let(:role) { "quaack_reader_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+
+    before do
+      admin.exec("CREATE ROLE #{role}")
+      conn.exec(<<~SQL)
+        GRANT USAGE ON SCHEMA public TO #{role};
+        GRANT SELECT ON orders, customers TO #{role};
+      SQL
+    end
+
+    after do
+      conn.exec("RESET ROLE")
+      conn.exec("DROP OWNED BY #{role}")
+      admin.exec("DROP ROLE IF EXISTS #{role}")
+    end
+
+    def reader_run(query = nil)
+      conn.exec("SET ROLE #{role}")
+      run(query:)
+    end
+
+    it "goes on, and records by name the expression indexes and extended statistics it couldn't see" do
+      reader_run
+
+      expect(stored_table("customers")["statistics_hidden"])
+        .to eq("indexes" => ["customers_lower_email_idx"], "extended_statistics" => [])
+      expect(stored_table("orders")["statistics_hidden"])
+        .to eq("indexes" => [], "extended_statistics" => ["public.orders_status_customer"])
+    end
+
+    it "records nothing hidden for the owner" do
+      run
+
+      expect(%w[customers orders].map { stored_table(it)["statistics_hidden"] })
+        .to all(eq("indexes" => [], "extended_statistics" => []))
+    end
+
+    it "doesn't count a plain index, which has no statistics of its own, as hidden" do
+      reader_run
+
+      expect(stored_table("customers")["indexes"].map { it["name"] }).to include("customers_email_ff_idx")
+      expect(stored_table("customers")["statistics_hidden"]["indexes"]).not_to include("customers_email_ff_idx")
+    end
+
+    it "refuses as row_security_statistics_hidden when row security hides every column's statistics" do
+      conn.exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
+      conn.exec("CREATE POLICY everyone ON orders FOR SELECT USING (true)")
+      error = error_of { reader_run("SELECT id FROM public.orders WHERE status = 'pending'") }
+
+      expect([error.rule, error.message]).to eq(
+        ["row_security_statistics_hidden",
+         "row_security_statistics_hidden: row security hides the column statistics of public.orders"]
+      )
+      expect(store.entry?("statistics")).to be(false)
+    end
+
+    it "reads a row-security table's statistics with a role that bypasses row security" do
+      conn.exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
+      admin.exec("ALTER ROLE #{role} BYPASSRLS")
+      reader_run("SELECT id FROM public.orders WHERE status = 'pending'")
+
+      expect(stored_table("orders")["columns"].keys).to include("id", "status")
+    end
+  end
+
   # The store keeps JSON, which must be UTF-8, whatever the production
   # database's encoding is.
   describe "a database that isn't UTF-8" do

@@ -15,7 +15,7 @@ module Quaack
       # function and type, and every ORDER BY pg_catalog's "C" collation, so
       # one planted ahead of it on the search_path can't change what a read
       # finds, the order it finds it in, or write what it returns.
-      module Catalog
+      module Catalog # rubocop:disable Metrics/ModuleLength
         TABLE_SQL = <<~SQL
           SELECT c.oid, c.reltuples, c.relpages,
                  EXISTS (SELECT FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) c.oid)
@@ -94,7 +94,8 @@ module Quaack
           columns, skipped = pg_stats(connection, table.schema, table.name)
           utf8({ **ColumnTypes.read(connection, oid), "columns" => columns, "array_statistics_skipped" => skipped,
                                                       "indexes" => indexes(connection, table.schema, oid),
-                                                      "extended_statistics" => extended(connection, oid) })
+                                                      "extended_statistics" => extended(connection, oid),
+                                                      "statistics_hidden" => Hidden.read(connection, oid) })
         end
 
         # The rows, and the names of the columns whose array statistics were

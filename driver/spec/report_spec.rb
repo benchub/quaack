@@ -174,6 +174,29 @@ RSpec.describe Quaack::Driver::Report do
       expect(section(render(payload), "summary")).not_to include("timed out")
     end
 
+    # Task 20261008-34.
+    it "says which statistics the production role couldn't see, and nothing when it saw them all" do
+      payload["hidden_statistics"] = { "indexes" => %w[orders_lower_idx orders_expr_idx], "extended_statistics" => 2 }
+      expect(section(render(payload), "summary")).to include(
+        "Your role on the production server couldn&#39;t see the statistics of 2 extended statistics objects " \
+        "and of these expression indexes: <code class=\"sql\">orders_lower_idx</code>, " \
+        "<code class=\"sql\">orders_expr_idx</code>. QUAACK went on without them, so its estimates for " \
+        "those may be off. A role that owns the tables can see them."
+      )
+      payload["hidden_statistics"] = { "indexes" => [], "extended_statistics" => 1 }
+      expect(section(render(payload), "summary")).to include(
+        "couldn&#39;t see the statistics of 1 extended statistics object. QUAACK went on"
+      )
+      payload["hidden_statistics"] = { "indexes" => ["orders_lower_idx"], "extended_statistics" => 0 }
+      expect(section(render(payload), "summary")).to include(
+        "couldn&#39;t see the statistics of this expression index: <code class=\"sql\">orders_lower_idx</code>. "
+      )
+      [{ "indexes" => [], "extended_statistics" => 0 }, nil].each do |hidden|
+        payload["hidden_statistics"] = hidden
+        expect(section(render(payload.compact), "summary")).not_to include("couldn&#39;t see")
+      end
+    end
+
     it "says nothing beat the query, and how much was tried" do
       summary = section(render(negative_payload), "summary")
       expect(summary).to include("Nothing QUAACK tried beat your query as it is.")

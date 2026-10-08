@@ -2,6 +2,7 @@
 
 require "json"
 require_relative "../stats_payload"
+require_relative "hidden"
 
 module Quaack
   module Enclave
@@ -45,7 +46,14 @@ module Quaack
 
         # entry is the table's stored entry, its names in UTF-8. query is
         # the qualified query, or nil to check every column.
+        # Row security that hides every column refuses first, as
+        # row_security_statistics_hidden (see Hidden).
         def check!(table, oid, entry, query, connection)
+          Hidden.check_row_security!(table, oid, entry, connection)
+          check_columns!(table, oid, entry, query, connection)
+        end
+
+        def check_columns!(table, oid, entry, query, connection)
           names = query_columns(entry, query)
           return if names.empty?
 

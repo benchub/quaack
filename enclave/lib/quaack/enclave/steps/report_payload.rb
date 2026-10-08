@@ -9,6 +9,7 @@ require_relative "../measurement"
 require_relative "../planner_statistics"
 require_relative "../table_name"
 require_relative "existing_indexes"
+require_relative "hidden_statistics"
 require_relative "index_sources"
 require_relative "measured_labels"
 require_relative "negative_result"
@@ -84,6 +85,12 @@ module Quaack
       #                    how many built indexes each of QUAACK's index
       #                    sources proposed (IndexSources). One several
       #                    sources proposed counts under each.
+      #   hidden_statistics { "indexes", "extended_statistics" }: the
+      #                    expression indexes, by name, whose statistics
+      #                    the production role couldn't see, and how many
+      #                    extended statistics objects' data it couldn't
+      #                    (a count, never names), which egress checks
+      #                    (Protocol::HiddenStatistics)
       #
       # A rewrite the enclave refused on arrival isn't stored, so nothing is
       # sent for it. The burndown counts those.
@@ -118,7 +125,7 @@ module Quaack
         # negative-result, rewrite-rules, and burndown: what the report says beyond the candidates.
         def findings(store, top)
           { negative: top.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
-            burndown: Burndown.read(store) }
+            burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store) }
         end
 
         def original(store, stats)

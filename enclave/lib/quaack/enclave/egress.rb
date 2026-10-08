@@ -4,6 +4,7 @@ require "json"
 require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require "quaack/protocol/index_sources"
+require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/step_counts"
 require_relative "plain_data"
@@ -141,9 +142,12 @@ module Quaack
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
           raise Error, "a value in this report message has a plan that isn't plan nodes"
         end
-        return if Protocol::IndexSources.valid?(fields["index_sources"])
+        unless Protocol::IndexSources.valid?(fields["index_sources"])
+          raise Error, "a value in this report message has index sources that aren't counts by source"
+        end
+        return if !fields.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(fields["hidden_statistics"])
 
-        raise Error, "a value in this report message has index sources that aren't counts by source"
+        raise Error, "a value in this report message has hidden statistics that aren't index names and a count"
       end
 
       # Whether entries (the rewrites or the labels) is an Array of Hashes,

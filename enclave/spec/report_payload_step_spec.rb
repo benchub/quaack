@@ -147,6 +147,41 @@ RSpec.describe "quaacks report-payload" do
       .to eq("SELECT id FROM public.orders WHERE created_at > (now() - $1::interval) AND note = $2")
   end
 
+  # Task 20261008-34: the statistics the role couldn't see, which the run
+  # went on without. Expression index names go out, as the report's
+  # existing index names do, and only a count of extended statistics.
+  describe "the statistics the production role couldn't see" do
+    def hidden_in(store, hidden)
+      statistics = store.read("statistics")
+      statistics["tables"].first["statistics_hidden"] = hidden
+      store.write("statistics", statistics)
+    end
+
+    it "sends nothing hidden when the statistics entry records none, as an older one doesn't" do
+      expect(report["hidden_statistics"]).to eq("indexes" => [], "extended_statistics" => 0)
+    end
+
+    context "with hidden expression indexes and extended statistics" do
+      let(:outcome) do
+        payload_of do |store|
+          statistics = store.read("statistics")
+          statistics["tables"].first["indexes"] << { "name" => "orders_lower_note_idx", "size_bytes" => 8192,
+                                                     "definition" => "CREATE INDEX orders_lower_note_idx " \
+                                                                     "ON public.orders USING btree (lower(note))" }
+          store.write("statistics", statistics)
+          hidden_in(store, "indexes" => ["orders_lower_note_idx", sentinel],
+                           "extended_statistics" => ["public.#{sentinel}", "public.orders_stats"])
+        end
+      end
+
+      it "sends the stored indexes' names and only a count of the extended statistics, never their names" do
+        expect(report["hidden_statistics"]).to eq("indexes" => ["orders_lower_note_idx"], "extended_statistics" => 2)
+        expect(outcome.stdout).not_to include("orders_stats")
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+  end
+
   describe "every measured label, not only the ranked ones" do
     it "lists each of the original's index combinations and each rewrite run, in the order they were measured" do
       expect(report["labels"].map { it["label"] })

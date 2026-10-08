@@ -849,6 +849,27 @@ RSpec.describe Quaack::Driver::Transport do
         "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1 } }
     end
 
+    # Task 20261008-34. Egress sends hidden_statistics only if
+    # Protocol::HiddenStatistics.valid? passes, so the driver checks the same.
+    it "reads a report whose hidden_statistics Protocol::HiddenStatistics.valid? passes, and refuses one it doesn't" do
+      report = lambda do |hidden|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
+                        "index_sources" => index_sources, **hidden })
+      end
+      hidden = { "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 }
+      result = raw("print #{"#{report.call("hidden_statistics" => hidden)}\n{\"type\":\"done\"}\n".inspect}")
+               .call("probe")
+
+      expect(result.messages.map { it["hidden_statistics"] }).to eq([hidden])
+      [hidden.merge("extended_statistics" => [sentinel]), hidden.merge(sentinel => 1),
+       hidden.merge("indexes" => [{ "v" => sentinel }]), sentinel, nil].each do |planted|
+        error = refusal(report.call("hidden_statistics" => planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Task 20261004-80. Egress sends a report only if its index_sources
     # pass Protocol::IndexSources.valid?, so the driver checks the same.
     it "reads a report whose index_sources Protocol::IndexSources.valid? passes, and refuses one it doesn't" do

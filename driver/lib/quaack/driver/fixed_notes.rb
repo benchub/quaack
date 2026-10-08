@@ -159,6 +159,10 @@ module Quaack
                                       "of the query's columns, since pg_stats shows a column's statistics " \
                                       "only to a role that can SELECT it. Grant your role there SELECT on " \
                                       "the columns of the query's tables. #{GO_ON}",
+        "row_security_statistics_hidden" => "A table the query reads has row-level security, and it hides every " \
+                                            "column's statistics from your role on the production server. Use a " \
+                                            "role there that bypasses row-level security or owns the table. " \
+                                            "#{GO_ON}",
         "memory_command_failed" => "memory_command in ~/.quaack/config.json on the jump server exited with a " \
                                    "failure. Fix it, or remove it and QUAACK records the memory as unknown. " \
                                    "#{GO_ON}",

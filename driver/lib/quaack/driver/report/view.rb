@@ -91,7 +91,27 @@ module Quaack
                  "those candidates."
           original = "#{ORIGINAL.capitalize} timed out on the #{list(infinite_sets.map { Words.set(it) })} values, " \
                      "so any candidate that finished there counts as better."
-          [*(runs if timed_out_count.positive?), *(original unless infinite_sets.empty?)]
+          [*(runs if timed_out_count.positive?), *(original unless infinite_sets.empty?), *hidden_statistics]
+        end
+
+        # DESIGN.md's statistics: what the production role couldn't see,
+        # which the run went on without. An older payload has none.
+        def hidden_statistics
+          hidden = @payload["hidden_statistics"] or return
+          extended = hidden["extended_statistics"]
+          parts = [*(Words.count(extended, "extended statistics object") if extended.positive?),
+                   *hidden_indexes(hidden["indexes"])]
+          return if parts.empty?
+
+          "Your role on the production server couldn't see the statistics of #{parts.join(" and of ")}. QUAACK " \
+            "went on without them, so its estimates for those may be off. A role that owns the tables can see them."
+        end
+
+        def hidden_indexes(names)
+          return [] if names.empty?
+
+          ["#{names.size == 1 ? "this expression index" : "these expression indexes"}: " \
+           "#{names.map { Format.sql_span(it) }.join(", ")}"]
         end
 
         # The winner's blocks on the slow literal set against the original's.

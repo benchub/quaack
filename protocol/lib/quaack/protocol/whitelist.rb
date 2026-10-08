@@ -180,6 +180,11 @@ module Quaack
       # llm), how many of the built indexes it proposed, how many of those
       # were not better, and how many were ranked: counts only, under the
       # fixed names of Protocol::IndexSources. Its values are nested.
+      # hidden_statistics, when the payload has it, is the names of the
+      # expression indexes whose statistics the production role couldn't
+      # see, and a count, never the names, of the extended statistics
+      # objects whose data it couldn't see; it must pass
+      # Protocol::HiddenStatistics.valid?.
       # The plans, original_plan and each rewrite's plan, are checked on
       # the way out: the egress function sends a report only if each passes
       # Protocol::PlanNodes.valid?, so every node has exactly the fields
@@ -190,7 +195,7 @@ module Quaack
       # one only if it's on their own lists, never what a store entry holds
       # as it is.
       report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
-                 indexes timed_out_count negative rule_bugs burndown index_sources].freeze,
+                 indexes timed_out_count negative rule_bugs burndown index_sources hidden_statistics].freeze,
       # One line of index-build's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's
