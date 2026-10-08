@@ -73,6 +73,14 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.untested).to include(builder.atoms[using].shape)
   end
 
+  it "reports a NATURAL JOIN untested, since its condition isn't written in the query" do
+    builder, result = guard("SELECT o.id FROM fx.orders o NATURAL JOIN fx.customers c WHERE o.status = 'open'")
+    natural = builder.atoms.index { it.operator == "NATURAL" }
+    expect(natural).not_to be_nil
+    expect(result.untested_atoms).to include(natural)
+    expect(result.untested).to include("NATURAL JOIN")
+  end
+
   it "retries a vacuous atom three times, then reports it untested by its redacted shape" do
     # No row can fail either kind test, since the CHECKs forbid it.
     sql = "SELECT o.id FROM fx.orders o WHERE o.kind = 'SENTINEL_9c' AND o.status = 'open'"
