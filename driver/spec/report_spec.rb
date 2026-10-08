@@ -1472,9 +1472,9 @@ RSpec.describe Quaack::Driver::Report do
 
         it "says under the table what each column counts" do
           expect(section(html, "accountability")).to include(
-            "Proposed, already existed, and planner ignored count the ideas of each search, for your query and " \
-            "for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not " \
-            "better, and ranked count each index QUAACK built once."
+            "Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for " \
+            "your query and for each rewrite, so an idea that came up in two searches counts twice. Built and " \
+            "measured, not better, and ranked count each index QUAACK built once."
           )
         end
 
