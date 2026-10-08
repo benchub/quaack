@@ -104,13 +104,13 @@ module Quaack
 
         "The gem on PATH there, #{gem}, isn't beside that ruby, #{ruby}, so gem install put quaacks in the user " \
           "gem directory of the Ruby that gem belongs to, and this Ruby doesn't load gems from there. " \
-          "Put Ruby 3.4's bin directory first on PATH in #{file(shell)}."
+          "Put Ruby 3.4's bin directory first on PATH in #{file(shell)}. Then run `quaack deploy` again."
       end
 
       def other_ruby(facts, shell, bin)
         "The ruby on PATH for non-interactive ssh on #{@host} uses the user gem directory " \
           "#{bin.delete_suffix("/bin")}, but quaacks isn't in #{bin}. #{which_gem(facts)} " \
-          "Put Ruby 3.4's bin directory first on PATH in #{file(shell)}."
+          "Put Ruby 3.4's bin directory first on PATH in #{file(shell)}. Then run `quaack deploy` again."
       end
 
       def which_gem(facts)
