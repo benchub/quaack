@@ -251,6 +251,19 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(same_rows(sql, rewrites)).to eq([["1"], ["3"]])
     end
 
+    # Postgres would cut each column's name plus _1 to the same 63 bytes.
+    it "names the UNION's columns apart when the columns' names are 62 and 63 characters long" do
+      long = "x" * 62
+      conn.exec(%(CREATE TABLE public.wide (id int PRIMARY KEY, #{long} int, #{long}_ int)))
+      conn.exec("INSERT INTO public.wide VALUES (1, 10, 11), (3, 30, 31), (4, 40, 41)")
+      sql = "SELECT w.#{long}, w.#{long}_ FROM public.wide w JOIN public.s ON s.a_id = w.id WHERE s.flag OR w.id = 3"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.first).to start_with("SELECT arms_1.#{"x" * 61}_1 AS #{long}, arms_1.#{"x" * 61}_2 AS #{long}_ ")
+      expect(same_rows(sql, rewrites)).to eq([%w[10 11], %w[30 31]])
+    end
+
     it "splits the OR that key_in_self_join makes of an IN over a UNION ALL, when the generator chains them" do
       sql = "SELECT count(*) #{from} WHERE a.id IN (SELECT a2.id FROM public.a a2 JOIN public.s s2 " \
             "ON s2.a_id = a2.id JOIN public.cp ON cp.s_id = s2.id WHERE cp.user_id = 7 UNION ALL " \

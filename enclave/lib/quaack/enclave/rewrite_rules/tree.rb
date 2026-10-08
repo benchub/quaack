@@ -23,14 +23,28 @@ module Quaack
         # hasn't handed out before. The names are every String node, which
         # covers columns' names, and the table and alias names a FROM
         # brings in, which a column may never mention.
+        #
+        # A fresh name is base_1, base_2, and so on, with base cut, at a
+        # character, so the name fits in the 63 bytes Postgres keeps of a
+        # name. Postgres would cut a longer one itself, and the cut name
+        # could be one the query uses, or another fresh one.
         class Names
+          MAX_BYTES = 63
+
           def initialize(tree)
             @taken = Tree.find(tree, PgQuery::String).to_set(&:sval)
             @taken.merge(Tree.find(tree, PgQuery::RangeVar).map(&:relname))
             @taken.merge(Tree.find(tree, PgQuery::Alias).map(&:aliasname))
           end
 
-          def fresh(base) = (1..).lazy.map { "#{base}_#{it}" }.find { @taken.add?(it) }
+          def fresh(base) = (1..).lazy.map { fit(base, "_#{it}") }.find { @taken.add?(it) }
+
+          private
+
+          def fit(base, suffix)
+            base = base.chop while base.bytesize + suffix.bytesize > MAX_BYTES
+            base + suffix
+          end
         end
 
         module_function
