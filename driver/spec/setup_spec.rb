@@ -125,6 +125,22 @@ RSpec.describe Quaack::Driver::Setup do
     expect(io.string.lines.last).to eq("quaack: [6/11] Failed after 0s (volatility)\n")
   end
 
+  # Task 20261008-12, item 4: so quaack run keeps the run, as quaack setup
+  # does.
+  it "lets a signal during a step through as itself, marked as a setup step's failure" do
+    failing["volatility"] = Interrupt.new
+
+    expect { run }.to raise_error(Interrupt) { |e|
+      expect([e.class, e.signo, described_class.failed?(e)]).to eq([Interrupt, Signal.list.fetch("INT"), true])
+    }
+    expect(subcommands).to eq(order.take(6))
+  end
+
+  it "doesn't count a signal outside setup as a setup step's failure" do
+    expect([described_class.failed?(Interrupt.new), described_class.failed?(SignalException.new("TERM"))])
+      .to eq([false, false])
+  end
+
   it "says in plain English what each step does, numbered, with each skip" do
     entries["inventory"] = true
 

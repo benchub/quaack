@@ -20,7 +20,9 @@ module Quaack
     # It resumes. entries are what `quaacks status` says the store holds
     # (Pipeline.status), and a step whose output is there is skipped. Each
     # step's output is the entry it stores last, so one that's there means
-    # the step finished. An EnclaveError stops it where it is.
+    # the step finished. An EnclaveError stops it where it is. A signal,
+    # such as a Ctrl-C, goes on as itself, marked Interrupted, so failed?
+    # counts it.
     module Setup
       Step = Data.define(:subcommand, :output, :say)
 
@@ -38,14 +40,19 @@ module Quaack
         Step.new("racetrack-setup", "racetrack_setup",
                  "Setting up the racetrack, a copy of production's schema and statistics")
       ].freeze
+      # What marks a signal raised during run.
+      module Interrupted; end
+
       # The run-server flags, by option name.
       SERVER_OPTIONS = %w[host port racetrack-db arena-db].freeze
 
       module_function
 
       # Whether error is a setup step's failure: an EnclaveError from one of
-      # STEPS' subcommands, which nothing else calls.
-      def failed?(error) = error.is_a?(EnclaveError) && STEPS.any? { it.subcommand == error.subcommand }
+      # STEPS' subcommands, which nothing else calls, or a signal during run.
+      def failed?(error)
+        error.is_a?(Interrupted) || (error.is_a?(EnclaveError) && STEPS.any? { it.subcommand == error.subcommand })
+      end
 
       # Whether entries say every step has run.
       def done?(entries) = STEPS.all? { entries[it.output] }
@@ -59,6 +66,8 @@ module Quaack
           args.merge!(flags) if step.subcommand == "run-server"
           progress.step(step.subcommand, step.say) { transport.call(step.subcommand, args:) }
         end
+      rescue SignalException => e
+        raise e.extend(Interrupted)
       end
 
       # What to say when run-server is done, so the run-server flags in
