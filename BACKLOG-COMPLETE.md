@@ -7900,3 +7900,23 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 - **Design:** qualify.
 - **Status:** done
 - **Landed:** 2026-10-08, part 1 merged from task/20261007-21 (commits ef101e0a, b1d359ef, 6cc61bc2) after a fix round. The second review was clean. Parts 2 and 3 were split into 20261008-44 and -45, and the minors went to 20261008-46.
+
+### 20261008-19. `token_limit_param` in an `llms` entry: add the missing test.
+
+The review of 20261007-25 found that no spec covers `token_limit_param` inside an `llms` entry. That leaves two things untested: whether the value carries through, and the `llms[N].token_limit_param` error text. It works, but DESIGN.md's claim that "an `llms` entry takes it the same way" isn't pinned. Add tests like the `max_retries` ones in `driver/spec/llm_providers_spec.rb`.
+
+- **Depends on:** 20261007-25.
+- **Came from:** The review of 20261007-25, 2026-10-08.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-19 (commit 7c800446). Review clean.
+
+### 20261008-17. DESIGN.md: one stale teardown sentence.
+
+The review of 20261008-13 found one stale sentence in DESIGN.md's "Where QUAACK runs", near line 275. It says the operator tears the run down "with `quaacks teardown --run <ID>` on the jump server", and that the driver "prints the teardown command to run later on the jump server". That contradicts the sentence below it. Since 20261008-12 and -13, every printed teardown command is the `ssh -- <jump> quaacks teardown --run <ID>` form, run from the laptop. Reword the stale sentence to match.
+
+- **Depends on:** 20261008-13.
+- **Came from:** The review of 20261008-13, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-19 (commit d37c2de4). Review clean, with one minor that went to 20261008-49.

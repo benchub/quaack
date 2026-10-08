@@ -2066,14 +2066,7 @@ The review of 20261007-29 found these minor issues:
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20261008-17. DESIGN.md: one stale teardown sentence.
-
-The review of 20261008-13 found one stale sentence in DESIGN.md's "Where QUAACK runs", near line 275. It says the operator tears the run down "with `quaacks teardown --run <ID>` on the jump server", and that the driver "prints the teardown command to run later on the jump server". That contradicts the sentence below it. Since 20261008-12 and -13, every printed teardown command is the `ssh -- <jump> quaacks teardown --run <ID>` form, run from the laptop. Reword the stale sentence to match.
-
-- **Depends on:** 20261008-13.
-- **Came from:** The review of 20261008-13, 2026-10-08.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261008-17. DESIGN.md: one stale teardown sentence. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-18. `or_to_union` composite keys: minors from 20261008-6.
 
@@ -2092,14 +2085,7 @@ The review of 20261008-6 found these minor issues:
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261008-19. `token_limit_param` in an `llms` entry: add the missing test.
-
-The review of 20261007-25 found that no spec covers `token_limit_param` inside an `llms` entry. That leaves two things untested: whether the value carries through, and the `llms[N].token_limit_param` error text. It works, but DESIGN.md's claim that "an `llms` entry takes it the same way" isn't pinned. Add tests like the `max_retries` ones in `driver/spec/llm_providers_spec.rb`.
-
-- **Depends on:** 20261007-25.
-- **Came from:** The review of 20261007-25, 2026-10-08.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261008-19. `token_limit_param` in an `llms` entry: add the missing test. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3.
 
@@ -2429,4 +2415,13 @@ The review of 20261001-10 found these minor issues:
 - **Depends on:** 20261001-10.
 - **Came from:** The review of 20261001-10, 2026-10-08.
 - **Design:** schema-dump.
+- **Status:** todo
+
+### 20261008-49. Teardown message fallback when no jump host is known.
+
+From the review of 20261008-17. When `jump` is nil, `TeardownMessages.run` and `command` still fall back to "run this on the jump server: quaacks teardown --run <ID>", but DESIGN.md now describes only the `ssh -- <jump>` form. Check whether `@jump` can ever be nil. If it can't, remove the fallback. If it can, mention it in DESIGN.md.
+
+- **Depends on:** 20261008-17.
+- **Came from:** The review of 20261008-17, 2026-10-08.
+- **Design:** Where QUAACK runs.
 - **Status:** todo
