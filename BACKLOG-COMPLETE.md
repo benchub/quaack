@@ -7035,3 +7035,17 @@ From the review of 20261007-39.
 - **Design:** trust boundary, assumption checks.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. `Equality.operator` refuses when the `=` it found doesn't take exactly the columns' types and an `=` that does exists in any schema, since a bare `=` would pick that one; across 55 realistic type pairs with common extensions installed, nothing newly refuses. The denormalized fixture's different-composite-types test now depends on the same-type rule, through an assignment cast. Enclave change, unreleased until the next batch bump.
+
+### 20261007-48. OpenAI-compatible replies: minors from 20261007-36.
+
+From the review of 20261007-36.
+1. `TypeError` is still in the adapter's rescue list, so a TypeError from a driver bug shows up as `llm_bad_response`. Narrow it the way NoMethodError was.
+2. A float overflow such as `"created":1e400` crashes with FloatDomainError from the gem's coercion (main too). Refuse it at the edge.
+3. A custom tool call whose `custom` is missing or a string is now refused where main read the text. QUAACK sends no tools, so it's harmless; note it or relax it.
+4. The `rescue JSON::ParserError` in `completion?` is redundant with the outer rescue.
+
+- **Depends on:** 20261007-36.
+- **Came from:** The review of 20261007-36.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. TypeError is out of the adapter's rescue list, so a driver bug surfaces as itself; a float past the double range anywhere in a reply is `llm_bad_response` instead of crashing the gem's coercion; a custom tool call is read whatever `custom` holds, as the gem does; and the redundant inner ParserError rescue is gone. A reviewer's probes of about 140 shapes found no malformed reply that crashes. Not filed: an overflowing float in a field the gem never reads is now refused where main read the text.

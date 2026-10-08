@@ -2277,18 +2277,7 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261007-48. OpenAI-compatible replies: minors from 20261007-36.
-
-From the review of 20261007-36.
-1. `TypeError` is still in the adapter's rescue list, so a TypeError from a driver bug shows up as `llm_bad_response`. Narrow it the way NoMethodError was.
-2. A float overflow such as `"created":1e400` crashes with FloatDomainError from the gem's coercion (main too). Refuse it at the edge.
-3. A custom tool call whose `custom` is missing or a string is now refused where main read the text. QUAACK sends no tools, so it's harmless; note it or relax it.
-4. The `rescue JSON::ParserError` in `completion?` is redundant with the outer rescue.
-
-- **Depends on:** 20261007-36.
-- **Came from:** The review of 20261007-36.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-48. OpenAI-compatible replies: minors from 20261007-36. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-49. A lone `llm` block: keep the API's detail after a skipped replacement round.
 
