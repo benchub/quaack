@@ -431,6 +431,37 @@ RSpec.describe Quaack::Driver::Transport do
       Process.wait(pid) if pid
     end
 
+    # There's no clean way to get a live process the driver can't signal, or
+    # to reap a child between the two kills, so these fake Process.kill at
+    # the edge. The pid is never signalled for real.
+    describe "when the group signal is refused" do
+      let(:pid) { 999_999 }
+      let(:kills) { [] }
+
+      def fake_kill(pid_error)
+        allow(Process).to receive(:kill) do |name, target|
+          kills << [name, target]
+          raise Errno::EPERM if target.negative?
+
+          raise pid_error
+        end
+      end
+
+      it "raises EPERM when the child alone can't be signalled either" do
+        fake_kill(Errno::EPERM)
+
+        expect { Quaack::Driver::Transport::Child.signal(pid, "TERM") }.to raise_error(Errno::EPERM)
+        expect(kills).to eq([["TERM", -pid], ["TERM", pid]])
+      end
+
+      it "signals nothing more once the child is reaped between the two kills" do
+        fake_kill(Errno::ESRCH)
+
+        expect(Quaack::Driver::Transport::Child.signal(pid, "KILL")).to be_nil
+        expect(kills).to eq([["KILL", -pid], ["KILL", pid]])
+      end
+    end
+
     it "times out a run that closes its stdout and keeps going" do
       step = local.new(command: EnclaveCommands.raw("STDOUT.reopen(File::NULL); sleep 30"), timeout: 0.5)
       error = nil
