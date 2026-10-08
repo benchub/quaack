@@ -133,7 +133,8 @@ RSpec.describe Quaack::Driver::GeneratorThree do
     it "says which provider answered the unit and which round each was, for the provenance record" do
       result = described_class.new(client: router_over({ "a" => fake, "b" => FakeLLM.new }), index_test:).run(payload)
 
-      expect([result.provider, result.rounds.map(&:round), result.skipped]).to eq(["a", %w[first replacement], nil])
+      expect([result.providers, result.rounds.map(&:round), result.rounds.map(&:entries), result.skipped])
+        .to eq([["a"], %w[first replacement], [%w[a a a], %w[a]], {}])
     end
 
     it "tests the replacements, and asks only once even if more are dropped" do
@@ -166,7 +167,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       result = run
 
       expect(result.rounds.map(&:ddls)).to eq([first])
-      expect([result.provider, result.skipped]).to eq(%w[a llm_rate_limited])
+      expect([result.providers, result.skipped]).to eq([["a"], { "a" => "llm_rate_limited" }])
       expect(rounds).to eq([first])
       expect(other.asks).to eq([])
       expect(notes.last).to eq("a is rate limited, so the rest of this run skips it; going on without replacement " \
@@ -222,6 +223,81 @@ RSpec.describe Quaack::Driver::GeneratorThree do
     fake.reply("llm-index-ideas", { "indexes" => ddls })
     answers << [*(1..5).map { accepted(it) }, dropped(6, "too_many"), dropped(7, "too_many")]
     expect { run }.to change { fake.asks.size }.by(1)
+  end
+
+  # DESIGN.md, "Several LLM providers" (Routing, Limits): each branch is
+  # its own unit; the union goes to index-test in one interleaved call,
+  # and each branch asks for replacements for its own dropped ideas.
+  describe "fan-out" do
+    let(:fakes) { %w[a b c].to_h { [it, FakeLLM.new] } }
+    let(:notes) { [] }
+    let(:client) do
+      router_over(fakes, routing: { "steps" => { "llm-index-ideas" => { "fan_out" => true } } },
+                         max_retries: 0).tap do |router|
+        seen = notes
+        router.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
+      end
+    end
+
+    def ddl(name) = "CREATE INDEX ON public.customers (#{name})"
+
+    before do
+      fakes["a"].reply("llm-index-ideas", { "indexes" => [ddl("a1"), ddl("a2")] })
+      fakes["b"].reply("llm-index-ideas", { "indexes" => [ddl("a1"), ddl("b2")] })
+      fakes["c"].reply("llm-index-ideas", { "indexes" => [ddl("c1")] })
+      answers << [accepted(1), dropped(2, "unqualified_table"), dropped(3, "duplicate"), accepted(4)]
+    end
+
+    it "tests the union in one interleaved call, dropping exact repeats, and asks each branch for its own " \
+       "replacements" do
+      fakes["a"].reply("llm-index-ideas", { "indexes" => [ddl("a3")] })
+      fakes["c"].reply("llm-index-ideas", { "indexes" => [ddl("c3"), ddl("a3")] })
+      answers << [accepted(1), accepted(2)]
+
+      result = run
+
+      expect(rounds).to eq([[ddl("a1"), ddl("c1"), ddl("a2"), ddl("b2")], [ddl("a3"), ddl("c3")]])
+      expect(fakes.transform_values { it.asks.size }).to eq("a" => 2, "b" => 1, "c" => 2)
+      expect(user_texts(fakes["a"].asks.last).last).to include("1. `#{ddl("a2")}`: it repeats a candidate")
+        .and include("up to 1 replacements")
+      expect(user_texts(fakes["c"].asks.last).last).to include("1. `#{ddl("c1")}`: its table name isn't")
+      expect(fakes["a"].asks.last.body[:messages][1])
+        .to eq(role: :assistant, content: JSON.generate("indexes" => [ddl("a1"), ddl("a2")]))
+      expect(result.rounds.map(&:entries)).to eq([%w[a c a b], %w[a c]])
+      expect([result.providers, result.skipped]).to eq([%w[a b c], {}])
+    end
+
+    it "keeps a branch's first-round ideas when its replacement round fails, and goes on with the others" do
+      fakes["a"].reply("llm-index-ideas", { "indexes" => [ddl("a3")] })
+      fakes["c"].error("llm-index-ideas", status: 429)
+      answers << [accepted(1)]
+
+      result = run
+
+      expect(rounds.last).to eq([ddl("a3")])
+      expect(result.skipped).to eq("c" => "llm_rate_limited")
+      expect(notes).to include("c is rate limited, so the rest of this run skips it; going on without replacement " \
+                               "ideas (llm-index-ideas)")
+    end
+
+    it "fails the step when a replacement ask fails with llm_bad_request" do
+      fakes["a"].error("llm-index-ideas", status: 400)
+
+      expect { run }.to raise_error(Quaack::Driver::LLM::Error, /\Allm_bad_request: a: /)
+    end
+
+    it "drops a branch whose first ask fails, and goes on with the others" do
+      fakes = { "a" => FakeLLM.new, "b" => FakeLLM.new }
+      fakes["a"].error("llm-index-ideas", status: 503)
+      fakes["b"].reply("llm-index-ideas", { "indexes" => [ddl("b1")] })
+      client = router_over(fakes, routing: { "steps" => { "llm-index-ideas" => { "fan_out" => true } } },
+                                  max_retries: 0)
+      answers.replace([[accepted(1)]])
+
+      result = described_class.new(client:, index_test:).run(payload)
+
+      expect([rounds, result.providers]).to eq([[[ddl("b1")]], %w[b]])
+    end
   end
 
   describe ".index_test" do

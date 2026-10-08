@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "llm/router"
 
 module Quaack
   module Driver
@@ -20,6 +21,13 @@ module Quaack
     # It's called with the LLM's rewrites, in its order, and returns the
     # enclave's rewrite_outcome messages, one per rewrite. It's called even
     # with none, so the enclave records that llm-rewrites ran.
+    #
+    # A fan-out step (DESIGN.md, "Several LLM providers": Routing, Limits)
+    # asks every healthy provider, one after another, and sends the union
+    # in one call, interleaved: each branch's first rewrite, then each
+    # branch's second, and so on, dropping exact repeats of the SQL text. So
+    # rewrite-check's cap of five is the step's in all, and each provider
+    # gets its best in.
     class RewriteGeneration
       STEP = "llm-rewrites"
       MAX_TOKENS = 8000
@@ -73,10 +81,11 @@ module Quaack
         Answer with JSON: {"rewrites": [{"sql": "...", "transformation": "...", "assumptions": [...]}]}.
       PROMPT
 
-      # provider is the entry that wrote the rewrites, for the provenance
+      # entries is the entry that wrote each rewrite, by position, and
+      # providers each entry that answered, in order, for the provenance
       # record.
-      Result = Data.define(:rewrites, :outcomes, :provider) do
-        def initialize(rewrites:, outcomes:, provider: nil) = super
+      Result = Data.define(:rewrites, :outcomes, :entries, :providers) do
+        def initialize(rewrites:, outcomes:, entries: [], providers: []) = super
       end
 
       # The rewrite_check callable for a run, over transport.
@@ -94,10 +103,12 @@ module Quaack
 
       def run(payload)
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
-        session = @client.session
-        rewrites = session.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA)
-                          .fetch("rewrites")
-        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites), provider: session.provider)
+        branches = @client.branches(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA)
+        lists = branches.map { |session, reply| [session.provider, reply.fetch("rewrites")] }
+        union = LLM::FanOut.union(lists) { it["sql"] }
+        rewrites = union.map(&:last)
+        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites), entries: union.map(&:first),
+                   providers: branches.map { it.first.provider })
       end
     end
   end

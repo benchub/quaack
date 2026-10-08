@@ -2,6 +2,7 @@
 
 require_relative "../burndown"
 require_relative "error"
+require_relative "fan_out"
 require_relative "pairing"
 require_relative "request_sizes"
 require_relative "router_lines"
@@ -48,6 +49,8 @@ module Quaack
         FAILS_OVER = %w[llm_rate_limited llm_unavailable llm_auth llm_bad_response].freeze
         MARKS_DOWN = %w[llm_rate_limited llm_unavailable llm_auth].freeze
 
+        include FanOut
+
         # A later ask in a unit that failed with a rule that fails over,
         # once its provider is marked down or dropped: provider is the
         # entry's name and step the ask's.
@@ -73,9 +76,11 @@ module Quaack
           # skip holds providers the unit mustn't use, by name, with the
           # Error each failed with; fresh is the note for a unit started
           # fresh, given the provider it starts on; pairing, a Pairing or
-          # nil, keeps the unit off a rewrite's author.
-          def initialize(router, skip: {}, fresh: nil, pairing: nil)
+          # nil, keeps the unit off a rewrite's author. provider pins a
+          # fan-out branch's unit to that entry from the start.
+          def initialize(router, skip: {}, fresh: nil, pairing: nil, provider: nil)
             @router = router
+            @provider = provider
             @skip = skip
             @fresh = fresh
             @pairing = pairing
@@ -242,9 +247,10 @@ module Quaack
 
         # The line saying why name was left, by rule, then what happens
         # next, rest: "trying groq (llm-rewrites)" (RouterLines).
-        def note(name, rule, rest)
-          @progress&.note(RouterLines.line(name, rule, rest, named: @named, copilot: @kinds[name] == "copilot_cli"))
-        end
+        def note(name, rule, rest) = @progress&.note(line(name, rule, rest))
+
+        # The line itself, as RouterLines words it.
+        def line(name, rule, rest) = RouterLines.line(name, rule, rest, named: @named, copilot: copilot?(name))
 
         # error, naming the provider after its rule, when the providers are
         # named.

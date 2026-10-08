@@ -202,7 +202,7 @@ module Quaack
           rewrite_check = StepSummary.noting(progress, RewriteGeneration::STEP, "Checking the LLM's rewrites",
                                              RewriteGeneration.rewrite_check(transport, run_id:))
           result = RewriteGeneration.new(client:, rewrite_check:).run(payload)
-          record.call { it.rewrites!(result.provider, result.outcomes, proposed: result.rewrites.size) }
+          record.call { it.rewrites!(result.outcomes, entries: result.entries, branches: result.providers) }
           result
         end
 

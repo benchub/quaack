@@ -32,6 +32,12 @@ module Quaack
     # replacement ask that fails with a rule that fails over is skipped, and
     # the first round's ideas go on alone.
     #
+    # A fan-out step (DESIGN.md, "Several LLM providers": Routing, Limits)
+    # runs that unit once per healthy provider, one after another: each
+    # round's union goes to index-test in one call, interleaved, with exact
+    # repeats of the DDL dropped, so the cap of five per call holds, and
+    # each branch asks for replacements for its own dropped ideas.
+    #
     # Trust boundary. The prompts carry only the payload, which is shape
     # data, the LLM's own DDL, and the enclave's shape-only outcomes.
     class GeneratorThree
@@ -75,15 +81,16 @@ module Quaack
         "storage_options" => "it uses WITH (...) storage options"
       }.freeze
 
-      # round is "first" or "replacement".
-      Round = Data.define(:ddls, :outcomes, :round) do
-        def initialize(ddls:, outcomes:, round: "first") = super
+      # round is "first" or "replacement", and entries the entry that wrote
+      # each statement, by position, for the provenance record.
+      Round = Data.define(:ddls, :outcomes, :round, :entries) do
+        def initialize(ddls:, outcomes:, round: "first", entries: []) = super
       end
-      # provider is the entry that answered the unit, and skipped the rule
-      # its replacement round was skipped for, or nil, for the provenance
-      # record.
-      Result = Data.define(:rounds, :provider, :skipped) do
-        def initialize(rounds:, provider: nil, skipped: nil) = super
+      # providers is each entry that answered a branch, in order, and
+      # skipped each entry whose replacement round was skipped, with the
+      # rule, for the provenance record.
+      Result = Data.define(:rounds, :providers, :skipped) do
+        def initialize(rounds:, providers: [], skipped: {}) = super
       end
 
       # The index_test callable for run's search, over transport: it sends
@@ -104,57 +111,74 @@ module Quaack
         @step = step
       end
 
+      # Each branch (one, unless the step fans out) asks for ideas; their
+      # union is tested in one call; each branch with dropped ideas asks for
+      # its own replacements, in its own conversation; and the replacements'
+      # union is tested in one more call.
       def run(payload)
-        session = @client.session
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
-        first = ask(session, messages, "Asking the LLM for index ideas")
-        rounds = test([], first, "first")
-        dropped = dropped(rounds.last, first)
-        return Result.new(rounds:, provider: session.provider) if dropped.empty?
-
-        replace(session, messages + [{ role: :assistant, content: JSON.generate("indexes" => first) },
-                                     { role: :user, content: replacement_ask(dropped) }], rounds)
+        branches = @client.branches(**ask(messages, "Asking the LLM for index ideas"))
+                          .map { |session, reply| [session, reply.fetch("indexes")] }
+        rounds, union = test([], branches, "first")
+        lists, skipped = replacements(branches, messages, rounds.last, union)
+        Result.new(rounds: test(rounds, lists, "replacement").first, providers: branches.map { it.first.provider },
+                   skipped:)
       end
 
       private
 
-      # The result once the replacement round, asked with messages, is done
-      # or skipped.
-      def replace(session, messages, rounds)
-        ddls, skipped = replacements(session, messages)
-        Result.new(rounds: test(rounds, ddls, "replacement"), provider: session.provider, skipped:)
+      # Each branch's replacement DDL, as [session, ddls], for the branches
+      # whose ideas round dropped, and each entry whose replacement round was
+      # skipped, with the rule.
+      def replacements(branches, messages, round, union)
+        skipped = {}
+        lists = branches.filter_map do |session, first|
+          dropped = dropped(round, union, session)
+          next if dropped.empty?
+
+          [session, replace(session, messages + [{ role: :assistant, content: JSON.generate("indexes" => first) },
+                                                 { role: :user, content: replacement_ask(dropped) }], skipped)]
+        end
+        [lists, skipped]
       end
 
-      # The replacement round's DDL, or none and the rule when its ask
-      # failed with a rule that fails over: the step keeps the first round's
-      # ideas and goes on (DESIGN.md, "Several LLM providers": Routing).
-      def replacements(session, messages)
-        [ask(session, messages, "Asking the LLM again, for replacements for the dropped ideas"), nil]
+      # The replacement round's DDL, or none when its ask failed with a rule
+      # that fails over, adding the entry and rule to skipped: the branch
+      # keeps its first round's ideas and goes on (DESIGN.md, "Several LLM
+      # providers": Routing).
+      def replace(session, messages, skipped)
+        session.ask(**ask(messages, "Asking the LLM again, for replacements for the dropped ideas")).fetch("indexes")
       rescue LLM::Router::LaterError => e
         @client.going_on(e, "going on without replacement ideas")
-        [[], e.rule]
+        skipped[e.provider] = e.rule
+        []
       end
 
       # purpose is what progress hears the ask is for.
-      def ask(session, messages, purpose)
-        session.ask(step: @step, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
-               .fetch("indexes")
+      def ask(messages, purpose)
+        { step: @step, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose: }
       end
 
-      def test(rounds, ddls, round)
-        return rounds if ddls.empty?
+      # rounds with lists' union, each [session, ddls], tested as round, and
+      # the union, as [[session, ddl], ...]. A round with no DDL isn't sent.
+      def test(rounds, lists, round)
+        union = LLM::FanOut.union(lists, &:itself)
+        return [rounds, union] if union.empty?
 
-        rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls), round:)]
+        ddls = union.map(&:last)
+        [rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls), round:,
+                             entries: union.map { it.first.provider })], union]
       end
 
-      # The DDL and outcome of each dropped candidate in round, except those
-      # past the first five, which the enclave never checked. So at most
-      # five replacements are asked for.
-      def dropped(round, ddls)
-        return [] unless round
-
-        replaceable = round.outcomes.select { it["outcome"] == "dropped" && it["rule"] != "too_many" }
-        replaceable.map { [ddls.fetch(it["index"] - 1), it] }
+      # The DDL and outcome of each candidate session wrote that round
+      # dropped, except those past the first five, which the enclave never
+      # checked. So at most five replacements are asked for in all.
+      def dropped(round, union, session)
+        replaceable = round ? round.outcomes.select { it["outcome"] == "dropped" && it["rule"] != "too_many" } : []
+        replaceable.filter_map do |outcome|
+          from, ddl = union.fetch(outcome["index"] - 1)
+          [ddl, outcome] if from.equal?(session)
+        end
       end
 
       def replacement_ask(dropped)

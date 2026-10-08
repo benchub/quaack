@@ -26,16 +26,17 @@ RSpec.describe "The pipeline's provenance record" do
   let(:fakes) { names.to_h { [it, FakeLLM.new] } }
   let(:fa) { fakes[names[0]] }
   let(:fb) { fakes[names[1]] }
-  # The entry llm-rewrites is pinned to, and llm_routing's
+  # The entry llm-rewrites is pinned to, its routing, and llm_routing's
   # counterexample_pairing, if any.
   let(:rewriter) { names[1] }
+  let(:rewrites_routing) { { "providers" => [rewriter] } }
   let(:pairing) { nil }
   let(:router) do
     config = { "llms" => names.zip(models).map do |name, model|
       { "name" => name, "provider" => "anthropic", "model" => model }
     end,
                "llm_routing" => { "mode" => "failover", "counterexample_pairing" => pairing,
-                                  "steps" => { "llm-rewrites" => { "providers" => [rewriter] } } }.compact }
+                                  "steps" => { "llm-rewrites" => rewrites_routing } }.compact }
     clients = names.zip(models).map do |name, model|
       fakes[name].client(burndown: Quaack::Driver::Burndown.new, model:, max_retries: 0)
     end
@@ -231,11 +232,44 @@ RSpec.describe "The pipeline's provenance record" do
                   "<td class=\"num\">1</td></tr>")
   end
 
+  # DESIGN.md, "Several LLM providers" (Routing, Provenance, Limits).
+  context "when llm-rewrites fans out" do
+    let(:rewrites_routing) { { "fan_out" => true } }
+
+    before do
+      script
+      fa.reply("llm-rewrites", { "rewrites" => [{ "sql" => "SELECT 3", "transformation" => "t", "assumptions" => [] },
+                                                { "sql" => "SELECT 4", "transformation" => "t",
+                                                  "assumptions" => [] }] })
+    end
+
+    it "checks the union in one interleaved call and credits each stored rewrite to its branch, by position" do
+      out = File.join(@home, "report.html")
+      run(out:)
+      checks = transport.calls.select { it.first == "rewrite-check" }
+
+      expect(checks.map { |_, options| options.dig(:input, "rewrites").map { it["sql"] } })
+        .to eq([["SELECT 3", "SELECT SENTINEL_REWRITE_SQL", "SELECT 4", "SELECT 2"]])
+      record = JSON.parse(File.read(path))
+      expect([record["rewrites"], record["rewrites_proposed"]])
+        .to eq([{ "rewrite_1" => names[0] }, { names[0] => 2, names[1] => 2 }])
+      expect(File.read(out)).to include("suggested by the LLM (#{names[0]}, <code>#{models[0]}</code>).")
+    end
+
+    it "sends no provider's name or model to the enclave or into a prompt, and keeps SQL out of the record" do
+      run
+
+      expect(found(to_enclave + prompts, names + models)).to eq([])
+      expect(found(File.read(path), secret + ["SELECT 3"])).to eq([])
+    end
+  end
+
   it "keeps the record from before a resume, and adds to it" do
     File.write(File.join(@home, "x"), "")
     Quaack::Driver::Provenance.open(@home, run_id)
                               .providers!([{ "name" => "old", "provider" => "anthropic", "model" => "m" }])
-                              .rewrites!("old", [{ "outcome" => "accepted", "rewrite" => "rewrite_9" }], proposed: 1)
+                              .rewrites!([{ "index" => 1, "outcome" => "accepted", "rewrite" => "rewrite_9" }],
+                                         entries: %w[old])
                               .save
     script
     run

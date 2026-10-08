@@ -54,11 +54,46 @@ RSpec.describe Quaack::Driver::Provenance do
                 { "type" => "rewrite_outcome", "index" => 2, "outcome" => "rejected", "rule" => "too_many",
                   "rewrite" => nil },
                 { "type" => "rewrite_outcome", "index" => 3, "outcome" => "accepted", "rewrite" => "rewrite_4" }]
-    provenance.rewrites!("groq", outcomes, proposed: 3)
+    provenance.rewrites!(outcomes, entries: %w[groq groq groq], branches: %w[groq])
     provenance.save
 
     expect(saved["rewrites"]).to eq("rewrite_3" => "groq", "rewrite_4" => "groq")
     expect(saved["rewrites_proposed"]).to eq("groq" => 3)
+  end
+
+  # DESIGN.md, "Several LLM providers" (Provenance): a fan-out step's
+  # outcomes map back to their branches by position in the input.
+  it "maps a fan-out union's outcomes to the entry that wrote each, by its position, and counts each branch" do
+    outcomes = [{ "type" => "rewrite_outcome", "index" => 3, "outcome" => "accepted", "rewrite" => "rewrite_7" },
+                { "type" => "rewrite_outcome", "index" => 1, "outcome" => "accepted", "rewrite" => "rewrite_5" },
+                { "type" => "rewrite_outcome", "index" => 2, "outcome" => "accepted", "rewrite" => "rewrite_6" },
+                { "type" => "rewrite_outcome", "index" => 4, "outcome" => "rejected", "rewrite" => nil }]
+    provenance.rewrites!(outcomes, entries: %w[groq opus opus groq], branches: %w[groq opus gpt])
+    provenance.save
+
+    expect(saved["rewrites"]).to eq("rewrite_5" => "groq", "rewrite_6" => "opus", "rewrite_7" => "opus")
+    expect(saved["rewrites_proposed"]).to eq("groq" => 2, "opus" => 2, "gpt" => 0)
+  end
+
+  it "maps a fan-out index round's outcomes to the entry that wrote each, and records each skipped branch" do
+    require "quaack/driver/generator_three"
+    g3 = Quaack::Driver::GeneratorThree
+    first = g3::Round.new(ddls: %w[d1 d2 d3], entries: %w[groq opus groq],
+                          outcomes: [outcome(1, "accepted"), outcome(2, "dropped", "duplicate"),
+                                     outcome(3, "dropped", "too_many")])
+    replacement = g3::Round.new(ddls: %w[d4], entries: %w[opus], round: "replacement",
+                                outcomes: [outcome(1, "set_aside")])
+    provenance.index_ideas!("original", g3::Result.new(rounds: [first, replacement], providers: %w[groq opus gpt],
+                                                       skipped: { "groq" => "llm_unavailable" }))
+    provenance.save
+
+    tally = ->(written, outcomes, rules = {}) { { "written" => written, "outcomes" => outcomes, "rules" => rules } }
+    expect(saved["index_ideas"]["original"]).to eq(
+      "first" => { "groq" => tally.call(2, { "accepted" => 1, "dropped" => 1 }, { "too_many" => 1 }),
+                   "opus" => tally.call(1, { "dropped" => 1 }, { "duplicate" => 1 }), "gpt" => tally.call(0, {}) },
+      "replacement" => { "opus" => tally.call(1, { "set_aside" => 1 }) },
+      "skipped" => [{ "entry" => "groq", "rule" => "llm_unavailable" }]
+    )
   end
 
   it "records each entry that ran a rewrite's counterexample rounds, in order, with the rule before a fresh start" do
@@ -114,7 +149,7 @@ RSpec.describe Quaack::Driver::Provenance do
 
   it "keeps the record across a resume, adding new entries and keeping the old ones" do
     provenance.providers!([{ "name" => "groq", "provider" => "openai_compatible", "model" => "llama" }])
-    provenance.rewrites!("groq", [{ "outcome" => "accepted", "rewrite" => "rewrite_1" }], proposed: 1)
+    provenance.rewrites!([{ "index" => 1, "outcome" => "accepted", "rewrite" => "rewrite_1" }], entries: %w[groq])
     provenance.save
 
     resumed = described_class.open(@home, run_id)
