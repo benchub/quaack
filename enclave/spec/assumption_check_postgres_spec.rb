@@ -163,6 +163,44 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       expect([met, differs, met?(assumption)]).to eq([true, false, false])
     end
 
+    # Task 20261007-9: a column's = is its type's own, as the application's
+    # query has it. citext's is case-insensitive, and its implicit cast to
+    # text mustn't turn the comparisons into text's, which would find no
+    # joined row of the type and call a contradicted assumption met.
+    describe "on columns whose type has its own =" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE EXTENSION citext SCHEMA public;
+          CREATE TYPE public.kind AS ENUM ('Foo', 'Bar');
+          CREATE TABLE public.parents (ref public.citext, kind public.citext, ident public.citext, mood public.kind);
+          CREATE TABLE public.children (j public.citext, col public.citext);
+          INSERT INTO public.parents VALUES ('a', 'Foo', 'X', 'Foo');
+          INSERT INTO public.children VALUES ('A', 'y');
+        SQL
+      end
+
+      let(:assumption) do
+        { "kind" => "denormalized_equal", "table" => "public.children", "column" => "col",
+          "join_column" => "j", "references_table" => "public.parents", "references_column" => "ref",
+          "type_column" => "kind", "type_value" => "foo", "id_column" => "ident" }
+      end
+
+      it "compares them with that =, so a row it calls equal still contradicts the assumption" do
+        contradicted = met?(assumption)
+        conn.exec("UPDATE public.children SET col = 'x'")
+
+        expect([contradicted, met?(assumption)]).to eq([false, true])
+      end
+
+      it "compares an enum type column with the enum's =" do
+        moody = assumption.merge("type_column" => "mood", "type_value" => "Foo")
+        contradicted = met?(moody)
+        conn.exec("UPDATE public.children SET col = 'x'")
+
+        expect([contradicted, met?(moody)]).to eq([false, true])
+      end
+    end
+
     it "checks only rows of the stated type" do
       expect(met?(assumption.merge("type_value" => "Group"))).to be(false)
     end
