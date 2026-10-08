@@ -262,6 +262,55 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       end
     end
 
+    # Task 20261007-39: an array, range, multirange, or composite type's
+    # default btree opclass takes a polymorphic type (anyarray and the
+    # like), so its = is accepted only when both columns have exactly that
+    # type.
+    describe "on columns of the same array, range, multirange, or composite type" do
+      before { %w[pair other_pair].each { conn.exec("CREATE TYPE public.#{it} AS (n int, s text)") } }
+
+      def retype(table, column, type, using)
+        conn.exec("ALTER TABLE public.#{table} ALTER #{column} TYPE #{type} USING #{value(using, column)}")
+      end
+
+      # using, with value in place of {}.
+      def value(using, value) = using.gsub("{}", value.to_s)
+
+      {
+        "int4[]" => "ARRAY[{}::int4]", "text[]" => "ARRAY[{}::text]",
+        "int4range" => "int4range({}::int4, {}::int4 + 1)",
+        "int4multirange" => "int4multirange(int4range({}::int4, {}::int4 + 1))",
+        "public.pair" => "ROW({}::int4, 'z')::public.pair"
+      }.each do |type, using|
+        it "checks the data when both are #{type}" do
+          retype("submissions", "course_id", type, using)
+          retype("assignments", "context_id", type, using)
+          met = met?(assumption)
+          conn.exec("UPDATE public.submissions SET course_id = #{value(using, 21)} WHERE id = 3")
+
+          expect([met, met?(assumption)]).to eq([true, false])
+        end
+      end
+
+      {
+        "int4[] and int8[]" => [%w[int4[] ARRAY[{}::int4]], %w[int8[] ARRAY[{}]]],
+        "int4range and int8range" => [["int4range", "int4range({}::int4, {}::int4 + 1)"],
+                                      ["int8range", "int8range({}, {} + 1)"]],
+        "two composite types" => [["public.pair", "ROW({}::int4, 'z')::public.pair"],
+                                  ["public.other_pair", "ROW({}::int4, 'z')::public.other_pair"]]
+      }.each do |name, ((child_type, child_using), (parent_type, parent_using))|
+        it "still refuses #{name}" do
+          retype("submissions", "course_id", child_type, child_using)
+          retype("assignments", "context_id", parent_type, parent_using)
+
+          types = [%w[public.submissions course_id], %w[public.assignments context_id]]
+                  .map { described_class::Equality.column_type(conn, *it) }
+
+          expect([met?(assumption), described_class::Equality.operator(conn, *types)]).to eq([false, nil])
+        end
+      end
+    end
+
     it "checks only rows of the stated type" do
       expect(met?(assumption.merge("type_value" => "Group"))).to be(false)
     end

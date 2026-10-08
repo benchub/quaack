@@ -40,12 +40,14 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
 
   # Assignment 1 is a Course's and assignment 2 an Account's, both with
   # context 50; each submission keeps course 1.
+  let(:context_id) { 50 }
+  let(:course_id) { 1 }
   let(:rows) do
     [row("courses", { "id" => 1 }),
-     row("assignments", { "id" => 1, "context_type" => "Course", "context_id" => 50 }),
-     row("assignments", { "id" => 2, "context_type" => "Account", "context_id" => 50 }),
-     row("submissions", { "id" => 1, "assignment_id" => 1, "course_id" => 1 }),
-     row("submissions", { "id" => 2, "assignment_id" => 2, "course_id" => 1 }),
+     row("assignments", { "id" => 1, "context_type" => "Course", "context_id" => context_id }),
+     row("assignments", { "id" => 2, "context_type" => "Account", "context_id" => context_id }),
+     row("submissions", { "id" => 1, "assignment_id" => 1, "course_id" => course_id }),
+     row("submissions", { "id" => 2, "assignment_id" => 2, "course_id" => course_id }),
      row("submissions", { "id" => 3, "assignment_id" => 1, "course_id" => nil })]
   end
 
@@ -90,6 +92,47 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
 
       expect { copies(described_class.new(conn, [copy])) }
         .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect([it.rule, it.step]).to eq(%i[fixture_load_failed load]) }
+    end
+
+    # Task 20261007-39: the polymorphic = of an array, range, or composite
+    # type is accepted when both columns have exactly that type.
+    { "int4[]" => %w[{50} {1}], "text[]" => %w[{50} {1}], "int4range" => ["[50,51)", "[1,2)"],
+      "cv.pair" => %w[(50,z) (1,z)] }.each do |type, (id, own)|
+      context "when both are #{type}" do
+        let(:context_id) { id }
+        let(:course_id) { own }
+
+        it "sets the copy" do
+          conn.exec(<<~SQL)
+            CREATE TYPE cv.pair AS (n int, s text);
+            ALTER TABLE cv.submissions DROP CONSTRAINT submissions_course_id_fkey;
+            ALTER TABLE cv.submissions ALTER course_id TYPE #{type} USING NULL;
+            ALTER TABLE cv.assignments ALTER context_id TYPE #{type} USING NULL;
+          SQL
+
+          expect(copies(described_class.new(conn, [copy]))).to eq([["1", id], ["2", own], ["3", id]])
+        end
+      end
+    end
+
+    # Equality refuses them (see assumption_check_postgres_spec.rb); the
+    # copy's assignment couldn't cast one to the other either.
+    context "when the copy and the parent's id are different composite types" do
+      let(:context_id) { "(50,z)" }
+      let(:course_id) { "(1,z)" }
+
+      it "fails the load" do
+        conn.exec(<<~SQL)
+          CREATE TYPE cv.pair AS (n int, s text);
+          CREATE TYPE cv.other_pair AS (n int, s text);
+          ALTER TABLE cv.submissions DROP CONSTRAINT submissions_course_id_fkey;
+          ALTER TABLE cv.submissions ALTER course_id TYPE cv.pair USING NULL;
+          ALTER TABLE cv.assignments ALTER context_id TYPE cv.other_pair USING NULL;
+        SQL
+
+        expect { copies(described_class.new(conn, [copy])) }
+          .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect([it.rule, it.step]).to eq(%i[fixture_load_failed load]) }
+      end
     end
 
     it "leaves the fixture as built without a copy to honour" do

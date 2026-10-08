@@ -19,13 +19,21 @@ module Quaack
       # text's = for varchar. citext's = is then citext's own, not text's,
       # which its implicit cast to text would give pg_catalog.=. nil when
       # there's no such operator: the comparison can't be shown to be the
-      # application's.
+      # application's. An array, range, multirange, or composite type's
+      # default opclass takes a polymorphic type (anyarray, anyrange,
+      # anymultirange, record), whose = is the application's only when
+      # both sides have exactly the same type, so it's taken only then.
       module Equality
         ANYENUM = 3500
+        # The polymorphic btree input type of a true array, then by typtype.
+        ANYARRAY = 2277
+        POLYMORPHIC = { "r" => 3831, "m" => 4537, "c" => 2249 }.freeze
         OPERATOR_NAME = %r{\A[-+*/<>=~!@#%^&|`?]+\z}
 
         TYPE_SQL = <<~SQL
-          SELECT t.typtype, t.typbasetype, pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(t.typname)
+          SELECT t.typtype, t.typbasetype, pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(t.typname),
+                 t.typsubscript::pg_catalog.oid OPERATOR(pg_catalog.=)
+                   'pg_catalog.array_subscript_handler'::pg_catalog.regproc::pg_catalog.oid
           FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) t.typnamespace
           WHERE t.oid OPERATOR(pg_catalog.=) $1
         SQL
@@ -85,11 +93,18 @@ module Quaack
         def operator(connection, left, right)
           left_in = btree_type(connection, left)
           right_in = btree_type(connection, right)
+          left_in = right_in = polymorphic(connection, left) if left == right && !left_in
           return unless left_in && right_in
 
           rows = connection.exec_params(EQUALITY_SQL, [left_in, right_in]).values
           schema, name = rows.first
           "OPERATOR(#{schema}.#{name})" if rows.size == 1 && name.match?(OPERATOR_NAME)
+        end
+
+        # The polymorphic type a type's default opclass takes, or nil.
+        def polymorphic(connection, type)
+          kind, *, array = connection.exec_params(TYPE_SQL, [type]).values.first
+          array == "t" ? ANYARRAY : POLYMORPHIC[kind]
         end
 
         def btree_type(connection, type)
