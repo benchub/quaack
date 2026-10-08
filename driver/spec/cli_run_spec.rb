@@ -445,8 +445,8 @@ RSpec.describe "quaack run" do
 
     let(:kept) { "quaack: kept run #{run_id}, since a setup step failed.\n" }
     let(:go_on) do
-      "resume with `quaack run --run #{run_id}`, or tear the run down by running this on the jump server: " \
-        "quaacks teardown --run #{run_id}\n"
+      "resume with `quaack run --run #{run_id}`, or tear the run down by running: " \
+        "ssh jump-1 quaacks teardown --run #{run_id}\n"
     end
 
     it "keeps the run, and says to resume it or how to tear it down" do
@@ -489,13 +489,32 @@ RSpec.describe "quaack run" do
       )
     end
 
+    # Task 20261008-12, item 4: as `quaack setup` does, a Ctrl-C during a
+    # setup step keeps the run, and the signal goes on.
+    it "keeps the run on a Ctrl-C during a setup step, says to resume it or how to tear it down, and lets it through" do
+      failing["volatility"] = Interrupt.new
+
+      expect { cli.run(["run", "--run", run_id, "--out", out]) }.to raise_error(Interrupt)
+
+      expect(transport.calls.map(&:first)).not_to include("teardown")
+      expect(errors).to eq("quaack: kept run #{run_id}, since a signal interrupted a setup step. To go on, #{go_on}")
+    end
+
+    it "still tears the run down on a Ctrl-C during a later step" do
+      failing["index-feedback"] = Interrupt.new
+
+      expect { cli.run(["run", "--run", run_id, "--out", out]) }.to raise_error(Interrupt)
+
+      expect(transport.calls.map(&:first).last).to eq("teardown")
+    end
+
     it "says only what --keep says, with --keep" do
       failing["volatility"] = Quaack::Driver::EnclaveError.new(subcommand: "volatility", rule: "volatile_function",
                                                                exit_status: 70)
 
       expect(cli.run(["run", "--run", run_id, "--out", out, "--keep"])).to eq(1)
-      expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
-                           "quaacks teardown --run #{run_id}\nquaack run failed: volatile_function\n")
+      expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run: " \
+                           "ssh jump-1 quaacks teardown --run #{run_id}\nquaack run failed: volatile_function\n")
     end
 
     it "skips teardown as for any step when ssh failed" do
@@ -503,7 +522,7 @@ RSpec.describe "quaack run" do
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
       expect(errors).to eq("quaack: skipped the teardown of run #{run_id}, since ssh to the jump server failed. " \
-                           "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" \
+                           "To tear it down later, run: ssh jump-1 quaacks teardown --run #{run_id}\n" \
                            "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login " \
                            "or network, then resume with `quaack run --run #{run_id}`\n")
     end
@@ -547,7 +566,7 @@ RSpec.describe "quaack run" do
     expect(transport.calls.map(&:first)).not_to include("teardown")
     expect([status, errors]).to eq(
       [1, "quaack: skipped the teardown of run #{run_id}, since ssh to the jump server failed. To tear it down " \
-          "later, run this on the jump server: quaacks teardown --run #{run_id}\n" \
+          "later, run: ssh jump-1 quaacks teardown --run #{run_id}\n" \
           "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
           "then resume with `quaack run --run #{run_id}`\n"]
     )
@@ -589,8 +608,9 @@ RSpec.describe "quaack run" do
 
     it "says to resume the run when --keep kept it" do
       expect(cli.run(["run", "--run", run_id, "--out", out, "--keep"])).to eq(1)
-      expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
-                           "quaacks teardown --run #{run_id}\n#{failed}resume with `quaack run --run #{run_id}`\n")
+      expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run: " \
+                           "ssh jump-1 quaacks teardown --run #{run_id}\n" \
+                           "#{failed}resume with `quaack run --run #{run_id}`\n")
     end
 
     it "says to resume the run when teardown failed" do
@@ -598,8 +618,8 @@ RSpec.describe "quaack run" do
                                                              exit_status: 255)
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
-      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (incomplete). To tear it down later, run this " \
-                           "on the jump server: quaacks teardown --run #{run_id}\n" \
+      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (incomplete). To tear it down later, run: " \
+                           "ssh jump-1 quaacks teardown --run #{run_id}\n" \
                            "#{failed}resume with `quaack run --run #{run_id}`\n")
     end
   end
@@ -610,7 +630,7 @@ RSpec.describe "quaack run" do
   # not done. The teardown hint prints once, in teardown's own line.
   describe "what to do when teardown fails after a good run" do
     let(:teardown_left) { "tear the run down as said above (the run itself finished)" }
-    let(:later) { "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" }
+    let(:later) { "To tear it down later, run: ssh jump-1 quaacks teardown --run #{run_id}\n" }
 
     it "prints the report's path and says to run teardown, not to resume, when ssh fails during teardown" do
       failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "ssh_failed",
@@ -753,8 +773,8 @@ RSpec.describe "quaack run" do
 
       expect([status, stdout.string, errors]).to eq(
         [1, "", "quaack: kept run #{run_id}, since a setup step failed.\nquaack run failed: unknown_relation. " \
-                "To go on, resume with `quaack run --run #{run_id}`, or tear the run down by running this on the " \
-                "jump server: quaacks teardown --run #{run_id}\n"]
+                "To go on, resume with `quaack run --run #{run_id}`, or tear the run down by running: " \
+                "ssh jump-1 quaacks teardown --run #{run_id}\n"]
       )
       expect(transport.calls.map(&:first)).to eq(%w[version status qualify])
     end
@@ -775,8 +795,8 @@ RSpec.describe "quaack run" do
     end
     expect(transport.calls.map(&:first)).not_to include("teardown")
     expect(stdout.string).to eq("#{out}\n#{run_id} done\n" * 2)
-    expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
-                         "quaacks teardown --run #{run_id}\n" * 2)
+    expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run: " \
+                         "ssh jump-1 quaacks teardown --run #{run_id}\n" * 2)
   end
 
   it "fails with exit 1 and the LLM error's rule and detail when an LLM call fails" do
@@ -794,8 +814,8 @@ RSpec.describe "quaack run" do
   # shows as is, with no pointer to teardown's line.
   { "teardown_failed" => [Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed"),
                           "Check or remove ~/.quaack/runs/20260926T010203Z-0123abcd on the jump server by hand."],
-    "driver_error" => [IOError.new("sentinel-io-7f3a"), "To tear it down later, run this on the jump server: " \
-                                                        "quaacks teardown --run 20260926T010203Z-0123abcd"] }
+    "driver_error" => [IOError.new("sentinel-io-7f3a"), "To tear it down later, run: " \
+                                                        "ssh jump-1 quaacks teardown --run 20260926T010203Z-0123abcd"] }
     .each do |rule, (teardown_error, hint)|
     it "shows the LLM error alone when the run fails and then its teardown fails as #{rule}" do
       fake.error("operator-rewrites", status: 400)
