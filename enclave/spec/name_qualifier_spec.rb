@@ -52,13 +52,27 @@ RSpec.describe "qualifying names other than relations" do
         .to eq("SELECT count(*), max(status), date_trunc('day', created_at) FROM public.orders")
     end
 
-    it "stays bare when pg_catalog and another schema both have the name" do
+    it "stays bare when pg_catalog and another schema both have the name, and pg_catalog's wins" do
       expect(qualified("SELECT lower(status) FROM orders")).to eq("SELECT lower(status) FROM public.orders")
     end
 
-    it "stays bare when two schemas on the path other than pg_catalog have the name" do
+    # Task 20261007-21: Postgres resolves the call, so the winner is known.
+    it "names the other schema when its overload wins over pg_catalog's" do
+      expect(qualified("SELECT lower(total_cents), lower(status) FROM orders"))
+        .to eq("SELECT public.lower(total_cents), lower(status) FROM public.orders")
+    end
+
+    it "names the schema whose overload wins when two schemas other than pg_catalog have the name" do
       expect(qualified("SELECT twice(total_cents) FROM orders", { "search_path" => "sales, public" }))
-        .to eq("SELECT twice(total_cents) FROM public.orders")
+        .to eq("SELECT sales.twice(total_cents) FROM public.orders")
+      expect(qualified("SELECT twice(total_cents) FROM orders", { "search_path" => "public, sales" }))
+        .to eq("SELECT public.twice(total_cents) FROM public.orders")
+    end
+
+    it "stays bare when the query doesn't plan, so nothing is known" do
+      conn.exec("CREATE FUNCTION public.lower(int, int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT $1'")
+      expect(qualified("SELECT lower(total_cents) FROM orders WHERE lower(1, 2) = lower(3, 4, 5)"))
+        .to eq("SELECT lower(total_cents) FROM public.orders WHERE lower(1, 2) = lower(3, 4, 5)")
     end
 
     # Task 20261007-30: Postgres skips a schema the role can't use, so
@@ -90,9 +104,24 @@ RSpec.describe "qualifying names other than relations" do
         .to eq("SELECT id FROM public.orders WHERE total_cents OPERATOR(public.=~=) 3")
     end
 
-    it "stays bare when pg_catalog has one of the name too, as for an extension's =" do
+    it "stays bare when pg_catalog has one of the name too, as for an extension's =, and pg_catalog's wins" do
       expect(qualified("SELECT id FROM orders WHERE status = 'open' AND total_cents > 3"))
         .to eq("SELECT id FROM public.orders WHERE status = 'open' AND total_cents > 3")
+    end
+
+    it "names the extension's schema when its = wins, through the query's types" do
+      expect(qualified("SELECT id FROM orders WHERE status = total_cents AND status = 'open'"))
+        .to eq("SELECT id FROM public.orders WHERE status OPERATOR(public.=) total_cents AND status = 'open'")
+    end
+
+    it "resolves a parameter's type as Postgres infers it" do
+      expect(qualified("SELECT id FROM orders WHERE status = $1::int AND total_cents = $2"))
+        .to eq("SELECT id FROM public.orders WHERE status OPERATOR(public.=) $1::int AND total_cents = $2")
+    end
+
+    it "leaves a keyword's operator bare, even when the extension's = would win" do
+      expect(qualified("SELECT id FROM orders WHERE status IN (1, 2) AND status IS DISTINCT FROM 3"))
+        .to eq("SELECT id FROM public.orders WHERE status IN (1, 2) AND status IS DISTINCT FROM 3")
     end
   end
 

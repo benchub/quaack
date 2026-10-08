@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "name_qualifier/catalog"
 require_relative "name_qualifier/error"
 require_relative "name_qualifier/reg_literal"
+require_relative "name_qualifier/resolved"
 
 module Quaack
   module Enclave
@@ -24,14 +25,14 @@ module Quaack
     #   later steps run with the plan's search path (RunServer.connect), so
     #   it resolves the same way there.
     # - A function, or an operator written as one (a + b, a = ANY (...),
-    #   ORDER BY a USING <), gets a schema only when exactly one schema on
-    #   the path has one of that name, and it isn't pg_catalog. Postgres
-    #   picks among every one of the name on the path by argument types, so
-    #   with more than one schema, such as an extension's = beside
-    #   pg_catalog's, which wins isn't known without the query's types. Those
-    #   stay bare, and so do the operators Postgres supplies or that are
-    #   written as keywords (IN, BETWEEN, LIKE, and the like). They resolve
-    #   through the plan's search path in later steps.
+    #   ORDER BY a USING <), gets the schema whose one of that name the call
+    #   resolves to, unless it's pg_catalog. With one schema on the path
+    #   that has the name, that's it. With more, such as an extension's =
+    #   beside pg_catalog's, Postgres picks by argument types, so Resolved
+    #   asks Postgres which wins, and a call it can't tell stays bare. The
+    #   operators Postgres supplies or that are written as keywords (IN,
+    #   BETWEEN, LIKE, and the like) stay bare. Bare names resolve through
+    #   the plan's search path in later steps.
     # - A regclass or regtype literal: see RegLiteral, which refuses some.
     #
     # A name that resolves nowhere is left bare, but in a regclass literal.
@@ -67,7 +68,8 @@ module Quaack
         collect(tree, nodes)
         # Literals first: a cast to regclass names pg_catalog's type.
         nodes.grep(PgQuery::TypeCast).each { RegLiteral.qualify!(it, catalog) }
-        nodes.each { name!(it, catalog) }
+        sites = nodes.filter_map { name!(it, catalog) }
+        Resolved.qualify!(tree, sites, path, connection)
       end
 
       def collect(node, found)
@@ -85,7 +87,19 @@ module Quaack
         return if field.nil? || (node.is_a?(PgQuery::A_Expr) && !OPERATOR_KINDS.include?(node.kind))
 
         names = node.public_send(field)
-        names.replace(catalog.qualified(kind, names, pick)) if names.size == 1
+        return unless names.size == 1
+
+        names.replace(catalog.qualified(kind, names, pick))
+        ambiguous(names, catalog, kind, pick)
+      end
+
+      # A bare function or operator that several schemas have, as a site
+      # for Resolved: [its name list, those schemas].
+      def ambiguous(names, catalog, kind, pick)
+        return unless pick == :only && names.size == 1
+
+        schemas = catalog.schemas(kind, names.first.string.sval)
+        [names, schemas] if schemas.size > 1
       end
     end
   end
