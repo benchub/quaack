@@ -23,8 +23,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
 - 20261007-45 (Equality refuses when an exact-type `=` exists outside the family).
 - 20261007-46 (or_to_union refuses LIKE patterns that can raise).
-
-Known open bug in this batch (found 2026-10-08): the shared `unique` check counts a `text_ops` unique index on a citext column as unique, though citext compares case-blind. 20261007-43 fixes it; close the batch only after it lands.
+- 20261007-43 (unique checks compare with the column's own type's `=`; fixes citext with text classes).
 
 ## How this file works.
 
@@ -2219,17 +2218,7 @@ From the review of 20261007-14.
 - **Design:** Several LLM providers.
 - **Status:** todo
 
-### 20261007-43. Unique keys: minors from 20261002-4.
-
-From the review of 20261002-4.
-1. `catalog/keys.rb`'s `u.n <= i.indnkeyatts` filter is untested; dropping it lets INCLUDE columns join candidate keys, which would refuse `SELECT DISTINCT t.a` for `UNIQUE (a) INCLUDE (b)` and demand `b` not null. Add a test with an INCLUDE index.
-2. The per-catalog `@keys` memo in `keys.rb` is untested (performance only).
-3. The shared check refuses a unique index with a non-default operator class even when its `=` matches the default's (`text_pattern_ops`, `varchar_pattern_ops`). Allow a class whose equality operator is the default class's, with a test.
-
-- **Depends on:** 20261002-4.
-- **Came from:** The review of 20261002-4.
-- **Design:** rewrite-rules, assumption checks.
-- **Status:** todo
+### 20261007-43. Unique keys: minors from 20261002-4. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table.
 

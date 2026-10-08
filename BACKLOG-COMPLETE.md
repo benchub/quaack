@@ -7101,3 +7101,16 @@ From the review of 20261007-28. `env_region` skips an empty region variable and 
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. `env_region` takes the first region variable that's set, as aws-sdk-core does, and an empty one hides the rest: bearer mode then has no region, and SigV4 mode falls to the profile. The no-region message names all three variables and the profile. Not filed: "one of X, Y, and Z" could read "X, Y, or Z".
+
+### 20261007-43. Unique keys: minors from 20261002-4.
+
+From the review of 20261002-4.
+1. `catalog/keys.rb`'s `u.n <= i.indnkeyatts` filter is untested; dropping it lets INCLUDE columns join candidate keys, which would refuse `SELECT DISTINCT t.a` for `UNIQUE (a) INCLUDE (b)` and demand `b` not null. Add a test with an INCLUDE index.
+2. The per-catalog `@keys` memo in `keys.rb` is untested (performance only).
+3. The shared check refuses a unique index with a non-default operator class even when its `=` matches the default's (`text_pattern_ops`, `varchar_pattern_ops`). Allow a class whose equality operator is the default class's, with a test.
+
+- **Depends on:** 20261002-4.
+- **Came from:** The review of 20261002-4.
+- **Design:** rewrite-rules, assumption checks.
+- **Status:** done
+- **Landed:** 2026-10-08, after a review with one blocking finding, a fix round, and a clean second review. The shared `unique` check compares a unique index's operator class `=` with the default btree class's for the column's own type (domains unwrapped), falling back to the class's input type when the column's type has none of its own, so a `text_ops` or `text_pattern_ops` index on a citext column no longer counts as unique; that closes a hole 20261002-4 had put on main. A class whose `=` matches the default's, such as `text_pattern_ops` on text, now counts. Tests cover INCLUDE columns in candidate keys and the keys memo. DESIGN.md (finished at landing) says what happens with no default class. Not filed: three defensive guards reachable only with planted classes. Enclave change, unreleased until the next batch bump.
