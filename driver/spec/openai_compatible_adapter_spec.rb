@@ -11,7 +11,6 @@ require_relative "support/llm_client_examples"
 RSpec.describe "the OpenAI-compatible adapter" do
   it_behaves_like "an LLM client" do
     let(:fake) { FakeOpenAI.new }
-    let(:refused_key_error) { { message: "Incorrect API key provided: SENTINEL-KEY" } }
   end
 
   let(:burndown) { Quaack::Driver::Burndown.new }
@@ -325,6 +324,19 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
       expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply couldn't be read as a message")
       expect(e.cause).to be_nil
+    end
+
+    it "fails with llm_bad_response on choices that aren't an array of objects, without quoting them" do
+      ["SENTINEL-CHOICES", [7], ["SENTINEL-CHOICE"], { "0" => "SENTINEL-CHOICE" }].each do |choices|
+        fake.raw("llm-index-ideas",
+                 JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m", choices: choices))
+
+        e = ask_error
+
+        expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply couldn't be read as a message"),
+                                         "for #{choices.inspect}"
+        expect(e.cause).to be_nil
+      end
     end
 
     it "fails with llm_bad_response on content that isn't text, without quoting it" do

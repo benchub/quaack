@@ -231,13 +231,13 @@ If `driver.json` itself is bad, `quaack start` and `quaack run` say which file a
 
 With `"provider": "openai_compatible"`, the driver talks to OpenAI's Chat Completions API, through the official `openai` gem, at `base_url`. It sends the key from the variable `api_key_env` names, or from `OPENAI_API_KEY` when it names none, as a bearer token. If that variable is unset or empty, `quaack run` fails with `llm_auth` before it makes any call. Give a `model` too: there's no default.
 
-Check your provider's docs: these were current when written, but nobody has checked them against each provider since.
+These were checked against each provider's docs on October 7, 2026, but providers change their models often, so check yours.
 
 | Provider | `base_url` | `api_key_env` | `model`, for example |
 | --- | --- | --- | --- |
 | OpenAI | leave it out | leave it out (`OPENAI_API_KEY`) | `gpt-4.1` |
 | Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-2.5-pro` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-3.8-flash` |
 | OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4.1` |
 | Ollama, on your laptop | `http://localhost:11434/v1` | `OLLAMA_API_KEY` | `qwen2.5-coder:32b` |
 
@@ -255,11 +255,11 @@ For example, for Groq:
 }
 ```
 
-then `export GROQ_API_KEY=...` before `quaack run`. Give the API root as `base_url`, not the full endpoint: the driver adds `/chat/completions` itself, so a `base_url` that ends in it is a usage error. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`.
+then `export GROQ_API_KEY=...` before `quaack run`. Give the API root as `base_url`, not the full endpoint: the driver adds `/chat/completions` itself, so a `base_url` that ends in it is a usage error. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`. The driver sends its token limit as `max_completion_tokens`, which Ollama ignores, so a reply from Ollama has no token limit.
 
 The models are examples. Use one your account can call, and **make it a strong model**: QUAACK asks for careful SQL work, and a small model is mostly a waste of time and tokens.
 
-**Reasoning models need headroom.** A reasoning model, such as OpenAI's `gpt-5` or `o3`, or Gemini 2.5, spends its token limit on thinking as well as on the reply. QUAACK asks for at most 4000 or 8000 tokens a reply, so a long think can use them all up and leave no reply, and the run stops with `llm_bad_response: the reply stopped for length`. That's why the table's OpenAI example is `gpt-4.1`, which doesn't reason. If you use a reasoning model and see that error, pick a model that reasons less, or not at all.
+**Reasoning models need headroom.** A reasoning model, such as OpenAI's `gpt-5` or `o3`, or Gemini's thinking models, spends its token limit on thinking as well as on the reply. QUAACK asks for at most 4000 or 8000 tokens a reply, so a long think can use them all up and leave no reply, and the run stops with `llm_bad_response: the reply stopped for length`. That's why the table's OpenAI example is `gpt-4.1`, which doesn't reason. If you use a reasoning model and see that error, pick a model that reasons less, or not at all.
 
 **Structured output.** At several steps, QUAACK asks for JSON in a fixed shape, and checks every reply. A reply in the wrong shape gets one more try. If the model gets it wrong twice, the run stops with `llm_bad_response`. Strong models rarely do.
 

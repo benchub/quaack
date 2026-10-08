@@ -147,18 +147,26 @@ module Quaack
         # The completion, asking for output that matches schema while the
         # API takes response_format.
         def complete(params, schema)
-          completions = @openai.chat.completions
-          return completions.create(**params) unless schema && @schema_mode
+          return create(**params) unless schema && @schema_mode
 
           begin
-            completions.create(**params, response_format: response_format(schema))
+            create(**params, response_format: response_format(schema))
           rescue *REJECTED => e
             raise unless schema_rejected?(e)
 
-            completion = completions.create(**params)
+            completion = create(**params)
             @schema_mode = false
             completion
           end
+        end
+
+        # One completion. The gem walks a 200's choices before it checks
+        # them, so choices that aren't an array of objects, such as a string
+        # or an array of numbers, raise a NoMethodError from inside it.
+        def create(**)
+          @openai.chat.completions.create(**)
+        rescue NoMethodError
+          raise TypeError, "the reply's choices aren't an array of objects", cause: nil
         end
 
         # Whether a request was rejected for its response_format: the error
