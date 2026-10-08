@@ -7299,3 +7299,18 @@ From the reviews of 20261007-42.
 - **Design:** Several LLM providers, LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. Tests pin `Error#naming`'s reason, the empty-reason guard, and the OpenAI-compatible detail when the API never answers. `OPENAI_CUSTOM_HEADERS` values are scrubbed. A body with no usable message, or a text body, gives only "the API answered <status>", through the same `APIErrorDetail.answered` as Anthropic. The corpus README's list of replies that answer an older prompt now includes 20260927-24.
+
+### 20261007-60. Fan-out: minors from 20261007-18.
+
+From the builder and review of 20261007-18.
+1. A fan-out branch dropped for `llm_bad_response` isn't in the report, though DESIGN.md says "the progress line and the report say which and why". Branches dropped for rate limits, unavailability, or credentials show only as "marked down" in the providers table, with no step named. Record each failed fan-out branch with its step and rule in the provenance record, and show it in the report.
+2. When two branches propose the same SQL or DDL, only the first writer gets credit in `rewrites_proposed` and the index counts (so the per-provider counts add up). Say so in DESIGN.md, or record repeats separately.
+
+3. From the review of 20261007-56: no test checks that a provider configured but never asked in a resumed run keeps its earlier "marked down" (`up!` given every entry minus `client.down` stays green); add one.
+4. From the review of 20261007-56: DESIGN.md should say a provider whose replies this run were all bad responses counts as asked and not down, without saying its replies were usable.
+5. From the review of 20261007-56: when counts are blanked, the "The LLM: not recorded" row reads oddly as all "not recorded"; relabel it or drop it from a blanked table.
+- **Depends on:** 20261007-18.
+- **Came from:** The builder and review of 20261007-18.
+- **Design:** Several LLM providers, report.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The router lists each dropped fan-out branch, and the provenance record keeps it as `failed_branches` (step, entry, and rule only, checked strictly on read-back); the report says, escaped, which branch of which step was dropped and why. DESIGN.md says only the first copy of a repeated proposal gets credit, and that a provider counts as asked when this run called it, whatever came back. A provider never asked keeps its earlier "marked down", with a test, and a blanked rewrites table leaves out the all-"not recorded" row.
