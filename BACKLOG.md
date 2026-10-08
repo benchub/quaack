@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- None. The last batch closed at 0.1.23 on 2026-10-08.
+- 20261007-52 (or_to_union: parameter LIKE patterns, and LIKE edge cases refused).
 
 ## How this file works.
 
@@ -2142,18 +2142,7 @@ From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept
 
 ### 20261007-51. Equality: refuse a half-exact `=` too. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns.
-
-From the builder and review of 20261007-46.
-1. **Needs the user:** an OR with a LIKE arm no longer splits, since its pattern is a parameter by the time the rule runs, and a parameter ending in a lone backslash raises only in the rewrite. Ask whether to accept that risk for parameter patterns (a one-line change) or keep refusing.
-2. With `standard_conforming_strings = off`, pg_query reads `'ab\\'` as two backslashes while the server reads one, so the parity rule misjudges it. Refuse cleanly, or list the setting as unsupported in v1.
-3. ILIKE on a column with a nondeterministic collation raises only when its arm runs (`b OR v ILIKE 'x'` returns rows; the arm alone raises). Refuse it, or note it as unsupported.
-
-- **Depends on:** 20261007-46.
-- **Came from:** The builder and review of 20261007-46.
-- **Design:** rewrite-rules.
-- **Decided by the user (2026-10-08):** item 1: allow parameter LIKE patterns in or_to_union, and document the behavior in `docs/transforms/or_to_union.md` and DESIGN.md: the rewrite raises where the original might not if the app passes a pattern ending in a lone backslash, since the original's other arm can skip the LIKE for a row and the UNION's branch can't. No caveat in the report itself. Items 2 and 3 stay as listed.
-- **Status:** todo
+### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
 
@@ -2283,4 +2272,16 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 - **Depends on:** none.
 - **Came from:** Per-commit checks on 2026-10-08.
 - **Design:** Development, driver transport.
+- **Status:** todo
+
+### 20261008-11. or_to_union LIKE checks: minors from 20261007-52.
+
+From the review of 20261007-52.
+1. `standard_conforming_strings` is read on the racetrack session, not production's, and nothing records production's value. Say so in DESIGN.md and the rule's page ("off for the run" reads as production's), or have inventory record production's database default and refuse on that.
+2. The nondeterministic-collation check counts dropped columns (`pg_attribute` keeps a dropped column's collation), so one dropped column refuses every LIKE arm database-wide. Add `NOT attisdropped`, with a test.
+3. The `typcollation` and `rngcollation` branches of the `NONDETERMINISTIC` query have no test. Test them or drop them.
+
+- **Depends on:** 20261007-52.
+- **Came from:** The review of 20261007-52.
+- **Design:** rewrite-rules.
 - **Status:** todo

@@ -7418,3 +7418,17 @@ The user confirmed them all on 2026-10-08: failover-mode units don't move the ro
 - **Design:** Several LLM providers, LLM client.
 - **Status:** done
 - **Landed:** 2026-10-08. The five markers the user confirmed are gone from DESIGN.md, with the matching comments in `llm.rb` and two specs; nothing else changed. Docs and comments only, so the main session checked the diff instead of a separate review; the per-commit check passed.
+
+### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns.
+
+From the builder and review of 20261007-46.
+1. **Needs the user:** an OR with a LIKE arm no longer splits, since its pattern is a parameter by the time the rule runs, and a parameter ending in a lone backslash raises only in the rewrite. Ask whether to accept that risk for parameter patterns (a one-line change) or keep refusing.
+2. With `standard_conforming_strings = off`, pg_query reads `'ab\\'` as two backslashes while the server reads one, so the parity rule misjudges it. Refuse cleanly, or list the setting as unsupported in v1.
+3. ILIKE on a column with a nondeterministic collation raises only when its arm runs (`b OR v ILIKE 'x'` returns rows; the arm alone raises). Refuse it, or note it as unsupported.
+
+- **Depends on:** 20261007-46.
+- **Came from:** The builder and review of 20261007-46.
+- **Design:** rewrite-rules.
+- **Decided by the user (2026-10-08):** item 1: allow parameter LIKE patterns in or_to_union, and document the behavior in `docs/transforms/or_to_union.md` and DESIGN.md: the rewrite raises where the original might not if the app passes a pattern ending in a lone backslash, since the original's other arm can skip the LIKE for a row and the UNION's branch can't. No caveat in the report itself. Items 2 and 3 stay as listed.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. As the user decided, or_to_union splits an OR whose LIKE or ILIKE pattern is a parameter, and `docs/transforms/or_to_union.md` and DESIGN.md document the risk: a pattern ending in a lone backslash raises in the rewrite where the original might not; a spec pins it. With `standard_conforming_strings` off, a constant pattern holding a backslash refuses, and the setting is listed as unsupported in v1. Any LIKE or ILIKE arm refuses when a column in the database uses a nondeterministic collation, or the arm has a COLLATE. Enclave change, unreleased until the next batch bump.
