@@ -253,6 +253,48 @@ RSpec.describe "quaack setup" do
     File.chmod(0o700, locked) if locked
   end
 
+  # Task 20261007-23: unlike chmod 000, a directory where the record
+  # should be stops root too, so this runs everywhere.
+  it "refuses, rather than calling it unknown, a run record that isn't a file" do
+    record = File.join(home, ".quaack", "runs", "#{run_id}.json")
+    File.delete(record)
+    Dir.mkdir(record)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(64)
+    expect([hosts, errors]).to eq([[], "quaack setup: can't read ~/.quaack/runs/#{run_id}.json\n"])
+  end
+
+  # Task 20261007-23: the record's JSON is checked, never quoted.
+  { "isn't valid JSON" => ["{\"jump_host\": \"sentinel-7f3a", "not valid JSON"],
+    "isn't a JSON object" => ['["sentinel-7f3a"]', "not a JSON object"] }.each do |what, (text, problem)|
+    it "refuses a run record that #{what} as a usage error, naming it by ~" do
+      File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"), text)
+
+      expect(cli.run(["setup", "--run", run_id])).to eq(64)
+      expect([hosts, errors]).to eq([[], "quaack setup: can't read ~/.quaack/runs/#{run_id}.json (#{problem})\n"])
+    end
+  end
+
+  # Task 20261007-23: a failing step's note uses the record setup read at
+  # the start, so a record that turns unreadable mid-setup doesn't crash it.
+  it "names the jump host and server it read at the start when the record turns unreadable mid-setup" do
+    Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
+    record = File.join(home, ".quaack", "runs", "#{run_id}.json")
+    t = transport
+    cli = Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |_host, **|
+      File.delete(record)
+      Dir.mkdir(record)
+      t
+    })
+    failing["inventory"] = Quaack::Driver::EnclaveError.new(subcommand: "inventory",
+                                                            rule: "production_connection_failed", exit_status: 70)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(1)
+    expect(errors).to start_with("quaack setup failed: production_connection_failed: couldn't connect to " \
+                                 "production at prod-1. ")
+    expect(errors).to include("Test it with `ssh jump-1 'psql -h prod-1 -c \"select 1\"'`.")
+  end
+
   it "rejects a missing --run, an unknown option, a repeated one, or one without a value" do
     [["setup"], ["setup", "--run", run_id, "--rewrites", "f"], ["setup", "--run", run_id, "--host", "a", "--host", "b"],
      ["setup", "--run", run_id, "--host"], ["setup", "--host", "a", "--run", run_id]].each do |argv|
@@ -326,6 +368,17 @@ RSpec.describe "quaack setup" do
 
     it "gives the transport 3600 seconds when nothing sets it" do
       expect(cli.run(["setup", "--run", run_id])).to eq(0)
+      expect(timeouts).to eq([3600])
+    end
+
+    # Task 20261007-23: a ~/.quaack linked to a real directory, as with
+    # dotfiles, with no driver.json there, gets the defaults.
+    it "gives the transport 3600 seconds for a symlinked ~/.quaack without a driver.json" do
+      quaack = File.join(home, ".quaack")
+      File.rename(quaack, File.join(home, "dotfiles-quaack"))
+      File.symlink(File.join(home, "dotfiles-quaack"), quaack)
+
+      expect([cli.run(["setup", "--run", run_id]), errors]).to eq([0, ""])
       expect(timeouts).to eq([3600])
     end
 

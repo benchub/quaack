@@ -59,14 +59,14 @@ module Quaack
       private
 
       def setup(run_id, server)
-        host = self.class.where(@home, run_id, @stderr, "setup")&.fetch(:jump) or return CLI::EX_USAGE
-        transport = checked(host) or return CLI::EX_USAGE
+        where = self.class.where(@home, run_id, @stderr, "setup") or return CLI::EX_USAGE
+        transport = checked(where[:jump]) or return CLI::EX_USAGE
         Setup.run(transport:, run_id:, entries: Pipeline.status(transport, run_id), server:,
                   progress: Progress.new(io: @stderr, total: Setup::STEPS.size))
         @stdout.print "#{run_id} set up\n"
         0
       rescue EnclaveError, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack setup failed: #{EnclaveError.shown(e, resume(run_id), **Runs.new(@home).where(run_id))}\n"
+        @stderr.print "quaack setup failed: #{EnclaveError.shown(e, resume(run_id), **where)}\n"
         1
       end
 

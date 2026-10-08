@@ -285,12 +285,33 @@ RSpec.describe Quaack::Driver::Start do
                                     "bad_driver_config: #{path}: it's a symlink to a missing file")
   end
 
+  # Task 20261007-23: the same for a ~/.quaack symlink whose target is
+  # missing, rather than running with the defaults.
+  it "refuses a ~/.quaack symlink whose target is missing" do
+    File.symlink(File.join(home, "moved-away"), File.join(home, ".quaack"))
+    path = File.join(home, ".quaack", "driver.json")
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{path}: ~/.quaack is a symlink to a missing directory")
+  end
+
   it "counts a ~/.quaack without a driver.json, or that isn't a directory, as no config" do
     quaack = File.join(home, ".quaack")
     FileUtils.mkdir_p(quaack)
     expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
     FileUtils.rm_rf(quaack)
     File.write(quaack, "")
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
+  end
+
+  # Task 20261007-23: a ~/.quaack symlink whose target is there counts as
+  # that target does, as with dotfiles.
+  it "counts a ~/.quaack symlink to a directory without a driver.json, or to a file, as no config" do
+    quaack = File.join(home, ".quaack")
+    File.symlink(File.join(dir, "dotfiles").tap { FileUtils.mkdir_p(it) }, quaack)
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
+    File.delete(quaack)
+    File.symlink(File.join(dir, "plain").tap { File.write(it, "") }, quaack)
     expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
   end
 

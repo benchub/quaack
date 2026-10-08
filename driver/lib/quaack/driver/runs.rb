@@ -68,7 +68,12 @@ module Quaack
       def read(run_id)
         return unless RUN_ID.match?(run_id) && there?(run_id)
 
-        JSON.parse(File.read(path(run_id)))
+        record = JSON.parse(File.read(path(run_id)))
+        raise Unreadable.new(run_id, " (not a JSON object)") unless record.is_a?(Hash)
+
+        record
+      rescue JSON::ParserError
+        raise Unreadable.new(run_id, " (not valid JSON)")
       rescue Errno::EACCES
         raise Unreadable.new(run_id, " (permission denied)")
       rescue SystemCallError
