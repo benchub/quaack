@@ -2257,14 +2257,4 @@ The URL prints too, so also scrub a key in a `base_url` query string (from the r
 - **Design:** LLM providers, trust boundary.
 - **Status:** todo
 
-### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps.
-
-From the review of 20261007-40.
-1. Regression: the old pattern redacted `Bearer "SECRET"` and `Bearer 'SECRET'`; the new `[^\s"']+` can't start at a quote, so those print unredacted. Redact a quoted token too, with tests for both quote kinds.
-2. The shared "keeps no cause on any API error" example plants sentinels in response headers, but `error_text` never reads headers, so that half can't fail. Have `error_text` include `headers.inspect` when the error has headers, and prove it catches a planted header sentinel in a kept cause.
-3. No test has a session token holding `tid=` without `8kp=`, so a mutation to only `8kp=` survives. Add one.
-
-- **Depends on:** 20261007-40.
-- **Came from:** The review of 20261007-40.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps. Done, see BACKLOG-COMPLETE.md.

@@ -7138,3 +7138,16 @@ From the reviews of 20261007-24.
 - **Design:** LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The Copilot CLI stderr redaction also catches `Bearer` with a colon, an equals sign, extra spaces, or a tab, in any case, and Copilot API session tokens with no prefix (`tid=` or `8kp=`); it stays linear on a megabyte of stderr. No API error from the Anthropic, Bedrock, or OpenAI-compatible adapters keeps the SDK's error as its cause, since a gateway's headers or body could echo a key; the visible detail is unchanged. The Anthropic and Bedrock detail itself still prints the whole body and URL: that's 20261007-54.
+
+### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps.
+
+From the review of 20261007-40.
+1. Regression: the old pattern redacted `Bearer "SECRET"` and `Bearer 'SECRET'`; the new `[^\s"']+` can't start at a quote, so those print unredacted. Redact a quoted token too, with tests for both quote kinds.
+2. The shared "keeps no cause on any API error" example plants sentinels in response headers, but `error_text` never reads headers, so that half can't fail. Have `error_text` include `headers.inspect` when the error has headers, and prove it catches a planted header sentinel in a kept cause.
+3. No test has a session token holding `tid=` without `8kp=`, so a mutation to only `8kp=` survives. Add one.
+
+- **Depends on:** 20261007-40.
+- **Came from:** The review of 20261007-40.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The Copilot CLI redaction handles a quoted Bearer token, keeping the quotes, and a token after `Bearer: `, which used to leave the token showing; it stays linear on megabytes of hostile stderr. A test covers a session token with `tid=` and no `8kp=`, and the spec helper `error_text` reads each error's headers, so the no-cause example's header sentinels can fail. Not filed: a Bearer token inside escaped JSON quotes, and one after two quotes, still show; both are unlikely in Copilot stderr.
