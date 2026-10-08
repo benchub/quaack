@@ -105,9 +105,7 @@ module Quaack
         @cardinality_threshold = object.fetch("cardinality_threshold", DEFAULT_CARDINALITY_THRESHOLD)
         raise Error, "bad_config" unless positive_integer?(@cardinality_threshold)
 
-        @extra_dump_schemas = object.fetch("extra_dump_schemas", []).freeze
-        raise Error, "bad_config" unless @extra_dump_schemas.instance_of?(Array) &&
-                                         @extra_dump_schemas.all? { schema?(it) }
+        @extra_dump_schemas = schemas(object.fetch("extra_dump_schemas", []))
       end
 
       # Whether a glob in pii_columns matches the column. table is a TableName.
@@ -137,7 +135,14 @@ module Quaack
         parts.map { |part| /\A#{part.split("*", -1).map { Regexp.escape(it) }.join(".*")}\z/mi }
       end
 
-      # A schema name: a non-empty String on one line.
+      # names, frozen, if it's an Array of schema names, each a non-empty
+      # String on one line.
+      def schemas(names)
+        raise Error, "bad_config" unless names.instance_of?(Array) && names.all? { schema?(it) }
+
+        names.freeze
+      end
+
       def schema?(name) = name.instance_of?(String) && !name.empty? && !NOT_ONE_LINE.match?(name)
 
       def positive_integer?(value) = value.instance_of?(Integer) && value.positive?
