@@ -104,6 +104,9 @@ RSpec.describe Quaack::Enclave::Config do
     "has a memory command on more than one line" => %({"memory_command": "echo 1\\necho 2"}),
     "has a memory command with a carriage return" => %({"memory_command": "echo 1\\recho 2"}),
     "has a memory command with a NUL" => %({"memory_command": "echo 1\\u0000"}),
+    "has a null memory command" => %({"memory_command": null}),
+    "has a null run server command" => %({"run_server_command": null}),
+    "has a null destroy command" => %({"destroy_command": null}),
     "has a run server command on two lines" => %({"run_server_command": "a\\nb"}),
     "has a destroy command that isn't a string" => %({"destroy_command": ["rm"]}),
     "has a blank destroy command" => %({"destroy_command": " "}),
@@ -123,6 +126,14 @@ RSpec.describe Quaack::Enclave::Config do
 
       expect(error_of { config.load(path) }.rule).to eq("bad_config")
     end
+  end
+
+  it "reads a command that isn't ASCII, and refuses one that isn't UTF-8 as bad_config" do
+    write(%({"memory_command": "echo caf\u00e9"}))
+    expect(config.load(path).memory_command).to eq("echo caf\u00e9")
+
+    File.binwrite(path, %({"memory_command": "echo caf\xE9"}).b)
+    expect(error_of { config.load(path) }.rule).to eq("bad_config")
   end
 
   # Trailing blanks, so the part before the limit is good JSON on its own.

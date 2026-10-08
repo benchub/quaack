@@ -109,12 +109,13 @@ module Quaack
 
       private
 
-      # The one-line command at key, or nil if it isn't set.
+      # The one-line command at key, or nil if the key isn't there. A null
+      # is bad_config, not unset.
       def command(object, key)
-        value = object[key]
-        raise Error, "bad_config" unless value.nil? || one_line?(value)
+        return unless object.key?(key)
+        raise Error, "bad_config" unless one_line?(object[key])
 
-        value
+        object[key]
       end
 
       # One glob's three parts, each as a Regexp.
