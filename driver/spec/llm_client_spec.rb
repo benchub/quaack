@@ -472,6 +472,38 @@ RSpec.describe Quaack::Driver::LLM::Client do
     end
   end
 
+  describe "an ask the router makes for a provider" do
+    let(:notes) { [] }
+
+    before do
+      seen = notes
+      client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
+    end
+
+    it "counts every attempt under the provider too, retries included" do
+      fake.error("llm-rewrites", status: 529).error("llm-rewrites", status: 429).reply("llm-rewrites", "ok")
+      expect(ask("llm-rewrites", provider: "groq")).to eq("ok")
+
+      expect(burndown.llm_calls).to eq("llm-rewrites" => 3)
+      expect(burndown.llm_calls_by_provider).to eq("groq" => { "llm-rewrites" => 3 })
+    end
+
+    it "names the provider after the step in each progress line, when told to show it" do
+      fake.error("llm-rewrites", status: 529).reply("llm-rewrites", "ok")
+      ask("llm-rewrites", provider: "groq", shown: "groq")
+
+      expect(notes).to eq(["Asking the LLM (llm-rewrites, groq)", "Asking the LLM, attempt 2 (llm-rewrites, groq)"])
+    end
+
+    it "shows no provider when not told to, though it counts under it" do
+      fake.reply("llm-rewrites", "ok")
+      ask("llm-rewrites", provider: "anthropic")
+
+      expect(notes).to eq(["Asking the LLM (llm-rewrites)"])
+      expect(burndown.llm_calls_by_provider).to eq("anthropic" => { "llm-rewrites" => 1 })
+    end
+  end
+
   describe "the settings" do
     it "are LLM.settings unless they're given, so QUAACK_MODEL reaches every call" do
       fake.reply("llm-index-ideas", "ok")

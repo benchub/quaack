@@ -54,4 +54,39 @@ RSpec.describe Quaack::Driver::Burndown do
     expect(calls).to eq("llm-rewrites" => 1)
     expect(burndown.llm_calls).to eq("llm-rewrites" => 2)
   end
+
+  it "also counts each call under the provider that made it, by provider then step" do
+    burndown.llm_call("llm-rewrites", "groq")
+    burndown.llm_call("llm-rewrites", "opus")
+    burndown.llm_call("llm-index-ideas", "groq")
+    burndown.llm_call("llm-rewrites", "groq")
+    burndown.llm_call("llm-rewrites")
+
+    expect(burndown.llm_calls).to eq("llm-rewrites" => 4, "llm-index-ideas" => 1)
+    expect(burndown.llm_calls_by_provider).to eq("groq" => { "llm-rewrites" => 2, "llm-index-ideas" => 1 },
+                                                 "opus" => { "llm-rewrites" => 1 })
+    expect(burndown.llm_calls_by_provider.keys).to eq(%w[groq opus])
+  end
+
+  it "hands out frozen per-provider counts" do
+    burndown.llm_call("llm-rewrites", "groq")
+    calls = burndown.llm_calls_by_provider
+    burndown.llm_call("llm-rewrites", "groq")
+
+    expect([calls.frozen?, calls["groq"].frozen?]).to eq([true, true])
+    expect(calls).to eq("groq" => { "llm-rewrites" => 1 })
+  end
+
+  it "sums several burndowns, by step and by provider" do
+    other = described_class.new
+    burndown.llm_call("llm-rewrites", "groq")
+    other.llm_call("llm-rewrites", "opus")
+    other.llm_call("llm-index-ideas", "groq")
+
+    sum = described_class.sum([burndown, other])
+
+    expect(sum.llm_calls).to eq("llm-rewrites" => 2, "llm-index-ideas" => 1)
+    expect(sum.llm_calls_by_provider).to eq("groq" => { "llm-rewrites" => 1, "llm-index-ideas" => 1 },
+                                            "opus" => { "llm-rewrites" => 1 })
+  end
 end

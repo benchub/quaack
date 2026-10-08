@@ -3,10 +3,13 @@
 require "quaack/driver/burndown"
 require "quaack/driver/generator_three"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 RSpec.describe Quaack::Driver::GeneratorThree do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:payload) do
     { "query" => "SELECT * FROM public.customers WHERE email LIKE $1", "placeholders" => {},
       "plan" => {}, "schema" => "CREATE TABLE public.customers (email text)", "mechanical_results" => [],
@@ -113,6 +116,18 @@ RSpec.describe Quaack::Driver::GeneratorThree do
 
       expect(notes).to eq(["Asking the LLM for index ideas (llm-index-ideas)",
                            "Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas)"])
+    end
+
+    it "asks for the replacements on the provider that gave the first ideas, as one unit" do
+      other = FakeLLM.new
+      other.reply("llm-rewrites", { "rewrites" => [] })
+      fakes = { "a" => fake, "b" => other }
+      router = router_over(fakes)
+      described_class.new(client: router, index_test:).run(payload)
+      router.ask(step: "llm-rewrites", messages: [{ role: :user, content: "x" }], max_tokens: 10)
+
+      expect(fakes.transform_values { it.asks.map(&:step) })
+        .to eq("a" => %w[llm-index-ideas llm-index-ideas], "b" => %w[llm-rewrites])
     end
 
     it "tests the replacements, and asks only once even if more are dropped" do

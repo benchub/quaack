@@ -24,6 +24,8 @@ module Quaack
     # setup, the run-server flags as a Hash, has it do setup first
     # (Setup), unless the store says the run has had them; nil leaves them
     # to the caller.
+    # client is the LLM::Router every LLM step asks through, or nil for a
+    # run with no LLM step left.
     # With stderr, a Progress there shows each step as it runs or is skipped,
     # and the client is given it too, so each LLM ask and retry shows under it.
     #

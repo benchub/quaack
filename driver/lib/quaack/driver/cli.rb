@@ -138,10 +138,10 @@ module Quaack
       def run_command(run:, rewrites:, timeout:, **options)
         require_run
         where = SetupCommand.where(@home, run, @stderr, "run") or return EX_USAGE
-        sqls, client, timeout = prepare(rewrites, timeout) || (return usage_error(@problem))
+        sqls, router, timeout = prepare(rewrites, timeout) || (return usage_error(@problem))
 
         teardown = Teardown.new(checked(where[:jump], timeout), run, @stderr)
-        drive(teardown, client, run, sqls, options)
+        drive(teardown, router, run, sqls, options)
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch, Teardown::DriverError => e
         @stderr.print "quaack run failed: #{Teardown.failure(e, teardown, run, **where)}\n"
         1
@@ -152,8 +152,8 @@ module Quaack
       # a Teardown, so its next step is to resume the run: nothing has run.
       def checked(jump, timeout) = @transport.call(jump, timeout:).tap { EnclaveVersion.check!(it, jump) }
 
-      # The rewrites file's SQL (nil without one), the LLM client, and the
-      # enclave call timeout (DriverConfig.enclave_timeout, from flag, the
+      # The rewrites file's SQL (nil without one), the LLM::Router over
+      # every entry's client, and the enclave call timeout (DriverConfig.enclave_timeout, from flag, the
       # --enclave-timeout-seconds text or nil), or nil with @problem set for
       # a usage error.
       def prepare(rewrites, flag)
@@ -162,8 +162,9 @@ module Quaack
 
         config = DriverConfig.read(@home)
         # A client for every entry, so a bad one stops the run before
-        # anything runs. Every ask still goes to the first.
-        [sqls, LLM.providers(config).build { @client.call(it) }.first,
+        # anything runs.
+        providers = LLM.providers(config)
+        [sqls, LLM::Router.for(providers, providers.build { @client.call(it) }),
          DriverConfig.enclave_timeout(config, flag, Transport::Base::DEFAULT_TIMEOUT)]
       rescue DriverConfig::Bad, DriverConfig::BadFlag, LLM::ConfigError => e
         @problem = e.message
@@ -173,10 +174,10 @@ module Quaack
       # Prints the report's path as soon as the pipeline writes it, so it
       # shows even when teardown then fails, and done after. The run is torn
       # down when the pipeline ends, however it ends, unless keep.
-      def drive(teardown, client, run_id, sqls, options)
+      def drive(teardown, router, run_id, sqls, options)
         teardown.around(keep: options[:keep]) do
-          path = Pipeline.new(transport: teardown.transport, client:, run_id:, rewrites: sqls, out: options[:out],
-                              stderr: @stderr, setup: options[:server]).run
+          path = Pipeline.new(transport: teardown.transport, client: router, run_id:, rewrites: sqls,
+                              out: options[:out], stderr: @stderr, setup: options[:server]).run
           @stdout.print "#{path}\n" if path
         end
         @stdout.print "#{run_id} done\n"

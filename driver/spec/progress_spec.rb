@@ -641,6 +641,26 @@ RSpec.describe Quaack::Driver::Progress do
         )
       end
 
+      it "keeps an ask that names its provider, under a step or a sub-step, since the name adds something" do
+        live.step("llm-rewrites", "Asking the LLM for rewrites of the query") do
+          live.note("Asking the LLM (llm-rewrites, groq)")
+        end
+        live.step("rewrite-correctness", "Testing each rewrite for wrong results") do
+          sub = live.within("Rewrite Silver Fox")
+          sub.step("counterexamples", "Asking the LLM for rows that could break the rewrite") do
+            live.note("Asking the LLM for rows that could break the rewrite (llm-counterexamples, opus)")
+          end
+        end
+
+        expect(terminal.string.split("\n").map { it[/\A[^\r]*/] }).to eq(
+          ["quaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites)",
+           "quaack: [1/3] Asking the LLM (llm-rewrites, groq)",
+           "quaack: [2/3] Testing each rewrite for wrong results (rewrite-correctness)",
+           "quaack: [2/3] Rewrite Silver Fox: Asking the LLM for rows that could break the rewrite (counterexamples)",
+           "quaack: [2/3] Asking the LLM for rows that could break the rewrite (llm-counterexamples, opus)"]
+        )
+      end
+
       it "waits on a short line in place of a sub-step's repeated ask after a note, and keeps the ask after it ends" do
         live.step("rewrite-correctness", "Testing each rewrite for wrong results") do
           sub = live.within("Rewrite Silver Fox")

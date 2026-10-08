@@ -4,10 +4,13 @@ require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/operator_candidates"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 RSpec.describe Quaack::Driver::OperatorCandidates do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:payload) do
     { "query" => "SELECT o.id FROM public.orders o WHERE o.id IN (SELECT order_id FROM public.items WHERE sku = $1)",
       "placeholders" => {}, "plan" => [], "schema" => {}, "stats" => {} }

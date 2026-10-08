@@ -1118,7 +1118,8 @@ RSpec.describe "quaack run" do
       let(:build_client) do
         lambda do |settings|
           seen << settings
-          (seen.size == 1 ? fake : other).client(burndown: Quaack::Driver::Burndown.new, model: settings.model)
+          (seen.size == 1 ? fake : other).client(burndown: Quaack::Driver::Burndown.new, model: settings.model,
+                                                 max_retries: 0)
         end
       end
       let(:llms) do
@@ -1135,13 +1136,17 @@ RSpec.describe "quaack run" do
         end
       end
 
-      it "builds a client for every entry, in order, and sends every ask to the first" do
+      it "builds a client for every entry, in order, and routes the asks across them" do
         write_config(JSON.generate("jump_command" => "echo jump-1", "llms" => llms))
-        fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+        fake.error("operator-rewrites", status: 429)
+        other.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
 
         expect([run_rewrites, errors]).to eq([0, torn])
         expect(seen.map(&:model)).to eq(%w[model-one model-two model-three])
-        expect([fake.asks.map(&:step), other.asks]).to eq([["operator-rewrites"], []])
+        expect([fake.asks.map(&:step), other.asks.map(&:step)]).to eq([["operator-rewrites"], ["operator-rewrites"]])
+        expect(stderr.string).to include("first is rate limited, so the rest of this run skips it; " \
+                                         "trying second (operator-rewrites)")
+        expect(stderr.string).to include("Asking the LLM (operator-rewrites, second)")
       end
 
       it "builds only the entries QUAACK_LLM keeps, in its order" do

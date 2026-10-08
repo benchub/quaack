@@ -292,7 +292,7 @@ module PromptPack
   end
 
   def run_pipeline(transport, llm, run_id, query, home)
-    client = llm.client(burndown: Quaack::Driver::Burndown.new)
+    client = Quaack::Driver::LLM::Router.one(llm.client(burndown: Quaack::Driver::Burndown.new))
     Quaack::Driver::Pipeline.new(transport:, client:, run_id:, rewrites: query.rewrites,
                                  out: File.join(home, "report.html")).run
     puts "  ran to the report, #{llm.asks.size} LLM asks"

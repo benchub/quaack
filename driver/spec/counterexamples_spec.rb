@@ -3,12 +3,15 @@
 require "quaack/driver/burndown"
 require "quaack/driver/counterexamples"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 # llm-counterexamples, the driver's half: ask the LLM for shape-level inserts that should
 # make a candidate and the original disagree.
 RSpec.describe Quaack::Driver::Counterexamples do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:payload) do
     { "original" => "SELECT o.id FROM public.orders o WHERE o.status = $1",
       "candidate" => { "sql" => "SELECT o.id FROM public.orders o WHERE lower(o.status) = $1",
@@ -89,6 +92,17 @@ RSpec.describe Quaack::Driver::Counterexamples do
       expect(notes).to eq(["Asking the LLM for rows that could break the rewrite (llm-counterexamples)",
                            "Asking the LLM again, for different rows (llm-counterexamples)",
                            "Asking the LLM again, for different rows (llm-counterexamples)"])
+    end
+
+    it "keeps a rewrite's rounds on one provider, as one unit, and starts the next rewrite's on the next" do
+      other = FakeLLM.new
+      3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
+      other.reply("llm-counterexamples", { "inserts" => ["INSERT b"] })
+      outcomes.push(clean, clean, clean, { "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
+      router = router_over({ "a" => fake, "b" => other })
+      2.times { described_class.new(client: router).run(payload, compare:) }
+
+      expect([fake.asks.size, other.asks.size]).to eq([3, 1])
     end
 
     it "stops once a round disproves the candidate" do
