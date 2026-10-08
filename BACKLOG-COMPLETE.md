@@ -7484,3 +7484,17 @@ From the review of 20261007-52.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260926-32 (commit 2e4e08ba). Review clean.
+
+### 20261008-12. Setup failures: minors from 20261003-22 item 3.
+
+From the review of 20261003-22 item 3.
+1. Only four of setup's steps have a "kept after failure" test; leaving `racetrack-setup` out of `Setup.failed?` stays green. Add one example that loops over every step's subcommand.
+2. Move `Teardown`'s message builders (`failed`, `done`, `interrupted`, `skipped`, `later`, `kept`) into a small module so the class is back under RuboCop's length limit, and drop the `rubocop:disable`.
+3. Name the jump host in the teardown step (`ssh <jump> quaacks teardown --run <ID>`), since `where[:jump]` is known, here and in the existing kept and skipped messages.
+4. Ctrl-C during a setup step tears the run down under `quaack run` but `quaack setup` keeps it. Pick one, or say in DESIGN.md why they differ.
+
+- **Depends on:** 20261003-22.
+- **Came from:** The review of 20261003-22 item 3.
+- **Design:** `quaack setup`, teardown.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-12 (commit 60cd36c8). Review had no blocking findings; its minors went to 20261008-13.

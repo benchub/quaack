@@ -2250,15 +2250,18 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 
 ### 20261008-11. or_to_union LIKE checks: minors from 20261007-52. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-12. Setup failures: minors from 20261003-22 item 3.
+### 20261008-12. Setup failures: minors from 20261003-22 item 3. Done, see BACKLOG-COMPLETE.md.
 
-From the review of 20261003-22 item 3.
-1. Only four of setup's steps have a "kept after failure" test; leaving `racetrack-setup` out of `Setup.failed?` stays green. Add one example that loops over every step's subcommand.
-2. Move `Teardown`'s message builders (`failed`, `done`, `interrupted`, `skipped`, `later`, `kept`) into a small module so the class is back under RuboCop's length limit, and drop the `rubocop:disable`.
-3. Name the jump host in the teardown step (`ssh <jump> quaacks teardown --run <ID>`), since `where[:jump]` is known, here and in the existing kept and skipped messages.
-4. Ctrl-C during a setup step tears the run down under `quaack run` but `quaack setup` keeps it. Pick one, or say in DESIGN.md why they differ.
+### 20261008-13. Setup failure messages: minors from 20261008-12.
 
-- **Depends on:** 20261003-22.
-- **Came from:** The review of 20261003-22 item 3.
-- **Design:** `quaack setup`, teardown.
+The review of 20261008-12 found these minor issues.
+
+1. `driver/spec/teardown_spec.rb` hard-codes the 11 setup subcommands. A new step added to `Setup::STEPS` but left out of that list would stay green. Assert that the list equals `Setup::STEPS.map(&:subcommand)`, or loop over `STEPS` directly.
+2. In README.md, the `driver_error` row at about line 771 still says the message "gives the teardown command to run on the jump server". Under `quaack run`, it now gives `ssh <jump> quaacks teardown ...` to run from the laptop.
+3. The printed teardown command shows the jump host as is: no shell quoting, no `--`, and none of the ssh options the transport adds. Quote it, or say in the docs that it's the plain form. The jump host comes from the operator's own config, so the risk is low.
+4. A DESIGN.md sentence about a signal during setup ("keeps the run the same way, as `quaack setup` does: it prints ...") reads as if `quaack setup` prints the line. Only `quaack run` does.
+
+- **Depends on:** 20261008-12.
+- **Came from:** The review of 20261008-12, 2026-10-08.
+- **Design:** Where QUAACK runs.
 - **Status:** todo
