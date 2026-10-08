@@ -75,6 +75,13 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
       expect(providers({ "llms" => two }).entries.map { it.settings.max_retries }).to eq([5, nil])
     end
 
+    it "gives each entry its own token_limit_param, or none" do
+      two = [{ "name" => "a", "provider" => "openai_compatible", "model" => "m", "token_limit_param" => "max_tokens" },
+             { "name" => "b", "provider" => "openai_compatible", "model" => "m" }]
+
+      expect(providers({ "llms" => two }).entries.map { it.settings.token_limit_param }).to eq(["max_tokens", nil])
+    end
+
     it "lets a provider type appear more than once" do
       two = [{ "name" => "a", "provider" => "copilot_cli" }, { "name" => "b", "provider" => "copilot_cli" }]
 
@@ -126,7 +133,12 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
                                               "provider copilot_cli"],
       "an entry's bad max_retries" => [[{ "name" => "a" }, { "name" => "b", "max_retries" => "SENTINEL-VALUE" }],
                                        "llms[1].max_retries in ~/.quaack/driver.json must be a whole number " \
-                                       "from 0 to 10"]
+                                       "from 0 to 10"],
+      "an entry's bad token_limit_param" => [[{ "name" => "a" },
+                                              { "name" => "b", "provider" => "openai_compatible", "model" => "m",
+                                                "token_limit_param" => "SENTINEL-VALUE" }],
+                                             "llms[1].token_limit_param in ~/.quaack/driver.json must be " \
+                                             "max_completion_tokens or max_tokens"]
     }.each do |what, (llms, message)|
       it "refuses #{what}, never quoting a value" do
         error = config_error({ "llms" => llms })
