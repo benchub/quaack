@@ -381,6 +381,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         "SELECT a.id FROM_ WHERE s.flag OR a.loose = (SELECT cp.user_id FROM public.cp WHERE cp.s_id = s.id)",
       "an arm's subquery casts a column" =>
         "SELECT a.id FROM_ WHERE s.flag OR EXISTS (SELECT 1 FROM public.cp WHERE cp.s_id::text = '1')",
+      "an arm's LIKE pattern is NULL" => "SELECT a.id FROM_ WHERE s.flag OR a.title LIKE NULL",
       "an arm uses an operator from a schema, though its schema is named like a comparison" =>
         'SELECT a.id FROM_ WHERE s.flag OR a.loose OPERATOR("=".=) 3'
     }.each do |why, sql|
@@ -427,7 +428,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "a division guarded by an arm on its own table" => "i.qty = 0 OR i.total / i.qty > 10 OR o.vip",
       "a LIKE whose pattern is a column" => "o.vip OR i.val LIKE i.pat",
       "an ILIKE whose pattern is a column" => "o.vip OR i.val ILIKE i.pat",
-      "a NOT LIKE whose pattern is a constant that ends in the escape character" => "o.vip OR o.kind = 'm' OR i.val NOT LIKE 'ab\\'",
+      "a NOT LIKE whose pattern is a constant that ends in the escape character" =>
+        "o.vip OR o.kind = 'm' OR i.val NOT LIKE 'ab\\'",
       "a LIKE whose pattern is a parameter" => "o.vip OR o.kind = 'm' OR i.val LIKE $1",
       "an index into a value by a column" => "o.vip OR (ARRAY[1, 2])[i.big] = 1"
     }.each do |what, where|
