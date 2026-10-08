@@ -21,8 +21,10 @@ module Quaack
     #   # or raises Error "view_relation: public.order_view is a view (relkind v), not a plain table"
     #
     # This is the one entry point for the relation check. The inbound check
-    # for rewrite candidates (20260922-10) is meant to call it too, and
-    # doesn't yet.
+    # for rewrite candidates (RewriteCandidateCheck) calls it too, with
+    # allowed: the relations the original uses. Then a relation outside that
+    # set is refused as unknown_relation before any relkind is read, so the
+    # refusal doesn't say what kind of relation it is.
     #
     # The inputs are the ones RelationQualifier takes: the query text,
     # qualified or not, the Settings hash from the input plan's EXPLAIN
@@ -124,12 +126,13 @@ module Quaack
 
       module_function
 
-      def check(sql, settings, connection)
+      def check(sql, settings, connection, allowed: nil)
         parse = parse(sql)
         supported!(parse)
         qualified = qualify(parse.tree, settings, connection)
         functions!(parse.tree, settings, connection)
         relations = tables(parse.tree)
+        allowed!(relations.keys, allowed) if allowed
         relations.each { |table, inherits| plain_table!(table, inherits, connection) }
         Result.new(sql: qualified.query, parse: qualified, relations: relations.keys)
       end
@@ -175,6 +178,11 @@ module Quaack
           table = TableName.new(schema: range.schemaname, name: range.relname)
           found[table] = found.fetch(table, false) || range.inh
         end
+      end
+
+      def allowed!(relations, allowed)
+        unknown = relations.find { |table| !allowed.include?(table) }
+        raise Error.new("unknown_relation", "#{unknown} isn't a relation the original uses") if unknown
       end
 
       def functions!(tree, settings, connection)
