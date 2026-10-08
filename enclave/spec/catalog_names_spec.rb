@@ -20,9 +20,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
     quaack/enclave/arena_runner/deferred.rb
     quaack/enclave/arena_runner/pipeline.rb
     quaack/enclave/arena_runner/sequences.rb
-    quaack/enclave/arena_schema.rb
-    quaack/enclave/arena_schema/domain_checks.rb
-    quaack/enclave/arena_schema/unique_indexes.rb
     quaack/enclave/clock_defaults.rb
     quaack/enclave/counterexamples/evaluated.rb
     quaack/enclave/insert_check.rb

@@ -19,13 +19,16 @@ module Quaack
       Column = Data.define(:name, :type, :oid, :nullable, :default)
 
       COLUMNS_SQL = <<~SQL
-        SELECT a.attname, format_type(a.atttypid, a.atttypmod), a.atttypid::int,
+        SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), a.atttypid::int,
                NOT a.attnotnull,
-               CASE WHEN a.attgenerated <> '' THEN 'generated' WHEN a.attidentity <> '' THEN 'identity'
-                    ELSE pg_get_expr(d.adbin, d.adrelid) END
-        FROM pg_attribute a
-        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-        WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
+               CASE WHEN a.attgenerated OPERATOR(pg_catalog.<>) '' THEN 'generated'
+                    WHEN a.attidentity OPERATOR(pg_catalog.<>) '' THEN 'identity'
+                    ELSE pg_catalog.pg_get_expr(d.adbin, d.adrelid) END
+        FROM pg_catalog.pg_attribute a
+        LEFT JOIN pg_catalog.pg_attrdef d
+          ON d.adrelid OPERATOR(pg_catalog.=) a.attrelid AND d.adnum OPERATOR(pg_catalog.=) a.attnum
+        WHERE a.attrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND a.attnum OPERATOR(pg_catalog.>) 0
+          AND NOT a.attisdropped
         ORDER BY a.attnum
       SQL
 
@@ -75,16 +78,23 @@ module Quaack
 
       CONSTRAINTS_SQL = <<~SQL
         SELECT c.contype,
-               array_to_json(ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY k(n, o)
-                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n ORDER BY k.o)),
+               pg_catalog.array_to_json(ARRAY(
+                 SELECT a.attname FROM pg_catalog.unnest(c.conkey) WITH ORDINALITY k(n, o)
+                 JOIN pg_catalog.pg_attribute a
+                   ON a.attrelid OPERATOR(pg_catalog.=) c.conrelid AND a.attnum OPERATOR(pg_catalog.=) k.n
+                 ORDER BY k.o)),
                pn.nspname, pc.relname,
-               array_to_json(ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY k(n, o)
-                 JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.n ORDER BY k.o)),
-               pg_get_constraintdef(c.oid)
-        FROM pg_constraint c
-        LEFT JOIN pg_class pc ON pc.oid = c.confrelid
-        LEFT JOIN pg_namespace pn ON pn.oid = pc.relnamespace
-        WHERE c.conrelid = $1::regclass AND c.contype IN ('p', 'u', 'f', 'c') AND c.convalidated
+               pg_catalog.array_to_json(ARRAY(
+                 SELECT a.attname FROM pg_catalog.unnest(c.confkey) WITH ORDINALITY k(n, o)
+                 JOIN pg_catalog.pg_attribute a
+                   ON a.attrelid OPERATOR(pg_catalog.=) c.confrelid AND a.attnum OPERATOR(pg_catalog.=) k.n
+                 ORDER BY k.o)),
+               pg_catalog.pg_get_constraintdef(c.oid)
+        FROM pg_catalog.pg_constraint c
+        LEFT JOIN pg_catalog.pg_class pc ON pc.oid OPERATOR(pg_catalog.=) c.confrelid
+        LEFT JOIN pg_catalog.pg_namespace pn ON pn.oid OPERATOR(pg_catalog.=) pc.relnamespace
+        WHERE c.conrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass
+          AND c.contype OPERATOR(pg_catalog.=) ANY ('{p,u,f,c}'::pg_catalog."char"[]) AND c.convalidated
         ORDER BY c.contype, c.conname
       SQL
 
@@ -128,7 +138,7 @@ module Quaack
       def self.regclass(conn, table) = "#{conn.quote_ident(table.schema)}.#{conn.quote_ident(table.name)}"
 
       def self.read_columns(conn, table)
-        exists = conn.exec_params("SELECT to_regclass($1)", [regclass(conn, table)]).getvalue(0, 0)
+        exists = conn.exec_params("SELECT pg_catalog.to_regclass($1)", [regclass(conn, table)]).getvalue(0, 0)
         raise KeyError, "table #{table} isn't in arena" unless exists
 
         conn.exec_params(COLUMNS_SQL, [regclass(conn, table)]).values.map do |name, type, oid, nullable, default|

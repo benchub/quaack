@@ -13,21 +13,29 @@ module Quaack
         # text, the columns it reads, and whether it calls a function
         # outside pg_catalog.
         QUERY = <<~SQL
-          SELECT array_to_json(ARRAY(SELECT a.attname FROM unnest(i.indkey::int2[]) WITH ORDINALITY k(n, o)
-                   JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.n
-                   WHERE k.o <= i.indnkeyatts ORDER BY k.o)),
+          SELECT pg_catalog.array_to_json(ARRAY(
+                   SELECT a.attname FROM pg_catalog.unnest(i.indkey::pg_catalog.int2[]) WITH ORDINALITY k(n, o)
+                   JOIN pg_catalog.pg_attribute a
+                     ON a.attrelid OPERATOR(pg_catalog.=) i.indrelid AND a.attnum OPERATOR(pg_catalog.=) k.n
+                   WHERE k.o OPERATOR(pg_catalog.<=) i.indnkeyatts ORDER BY k.o)),
                  i.indexprs IS NOT NULL, i.indnullsnotdistinct,
-                 array_to_json(ARRAY(SELECT pg_get_indexdef(i.indexrelid, k, true)
-                   FROM generate_series(1, i.indnkeyatts) k ORDER BY k)),
-                 array_to_json(ARRAY(SELECT DISTINCT a.attname FROM pg_depend d
-                   JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
-                   WHERE d.classid = 'pg_class'::regclass AND d.objid = i.indexrelid
-                     AND d.refclassid = 'pg_class'::regclass AND d.refobjid = i.indrelid AND d.refobjsubid > 0)),
-                 EXISTS (SELECT 1 FROM pg_depend d JOIN pg_proc p ON p.oid = d.refobjid
-                   WHERE d.classid = 'pg_class'::regclass AND d.objid = i.indexrelid
-                     AND d.refclassid = 'pg_proc'::regclass AND p.pronamespace <> 'pg_catalog'::regnamespace)
-          FROM pg_index i
-          WHERE i.indrelid = $1::regclass AND i.indisunique AND i.indisvalid
+                 pg_catalog.array_to_json(ARRAY(SELECT pg_catalog.pg_get_indexdef(i.indexrelid, k, true)
+                   FROM pg_catalog.generate_series(1, i.indnkeyatts) k ORDER BY k)),
+                 pg_catalog.array_to_json(ARRAY(SELECT DISTINCT a.attname FROM pg_catalog.pg_depend d
+                   JOIN pg_catalog.pg_attribute a
+                     ON a.attrelid OPERATOR(pg_catalog.=) d.refobjid AND a.attnum OPERATOR(pg_catalog.=) d.refobjsubid
+                   WHERE d.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass
+                     AND d.objid OPERATOR(pg_catalog.=) i.indexrelid
+                     AND d.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass
+                     AND d.refobjid OPERATOR(pg_catalog.=) i.indrelid AND d.refobjsubid OPERATOR(pg_catalog.>) 0)),
+                 EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                   JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) d.refobjid
+                   WHERE d.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass
+                     AND d.objid OPERATOR(pg_catalog.=) i.indexrelid
+                     AND d.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass
+                     AND p.pronamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+          FROM pg_catalog.pg_index i
+          WHERE i.indrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND i.indisunique AND i.indisvalid
         SQL
 
         module_function

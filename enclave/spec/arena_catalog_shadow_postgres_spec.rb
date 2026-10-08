@@ -38,6 +38,12 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
     "public.setval(pg_catalog.regclass, pg_catalog.int8) RETURNS pg_catalog.int8 AS $$ SELECT 0::pg_catalog.int8 $$"
   ].freeze
 
+  # What a read gave, with pg_catalog's names bare: with public's ahead of
+  # them, pg_catalog's own deparsers (format_type, pg_get_expr, and the
+  # like) print the names they'd otherwise leave bare with their schema,
+  # so they still mean the same, and the reads take them as they are.
+  def bare(found) = found.inspect.gsub(/0x\h+/, "").gsub(/OPERATOR\(pg_catalog\.(\S+?)\)/, '\1').gsub("pg_catalog.", "")
+
   def plant(*extra)
     CatalogShadow.plant(conn, :operators, :count, :to_regclass, *extra)
     NO.each do |op, left, right|
@@ -84,7 +90,7 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       baseline = schema
       plant
 
-      expect(schema).to eq(baseline)
+      expect(bare(schema)).to eq(bare(baseline))
     end
 
     it "builds the same scenarios, and each loads as it did" do
@@ -92,7 +98,7 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       loaded = baseline.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query("SELECT 1").rows } }
       plant
 
-      expect(scenarios).to eq(baseline)
+      expect(bare(scenarios)).to eq(bare(baseline))
       expect(scenarios.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query("SELECT 1").rows } })
         .to eq(loaded)
     end
@@ -121,7 +127,7 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       baseline = outcome(prepare(*inserts))
       plant(:text)
 
-      expect(outcome(prepare(*inserts))).to eq(baseline)
+      expect(bare(outcome(prepare(*inserts)))).to eq(bare(baseline))
     end
   end
 
