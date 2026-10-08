@@ -43,6 +43,9 @@ module Quaack
     # - clock_columns: each column whose type, or its domain's base type, is
     #   date, timestamp, or timestamptz, mapped to that type, for clock-anchor's
     #   clock literals.
+    # - column_types: each column whose type is one of pg_catalog's base
+    #   types (arrays included), mapped to the type's name, such as int8 or
+    #   _int8, for literals' cast placeholders (see ColumnTypes).
     # - columns: each column's own pg_stats row (inherited = false), keyed by
     #   name, with null_frac, avg_width, n_distinct, most_common_vals,
     #   most_common_freqs, histogram_bounds, and correlation. The value

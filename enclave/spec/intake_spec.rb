@@ -167,6 +167,21 @@ RSpec.describe "quaacks intake" do
       expect(intake_with(plan: file("plan.json", JSON.generate(plan)))).to eq(0)
     end
 
+    # Store.sweep reads the plan entry as the mark of a finished intake.
+    it "writes the plan last, once every input has passed its check" do
+      written = []
+      store = Object.new.tap do |s|
+        s.define_singleton_method(:write) { |name, _| written << name }
+        s.define_singleton_method(:run_id) { "20260101T000000Z-00000000" }
+      end
+      Quaack::Enclave::Steps::Intake.call(store:, options: { "query" => query_file, "plan" => plan_file,
+                                                             "server" => "prod-db-3", "port" => "5432" })
+
+      expect(written.last).to eq(Quaack::Enclave::Store::FINISHED_ENTRY)
+      expect(written.last).to eq("plan")
+      expect(written.size).to eq(5)
+    end
+
     it "keeps a query's comments and layout as given" do
       text = "-- slow report\nSELECT c.id\n  FROM public.customers c /* hint */\n WHERE c.id = 1;\n"
 
@@ -459,6 +474,25 @@ RSpec.describe "quaacks intake" do
       plan[0]["Plan"].delete_if { |key, _| key.end_with?("Blocks") }
 
       refuses_plan(JSON.generate(plan), "plan_no_buffers")
+    end
+
+    # The query is always a SELECT (SupportedSql), and only a data-changing
+    # statement's plan has a ModifyTable node.
+    it "refuses a plan with a ModifyTable node anywhere as plan_statement_mismatch" do
+      modify = { "Node Type" => "ModifyTable", "Operation" => "Update", "Relation Name" => INTAKE_SENTINEL,
+                 "Plans" => [plan[0]["Plan"]] }
+      refuses_plan(JSON.generate([plan[0].merge("Plan" => plan[0]["Plan"].merge(modify))]),
+                   "plan_statement_mismatch")
+
+      nested = plan[0]["Plan"].merge("Plans" => [{ "Node Type" => "Limit", "Plans" => [modify] }])
+      refuses_plan(JSON.generate([plan[0].merge("Plan" => nested)]), "plan_statement_mismatch")
+    end
+
+    it "refuses a plan whose Plans isn't a list of nodes as plan_bad_shape" do
+      [INTAKE_SENTINEL, [INTAKE_SENTINEL], { "Node Type" => "Seq Scan" }].each do |plans|
+        refuses_plan(JSON.generate([plan[0].merge("Plan" => plan[0]["Plan"].merge("Plans" => plans))]),
+                     "plan_bad_shape")
+      end
     end
 
     it "accepts a plan with only one buffer counter" do

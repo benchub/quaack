@@ -7746,3 +7746,30 @@ Still open from the build and reviews of 20260922-19:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-26 (commit 73dbb2f2). Review had no blocking findings. Hidden table columns are refused as column_statistics_hidden. What non-owner roles still lose (pg_stats_ext, expression-index statistics, row security) went to 20261008-34.
+
+### 20260924-28. literals loose ends.
+
+Still open from the build and reviews of 20260922-21:
+- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which redact turns into cast placeholders, and literals always falls back on those. Handle a cast placeholder whose cast matches the column's type.
+- The boolean `t`/`f` check at `literal_set.rb:326` survives mutation. Pin it with a planted bad value, or drop it.
+
+- **Depends on:** 20260922-21.
+- **Came from:** The build and reviews of 20260922-21.
+- **Design:** literals.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-28 (commit a6c46854). Review had no blocking findings; its minors went to 20261008-36.
+
+### 20260924-3. Intake loose ends.
+
+Still open from the reviews of 20260922-13:
+- **Orphaned partial runs.** SIGKILL, an OOM kill, or SIGXFSZ during intake can leave a 0700 run directory holding production literals, and print no run ID. Tiny signal windows around `Store.create` and after `done` do the same. Add a sweeper, such as `quaacks teardown --orphans`, or have intake sweep old runs with no finished marker.
+- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type.
+
+- **Depends on:** 20260922-13.
+- **Came from:** Both reviews of 20260922-13.
+- **Design:** input.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-08):** Intake sweeps old orphans on its own: each `quaacks start` deletes run directories older than about a day that never finished intake. Intake also refuses a plan whose statement type differs from the query's, or whose tables differ from the query's in either direction.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-3 (commit 0996366c). Review had no blocking findings. The table check runs in qualify, since intake can't see the catalog. The RLS minor went to 20261008-37.

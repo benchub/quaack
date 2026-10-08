@@ -197,6 +197,25 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(stored_table("times")["clock_columns"])
         .to eq("a" => "date", "b" => "timestamp", "c" => "timestamptz", "d" => "date")
     end
+
+    # For literals' cast placeholders: each column's type, by its pg_catalog
+    # name, when it's one of pg_catalog's base types. A domain, an enum, or
+    # an extension's type is left out, so no cast matches it.
+    it "maps each column of a pg_catalog base type to the type's name" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA ext;
+        CREATE EXTENSION hstore SCHEMA ext;
+        CREATE DOMAIN day AS date;
+        CREATE TYPE mood AS ENUM ('sad', 'fine');
+        CREATE TABLE typed (a date, b timestamp(3), c timestamptz, d day, e bigint, f varchar(12), g bigint[],
+                            h mood, i ext.hstore, j integer);
+      SQL
+      run([table("public", "typed")])
+
+      expect(stored_table("typed")["column_types"])
+        .to eq("a" => "date", "b" => "timestamp", "c" => "timestamptz", "e" => "int8", "f" => "varchar",
+               "g" => "_int8", "j" => "int4")
+    end
   end
 
   describe "the stored indexes" do

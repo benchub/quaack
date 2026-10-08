@@ -5,6 +5,7 @@ require_relative "error_filter"
 require_relative "hangup"
 require_relative "profiler"
 require_relative "store"
+require_relative "store/sweep"
 require_relative "cli/refused"
 require_relative "cli/step"
 require_relative "cli/bad_store_base"
@@ -128,12 +129,14 @@ module Quaack
       # other. If anything goes wrong before the block finishes, even a
       # signal or a failed write of the output, it deletes the run and
       # raises again. A failure to delete it doesn't hide the error that
-      # caused it.
+      # caused it. Each new run first sweeps the store's orphans (see
+      # Store.sweep), which never fails the run.
       def with_new_run(step)
         return yield(nil) unless step.new_run
 
         store = BadStoreBase.from_store { Store.create(base: store_base) }
         begin
+          Store.sweep(base: store_base)
           yield store
         rescue Exception # rubocop:disable Lint/RescueException
           delete_run(store)

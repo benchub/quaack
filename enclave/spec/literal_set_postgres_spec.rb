@@ -16,7 +16,8 @@ require "quaack/enclave/store"
 # a twentieth, and the row number in the rest, so its MCV list is 7, 3, 11
 # and its histogram holds the rest. amount is unique, so it has a histogram
 # and no MCV list. label is 'hot' in half the rows. public.fresh.x has its
-# statistics target set to 0, so ANALYZE keeps no pg_stats row for it. The
+# statistics target set to 0, so ANALYZE keeps no pg_stats row for it. kb
+# is k as a bigint, and day is 2026-01-01 in half the rows. The
 # harness's public.orders.status has an MCV list and no histogram.
 RSpec.describe Quaack::Enclave::LiteralSet do
   let(:conn) { test_database.connection }
@@ -32,10 +33,13 @@ RSpec.describe Quaack::Enclave::LiteralSet do
   before do
     conn.exec(<<~SQL)
       CREATE TABLE public.readings (id integer PRIMARY KEY, k integer NOT NULL, label text NOT NULL,
-                                    amount numeric NOT NULL, flag boolean NOT NULL, big bigint NOT NULL);
+                                    amount numeric NOT NULL, flag boolean NOT NULL, big bigint NOT NULL,
+                                    kb bigint NOT NULL, day date NOT NULL);
       INSERT INTO public.readings
       SELECT i, CASE WHEN i % 2 = 0 THEN 7 WHEN i % 10 = 1 THEN 3 WHEN i % 20 = 3 THEN 11 ELSE i + 100 END,
-             CASE WHEN i % 2 = 0 THEN 'hot' ELSE 'v' || i END, i * 1.5, i % 3 = 0, i * 1000000000::bigint
+             CASE WHEN i % 2 = 0 THEN 'hot' ELSE 'v' || i END, i * 1.5, i % 3 = 0, i * 1000000000::bigint,
+             CASE WHEN i % 2 = 0 THEN 7 WHEN i % 10 = 1 THEN 3 WHEN i % 20 = 3 THEN 11 ELSE i + 100 END,
+             DATE '2026-01-01' + CASE WHEN i % 2 = 0 THEN 0 ELSE i % 400 END
       FROM generate_series(1, 10000) AS i;
       CREATE TABLE public.fresh (id integer, x integer);
       INSERT INTO public.fresh SELECT i, i % 4 FROM generate_series(1, 1000) AS i;
@@ -219,6 +223,58 @@ RSpec.describe Quaack::Enclave::LiteralSet do
     end
   end
 
+  # psycopg2 writes Django's dates and lists as casts, which redact keeps
+  # around the placeholder. A cast to the column's own type reads a
+  # pg_stats value as the column does, so it picks like a plain one.
+  describe "cast placeholders whose cast is the column's type" do
+    it "picks the range bounds for a Django timestamptz range, and keeps the casts" do
+      sql, result = literal_sets(
+        'SELECT "orders"."id" FROM "public"."orders" WHERE ("orders"."created_at" >= ' \
+        "'2025-03-01T00:00:00+00:00'::timestamptz AND \"orders\".\"created_at\" < " \
+        "'2025-04-01T00:00:00+00:00'::timestamptz)"
+      )
+      created = pg_stats("orders", "created_at", "histogram_bounds")
+
+      expect(sql).to include("created_at >= $1::timestamptz AND orders.created_at < $2::timestamptz")
+      expect(values(result, "worst_case")).to eq("$1" => created.first, "$2" => created.last)
+      middle = created.size / 2
+      expect(values(result, "typical")).to eq("$1" => created[middle], "$2" => created[middle + 1])
+      expect(result.fallbacks).to eq("worst_case" => {}, "typical" => {})
+      # Every order but the latest, which sits on the last bound.
+      orders = Integer(conn.exec("SELECT count(*) FROM orders").getvalue(0, 0), 10)
+      expect(rows(sql, result.sets["worst_case"]).size).to eq(orders - 1)
+    end
+
+    it "picks the top MCV for a cast date, alone or in an IN list" do
+      sql, result = literal_sets(
+        "SELECT \"readings\".\"id\" FROM \"public\".\"readings\" WHERE \"readings\".\"day\" = '2027-01-01'::date " \
+        "OR \"readings\".\"day\" IN ('2027-01-02'::date, '2027-01-03'::date)"
+      )
+      mcv = pg_stats("readings", "day", "most_common_vals")
+
+      expect(mcv.first).to eq("2026-01-01")
+      expect(values(result, "worst_case")).to eq("$1" => mcv[0], "$2" => mcv[0], "$3" => mcv[1])
+      expect(result.fallbacks["worst_case"]).to eq({})
+      expect(rows(sql, result.sets["worst_case"]).size).to be >= 5000
+    end
+
+    it "builds an array of the same length for = ANY of a bigint[] cast on a bigint column" do
+      sql, result = literal_sets(
+        "SELECT \"readings\".\"id\" FROM \"public\".\"readings\" WHERE \"readings\".\"kb\" = ANY('{1,2}'::bigint[])"
+      )
+
+      expect(sql).to include("= ANY($1::bigint[])")
+      expect(values(result, "worst_case")).to eq("$1" => '{"7","3"}')
+      expect(rows(sql, result.sets["worst_case"]).size).to eq(6000)
+    end
+
+    it "keeps a cast clock-reading literal slow, since clock-anchor anchors it" do
+      _, result = literal_sets("SELECT o.id FROM public.orders o WHERE o.created_at >= 'today'::timestamptz")
+
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "clock_literal")
+    end
+  end
+
   describe "the slow literal in all three sets" do
     {
       "LIKE" => ["SELECT r.id FROM public.readings r WHERE r.label LIKE 'v1%'", "operator"],
@@ -227,7 +283,13 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       "a column with no statistics" => ["SELECT f.id FROM public.fresh f WHERE f.x = 2", "no_statistics"],
       "an expression on the column" => ["SELECT r.id FROM public.readings r WHERE lower(r.label) = 'hot'",
                                         "unsupported_shape"],
-      "a cast placeholder" => ["SELECT r.id FROM public.readings r WHERE r.k = '5'::integer", "unsupported_shape"],
+      "a cast to another type than the column's" => ["SELECT r.id FROM public.readings r WHERE r.k = '5'::bigint",
+                                                     "unsupported_shape"],
+      "a cast with a type modifier" => ["SELECT r.id FROM public.readings r WHERE r.amount = '5'::numeric(3, 0)",
+                                        "unsupported_shape"],
+      "a cast date against a timestamp column" => [
+        "SELECT o.id FROM public.orders o WHERE o.created_at >= '2025-03-01'::date", "unsupported_shape"
+      ],
       "a LIMIT" => ["SELECT r.id FROM public.readings r LIMIT 5", "unsupported_shape"],
       "a subquery's column" => ["SELECT s.k FROM (SELECT r.k FROM public.readings r) s WHERE s.k = 5",
                                 "unsupported_shape"]
@@ -284,6 +346,18 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       result = described_class.run(store:, sql:)
 
       expect(values(result, "worst_case")).to eq("$1" => "5")
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "type_mismatch")
+    end
+
+    it "for a boolean placeholder whose statistics value isn't t or f" do
+      sql, = literal_sets("SELECT r.id FROM public.readings r WHERE r.flag = true")
+      statistics = store.read("statistics")
+      readings = statistics["tables"].find { it["name"] == "readings" }
+      readings["columns"]["flag"]["most_common_vals"] = %w[yes f]
+      store.write("statistics", statistics)
+      result = described_class.run(store:, sql:)
+
+      expect(result.sets["worst_case"]).to eq("$1" => { "value" => "true", "type" => "boolean" })
       expect(result.fallbacks["worst_case"]).to eq("$1" => "type_mismatch")
     end
   end
@@ -366,6 +440,15 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       end
       expect([error&.message, error&.rule, error&.cause]).to eq(["bad_statistics", "bad_statistics", nil])
       expect_no_leaks(sentinels, objects: { error: })
+    end
+
+    it "raises bad_statistics for stored column types it can't read" do
+      sql, = literal_sets("SELECT r.id FROM public.readings r WHERE r.k = 5")
+      statistics = store.read("statistics")
+      statistics["tables"].find { it["name"] == "readings" }["column_types"] = { "k" => 4 }
+      store.write("statistics", statistics)
+
+      expect { described_class.run(store:, sql:) }.to raise_error(described_class::Error, "bad_statistics")
     end
 
     it "refuses SQL with a placeholder the map doesn't have" do

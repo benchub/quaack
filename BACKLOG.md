@@ -15,6 +15,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
 - 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
 - 20260924-26 (statistics: column_statistics_hidden, UTF-8, non-comma array delimiters skipped).
+- 20260924-28 (literals: cast placeholders get statistics values; statistics records column_types).
+- 20260924-3 (intake: orphan sweep, plan_statement_mismatch; qualify: plan_table_mismatch).
 
 ## How this file works.
 
@@ -262,17 +264,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260924-2. Pin hidden_differences? for every row in a tie group. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-3. Intake loose ends.
-
-Still open from the reviews of 20260922-13:
-- **Orphaned partial runs.** SIGKILL, an OOM kill, or SIGXFSZ during intake can leave a 0700 run directory holding production literals, and print no run ID. Tiny signal windows around `Store.create` and after `done` do the same. Add a sweeper, such as `quaacks teardown --orphans`, or have intake sweep old runs with no finished marker.
-- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type.
-
-- **Depends on:** 20260922-13.
-- **Came from:** Both reviews of 20260922-13.
-- **Design:** input.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-3. Intake loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
 
@@ -285,6 +277,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Depends on:** 20260922-47.
 - **Came from:** Second review of 20260923-54.
 - **Design:** fixture-compare.
+- **Decided by the user (2026-10-08):** Rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie.
 - **Status:** todo
 
 ### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -344,17 +337,7 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-28. literals loose ends.
-
-Still open from the build and reviews of 20260922-21:
-- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which redact turns into cast placeholders, and literals always falls back on those. Handle a cast placeholder whose cast matches the column's type.
-- The boolean `t`/`f` check at `literal_set.rb:326` survives mutation. Pin it with a planted bad value, or drop it.
-
-- **Depends on:** 20260922-21.
-- **Came from:** The build and reviews of 20260922-21.
-- **Design:** literals.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-28. literals loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-29. Run server check loose ends.
 
@@ -2336,6 +2319,7 @@ The second review of 20260923-57 found these. Both are already true on main.
 - **Depends on:** 20260923-57.
 - **Came from:** The second review of 20260923-57, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Decided by the user (2026-10-08):** Lock it down and document it. Candidates may use only the original's functions, types, collations, and operators, plus pg_catalog's. If a rewrite needs a new user-defined function to be faster, that function isn't coming from the mechanical rewrite rules, and an LLM can't be trusted blindly to provide one.
 - **Status:** todo
 
 ### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run.
@@ -2366,4 +2350,39 @@ Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `
 - **Depends on:** 20260924-26.
 - **Came from:** The builder and review of 20260924-26, 2026-10-08.
 - **Design:** statistics.
+- **Decided by the user (2026-10-08):** Go on without hidden extended and expression-index statistics, and say in the report which were missing. Refuse with a clear rule when row security hides every column's statistics.
+- **Status:** todo
+
+### 20261008-35. Reg literals in candidates: minors from 20261008-31.
+
+The first review of 20261008-31 found these minor issues:
+
+1. **The driver's note for `unsupported_reg_literal` misdescribes a refused candidate.** The note in `FixedNotes` says "The query has a regproc, regprocedure, regoper, or regoperator constant ... can't tune this query." For a refused rewrite candidate, that's wrong. Check whether candidate refusals ever reach that note. If they do, give the candidate case its own rule or words.
+2. **Index DDL predicates weren't checked for the same reg-literal leak.** Check whether an LLM-proposed index predicate, such as `WHERE x = 'hid.t'::regclass`, or its planning, can reveal that a relation exists.
+
+- **Depends on:** 20261008-31.
+- **Came from:** The first review of 20261008-31, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-36. Cast placeholders in literals: minors from 20260924-28.
+
+The review of 20260924-28 found these minor issues:
+
+1. **Older entries.** No test covers a statistics entry stored before `column_types` existed.
+2. **DateStyle.** A picked date or timestamp value goes through its cast as text, in the DateStyle that was active when statistics read it. A replay session with another DateStyle could misread the value or fail to bind it. Pin the DateStyle, for example to ISO, wherever the statistics are read and replayed.
+3. **Shadowed type names.** A bare cast like `$1::timestamptz` matches the pg_catalog type by name only, so a type of the same name earlier on the search_path would match too. The worst case is a bind error, not a leak.
+
+- **Depends on:** 20260924-28.
+- **Came from:** The review of 20260924-28, 2026-10-08.
+- **Design:** literals.
+- **Status:** todo
+
+### 20261008-37. Plan table check: RLS policies that read other tables.
+
+The review of 20260924-3 found this. A table whose RLS policy queries another table, such as a membership lookup for multi-tenancy, gets that table's scan added to the plan, so qualify refuses it as `plan_table_mismatch`. That refusal is wrong. List RLS policies that reference other tables as unsupported in v1 in DESIGN.md, or refuse them earlier with a clearer rule.
+
+- **Depends on:** 20260924-3.
+- **Came from:** The review of 20260924-3, 2026-10-08.
+- **Design:** input.
 - **Status:** todo

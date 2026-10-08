@@ -25,6 +25,13 @@ module Quaack
       # 4. plan_no_buffers: the root plan node has none of the block
       #    counters BUFFERS writes. Without ANALYZE, BUFFERS writes them only
       #    under "Planning", but that's already refused above.
+      # 5. plan_bad_shape again: a node's "Plans" isn't a list of objects.
+      # 6. plan_statement_mismatch: a node anywhere in the plan is a
+      #    ModifyTable, which only a data-changing statement's plan has, such
+      #    as an UPDATE's. The query is always a SELECT (see Query), so the
+      #    plan came from another statement. Comparing the plan's tables
+      #    with the query's needs the catalog, so qualify does it (see
+      #    PlanTables).
       #
       # One leading byte order mark, which some editors write, is dropped
       # first, since JSON refuses it.
@@ -44,7 +51,20 @@ module Quaack
           raise Error, "plan_not_analyzed" unless ANALYZE_KEYS.any? { root.key?(it) }
           raise Error, "plan_no_buffers" unless BUFFER_COUNTERS.any? { root.key?(it) }
 
+          statement!(root)
           plan
+        end
+
+        def statement!(root)
+          raise Error, "plan_statement_mismatch" if nodes(root).any? { it["Node Type"] == "ModifyTable" }
+        end
+
+        # The node and every node under it, depth first.
+        def nodes(node)
+          plans = node.fetch("Plans", [])
+          raise Error, "plan_bad_shape" unless plans.instance_of?(Array) && plans.all?(Hash)
+
+          [node, *plans.flat_map { nodes(it) }]
         end
 
         def parse(text)
