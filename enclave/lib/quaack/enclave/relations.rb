@@ -21,8 +21,15 @@ module Quaack
     #   # or raises Error "view_relation: public.order_view is a view (relkind v), not a plain table"
     #
     # This is the one entry point for the relation check. The inbound check
-    # for rewrite candidates (20260922-10) is meant to call it too, and
-    # doesn't yet.
+    # for rewrite candidates (RewriteCandidateCheck) calls it too, with a
+    # block. Relations calls the block with the relations the query names,
+    # as TableNames, as soon as they resolve, before it reads anything else
+    # from the catalog, so the block can refuse a relation the original
+    # doesn't use whatever the catalog holds. With a block, UserSchema
+    # doesn't run: a candidate is run and reported as qualified here, so the
+    # application's "$user" never resolves its names, and the rule
+    # UserSchema raises would tell the LLM what a schema named for a role
+    # holds.
     #
     # The inputs are the ones RelationQualifier takes: the query text,
     # qualified or not, the Settings hash from the input plan's EXPLAIN
@@ -92,8 +99,7 @@ module Quaack
         "S" => ["sequence_relation", "a sequence"],
         "c" => ["composite_type_relation", "a composite type"],
         "t" => ["toast_relation", "a toast table"],
-        "i" => ["index_relation", "an index"],
-        "I" => ["index_relation", "a partitioned index"]
+        "i" => ["index_relation", "an index"], "I" => ["index_relation", "a partitioned index"]
       }.freeze
 
       OTHER = ["not_a_table", "a relation"].freeze
@@ -124,10 +130,10 @@ module Quaack
 
       module_function
 
-      def check(sql, settings, connection)
+      def check(sql, settings, connection, &listed)
         parse = parse(sql)
         supported!(parse)
-        qualified = qualify(parse.tree, settings, connection)
+        qualified = qualify(parse.tree, settings, connection, listed)
         functions!(parse.tree, settings, connection)
         relations = tables(parse.tree)
         relations.each { |table, inherits| plain_table!(table, inherits, connection) }
@@ -151,17 +157,22 @@ module Quaack
       # the query's text each relation was, which tables needs. The search
       # path is read first, so a bad one gets its own rule rather than
       # unknown_relation.
-      def qualify(tree, settings, connection)
+      def qualify(tree, settings, connection, listed)
         rule = "bad_search_path"
         RelationQualifier.search_path(settings, connection)
         rule = "unknown_relation"
-        UserSchema.check!(tree, RelationQualifier.qualify_tree(tree, settings, connection), settings, connection)
+        resolved!(tree, RelationQualifier.qualify_tree(tree, settings, connection), settings, connection, listed)
         NameQualifier.qualify!(tree, RelationQualifier.search_path(settings, connection), connection)
         Deparse.faithful_parse(tree)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil
       rescue Deparse::Error, UserSchema::Error, NameQualifier::Error => e
         raise Error.from(e), cause: nil
+      end
+
+      # The block, given the relations as they resolve, or else UserSchema.
+      def resolved!(tree, resolved, settings, connection, listed)
+        listed ? listed.call(tables(tree).keys) : UserSchema.check!(tree, resolved, settings, connection)
       end
 
       # Each relation in a qualified tree, once, in the order the query's
@@ -209,8 +220,7 @@ module Quaack
         when PgQuery::RangeVar then found << node
         when Google::Protobuf::RepeatedField then node.each { |child| range_vars(child, found) }
         when PgQuery::Node then range_vars(node.inner, found)
-        when Google::Protobuf::MessageExts
-          node.class.descriptor.each { |field| range_vars(field.get(node), found) }
+        when Google::Protobuf::MessageExts then node.class.descriptor.each { range_vars(it.get(node), found) }
         end
         found
       end

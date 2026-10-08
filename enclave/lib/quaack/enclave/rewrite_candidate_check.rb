@@ -2,9 +2,7 @@
 
 require "pg_query"
 require_relative "parser_version"
-require_relative "deparse"
-require_relative "name_qualifier"
-require_relative "relation_qualifier"
+require_relative "relations"
 require_relative "supported_sql"
 require_relative "table_name"
 require_relative "volatility_check"
@@ -18,7 +16,7 @@ module Quaack
     #
     #   RewriteCandidateCheck.check(sql, original, settings, connection)
     #   # => Accepted(sql: "SELECT ... FROM public.orders WHERE ... $1", parse: PgQuery::ParseResult)
-    #   # or raises Error "not_a_table: public.order_view has relkind v, not r"
+    #   # or raises Error "view_relation: public.order_view is a view (relkind v), not a plain table"
     #
     # The inputs:
     # - sql, the candidate's text, written with the original's $n
@@ -44,18 +42,25 @@ module Quaack
     #    COALESCE(x, 0), are allowed. The LLM only saw the redacted query,
     #    and a literal in a candidate flows into the enclave, not out of it,
     #    so it can't leak anything.
-    # 4. Relations. Each is qualified the way RelationQualifier qualifies
-    #    the original, with the same Settings. bad_search_path if the
-    #    Settings' search_path doesn't read, and unknown_relation if a
-    #    relation doesn't resolve, doesn't exist, or isn't one the original
-    #    uses. A candidate may leave out relations the original uses, since
-    #    a rewrite can eliminate a join. not_a_table if a relation isn't a
-    #    plain table (relkind r), since a view's body can call a volatile
-    #    function that the volatility check, below, never sees.
-    #    deparse_mismatch if the qualified candidate, as pg_query deparses
-    #    it, doesn't parse back to the tree it came from (see Deparse). So
-    #    Accepted's parse is the candidate's own parse with schemas added,
-    #    and checks 2 and 3 hold for it without being run again.
+    # 4. Relations, through Relations.check, the check intake uses, with
+    #    the same Settings, so the candidate is qualified the way the
+    #    original was. bad_search_path if the Settings' search_path doesn't
+    #    read, and unknown_relation if a relation doesn't resolve, isn't one
+    #    the original uses, or doesn't exist, in that order. A candidate may
+    #    leave out relations the original uses, since a rewrite can
+    #    eliminate a join. UserSchema's ambiguous_user_schema doesn't
+    #    apply, since its rule would say what a role's schema holds (see
+    #    Relations). Then each relation, and each inheritance
+    #    descendant it scans, must be a plain table (relkind r), refused
+    #    with Relations' rule for its kind, such as view_relation, since a
+    #    view's body can call a volatile function that the volatility
+    #    check, below, never sees. Relations' other refusals apply too:
+    #    user_function_in_from, the name qualifier's
+    #    rules, and deparse_mismatch if the qualified candidate, as pg_query
+    #    deparses it, doesn't parse back to the tree it came from (see
+    #    Deparse). So Accepted's parse is the candidate's own parse with
+    #    schemas added, and checks 2 and 3 hold for it without being run
+    #    again.
     # 5. volatile_function (or bad_search_path): volatility's VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
@@ -94,21 +99,13 @@ module Quaack
 
       Accepted = Data.define(:sql, :parse)
 
-      RELKIND_SQL = <<~SQL
-        SELECT c.relkind
-        FROM pg_catalog.pg_class c
-        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
-        WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2
-      SQL
-
       module_function
 
       def check(sql, original, settings, connection)
         parse = parse(sql)
         supported!(parse)
         placeholders!(parse, original.placeholders)
-        accepted = qualify(sql, settings, connection)
-        relations!(accepted.parse, original.relations, connection)
+        accepted = relations!(sql, original.relations, settings, connection)
         volatility!(accepted.sql, settings, connection)
         accepted
       end
@@ -135,50 +132,18 @@ module Quaack
         raise Error.new("bad_placeholder", "$#{bad.number} #{why}")
       end
 
-      # The candidate qualified, and its parse. The search path is read
-      # first, so a bad one gets its own rule rather than unknown_relation.
-      def qualify(sql, settings, connection)
-        rule = "bad_search_path"
-        path = RelationQualifier.search_path(settings, connection)
-        rule = "unknown_relation"
-        qualified = qualified_parse(sql, path, settings, connection)
-        Accepted.new(sql: qualified.query, parse: qualified)
-      rescue RelationQualifier::Error => e
-        raise Error.new(rule, e.message), cause: nil
-      rescue Deparse::Error, NameQualifier::Error => e
+      # The candidate qualified, and its parse, once Relations accepts its
+      # relations. Each must be one the original uses, checked as soon as
+      # it resolves, so the rule never depends on what else the catalog
+      # holds.
+      def relations!(sql, allowed, settings, connection)
+        result = Relations.check(sql, settings, connection) do |tables|
+          unknown = tables.find { !allowed.include?(it) }
+          raise Error.new("unknown_relation", "#{unknown} isn't a relation the original uses") if unknown
+        end
+        Accepted.new(sql: result.sql, parse: result.parse)
+      rescue Relations::Error => e
         raise Error.from(e), cause: nil
-      end
-
-      # The candidate's parse with its relations qualified, as
-      # RelationQualifier.qualify does, and its other names (NameQualifier).
-      def qualified_parse(sql, path, settings, connection)
-        tree = RelationQualifier.parse(sql).tree
-        RelationQualifier.qualify_tree(tree, settings, connection)
-        NameQualifier.qualify!(tree, path, connection)
-        Deparse.faithful_parse(tree)
-      end
-
-      def relations!(parse, allowed, connection)
-        used = tables(parse)
-        unknown = used.find { |table| !allowed.include?(table) }
-        raise Error.new("unknown_relation", "#{unknown} isn't a relation the original uses") if unknown
-
-        used.each { |table| plain_table!(table, connection) }
-      end
-
-      # Each relation in a qualified parse, once. A RangeVar with no schema
-      # left is a reference to a CTE.
-      def tables(parse)
-        ranges = nodes(parse.tree, PgQuery::RangeVar).reject { |range| range.schemaname.empty? }
-        ranges.map { |range| TableName.new(schema: range.schemaname, name: range.relname) }.uniq
-      end
-
-      def plain_table!(table, connection)
-        rows = connection.exec_params(RELKIND_SQL, [table.schema, table.name])
-        raise Error.new("unknown_relation", "#{table} doesn't exist") if rows.ntuples.zero?
-
-        relkind = rows.getvalue(0, 0)
-        raise Error.new("not_a_table", "#{table} has relkind #{relkind}, not r") unless relkind == "r"
       end
 
       def volatility!(sql, settings, connection)

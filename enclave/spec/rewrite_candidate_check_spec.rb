@@ -211,7 +211,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
       expect(check("SELECT id FROM public.orders", original: both).sql).to eq("SELECT id FROM public.orders")
       expect { check("SELECT id FROM sales.orders", original: both) }
-        .to rejected("not_a_table", "not_a_table: sales.orders has relkind v, not r")
+        .to rejected("view_relation", "view_relation: sales.orders is a view (relkind v), not a plain table")
     end
 
     {
@@ -224,7 +224,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
           relations: [table_name("public", "orders"), table_name("public", "order_view")], placeholders: 0
         )
         expect { check(sql, original: mixed) }
-          .to rejected("not_a_table", "not_a_table: public.order_view has relkind v, not r")
+          .to rejected("view_relation", "view_relation: public.order_view is a view (relkind v), not a plain table")
       end
     end
 
@@ -240,7 +240,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
       expect(check("SELECT id FROM public.orders", original: ordered).sql).to eq("SELECT id FROM public.orders")
       expect { check("SELECT id FROM public.order_view", original: viewed) }
-        .to rejected("not_a_table", "not_a_table: public.order_view has relkind v, not r")
+        .to rejected("view_relation", "view_relation: public.order_view is a view (relkind v), not a plain table")
     end
 
     it "refuses a relation the original names that doesn't exist" do
@@ -268,14 +268,32 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         %w[order_view random_view order_mv parted orders_id_seq].map { |name| table_name("public", name) }
       end
 
+      # Task 20260923-57: the same per-kind rules intake uses (Relations).
       {
-        "order_view" => "v", "random_view" => "v", "order_mv" => "m", "parted" => "p", "orders_id_seq" => "S"
-      }.each do |name, relkind|
-        it "refuses #{name}, whose relkind is #{relkind}" do
+        "order_view" => ["v", "view_relation", "a view"],
+        "random_view" => ["v", "view_relation", "a view"],
+        "order_mv" => ["m", "matview_relation", "a materialized view"],
+        "parted" => ["p", "partitioned_relation", "a partitioned table"],
+        "orders_id_seq" => ["S", "sequence_relation", "a sequence"]
+      }.each do |name, (relkind, rule, kind)|
+        it "refuses #{name}, whose relkind is #{relkind}, as #{rule}" do
           expect { check("SELECT * FROM #{name}") }
-            .to rejected("not_a_table", "not_a_table: public.#{name} has relkind #{relkind}, not r")
+            .to rejected(rule, "#{rule}: public.#{name} is #{kind} (relkind #{relkind}), not a plain table")
         end
       end
+    end
+
+    # A relation outside the original's set is refused for that alone, so
+    # the refusal doesn't say what kind of relation it is.
+    it "refuses a view the original doesn't use as unknown_relation, not by its kind" do
+      expect { check("SELECT id FROM public.order_view") }
+        .to rejected("unknown_relation", "unknown_relation: public.order_view isn't a relation the original uses")
+    end
+
+    it "refuses a user function in FROM, as intake does" do
+      conn.exec("CREATE FUNCTION public.ids() RETURNS SETOF int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$")
+      expect { check("SELECT * FROM public.ids() AS i JOIN orders o ON o.id = i") }
+        .to rejected("user_function_in_from", "user_function_in_from: a function in FROM isn't in pg_catalog")
     end
   end
 
@@ -372,13 +390,52 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       "unsupported_construct" => planted(sentinel, tail: " FOR UPDATE"),
       "bad_placeholder" => planted(sentinel, extra: ", $8"),
       "unknown_relation" => planted(sentinel, from: "sales.refunds"),
-      "not_a_table" => planted(sentinel, from: "sales.item_view"),
+      "view_relation" => planted(sentinel, from: "sales.item_view"),
       "deparse_mismatch" => planted(sentinel, tail: " AND ('x' = $1) IS NOT DISTINCT FROM (true AND 't'::boolean)"),
       "volatile_function" => planted(sentinel, extra: ", random()")
     }.each do |rule, sql|
       it "never shows up when it's refused as #{rule}" do
         expect(sql.scan(sentinel).size).to eq(7)
         refusal(sql, rule).each { |text| expect(text).not_to include(sentinel) }
+      end
+    end
+
+    # The refusal mustn't tell the LLM what a schema named for a role holds
+    # (20260923-57's review): a name the original doesn't use is refused the
+    # same way whether a role's schema has it or nothing does. The same goes
+    # for a function only a role's schema has.
+    describe 'with "$user" in the search path' do
+      let(:role) { "sentinelrole_#{SecureRandom.hex(4)}" }
+      let(:path) { { "search_path" => '"$user", public' } }
+
+      before do
+        conn.exec(<<~SQL)
+          CREATE ROLE "#{role}"; CREATE SCHEMA "#{role}";
+          CREATE TABLE "#{role}".secret_sentinel (id int);
+          CREATE TABLE public.secret_sentinel (id int);
+          CREATE TABLE public.other_sentinel (id int);
+          CREATE FUNCTION "#{role}".secret_fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$;
+        SQL
+      end
+
+      after do
+        conn.exec(%(SET client_min_messages = warning; DROP SCHEMA IF EXISTS "#{role}" CASCADE; DROP ROLE "#{role}"))
+      end
+
+      def rule_for(sql)
+        check(sql, path)
+        "accepted"
+      rescue described_class::Error => e
+        e.rule
+      end
+
+      it "refuses a relation a role's schema holds as it refuses one that's missing" do
+        rules = %w[secret_sentinel other_sentinel nothere_sentinel].map { rule_for("SELECT id FROM #{it}") }
+        expect(rules).to eq(%w[unknown_relation unknown_relation unknown_relation])
+      end
+
+      it "treats a function only a role's schema has as it treats one that's missing" do
+        expect(rule_for("SELECT secret_fn() FROM orders")).to eq(rule_for("SELECT nothere_fn() FROM orders"))
       end
     end
 
