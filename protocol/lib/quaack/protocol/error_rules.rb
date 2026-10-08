@@ -12,7 +12,8 @@ module Quaack
                  bad_literal_sets bad_placeholder bad_placeholder_map bad_port bad_run bad_run_server_database
                  bad_run_server_host bad_run_server_port bad_search_path bad_server bad_statistics bad_store_base
                  bad_type bad_value begin_failed cleanup_failed clock_anchor_in_query clock_function_search_path
-                 clock_literal complex_check composite_type_relation concurrently connection_unusable
+                 clock_literal column_statistics_hidden complex_check composite_type_relation concurrently
+                 connection_unusable
                  counterexample_payload_unknown_search counterexample_payload_untested
                  counterexample_round_bad_inserts counterexample_round_bad_round counterexample_round_decided
                  counterexample_round_no_arena_setup counterexample_round_out_of_order

@@ -50,10 +50,15 @@ module Quaack
     #   nil. A column with no pg_stats row isn't there. The element and
     #   range statistics (most_common_elems, range_length_histogram, and the
     #   like) aren't read: no step uses them yet.
+    # - array_statistics_skipped: the columns, sorted, whose type's array
+    #   delimiter isn't a comma, such as box or PostGIS geometry, which
+    #   PgArray can't read. Each keeps its scalars, and its
+    #   most_common_vals, most_common_freqs, and histogram_bounds are nil.
     # - indexes: each valid index, sorted by name, with its name, definition
-    #   (pg_get_indexdef), size_bytes (pg_relation_size), and columns, the
+    #   (pg_get_indexdef), size_bytes (pg_relation_size), columns, the
     #   pg_stats rows Postgres keeps for an expression index's expressions,
-    #   in the same form. An invalid index (indisvalid false), such as one
+    #   in the same form, and array_statistics_skipped, as above for those
+    #   rows. An invalid index (indisvalid false), such as one
     #   left by a failed CREATE INDEX CONCURRENTLY, is left out, so index-dedupe
     #   can't count it as covering.
     # - extended_statistics: each CREATE STATISTICS object on the table,
@@ -70,10 +75,16 @@ module Quaack
     # nil where it can't. DESIGN.md's classify (PiiClassification) reads the entry for
     # the low-cardinality set that Dedupe takes.
     #
+    # Every name and value is stored as UTF-8, whatever the database's
+    # encoding, as SchemaDump does.
+    #
     # Refusals raise Error, with a rule and a message naming only tables:
-    # unknown_relation (the catalog doesn't have one), and
+    # unknown_relation (the catalog doesn't have one),
     # inheritance_parent (a table has inheritance children, so pg_stats has
-    # two rows for each column, and v1 doesn't choose between them). A
+    # two rows for each column, and v1 doesn't choose between them), and
+    # column_statistics_hidden (pg_stats hides the statistics of a column
+    # query references, since the role can't SELECT it; see Visibility).
+    # query is the qualified query, and nil checks every column. A
     # failed read raises Inventory::Error production_read_failed, with the
     # SQLSTATE and no cause, since Postgres's message can quote a value.
     # A refusal stores nothing.
@@ -93,9 +104,9 @@ module Quaack
 
       module_function
 
-      def run(store:, relations:, connection:)
+      def run(store:, relations:, connection:, query: nil)
         data = Inventory::Production.read_only(connection) do
-          { "tables" => relations.map { Catalog.table(it, connection) } }
+          { "tables" => relations.map { Catalog.table(it, connection, query) } }
         end
         store.write(ENTRY, data)
         build(data)

@@ -28,6 +28,7 @@ RSpec.describe "quaacks classify, after quaacks statistics against a real server
     Quaack::Enclave::Store.create(base: quaacks.store_base).tap do |store|
       store.write("server", production.host)
       store.write("relations", [{ "schema" => "public", "name" => "orders" }])
+      store.write("qualified_query", "SELECT * FROM public.orders")
     end
   end
 

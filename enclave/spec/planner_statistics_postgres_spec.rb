@@ -48,7 +48,9 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
 
   def table(schema, name) = Quaack::Enclave::TableName.new(schema:, name:)
 
-  def run(relations = [customers, orders], connection: conn) = described_class.run(store:, relations:, connection:)
+  def run(relations = [customers, orders], connection: conn, query: nil)
+    described_class.run(store:, relations:, connection:, query:)
+  end
 
   def stored_table(name) = store.read("statistics")["tables"].find { it["name"] == name }
 
@@ -457,6 +459,141 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
 
       expect([error.rule, error.sqlstate]).to eq(%w[production_read_failed 22012])
       expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+  end
+
+  # pg_stats shows a column's row only to a role that can SELECT the
+  # column, so a role with limited privileges would get no statistics for
+  # it, with no error.
+  describe "a column whose statistics pg_stats hides" do
+    let(:role) { "quaack_limited_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+
+    before do
+      admin.exec("CREATE ROLE #{role}")
+      conn.exec(<<~SQL)
+        GRANT USAGE ON SCHEMA public TO #{role};
+        GRANT SELECT (id, status) ON orders TO #{role};
+      SQL
+    end
+
+    after do
+      conn.exec("RESET ROLE")
+      conn.exec("DROP OWNED BY #{role}")
+      conn.exec("REVOKE ALL ON pg_catalog.pg_statistic FROM #{role}")
+      admin.exec("DROP ROLE IF EXISTS #{role}")
+    end
+
+    def limited_run(query)
+      conn.exec("SET ROLE #{role}")
+      run([orders], query:)
+    end
+
+    it "refuses as column_statistics_hidden when the role can't SELECT a query's column, naming no column" do
+      error = error_of { limited_run("SELECT id FROM public.orders WHERE total_cents > 5") }
+
+      expect([error.rule, error.message]).to eq(
+        ["column_statistics_hidden", "column_statistics_hidden: pg_stats hides column statistics of public.orders"]
+      )
+      expect(store.entry?("statistics")).to be(false)
+    end
+
+    it "refuses the same way when the role can read pg_statistic, by comparing what pg_stats shows with it" do
+      conn.exec("GRANT SELECT ON pg_catalog.pg_statistic TO #{role}")
+      # A column the role can't SELECT, but that has no statistics, hides nothing.
+      conn.exec("ALTER TABLE orders ADD COLUMN unanalyzed int")
+
+      limited_run("SELECT id, unanalyzed FROM public.orders WHERE status = 'x'")
+      expect(stored_table("orders")["columns"].keys).to eq(%w[id status])
+
+      error = error_of { limited_run("SELECT id FROM public.orders WHERE total_cents > 5") }
+      expect(error.rule).to eq("column_statistics_hidden")
+    end
+
+    it "reads the statistics when every column the query references is one the role can SELECT" do
+      limited_run("SELECT id FROM public.orders WHERE status = 'pending'")
+
+      expect(stored_table("orders")["columns"].keys).to eq(%w[id status])
+    end
+
+    it "checks every column when there's no query" do
+      error = error_of { limited_run(nil) }
+
+      expect(error.rule).to eq("column_statistics_hidden")
+    end
+  end
+
+  # The store keeps JSON, which must be UTF-8, whatever the production
+  # database's encoding is.
+  describe "a database that isn't UTF-8" do
+    let(:latin1) { "quaack_stats_latin1_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+    let(:latin1_conn) { PG.connect(**db.connection_params, dbname: latin1) }
+
+    before do
+      admin.exec("CREATE DATABASE #{latin1} ENCODING 'LATIN1' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0")
+      latin1_conn.exec(<<~SQL)
+        CREATE TABLE public."café" ("crème" text);
+        CREATE INDEX "café_idx" ON public."café" (lower("crème"));
+        INSERT INTO public."café"
+        SELECT CASE WHEN g % 2 = 0 THEN 'brûlée' ELSE 'déjà' END FROM generate_series(1, 100) g;
+        ANALYZE public."café";
+      SQL
+    end
+
+    after do
+      latin1_conn.close
+      admin.exec("DROP DATABASE IF EXISTS #{latin1} WITH (FORCE)")
+    end
+
+    it "stores the names and values as UTF-8" do
+      expect(latin1_conn.internal_encoding).to eq(Encoding::ISO_8859_1)
+
+      described_class.run(store:, relations: [table("public", "café")], connection: latin1_conn,
+                          query: 'SELECT "crème" FROM public."café"')
+
+      stored = stored_table("café")
+      expect(stored["column_names"]).to eq(["crème"])
+      expect(stored["columns"]["crème"]["most_common_vals"]).to contain_exactly("brûlée", "déjà")
+      expect(stored["indexes"].map { it["name"] }).to eq(["café_idx"])
+      expect(stored["indexes"].first["columns"]["lower"]["most_common_vals"]).to contain_exactly("brûlée", "déjà")
+    end
+  end
+
+  # array_out separates elements with the element type's typdelim, a comma
+  # for nearly every type. box's is a semicolon, and PostGIS geometry's a
+  # colon, so PgArray can't read their arrays. Such a column keeps its
+  # scalars, and its array statistics are skipped and listed.
+  describe "a column type whose array delimiter isn't a comma" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN semi_text AS text;
+        UPDATE pg_catalog.pg_type SET typdelim = ';' WHERE typname = 'semi_text';
+        ALTER TABLE orders ADD COLUMN semi semi_text;
+        UPDATE orders SET semi = CASE WHEN id % 2 = 0 THEN 'a,b' ELSE 'c' END;
+        CREATE INDEX orders_semi_idx ON orders (((semi || 'x')::semi_text));
+        CREATE INDEX orders_lower_semi_idx ON orders (lower(semi));
+        ANALYZE orders;
+      SQL
+    end
+
+    it "keeps the column's scalars and skips its array statistics, recording which columns" do
+      expect(conn.exec("SELECT most_common_vals::text FROM pg_stats WHERE attname = 'semi'").getvalue(0, 0))
+        .to include(";")
+
+      run([orders])
+
+      stored = stored_table("orders")
+      expect(stored["columns"]["semi"]).to include("n_distinct" => 2.0, "most_common_vals" => nil,
+                                                   "most_common_freqs" => nil, "histogram_bounds" => nil)
+      expect(stored["columns"]["status"]["most_common_vals"]).not_to be_nil
+      expect(stored["array_statistics_skipped"]).to eq(["semi"])
+      indexes = stored["indexes"].to_h { [it["name"], it] }
+      expect(indexes["orders_semi_idx"]["array_statistics_skipped"]).to eq(["semi_text"])
+      expect(indexes["orders_semi_idx"]["columns"]["semi_text"]).to include("n_distinct" => 2.0,
+                                                                            "most_common_vals" => nil)
+      expect(indexes["orders_lower_semi_idx"]["array_statistics_skipped"]).to eq([])
+      expect(indexes["orders_lower_semi_idx"]["columns"]["lower"]["most_common_vals"]).to contain_exactly("a,b", "c")
     end
   end
 
