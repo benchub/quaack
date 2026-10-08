@@ -22,6 +22,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
 - 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
 
+Known open bug in this batch (found 2026-10-08): the shared `unique` check counts a `text_ops` unique index on a citext column as unique, though citext compares case-blind. 20261007-43 fixes it; close the batch only after it lands.
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
