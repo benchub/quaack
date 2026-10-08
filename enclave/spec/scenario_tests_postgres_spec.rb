@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/scenario_tests"
+require_relative "support/server_clock"
 
 # rewrite-test end to end: build the scenarios, run vacuity-guard, and run every
 # scenario through the fixture-compare comparison for each candidate.
@@ -30,6 +31,28 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
   it "reports a candidate that fails to run as disproved, with the runner's rule" do
     report = run("SELECT o.id FROM fx.orders o WHERE o.qty / 0 = 1")
     expect(report.results.map { |r| [r.passed, r.scenario, r.rule] }).to eq([[false, :s1, :query_failed]])
+  end
+
+  # A cancel QUAACK didn't send says nothing about the candidate, so it
+  # ends rewrite-test, as RunDiscipline's does, instead of recording a
+  # verdict (task 20260929-29).
+  it "raises an operator's cancel of a candidate as statement_canceled, recording no result" do
+    slow = "SELECT o.id FROM fx.orders o WHERE o.status = 'SENTINEL_49' AND o.qty <> 5 " \
+           "AND (SELECT length(pg_sleep(5)::text)) >= 0"
+    error = cancel_when_sleeping(conn) do
+      run(slow)
+    rescue Quaack::Enclave::ArenaRunner::Error => e
+      e
+    end
+    expect(error).to be_a(Quaack::Enclave::ArenaRunner::Error)
+    expect([error.rule, error.step]).to eq(%i[statement_canceled query])
+  end
+
+  it "still records a candidate that hits QUAACK's statement timeout as not passed, with statement_timeout" do
+    slow = "SELECT o.id FROM fx.orders o WHERE o.status = 'SENTINEL_49' AND o.qty <> 5 " \
+           "AND (SELECT length(pg_sleep(1)::text)) >= 0"
+    report = described_class.run(conn, original, [slow], statement_timeout_ms: 200)
+    expect(report.results.map { |r| [r.passed, r.scenario, r.rule] }).to eq([[false, :s0, :statement_timeout]])
   end
 
   it "skips a scenario that won't load in vacuity-guard, marking its atoms untested, instead of crashing" do

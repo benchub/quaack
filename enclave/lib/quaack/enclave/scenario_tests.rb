@@ -24,7 +24,10 @@ module Quaack
     # rule (such as :multiset, or :unsupported_order for a refusal) and
     # load order. A candidate that fails in arena doesn't pass either: its
     # Result has the runner's rule (such as :query_failed) and no load order,
-    # and RewriteFate counts that as a runner failure, not a disproof. A candidate
+    # and RewriteFate counts that as a runner failure, not a disproof. A query
+    # that fails with statement_canceled, a cancel QUAACK didn't send, is
+    # raised instead, and ends the step with no verdict, as in RunDiscipline
+    # (ArenaRunner::Cancel.foreign?). A candidate
     # that matches every scenario passes, with scenario nil.
     #
     # honour is the DenormalizedFixture::Copies of a rule's rewrite under
@@ -84,10 +87,18 @@ module Quaack
 
             return Result.new(passed: false, scenario: name, rule: verdict.rule, load_order: verdict.load_order)
           rescue ArenaRunner::Error => e
-            return Result.new(passed: false, scenario: name, rule: e.rule, load_order: nil)
+            return failed(name, e)
           end
         end
         Result.new(passed: true, scenario: nil, rule: nil, load_order: nil)
+      end
+
+      # A runner failure in scenario name: a Result, or the error itself,
+      # raised, for a cancel QUAACK didn't send.
+      def failed(name, error)
+        raise error if ArenaRunner::Cancel.foreign?(error)
+
+        Result.new(passed: false, scenario: name, rule: error.rule, load_order: nil)
       end
     end
   end

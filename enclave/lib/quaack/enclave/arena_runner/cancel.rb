@@ -13,6 +13,13 @@ module Quaack
       module Cancel
         module_function
 
+        # Whether error, an ArenaRunner::Error, is a query's cancel that
+        # wasn't QUAACK's statement_timeout, such as an operator's
+        # pg_cancel_backend. It says nothing about the query, so rewrite-test
+        # and counterexamples raise it, ending the step, instead of recording
+        # a verdict (DESIGN.md's rewrite-test).
+        def foreign?(error) = error.rule == :statement_canceled && error.step == :query
+
         # started is the server's clock, in ms, read in the statement's own
         # pipeline just before it (see Pipeline), or nil for a call with no
         # reading, such as BEGIN or a SET, which can't run for anything like
