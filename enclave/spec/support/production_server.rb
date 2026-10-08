@@ -49,8 +49,11 @@ class ProductionServer
     conn = connect
     conn.exec("CREATE EXTENSION hypopg")
     conn.exec("CREATE TEXT SEARCH CONFIGURATION public.#{ts_config} (COPY = pg_catalog.english)")
-    conn.close
-    database_settings.each { server.admin.exec(%(ALTER DATABASE "#{name}" SET #{it})) }
+    # From inside the database, where the text search config exists, so
+    # Postgres doesn't print a NOTICE that it doesn't.
+    database_settings.each { conn.exec(%(ALTER DATABASE "#{name}" SET #{it})) }
+  ensure
+    conn&.close
   end
 
   def database_settings

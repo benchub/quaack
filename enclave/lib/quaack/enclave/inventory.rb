@@ -19,9 +19,12 @@ module Quaack
     #   default_statistics_target.
     # - parallel_settings: every setting named for parallel query, plus
     #   max_worker_processes and enable_gathermerge.
-    # - plan_settings: production's own value of each setting the input
-    #   plan's SETTINGS lists, or nil for one production doesn't have. The
-    #   plan's values are the operator's session's, so they aren't used.
+    # - plan_settings: production's value of each setting the input plan's
+    #   SETTINGS lists, or nil for one production doesn't have. The plan's
+    #   own values aren't used.
+    #
+    # Every value is the one the operator's session on production sees, so
+    # PGOPTIONS and ALTER ROLE ... SET for the operator's role change it.
     # - database: pg_database's datname, datcollate, datctype,
     #   datlocprovider, datlocale, and datcollversion.
     # - default_text_search_config.

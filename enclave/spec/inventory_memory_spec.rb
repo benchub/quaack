@@ -34,7 +34,10 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
       "16384kB" => 16_384 * 1024,
       "16384 KiB" => 16_384 * 1024,
       "2TB" => 2 * (1024**4),
-      "2 tib" => 2 * (1024**4)
+      "2 tib" => 2 * (1024**4),
+      "1024 TB" => 1024**5,
+      "1048576 GiB" => 1024**5,
+      (1024**5).to_s => 1024**5
     }.each do |text, bytes|
       it "reads #{text.inspect} as #{bytes} bytes" do
         expect(memory.parse(text)).to eq(bytes)
@@ -42,7 +45,7 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
     end
 
     ["", "\n", "lots", "64 G", "64B", "64 PB", "-1", "0", "0GB", "1.5GB", "64GB extra", "64GB\n64GB", "0x40",
-     "64\nGB", "１０２４"].each do |text|
+     "64\nGB", "１０２４", "64  GB", "1025 TB", ((1024**5) + 1).to_s, "9" * 40].each do |text|
       it "refuses #{text.inspect} as memory_command_bad_output" do
         expect(rule_of { memory.parse(text) }).to eq("memory_command_bad_output")
       end
@@ -68,11 +71,36 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
       expect(rule_of { memory.bytes("echo lots", "prod-db-3") }).to eq("memory_command_bad_output")
     end
 
-    it "refuses output past its size limit as memory_command_bad_output, even if it would parse" do
-      command = "printf '%#{memory::MAX_OUTPUT + 1}s' 1024"
+    it "refuses output past 256 bytes as memory_command_bad_output, even if it would parse" do
+      expect(rule_of { memory.bytes("printf '%257s' 1024", "prod-db-3") }).to eq("memory_command_bad_output")
+      expect(memory.bytes("printf '%256s' 1024", "prod-db-3")).to eq(1024)
+    end
 
-      expect(rule_of { memory.bytes(command, "prod-db-3") }).to eq("memory_command_bad_output")
-      expect(memory.bytes("printf '%#{memory::MAX_OUTPUT}s' 1024", "prod-db-3")).to eq(1024)
+    it "gives the command 30 seconds by default" do
+      expect(memory::TIMEOUT).to eq(30)
+    end
+
+    it "refuses a command that can't start as memory_command_failed" do
+      allow(Process).to receive(:spawn).and_raise(Errno::EAGAIN)
+
+      expect(rule_of { memory.bytes("echo 1024", "prod-db-3") }).to eq("memory_command_failed")
+    end
+
+    # A child left in the background can hold stdout open long after the
+    # command is done. Its output is the command's once the shell exits,
+    # and the child is stopped with the rest of the process group.
+    it "doesn't wait for a background child that holds stdout, and stops it" do
+      pid_file = File.join(dir, "pid")
+      command = "sh -c 'echo $$ > #{pid_file}.new && mv #{pid_file}.new #{pid_file} && exec sleep 30' & " \
+                "while [ ! -f #{pid_file} ]; do sleep 0.01; done; echo 64GB"
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      bytes = memory.bytes(command, "prod-db-3", timeout: 10)
+
+      expect(bytes).to eq(64 * (1024**3))
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 5
+      sleeper = Integer(File.read(pid_file))
+      expect(gone_soon?(sleeper)).to be(true), "sleep #{sleeper} is still running"
     end
 
     # The shell's pid comes from the spawn, not from a pid file, which a
@@ -98,6 +126,7 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
       sleeper = Integer(File.read(pid_file))
       expect(gone_soon?(sleeper)).to be(true), "sleep #{sleeper} is still running"
       expect(gone_soon?(-pids.first)).to be(true), "process group #{pids.first} is still running"
+      expect { Process.wait(pids.first, Process::WNOHANG) }.to raise_error(Errno::ECHILD)
     ensure
       # If the kill missed the group, don't leave the sleep running.
       pids&.each do |pid|

@@ -5,7 +5,11 @@ module Quaack
     # Runs one of the operator's one-line shell commands from the quaacks
     # config, such as memory_command or run_server_command, with /bin/sh in
     # its own process group, so a timeout stops everything it started, not
-    # just the shell. It gets no stdin, and its stderr is thrown away.
+    # just the shell. It gets no stdin, and its stderr is thrown away. Its
+    # output is what it printed by the time the shell exited, so a child
+    # left in the background holding stdout doesn't keep it waiting, and
+    # the child is stopped with the rest of the group. Unsupported in v1: a
+    # child that leaves the group, as with setsid, isn't stopped.
     #
     # A failure raises error with a rule named for prefix: <prefix>_failed
     # for a command that couldn't start or exited with a failure,
@@ -13,6 +17,9 @@ module Quaack
     # for one that printed more than max_output bytes. Its output is the
     # operator's and could hold anything, so it's never in an error.
     module ShellCommand
+      # Seconds to wait for output before checking whether the shell exited.
+      POLL = 0.05
+
       module_function
 
       # The command's stdout, once it has exited with success.
@@ -32,8 +39,8 @@ module Quaack
         def output(command)
           IO.pipe do |reader, writer|
             pid = spawn(command, writer)
-            text = read(reader)
-            fail!("failed") unless wait(pid).success?
+            text, status = collect(reader, pid)
+            fail!("failed") unless status.success?
             text
           ensure
             stop(pid)
@@ -52,28 +59,41 @@ module Quaack
           writer.close
         end
 
-        # Reads until the command closes its stdout, which it may leave
-        # open for a child it started.
-        def read(reader)
+        # The command's output and exit status. It reads until the shell
+        # exits, then takes what's left in the pipe. The status is checked
+        # before each read, so everything the shell wrote is in the pipe by
+        # the last one. If stdout closes first, it waits for the exit.
+        def collect(reader, pid)
           text = +""
           loop do
-            chunk = read_some(reader)
-            return text if chunk.nil?
+            status = exited(pid)
+            closed = drained_to_eof?(reader, text, status ? 0 : [POLL, @deadline - now].min)
+            return [text, status] if status
+            return [text, wait(pid)] if closed
 
-            text << chunk
-            fail!("bad_output") if text.bytesize > @max_output
+            fail!("timed_out") unless now < @deadline
           end
         end
 
-        def read_some(reader)
-          left = @deadline - now
-          fail!("timed_out") unless left.positive? && reader.wait_readable(left)
-          reader.read_nonblock(@max_output + 1, exception: false).then { it == :wait_readable ? +"" : it }
+        # Adds what reader has to text, waiting up to wait seconds for the
+        # first of it. Whether stdout has closed.
+        def drained_to_eof?(reader, text, wait)
+          while reader.wait_readable([wait, 0].max)
+            chunk = reader.read_nonblock(@max_output + 1, exception: false)
+            return true if chunk.nil?
+
+            text << chunk unless chunk == :wait_readable
+            fail!("bad_output") if text.bytesize > @max_output
+            wait = 0
+          end
+          false
         end
+
+        def exited(pid) = Process.wait2(pid, Process::WNOHANG)&.last
 
         def wait(pid)
           loop do
-            _, status = Process.wait2(pid, Process::WNOHANG)
+            status = exited(pid)
             return status if status
 
             fail!("timed_out") unless now < @deadline

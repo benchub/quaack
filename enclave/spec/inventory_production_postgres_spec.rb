@@ -146,6 +146,25 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
       expect(production_module.read_only(conn) { conn.exec("SELECT 41 + 1").getvalue(0, 0) }).to eq("42")
     end
 
+    # A read that hangs, such as one waiting on a lock, fails rather than
+    # holding the step forever. The timeout lasts only as long as the
+    # transaction.
+    it "gives each read a one minute statement_timeout, for its transaction only" do
+      inside = production_module.read_only(conn) { show("statement_timeout") }
+
+      expect(inside).to eq("1min")
+      expect(show("statement_timeout")).to eq("0")
+    end
+
+    it "fails a read past its statement_timeout as production_read_failed, with 57014" do
+      error = error_of do
+        production_module.read_only(conn, statement_timeout: "100ms") { conn.exec("SELECT pg_sleep(5)") }
+      end
+
+      expect([error.rule, error.sqlstate]).to eq(%w[production_read_failed 57014])
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+
     it "keeps Postgres's message out of its error, and keeps the SQLSTATE" do
       error = error_of { production_module.read_only(conn) { conn.exec("SELECT '#{sentinels.text}'::int") } }
 
