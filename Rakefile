@@ -36,9 +36,9 @@ def gem_versions
   end
 end
 
-def write_full_replay_stamp
+def write_full_replay_stamp(versions)
   FileUtils.mkdir_p(File.dirname(FULL_REPLAY_STAMP))
-  File.write(FULL_REPLAY_STAMP, "#{JSON.pretty_generate(gem_versions)}\n")
+  File.write(FULL_REPLAY_STAMP, "#{JSON.pretty_generate(versions)}\n")
 end
 
 # Every suite runs, even after one fails, so one run shows all the results.
@@ -88,10 +88,13 @@ task :full do
     abort "The specs already ran in this rake, and rake full must run the specs itself. Run `rake full` on its own."
   end
 
+  # Read the versions first, so an unreadable one stops the run before the
+  # long replay, not after it. The stamp records the versions the run tested.
+  versions = gem_versions
   ENV[FullReplay::ENV_VAR] = "1"
   Rake::Task[:rubocop].invoke
   Rake::Task[:spec].invoke
-  write_full_replay_stamp
+  write_full_replay_stamp(versions)
 ensure
   old ? ENV[FullReplay::ENV_VAR] = old : ENV.delete(FullReplay::ENV_VAR)
 end

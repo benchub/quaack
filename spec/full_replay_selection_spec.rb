@@ -8,7 +8,10 @@ require_relative "spec_helper"
 
 # Task 20261003-2: which recorded replay variants spec/pipeline_replay_spec.rb
 # selects, seen from a --dry-run child: on its own, as the per-commit check
-# runs it, and under the Rakefile's full task, as `rake full` runs it.
+# runs it, and under the Rakefile's full task. The full-task case swaps in its
+# own spec task that runs the replay spec directly, so it doesn't check that
+# the real spec task passes the full-replay variable on to the child suites.
+# spec/rakefile_spec.rb checks that.
 RSpec.describe "the pipeline replay variants each check runs" do
   def runner = "RSpec.configure { |c| c.fail_if_no_examples = true }; RSpec::Core::Runner.invoke"
 
@@ -36,7 +39,7 @@ RSpec.describe "the pipeline replay variants each check runs" do
     <<~RUBY
       require "rake"
       load "Rakefile"
-      def write_full_replay_stamp = nil
+      def write_full_replay_stamp(*) = nil
       Rake::Task[:rubocop].clear
       Rake::Task[:spec].clear
       Rake::Task.define_task(:spec) do
