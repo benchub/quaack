@@ -309,7 +309,7 @@ module Quaack
       # The tables of the top-level FROM clause, the join clauses between
       # them, and how column references resolve to them.
       class Scope
-        attr_reader :tables, :joins, :using
+        attr_reader :tables, :joins, :using, :statistics
 
         def initialize(select, statistics)
           @statistics = statistics
@@ -572,7 +572,10 @@ module Quaack
       module Values
         # Built-in volatile functions. A call to one changes from row to
         # row, so an index can't seek to it. volatility refuses a query that
-        # calls any volatile function, and this is a backstop.
+        # calls any volatile function, and this is a backstop. volatility
+        # only refuses, so it leaves no results to read here. A name counts
+        # unqualified (pg_catalog comes first on the search path) or under
+        # pg_catalog, never under another schema.
         VOLATILE_FUNCTIONS = %w[random random_normal gen_random_uuid uuidv4 uuidv7 clock_timestamp timeofday
                                 nextval setval currval lastval txid_current pg_sleep].freeze
 
@@ -616,11 +619,16 @@ module Quaack
         def volatile?(node)
           case node
           when PgQuery::FuncCall
-            VOLATILE_FUNCTIONS.include?(node.funcname.last.string.sval) || volatile?(node.args)
+            builtin_volatile?(node.funcname) || volatile?(node.args)
           when Google::Protobuf::RepeatedField then node.any? { |n| volatile?(n) }
           when Google::Protobuf::MessageExts then node.class.descriptor.any? { |f| volatile?(f.get(node)) }
           else false
           end
+        end
+
+        def builtin_volatile?(funcname)
+          names = funcname.map { |n| n.string.sval }
+          (names.one? || names.first == "pg_catalog") && VOLATILE_FUNCTIONS.include?(names.last)
         end
 
         # A NULL literal matches no row under = or a range operator, so it
@@ -883,10 +891,12 @@ module Quaack
         end
 
         # Every ColumnRef in the SELECT but its WITH, plus USING columns.
-        # A subquery in FROM is walked too, which can only add columns.
+        # A subquery in FROM is walked too, which can only add columns. So
+        # are the outer columns a correlated subquery reads.
         def read_columns(select, scope)
           read = Columns.new
-          refs_outside_with(select).each { |ref| scope.columns(ref).each { |pair| read.add(pair) } }
+          refs = refs_outside_with(select) + OuterRefs.in(select, scope.statistics)
+          refs.each { |ref| scope.columns(ref).each { |pair| read.add(pair) } }
           scope.using.each { |name, left, right| add_using(read, name, left + right) }
           read
         end
@@ -919,6 +929,34 @@ module Quaack
 
           node.sub_link ? [] : self.in(node.inner)
         end
+      end
+
+      # The ColumnRefs that subqueries (SubLinks) under a node read from
+      # outside themselves, at any depth. Each subquery's own FROM decides
+      # what's outer to it, as Scope#outer? says.
+      module OuterRefs
+        module_function
+
+        def in(node, statistics)
+          case node
+          when PgQuery::Node
+            node.sub_link ? select(node.sub_link.subselect.select_stmt, statistics) : self.in(node.inner, statistics)
+          when Google::Protobuf::RepeatedField then node.flat_map { |n| self.in(n, statistics) }
+          when Google::Protobuf::MessageExts then node.class.descriptor.flat_map { |f| self.in(f.get(node), statistics) }
+          else []
+          end
+        end
+
+        # A set operation's arms each have their own FROM.
+        def select(stmt, statistics)
+          return [] unless stmt
+          return [stmt.larg, stmt.rarg].flat_map { |arm| select(arm, statistics) } unless stmt.op == :SETOP_NONE
+
+          scope = Scope.new(stmt, statistics)
+          (ColumnRefs.in(stmt) + self.in(stmt, statistics)).select { |ref| outer?(ref, scope) }
+        end
+
+        def outer?(ref, scope) = ref.fields.none?(&:a_star) && scope.outer?(ref)
       end
 
       # The ORDER BY clause, resolved to columns. An ordinal (ORDER BY 2) or
@@ -1201,8 +1239,8 @@ module Quaack
         end
       end
 
-      private_constant :Input, :Table, :Join, :Scope, :Reduction, :Strict, :Keyset, :Columns, :Values, :Predicates,
-                       :Uses, :ColumnRefs, :OrderBy, :GroupBy, :OrderTail, :TableCandidates
+      private_constant :Input, :Table, :Join, :Scope, :Reduction, :Strict, :Keyset, :Columns, :OuterRefs, :Values,
+                       :Predicates, :Uses, :ColumnRefs, :OrderBy, :GroupBy, :OrderTail, :TableCandidates
     end
   end
 end

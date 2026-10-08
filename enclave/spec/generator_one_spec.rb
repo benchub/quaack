@@ -835,6 +835,11 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(equality_columns("r >= $1 - make_interval(days => 3)")).to eq(%w[r])
     end
 
+    it "treats a user function that shares a built-in volatile name as a value, but not pg_catalog's" do
+      expect(equality_columns("f = public.random()")).to eq(%w[f])
+      expect(equality_columns("a = 1 AND f = pg_catalog.random()")).to eq(%w[a])
+    end
+
     it "counts a comparison with a column of a subquery or function in FROM as a range" do
       sql = "SELECT o.a FROM public.orders o CROSS JOIN (SELECT max(r) AS latest FROM public.orders) m " \
             "WHERE o.r > m.latest - interval '1 hour'"
@@ -1336,6 +1341,20 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(generate(sql, stats)).to eq([btree(orders, %w[b], %w[a total region]), btree(orders, %w[b]),
                                           btree(orders, %w[b a], %w[total region]), btree(orders, %w[b a]),
                                           btree(orders, %w[b a region], %w[total]), btree(orders, %w[b a region])])
+    end
+
+    it "counts an outer column read only inside a correlated subquery, so a partial INCLUDE isn't offered" do
+      stats = statistics(table(orders, { "a" => column(10), "b" => column(20) }, extra: %w[id total region]),
+                         table(customers, { "id" => column(1000) }, extra: %w[region]))
+      sql = "SELECT a FROM public.orders o WHERE a = 1 AND b = 2 " \
+            "AND EXISTS (SELECT 1 FROM public.customers c WHERE c.id = o.total AND region = 'x')"
+
+      expect(generate(sql, stats).select { |c| c.table == orders })
+        .to eq([btree(orders, %w[b]), btree(orders, %w[b a])])
+
+      own = "SELECT a FROM public.orders o WHERE a = 1 AND b = 2 " \
+            "AND EXISTS (SELECT 1 FROM public.customers c WHERE c.id = 5 AND region = 'x')"
+      expect(generate(own, stats).select { |c| c.table == orders }).to include(btree(orders, %w[b], %w[a]))
     end
 
     it "also proposes the INCLUDE columns moved into the key when the leading column is low-cardinality (e2e 055)" do
