@@ -21,10 +21,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
     quaack/enclave/arena_runner/pipeline.rb
     quaack/enclave/arena_runner/sequences.rb
     quaack/enclave/clock_defaults.rb
-    quaack/enclave/counterexamples/evaluated.rb
-    quaack/enclave/insert_check.rb
-    quaack/enclave/insert_clock_words.rb
-    quaack/enclave/insert_values.rb
     quaack/enclave/rewrite_rules/existence_in_flip.rb
   ].freeze
 

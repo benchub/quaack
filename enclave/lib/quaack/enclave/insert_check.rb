@@ -120,9 +120,10 @@ module Quaack
       COLUMNS_SQL = <<~SQL
         SELECT a.attname, a.atttypid
         FROM pg_catalog.pg_attribute a
-        JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+        JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) a.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2
+          AND a.attnum OPERATOR(pg_catalog.>) 0 AND NOT a.attisdropped
       SQL
 
       module_function

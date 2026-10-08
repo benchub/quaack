@@ -32,13 +32,14 @@ module Quaack
       # check's rule for which ones a call could reach.
       MUTABLE_SQL = <<~SQL
         SELECT pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(p.proname),
-               CASE p.provolatile WHEN 's' THEN 'stable' ELSE 'volatile' END
+               CASE WHEN p.provolatile OPERATOR(pg_catalog.=) 's' THEN 'stable' ELSE 'volatile' END
         FROM pg_catalog.pg_proc p
-        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = ANY ($1::text[]) AND p.proname = $2 AND p.provolatile <> 'i'
-          AND $3::int >= p.pronargs - p.pronargdefaults
-          AND ($3::int <= p.pronargs OR p.provariadic <> 0)
-        ORDER BY pg_catalog.array_position($1::text[], n.nspname::text), p.oid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) ANY ($1::pg_catalog.text[]) AND p.proname OPERATOR(pg_catalog.=) $2
+          AND p.provolatile OPERATOR(pg_catalog.<>) 'i'
+          AND $3::int OPERATOR(pg_catalog.>=) (p.pronargs OPERATOR(pg_catalog.-) p.pronargdefaults)
+          AND ($3::int OPERATOR(pg_catalog.<=) p.pronargs OR p.provariadic OPERATOR(pg_catalog.<>) 0)
+        ORDER BY pg_catalog.array_position($1::pg_catalog.text[], n.nspname::pg_catalog.text), p.oid
         LIMIT 1
       SQL
 
