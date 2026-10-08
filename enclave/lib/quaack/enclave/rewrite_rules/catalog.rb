@@ -2,6 +2,7 @@
 
 require_relative "../assumption_check"
 require_relative "../rewrite_assumptions"
+require_relative "catalog/btree"
 require_relative "catalog/calls"
 require_relative "catalog/foreign_keys"
 require_relative "catalog/standalone"
@@ -56,6 +57,7 @@ module Quaack
       # column's (see Types).
       class Catalog
         include Standalone
+        include Btree
         include Calls
         include ForeignKeys
         include Types
@@ -66,73 +68,41 @@ module Quaack
         COMPARABLE = %w[bool int2 int4 int8 oid float4 float8 numeric text varchar bpchar name uuid date time timetz
                         timestamp timestamptz interval bytea].freeze
 
+        EQ = "OPERATOR(pg_catalog.=)"
+
         # A dropped column has no type, so the join to pg_type leaves it out.
         COLUMNS = <<~SQL.freeze
           SELECT a.attname,
-                 (t.typtype = 'e' OR (n.nspname = 'pg_catalog' AND t.typname = ANY ($3::text[])))
-                 AND (a.attcollation = 0 OR co.collisdeterministic)
+                 (t.typtype #{EQ} 'e'
+                  OR (n.nspname #{EQ} 'pg_catalog' AND t.typname #{EQ} ANY ($3::pg_catalog.text[])))
+                 AND (a.attcollation #{EQ} 0 OR co.collisdeterministic)
           FROM pg_catalog.pg_attribute a
-          JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
-          JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-          LEFT JOIN pg_catalog.pg_collation co ON co.oid = a.attcollation
-          WHERE a.attrelid = #{AssumptionCheck::RELATION} AND a.attnum > 0
+          JOIN pg_catalog.pg_type t ON t.oid #{EQ} a.atttypid
+          JOIN pg_catalog.pg_namespace n ON n.oid #{EQ} t.typnamespace
+          LEFT JOIN pg_catalog.pg_collation co ON co.oid #{EQ} a.attcollation
+          WHERE a.attrelid #{EQ} #{AssumptionCheck::RELATION} AND a.attnum OPERATOR(pg_catalog.>) 0
           ORDER BY a.attnum
         SQL
 
         COLUMN_INFO = <<~SQL.freeze
           SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
-                 CASE WHEN a.attcollation = 0 THEN NULL
+                 CASE WHEN a.attcollation #{EQ} 0 THEN NULL
                       ELSE pg_catalog.format('%I.%I', cn.nspname, co.collname)
                  END AS collation,
-                 a.attcollation = 0 OR co.collisdeterministic AS deterministic
+                 a.attcollation #{EQ} 0 OR co.collisdeterministic AS deterministic
           FROM pg_catalog.pg_attribute a
-          LEFT JOIN pg_catalog.pg_collation co ON co.oid = a.attcollation
-          LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = co.collnamespace
-          WHERE a.attrelid = #{AssumptionCheck::RELATION} AND a.attname = $3 AND a.attnum > 0
-        SQL
-
-        # The column type's default btree operator family: the type's own
-        # default btree opclass, or failing that the one opclass of a
-        # preferred type it coerces to without a function, as varchar does to
-        # text, which is how Postgres picks varchar's =. A domain, an enum, or
-        # an array has neither, so it has none.
-        BTREE_FAMILY = <<~SQL.freeze
-          WITH col AS (
-            SELECT a.atttypid AS type FROM pg_catalog.pg_attribute a
-            WHERE a.attrelid = #{AssumptionCheck::RELATION} AND a.attname = $3 AND a.attnum > 0
-          ), opclasses AS (
-            SELECT c.opcfamily, c.opcintype, c.opcintype = col.type AS exact, t.typispreferred AS preferred
-            FROM col
-            JOIN pg_catalog.pg_opclass c ON c.opcdefault
-            JOIN pg_catalog.pg_am am ON am.oid = c.opcmethod AND am.amname = 'btree'
-            JOIN pg_catalog.pg_type t ON t.oid = c.opcintype
-            WHERE c.opcintype = col.type
-               OR EXISTS (SELECT 1 FROM pg_catalog.pg_cast k
-                          WHERE k.castsource = col.type AND k.casttarget = c.opcintype AND k.castmethod = 'b')
-          )
-          SELECT o.opcfamily, col.type FROM opclasses o, col
-          WHERE o.exact OR (o.preferred AND NOT EXISTS (SELECT 1 FROM opclasses e WHERE e.exact))
-        SQL
-
-        # How many operators named =, <, <=, >, or >= between two of the
-        # column's type ($2) aren't in the family ($1) under that name.
-        # Postgres picks an operator taking exactly the column's type over
-        # any other.
-        BTREE_OPERATORS = <<~SQL
-          WITH strategies (strategy, name) AS (VALUES (1, '<'), (2, '<='), (3, '='), (4, '>='), (5, '>'))
-          SELECT count(*) FROM strategies s
-          JOIN pg_catalog.pg_operator op ON op.oprname = s.name AND op.oprleft = $2 AND op.oprright = $2
-          WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_amop o
-                            WHERE o.amopfamily = $1 AND o.amopopr = op.oid AND o.amopstrategy = s.strategy)
+          LEFT JOIN pg_catalog.pg_collation co ON co.oid #{EQ} a.attcollation
+          LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid #{EQ} co.collnamespace
+          WHERE a.attrelid #{EQ} #{AssumptionCheck::RELATION} AND a.attname #{EQ} $3 AND a.attnum OPERATOR(pg_catalog.>) 0
         SQL
 
         # The tables any foreign key from the column points at, NOT VALID
         # ones included.
         REFERENCED = <<~SQL.freeze
           SELECT DISTINCT r.relname FROM pg_catalog.pg_constraint c
-          JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
-          JOIN pg_catalog.pg_class r ON r.oid = c.confrelid
-          WHERE c.conrelid = #{AssumptionCheck::RELATION} AND c.contype = 'f' AND a.attname = $3
+          JOIN pg_catalog.pg_attribute a ON a.attrelid #{EQ} c.conrelid AND a.attnum #{EQ} ANY (c.conkey)
+          JOIN pg_catalog.pg_class r ON r.oid #{EQ} c.confrelid
+          WHERE c.conrelid #{EQ} #{AssumptionCheck::RELATION} AND c.contype #{EQ} 'f' AND a.attname #{EQ} $3
           ORDER BY 1
         SQL
 
@@ -141,16 +111,6 @@ module Quaack
           @met = {}
           @columns = {}
           @column_info = {}
-          @default_btree = {}
-        end
-
-        # Whether =, <, <=, >, and >= between two values of the column's type
-        # are the operators of its default btree family, so values that = calls
-        # equal compare alike under all five.
-        def default_btree?(schema, table, column)
-          @default_btree.fetch([schema, table, column]) do
-            @default_btree[[schema, table, column]] = default_btree_family?(schema, table, column)
-          end
         end
 
         def columns(schema, table)
@@ -178,15 +138,6 @@ module Quaack
             @met[assumption] = RewriteAssumptions.assumption?(assumption) &&
                                AssumptionCheck.met?(assumption, @connection)
           end
-        end
-
-        private
-
-        def default_btree_family?(schema, table, column)
-          families = @connection.exec_params(BTREE_FAMILY, [schema, table, column]).values
-          return false unless families.size == 1
-
-          @connection.exec_params(BTREE_OPERATORS, families.first).getvalue(0, 0) == "0"
         end
       end
     end

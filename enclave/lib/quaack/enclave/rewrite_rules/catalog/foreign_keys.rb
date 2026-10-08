@@ -13,6 +13,8 @@ module Quaack
         #
         #   catalog.strict_foreign_key?(%w[public posts], %w[public users], [%w[user_id id]])   # => true
         module ForeignKeys
+          EQ = "OPERATOR(pg_catalog.=)"
+
           # The column pairs, [child, parent], of each foreign key from table
           # ($1, $2) to references_table ($3, $4) that binds every row of the
           # child at every moment, as JSON: not deferrable, with its triggers
@@ -24,30 +26,34 @@ module Quaack
           # none, and = between two of the child column's type is one
           # operator, the foreign key's own, so the two columns have one type
           # and the query's = is the one the key was checked with.
+          #
+          # ROWS FROM, since only an unqualified unnest takes several arrays.
           STRICT_FOREIGN_KEY = <<~SQL.freeze
-            SELECT array_to_json(ARRAY(
-                     SELECT ARRAY[a.attname::text, r.attname::text]
-                     FROM unnest(c.conkey, c.confkey, c.conpfeqop) AS u(k, f, op)
-                     JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.k
-                     JOIN pg_catalog.pg_attribute r ON r.attrelid = c.confrelid AND r.attnum = u.f
+            SELECT pg_catalog.array_to_json(ARRAY(
+                     SELECT ARRAY[a.attname::pg_catalog.text, r.attname::pg_catalog.text]
+                     FROM ROWS FROM (pg_catalog.unnest(c.conkey), pg_catalog.unnest(c.confkey),
+                                     pg_catalog.unnest(c.conpfeqop)) AS u(k, f, op)
+                     JOIN pg_catalog.pg_attribute a ON a.attrelid #{EQ} c.conrelid AND a.attnum #{EQ} u.k
+                     JOIN pg_catalog.pg_attribute r ON r.attrelid #{EQ} c.confrelid AND r.attnum #{EQ} u.f
                      WHERE ARRAY(SELECT o.oid FROM pg_catalog.pg_operator o
-                                 WHERE o.oprname = '=' AND o.oprleft = a.atttypid AND o.oprright = a.atttypid)
-                           = ARRAY[u.op]
+                                 WHERE o.oprname #{EQ} '=' AND o.oprleft #{EQ} a.atttypid
+                                   AND o.oprright #{EQ} a.atttypid)
+                           #{EQ} ARRAY[u.op]
                        AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_collation co
-                                       WHERE co.oid IN (a.attcollation, r.attcollation)
-                                         AND NOT co.collisdeterministic)))::text
+                                       WHERE (co.oid #{EQ} a.attcollation OR co.oid #{EQ} r.attcollation)
+                                         AND NOT co.collisdeterministic)))::pg_catalog.text
             FROM pg_catalog.pg_constraint c
-            JOIN pg_catalog.pg_class ch ON ch.oid = c.conrelid
-            JOIN pg_catalog.pg_class pa ON pa.oid = c.confrelid
-            WHERE c.conrelid = #{AssumptionCheck::RELATION} AND c.contype = 'f' AND NOT c.condeferrable
-              AND c.confrelid = (SELECT c2.oid FROM pg_catalog.pg_class c2
-                                 JOIN pg_catalog.pg_namespace n2 ON n2.oid = c2.relnamespace
-                                 WHERE n2.nspname = $3 AND c2.relname = $4)
-              AND ch.relkind = 'r' AND pa.relkind = 'r' AND NOT pa.relrowsecurity
+            JOIN pg_catalog.pg_class ch ON ch.oid #{EQ} c.conrelid
+            JOIN pg_catalog.pg_class pa ON pa.oid #{EQ} c.confrelid
+            WHERE c.conrelid #{EQ} #{AssumptionCheck::RELATION} AND c.contype #{EQ} 'f' AND NOT c.condeferrable
+              AND c.confrelid #{EQ} #{AssumptionCheck::RELATION.sub("$1", "$3").sub("$2", "$4")}
+              AND ch.relkind #{EQ} 'r' AND pa.relkind #{EQ} 'r' AND NOT pa.relrowsecurity
               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_inherits i
-                              WHERE i.inhrelid IN (ch.oid, pa.oid) OR i.inhparent IN (ch.oid, pa.oid))
+                              WHERE i.inhrelid #{EQ} ch.oid OR i.inhrelid #{EQ} pa.oid
+                                 OR i.inhparent #{EQ} ch.oid OR i.inhparent #{EQ} pa.oid)
               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t
-                              WHERE t.tgconstraint = c.oid AND t.tgenabled NOT IN ('O', 'A'))
+                              WHERE t.tgconstraint #{EQ} c.oid AND t.tgenabled OPERATOR(pg_catalog.<>) 'O'
+                                AND t.tgenabled OPERATOR(pg_catalog.<>) 'A')
           SQL
 
           # Whether a foreign key from table to references_table, both

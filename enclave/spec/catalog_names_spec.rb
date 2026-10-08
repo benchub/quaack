@@ -31,10 +31,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
     quaack/enclave/insert_check.rb
     quaack/enclave/insert_clock_words.rb
     quaack/enclave/insert_values.rb
-    quaack/enclave/rewrite_rules/catalog.rb
-    quaack/enclave/rewrite_rules/catalog/calls.rb
-    quaack/enclave/rewrite_rules/catalog/foreign_keys.rb
-    quaack/enclave/rewrite_rules/catalog/types.rb
     quaack/enclave/rewrite_rules/existence_in_flip.rb
     quaack/enclave/scenarios/ties.rb
     quaack/enclave/scenarios/types.rb
