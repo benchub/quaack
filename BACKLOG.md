@@ -2188,17 +2188,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-23. Driver run records and config: minors from 20261001-14 and 20261001-15. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-24. LLM adapter errors: keep keys and driver bugs out of them.
-
-From the review of 20261007-12.
-1. The Anthropic adapter's llm_auth error keeps the gem's APIError, whose message can quote the key, as its `cause`, and the OpenAI-compatible adapter does the same. A crash backtrace that prints the cause chain would show it. Drop the cause, or replace it with one that holds only the status. Check Bedrock, which depends on the cause today.
-2. The OpenAI-compatible adapter turns any NoMethodError from inside `@openai.chat.completions.create` into llm_bad_response, which also covers the driver's own `Attempts`, the burndown count, and the transport. A planted driver bug came back as "the reply couldn't be read as a message", with no backtrace. Check the parsed `choices` shape at the edge instead, or rescue only errors from the gem's coercion.
-3. The Copilot CLI adapter's llm_auth message quotes the tail of the command's stderr. Check that it can't hold a token, or keep only a fixed sentence.
-
-- **Depends on:** 20261007-12.
-- **Came from:** The review of 20261007-12.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-24. LLM adapter errors: keep keys and driver bugs out of them. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-25. Ollama replies have no token cap.
 
@@ -2307,4 +2297,15 @@ From the review of 20261007-32. `AssumptionCheck::Equality` refuses two columns 
 - **Depends on:** 20261007-32.
 - **Came from:** The review of 20261007-32.
 - **Design:** trust boundary, assumption checks.
+- **Status:** todo
+
+### 20261007-40. LLM errors: Copilot token patterns, and causes on other rules.
+
+From the reviews of 20261007-24.
+1. The Copilot CLI tail redaction misses `Bearer:`, two spaces or a tab after "Bearer", and Copilot API session tokens with no prefix (`tid=...;exp=...;8kp=1:...`). It matters only for llm_unavailable stderr, so this is defense in depth.
+2. Only llm_auth drops its cause. The Anthropic and OpenAI-compatible adapters' other API errors still keep the gem error, body included, as their cause. Decide whether any of those bodies can hold a secret, and drop or trim the cause where one could.
+
+- **Depends on:** 20261007-24.
+- **Came from:** The reviews of 20261007-24.
+- **Design:** LLM providers.
 - **Status:** todo

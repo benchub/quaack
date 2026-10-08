@@ -6861,3 +6861,16 @@ From the review of 20261007-30. `IndexDdlCheck`'s volatility check gets the plan
 - **Design:** qualify, index-test.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. index-test's GeneratorThree filter and counterexample-round's `Counterexamples.prepare` take `RunServer.plan_settings(store)`, so their volatility checks resolve names on the run's stored path, as the racetrack and arena sessions do. 20261007-30's collation test now uses a LATIN1 database instead of a catalog UPDATE. Not filed, from the review: for a run stored before 20261007-30 (no stored path), counterexample-round now checks with the plan's path while its arena session keeps the run server role's; they differ only when that plan sets a non-default path and the arena has same-named functions of different volatility. Enclave change, unreleased until the next batch bump.
+
+### 20261007-24. LLM adapter errors: keep keys and driver bugs out of them.
+
+From the review of 20261007-12.
+1. The Anthropic adapter's llm_auth error keeps the gem's APIError, whose message can quote the key, as its `cause`, and the OpenAI-compatible adapter does the same. A crash backtrace that prints the cause chain would show it. Drop the cause, or replace it with one that holds only the status. Check Bedrock, which depends on the cause today.
+2. The OpenAI-compatible adapter turns any NoMethodError from inside `@openai.chat.completions.create` into llm_bad_response, which also covers the driver's own `Attempts`, the burndown count, and the transport. A planted driver bug came back as "the reply couldn't be read as a message", with no backtrace. Check the parsed `choices` shape at the edge instead, or rescue only errors from the gem's coercion.
+3. The Copilot CLI adapter's llm_auth message quotes the tail of the command's stderr. Check that it can't hold a token, or keep only a fixed sentence.
+
+- **Depends on:** 20261007-12.
+- **Came from:** The review of 20261007-12.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-07, items 1 and 3, after a review with a blocking finding in item 2, a fix round, a second review that found another, and a split. An llm_auth from the Anthropic and OpenAI-compatible adapters keeps no cause, since the gem's error can quote the key, and Bedrock gives its status-only message through a `refused(status)` override; a shared example checks the message, inspect, body, whole cause chain, and backtrace, and `quaack run` never prints a quoted-back key. Copilot CLI's llm_auth is a fixed sentence, and its llm_unavailable stderr tail shows GitHub tokens and anything after `Bearer` as `[token]`. Item 2 (letting driver bugs surface instead of the `rescue NoMethodError`) failed both reviews and moved to 20261007-36; its attempt stays on branch `task/20261007-24` until then.
