@@ -2267,14 +2267,7 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 
 ### 20261007-48. OpenAI-compatible replies: minors from 20261007-36. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-49. A lone `llm` block: keep the API's detail after a skipped replacement round.
-
-From the review of 20261007-15. With a lone `llm` block, an `llm_rate_limited`, `llm_unavailable`, or `llm_auth` at the replacement round now marks the provider down, so the next ask (llm-index-refine) fails at once without a call: `llm_rate_limited: every LLM provider llm-index-refine may use failed: anthropic (llm_rate_limited). <sizes>`. In `Router#exhausted` (~229), `tried.last.last` is the down rule's string, not an `Error`. That names the provider and uses the list form, which a lone block shouldn't, and the API's own detail (a retry hint, say) never reaches the operator, since the going-on line drops it. Before 20261007-15 the run failed one step earlier with the detail. For a lone block, fail the later unit with the stored original `Error`, or keep the detail in the going-on line. Also: DESIGN.md should describe the lone-block going-on lines and that a lone block now keeps first-round ideas, once the user confirms; and a pipeline spec should pin the enclave's round numbers 1, 2, 3 across a fresh start.
-
-- **Depends on:** 20261007-15.
-- **Came from:** The review of 20261007-15.
-- **Design:** Several LLM providers.
-- **Status:** todo
+### 20261007-49. A lone `llm` block: keep the API's detail after a skipped replacement round. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-50. Bedrock region lookup: match the SDK on empty variables.
 
