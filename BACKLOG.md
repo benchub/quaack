@@ -2151,7 +2151,7 @@ From the builder and review of 20261007-46.
 - **Depends on:** 20261007-46.
 - **Came from:** The builder and review of 20261007-46.
 - **Design:** rewrite-rules.
-- **Decided by the user (2026-10-08):** item 1: allow parameter LIKE patterns in or_to_union, with no caveat in the report. Items 2 and 3 stay as listed.
+- **Decided by the user (2026-10-08):** item 1: allow parameter LIKE patterns in or_to_union, and document the behavior in `docs/transforms/or_to_union.md` and DESIGN.md: the rewrite raises where the original might not if the app passes a pattern ending in a lone backslash, since the original's other arm can skip the LIKE for a row and the UNION's branch can't. No caveat in the report itself. Items 2 and 3 stay as listed.
 - **Status:** todo
 
 ### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
