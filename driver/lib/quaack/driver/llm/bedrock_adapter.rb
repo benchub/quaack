@@ -30,12 +30,13 @@ module Quaack
       # as an SSO session's, are refused then: llm_auth.
       #
       # The region is llm.aws_region, else the SDK's lookup: AWS_REGION,
-      # AWS_DEFAULT_REGION, then the profile's. With a Bedrock API key the
-      # gem looks up nothing, so it's llm.aws_region, AWS_REGION, or
-      # AWS_DEFAULT_REGION. No region is a usage error, before any attempt,
-      # unless there's a base URL, which a key needs no region for. So is a
-      # bad AWS_REGION or AWS_DEFAULT_REGION, when there's no llm.aws_region,
-      # checked as llm.aws_region is, and named, not quoted.
+      # AMAZON_REGION, AWS_DEFAULT_REGION, then the profile's. With a Bedrock
+      # API key the gem looks up nothing, so it's llm.aws_region or the first
+      # of those three variables. No region is a usage error, before any
+      # attempt, unless there's a base URL, which a key needs no region for.
+      # So is a bad value in the first of the variables that's set, when
+      # there's no llm.aws_region, checked as llm.aws_region is, and named,
+      # not quoted.
       #
       # `transport` gets each attempt as it would go out, rewritten and
       # signed, as the gem's Anthropic::APIRequest, plus the step, and
@@ -43,7 +44,7 @@ module Quaack
       # nil means HTTP.
       class BedrockAdapter < AnthropicAdapter
         BEARER_ENV = "AWS_BEARER_TOKEN_BEDROCK"
-        REGION_VARIABLES = %w[AWS_REGION AWS_DEFAULT_REGION].freeze
+        REGION_VARIABLES = %w[AWS_REGION AMAZON_REGION AWS_DEFAULT_REGION].freeze
 
         # The chain's own messages can quote its files and commands, so
         # they're left out.

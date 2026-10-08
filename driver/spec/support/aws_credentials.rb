@@ -7,11 +7,11 @@ require "tmpdir"
 # The AWS credentials and region the AWS SDK finds on its own, set up for a
 # spec, so nothing on this machine is found and nothing reaches AWS.
 module AWSCredentials
-  # For the block, every AWS_ variable is unset, the SDK's config and
+  # For the block, every AWS_ variable and AMAZON_REGION is unset, the SDK's config and
   # credentials files are empty ones in a new directory, and the EC2
   # metadata endpoint is off, so the SDK's credential chain finds nothing and
   # never waits on the network. changes then set some. Yields the directory.
-  # Afterwards the AWS_ variables are as they were, even ones the block set.
+  # Afterwards those variables are as they were, even ones the block set.
   #
   # The SDK reads its files once and keeps them, so they're forgotten before
   # the block and after it.
@@ -39,9 +39,9 @@ module AWSCredentials
 
   private
 
-  def aws_variables = ENV.to_h.select { |name, _| name.start_with?("AWS_") }
+  def aws_variables = ENV.to_h.select { |name, _| name.start_with?("AWS_") || name == "AMAZON_REGION" }
 
-  # Unsets every AWS_ variable, then sets variables.
+  # Unsets every AWS_ variable and AMAZON_REGION, then sets variables.
   def reset_aws_variables(variables)
     aws_variables.each_key { ENV.delete(it) }
     ENV.update(variables)

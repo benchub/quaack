@@ -104,11 +104,12 @@ module Quaack
       # and QUAACK_LLM_BASE_URL override the block, and an empty one counts
       # as unset. With neither, it's Anthropic with DEFAULT_MODEL. Raises
       # ConfigError for a bad value, or a key that doesn't apply to the
-      # provider. When QUAACK_LLM_PROVIDER switches to another provider than
-      # the block's, every key of the block is checked and then ignored, so
-      # the switch works for one run: the block's base_url and api_key_env
-      # are meant for its own provider, and that provider's credentials must
-      # never go to them. The model and base_url then come only from
+      # block's provider. When QUAACK_LLM_PROVIDER switches to another
+      # provider than the block's, every key of the block is checked, as it
+      # would be without the switch, and then ignored, so the switch works
+      # for one run: the block's base_url and api_key_env are meant for its
+      # own provider, and that provider's credentials must never go to
+      # them. The model and base_url then come only from
       # QUAACK_MODEL and QUAACK_LLM_BASE_URL, or the new provider's defaults.
       #
       # at is where the block sits in the file, for messages, such as
@@ -142,14 +143,15 @@ module Quaack
       end
 
       # The provider in effect, the block for it, and whether
-      # QUAACK_LLM_PROVIDER switched from the block's own provider. A switch
-      # gives an empty block. Otherwise it raises unless every key applies.
+      # QUAACK_LLM_PROVIDER switched from the block's own provider. It raises
+      # unless every key applies to the block's own provider, even on a
+      # switch, so a mistake shows now and not on the next run. A switch
+      # gives an empty block.
       def self.for_provider(block, env, at)
+        own = block.fetch("provider", "anthropic")
+        check_applies(block, own, at)
         provider = pick(env, block, "provider") || "anthropic"
-        return [{}, provider, true] if provider != block.fetch("provider", "anthropic")
-
-        check_applies(block, provider, at)
-        [block, provider, false]
+        [provider == own ? block : {}, provider, provider != own]
       end
 
       def self.no_model(provider, switched, at)
