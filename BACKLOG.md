@@ -2151,19 +2151,7 @@ From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-oper
 
 ### 20261007-41. Arena qualification: minors from 20261007-31. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-42. The router: minors from 20261007-14.
-
-From the review of 20261007-14.
-1. A unit whose last provider fails with `llm_auth` prints no loud drop line, since the line only prints when there's a next provider. The step's failure message still names `<name> (llm_auth)`. Print the drop line anyway.
-2. When providers are named, running out lists each provider's rule but drops its detail (the API's reason from 20261001-1), and failover lines don't carry it either. Keep a short reason per provider, as long as it names no value.
-3. The router builds its `Error` without `cause:`, so Ruby's implicit cause is the client's error, not the SDK's. Nothing reads it today; set it on purpose, or to nil, consistently with 20261007-24.
-4. Untested guards: `&& !@down.key?(name)` in `Router#failed` (equivalent today) and `.uniq(&:object_id)` in `Router#burndown` (every client has its own burndown). Test them or drop them.
-5. The corpus's saved refine replies answer the old refine wording, as other hand-edited corpus prompts do since 20261001-28 and 20261004-95. Record which prompt wording each corpus directory's replies answered (a note or marker), or rerun the prompt pack for them.
-
-- **Depends on:** 20261007-14.
-- **Came from:** The review of 20261007-14.
-- **Design:** Several LLM providers.
-- **Status:** todo
+### 20261007-42. The router: minors from 20261007-14. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-43. Unique keys: minors from 20261002-4. Done, see BACKLOG-COMPLETE.md.
 
@@ -2258,3 +2246,17 @@ From the builder and review of 20261007-18.
 - **Status:** todo
 
 ### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys. Done, see BACKLOG-COMPLETE.md.
+
+### 20261007-62. Router and OpenAI-compatible details: minors from 20261007-42.
+
+From the reviews of 20261007-42.
+1. `Error#naming`'s `reason:` is untested (dropping it stays green), and so is the empty-text guard in `RouterLines.short`. Test them or drop them.
+2. The OpenAI-compatible adapter's status-nil branch (`return error.message unless error.status`) is untested; pin the connection-error and timeout details.
+3. `OPENAI_CUSTOM_HEADERS` values, sent only to OpenAI's own API, aren't in the scrub list.
+4. When an error body has no message, the whole JSON body is shown, scrubbed only of the adapter's own secrets. Show only the status there, or a fixed sentence.
+5. The corpus README's list of hand-edited prompts misses 20260927-24 (commit 22072ed, which changed the counterexample prompts' OVERRIDING sentence after some replies were collected).
+
+- **Depends on:** 20261007-42.
+- **Came from:** The builder and reviews of 20261007-42.
+- **Design:** Several LLM providers, LLM providers.
+- **Status:** todo

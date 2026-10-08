@@ -7253,3 +7253,18 @@ From the review of 20261007-57.
 - **Design:** LLM providers, trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The error-detail scrub turns the text and every secret into valid UTF-8 first and never raises (a seeded fuzz of random bytes and encodings pins it), keeps a `base_url` value that decodes to invalid UTF-8 in dropped and replaced forms, and matches every secret as written or URL-encoded per character, in either hex case, so an encoded echo of a Bedrock bearer token or session token is scrubbed. It stays linear on a megabyte of text. Not filed: three edge cases with secrets that are themselves invalid UTF-8, and double-encoded echoes.
+
+### 20261007-42. The router: minors from 20261007-14.
+
+From the review of 20261007-14.
+1. A unit whose last provider fails with `llm_auth` prints no loud drop line, since the line only prints when there's a next provider. The step's failure message still names `<name> (llm_auth)`. Print the drop line anyway.
+2. When providers are named, running out lists each provider's rule but drops its detail (the API's reason from 20261001-1), and failover lines don't carry it either. Keep a short reason per provider, as long as it names no value.
+3. The router builds its `Error` without `cause:`, so Ruby's implicit cause is the client's error, not the SDK's. Nothing reads it today; set it on purpose, or to nil, consistently with 20261007-24.
+4. Untested guards: `&& !@down.key?(name)` in `Router#failed` (equivalent today) and `.uniq(&:object_id)` in `Router#burndown` (every client has its own burndown). Test them or drop them.
+5. The corpus's saved refine replies answer the old refine wording, as other hand-edited corpus prompts do since 20261001-28 and 20261004-95. Record which prompt wording each corpus directory's replies answered (a note or marker), or rerun the prompt pack for them.
+
+- **Depends on:** 20261007-14.
+- **Came from:** The review of 20261007-14.
+- **Design:** Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after a review with two blocking findings, a fix round, and a clean second review. With an `llms` list, router lines and the list of what was tried carry each provider's reason (the adapter's scrubbed detail, one line, at most 120 characters), and an `llm_auth` on the last provider still prints its loud line; a lone `llm` block reads as before. The router raises with `cause: nil`, the `@down` guard has a test, and the unused `.uniq` is gone. The corpus README records which replies answer an older prompt. Found in review and fixed here: the OpenAI-compatible adapter's detail was the gem's `status=… url=…` message with nothing scrubbed, so a gateway-echoed key could reach step failures (already on main) and now router lines; it now reads `the API answered <status>: <message>` through the same scrub, covering its key, OpenAI organization and project, and `base_url` secrets.
