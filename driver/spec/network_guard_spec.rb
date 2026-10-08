@@ -2,6 +2,7 @@
 
 require "anthropic"
 require "openai"
+require "aws-sdk-bedrockruntime"
 
 # The root spec/support/no_network.rb stops the anthropic gem's HTTP requester, the
 # one way its requests reach the network, so no spec can call the real API,
@@ -79,5 +80,39 @@ RSpec.describe "the spec-time network guard, for the openai gem" do
       NoNetwork.always_refuse { expect { create(client) }.to raise_error(NoNetwork::Refused) }
       expect { create(client) }.to raise_error(OpenAI::Errors::APIConnectionError)
     end
+  end
+end
+
+# The AWS SDK's credential chain, which the Bedrock adapter uses when it's
+# handed no keys, reads ~/.aws/config and ~/.aws/credentials, then asks the
+# EC2 metadata endpoint. Under a HOME whose ~/.aws files would raise on that
+# read, the chain still finds nothing, so it never reads the real ones, and
+# it never builds the metadata provider, so it never reaches 169.254.169.254.
+RSpec.describe "the spec-time guard on the AWS SDK's credential chain" do
+  # The SDK reads its files once and keeps them, so they're forgotten around
+  # each example.
+  def forget_aws_files = Aws.instance_variable_set(:@shared_config, nil)
+
+  # The variables that would end the chain before it reads the files.
+  around do |example|
+    names = %w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE AWS_DEFAULT_PROFILE
+               AWS_ROLE_ARN AWS_WEB_IDENTITY_TOKEN_FILE AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+               AWS_CONTAINER_CREDENTIALS_FULL_URI]
+    with_env(names.to_h { [it, nil] }) do
+      forget_aws_files
+      example.run
+    ensure
+      forget_aws_files
+    end
+  end
+
+  it "finds no credentials, without reading the real ~/.aws or asking the EC2 metadata endpoint" do
+    expect(Aws::InstanceProfileCredentials).not_to receive(:new)
+
+    credentials = NoRealCredentials.with_trapped_home do
+      Aws::BedrockRuntime::Client.new(region: "us-east-1").config.credentials
+    end
+
+    expect(credentials).to be_nil
   end
 end
