@@ -70,6 +70,16 @@ RSpec.describe IsolatedInstall do
     expect(probe("puts ENV.keys.grep(/\\ABUNDLE/).sort", leak)).to eq("")
   end
 
+  # The runtime boundary check builds an Anthropic::Client in the child,
+  # whose constructor reads the anthropic config dir, so the child gets the
+  # spec process's empty one, not the parent's or the default
+  # ~/.config/anthropic.
+  it "points the child's anthropic config dir at the specs' empty one" do
+    leak = { "ANTHROPIC_CONFIG_DIR" => File.join(@dir, "real-anthropic") }
+
+    expect(probe("puts ENV['ANTHROPIC_CONFIG_DIR']", leak)).to eq("#{NoRealCredentials::DIR}\n")
+  end
+
   it "still passes its own GEM_HOME and GEM_PATH to the child" do
     home = File.realpath(@install.home)
 

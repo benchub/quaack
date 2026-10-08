@@ -15,6 +15,17 @@ RSpec.describe "the spec-time network guard" do
 
   let(:client) { Anthropic::Client.new(api_key: "k", base_url: "http://127.0.0.1:9", max_retries: 0) }
 
+  # The client's constructor reads the anthropic config dir's active_config
+  # even with an api_key. Under a HOME whose ~/.config/anthropic would raise
+  # on that read, building one still works, so it never reads the real one.
+  it "builds the gem's own client without reading the real ~/.config/anthropic" do
+    client = NoRealCredentials.with_trapped_home do
+      Anthropic::Client.new(api_key: "k", base_url: "http://127.0.0.1:9", max_retries: 0)
+    end
+
+    expect(client.base_url.to_s).to start_with("http://127.0.0.1:9")
+  end
+
   it "refuses a request that would reach the network from the gem's own client" do
     expect { create(client) }.to raise_error(NoNetwork::Refused, /QUAACK_ALLOW_REAL_LLM/)
   end

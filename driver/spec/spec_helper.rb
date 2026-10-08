@@ -16,6 +16,7 @@ ENV["QUAACK_SPECS"] = "1"
 # driver gem. Without it, quaacks refuses with driver_present.
 ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 require_relative "../../spec/support/no_network"
+require_relative "../../spec/support/no_real_credentials"
 
 # Runs Ruby in a child process that inherits this bundle. Specs use it so
 # that what they check (running an executable) happens in a clean process,
