@@ -7578,3 +7578,15 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 - **Decided by the user (2026-10-08), on the builder's survey (170 to 200 sendable rules):** specific messages only for the rules an operator can act on (input, intake, config, connections, run server, arena and racetrack setup, pg_dump, store, run state); every other rule gets one shared line: "QUAACK hit an internal check it can't recover from. This is a QUAACK bug: report the rule name and the step." The enclave publishes its list of sendable rules, and a spec checks every rule is either messaged or marked internal. The list is an enclave change, so it goes in the next batch.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261007-29 (commits 50277436, 9c05724c, f8196ad6, bd584376) after a fix round. The second review was clean; the minors from both reviews are in 20261008-16.
+
+### 20261008-3. `not_in_to_not_exists`: support a subquery that is a set operation.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to a subquery that is a set operation (`NOT IN (SELECT ... UNION SELECT ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+
+Also, from the review of 20261008-2: (a) a row comparison on a type whose `=` isn't a btree operator (such as `box`) errors in Postgres but the NOT EXISTS rewrite returns rows, so refuse a row-valued NOT IN unless every pair's `=` is a btree operator; (b) add a test with a second shadowing FROM item that isn't a table (`public.grants u, generate_series(1, 2) g` tested by `(u.id, g.x)`).
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-3 (commits 43300055, b8fab7f4, 658b557b). Review had no blocking findings; its minors went to 20261008-20.

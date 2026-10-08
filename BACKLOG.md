@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-44 (distinct_join_to_exists: subqueries in conditions on the kept table).
 - 20261008-6 (or_to_union: composite keys).
 - 20261007-29 (protocol: Protocol::ErrorRules, the published list of enclave rules).
+- 20261008-3 (not_in_to_not_exists: UNION subqueries, btree check on row pairs).
 
 ## How this file works.
 
@@ -2155,16 +2156,7 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 
 ### 20261008-2. `not_in_to_not_exists`: support row-valued `NOT IN`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-3. `not_in_to_not_exists`: support a subquery that is a set operation.
-
-One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to a subquery that is a set operation (`NOT IN (SELECT ... UNION SELECT ...)`). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-
-Also, from the review of 20261008-2: (a) a row comparison on a type whose `=` isn't a btree operator (such as `box`) errors in Postgres but the NOT EXISTS rewrite returns rows, so refuse a row-valued NOT IN unless every pair's `=` is a btree operator; (b) add a test with a second shadowing FROM item that isn't a table (`public.grants u, generate_series(1, 2) g` tested by `(u.id, g.x)`).
-- **Depends on:** 20261007-38.
-- **Came from:** The split of 20261007-38, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-3. `not_in_to_not_exists`: support a subquery that is a set operation. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE.
 
@@ -2294,4 +2286,16 @@ The review of 20261007-25 found that no spec covers `token_limit_param` inside a
 - **Depends on:** 20261007-25.
 - **Came from:** The review of 20261007-25, 2026-10-08.
 - **Design:** LLM providers.
+- **Status:** todo
+
+### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3.
+
+The review of 20261008-3 found these minor issues:
+
+1. **No test covers the recursion in `Columns.deduped?`.** That's the check for a UNION without ALL nested under a UNION ALL. Cutting it to `!sub.all` stays green. Test `(SELECT t.b ... UNION SELECT r.b ...) UNION ALL SELECT q.b ...` on `box` columns. Postgres errors on the original, and the mutated rule would rewrite it.
+2. **The branch type check refuses more than it needs to.** It compares branch types with their typmod (through `format_type`), so `varchar(10) UNION varchar(20)` is refused even though the rewrite would be sound. Consider comparing types without the typmod. Either way, say in the docs page and DESIGN.md how typmods are treated.
+
+- **Depends on:** 20261008-3.
+- **Came from:** The review of 20261008-3, 2026-10-08.
+- **Design:** rewrite-rules.
 - **Status:** todo
