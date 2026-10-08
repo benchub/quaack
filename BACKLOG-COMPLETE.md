@@ -6729,3 +6729,13 @@ From the review of 20261006-19. Changing `runs.take(1)` to `runs.last(1)` in `en
 - **Design:** measure.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. A stable fixture whose runs differ only in Execution Time pins that the first run's plan is the one stored; keeping the last, the middle, or the slowest run turns it red. Test only.
+
+### 20261007-22. `CastlessIndex`: the IndexCandidate::Error rescue is untested.
+
+From the review of 20260926-56. In `enclave/lib/quaack/enclave/castless_index.rb`, narrowing the rescue to `Deparse::Error` alone breaks no spec. It looks unreachable, since the predicate comes from a candidate that already passed `parse_predicate`. Prove it unreachable and drop the rescue, or add a spec that reaches it.
+
+- **Depends on:** 20260926-56.
+- **Came from:** The review of 20260926-56.
+- **Design:** input.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. The IndexCandidate::Error rescue in `CastlessIndex.predicate` was unreachable: every candidate's predicate comes through the constructor's normalization, which already round-trips the exact text `parse_predicate` reads. It's removed; `Deparse::Error` stays. Enclave change (dead code only), unreleased until the next batch bump.

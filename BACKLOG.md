@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-3 (statistics hardening).
 - 20261001-4 (refused candidates never best in the index payload).
 - 20261007-9 (racetrack catalog names qualified; denormalized-equal uses each type's own `=`).
+- 20261007-22 (an unreachable rescue removed).
 
 ## How this file works.
 
@@ -2211,14 +2212,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 - **Design:** qualify.
 - **Status:** todo
 
-### 20261007-22. `CastlessIndex`: the IndexCandidate::Error rescue is untested.
-
-From the review of 20260926-56. In `enclave/lib/quaack/enclave/castless_index.rb`, narrowing the rescue to `Deparse::Error` alone breaks no spec. It looks unreachable, since the predicate comes from a candidate that already passed `parse_predicate`. Prove it unreachable and drop the rescue, or add a spec that reaches it.
-
-- **Depends on:** 20260926-56.
-- **Came from:** The review of 20260926-56.
-- **Design:** input.
-- **Status:** todo
+### 20261007-22. `CastlessIndex`: the IndexCandidate::Error rescue is untested. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-23. Driver run records and config: minors from 20261001-14 and 20261001-15.
 
