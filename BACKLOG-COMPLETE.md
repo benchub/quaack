@@ -7228,3 +7228,16 @@ From the builder and reviews of 20261007-54.
 - **Design:** LLM providers, trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The error-detail scrub also covers every bearer token the Anthropic adapter actually sent (so an `ant auth login` profile token too), a password or user in `base_url`, and its path segments of 16 characters or more. Secrets of 16 characters or more are scrubbed anywhere; shorter ones only as whole tokens, so `anthropic-version` stays readable. `LLM::URL` now refuses a `base_url` that `URI.parse` rejects, since the anthropic gem would otherwise raise with the whole URL, key included, in its message. DESIGN.md lists the two cases left unsupported in v1.
+
+### 20261007-59. Pairing: minors from 20261007-17.
+
+From the review of 20261007-17.
+1. No test covers `require_different` with no recorded author: dropping the author nil check from `Pairing#active?` stays green, and would crash with a NoMethodError once every provider fails. Add a test that it falls back to the usual "every LLM provider ... failed" error.
+2. The capitalization of the pairing warning after another warning in `Cautions#warning` has no test.
+3. Rule-made and operator rewrites are recorded as `unchecked`, where DESIGN.md's outcomes imply "not applicable". Update DESIGN.md's provenance section, or tell those rewrites apart in the pipeline (for example, by a missing `rewrites` entry in a record that otherwise has llm-rewrites data).
+
+- **Depends on:** 20261007-17.
+- **Came from:** The review of 20261007-17.
+- **Design:** Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. A spec pins that `require_different` with no recorded author fails with the usual every-provider error, and another pins the pairing warning's capital after an earlier warning. DESIGN.md's provenance section says the record can't tell a rule-made or operator rewrite from an LLM rewrite with no recorded author, so unless the pairing is `any` (wording fixed at landing) it records both as couldn't be checked, and the report tells them apart by source.

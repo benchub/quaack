@@ -2244,17 +2244,7 @@ From the review of 20261007-51. Neither is new in that task.
 - **Design:** trust boundary, assumption checks.
 - **Status:** todo
 
-### 20261007-59. Pairing: minors from 20261007-17.
-
-From the review of 20261007-17.
-1. No test covers `require_different` with no recorded author: dropping the author nil check from `Pairing#active?` stays green, and would crash with a NoMethodError once every provider fails. Add a test that it falls back to the usual "every LLM provider ... failed" error.
-2. The capitalization of the pairing warning after another warning in `Cautions#warning` has no test.
-3. Rule-made and operator rewrites are recorded as `unchecked`, where DESIGN.md's outcomes imply "not applicable". Update DESIGN.md's provenance section, or tell those rewrites apart in the pipeline (for example, by a missing `rewrites` entry in a record that otherwise has llm-rewrites data).
-
-- **Depends on:** 20261007-17.
-- **Came from:** The review of 20261007-17.
-- **Design:** Several LLM providers.
-- **Status:** todo
+### 20261007-59. Pairing: minors from 20261007-17. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-60. Fan-out: minors from 20261007-18.
 
