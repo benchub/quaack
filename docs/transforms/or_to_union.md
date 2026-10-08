@@ -16,8 +16,11 @@ It leaves a query alone when:
 - Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column or a bare `*`, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
 - A select-list entry with no `AS` has a column in it but isn't a column, a function call, or an operator, such as a cast, a `COALESCE`, or a `CASE` over a column. A cast takes its name from its column, which the `UNION` renames, so the rule leaves all of these alone.
 - It uses a column of a type `UNION` can't compare, such as `json`.
+- An arm of the `OR`, its subqueries included, has something that can raise an error on some rows: a cast, a function call, or an operator other than a comparison (such as `/` or `%`) over a column, an index into a column, or a subquery used as a value. One with no column in it, such as `'10'::int`, is fine.
 
-Each arm of the split `OR` runs on its own, so an arm runs on rows the original might never have run it on. An arm that raises an error on some rows, as `i.total / i.qty > 10` does where `i.qty = 0`, can make the rewrite fail where the original returns rows, as in `i.qty = 0 OR i.total / i.qty > 10 OR o.vip`. It never gives wrong rows. The original doesn't avoid that error either: Postgres doesn't promise the order it evaluates an `OR`'s arms in, or that it stops at the first true one, so it's free to fail the original the same way.
+That last refusal matters because Postgres runs an `OR`'s arms in order and stops at the first true one. In `o.vip OR i.total / i.qty > 10`, the first arm keeps the division from running on a VIP's rows, where `i.qty` may be 0. Split, each arm runs on its own, and the division would raise where the original returns rows.
+
+Arms with no subquery that read the same tables stay together in one query of the `UNION`, as an `OR` in their order. So `i.qty = 0 OR i.total > 10 OR o.vip` becomes two queries, not three.
 
 ## What it rests on.
 
