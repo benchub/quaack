@@ -37,6 +37,15 @@ RSpec.describe Quaack::Enclave::ValuePools do
     expect(described_class.boundaries("character varying(20)")).to eq(["", "~"])
   end
 
+  # format_type names pg_catalog's text with its schema when public's text
+  # sits ahead of it on the search_path (task 20261007-41).
+  it "gives pg_catalog's text its boundaries when format_type names it with its schema" do
+    conn.exec("CREATE DOMAIN public.text AS pg_catalog.text; SET search_path = public, pg_catalog")
+    p = pool("o.status = 'open'")
+
+    expect([p.type, p.boundaries]).to eq(["pg_catalog.text", ["", "~"]])
+  end
+
   it "sorts the literal, a unit either side, and the type's boundaries for an integer equality" do
     p = pool("o.qty = 5")
     expect(p.satisfying).to eq(["5"])

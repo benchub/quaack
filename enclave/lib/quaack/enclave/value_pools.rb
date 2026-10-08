@@ -120,7 +120,10 @@ module Quaack
       def boundaries(type)
         return [] if type.end_with?("]")
 
-        BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
+        # format_type names pg_catalog's type with its schema when the
+        # search_path finds another of that name first.
+        name = type.delete_prefix("pg_catalog.")
+        BOUNDARIES.find { |pattern, _| pattern.match?(name) }&.last || []
       end
 
       def pool(conn, parse, atom, schema, probe = nil)
