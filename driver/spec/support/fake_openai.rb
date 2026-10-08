@@ -98,14 +98,16 @@ class FakeOpenAI
   # Queues one attempt for step that fails to connect, the way a dropped
   # network does before the request goes out. `message` is the error's.
   def drop(step, message: "fake dropped connection")
-    @scripts[step] << [:drop, message]
+    @scripts[step] << lambda { |url|
+      raise OpenAI::Errors::APIConnectionError.new(url:, message:, request_may_have_been_sent: false)
+    }
     self
   end
 
   # Queues one attempt for step that times out, the way the gem's HTTP
   # client raises it, with the gem's own message.
   def timeout(step)
-    @scripts[step] << :timeout
+    @scripts[step] << ->(url) { raise OpenAI::Errors::APITimeoutError.new(url:) }
     self
   end
 
@@ -137,11 +139,8 @@ class FakeOpenAI
     @asks << Ask.new(step: step, body: JSON.parse(request.body, symbolize_names: true), url: request.url.to_s)
     scripted = @scripts[step].shift
     raise Unscripted, "FakeOpenAI has no answer scripted for step #{step}" unless scripted
-    raise OpenAI::Errors::APITimeoutError.new(url: request.url) if scripted == :timeout
-    if scripted.first == :drop
-      raise OpenAI::Errors::APIConnectionError.new(url: request.url, message: scripted.last,
-                                                   request_may_have_been_sent: false)
-    end
+
+    scripted.call(request.url) if scripted.is_a?(Proc)
 
     status, headers, body = scripted
     OpenAI::HTTPClient::Response.new(status: status, headers: headers,

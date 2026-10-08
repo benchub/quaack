@@ -194,16 +194,35 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(sans_sizes(ask_error.message)).to match(/\Allm_bad_request: .*sentinel reason\z/)
     end
 
-    it "puts the whole JSON body in the detail when its error has no message" do
-      fake.error_body("llm-index-ideas", status: 400, body: { error: { type: "sentinel_type" } })
+    # A body with no message can hold anything a gateway echoes, so it's
+    # left out, as the Anthropic adapter leaves it out.
+    it "shows only the status when the body has no message, never the body or the URL" do
+      fake.error_body("llm-index-ideas", status: 400, body: { error: { type: "SENTINEL-TYPE" }, debug: "SENTINEL" })
+          .error_body("llm-index-ideas", status: 500, body: "<html>SENTINEL text body</html>")
+          .error_body("llm-index-ideas", status: 502, body: { error: { message: ["SENTINEL-NOT-TEXT"] } })
+          .error_body("llm-index-ideas", status: 422, body: { error: { message: "" } })
+          .error_body("llm-index-ideas", status: 404, body: { detail: "SENTINEL-DETAIL" })
+      client = fake.client(burndown:, max_retries: 0)
 
-      expect(sans_sizes(ask_error.message)).to end_with(JSON.generate("error" => { "type" => "sentinel_type" }))
+      seen = Array.new(5) do
+        client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(seen.map { sans_sizes(it.message) })
+        .to eq(["llm_bad_request: the API answered 400", "llm_unavailable: the API answered 500",
+                "llm_unavailable: the API answered 502", "llm_bad_request: the API answered 422",
+                "llm_bad_request: the API answered 404"])
+      expect(seen.map { error_text(it) }.join).not_to include("SENTINEL", "llm.example.com")
     end
 
-    it "puts a text body in the detail as it is" do
-      fake.error_body("llm-index-ideas", status: 400, body: "sentinel text body")
+    it "asks again without response_format when a body with no message names it" do
+      fake.error_body("llm-index-ideas", status: 400, body: "response_format isn't supported")
+          .reply("llm-index-ideas", { "ddl" => [] })
 
-      expect(sans_sizes(ask_error.message)).to end_with("sentinel text body")
+      expect(ask(schema: schema)).to eq("ddl" => [])
+      expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, false])
     end
 
     # A gateway's error body can carry more than its message, such as the
