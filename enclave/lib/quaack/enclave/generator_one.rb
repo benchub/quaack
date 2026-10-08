@@ -40,8 +40,10 @@ module Quaack
     # is held to one value, as by
     # = const. A reference to a CTE isn't a table. A subquery or function
     # in FROM has no table's columns, so its columns are skipped in the
-    # query it's in, but a join to one still counts for the table on the
-    # other side.
+    # query it's in. A join condition to one touches only the table on the
+    # other side, so it counts as that table's ON conjunct does (see Outer
+    # joins): always for an inner join, but for an outer join only when
+    # that table is on the side that isn't preserved.
     #
     # Which columns. A column qualified by an alias, a table name without an
     # alias, or schema and table belongs to that table. An unqualified one

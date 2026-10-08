@@ -581,6 +581,15 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                 ["customers", %w[region], []]])
     end
 
+    it "counts an outer join to a subquery only for a table on the join's nullable side" do
+      subquery = "(SELECT id FROM public.customers) s"
+      preserved = "SELECT 1 FROM public.orders o LEFT JOIN #{subquery} ON s.id = o.customer_id"
+      nullable = "SELECT 1 FROM #{subquery} LEFT JOIN public.orders o ON o.customer_id = s.id"
+
+      expect(keys(generate(preserved, stats))).to eq([])
+      expect(keys(generate(nullable, stats))).to eq([["orders", %w[customer_id], []]])
+    end
+
     it "gives the tables inside a CTE their own candidates, before the query, a set operation read per branch" do
       sql = "WITH c AS (SELECT id FROM public.customers WHERE region = 1 " \
             "UNION SELECT id FROM public.orders WHERE status = 2) " \
