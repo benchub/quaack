@@ -49,7 +49,9 @@ module Quaack
       # in lower('bob')), compared with another constant, or standing alone
       # (true), fails. So does a cast's type modifier outside those
       # comparisons (flag::varchar(10)). A predicate with no constants
-      # passes.
+      # passes. A cast's array bounds, as in status::text[12345], aren't
+      # checked, like integer type modifiers: the grammar takes only an
+      # integer there, so it's shape, not a value.
       def constants_compared_with_columns?(sql) = !stray_constant?(IndexSql.parse_predicate(sql))
 
       def stray_constant?(node)
@@ -73,9 +75,10 @@ module Quaack
         return false unless node.is_a?(PgQuery::A_Expr) && COMPARISONS.include?(node.kind)
         return false unless comparison_operator?(node)
 
-        left = unwrap(node.lexpr)
+        # column? and constant? unwrap a node themselves, but constant_list?
+        # needs the List that IN and BETWEEN put on the right.
         right = unwrap(node.rexpr)
-        column_and_value?(left, right) || column_and_value?(right, left)
+        column_and_value?(node.lexpr, right) || column_and_value?(right, node.lexpr)
       end
 
       # An operator name may come with a schema, as in

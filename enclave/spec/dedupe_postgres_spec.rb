@@ -7,7 +7,7 @@ require "quaack/enclave/pg_array"
 
 # Checks Dedupe.covers? against the planner. For each case, a real index
 # stands for the existing index, read back through pg_get_indexdef and
-# IndexCandidate.from_ddl, as DESIGN.md's schema-dump will read it. The candidate is
+# IndexCandidate.from_indexdef, as PlannerStatistics reads it. The candidate is
 # created with HypoPG, as index-test would. The query is one the candidate
 # serves on its own: the planner scans the candidate, with no sort, no
 # filter on the scan, and an index-only scan when the candidate has INCLUDE
@@ -20,8 +20,8 @@ RSpec.describe "Dedupe.covers? against the planner" do
   before do
     conn.exec(<<~SQL)
       CREATE EXTENSION IF NOT EXISTS hypopg;
-      CREATE TABLE t (a int, b int, c int, d int, s text);
-      INSERT INTO t SELECT i % 1000, i % 7, i, i * 2, md5(i::text) FROM generate_series(1, 100000) AS i;
+      CREATE TABLE t (a int, b int, c int, d int, s text, f bool);
+      INSERT INTO t SELECT i % 1000, i % 7, i, i * 2, md5(i::text), i % 7 = 0 FROM generate_series(1, 100000) AS i;
     SQL
     conn.exec("VACUUM ANALYZE t")
   end
@@ -55,7 +55,7 @@ RSpec.describe "Dedupe.covers? against the planner" do
   def existing_index(definition, unique:)
     conn.exec("CREATE #{"UNIQUE " if unique}INDEX existing_idx ON t #{definition}")
     ddl = conn.exec("SELECT pg_get_indexdef('existing_idx'::regclass)").getvalue(0, 0)
-    Quaack::Enclave::IndexCandidate.from_ddl(ddl, sources: [:existing])
+    Quaack::Enclave::IndexCandidate.from_indexdef(ddl)
   end
 
   def candidate(**)
@@ -149,7 +149,21 @@ RSpec.describe "Dedupe.covers? against the planner" do
       query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
     { name: "the same collation", existing: "(s COLLATE \"C\")",
       candidate: { key: [expr_key(name: "s", collation: "C")] },
-      query: "SELECT * FROM t ORDER BY s COLLATE \"C\" LIMIT 10", covered: true }
+      query: "SELECT * FROM t ORDER BY s COLLATE \"C\" LIMIT 10", covered: true },
+    # Options that don't change what an index serves (20260923-36).
+    { name: "an index with a fillfactor", existing: "(a, b) WITH (fillfactor = 70)", candidate: { key: ["a"] },
+      query: "SELECT * FROM t WHERE a = 5", covered: true },
+    { name: "an index without deduplication", existing: "(a) WITH (deduplicate_items = off)",
+      candidate: { key: ["a"] }, query: "SELECT * FROM t WHERE a = 5", covered: true },
+    { name: "a NULLS NOT DISTINCT unique index", existing: "(c, a) NULLS NOT DISTINCT", unique: true,
+      candidate: { key: ["c"] }, query: "SELECT * FROM t WHERE c = 5", covered: true },
+    # pg_get_indexdef keeps f = true as written, and the planner folds it.
+    { name: "a bare boolean predicate under the same one compared with true", existing: "(a) WHERE f = true",
+      candidate: { key: ["a"], predicate: "f" },
+      query: "SELECT * FROM t WHERE a = 5 AND f", covered: true },
+    { name: "a NOT predicate under the same one compared with false", existing: "(a) WHERE f = false",
+      candidate: { key: ["a"], predicate: "NOT f" },
+      query: "SELECT * FROM t WHERE a = 5 AND NOT f", covered: true }
   ].freeze
 
   cases.each do |c|

@@ -189,7 +189,7 @@ module Quaack
       #
       # An existing index that IndexCandidate couldn't represent (nil in
       # TableStatistics#indexes), such as one with an opclass that takes
-      # parameters or NULLS NOT DISTINCT, never covers anything. The shape can't say
+      # parameters, never covers anything. The shape can't say
       # what it serves, so the candidate gets tested.
       def self.covers?(index, candidate) = Coverage.covers?(index, candidate)
 

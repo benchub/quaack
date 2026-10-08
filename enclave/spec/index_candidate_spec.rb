@@ -362,6 +362,25 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     it "keeps casts, which don't normalize away" do
       expect(candidate(predicate: "status::text = 'open'")).not_to eq(candidate(predicate: "status = 'open'"))
     end
+
+    # pg_get_indexdef keeps WHERE (deleted = true) as written, and the
+    # planner folds it to deleted, so the two must make equal candidates.
+    it "folds a column compared with true or false to the bare boolean test" do
+      {
+        "(deleted = true)" => "deleted", "true = deleted" => "deleted", "deleted <> false" => "deleted",
+        "(active = false)" => "NOT active", "false = active" => "NOT active", "active <> true" => "NOT active",
+        "(a > 1) AND (deleted = true) AND (active = false)" => "a > 1 AND deleted AND NOT active"
+      }.each do |written, folded|
+        expect(candidate(predicate: written).predicate).to eq(folded), written
+        expect(candidate(predicate: written)).to eq(candidate(predicate: folded)), written
+      end
+    end
+
+    it "leaves a boolean compared with anything but a column, or with a cast constant, as written" do
+      expect(candidate(predicate: "(a > 1) = true").predicate).to eq("(a > 1) = true")
+      expect(candidate(predicate: "deleted = 'yes'").predicate).to eq("deleted = 'yes'")
+      expect(candidate(predicate: "deleted IS TRUE").predicate).to eq("deleted IS TRUE")
+    end
   end
 
   describe "what each built-in method supports" do
@@ -654,6 +673,51 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       ["SELECT 1", "CREATE INDEX ON public.t (a); CREATE INDEX ON public.t (b)", "CREATE INDEX ON"].each do |bad|
         expect { from_ddl(bad) }.to raise_error(invalid, /CREATE INDEX/), bad
       end
+    end
+  end
+
+  # The pg_get_indexdef text here comes from a real Postgres 18.
+  describe ".from_indexdef" do
+    def from_indexdef(sql) = described_class.from_indexdef(sql)
+
+    it "reads an existing index with WITH storage parameters as the same index without them" do
+      ["CREATE INDEX i1 ON public.orders USING btree (a) WITH (fillfactor='70')",
+       "CREATE INDEX i2 ON public.orders USING btree (a) WITH (deduplicate_items=off)"].each do |ddl|
+        expect(from_indexdef(ddl)).to eq(candidate(key: ["a"])), ddl
+      end
+    end
+
+    it "reads a NULLS NOT DISTINCT unique index as unique" do
+      index = from_indexdef("CREATE UNIQUE INDEX i3 ON public.orders USING btree (a, b) NULLS NOT DISTINCT")
+
+      expect(index).to eq(candidate(key: %w[a b], unique: true))
+    end
+
+    it "reads a column compared with true or false as the bare boolean test" do
+      expect(from_indexdef("CREATE INDEX i4 ON public.orders USING btree (a) WHERE (deleted = true)"))
+        .to eq(candidate(key: ["a"], predicate: "deleted"))
+      expect(from_indexdef("CREATE INDEX i5 ON public.orders USING btree (a) WHERE (active = false)"))
+        .to eq(candidate(key: ["a"], predicate: "NOT active"))
+    end
+
+    it "gives sources [:existing]" do
+      expect(from_indexdef("CREATE INDEX i ON public.orders USING btree (a)").sources).to eq(Set[:existing])
+    end
+
+    # Postgres prints ON ONLY only for an index on a partitioned table,
+    # and v1 refuses a query on one (relations' partitioned_relation).
+    it "still returns nil for what it can't represent, such as ON ONLY and TABLESPACE" do
+      ["CREATE INDEX pi ON ONLY public.p USING btree (a)",
+       "CREATE INDEX i ON public.orders USING btree (a) TABLESPACE fast"].each do |ddl|
+        expect(from_indexdef(ddl)).to be_nil, ddl
+      end
+    end
+
+    it "leaves from_ddl refusing what it drops" do
+      expect(described_class.from_ddl("CREATE INDEX i1 ON public.orders USING btree (a) WITH (fillfactor='70')",
+                                      sources: [:llm])).to be_nil
+      expect(described_class.from_ddl("CREATE UNIQUE INDEX i ON public.orders USING btree (a) NULLS NOT DISTINCT",
+                                      sources: [:llm])).to be_nil
     end
   end
 end

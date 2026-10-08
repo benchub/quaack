@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "deparse"
 require_relative "index_candidate_error"
+require_relative "boolean_fold"
 
 module Quaack
   module Enclave
@@ -92,8 +93,10 @@ module Quaack
         AGGREGATE_AND_WINDOW_FUNCTIONS.include?(name) && [[], ["pg_catalog"]].include?(schema)
       end
 
-      # The predicate as pg_query deparses it.
-      def normalize_predicate(sql) = deparse_predicate(parse_predicate(sql)).freeze
+      # The predicate as pg_query deparses it, with each column compared
+      # with true or false folded to the bare test (see BooleanFold), so
+      # WHERE (deleted = true) and WHERE deleted make equal candidates.
+      def normalize_predicate(sql) = deparse_predicate(BooleanFold.fold(parse_predicate(sql))).freeze
 
       # The predicate node as SQL. pg_query's deparser can write an
       # expression that means something else, such as (a = 1) IS NOT
@@ -105,9 +108,11 @@ module Quaack
         raise IndexCandidateError, "#{what} changes meaning when pg_query deparses it", cause: nil
       end
 
-      # See IndexCandidate.from_ddl.
-      def read_index(sql, sources)
+      # See IndexCandidate.from_ddl and from_indexdef. With existing, WITH
+      # storage parameters and NULLS NOT DISTINCT are dropped first.
+      def read_index(sql, sources, existing: false)
         stmt = parse_index_stmt(sql)
+        drop_existing_options(stmt) if existing
         candidate = candidate_from(stmt, sources)
         candidate if candidate&.to_ddl == PgQuery.deparse_stmt(comparable(stmt))
       end
@@ -138,17 +143,29 @@ module Quaack
         nil
       end
 
+      # Storage parameters, such as fillfactor or deduplicate_items, change
+      # how the index is stored, not what it can answer. A NULLS NOT
+      # DISTINCT unique index is a btree on the same columns whose
+      # uniqueness is stricter than plain UNIQUE, so reading it as plain
+      # unique only understates it.
+      def drop_existing_options(stmt)
+        stmt.options.clear
+        stmt.nulls_not_distinct = false
+      end
+
       # nil for an unqualified table, which the constructor refuses.
       def table_name(range_var)
         TableName.new(schema: range_var.schemaname, name: range_var.relname) unless range_var.schemaname.empty?
       end
 
       # Changes the parsed statement in place to what to_ddl would render: no
-      # name, and each key column as IndexKeySql.comparable leaves it.
+      # name, each key column as IndexKeySql.comparable leaves it, and the
+      # predicate's booleans folded, as the constructor stores them.
       # CONCURRENTLY and IF NOT EXISTS stay, so from_ddl returns nil for
       # them. pg_get_indexdef never prints either.
       def comparable(stmt)
         stmt.idxname = ""
+        stmt.where_clause = BooleanFold.fold(stmt.where_clause) if stmt.where_clause
         stmt.index_params.each { |n| IndexKeySql.comparable(n.index_elem) }
         stmt
       end
