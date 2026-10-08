@@ -7705,3 +7705,15 @@ Still open from the build and reviews of 20260922-16:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-24 (commits 48cd01ac, 7b852462, 5b5fb6bc). Review had no blocking findings. The pg_catalog qualification was already done. The review's minors and the builder's keepalive note went to 20261008-30.
+
+### 20260923-57. Rewrite candidate check loose ends.
+
+Still open from the reviews of 20260922-10:
+- `RewriteCandidateCheck` still has its own qualify and `plain_table!`. Switch it to `Relations.check`, so its non-table rules become per-kind. Its spec expectations change with it.
+
+- **Depends on:** 20260922-10.
+- **Came from:** The reviews of 20260922-10.
+- **Design:** What goes into the enclave.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260923-57 (commits 13575877, 59be0414, 272f3382, 6d829843) after a fix round. The second review was clean. Its findings on main's behavior went to 20261008-31 and -32, and the first review's minors are in 20261008-29.

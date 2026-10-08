@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-8 (burndown: once-per-search refusals, proposals check, unrenderable counted on its own).
 - 20260923-36 (index-dedupe: WITH and NULLS NOT DISTINCT existing indexes cover, boolean folding).
 - 20260924-24 (inventory: production read timeout, null config commands refused, memory cap, ShellCommand drain).
+- 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
 
 ## How this file works.
 
@@ -251,16 +252,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260923-56. Finish 5a-4, second pass. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-57. Rewrite candidate check loose ends.
-
-Still open from the reviews of 20260922-10:
-- `RewriteCandidateCheck` still has its own qualify and `plain_table!`. Switch it to `Relations.check`, so its non-table rules become per-kind. Its spec expectations change with it.
-
-- **Depends on:** 20260922-10.
-- **Came from:** The reviews of 20260922-10.
-- **Design:** What goes into the enclave.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260923-57. Rewrite candidate check loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-58. Enclave CLI loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2333,4 +2325,36 @@ The build and review of 20260924-24 found these:
 - **Depends on:** 20260924-24.
 - **Came from:** The builder and review of 20260924-24, 2026-10-08.
 - **Design:** inventory.
+- **Status:** todo
+
+### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists.
+
+The second review of 20260923-57 found this. It's already true on main, and 20260923-57 neither causes it nor makes it worse. It's the same kind of leak that review treated as blocking, so take it up soon.
+
+The candidate check compares relations against the original's set, but it never sees a name inside a string literal:
+
+- **Qualified literal.** A candidate with `'anyschema.t'::regclass` is accepted. It plans when `t` exists and fails to plan when it doesn't. The LLM can use that to probe whether any relation exists in the racetrack, which holds production's schema.
+- **Unqualified literal.** With the role QUAACK connects as, an unqualified `'sent_t'::regclass` is accepted when that role's schema holds `sent_t`. When it doesn't, the inbound check refuses it as `unknown_relation`.
+
+The fix is to check the relations named in regclass literals against the original's set, or to refuse regclass literals (and regtype and the rest) in candidates unless the original has the same literal. Test it with sentinel relations that the original doesn't use, and assert that a hidden name and a missing one get the same outcome.
+
+- **Depends on:** 20260923-57.
+- **Came from:** The second review of 20260923-57, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible.
+
+The second review of 20260923-57 found these. Both are already true on main.
+
+1. **Existence shows in the outcome.** A candidate can name any function, type, collation, or operator, even ones the original doesn't use, and its outcome shows whether that name exists:
+   - A qualified `hidden.vfn()` gets `volatile_function` when the function exists and is volatile, and the error line names it. When it doesn't exist, the candidate fails later as `failed_to_plan`.
+   - In the schema of the role QUAACK connects as, an unqualified name that exists plans, and one that doesn't fails to plan.
+
+   It needs a decision: how much of the catalog's contents outside the query is secret from the LLM? One option is to limit candidates to the original's non-relation names plus pg_catalog's. Another is to accept this and document it.
+2. **New bare names skip the `"$user"` check.** When more than one schema on the path has a function or operator, `NameQualifier` leaves the name bare, and it resolves at run time through the plan's search path. `UserSchema` at intake covers only the original's names. So a rewrite that adds a new overloaded name could be tested against a different object than the application's role would get. That happens only when a schema named for a role holds an overload of that name.
+
+- **Depends on:** 20260923-57.
+- **Came from:** The second review of 20260923-57, 2026-10-08.
+- **Design:** What goes into the enclave.
 - **Status:** todo
