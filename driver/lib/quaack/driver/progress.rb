@@ -302,9 +302,11 @@ module Quaack
         # (llm-rewrites)" does under "Asking the LLM for rewrites of the
         # query (llm-rewrites)". With no name, as for a sub-step, any ID will
         # do, since its ask names the LLM's step, such as
-        # llm-counterexamples under counterexamples.
+        # llm-counterexamples under counterexamples. An ask that names its
+        # provider after the ID, such as "(llm-rewrites, groq)", adds
+        # something, so it never repeats a line.
         def self.call(text, description, name = nil)
-          words = name ? text.delete_suffix(" (#{name})") : text.sub(/ \([^()]+\)\z/, "")
+          words = name ? text.delete_suffix(" (#{name})") : text.sub(/ \([^(),]+\)\z/, "")
           words != text && (description == words || description.start_with?("#{words} "))
         end
       end

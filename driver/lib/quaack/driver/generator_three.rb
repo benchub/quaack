@@ -26,6 +26,9 @@ module Quaack
     # asked for as many replacements, once. Whatever survives either round
     # goes on. A round with no DDL isn't sent to the enclave.
     #
+    # client is the LLM::Router. The first ask and its replacement round
+    # are one unit, so both go to one provider, in one session.
+    #
     # Trust boundary. The prompts carry only the payload, which is shape
     # data, the LLM's own DDL, and the enclave's shape-only outcomes.
     class GeneratorThree
@@ -91,22 +94,24 @@ module Quaack
       end
 
       def run(payload)
+        session = @client.session
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
-        first = ask(messages, "Asking the LLM for index ideas")
+        first = ask(session, messages, "Asking the LLM for index ideas")
         rounds = test([], first)
         dropped = dropped(rounds.last, first)
         return Result.new(rounds:) if dropped.empty?
 
         messages += [{ role: :assistant, content: JSON.generate("indexes" => first) },
                      { role: :user, content: replacement_ask(dropped) }]
-        Result.new(rounds: test(rounds, ask(messages, "Asking the LLM again, for replacements for the dropped ideas")))
+        again = ask(session, messages, "Asking the LLM again, for replacements for the dropped ideas")
+        Result.new(rounds: test(rounds, again))
       end
 
       private
 
       # purpose is what progress hears the ask is for.
-      def ask(messages, purpose)
-        @client.ask(step: @step, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
+      def ask(session, messages, purpose)
+        session.ask(step: @step, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
                .fetch("indexes")
       end
 

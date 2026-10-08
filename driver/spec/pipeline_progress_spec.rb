@@ -6,14 +6,17 @@ require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/pipeline"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 PROGRESS_SENTINEL = "sentinel-20261003-15-c0ffee"
 
 # Each step's closing line in `quaack run`'s progress: what the step did,
 # from its result, then its time.
 RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:stderr) { StringIO.new }
   let(:dir) { Dir.mktmpdir("quaack-progress") }
   let(:out) { File.join(dir, "report.html") }

@@ -195,7 +195,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
 
   def replayed(transport, run_id, query, variant, out)
     replies = Replies.new(query.name, variant)
-    client = E2ERun::CaseLLM.new(replies:).client(burndown: Quaack::Driver::Burndown.new)
+    client = Quaack::Driver::LLM::Router.one(E2ERun::CaseLLM.new(replies:).client(burndown: Quaack::Driver::Burndown.new))
     error = drive { Quaack::Driver::Pipeline.new(transport:, client:, run_id:, rewrites: query.rewrites, out:).run }
     Outcome.new(variant:, error:, report: error ? nil : report(transport, run_id),
                 html: (File.read(out) if File.exist?(out)),

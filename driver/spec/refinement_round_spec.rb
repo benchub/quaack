@@ -3,10 +3,13 @@
 require "quaack/driver/burndown"
 require "quaack/driver/refinement_round"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 RSpec.describe Quaack::Driver::RefinementRound do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:payload) { { "query" => "SELECT * FROM public.orders WHERE status = $1", "mechanical_results" => {} } }
   let(:short) do
     { "ddl" => "CREATE INDEX ON public.orders USING btree (created_at) WHERE status = 'held'",
@@ -41,6 +44,18 @@ RSpec.describe Quaack::Driver::RefinementRound do
     expect(ask.body[:system]).to include("revise")
     expect(tested).to eq([[["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"], "refinement"]])
     expect(result.outcomes.map { it["outcome"] }).to eq(["accepted"])
+  end
+
+  # One unit on one provider, which may not have written every candidate
+  # it's shown (DESIGN.md's llm-index-refine).
+  it "says an LLM already proposed the candidates, never that this model did" do
+    fake.reply("llm-index-refine", { "indexes" => [] })
+    run
+    ask = fake.asks.first
+    sent = [ask.body[:system], *ask.body[:messages].map { it[:content] }].join("\n")
+
+    expect(ask.body[:system]).to include("An LLM already proposed candidates")
+    expect(sent).not_to match(/\b(you|your)\b[^.]*\b(proposed|candidates)\b/i)
   end
 
   it "skips the round when nothing fell short, or when it already ran" do

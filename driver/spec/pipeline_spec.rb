@@ -7,6 +7,7 @@ require "quaack/driver/enclave_error"
 require "quaack/driver/pipeline"
 require "quaack/driver/transport/base"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 # arena-setup and index-build to selection, all stored, for specs about other steps.
 MEASURED = %w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
@@ -18,8 +19,10 @@ MEASURED = %w[arena_setup index_build baseline index_baseline candidate_runs min
 CHECK_ARGV = ->(subcommand, options) { Quaack::Driver::Transport::Base.new.send(:argv, subcommand, options.fetch(:args, {})) }
 
 RSpec.describe Quaack::Driver::Pipeline do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:payload) { { "type" => "index_payload", "query" => "SELECT 1", "mechanical_results" => {} } }
   let(:feedback) { { "type" => "index_feedback", "revise" => false, "refined" => false } }
   let(:entries) do
@@ -520,7 +523,7 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
     burndown = Quaack::Driver::Burndown.new
     burndown.llm_call("llm-index-ideas")
     burndown.llm_call("llm-index-ideas")
-    client = FakeLLM.new.client(burndown:)
+    client = Quaack::Driver::LLM::Router.one(FakeLLM.new.client(burndown:))
     t = transport(done.merge("selection" => true), "report-payload" => [report])
 
     described_class.new(transport: t, client:, run_id: "RUN", out:).run

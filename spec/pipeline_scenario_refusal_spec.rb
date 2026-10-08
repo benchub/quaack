@@ -53,7 +53,7 @@ module ScenarioRefusalRun
 
   # nil or the error that ended the run, and what the run said on stderr.
   def pipeline(transport, run_id, out)
-    client = E2ERun::CaseLLM.new.client(burndown: Quaack::Driver::Burndown.new)
+    client = Quaack::Driver::LLM::Router.one(E2ERun::CaseLLM.new.client(burndown: Quaack::Driver::Burndown.new))
     stderr = StringIO.new
     error = PipelineReplay.drive { Quaack::Driver::Pipeline.new(transport:, client:, run_id:, out:, stderr:).run }
     [error, stderr.string]

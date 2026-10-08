@@ -3,10 +3,13 @@
 require "quaack/driver/burndown"
 require "quaack/driver/rewrite_generation"
 require_relative "support/fake_llm"
+require_relative "support/routers"
 
 RSpec.describe Quaack::Driver::RewriteGeneration do
+  include Routers
+
   let(:fake) { FakeLLM.new }
-  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:client) { router_of(fake) }
   let(:payload) do
     { "query" => "SELECT * FROM public.orders WHERE id IN (SELECT order_id FROM public.items WHERE sku = $1)",
       "placeholders" => {}, "plan" => [], "schema" => {}, "stats" => {} }
@@ -59,7 +62,7 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
     fake = FakeLLM.new
     fake.reply("llm-rewrites", { "rewrites" => [] })
 
-    described_class.new(client: fake.client(burndown: Quaack::Driver::Burndown.new), rewrite_check:).run(payload)
+    described_class.new(client: router_of(fake), rewrite_check:).run(payload)
 
     expect(sent).to eq([[]])
   end

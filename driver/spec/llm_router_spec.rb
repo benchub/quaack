@@ -242,6 +242,31 @@ RSpec.describe Quaack::Driver::LLM::Router do
     end
   end
 
+  describe "the trust boundary" do
+    let(:names) { %w[sentinel-name-one sentinel-name-two] }
+
+    # Every request body sent to any provider, as JSON text.
+    def sent = fakes.values.flat_map(&:asks).map { JSON.generate(it.body) }.join("\n")
+
+    it "never puts a provider's name in any prompt, across a failover and a session's later ask" do
+      fakes["sentinel-name-one"].error("llm-index-ideas", status: 429)
+      fakes["sentinel-name-two"].reply("llm-index-ideas", "1").reply("llm-index-ideas", "2")
+      session = router.session
+      2.times { ask(session, "llm-index-ideas") }
+
+      expect(fakes.values.sum { it.asks.size }).to eq(3)
+      expect(sent).not_to include("sentinel")
+      expect(notes.join).to include("sentinel-name-one", "sentinel-name-two")
+    end
+
+    it "would catch a name planted in a prompt" do
+      fakes["sentinel-name-one"].reply("llm-rewrites", "ok")
+      router.ask(step: "llm-rewrites", messages: [{ role: "user", content: "from sentinel-name-one" }], max_tokens: 10)
+
+      expect(sent).to include("sentinel")
+    end
+  end
+
   describe "one provider from an llm block, or none" do
     let(:fake) { FakeLLM.new }
     let(:router) do

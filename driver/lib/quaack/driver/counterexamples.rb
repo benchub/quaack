@@ -17,6 +17,9 @@ module Quaack
     # literals, and the enclave binds the real value and fills any
     # foreign-key gaps (Enclave::Counterexamples).
     #
+    # client is the LLM::Router. One rewrite's rounds are one unit, so they
+    # go to one provider, in one session.
+    #
     # Trust boundary. The prompt carries only the payload, which is shape
     # data, and the LLM's own inserts.
     class Counterexamples
@@ -64,10 +67,11 @@ module Quaack
       # more run. A round whose inserts failed to load (load_failed, match
       # nil) disproves nothing, and the rounds go on.
       def run(payload, compare:)
+        session = @client.session
         messages = [payload_message(payload)]
         rounds = []
         ROUNDS.times do |round|
-          inserts = ask_with(messages, round.zero? ? FIRST : AGAIN)
+          inserts = ask_with(messages, round.zero? ? FIRST : AGAIN, session)
           rounds << Round.new(inserts:, outcome: compare.call(inserts))
           break if rounds.last.outcome["match"] == false
 
@@ -94,8 +98,8 @@ module Quaack
         { role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }
       end
 
-      def ask_with(messages, purpose = FIRST)
-        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
+      def ask_with(messages, purpose = FIRST, session = @client)
+        session.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
                .fetch("inserts")
       end
 

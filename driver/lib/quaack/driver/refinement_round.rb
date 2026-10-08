@@ -31,7 +31,7 @@ module Quaack
 
       SYSTEM = <<~PROMPT.freeze
         #{GeneratorThree::SYSTEM}
-        This is a second look. You already proposed candidates, and each was tested with HypoPG. The feedback lists them with their redacted DDL, whether the planner used each one, its cost for each literal set next to the baseline cost with no index, its estimated size, its plan, and its shortfall: "unused" if the planner never used it, or "beaten" if the simpler mechanical candidate in beaten_by did at least as well. A partial predicate that doesn't match the query, an operator class that doesn't fit the column's collation, or an expression that doesn't match the query's exactly are the usual reasons. Propose revised candidates for the ones that fell short.
+        This is a second look. An LLM already proposed candidates, and each was tested with HypoPG. The feedback lists them with their redacted DDL, whether the planner used each one, its cost for each literal set next to the baseline cost with no index, its estimated size, its plan, and its shortfall: "unused" if the planner never used it, or "beaten" if the simpler mechanical candidate in beaten_by did at least as well. A partial predicate that doesn't match the query, an operator class that doesn't fit the column's collation, or an expression that doesn't match the query's exactly are the usual reasons. Propose revised candidates for the ones that fell short.
       PROMPT
 
       Result = Data.define(:ddls, :outcomes)
@@ -72,7 +72,7 @@ module Quaack
         short = feedback["candidates"].count { it["shortfall"] }
         payload = payload.call if payload.respond_to?(:call)
         content = "The payload:\n\n```json\n#{JSON.generate(payload)}\n```\n\n" \
-                  "Your candidates' results:\n\n```json\n#{JSON.generate(feedback["candidates"])}\n```\n\n" \
+                  "The candidates' results:\n\n```json\n#{JSON.generate(feedback["candidates"])}\n```\n\n" \
                   "Baseline cost per literal set: #{JSON.generate(feedback["baseline"])}\n\n" \
                   "Propose up to #{short} revised candidates. Answer with JSON: {\"indexes\": [...]}."
         @client.ask(step: @step, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
