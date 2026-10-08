@@ -33,6 +33,14 @@ RSpec.describe Quaack::Enclave::ResultComparison::Tiebreaker do
     expect(described_class.catalog_orderable(transaction, types).sort).to eq(types.first(3).sort)
   end
 
+  # Task 20261007-32: a range of a faithful built-in, and its array.
+  it "finds the ranges of faithful built-ins" do
+    conn.exec("CREATE TYPE public.span AS RANGE (subtype = pg_catalog.int4)")
+    types = [oid("public.span"), oid("public.span[]"), oid("pg_catalog.numrange")]
+
+    expect(described_class.catalog_orderable(transaction, types).sort).to eq(types.first(2).sort)
+  end
+
   it "finds a nondeterministic collation that a column uses, or that a query names" do
     odd = %(it's "odd" \\x)
     conn.exec("CREATE COLLATION public.#{conn.quote_ident(odd)} " \

@@ -134,5 +134,14 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
       expect([catalog.default_btree?("public", "t", "born"), catalog.default_btree?("public", "t", "doc")])
         .to eq([true, false])
     end
+
+    # Task 20261007-32: a public <> that says no would let a key whose
+    # triggers are disabled read as binding every row.
+    it "doesn't call a foreign key strict when its triggers are disabled" do
+      CatalogShadow.plant(conn, :operators)
+      conn.exec("ALTER TABLE public.child DISABLE TRIGGER ALL")
+
+      expect(catalog.strict_foreign_key?(%w[public child], %w[public parent], [%w[pid id]])).to be(false)
+    end
   end
 end
