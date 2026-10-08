@@ -7644,3 +7644,16 @@ Still open from the reviews of 20260922-30 and 20260923-20:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260923-21 (commits e052bacf..b8503f7d). Review had no blocking findings. FOR UPDATE OF and (o).* were stale: SupportedSql refuses both. Left-out items went to 20261008-24, and the review's minors to 20261008-25.
+
+### 20260923-30. Predicate atom loose ends.
+
+Still open from the reviews of 20260922-43:
+- **Needs a decision:** NATURAL JOIN gives no atoms. When both sides are plain tables, compute the common columns, or emit a marker that can't be replaced, so the report counts it.
+
+- **Depends on:** 20260923-29.
+- **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
+- **Design:** rewrite-test and vacuity-guard.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Emit a marker the report counts, and list NATURAL JOIN as unsupported in v1.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260923-30 (commits 6d0e80c0, 4f688e98). Review had no blocking findings; its minors went to 20261008-26.

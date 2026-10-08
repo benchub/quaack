@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260923-24 (index-from-plan: MCV coverage rule, boolean partials).
 - 20260923-21 (index-from-query: join reduction, pattern keys, alias lists).
+- 20260923-30 (vacuity-guard: NATURAL JOIN marker atom, protocol rule natural_join_unreplaceable).
 
 ## How this file works.
 
@@ -217,17 +218,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260923-29. Finish predicate atom extraction. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-30. Predicate atom loose ends.
-
-Still open from the reviews of 20260922-43:
-- **Needs a decision:** NATURAL JOIN gives no atoms. When both sides are plain tables, compute the common columns, or emit a marker that can't be replaced, so the report counts it.
-
-- **Depends on:** 20260923-29.
-- **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
-- **Design:** rewrite-test and vacuity-guard.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Emit a marker the report counts, and list NATURAL JOIN as unsupported in v1.
-- **Status:** todo
+### 20260923-30. Predicate atom loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-31. Finish 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
 
@@ -2312,4 +2303,17 @@ The review of 20260923-21 found these minor issues:
 - **Depends on:** 20260923-21.
 - **Came from:** The review of 20260923-21, 2026-10-08.
 - **Design:** index-from-query.
+- **Status:** todo
+
+### 20261008-26. NATURAL JOIN marker: minors from 20260923-30.
+
+The review of 20260923-30 found these minor issues:
+
+1. **DESIGN.md doesn't say what a NATURAL JOIN leaves untested.** It never ties its shared columns, so the query's other atoms can come out untested too: in the spec's query, `o.status = $1` stays untested after three retries that can't succeed. Add a line to "Also unsupported in v1", around line 1151.
+2. **The counterexample prompt asks for something no reply can give.** It asks the LLM to exercise every untested atom, but a "NATURAL JOIN" marker, like a USING one, can never be covered. Consider leaving unreplaceable markers out of that list.
+3. **The new vacuity-guard spec is loose.** It checks the marker only with `include`. Also assert that the marker shows up exactly once and gets no retry.
+
+- **Depends on:** 20260923-30.
+- **Came from:** The review of 20260923-30, 2026-10-08.
+- **Design:** vacuity-guard.
 - **Status:** todo
