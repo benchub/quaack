@@ -814,8 +814,8 @@ RSpec.describe "quaack run" do
   # shows as is, with no pointer to teardown's line.
   { "teardown_failed" => [Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed"),
                           "Check or remove ~/.quaack/runs/20260926T010203Z-0123abcd on the jump server by hand."],
-    "driver_error" => [IOError.new("sentinel-io-7f3a"), "To tear it down later, run: " \
-                                                        "ssh -- jump-1 quaacks teardown --run 20260926T010203Z-0123abcd"] }
+    "driver_error" => [IOError.new("sentinel-io-7f3a"),
+                       "To tear it down later, run: ssh -- jump-1 quaacks teardown --run 20260926T010203Z-0123abcd"] }
     .each do |rule, (teardown_error, hint)|
     it "shows the LLM error alone when the run fails and then its teardown fails as #{rule}" do
       fake.error("operator-rewrites", status: 400)
