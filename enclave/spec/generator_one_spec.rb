@@ -506,6 +506,40 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                                                 ["customers", %w[name id], []]])
     end
 
+    it "treats every table under the left of a RIGHT JOIN as nullable" do
+      sql = "SELECT 1 FROM (public.orders o JOIN public.orders p ON p.parent_id = o.id) " \
+            "RIGHT JOIN public.customers c ON o.customer_id = c.id WHERE o.region IS NULL AND p.total IS NULL"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["orders", %w[customer_id id], []],
+                                                ["orders", %w[parent_id], []], ["customers", %w[id], []]])
+    end
+
+    it "treats every table under either side of a FULL JOIN as nullable" do
+      sql = "SELECT 1 FROM (public.orders o JOIN public.orders p ON p.parent_id = o.id) " \
+            "FULL JOIN (public.customers c JOIN public.customers d ON d.id = c.id) ON o.customer_id = c.id " \
+            "WHERE p.total IS NULL AND d.name IS NULL"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["orders", %w[customer_id id], []],
+                                                ["orders", %w[parent_id], []], ["customers", %w[id], []]])
+    end
+
+    it "skips an IS NULL in a higher ON on a table a lower RIGHT or FULL JOIN made nullable" do
+      %w[RIGHT FULL].each do |type|
+        sql = "SELECT 1 FROM public.orders o #{type} JOIN public.customers c ON o.customer_id = c.id " \
+              "JOIN public.customers i ON i.id = c.id AND o.region IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["customers", %w[id], []]]), type
+      end
+    end
+
+    it "always counts USING, on both sides of an outer join" do
+      %w[LEFT RIGHT FULL].each do |type|
+        sql = "SELECT 1 FROM public.orders o #{type} JOIN public.customers c USING (region)"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[region], []], ["customers", %w[region], []]]), type
+      end
+    end
+
     it "doesn't resolve schema and table name once the table has an alias" do
       expect(generate("SELECT 1 FROM public.orders o WHERE public.orders.status = 1", stats)).to eq([])
     end
@@ -1265,8 +1299,32 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         ["WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1", refused]
       ]
       cases.each do |sql, error|
-        expect { generate(sql, stats) }.to raise_error(error) { |e| expect(e.message).not_to include(sentinel) }
+        expect { generate(sql, stats) }.to raise_error(error) { |e| expect(error_leaks?(e)).to be(false) }
       end
+    end
+
+    # The error's message and its full_message, which takes in its
+    # detailed_message and every cause's.
+    def error_leaks?(error) = [error.message, error.full_message(highlight: false)].join.include?(sentinel)
+
+    it "catches a sentinel planted in an error's message, full_message, or cause, so the check above works" do
+      wrap = lambda do |inner_message|
+        raise ArgumentError, inner_message
+      rescue ArgumentError
+        raise KeyError, "outer"
+      end
+      caught = lambda do |&block|
+        block.call
+      rescue StandardError => e
+        e
+      end
+      planted = sentinel
+      detailed = Class.new(StandardError) { define_method(:detailed_message) { |**| "x #{planted}" } }
+
+      expect(error_leaks?(caught.call { raise ArgumentError, sentinel })).to be(true)
+      expect(error_leaks?(caught.call { wrap.call(sentinel) })).to be(true)
+      expect(error_leaks?(caught.call { raise detailed, "plain" })).to be(true)
+      expect(error_leaks?(caught.call { wrap.call("clean") })).to be(false)
     end
   end
 
