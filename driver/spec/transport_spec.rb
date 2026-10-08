@@ -939,7 +939,8 @@ RSpec.describe Quaack::Driver::Transport do
           error = refusal(%({"type":"error","step":"intake","rule":"#{rule}","reason":"#{reason}"}))
 
           expect(error.reason).to eq(reason)
-          expect(error.rule_with_note).to eq("#{rule}: #{text}")
+          expect(error.rule_with_note).to eq("#{rule}: #{text}. #{Quaack::Driver::FixedNotes.for(rule,
+                                                                                                 "resume the run")}")
           expect(error.message).to eq("quaacks probe failed: #{rule} (step intake, reason #{text}, exit 0)")
         end
       end
@@ -972,7 +973,8 @@ RSpec.describe Quaack::Driver::Transport do
         error = refusal(%({"type":"error","step":"scenarios","rule":"#{rule}","column":#{JSON.generate(column)}}))
 
         expect(error.column).to eq(column)
-        expect(error.rule_with_note).to eq("#{rule}: public.courses.tags (character varying(255)[])")
+        expect(error.rule_with_note).to eq("#{rule}: public.courses.tags (character varying(255)[]). " \
+                                           "#{Quaack::Driver::FixedNotes.for(rule, "")}")
         expect(error.message).to eq("quaacks probe failed: #{rule} (step scenarios, " \
                                     "column public.courses.tags (character varying(255)[]), exit 0)")
       end
@@ -995,7 +997,8 @@ RSpec.describe Quaack::Driver::Transport do
         error = refusal(%({"type":"error","rule":"unsupported_type","column":#{JSON.generate(column)}}))
 
         expect(error.column).to be_nil
-        expect(error.rule_with_note).to eq("unsupported_type")
+        expect(error.rule_with_note).to eq("unsupported_type: #{Quaack::Driver::FixedNotes.for("unsupported_type",
+                                                                                               "")}")
         expect(error.message).to eq("quaacks probe failed: unsupported_type (exit 0)")
         expect(error.full_message(highlight: false)).not_to include("SENTINEL")
       end
@@ -1013,7 +1016,8 @@ RSpec.describe Quaack::Driver::Transport do
       error = refusal(JSON.generate(line))
 
       expect(error.cycle).to eq(cycle)
-      expect(error.rule_with_note).to eq("fk_cycle: public.accounts -> billing.courses -> public.accounts")
+      expect(error.rule_with_note).to eq("fk_cycle: public.accounts -> billing.courses -> public.accounts. " \
+                                         "#{Quaack::Driver::FixedNotes.for("fk_cycle", "")}")
       expect(error.message).to eq("quaacks probe failed: fk_cycle (step counterexample-round, " \
                                   "cycle public.accounts -> billing.courses -> public.accounts, exit 0)")
     end
@@ -1031,7 +1035,7 @@ RSpec.describe Quaack::Driver::Transport do
         error = refusal(%({"type":"error","rule":"fk_cycle","cycle":#{JSON.generate(cycle)}}))
 
         expect(error.cycle).to be_nil
-        expect(error.rule_with_note).to eq("fk_cycle")
+        expect(error.rule_with_note).to eq("fk_cycle: #{Quaack::Driver::FixedNotes.for("fk_cycle", "")}")
         expect(error.message).to eq("quaacks probe failed: fk_cycle (exit 0)")
         expect(error.full_message(highlight: false)).not_to include("SENTINEL")
       end

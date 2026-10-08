@@ -62,7 +62,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
   end
 
   it "names only rules shaped as ErrorFilter sends them, each once" do
-    expect(names.reject { it.match?(Quaack::Enclave::ErrorFilter::RULE) }).to eq([])
+    expect(names.grep_v(Quaack::Enclave::ErrorFilter::RULE)).to eq([])
     expect(names.uniq).to eq(names)
   end
 
@@ -92,9 +92,9 @@ RSpec.describe Quaack::Protocol::ErrorRules do
   end
 
   it "holds every rule ShellCommand builds from a caller's prefix" do
-    prefixes = %w[run_server_command.rb inventory/memory.rb].flat_map do
-      ErrorRuleScan.call_literals(enclave, it, :run_command, keyword: :prefix) +
-        ErrorRuleScan.call_literals(enclave, it, :output, keyword: :prefix)
+    prefixes = %w[run_server_command.rb inventory/memory.rb].flat_map do |file|
+      ErrorRuleScan.call_literals(enclave, file, :run_command, keyword: :prefix) +
+        ErrorRuleScan.call_literals(enclave, file, :output, keyword: :prefix)
     end
     suffixes = ErrorRuleScan.call_literals(enclave, "shell_command.rb", :fail!, position: 0)
     built = prefixes.uniq.product(suffixes.uniq).map { |prefix, suffix| "#{prefix}_#{suffix}" }

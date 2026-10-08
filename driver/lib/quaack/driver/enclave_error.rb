@@ -33,7 +33,7 @@ module Quaack
     #   says which setting raises it.
     # - output_too_large: the run printed more than the transport reads, so
     #   the driver killed it.
-    class EnclaveError < StandardError
+    class EnclaveError < StandardError # rubocop:disable Metrics/ClassLength
       # sysexits.h's EX_USAGE and EX_SOFTWARE, as the enclave's CLI uses
       # them: the CLI refused the call, or a step failed.
       EX_USAGE = 64
@@ -95,13 +95,15 @@ module Quaack
       # A signal ended the process.
       def killed? = !signal.nil?
 
-      # The rule, and for query_unparsable a fixed note naming pg_query's
-      # grammar, which is older than production's Postgres. The enclave's
-      # error line holds only the rule, so the driver adds the note. A
-      # rewrite-test refusal that names its column gets the table, column, and type,
-      # and an fk_cycle refusal that names its tables gets them. A run an
-      # older version started gets what to do instead, and a refused
-      # --captured-at what a good one looks like.
+      # The rule and its note. The enclave's error line holds only the rule
+      # and a few shape-class fields, so the driver adds the words: its
+      # fixed note for the rule (FixedNotes), with any {next} in it as
+      # next_step, after what the line named beyond the rule (facts): an
+      # intake refusal's reason, a rewrite-test refusal's column or cycle, a
+      # volatile_function refusal's function, or the other clients. A rule
+      # on FixedNotes::INTERNAL gets the shared line, after its step.
+      # query_unparsable gets a note naming pg_query's grammar, which is
+      # older than production's Postgres.
       #
       # incomplete gets the subcommand and how it ended, and ssh_failed what
       # to check, then next_step, the caller's words for what to do after,
@@ -122,23 +124,31 @@ module Quaack
       # timeout_hint is false, for a caller whose timeout no setting
       # changes, such as deploy.
       def rule_with_note(next_step: "resume the run", jump: nil, server: nil, port: nil, timeout_hint: true)
-        return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server, port)}" if to_go_on?
+        return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server, port)}" if GO_ON.include?(rule)
+        return FixedNotes.internal_line(rule, step) if FixedNotes.internal?(rule)
 
-        added = note(timeout_hint)
-        return "#{rule}: #{added}" if added
+        return unparsable if rule == "query_unparsable"
 
-        return rule unless rule == "query_unparsable"
+        added = note(timeout_hint, next_step)
+        added ? "#{rule}: #{added}" : rule
+      end
 
+      # The rules whose note EnclaveError builds, ending with what to do next.
+      GO_ON = %w[ssh_failed incomplete production_connection_failed run_server_connection_failed].freeze
+
+      # Whether the rule's note ends with what to do next: one of GO_ON, or a
+      # fixed note with a {next} (FixedNotes).
+      def to_go_on? = GO_ON.include?(rule) || FixedNotes.goes_on?(rule)
+
+      private
+
+      # query_unparsable's note, naming pg_query's grammar.
+      def unparsable
         require "pg_query"
         major = PgQuery::PG_VERSION_NUM / 10_000
         "#{rule} (pg_query parses with the Postgres #{major} grammar; " \
           "Postgres #{major + 1}-only syntax isn't supported yet)"
       end
-
-      # The rules whose note ends with what to do next.
-      def to_go_on? = %w[ssh_failed incomplete production_connection_failed run_server_connection_failed].include?(rule)
-
-      private
 
       def to_go_on(next_step, jump, server, port)
         case rule
@@ -155,12 +165,21 @@ module Quaack
       end
 
       # What rule_with_note adds after the rule, or nil.
-      def note(timeout_hint)
-        return FixedNotes::BY_RULE[rule] if FixedNotes::BY_RULE.key?(rule)
+      def note(timeout_hint, next_step)
         return timed_out(timeout_hint) if rule == "timeout" && timeout_seconds
+
+        parts = [facts, FixedNotes.for(rule, next_step)].compact
+        parts.join(". ") unless parts.empty?
+      end
+
+      # What the error line named beyond its rule, for the note: an intake
+      # refusal's reason, a rewrite-test refusal's column or cycle, a
+      # volatile_function refusal's function, or run_server_other_clients's
+      # clients. Each was checked for shape (Transport::ErrorFields).
+      def facts
         return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
 
-        named_schema
+        named_schema || function || (described_clients if clients)
       end
 
       def timed_out(hint)

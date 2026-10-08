@@ -45,19 +45,20 @@ module ErrorRuleScan
   module_function
 
   def scan(root)
-    rules = Hash.new { |hash, key| hash[key] = [] }
-    dynamic = []
-    Dir.glob("**/*.rb", base: root).sort.each do |path|
-      tree = Prism.parse_file(File.join(root, path)).value
-      constants = constants(tree)
-      each_node(tree) do |node|
-        where = "#{path}:#{node.location.start_line}"
-        found, open = sites(node, constants)
-        found.select { it.match?(RULE) }.each { rules[it] << where }
-        dynamic << where if open
-      end
+    result = Result.new(rules: Hash.new { |hash, key| hash[key] = [] }, dynamic: [])
+    Dir.glob("**/*.rb", base: root).sort.each { scan_file(root, it, result) }
+    result
+  end
+
+  def scan_file(root, path, result)
+    tree = Prism.parse_file(File.join(root, path)).value
+    constants = constants(tree)
+    each_node(tree) do |node|
+      where = "#{path}:#{node.location.start_line}"
+      found, open = sites(node, constants)
+      found.grep(RULE).each { result.rules[it] << where }
+      result.dynamic << where if open
     end
-    Result.new(rules:, dynamic:)
   end
 
   # The String literals passed to the calls named name in the file at path,
@@ -100,15 +101,21 @@ module ErrorRuleScan
 
   # The rules node names, and whether it's a dynamic site.
   def sites(node, constants)
-    case node
-    when Prism::CallNode then argument(rule_argument(node), constants)
-    when Prism::AssocNode then literals(node.key, constants) == ["rule"] ? [literals(node.value, constants), false] : [[], false]
-    when Prism::DefNode then [node.name == :rule ? literals(node.body, constants) : [], false]
-    when Prism::InstanceVariableWriteNode then [node.name == :@rule ? literals(node.value, constants) : [], false]
-    when Prism::LocalVariableWriteNode then [RULE_LOCALS.include?(node.name) ? literals(node.value, constants) : [], false]
-    else [[], false]
-    end
+    return argument(rule_argument(node), constants) if node.is_a?(Prism::CallNode)
+
+    [literals(rule_value(node), constants), false]
   end
+
+  # The part of a site other than a call that holds its rules, by the
+  # site's node class.
+  VALUES = {
+    Prism::AssocNode => ->(node) { node.value if node.key.is_a?(Prism::SymbolNode) && node.key.unescaped == "rule" },
+    Prism::DefNode => ->(node) { node.body if node.name == :rule },
+    Prism::InstanceVariableWriteNode => ->(node) { node.value if node.name == :@rule },
+    Prism::LocalVariableWriteNode => ->(node) { node.value if RULE_LOCALS.include?(node.name) }
+  }.freeze
+
+  def rule_value(node) = VALUES[node.class]&.call(node)
 
   # Its rules, and whether it's dynamic: it has no literal, and isn't an
   # interpolated message, whose fixed text has a space, as "no entry
@@ -129,15 +136,18 @@ module ErrorRuleScan
   # library's errors have no rule, so ErrorFilter calls them internal_error.
   def rule_argument(call)
     args = call.arguments&.arguments || []
-    if call.name == :raise && args.size >= 2 && constant?(args[0]) && !STANDARD.include?(args[0].slice)
-      args[1]
-    elsif call.name == :new && call.receiver && constant?(call.receiver) && call.receiver.slice.match?(ERROR_CLASS) &&
-          !STANDARD.include?(call.receiver.slice)
-      args[0]
-    elsif RULE_CALLS.key?(call.name)
-      args[RULE_CALLS[call.name]]
-    end
+    return raise_argument(args) if call.name == :raise
+    return new_argument(call.receiver, args) if call.name == :new
+
+    args[RULE_CALLS[call.name]] if RULE_CALLS.key?(call.name)
   end
+
+  def raise_argument(args) = (args[1] if args.size >= 2 && ruled?(args[0]))
+
+  def new_argument(receiver, args) = (args[0] if ruled?(receiver) && receiver.slice.match?(ERROR_CLASS))
+
+  # Whether node is a constant naming a class that may have a rule.
+  def ruled?(node) = constant?(node) && !STANDARD.include?(node.slice)
 
   def constant?(node) = node.is_a?(Prism::ConstantReadNode) || node.is_a?(Prism::ConstantPathNode)
 

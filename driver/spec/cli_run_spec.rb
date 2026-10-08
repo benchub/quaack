@@ -416,7 +416,7 @@ RSpec.describe "quaack run" do
 
     expect([status, stdout.string, errors]).to eq(
       [1, "", "#{torn}quaack run failed: run_from_older_version: an older version of QUAACK started this run, " \
-              "and this version can't resume it. Start a new run with quaack start.\n"]
+              "and this version can't resume it. Start a new run with quaack start\n"]
     )
   end
 
@@ -557,6 +557,13 @@ RSpec.describe "quaack run" do
   # not done. The teardown hint prints once, in teardown's own line.
   describe "what to do when teardown fails after a good run" do
     let(:teardown_left) { "tear the run down as said above (the run itself finished)" }
+
+    # A teardown rule's fixed note, then teardown's pointer unless the note
+    # already ends with one.
+    def teardown_note(rule)
+      note = Quaack::Driver::FixedNotes.for(rule, teardown_left)
+      Quaack::Driver::FixedNotes.goes_on?(rule) ? note : "#{note}. To go on, #{teardown_left}"
+    end
     let(:later) { "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" }
 
     it "prints the report's path and says to run teardown, not to resume, when ssh fails during teardown" do
@@ -591,7 +598,7 @@ RSpec.describe "quaack run" do
         expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
         expect(errors).to eq("quaack: couldn't tear down run #{run_id} (#{rule}). Check or remove " \
                              "~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
-                             "quaack run failed: #{rule}. To go on, #{teardown_left}\n")
+                             "quaack run failed: #{rule}: #{teardown_note(rule)}\n")
       end
     end
 
@@ -601,7 +608,7 @@ RSpec.describe "quaack run" do
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
       expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
       expect(errors).to eq("quaack: couldn't tear down run #{run_id} (destroy_command_failed). #{later}" \
-                           "quaack run failed: destroy_command_failed. To go on, #{teardown_left}\n")
+                           "quaack run failed: destroy_command_failed: #{teardown_note("destroy_command_failed")}\n")
     end
 
     # Task 20261004-60: teardown couldn't read the run's server, so its
@@ -614,7 +621,7 @@ RSpec.describe "quaack run" do
       expect(errors).to eq("quaack: couldn't tear down run #{run_id} (destroy_command_not_run). destroy_command " \
                            "didn't run, so destroy the run server for run #{run_id} yourself. Then check or " \
                            "remove ~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
-                           "quaack run failed: destroy_command_not_run. To go on, #{teardown_left}\n")
+                           "quaack run failed: destroy_command_not_run: #{teardown_note("destroy_command_not_run")}\n")
     end
 
     # Task 20261004-60: an error from the driver itself, not the enclave,
@@ -639,7 +646,8 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--out", out])
 
-    expect([status, errors]).to eq([1, "#{torn}quaack run failed: unsupported_type: public.courses.tags (int4range)\n"])
+    expect([status, errors]).to eq([1, "#{torn}quaack run failed: unsupported_type: public.courses.tags (int4range). " \
+                                       "#{Quaack::Driver::FixedNotes.for("unsupported_type", "")}\n"])
   end
 
   it "tears the run down after an enclave call fails" do
@@ -697,7 +705,8 @@ RSpec.describe "quaack run" do
 
       status = cli.run(["run", "--run", run_id, "--out", out])
 
-      expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: unknown_relation\n"])
+      note = Quaack::Driver::FixedNotes.for("unknown_relation", "")
+      expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: unknown_relation: #{note}\n"])
       expect(transport.calls.map(&:first)).to eq(%w[version status qualify teardown])
     end
 

@@ -108,7 +108,8 @@ RSpec.describe "quaack setup" do
     expect(cli.run(["setup", "--run", run_id])).to eq(1)
 
     expect(subcommands).to eq(%w[version status inventory run-server qualify])
-    expect([stdout.string, errors]).to eq(["", "quaack setup failed: unknown_relation\n"])
+    expect([stdout.string, errors])
+      .to eq(["", "quaack setup failed: unknown_relation: #{Quaack::Driver::FixedNotes.for("unknown_relation", "")}\n"])
   end
 
   it "says when ssh couldn't reach the jump server, and the command that resumes setup" do
@@ -137,7 +138,7 @@ RSpec.describe "quaack setup" do
     expect(cli.run(["setup", "--run", run_id])).to eq(1)
 
     expect(errors).to eq("quaack setup failed: run_from_older_version: an older version of QUAACK started this run, " \
-                         "and this version can't resume it. Start a new run with quaack start.\n")
+                         "and this version can't resume it. Start a new run with quaack start\n")
   end
 
   it "says where the run server comes from when run-server was given none" do
