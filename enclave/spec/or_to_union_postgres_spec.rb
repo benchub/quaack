@@ -531,6 +531,35 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       end
     end
 
+    # pg_attribute keeps a dropped column's collation (task 20261008-11).
+    it "still splits an OR with a LIKE when only a dropped column used a nondeterministic collation" do
+      conn.exec(<<~SQL)
+        CREATE COLLATION public.loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+        ALTER TABLE public.i ADD COLUMN v text COLLATE public.loose;
+        ALTER TABLE public.i DROP COLUMN v;
+      SQL
+      sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val LIKE '9%'"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[1 10], %w[2 20]])
+    end
+
+    # A domain or a range can carry a nondeterministic collation that no
+    # column names directly (task 20261008-11).
+    {
+      "domain" => "CREATE DOMAIN public.loose_text AS text COLLATE public.loose",
+      "range" => "CREATE TYPE public.loose_range AS RANGE (subtype = text, collation = public.loose)"
+    }.each do |kind, create|
+      it "refuses an OR with a LIKE when a #{kind} uses a nondeterministic collation" do
+        conn.exec(<<~SQL)
+          CREATE COLLATION public.loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+          #{create};
+        SQL
+        sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR o.kind = 'm' OR i.val LIKE 'x'"
+
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
     it "refuses an OR with a LIKE or ILIKE whose column is given a collation" do
       %w[LIKE ILIKE].each do |like|
         sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val COLLATE \"C\" #{like} 'x'"
