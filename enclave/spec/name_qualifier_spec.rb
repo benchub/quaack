@@ -75,6 +75,27 @@ RSpec.describe "qualifying names other than relations" do
         .to eq("SELECT lower(total_cents) FROM public.orders WHERE lower(1, 2) = lower(3, 4, 5)")
     end
 
+    # Both overloads fold to the same constant, so both plans match the
+    # original's, and which one wins can't be told from them.
+    it "stays bare when more than one schema's overload plans as the original does" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.seven(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT 7';
+        CREATE FUNCTION sales.seven(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT 7';
+      SQL
+      expect(qualified("SELECT seven(1) FROM orders", { "search_path" => "sales, public" }))
+        .to eq("SELECT seven(1) FROM public.orders")
+    end
+
+    # Task 20261007-21: on a connection with no transaction open, the plans
+    # run in a read-only one of their own, with the production timeout.
+    it "plans in a read-only transaction with the production timeout when none is open" do
+      seen = Quaack::Enclave::NameQualifier::Resolved.transaction(conn) do
+        %w[transaction_read_only statement_timeout].map { conn.exec("SHOW #{it}").getvalue(0, 0) }
+      end
+      expect(seen).to eq(%w[on 1min]) # Production::STATEMENT_TIMEOUT, 60s, as Postgres shows it
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+
     # Task 20261007-30: Postgres skips a schema the role can't use, so
     # only public's shout counts for a role without USAGE on locked.
     it "counts only the schemas on the path the role has USAGE on" do

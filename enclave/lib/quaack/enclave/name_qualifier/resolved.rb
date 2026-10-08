@@ -2,6 +2,7 @@
 
 require "pg"
 require_relative "../deparse"
+require_relative "../inventory/production"
 
 module Quaack
   module Enclave
@@ -35,19 +36,19 @@ module Quaack
           return if sites.empty?
 
           baseline = plan(tree, path, connection) or return
-          picks = sites.filter_map do |list, schemas|
-            pick(list, schemas, baseline) { probe(tree, list, it, path, connection) }
+          # Each call is probed with the schemas picked before it in place,
+          # so the query as it ends up is one that planned as written.
+          sites.each do |list, schemas|
+            schema = pick(schemas, baseline) { probe(tree, list, it, path, connection) }
+            list.unshift(string(schema)) if schema
           end
-          picks.each { |list, schema| list.unshift(string(schema)) }
-          # Every pick together must still plan as written, or none is kept.
-          picks.each { it.first.shift } unless plan(tree, path, connection) == baseline
         end
 
-        # [list, the one schema other than pg_catalog whose plan, as the
-        # block gives it, matches], or nil.
-        def pick(list, schemas, baseline)
+        # The one schema other than pg_catalog whose plan, as the block
+        # gives it, matches, or nil.
+        def pick(schemas, baseline)
           matches = (schemas - ["pg_catalog"]).select { yield(it) == baseline }
-          [list, matches.first] if matches.size == 1
+          matches.first if matches.size == 1
         end
 
         def probe(tree, list, schema, path, connection)
@@ -87,6 +88,7 @@ module Quaack
 
           connection.exec("BEGIN READ ONLY")
           begin
+            connection.exec_params(Inventory::Production::TIMEOUT_SQL, [Inventory::Production::STATEMENT_TIMEOUT])
             yield
           ensure
             connection.exec("ROLLBACK")
