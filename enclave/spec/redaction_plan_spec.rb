@@ -245,6 +245,20 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
                     placeholder_map)).to eq("((a = $?) AND (c = $?) AND (d = $?::\"bit\"))")
     end
 
+    it "prefers the placeholder whose type matches the literal's cast" do
+      bits_second = map(entry("101", "integer"), entry("b00000101", "bit varying"))
+      expect(filter("(c = '00000101'::\"bit\")", bits_second)).to eq("(c = $2::\"bit\")")
+      number_second = map(entry("b101", "bit varying"), entry("101", "integer"))
+      expect(filter("((a = '101'::integer) AND (b = '101'::bit varying))", number_second))
+        .to eq("((a = $2::integer) AND (b = $1::bit varying))")
+    end
+
+    it "masks a TRUE or FALSE that matches nothing without counting it, since the planner writes them" do
+      result = redact(node("Filter" => "((a = true) OR (b = false) OR (c = 'x'::text))"), map(entry("y", "integer")))
+      expect([result.explain.first["Plan"]["Filter"], result.masked])
+        .to eq(["((a = $?) OR (b = $?) OR (c = $?::text))", 1])
+    end
+
     it "matches a number the query wrote in hex, octal, binary, or with underscores" do
       placeholder_map = map(entry("0x1F", "integer"), entry("0o17", "integer"), entry("0b101", "integer"),
                             entry("1_000", "integer"))
@@ -495,11 +509,16 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       expect { bound.execute(connection, "quaack_other") }.to raise_error(ArgumentError, "not postgres either")
     end
 
-    it "retypes only for SQLSTATE 42P18, and only for its exact message" do
+    it "retypes only for SQLSTATE 42P18 with one $n in its message, in any language" do
       bound = described_class.binding("SELECT $1", { "$1" => entry("x") })
+      connection = failing do
+        german = "konnte Datentyp von Parameter $1 nicht ermitteln"
+        raise postgres_error("42P18", german) if connection.statements.size == 1
+      end
+      expect(bound.prepare(connection, "quaack_de")).to eq(%w[text])
       [["42804", "could not determine data type of parameter $1"],
-       ["42P18", "could not determine data type of parameter $1 or so"],
-       ["42P18", "so could not determine data type of parameter $1"]].each do |sqlstate, message|
+       ["42P18", "could not determine data type of parameter"],
+       ["42P18", "could not determine data type of parameter $1 or $2"]].each do |sqlstate, message|
         connection = failing { raise postgres_error(sqlstate, message) }
         expect { bound.prepare(connection, "quaack_once") }
           .to raise_error(described_class::Error) { |e| expect(e.sqlstate).to eq(sqlstate) }

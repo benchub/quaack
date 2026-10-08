@@ -488,6 +488,28 @@ RSpec.describe "quaacks intake" do
       refuses_plan(JSON.generate([plan[0].merge("Plan" => nested)]), "plan_statement_mismatch")
     end
 
+    # A chain of depth nodes, the root the fixture's, each child a node
+    # with a list field, as Output is.
+    def chain(depth)
+      leaf = { "Node Type" => "Limit", "Output" => ["x"] }
+      nested = (depth - 2).times.reduce(leaf) { |child, _| leaf.merge("Plans" => [child]) }
+      [plan[0].merge("Plan" => plan[0]["Plan"].merge("Plans" => [nested]))]
+    end
+
+    # JSON's nesting limit of 100 is what egress can write. A payload
+    # holds the plan at its third level, as index_payload does.
+    it "takes a plan #{Quaack::Enclave::Intake::Plan::MAX_DEPTH} nodes deep, which egress can still send" do
+      deepest = chain(Quaack::Enclave::Intake::Plan::MAX_DEPTH)
+      expect(intake_with(plan: file("deep.json", JSON.generate(deepest)))).to eq(0)
+      expect(Quaack::Enclave::Egress.serialize({ type: :index_payload, plan: deepest })).to include("Limit")
+      expect { Quaack::Enclave::Egress.serialize({ type: :index_payload, plan: chain(Quaack::Enclave::Intake::Plan::MAX_DEPTH + 1) }) }
+        .to raise_error(Quaack::Enclave::Egress::Error)
+    end
+
+    it "refuses a plan more than #{Quaack::Enclave::Intake::Plan::MAX_DEPTH} nodes deep as plan_too_deep" do
+      refuses_plan(JSON.generate(chain(Quaack::Enclave::Intake::Plan::MAX_DEPTH + 1)), "plan_too_deep")
+    end
+
     it "refuses a plan whose Plans isn't a list of nodes as plan_bad_shape" do
       [INTAKE_SENTINEL, [INTAKE_SENTINEL], { "Node Type" => "Seq Scan" }].each do |plans|
         refuses_plan(JSON.generate([plan[0].merge("Plan" => plan[0]["Plan"].merge("Plans" => plans))]),

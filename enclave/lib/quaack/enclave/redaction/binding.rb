@@ -144,13 +144,15 @@ module Quaack
 
         def sqlstate(error) = error.result&.error_field(SQLSTATE)
 
-        # The parameter Postgres says it can't type, or nil. Its message is
-        # a fixed form with only the parameter's number, and nothing else
-        # of it is kept.
+        # The parameter Postgres says it can't type, or nil. 42P18's message
+        # is a fixed form with only the parameter's number, as $n, in every
+        # lc_messages language, so only that one $n is read from it, and
+        # nothing else of it is kept.
         def untyped_parameter(error)
           return nil unless sqlstate(error) == "42P18"
 
-          error.result&.error_field(MESSAGE).to_s[/\Acould not determine data type of parameter \$(\d+)\z/, 1]&.to_i
+          found = error.result&.error_field(MESSAGE).to_s.scan(/\$(\d+)/)
+          found.first.first.to_i if found.size == 1
         end
       end
 
@@ -174,8 +176,12 @@ module Quaack
 
         # nil once it's prepared, or the number of the parameter Postgres
         # couldn't type.
+        # In a transaction that has already failed, SAVEPOINT itself fails
+        # with 25P02, and there's no savepoint to roll back to, so that's
+        # the error, not ROLLBACK TO's 3B001.
         def attempt
-          @connection.exec("SAVEPOINT #{SAVEPOINT}") if @savepoint
+          @saved = false
+          save if @savepoint
           @connection.exec(@binding.prepare_sql(@name, @types))
           @connection.exec("RELEASE SAVEPOINT #{SAVEPOINT}") if @savepoint
           nil
@@ -185,8 +191,13 @@ module Quaack
           failed(e)
         end
 
+        def save
+          @connection.exec("SAVEPOINT #{SAVEPOINT}")
+          @saved = true
+        end
+
         def failed(error)
-          Bind.guarded("prepare_failed") { roll_back } if @savepoint
+          Bind.guarded("prepare_failed") { roll_back } if @saved
           number = Bind.untyped_parameter(error)
           return number if number && @types[number - 1] == "unknown"
 

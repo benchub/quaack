@@ -50,6 +50,7 @@ module Quaack
                              "you gave quaack start, then {next}.",
         "query_too_large" => "The query file is larger than QUAACK reads. Check that --query names the " \
                              "query's file. #{GO_ON}",
+        "plan_too_deep" => "The plan nests more than 48 levels of nodes, which QUAACK doesn't support. #{GO_ON}",
         "plan_too_large" => "The plan file is larger than QUAACK reads. Check that --plan names the plan's " \
                             "file. #{GO_ON}",
         "query_not_text" => "The query file isn't UTF-8 text, or it holds a NUL byte. Save it as UTF-8 text. " \

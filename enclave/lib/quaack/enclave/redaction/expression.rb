@@ -90,7 +90,7 @@ module Quaack
             if LITERALS.include?(token.token)
               literal(token, index) unless @cast.modifier?(index) || subplan_number?(index)
             elsif BOOLEANS.include?(token.token) && !after_is?(index)
-              placeholder([:boolean, token.token == :TRUE_P ? "true" : "false"])
+              boolean(token)
             end
           end
 
@@ -104,21 +104,29 @@ module Quaack
             before == :IS || (before == :NOT && index > 1 && @tokens[index - 2].token == :IS)
           end
 
+          # A TRUE or FALSE that matches nothing is masked, but not counted:
+          # the planner writes them itself, as for a folded condition.
+          def boolean(token)
+            use(@matcher.candidates([:boolean, token.token == :TRUE_P ? "true" : "false"]), count: false)
+          end
+
+          # Where placeholders of different types could be the literal, the
+          # one whose type matches its cast comes first.
           def literal(token, index)
             value = Value.read(token.token, @sources[index])
-            return placeholder(value) unless value&.first == :string && @cast.array?(index + 1)
+            return placeholder(value, @cast.type(index + 1)) unless value&.first == :string && @cast.array?(index + 1)
 
             numbers = @matcher.candidates(value)
             numbers.empty? ? array(value.last) : use(numbers)
           end
 
-          def placeholder(value) = use(value ? @matcher.candidates(value) : [])
+          def placeholder(value, cast = nil) = use(value ? @matcher.prefer(@matcher.candidates(value), cast) : [])
 
-          def use(numbers)
+          def use(numbers, count: true)
             @matches << numbers
             return "$#{numbers.first}" unless numbers.empty?
 
-            @masked += 1
+            @masked += 1 if count
             MASK
           end
 
@@ -143,6 +151,20 @@ module Quaack
             casts = tokens.each_index.select { |i| tokens[i].token == :TYPECAST }.map { |i| [i, read(i)] }
             @modifiers = casts.flat_map { |_i, (modifiers, _array)| modifiers }.to_set
             @arrays = casts.filter_map { |i, (_modifiers, array)| i if array }.to_set
+          end
+
+          # The name of the type after the :: at index, lowercase and
+          # unquoted, such as "bit varying", or nil if there's no :: there.
+          def type(index)
+            return nil unless @tokens[index]&.token == :TYPECAST
+
+            i = index + 1
+            words = []
+            while (after = after_part(i))
+              words << @sources[i].delete('"').downcase if word?(i)
+              i = after
+            end
+            words.join(" ")
           end
 
           # Whether the token at index is one of a cast's type modifiers.

@@ -40,6 +40,12 @@ module Quaack
         DECIMAL = /\A([+-]?)(?:(\d+)\.?(\d*)|\.(\d+))(?:[eE]([+-]?\d+))?\z/
         MAX_NUMBER = 100
         MAX_EXPONENT = 1_000
+        # The placeholder types each cast's type name matches, for prefer.
+        CAST_FAMILIES = {
+          ["bit", "varbit", "bit varying"] => ["bit varying"],
+          %w[integer int int4 bigint int8 smallint int2 numeric decimal] => NUMBER_TYPES,
+          %w[boolean bool] => ["boolean"]
+        }.flat_map { |names, types| names.map { [it, types] } }.to_h.freeze
         TRUE_TEXT = %w[t tr tru true y ye yes on 1].freeze
         FALSE_TEXT = %w[f fa fal fals false n no of off 0].freeze
 
@@ -55,6 +61,7 @@ module Quaack
           @numbers_from = lookup
           @bits = lookup
           @booleans = lookup
+          @types = {}
           Redaction.checked_map(map).each { |key, entry| index(Integer(key[1..]), entry["value"], entry["type"]) }
         end
 
@@ -68,6 +75,16 @@ module Quaack
           end
         end
 
+        # numbers, those whose placeholder's type matches cast, a type
+        # name, coming first. A cast of no known family, or nil, changes
+        # nothing.
+        def prefer(numbers, cast)
+          types = CAST_FAMILIES[cast.to_s.delete_prefix("pg_catalog.")]
+          return numbers unless types
+
+          numbers.partition { types.include?(@types[it]) }.flatten
+        end
+
         private
 
         def lookup = Hash.new { [] }
@@ -75,6 +92,7 @@ module Quaack
         def index(number, value, type)
           return if value.nil?
 
+          @types[number] = type
           add(@texts, value, number)
           add(@numbers, number(value), number) if NUMBER_TYPES.include?(type)
           add(@numbers_from, number(value), number) if NUMBERS_FROM.include?(type)

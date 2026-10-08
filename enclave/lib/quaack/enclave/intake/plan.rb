@@ -32,6 +32,10 @@ module Quaack
       #    plan came from another statement. Comparing the plan's tables
       #    with the query's needs the catalog, so qualify does it (see
       #    PlanTables).
+      # 7. plan_too_deep: a node is more than MAX_DEPTH levels down, the
+      #    root being level one. Egress writes JSON with its nesting limit
+      #    of 100, and a payload holds each level of the plan two deeper,
+      #    so a deeper plan, redacted, couldn't go out (unsupported in v1).
       #
       # One leading byte order mark, which some editors write, is dropped
       # first, since JSON refuses it.
@@ -40,6 +44,7 @@ module Quaack
         BUFFER_COUNTERS = %w[Shared Local Temp].product(%w[Hit Read Dirtied Written])
                                                .map { |kind, what| "#{kind} #{what} Blocks" }.freeze
         ANALYZE_KEYS = ["Actual Rows", "Actual Total Time"].freeze
+        MAX_DEPTH = 48
 
         module_function
 
@@ -57,6 +62,7 @@ module Quaack
 
         def statement!(root)
           raise Error, "plan_statement_mismatch" if nodes(root).any? { it["Node Type"] == "ModifyTable" }
+          raise Error, "plan_too_deep" if depth(root) > MAX_DEPTH
         end
 
         # The node and every node under it, depth first.
@@ -66,6 +72,9 @@ module Quaack
 
           [node, *plans.flat_map { nodes(it) }]
         end
+
+        # The levels of nodes, the root's counted. The shape is checked.
+        def depth(node) = 1 + (node.fetch("Plans", []).map { depth(it) }.max || 0)
 
         def parse(text)
           CLI::Input.parse_document(text)

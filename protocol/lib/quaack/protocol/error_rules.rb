@@ -38,7 +38,7 @@ module Quaack
                  on_conflict on_only parse_error partitioned_relation pg_dump_failed pg_dump_missing pg_dump_too_old
                  plan_bad_shape plan_gate_bad_plan plan_gate_mismatch_likely_stale_statistics
                  plan_gate_not_comparable plan_no_buffers plan_not_analyzed plan_not_json plan_statement_mismatch
-                 plan_table_mismatch plan_too_large
+                 plan_table_mismatch plan_too_deep plan_too_large
                  plan_unreadable prepare_failed production_connection_failed production_read_failed query_failed
                  query_has_parameters query_not_one_statement query_not_text query_too_large query_unparsable
                  query_unreadable racetrack_bad_clock_anchor racetrack_quaack_schema_foreign
