@@ -338,6 +338,14 @@ RSpec.describe "quaacks intake" do
       end
     end
 
+    # Task 20261003-7: a path through a regular file (ENOTDIR) is missing,
+    # since no such file can be there.
+    it "says a path whose parent is a regular file is missing" do
+      expect_refused("query_unreadable", intake_with(query: File.join(plan_file, "q.sql")), reason: "missing")
+      out.truncate(0) && out.rewind
+      expect_refused("plan_unreadable", intake_with(plan: File.join(query_file, "p.json")), reason: "missing")
+    end
+
     it "refuses a file it can't read as unreadable" do
       File.chmod(0o000, query_file)
       File.chmod(0o000, plan_file)
