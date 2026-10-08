@@ -18,7 +18,8 @@ module Quaack
       module Catalog
         TABLE_SQL = <<~SQL
           SELECT c.oid, c.reltuples, c.relpages,
-                 EXISTS (SELECT FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) c.oid)
+                 EXISTS (SELECT FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) c.oid),
+                 c.relrowsecurity AND pg_catalog.row_security_active(c.oid)
           FROM pg_catalog.pg_class c
           JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
           WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2
@@ -69,6 +70,36 @@ module Quaack
           ORDER BY n.nspname COLLATE pg_catalog."C", s.stxname COLLATE pg_catalog."C"
         SQL
 
+        # The valid expression indexes whose pg_stats rows the role can't
+        # see: pg_stats shows an index's columns only to a role with SELECT
+        # on them, and an index has no privileges of its own, so only its
+        # owner has it. A plain index has no statistics of its own to hide.
+        HIDDEN_INDEXES_SQL = <<~SQL
+          SELECT c.relname FROM pg_catalog.pg_index i
+          JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) i.indexrelid
+          WHERE i.indrelid OPERATOR(pg_catalog.=) $1 AND i.indisvalid AND i.indexprs IS NOT NULL
+           AND EXISTS (SELECT FROM pg_catalog.pg_attribute a
+                       WHERE a.attrelid OPERATOR(pg_catalog.=) i.indexrelid AND a.attnum OPERATOR(pg_catalog.>) 0
+                        AND NOT pg_catalog.has_column_privilege(i.indexrelid, a.attnum, 'SELECT'))
+          ORDER BY c.relname COLLATE pg_catalog."C"
+        SQL
+
+        # The extended statistics objects whose pg_stats_ext data the role
+        # can't see. pg_stats_ext shows an object's data only to a member
+        # of the table owner's role, and, with row security active, to no
+        # one. This reads pg_stats_ext's own condition, so it needs no
+        # access to pg_statistic_ext_data, and it can't tell a hidden object
+        # that ANALYZE filled from one it hasn't.
+        HIDDEN_EXTENDED_SQL = <<~SQL
+          SELECT n.nspname, s.stxname FROM pg_catalog.pg_statistic_ext s
+          JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) s.stxnamespace
+          JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) s.stxrelid
+          WHERE s.stxrelid OPERATOR(pg_catalog.=) $1
+           AND (NOT pg_catalog.pg_has_role(c.relowner, 'USAGE')
+                OR (c.relrowsecurity AND pg_catalog.row_security_active(c.oid)))
+          ORDER BY n.nspname COLLATE pg_catalog."C", s.stxname COLLATE pg_catalog."C"
+        SQL
+
         COLUMN_KEYS = %w[null_frac avg_width n_distinct most_common_vals most_common_freqs histogram_bounds
                          correlation].freeze
         EXTENDED_KEYS = %w[schema name definition kinds n_distinct dependencies most_common_vals
@@ -79,13 +110,17 @@ module Quaack
         # query is the qualified query, whose columns' statistics must all
         # be ones pg_stats shows (see Visibility). nil checks every column.
         def table(table, connection, query = nil)
-          oid, reltuples, relpages, children = connection.exec_params(TABLE_SQL,
+          oid, reltuples, relpages, children, row_security = connection.exec_params(TABLE_SQL,
                                                                       [table.schema, table.name]).values.first
           raise Error.new("unknown_relation", "#{table} doesn't exist") unless oid
           raise Error.new("inheritance_parent", "#{table} has inheritance children") if children == "t"
 
           entry = { "schema" => table.schema, "name" => table.name, "reltuples" => Float(reltuples),
                     "relpages" => Integer(relpages, 10), **contents(table, oid, connection) }
+          if row_security == "t" && entry["columns"].empty?
+            raise Error.new("row_security_statistics_hidden", "row security hides the column statistics of #{table}")
+          end
+
           Visibility.check!(table, oid, entry, query, connection)
           entry
         end
@@ -94,7 +129,17 @@ module Quaack
           columns, skipped = pg_stats(connection, table.schema, table.name)
           utf8({ **ColumnTypes.read(connection, oid), "columns" => columns, "array_statistics_skipped" => skipped,
                                                       "indexes" => indexes(connection, table.schema, oid),
-                                                      "extended_statistics" => extended(connection, oid) })
+                                                      "extended_statistics" => extended(connection, oid),
+                                                      "statistics_hidden" => hidden(connection, oid) })
+        end
+
+        # The names, never the data, of the expression indexes and extended
+        # statistics objects whose statistics the role can't see, so the
+        # run goes on without them and the report says so. An extended
+        # statistics object is named "schema.name".
+        def hidden(connection, oid)
+          { "indexes" => connection.exec_params(HIDDEN_INDEXES_SQL, [oid]).column_values(0),
+            "extended_statistics" => connection.exec_params(HIDDEN_EXTENDED_SQL, [oid]).values.map { it.join(".") } }
         end
 
         # The rows, and the names of the columns whose array statistics were
