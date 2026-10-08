@@ -58,7 +58,36 @@ module Quaack
             end
           end
 
+          # Whether Postgres takes = between two columns, each [schema,
+          # table, column], as one pair of a row comparison: it does only
+          # when that = is an operator of a btree family, which box's isn't.
+          # It asks Postgres by preparing a comparison of the pair beside a
+          # pair of booleans, since a row of one column isn't held to that.
+          # It names pg_catalog's =, so nothing on the search path can change
+          # the answer, and a pair whose = is in another schema, as an
+          # extension type's can be, is refused.
+          def row_equality?(left, right)
+            (@row_equality ||= {}).fetch([left, right]) do
+              @row_equality[[left, right]] =
+                self_contained?("SELECT FROM #{relation(left)} l, #{relation(right)} r " \
+                                "WHERE (l.#{@connection.quote_ident(left.last)}, true) #{EQ} " \
+                                "(r.#{@connection.quote_ident(right.last)}, true)")
+            end
+          end
+
+          # Whether Postgres can dedupe a column, [schema, table, column], in
+          # a UNION: its type has an equality to sort or hash by, which box's
+          # = isn't. It asks Postgres, as row_equality? does.
+          def unionable?(column)
+            (@unionable ||= {}).fetch(column) do
+              read = "SELECT l.#{@connection.quote_ident(column.last)} FROM #{relation(column)} l"
+              @unionable[column] = self_contained?("#{read} UNION #{read}")
+            end
+          end
+
           private
+
+          def relation((schema, table)) = "#{@connection.quote_ident(schema)}.#{@connection.quote_ident(table)}"
 
           def default_btree_family?(schema, table, column)
             families = @connection.exec_params(BTREE_FAMILY, [schema, table, column]).values
