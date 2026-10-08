@@ -28,7 +28,7 @@ module NoRealCredentials
   def self.with_trapped_home
     Dir.mktmpdir("quaack-trapped-home") do |home|
       FileUtils.mkdir_p(File.join(home, ".config", "anthropic", "active_config"))
-      original = ENV.fetch("HOME", nil)
+      original = Dir.home
       begin
         ENV["HOME"] = home
         yield home
