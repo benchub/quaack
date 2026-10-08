@@ -65,11 +65,11 @@ class FakeLLM
 
   # Queues one failed attempt for step, an HTTP error the way the API sends
   # it. `retry_after_ms` keeps the gem's backoff short, and `message` is the
-  # body's.
-  def error(step, status:, retry_after_ms: "1", message: nil)
+  # body's. `headers` adds response headers.
+  def error(step, status:, retry_after_ms: "1", message: nil, headers: {})
     type = ERROR_TYPES.fetch(status, "api_error")
     body = { type: "error", error: { type: type, message: message || "fake #{type}" } }
-    @scripts[step] << [status, { "retry-after-ms" => retry_after_ms }, body]
+    @scripts[step] << [status, { "retry-after-ms" => retry_after_ms, **headers }, body]
     self
   end
 

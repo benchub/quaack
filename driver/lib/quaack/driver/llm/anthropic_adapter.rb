@@ -70,10 +70,12 @@ module Quaack
           timeout = nonstreaming_timeout(max_tokens)
           reply_text(send_message(params(system, messages, max_tokens, schema), step, count, timeout))
         rescue ::Anthropic::Errors::APIError => e
-          # The gem's error for a refused key can quote it, so an llm_auth
-          # doesn't keep it as the cause.
-          rule = rule_for(e)
-          raise Error.new(rule, detail(e)), cause: (e unless rule == "llm_auth")
+          # The gem's error holds the response's headers and whole body.
+          # Anthropic's own bodies hold only an error type and message, but
+          # base_url can name a gateway or proxy, whose headers or body can
+          # echo a key or cookie, and a refused key's body can quote it, so
+          # no rule keeps the gem's error as the cause.
+          raise Error.new(rule_for(e), detail(e)), cause: nil
         rescue *CREDENTIAL_ERRORS
           raise Error.new("llm_auth", UNLOADABLE), cause: nil
         rescue ::Anthropic::Errors::Error, TypeError, JSON::ParserError
