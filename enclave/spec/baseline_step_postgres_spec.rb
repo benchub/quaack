@@ -138,6 +138,18 @@ RSpec.describe "quaacks baseline, against a real server" do
     expect(Quaack::Enclave::Measurement.plan(stable)).to eq(plan(1, 1))
   end
 
+  it "keeps the first run's plan for a stable set whose runs differ only in Execution Time" do
+    map = { "$1" => { "value" => "secret-7", "type" => "unknown" } }
+    runs = [plan(1, 1), plan(1, 1), plan(1, 1)]
+    runs.each_with_index { |run, i| run[0]["Execution Time"] = [1.25, 2.5, 3.75][i] }
+
+    summary = Quaack::Enclave::Measurement.summarize(runs, map)
+
+    expect(summary["stable"]).to be(true)
+    expect(summary["plans"].map { it[0]["Execution Time"] }).to eq([1.25])
+    expect(Quaack::Enclave::Measurement.plan(summary)[0]["Execution Time"]).to eq(1.25)
+  end
+
   it "stores each run's plan once, with no second copy of the kept plan" do
     map = { "$1" => { "value" => "secret-7", "type" => "unknown" } }
 
