@@ -142,8 +142,7 @@ module Quaack
         # prepare. Shape-class.
         def parameter_types(connection, sql, types)
           oids = StructuralDiscard.parameter_types(connection, sql, types) || []
-          names = oids.map { connection.exec_params("SELECT format_type($1::oid, NULL)", [it]).getvalue(0, 0) }
-          names.each_with_index.to_h { |name, i| ["$#{i + 1}", name] }
+          StructuralDiscard.format_types(connection, oids).each_with_index.to_h { |name, i| ["$#{i + 1}", name] }
         end
 
         # DESIGN.md's plan-pruning: the same search for one rewrite candidate, sql, as

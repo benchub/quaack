@@ -28,7 +28,7 @@ module Quaack
     #   many placeholders its redacted form has.
     # - settings, the Settings hash from the input plan's EXPLAIN
     #   (SETTINGS), or nil, as RelationQualifier takes it.
-    # - connection, a PG connection to the production database. Only the
+    # - connection, a PG connection to the racetrack (RewriteCheck). Only the
     #   catalog is read, with plain SELECTs.
     #
     # The checks run in this order, and the first one that fails wins:
@@ -96,8 +96,8 @@ module Quaack
       RELKIND_SQL = <<~SQL
         SELECT c.relkind
         FROM pg_catalog.pg_class c
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = $1 AND c.relname = $2
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2
       SQL
 
       module_function
