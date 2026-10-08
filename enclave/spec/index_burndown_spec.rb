@@ -28,7 +28,8 @@ RSpec.describe Quaack::Enclave::IndexBurndown, ".record_rank" do
   end
 
   it "counts what didn't make the cut: never used, below the top three, and combinations not kept" do
-    results = Array.new(5) { result(used: true) } + [result(used: false), result(used: false, refusal: :refused)]
+    refused = sct::Refusal.new(rule: :hypopg_refused, sqlstate: "42704")
+    results = Array.new(5) { result(used: true) } + [result(used: false), result(used: false, refusal: refused)]
     report = sct::Report.new(baseline: nil, results:)
     tally = Quaack::Enclave::IndexRanking::Tally.new(ranked: 5, combinations: 6, unused_index: 2, explains: 10)
     ranking = Quaack::Enclave::IndexRanking::Ranking.new(top: %i[a b c], combination: :pair, tally:)

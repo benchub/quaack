@@ -32,6 +32,13 @@ RSpec.describe Quaack::Enclave::Burndown do
 
   def candidate(**) = Quaack::Enclave::IndexCandidate.new(table: t, sources: [:parse], **)
 
+  # A Dedupe whose proposals are exactly what the report tested.
+  def proposed(report)
+    candidates = report.results.map(&:candidate)
+    Quaack::Enclave::Dedupe.restore(statistics: Quaack::Enclave::Statistics.new(tables: []), low_cardinality: [],
+                                    proposals: candidates, set_aside: [], drops: [], considered: candidates.size)
+  end
+
   # Four candidates, planned for three literal sets: two the planner uses,
   # one it never uses, and one HypoPG refuses.
   def report
@@ -48,7 +55,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     expect(tested.results.map(&:used?)).to eq([true, false, true, false])
     expect(tested.results.map(&:refusal).map { it&.rule }).to eq([nil, nil, nil, :hypopg_refused])
 
-    described_class.record_single_candidate_test(store, tested, search: :original)
+    described_class.record_single_candidate_test(store, tested, search: :original, dedupe: proposed(tested))
 
     burndown = described_class.read(Quaack::Enclave::Store.open(store.run_id, base: @base))
     expect(burndown["stages"]).to eq(
@@ -64,7 +71,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     tested = Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
                                                             literal_sets: { slow: ["5"] },
                                                             candidates: [candidate(key: ["a"]), candidate(key: ["c"])])
-    described_class.record_single_candidate_test(store, tested, search: :original)
+    described_class.record_single_candidate_test(store, tested, search: :original, dedupe: proposed(tested))
 
     expect(described_class.read(store).dig("stages", "index-test", "original", "dropped")).to eq("never_used" => 1)
   end
@@ -74,15 +81,18 @@ RSpec.describe Quaack::Enclave::Burndown do
     tested = Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
                                                             literal_sets: { slow: ["5"] },
                                                             candidates: [candidate(key: ["a"]), unused])
-    described_class.record_single_candidate_test(store, tested, search: :original, set_aside: [unused])
+    described_class.record_single_candidate_test(store, tested, search: :original, dedupe: proposed(tested),
+                                                                set_aside: [unused])
 
     expect(described_class.read(store).dig("stages", "index-test", "original"))
       .to include("in" => 2, "dropped" => {}, "set_aside" => 1, "out" => 1)
   end
 
   it "records only index-test, so it takes no stage" do
-    expect { described_class.record_single_candidate_test(store, report, search: :original, stage: "llm-index-ideas") }
-      .to raise_error(ArgumentError, /unknown keyword: :stage/)
+    expect do
+      described_class.record_single_candidate_test(store, report, search: :original, dedupe: nil,
+                                                                  stage: "llm-index-ideas")
+    end.to raise_error(ArgumentError, /unknown keyword: :stage/)
   end
 
   describe "an LLM round" do
@@ -105,7 +115,7 @@ RSpec.describe Quaack::Enclave::Burndown do
       survivors = dedupe.filter([candidate(key: ["a"]), candidate(key: %w[a c])])
       since = described_class.record_dedupe(store, dedupe, search: :original)
       mechanical_report = test(survivors)
-      described_class.record_single_candidate_test(store, mechanical_report, search: :original)
+      described_class.record_single_candidate_test(store, mechanical_report, search: :original, dedupe:)
       [since, mechanical_report]
     end
 

@@ -43,6 +43,9 @@ module Quaack
 
         LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
+        # The index-test drops planner ignored or couldn't try counts.
+        COULDNT_TRY = %w[never_used hypopg_refused unrenderable].freeze
+
         # index_sources' outcomes, in the table's order.
         BY_SOURCE = %w[built not_better ranked].freeze
 
@@ -71,7 +74,7 @@ module Quaack
           [["Generator one, from the query's text", proposals[0], nil, nil, *built_by("generator_one")],
            ["Generator two, from the query's plan", proposals[1], nil, nil, *built_by("generator_two")],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),
-            dropped(LLM_ROUNDS, %w[never_used hypopg_refused]), *built_by("llm")], *llm_index_rows(proposals[2]),
+            dropped(LLM_ROUNDS, COULDNT_TRY), *built_by("llm")], *llm_index_rows(proposals[2]),
            ["All sources together", (proposals.sum if proposals.all?), *index_totals]]
         end
 
@@ -101,7 +104,7 @@ module Quaack
         # not_better_indexes.
         def index_totals
           [together(%w[index-dedupe], %w[covered_by_existing]),
-           together(%w[index-test], %w[never_used hypopg_refused]), indexes.size, not_better_indexes.size,
+           together(%w[index-test], COULDNT_TRY), indexes.size, not_better_indexes.size,
            proposed.size]
         end
 

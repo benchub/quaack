@@ -221,7 +221,7 @@
 <% end %>
 </tbody></table>
 <p class="note">Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for your query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once.</p>
-<p class="note">Planner ignored or couldn't try also counts the ideas QUAACK couldn't try, because HypoPG, which it uses to try an index without building it, couldn't create them. The planner was never asked about those.</p>
+<p class="note">Planner ignored or couldn't try also counts the ideas QUAACK couldn't try, because HypoPG, which it uses to try an index without building it, couldn't create them, or because it couldn't write their definition. The planner was never asked about those.</p>
 <% if overlap? %>
 <p class="note">An index more than one source proposed counts in each of their rows, so the rows by source can add up to more than all sources together.</p>
 <% end %>
