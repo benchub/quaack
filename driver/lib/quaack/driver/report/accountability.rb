@@ -47,11 +47,17 @@ module Quaack
         BY_SOURCE = %w[built not_better ranked].freeze
 
         def rewrite_account
-          rows = REWRITE_SOURCES.map do |source, (name, stage)|
-            [name, *rewrite_counts(rewrites.select { it["source"] == source }, added(stage))]
-          end
+          rows = REWRITE_SOURCES.flat_map { |source, (name, stage)| source_rows(source, name, added(stage)) }
           unknown = rewrites.reject { REWRITE_SOURCES.key?(it["source"]) }
           unknown.empty? ? rows : rows + [["Source #{Words::MISSING}", *rewrite_counts(unknown, nil)]]
+        end
+
+        # A source's row, named name, which proposed proposed, then, for the
+        # LLM, its rows by provider (Providers).
+        def source_rows(source, name, proposed)
+          kept = rewrites.select { it["source"] == source }
+          row = [name, *rewrite_counts(kept, proposed)]
+          source == "llm" ? [row, *llm_rewrite_rows(kept, proposed)] : [row]
         end
 
         def rewrite_counts(kept, proposed)
@@ -65,7 +71,7 @@ module Quaack
           [["Generator one, from the query's text", proposals[0], nil, nil, *built_by("generator_one")],
            ["Generator two, from the query's plan", proposals[1], nil, nil, *built_by("generator_two")],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),
-            dropped(LLM_ROUNDS, %w[never_used hypopg_refused]), *built_by("llm")],
+            dropped(LLM_ROUNDS, %w[never_used hypopg_refused]), *built_by("llm")], *llm_index_rows(proposals[2]),
            ["All sources together", (proposals.sum if proposals.all?), *index_totals]]
         end
 

@@ -20,8 +20,8 @@ module Quaack
       START_OPTIONAL = %w[--port --captured-at].freeze
       RUN_OPTIONAL = (%w[--rewrites --out --enclave-timeout-seconds] + SetupCommand::OPTIONS).freeze
       # What setup and run load, only once they run.
-      RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline progress runs
-                     setup teardown transport/ssh].freeze
+      RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline progress
+                     provenance runs setup teardown transport/ssh].freeze
 
       # transport builds the transport to a jump host, and client the LLM
       # client from its LLM::Settings. Specs pass fakes for both, since
@@ -177,7 +177,7 @@ module Quaack
       def drive(teardown, router, run_id, sqls, options)
         teardown.around(keep: options[:keep]) do
           path = Pipeline.new(transport: teardown.transport, client: router, run_id:, rewrites: sqls,
-                              out: options[:out], stderr: @stderr, setup: options[:server]).run
+                              out: options[:out], stderr: @stderr, setup: options[:server], home: @home).run
           @stdout.print "#{path}\n" if path
         end
         @stdout.print "#{run_id} done\n"

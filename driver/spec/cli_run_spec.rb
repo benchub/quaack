@@ -366,6 +366,16 @@ RSpec.describe "quaack run" do
     File.join(home, "rewrites.sql").tap { File.write(it, text) }
   end
 
+  it "writes the provenance record next to the run's record as its LLM steps run" do
+    fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+
+    expect(cli.run(["run", "--run", run_id, "--out", out, "--rewrites", rewrites_file])).to eq(0)
+    record = JSON.parse(File.read(File.join(home, ".quaack", "runs", "#{run_id}.llm.json")))
+    expect(record).to eq("providers" => [{ "name" => "anthropic", "provider" => "anthropic",
+                                           "model" => Quaack::Driver::LLM::DEFAULT_MODEL }],
+                         "operator_inference" => "anthropic")
+  end
+
   it "prints the run ID and done on success" do
     expect([cli.run(["run", "--run", run_id, "--out", out]), stdout.string]).to eq([0, "#{out}\n#{run_id} done\n"])
   end

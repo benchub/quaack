@@ -65,15 +65,6 @@ module Quaack
           "never tested, because #{Words::REFUSALS.fetch(name) { Words::FAILURES.fetch(name, Words::FAILED) }}"
         end
 
-        # The driver's LLM calls, by what each was for.
-        def llm_lines
-          return ["No LLM calls were counted in this run."] if @llm_calls.empty?
-
-          @llm_calls.map do |step, calls|
-            "#{Words::LLM_STEPS.fetch(step) { Words.plain(step) }}: #{Words.count(calls.to_i, "call")}"
-          end
-        end
-
         # burndown's work totals, each always listed, then any other the enclave
         # counted.
         def total_lines

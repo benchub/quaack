@@ -5,6 +5,7 @@ require_relative "enclave_error"
 require_relative "generator_three"
 require_relative "operator_candidates"
 require_relative "progress"
+require_relative "provenance"
 require_relative "refinement_round"
 require_relative "report"
 require_relative "rewrite_generation"
@@ -52,28 +53,40 @@ module Quaack
 
         module_function
 
-        def run(transport:, client:, run_id:, entries:, progress: Progress::NULL, **) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, client:, run_id:, entries:, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           args = { run: run_id, search: SEARCH }
           Pipeline.run_step(progress, entries["index_search_#{SEARCH}"], "index-search") do
             transport.call("index-search", args:)
           end
           llm(transport, client, run_id, SEARCH, { generated: entries["index_generated_#{SEARCH}"],
-                                                   ranked: entries["index_ranking_#{SEARCH}"] }, progress)
+                                                   ranked: entries["index_ranking_#{SEARCH}"] }, progress, record:)
         end
 
         # llm-index-ideas unless done[:generated], llm-index-refine, and index-rank unless done[:ranked],
-        # for search. Returns llm-index-refine's result, from refine.
-        def llm(transport, client, run_id, search, done, progress = Progress::NULL) # rubocop:disable Metrics/ParameterLists
-          args = { run: run_id, search: }
-          payload = payload(transport, args, progress)
-          names = search == SEARCH ? NAMES : REWRITE_NAMES
-          Pipeline.run_step(progress, done[:generated], names[0]) do
-            generate(transport, client, run_id, search, payload.call(names[0]), progress)
+        # for search. Returns llm-index-refine's result, from refine. record
+        # writes what each LLM step did to the provenance record
+        # (Provenance.recorder).
+        def llm(transport, client, run_id, search, done, progress = Progress::NULL, record: NONE) # rubocop:disable Metrics/ParameterLists
+          refined = ideas(transport, client, run_id, search, done, progress, record)
+          Pipeline.run_step(progress, done[:ranked], names(search)[2]) do
+            transport.call("index-rank", args: { run: run_id, search: })
           end
-          refined = Pipeline.step(progress, names[1]) { refine(transport, client, run_id, search, payload, progress) }
-          Pipeline.run_step(progress, done[:ranked], names[2]) { transport.call("index-rank", args:) }
           refined
         end
+
+        # llm-index-ideas unless done[:generated], then llm-index-refine,
+        # whose result it returns.
+        def ideas(transport, client, run_id, search, done, progress, record) # rubocop:disable Metrics/ParameterLists
+          payload = payload(transport, { run: run_id, search: }, progress)
+          Pipeline.run_step(progress, done[:generated], names(search)[0]) do
+            generate(transport, client, run_id, search, payload.call(names(search)[0]), progress, record)
+          end
+          Pipeline.step(progress, names(search)[1]) do
+            refine(transport, client, run_id, search, payload, progress, record)
+          end
+        end
+
+        def names(search) = search == SEARCH ? NAMES : REWRITE_NAMES
 
         # index-payload's payload, fetched on the first call only, with a
         # note under the step it's called with.
@@ -88,27 +101,29 @@ module Quaack
           end
         end
 
-        def generate(transport, client, run_id, search, payload, progress) # rubocop:disable Metrics/ParameterLists
+        def generate(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           step = search == SEARCH ? GeneratorThree::STEP : GeneratorThree::REWRITE_STEP
           test = GeneratorThree.index_test(transport, run_id:, search:)
-          index_test = Pipeline.noting(progress, step, "Testing the LLM's index ideas", test)
+          index_test = StepSummary.noting(progress, step, "Testing the LLM's index ideas", test)
           result = GeneratorThree.new(client:, index_test:, step:).run(payload)
-          none = Pipeline.noting(progress, step, "Recording that the LLM gave no index ideas", test)
+          none = StepSummary.noting(progress, step, "Recording that the LLM gave no index ideas", test)
           none.call([]) if result.rounds.empty?
+          record.call { it.index_ideas!(search, result) }
           result
         end
 
         # RefinementRound's result, or, when it skips the round, :refined if
         # the round already ran, else nil.
-        def refine(transport, client, run_id, search, payload, progress) # rubocop:disable Metrics/ParameterLists
+        def refine(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           feedback = nil
           step = search == SEARCH ? RefinementRound::STEP : RefinementRound::REWRITE_STEP
-          fetch = Pipeline.noting(progress, step, "Reading how the LLM's index ideas did",
-                                  RefinementRound.index_feedback(transport, run_id:, search:))
-          index_test = Pipeline.noting(progress, step, "Testing the LLM's revised index ideas",
-                                       RefinementRound.index_test(transport, run_id:, search:))
+          fetch = StepSummary.noting(progress, step, "Reading how the LLM's index ideas did",
+                                     RefinementRound.index_feedback(transport, run_id:, search:))
+          index_test = StepSummary.noting(progress, step, "Testing the LLM's revised index ideas",
+                                          RefinementRound.index_test(transport, run_id:, search:))
           result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:, step:)
                                   .run(-> { payload.call(step) })
+          record.call { it.refinement!(search, result) } if result
           result || (:refined if feedback["refined"])
         end
       end
@@ -140,8 +155,8 @@ module Quaack
 
         module_function
 
-        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL) # rubocop:disable Metrics/ParameterLists
-          entries = generated(transport, client, run_id, entries, rewrites, progress)
+        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
+          entries = generated(transport, client, run_id, entries, rewrites, progress, record)
           Pipeline.step(progress, "plan-pruning") do
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
               prune(transport, run_id, entries, number, Pipeline.within(progress, run_id, number))
@@ -151,7 +166,7 @@ module Quaack
 
         # entries, asked again if rewrite-rules, llm-rewrites, or operator-rewrites still had to run, after
         # running them; else the skips are printed.
-        def generated(transport, client, run_id, entries, rewrites, progress) # rubocop:disable Metrics/ParameterLists
+        def generated(transport, client, run_id, entries, rewrites, progress, record) # rubocop:disable Metrics/ParameterLists
           return skipped(entries, rewrites, progress) if Pipeline.checked?(entries, rewrites)
 
           Pipeline.run_step(progress, entries["rewrite_rules_applied"], "rewrite-rules") do
@@ -160,7 +175,7 @@ module Quaack
           if Pipeline.llm_checked?(entries, rewrites)
             skipped(entries, rewrites, progress, from: 1)
           else
-            generate(transport, client, run_id, entries, rewrites, progress)
+            generate(transport, client, run_id, entries, rewrites, progress, record)
           end
           Pipeline.status(transport, run_id)
         end
@@ -173,25 +188,34 @@ module Quaack
           entries
         end
 
-        def generate(transport, client, run_id, entries, rewrites, progress) # rubocop:disable Metrics/ParameterLists
+        def generate(transport, client, run_id, entries, rewrites, progress, record) # rubocop:disable Metrics/ParameterLists
           payload = transport.call("rewrite-payload", args: { run: run_id }).messages
                              .find { it["type"] == "rewrite_payload" }
           Pipeline.run_step(progress, entries["rewrites_generated"], "llm-rewrites") do
-            rewrite_check = Pipeline.noting(progress, RewriteGeneration::STEP, "Checking the LLM's rewrites",
-                                            RewriteGeneration.rewrite_check(transport, run_id:))
-            RewriteGeneration.new(client:, rewrite_check:).run(payload)
+            llm(transport, client, run_id, payload, progress, record)
           end
-          operator(transport, client, run_id, entries, rewrites, payload, progress) unless rewrites.nil?
+          operator(transport, client, run_id, entries, rewrites, payload, progress, record) unless rewrites.nil?
+        end
+
+        # llm-rewrites, recording who wrote what it stored.
+        def llm(transport, client, run_id, payload, progress, record) # rubocop:disable Metrics/ParameterLists
+          rewrite_check = StepSummary.noting(progress, RewriteGeneration::STEP, "Checking the LLM's rewrites",
+                                             RewriteGeneration.rewrite_check(transport, run_id:))
+          result = RewriteGeneration.new(client:, rewrite_check:).run(payload)
+          record.call { it.rewrites!(result.provider, result.outcomes, proposed: result.rewrites.size) }
+          result
         end
 
         # operator-rewrites, unless the store says it ran.
-        def operator(transport, client, run_id, entries, rewrites, payload, progress) # rubocop:disable Metrics/ParameterLists
+        def operator(transport, client, run_id, entries, rewrites, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           Pipeline.run_step(progress, entries["operator_rewrites_checked"], "operator-rewrites") do
             raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
 
-            rewrite_check = Pipeline.noting(progress, OperatorCandidates::STEP, OPERATOR_CHECK,
-                                            OperatorCandidates.rewrite_check(transport, run_id:))
-            OperatorCandidates.new(client:, rewrite_check:).run(payload, rewrites)
+            rewrite_check = StepSummary.noting(progress, OperatorCandidates::STEP, OPERATOR_CHECK,
+                                               OperatorCandidates.rewrite_check(transport, run_id:))
+            result = OperatorCandidates.new(client:, rewrite_check:).run(payload, rewrites)
+            record.call { it.operator_inference!(result.provider) } if result.provider
+            result
           end
         end
 
@@ -217,47 +241,52 @@ module Quaack
       module CounterexampleStage
         module_function
 
-        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           Pipeline.step(progress, "rewrite-correctness") do
             entries = Pipeline.status(transport, run_id) unless Pipeline.checked?(entries, rewrites)
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
-              undecided(transport, client, run_id, entries, number, Pipeline.within(progress, run_id, number))
+              undecided(transport, client, run_id, entries, number, Pipeline.within(progress, run_id, number),
+                        record)
             end.to_a.compact
           end
         end
 
         # Whether rewrite number passed, or nil, printing the skip, if the
         # store says it's decided.
-        def undecided(transport, client, run_id, entries, number, progress) # rubocop:disable Metrics/ParameterLists
+        def undecided(transport, client, run_id, entries, number, progress, record) # rubocop:disable Metrics/ParameterLists
           if entries["rewrite_survived_#{number}"]
             progress.skip("rewrite-correctness", Pipeline::SAY.fetch("rewrite-tested"))
             return
           end
 
           rewrite(transport, client, { run: run_id, search: "rewrite_#{number}" },
-                  entries["rewrite_tested_#{number}"], progress)
+                  entries["rewrite_tested_#{number}"], progress, record)
         end
 
         # Whether the rewrite passed rewrite-test and counterexamples.
-        def rewrite(transport, client, args, tested, progress)
+        def rewrite(transport, client, args, tested, progress, record) # rubocop:disable Metrics/ParameterLists
           passed = Pipeline.run_step(progress, tested, "rewrite-test") do
             message(transport.call("rewrite-test", args:), "rewrite_test")["passed"]
           end
           return false unless tested || passed
 
-          Pipeline.step(progress, "counterexamples") { survives_counterexamples?(transport, client, args, progress) }
+          Pipeline.step(progress, "counterexamples") do
+            survives_counterexamples?(transport, client, args, progress, record)
+          end
         end
 
         # Whether no round of counterexamples disproved the rewrite. Each
         # enclave call gets a note of its own, so the LLM's line isn't left
         # open over it.
-        def survives_counterexamples?(transport, client, args, progress)
+        def survives_counterexamples?(transport, client, args, progress, record)
           progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-          rounds = Pipeline.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
-                                   compare(transport, args))
+          rounds = StepSummary.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
+                                      compare(transport, args))
           label = RewriteNames.label(args[:run], args[:search])
-          !Counterexamples.new(client:, label:).run(payload, compare: rounds).disproved
+          result = Counterexamples.new(client:, label:).run(payload, compare: rounds)
+          record.call { it.counterexamples!(args[:search], result.units) }
+          !result.disproved
         end
 
         def compare(transport, args)
@@ -286,22 +315,22 @@ module Quaack
       module RewriteIndexStage
         module_function
 
-        def run(transport:, client:, run_id:, progress: Progress::NULL, **)
+        def run(transport:, client:, run_id:, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           Pipeline.step(progress, "rewrite-index-ideas") do
             entries = Pipeline.status(transport, run_id)
             numbers = (1..).lazy.take_while { entries["rewrite_#{it}"] }
             numbers.select { entries["rewrite_index_ideas_#{it}"] }.map do |n|
-              asked?(transport, client, run_id, entries, n, Pipeline.within(progress, run_id, n))
+              asked?(transport, client, run_id, entries, n, Pipeline.within(progress, run_id, n), record)
             end.to_a
           end
         end
 
         # Runs IndexStage.llm for rewrite n, and returns whether any of llm-index-ideas
         # to index-rank did anything, rather than finding it already done.
-        def asked?(transport, client, run_id, entries, number, progress) # rubocop:disable Metrics/ParameterLists
+        def asked?(transport, client, run_id, entries, number, progress, record) # rubocop:disable Metrics/ParameterLists
           done = { generated: entries["index_generated_rewrite_#{number}"],
                    ranked: entries["index_llm_ranked_rewrite_#{number}"] }
-          refined = IndexStage.llm(transport, client, run_id, "rewrite_#{number}", done, progress)
+          refined = IndexStage.llm(transport, client, run_id, "rewrite_#{number}", done, progress, record:)
           !done[:generated] || !done[:ranked] || refined.is_a?(RefinementRound::Result)
         end
       end
@@ -389,17 +418,21 @@ module Quaack
       module ReportStage
         module_function
 
-        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, **) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, provenance: nil, **) # rubocop:disable Metrics/ParameterLists
           return unless out
 
           Pipeline.step(progress, "report") do
             payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
-            Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {})
+            Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {},
+                                  llm: Provenance.for_report(provenance, client))
           end
         end
       end
 
       STAGES = [IndexStage, RewriteStage, ArenaStage, CounterexampleStage, RewriteIndexStage].freeze
+
+      # The record callable for a run with no provenance record.
+      NONE = Provenance::NONE
 
       # The number of steps a run counts in its progress: 17, plus operator-rewrites
       # with rewrites, plus the report with out, plus Setup's eleven when
@@ -423,16 +456,6 @@ module Quaack
       end
 
       def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
-
-      # call, an enclave call that runs under an LLM step's lines, such as
-      # its index-test, with a note of its own under the step name first
-      # each time, so the LLM's line isn't left open over it.
-      def self.noting(progress, name, text, call)
-        lambda do |*args, **options|
-          progress.step_note(name, text)
-          call.call(*args, **options)
-        end
-      end
 
       # Progress for rewrite number's sub-steps, under its name, such as
       # "Rewrite Silver Fox" (RewriteNames).
@@ -488,7 +511,9 @@ module Quaack
       # setup is nil, or the run-server flags for Setup (an empty Hash for
       # none). Given setup, the run first does setup, unless the
       # store says it has had them.
-      def initialize(transport:, client:, run_id:, rewrites: nil, out: nil, stderr: nil, setup: nil) # rubocop:disable Metrics/ParameterLists
+      # With home, each LLM step writes the run's provenance record there
+      # (Provenance), and the report reads it.
+      def initialize(transport:, client:, run_id:, rewrites: nil, out: nil, stderr: nil, setup: nil, home: nil) # rubocop:disable Metrics/ParameterLists
         @stderr = stderr
         @out = out
         @transport = transport
@@ -496,6 +521,7 @@ module Quaack
         @run_id = run_id
         @rewrites = rewrites
         @setup = setup
+        @provenance = Provenance.open(home, run_id) if home
       end
 
       def run
@@ -503,15 +529,17 @@ module Quaack
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
         set_up(setup, entries)
-        STAGES.each do |stage|
-          stage.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites,
-                    progress: @progress)
-        end
-        MeasurementStage.run(transport: @transport, run_id: @run_id, entries:, progress: @progress)
-        ReportStage.run(transport: @transport, client: @client, run_id: @run_id, out: @out, progress: @progress)
+        [*STAGES, MeasurementStage].each { it.run(**options(entries)) }
+        ReportStage.run(**options(entries))
       end
 
       private
+
+      # What every stage runs with, each taking what it needs.
+      def options(entries)
+        { transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites, out: @out,
+          progress: @progress, record: Provenance.recorder(@provenance, @client), provenance: @provenance }
+      end
 
       # Runs setup when setup says to. A run that's had all of setup skips
       # it, so it says which run-server flags given go unused (Setup.ignored).
