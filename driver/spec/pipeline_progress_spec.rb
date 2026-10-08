@@ -302,6 +302,23 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 round, again, round, again, round])
     end
 
+    context "with two providers, when a later round's ask fails" do
+      let(:other) { FakeLLM.new }
+      let(:client) { router_over({ "a" => fake, "b" => other }, routing: { "mode" => "failover" }, max_retries: 0) }
+
+      it "names the rewrite in the line that starts its remaining rounds fresh" do
+        entries.merge!(rewrite(1, rewrite_survived: false))
+        tests.push(true)
+        fake.reply("llm-counterexamples", { "inserts" => [] }).error("llm-counterexamples", status: 429)
+        2.times { other.reply("llm-counterexamples", { "inserts" => [] }) }
+
+        run
+
+        expect(stderr.string).to include("a is rate limited, so the rest of this run skips it; asking b for the " \
+                                         "remaining rounds, starting fresh (llm-counterexamples, #{name})")
+      end
+    end
+
     it "notes index-payload and index-test under llm-index-ideas, and index-feedback and index-test under " \
        "llm-index-refine" do
       entries["index_generated_original"] = false

@@ -218,6 +218,107 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(llm_error { ask(session, "llm-index-ideas") }.rule).to eq("llm_bad_response")
       expect(ask).to eq("a")
     end
+
+    it "raises a LaterError naming the provider and step, so the step can go on without it" do
+      fakes["a"].reply("llm-index-ideas", "first").error("llm-index-ideas", status: 503)
+      session = router.session
+      ask(session, "llm-index-ideas")
+
+      error = llm_error { ask(session, "llm-index-ideas") }
+      expect(error).to be_a(Quaack::Driver::LLM::Router::LaterError)
+      expect([error.rule, error.provider, error.step]).to eq(%w[llm_unavailable a llm-index-ideas])
+      expect(session.failures.transform_values(&:rule)).to eq("a" => "llm_unavailable")
+    end
+
+    it "raises a plain error for llm_bad_request, which fails the step" do
+      fakes["a"].reply("llm-index-ideas", "first").error("llm-index-ideas", status: 400)
+      session = router.session
+      ask(session, "llm-index-ideas")
+
+      error = llm_error { ask(session, "llm-index-ideas") }
+      expect(error).not_to be_a(Quaack::Driver::LLM::Router::LaterError)
+      expect(error.message).to start_with("llm_bad_request: a: ")
+    end
+
+    it "says the step goes on without the provider, by the rule" do
+      fakes["a"].reply("llm-index-ideas", "1").error("llm-index-ideas", status: 429)
+      fakes["b"].reply("llm-index-ideas", "2").cut_short("llm-index-ideas", "par")
+                .reply("llm-index-ideas", "3").error("llm-index-ideas", status: 401)
+      3.times do
+        session = router.session
+        ask(session, "llm-index-ideas")
+        router.going_on(llm_error { ask(session, "llm-index-ideas") }, "going on without replacement ideas")
+      end
+
+      expect(notes.grep_v(/\AAsking/))
+        .to eq(["a is rate limited, so the rest of this run skips it; going on without replacement ideas " \
+                "(llm-index-ideas)",
+                "b's reply couldn't be used, though later asks may still use it; going on without replacement " \
+                "ideas (llm-index-ideas)",
+                "llm_auth: b: the API refused the credentials, so the rest of this run skips b. Fix its " \
+                "credentials before the next run. Going on without replacement ideas (llm-index-ideas)"])
+    end
+  end
+
+  describe "a unit started fresh after a later ask failed" do
+    let(:routing) { { "mode" => "failover" } }
+
+    # The LaterError of a's unit, whose second ask fails as fail does.
+    def later_failure(fail)
+      fakes["a"].reply("llm-counterexamples", "first")
+      fail.call(fakes["a"])
+      session = router.session
+      ask(session, "llm-counterexamples")
+      llm_error { ask(session, "llm-counterexamples") }.then { [it, session] }
+    end
+
+    it "skips the providers it's told to, though not down, and says it's starting fresh" do
+      error, session = later_failure(->(a) { a.cut_short("llm-counterexamples", "par") })
+      fakes["b"].reply("llm-counterexamples", "fresh")
+      fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox")
+
+      expect(ask(fresh, "llm-counterexamples")).to eq("fresh")
+      expect(fresh.provider).to eq("b")
+      expect(notes.last(2))
+        .to eq(["a's reply couldn't be used, though later asks may still use it; asking b for the remaining rounds, " \
+                "starting fresh (llm-counterexamples, Rewrite Silver Fox)",
+                "Asking the LLM (llm-counterexamples, b)"])
+    end
+
+    it "fails over at its first ask as any unit does, and its failures name every provider it failed on" do
+      error, session = later_failure(->(a) { a.error("llm-counterexamples", status: 401) })
+      fakes["b"].error("llm-counterexamples", status: 503)
+      fakes["c"].reply("llm-counterexamples", "fresh")
+      fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox")
+
+      expect(ask(fresh, "llm-counterexamples")).to eq("fresh")
+      expect(notes.grep_v(/\AAsking/))
+        .to eq(["llm_auth: a: the API refused the credentials, so the rest of this run skips a. Fix its credentials " \
+                "before the next run. Asking b for the remaining rounds, starting fresh (llm-counterexamples, " \
+                "Rewrite Silver Fox)",
+                "b is unavailable, so the rest of this run skips it; trying c (llm-counterexamples)"])
+      expect(fresh.failures.transform_values(&:rule)).to eq("b" => "llm_unavailable")
+    end
+
+    context "when every other provider is down" do
+      let(:routing) { { "mode" => "failover", "steps" => { "llm-rewrites" => { "providers" => %w[b c] } } } }
+
+      it "fails the step with the later failure's rule, listing what was tried" do
+        error, session = later_failure(->(a) { a.cut_short("llm-counterexamples", "par") })
+        fakes["b"].error("llm-rewrites", status: 429)
+        fakes["c"].error("llm-rewrites", status: 429)
+        llm_error { ask }
+        notes.clear
+        fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox")
+
+        failure = llm_error { ask(fresh, "llm-counterexamples") }
+        expect(failure.rule).to eq("llm_bad_response")
+        expect(failure.message)
+          .to start_with("llm_bad_response: every LLM provider llm-counterexamples may use failed: " \
+                         "b (llm_rate_limited), c (llm_rate_limited), a (llm_bad_response).")
+        expect(notes).to eq([])
+      end
+    end
   end
 
   describe "accounting and progress" do
@@ -244,9 +345,49 @@ RSpec.describe Quaack::Driver::LLM::Router do
 
   describe "the trust boundary" do
     let(:names) { %w[sentinel-name-one sentinel-name-two] }
+    let(:models) { names.to_h { [it, "sentinel-model-#{it.delete_prefix("sentinel-name-")}"] } }
+    let(:routing) { { "mode" => "failover" } }
 
-    # Every request body sent to any provider, as JSON text.
-    def sent = fakes.values.flat_map(&:asks).map { JSON.generate(it.body) }.join("\n")
+    let(:providers) do
+      config = { "llms" => names.map { { "name" => it, "provider" => "anthropic", "model" => models[it] } },
+                 "llm_routing" => routing }
+      Quaack::Driver::LLM.providers(config, env: {})
+    end
+
+    let(:router) do
+      clients = names.map do |name|
+        fakes.fetch(name).client(burndown: Quaack::Driver::Burndown.new, max_retries: 0, model: models[name])
+      end
+      described_class.for(providers, clients).tap do |router|
+        seen = notes
+        router.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
+      end
+    end
+
+    # Every prompt sent to any provider, its system prompt and messages, as
+    # JSON text. The request's own model field isn't a prompt.
+    def sent = fakes.values.flat_map(&:asks).map { JSON.generate([it.body[:system], it.body[:messages]]) }.join("\n")
+
+    it "sends each request to its entry's model, which is a sentinel" do
+      fakes["sentinel-name-one"].reply("llm-rewrites", "ok")
+      ask
+
+      expect(fakes["sentinel-name-one"].asks.first.body[:model]).to eq("sentinel-model-one")
+    end
+
+    it "never puts a provider's name or model in a fresh start's prompt" do
+      fakes["sentinel-name-one"].reply("llm-counterexamples", "1").error("llm-counterexamples", status: 429)
+      fakes["sentinel-name-two"].reply("llm-counterexamples", "2").reply("llm-counterexamples", "3")
+      session = router.session
+      ask(session, "llm-counterexamples")
+      error = llm_error { ask(session, "llm-counterexamples") }
+      fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox")
+      2.times { ask(fresh, "llm-counterexamples") }
+
+      expect(fakes.values.sum { it.asks.size }).to eq(4)
+      expect(sent).not_to include("sentinel")
+      expect(notes.join).to include("sentinel-name-one", "sentinel-name-two")
+    end
 
     it "never puts a provider's name in any prompt, across a failover and a session's later ask" do
       fakes["sentinel-name-one"].error("llm-index-ideas", status: 429)
@@ -262,6 +403,13 @@ RSpec.describe Quaack::Driver::LLM::Router do
     it "would catch a name planted in a prompt" do
       fakes["sentinel-name-one"].reply("llm-rewrites", "ok")
       router.ask(step: "llm-rewrites", messages: [{ role: "user", content: "from sentinel-name-one" }], max_tokens: 10)
+
+      expect(sent).to include("sentinel")
+    end
+
+    it "would catch a model planted in a prompt" do
+      fakes["sentinel-name-one"].reply("llm-rewrites", "ok")
+      router.ask(step: "llm-rewrites", system: "you are sentinel-model-one", messages:, max_tokens: 10)
 
       expect(sent).to include("sentinel")
     end
@@ -293,6 +441,36 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(error.message).to start_with("llm_rate_limited: ").and include("slow down")
       expect(error.message).not_to include("anthropic:")
       expect(error.message).not_to include("every LLM provider")
+    end
+
+    it "fails a fresh start with the later failure itself, since no provider is left" do
+      fake.reply("llm-counterexamples", "first").error("llm-counterexamples", status: 429, message: "slow down")
+      session = router.session
+      ask(session, "llm-counterexamples")
+      error = llm_error { ask(session, "llm-counterexamples") }
+      fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox")
+
+      failure = llm_error { ask(fresh, "llm-counterexamples") }
+      expect(failure.rule).to eq("llm_rate_limited")
+      expect(failure.message).to start_with("llm_rate_limited: ").and include("slow down")
+      expect(failure.message).not_to include("anthropic:", "every LLM provider")
+      expect(fake.asks.size).to eq(2)
+    end
+
+    {
+      429 => "The LLM is rate limited, so the rest of this run skips it; going on without replacement ideas " \
+             "(llm-index-ideas)",
+      401 => "llm_auth: the API refused the credentials, so the rest of this run skips the LLM. Fix its " \
+             "credentials before the next run. Going on without replacement ideas (llm-index-ideas)"
+    }.each do |status, line|
+      it "names no provider when the step goes on without it after a #{status}" do
+        fake.reply("llm-index-ideas", "1").error("llm-index-ideas", status:)
+        session = router.session
+        ask(session, "llm-index-ideas")
+        router.going_on(llm_error { ask(session, "llm-index-ideas") }, "going on without replacement ideas")
+
+        expect(notes.last).to eq(line)
+      end
     end
 
     it "is what Router.one builds around a lone client" do

@@ -140,6 +140,59 @@ RSpec.describe Quaack::Driver::GeneratorThree do
     end
   end
 
+  # DESIGN.md, "Several LLM providers" (Routing): a replacement round
+  # whose ask fails with a rule that fails over is skipped.
+  describe "a replacement round that fails" do
+    let(:first) { ["CREATE INDEX ON customers (lower(email))", "CREATE INDEX ON public.customers (email)"] }
+    let(:other) { FakeLLM.new }
+    let(:notes) { [] }
+    let(:client) { router_over({ "a" => fake, "b" => other }, routing: { "mode" => "failover" }, max_retries: 0) }
+
+    before do
+      seen = notes
+      client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
+      fake.reply("llm-index-ideas", { "indexes" => first })
+      answers << [dropped(1, "unqualified_table"), accepted(2)]
+    end
+
+    it "keeps the first round's ideas, asks no one else, and says it goes on without replacements" do
+      fake.error("llm-index-ideas", status: 429)
+      result = run
+
+      expect(result.rounds.map(&:ddls)).to eq([first])
+      expect(rounds).to eq([first])
+      expect(other.asks).to eq([])
+      expect(notes.last).to eq("a is rate limited, so the rest of this run skips it; going on without replacement " \
+                               "ideas (llm-index-ideas)")
+    end
+
+    it "names the rewrite's step when it searches for a rewrite" do
+      fake.reply("rewrite-llm-index-ideas", { "indexes" => first }).cut_short("rewrite-llm-index-ideas", "par")
+      described_class.new(client:, index_test:, step: described_class::REWRITE_STEP).run(payload)
+
+      expect(notes.last).to eq("a's reply couldn't be used, though later asks may still use it; going on without " \
+                               "replacement ideas (rewrite-llm-index-ideas)")
+    end
+
+    it "fails the step on llm_bad_request" do
+      fake.error("llm-index-ideas", status: 400)
+
+      expect { run }.to raise_error(Quaack::Driver::LLM::Error, /\Allm_bad_request: a: /)
+    end
+
+    context "from an llm block" do
+      let(:client) { router_of(fake, max_retries: 0) }
+
+      it "keeps the first round's ideas too" do
+        fake.error("llm-index-ideas", status: 503)
+
+        expect(run.rounds.map(&:ddls)).to eq([first])
+        expect(notes.last).to eq("The LLM is unavailable, so the rest of this run skips it; going on without " \
+                                 "replacement ideas (llm-index-ideas)")
+      end
+    end
+  end
+
   it "doesn't ask for replacements when every candidate was accepted or set aside" do
     fake.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.customers USING gin (email gin_trgm_ops)"] })
     answers << [accepted(1).merge("outcome" => "set_aside")]

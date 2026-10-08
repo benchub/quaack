@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "llm/router"
 
 module Quaack
   module Driver
@@ -18,10 +19,19 @@ module Quaack
     # foreign-key gaps (Enclave::Counterexamples).
     #
     # client is the LLM::Router. One rewrite's rounds are one unit, so they
-    # go to one provider, in one session.
+    # go to one provider, in one session. When a later round's ask fails
+    # with a rule that fails over, the remaining rounds start fresh, as a
+    # new unit on another provider, off every provider this rewrite's rounds
+    # failed on (DESIGN.md, "Several LLM providers": Routing). Its first ask
+    # is one user message: the payload, then each earlier round's inserts
+    # and feedback, in the words already sent, under "Earlier rounds, run
+    # by another model." None of it is the new model's own turns. The
+    # rounds count on, so no rewrite gets more than three. label, such as
+    # "Rewrite Silver Fox", names the rewrite in the progress line.
     #
     # Trust boundary. The prompt carries only the payload, which is shape
-    # data, and the LLM's own inserts.
+    # data, the LLM's own inserts, and the driver's feedback on them. A
+    # fresh start sends nothing else, and no provider's name or model.
     class Counterexamples
       STEP = "llm-counterexamples"
       MAX_TOKENS = 4000
@@ -48,11 +58,17 @@ module Quaack
         Answer with JSON: {"inserts": ["INSERT INTO ...", ...]}.
       PROMPT
 
-      def initialize(client:)
+      def initialize(client:, label: nil)
         @client = client
+        @label = label
       end
 
       ROUNDS = 3
+
+      ANSWER = 'Answer with JSON: {"inserts": [...]}.'
+      ANOTHER = "Write a new set of inserts that tries something different. #{ANSWER}".freeze
+      EARLIER = "Earlier rounds, run by another model."
+      DIFFERENT = "Write a new set of inserts that tries something different from all of them. #{ANSWER}".freeze
 
       Round = Data.define(:inserts, :outcome)
       Result = Data.define(:rounds, :disproved, :covered)
@@ -67,15 +83,11 @@ module Quaack
       # more run. A round whose inserts failed to load (load_failed, match
       # nil) disproves nothing, and the rounds go on.
       def run(payload, compare:)
-        session = @client.session
-        messages = [payload_message(payload)]
         rounds = []
-        ROUNDS.times do |round|
-          inserts = ask_with(messages, round.zero? ? FIRST : AGAIN, session)
-          rounds << Round.new(inserts:, outcome: compare.call(inserts))
-          break if rounds.last.outcome["match"] == false
-
-          messages += follow_up(rounds.last)
+        failed = {}
+        unit = [@client.session, [payload_message(payload)]]
+        until over?(rounds)
+          unit = turn(unit, rounds, compare) { |error, session| fresh(error, session, failed, payload, rounds) }
         end
         result(rounds)
       end
@@ -84,6 +96,27 @@ module Quaack
 
       private
 
+      def over?(rounds) = rounds.size == ROUNDS || rounds.last&.outcome&.fetch("match") == false
+
+      # One round on unit, a session and the messages it asks with: asks for
+      # the round's inserts, has compare load them, and adds the round to
+      # rounds. Returns the unit for the next round, or, when the ask failed
+      # with a LaterError, the block's, given the error and the session.
+      def turn((session, messages), rounds, compare)
+        inserts = ask_with(messages, rounds.empty? ? FIRST : AGAIN, session)
+        rounds << Round.new(inserts:, outcome: compare.call(inserts))
+        [session, messages + follow_up(rounds.last)]
+      rescue LLM::Router::LaterError => e
+        yield e, session
+      end
+
+      # The unit that starts the remaining rounds fresh after error, off
+      # every provider this rewrite's rounds failed on, which failed
+      # collects, session's among them.
+      def fresh(error, session, failed, payload, rounds)
+        [@client.fresh(error, skip: failed.merge!(session.failures), label: @label), [fresh_message(payload, rounds)]]
+      end
+
       def result(rounds)
         Result.new(rounds:, disproved: rounds.any? { it.outcome["match"] == false },
                    covered: rounds.flat_map { it.outcome["covered"] }.uniq)
@@ -91,7 +124,19 @@ module Quaack
 
       def follow_up(round)
         [{ role: :assistant, content: JSON.generate("inserts" => round.inserts) },
-         { role: :user, content: feedback(round.outcome) }]
+         { role: :user, content: "#{feedback_lines(round.outcome)}\n\n#{ANOTHER}" }]
+      end
+
+      # A fresh start's one user message: the payload as the first round
+      # sent it, then each earlier round's inserts, as its follow-up sent
+      # them, and its feedback.
+      def fresh_message(payload, rounds)
+        earlier = rounds.each_with_index.map do |round, i|
+          "Round #{i + 1}'s inserts:\n\n```json\n#{JSON.generate("inserts" => round.inserts)}\n```\n\n" \
+            "#{feedback_lines(round.outcome)}"
+        end
+        { role: :user, content: "#{payload_message(payload)[:content]}\n\n#{EARLIER}\n\n" \
+                                "#{earlier.join("\n\n")}\n\n#{DIFFERENT}" }
       end
 
       def payload_message(payload)
@@ -109,12 +154,14 @@ module Quaack
         "The accepted inserts gave both queries the same results."
       end
 
-      def feedback(outcome)
+      # What the driver tells the LLM about a round: which inserts were
+      # refused and by which rule, whether the accepted ones loaded, and
+      # which untested atoms they exercised.
+      def feedback_lines(outcome)
         refused = outcome["refused"].map { |r| "insert #{r["index"] + 1} was refused (#{r["rule"]})" }
         lines = refused + [result_line(outcome)]
         lines << "They exercised: #{outcome["covered"].join(", ")}." unless outcome["covered"].empty?
-        "#{lines.join("\n")}\n\nWrite a new set of inserts that tries something different. " \
-          "Answer with JSON: {\"inserts\": [...]}."
+        lines.join("\n")
       end
     end
   end

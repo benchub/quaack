@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "llm/router"
 
 module Quaack
   module Driver
@@ -27,7 +28,9 @@ module Quaack
     # goes on. A round with no DDL isn't sent to the enclave.
     #
     # client is the LLM::Router. The first ask and its replacement round
-    # are one unit, so both go to one provider, in one session.
+    # are one unit, so both go to one provider, in one session. A
+    # replacement ask that fails with a rule that fails over is skipped, and
+    # the first round's ideas go on alone.
     #
     # Trust boundary. The prompts carry only the payload, which is shape
     # data, the LLM's own DDL, and the enclave's shape-only outcomes.
@@ -103,11 +106,20 @@ module Quaack
 
         messages += [{ role: :assistant, content: JSON.generate("indexes" => first) },
                      { role: :user, content: replacement_ask(dropped) }]
-        again = ask(session, messages, "Asking the LLM again, for replacements for the dropped ideas")
-        Result.new(rounds: test(rounds, again))
+        Result.new(rounds: test(rounds, replacements(session, messages)))
       end
 
       private
+
+      # The replacement round's DDL, or none when its ask failed with a rule
+      # that fails over: the step keeps the first round's ideas and goes on
+      # (DESIGN.md, "Several LLM providers": Routing).
+      def replacements(session, messages)
+        ask(session, messages, "Asking the LLM again, for replacements for the dropped ideas")
+      rescue LLM::Router::LaterError => e
+        @client.going_on(e, "going on without replacement ideas")
+        []
+      end
 
       # purpose is what progress hears the ask is for.
       def ask(session, messages, purpose)
