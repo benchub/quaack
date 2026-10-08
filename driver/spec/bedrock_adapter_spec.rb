@@ -108,6 +108,14 @@ RSpec.describe "the bedrock adapter" do
 
       expect(fake.asks.map(&:url)).to eq(["https://bedrock.example.com/model/#{FakeBedrock::MODEL}/invoke"])
     end
+
+    # The README says so: the gem reads it, and QUAACK passes it through.
+    it "goes to ANTHROPIC_BEDROCK_BASE_URL when the settings have no base URL" do
+      fake.reply("llm-rewrites", "ok")
+      with_env("ANTHROPIC_BEDROCK_BASE_URL" => "https://bedrock-env.example.com") { ask("llm-rewrites") }
+
+      expect(fake.asks.map(&:url)).to eq(["https://bedrock-env.example.com/model/#{FakeBedrock::MODEL}/invoke"])
+    end
   end
 
   describe "the credentials" do
@@ -176,6 +184,12 @@ RSpec.describe "the bedrock adapter" do
       expect(burndown.llm_calls).to eq({})
     end
 
+    it "fail with llm_auth before any attempt when the keys found aren't set, such as an empty secret" do
+      expect { fake.client(burndown:, api_key: "") }.to raise_error(Quaack::Driver::LLM::Error, no_credentials)
+      expect(fake.asks).to eq([])
+      expect(burndown.llm_calls).to eq({})
+    end
+
     it "fail with llm_auth on credentials AWS refuses, without quoting its message or retrying" do
       fake.error("llm-index-ideas", status: 403, message: "SENTINEL-AWS-MESSAGE")
 
@@ -225,6 +239,16 @@ RSpec.describe "the bedrock adapter" do
                           "is set: unset one")
       end
 
+      %w[AWS_REGION AWS_DEFAULT_REGION].each do |name|
+        it "refuses a #{name} that isn't a region, naming the variable and not the value" do
+          ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
+          ENV[name] = "SENTINEL us east 1"
+
+          expect { build(FakeBedrock.settings.with(aws_region: nil)) }
+            .to raise_error(Quaack::Driver::LLM::ConfigError, "#{name} must be an AWS region, such as us-east-1")
+        end
+      end
+
       it "needs a region, unless there's a base URL" do
         ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
         regionless = FakeBedrock.settings.with(aws_region: nil)
@@ -262,6 +286,32 @@ RSpec.describe "the bedrock adapter" do
 
       expect(fake.asks.map(&:url)).to eq([invoke_url("eu-west-3")])
       expect(fake.auths.map { scope(it)[1] }).to eq(["eu-west-3"])
+    end
+
+    %w[AWS_REGION AWS_DEFAULT_REGION].each do |name|
+      it "refuses a #{name} that isn't a region, naming the variable and not the value" do
+        ENV[name] = "SENTINEL us east 1"
+
+        expect { build(regionless) }
+          .to raise_error(Quaack::Driver::LLM::ConfigError, "#{name} must be an AWS region, such as us-east-1")
+        expect(burndown.llm_calls).to eq({})
+      end
+    end
+
+    it "is AWS_DEFAULT_REGION when the settings and AWS_REGION name none" do
+      ENV["AWS_DEFAULT_REGION"] = "eu-west-3"
+      fake.reply("llm-rewrites", "ok")
+      ask_with(build(regionless))
+
+      expect(fake.asks.map(&:url)).to eq([invoke_url("eu-west-3")])
+    end
+
+    it "takes llm.aws_region without checking AWS_REGION, which it overrides" do
+      ENV["AWS_REGION"] = "not a region"
+      fake.reply("llm-rewrites", "ok")
+      ask_with(build)
+
+      expect(fake.asks.map(&:url)).to eq([invoke_url("us-west-2")])
     end
 
     it "is the profile's region when neither names one" do
@@ -310,6 +360,8 @@ end
 # closed local port, so if the guard were missing the request still couldn't
 # reach AWS.
 RSpec.describe "the spec-time network guard, for Bedrock" do
+  include AWSCredentials
+
   def create(client)
     client.messages.create(model: "m", max_tokens: 10, messages: [{ role: "user", content: "hi" }])
   end
@@ -319,7 +371,8 @@ RSpec.describe "the spec-time network guard, for Bedrock" do
                                  aws_secret_key: "s", base_url: "http://127.0.0.1:9", max_retries: 0)
   end
 
-  around { |example| with_env("AWS_BEARER_TOKEN_BEDROCK" => nil) { example.run } }
+  # So the gem reads no AWS file or variable of this machine's.
+  around { |example| without_aws_credentials { example.run } }
 
   it "refuses a request that would reach the network from the gem's own Bedrock client" do
     expect { create(client) }.to raise_error(NoNetwork::Refused, /QUAACK_ALLOW_REAL_LLM/)

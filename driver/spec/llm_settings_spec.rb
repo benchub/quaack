@@ -250,7 +250,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     end
 
     it "takes each region form AWS uses" do
-      %w[us-east-1 eu-central-1 ap-southeast-2 us-gov-west-1 ca-west-1].each do |region|
+      %w[us-east-1 eu-central-1 ap-southeast-2 us-gov-west-1 ca-west-1 eusc-de-east-1].each do |region|
         expect(settings(block.merge("aws_region" => region)).aws_region).to eq(region)
       end
     end
@@ -288,13 +288,24 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       end
     end
 
-    it "judges which keys apply by the provider QUAACK_LLM_PROVIDER picks" do
-      e = config_error(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+    it "ignores its own keys when QUAACK_LLM_PROVIDER switches to another provider for one run" do
+      result = settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic", "QUAACK_MODEL" => "claude-opus-5-5" })
 
-      expect(e.message).to eq("llm.aws_region in ~/.quaack/driver.json doesn't apply to provider anthropic")
+      expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5",
+                                   base_url: "https://bedrock.example.com", api_key_env: nil, aws_region: nil,
+                                   aws_profile: nil, command_template: nil, timeout_seconds: nil)
+    end
+
+    it "takes block keys for bedrock when QUAACK_LLM_PROVIDER picks it" do
       expect(settings({ "aws_region" => "us-west-2" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock",
                                                               "QUAACK_MODEL" => "m" }).aws_region)
         .to eq("us-west-2")
+    end
+
+    it "still refuses a key that doesn't apply when QUAACK_LLM_PROVIDER names the block's own provider" do
+      e = config_error(block.merge("api_key_env" => "SENTINEL_VALUE"), env: { "QUAACK_LLM_PROVIDER" => "bedrock" })
+
+      expect(e.message).to eq("llm.api_key_env in ~/.quaack/driver.json doesn't apply to provider bedrock")
     end
   end
 
@@ -321,20 +332,28 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(e.message).not_to include("sentinel")
     end
 
-    it "refuses a block base_url when QUAACK_LLM_PROVIDER switches to copilot_cli" do
-      e = config_error({ "base_url" => "https://sentinel.example" },
-                       env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
+    it "ignores a block base_url when QUAACK_LLM_PROVIDER switches to copilot_cli" do
+      result = settings({ "base_url" => "https://sentinel.example", "api_key_env" => "MY_KEY" },
+                        env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
 
-      expect(e.message).to eq("llm.base_url in ~/.quaack/driver.json doesn't apply to provider copilot_cli")
-      expect(e.message).not_to include("sentinel")
+      expect([result.provider, result.base_url, result.api_key_env]).to eq(["copilot_cli", nil, nil])
     end
 
-    it "refuses copilot-only block keys when QUAACK_LLM_PROVIDER switches away" do
+    it "ignores copilot-only block keys when QUAACK_LLM_PROVIDER switches away" do
       template = ["copilot", "{prompt_file}", "{model}"]
-      e = config_error({ "provider" => "copilot_cli", "command_template" => template },
+      result = settings({ "provider" => "copilot_cli", "command_template" => template, "timeout_seconds" => 5 },
+                        env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+
+      expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
+                                   api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                   command_template: nil, timeout_seconds: nil)
+    end
+
+    it "still checks the ignored keys' values" do
+      e = config_error({ "provider" => "copilot_cli", "timeout_seconds" => -1 },
                        env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
 
-      expect(e.message).to eq("llm.command_template in ~/.quaack/driver.json doesn't apply to provider anthropic")
+      expect(e.message).to eq("llm.timeout_seconds in ~/.quaack/driver.json must be a positive number")
     end
 
     it "takes its command template and timeout" do
