@@ -392,6 +392,38 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     end
   end
 
+  describe "NATURAL JOIN" do
+    let(:sql) { "SELECT 1 FROM public.orders o NATURAL JOIN public.customers c WHERE o.status = 1" }
+
+    it "gives one join marker for the join, in query order, naming no columns" do
+      atoms = extract(sql)
+      expect(atoms.map { |a| [a.kind, a.operator, a.negated, a.bare, a.shape, a.columns] }.first)
+        .to eq([:join, "NATURAL", false, true, "NATURAL JOIN", []])
+      expect(atoms.map(&:kind)).to eq(%i[join equality])
+    end
+
+    it "gives a marker for each NATURAL join, at any depth, and none for other joins" do
+      atoms = extract("SELECT 1 FROM public.orders o NATURAL LEFT JOIN public.customers c " \
+                      "JOIN public.items i ON i.order_id = o.id " \
+                      "WHERE EXISTS (SELECT 1 FROM public.items j NATURAL JOIN public.orders p)")
+      expect(atoms.map(&:operator)).to eq(["NATURAL", "=", nil, "NATURAL"])
+    end
+
+    it "can't be replaced by TRUE, since its condition isn't written in the query" do
+      parse = PgQuery.parse(sql)
+      atom = described_class.extract(parse, column_names:).first
+      expect(atom.replaceable).to be(false)
+      expect { described_class.with_true(parse, atom) }
+        .to raise_error(described_class::Error, /NATURAL/) { expect(it.rule).to eq("natural_join_unreplaceable") }
+    end
+
+    it "points its path at the join" do
+      parse = PgQuery.parse(sql)
+      atom = described_class.extract(parse, column_names:).first
+      expect(described_class.node(parse, atom)).to be_a(PgQuery::JoinExpr).and have_attributes(is_natural: true)
+    end
+  end
+
   describe "JOIN ... USING" do
     let(:sql) { "SELECT 1 FROM public.orders o JOIN public.items i USING (id, customer_id)" }
 

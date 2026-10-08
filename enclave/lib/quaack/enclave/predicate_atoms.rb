@@ -38,8 +38,10 @@ module Quaack
     # (x = 1) IS NOT FALSE, bool_or(x = 1), and a CASE that returns x = 1
     # each hold the atom x = 1. A select list holds no atoms, even in a
     # subquery inside an atom. A CASE x WHEN v's test is x = v. Each JOIN
-    # ... USING column is one atom too. NATURAL JOIN gives none, since its
-    # columns aren't written in the query.
+    # ... USING column is one atom too. Each NATURAL JOIN is one marker
+    # atom, :join with operator "NATURAL", no columns, and shape NATURAL
+    # JOIN, since its columns aren't written in the query. Its path leads
+    # to the join.
     #
     # Kinds. An atom whose columns belong to two or more relations, across
     # query levels too (a correlated subquery's o.id = i.order_id), is
@@ -83,7 +85,10 @@ module Quaack
     # simple CASE becomes a searched one, CASE WHEN x = v ..., so one WHEN
     # can be TRUE. A USING column can't be replaced, because USING also
     # merges the two columns into one, so replaceable is false and with_true
-    # raises Error, rule using_column_unreplaceable. The deparsed SQL must
+    # raises Error, rule using_column_unreplaceable. A NATURAL JOIN marker
+    # can't be replaced either, rule natural_join_unreplaceable, so
+    # vacuity-guard always counts it untested (unsupported in v1). The
+    # deparsed SQL must
     # parse back to the changed tree, or with_true raises Deparse::Error
     # (rule deparse_mismatch).
     # Deparse::Parentheses puts back the parentheses the deparser leaves
@@ -117,6 +122,12 @@ module Quaack
       end
 
       USING_UNREPLACEABLE = "a JOIN ... USING column can't be replaced by TRUE"
+      NATURAL_UNREPLACEABLE = "a NATURAL JOIN's condition can't be replaced by TRUE"
+      # The rule and message with_true raises for each atom it can't replace.
+      UNREPLACEABLE = {
+        "USING" => ["using_column_unreplaceable", USING_UNREPLACEABLE],
+        "NATURAL" => ["natural_join_unreplaceable", NATURAL_UNREPLACEABLE]
+      }.freeze
 
       module_function
 
@@ -137,7 +148,7 @@ module Quaack
       # The query with this one atom replaced by TRUE, deparsed. The parse
       # must be the one the atom came from, and it isn't changed.
       def with_true(parse, atom)
-        raise Error.new("using_column_unreplaceable", USING_UNREPLACEABLE) unless atom.replaceable
+        raise Error.new(*UNREPLACEABLE.fetch(atom.operator)) unless atom.replaceable
 
         tree = Tree.copy(parse.tree)
         case_expr = Tree.simple_case(tree, atom.path)
@@ -409,6 +420,30 @@ module Quaack
         end
       end
 
+      # The atoms a join's own syntax makes, which with_true can't replace:
+      # one per USING column, then one marker if it's NATURAL.
+      module JoinMarkers
+        module_function
+
+        def of(join, sides, path, frames)
+          using = join.using_clause.each_with_index.map do |node, i|
+            using(node.string.sval, sides, path + ["using_clause", i], frames)
+          end
+          join.is_natural ? using + [natural(path)] : using
+        end
+
+        def using(name, sides, path, frames)
+          columns = sides.map { |side| frames.using_column(name, side) }.freeze
+          Atom.new(kind: :join, operator: "USING", negated: false, bare: true, columns:,
+                   shape: "USING (#{Redaction.identifier(name)})", path: path.freeze, replaceable: false)
+        end
+
+        def natural(path)
+          Atom.new(kind: :join, operator: "NATURAL", negated: false, bare: true, columns: [].freeze,
+                   shape: "NATURAL JOIN", path: path.freeze, replaceable: false)
+        end
+      end
+
       # Walks the parse and collects the atoms, in query order: each
       # SELECT's WITH first, then its fields in the parse's order.
       class Walker
@@ -468,24 +503,18 @@ module Quaack
           @depth = depth
         end
 
-        # A join's ON clause, or each USING column. The join is in the
-        # innermost frame, and its ON sees only the join's own inputs there.
+        # A join's ON clause, each USING column, and a NATURAL marker. The
+        # join is in the innermost frame, and its ON sees only the join's
+        # own inputs there.
         def join(join, path, scopes)
           sides = [join.larg, join.rarg].map { |side| @frames.rels(side, scopes.size - 1) }
           fields(join, path, scopes, skip: "quals")
           predicate(join.quals, path + ["quals"], inputs(scopes, sides)) if join.quals
-          join.using_clause.each_with_index { |node, i| add_using(node, sides, path + ["using_clause", i]) }
+          @atoms.concat(JoinMarkers.of(join, sides, path, @frames))
         end
 
         # The scopes with the innermost frame cut down to the join's inputs.
         def inputs(scopes, sides) = scopes[0...-1] + [sides.flatten(1)]
-
-        def add_using(node, sides, path)
-          name = node.string.sval
-          columns = sides.map { |side| @frames.using_column(name, side) }.freeze
-          @atoms << Atom.new(kind: :join, operator: "USING", negated: false, bare: true, columns:,
-                             shape: "USING (#{Redaction.identifier(name)})", path: path.freeze, replaceable: false)
-        end
 
         # A subquery in FROM sees the FROM it's in only when it's LATERAL.
         # A function always does: Postgres makes it LATERAL.

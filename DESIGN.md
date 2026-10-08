@@ -1183,6 +1183,8 @@ When an atom is vacuous:
 
 A scenario never crashes QUAACK. If S1 won't load in arena, say because a trigger or constraint QUAACK doesn't model rejects a row, it exercises nothing: its atoms stay vacuous, get their retries, and end untested. In fixture-compare, a scenario that won't load disproves each candidate with the load failure's rule, which is safe but means no candidate passes.
 
+Some atoms can't be replaced by `TRUE` at all, so they're untested with no retry. A `JOIN ... USING` column is one, since `USING` also merges the two columns into one. Unsupported in v1: a `NATURAL JOIN`'s condition isn't written in the query, so each `NATURAL JOIN` is one marker atom with the shape `NATURAL JOIN`, which is always untested. QUAACK doesn't work out its common columns.
+
 The enclave script tells the driver which atoms are untested by their redacted shape, such as `o.status = $1`, never by their values.
 
 #### fixture-open. Open the transaction.
