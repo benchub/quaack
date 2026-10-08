@@ -21,9 +21,9 @@ module Quaack
         #   CTE), read without ONLY and without column aliases, under a
         #   name of its own, joined only by plain inner or cross joins: no
         #   outer join, NATURAL, USING, or join alias.
-        # - Every table has a key: one column the catalog proves unique and
-        #   not null, of a type UNION compares (see Catalog#columns). The
-        #   first such column, in the table's order, is used.
+        # - Every table has a key: columns the catalog proves unique
+        #   together and each not null, each of a type UNION compares (see
+        #   Catalog#columns). A key of one column is used first; see key.
         # - Outside the WHERE, every column is written name.column or, as
         #   a whole select-list entry, name.*, where name is one of the
         #   tables. Each is a column the catalog lists, so not a system
@@ -41,7 +41,7 @@ module Quaack
           end
 
           def self.with_keys(used, keys, stars)
-            new(columns: (used + keys.map(&:first)).uniq, stars:, assumptions: keys.flat_map(&:last).uniq)
+            new(columns: (used + keys.flat_map(&:first)).uniq, stars:, assumptions: keys.flat_map(&:last).uniq)
           end
 
           def self.columns(item, catalog) = catalog.columns(item.table.schemaname, item.table.relname)
@@ -52,16 +52,32 @@ module Quaack
             items if !items.empty? && Tree.inner_conditions(from) && Tree.tables?(items)
           end
 
-          # [[name, column], its assumptions] for the table's key, or nil.
+          # [[[name, column], ...], their assumptions] for the table's key,
+          # or nil. A key of one column comes first, the first in the
+          # table's order; then the catalog's keys of several columns
+          # (Catalog#keys), the fewest columns first, then the index made
+          # first.
           def self.key(item, catalog)
             table = "#{item.table.schemaname}.#{item.table.relname}"
-            columns(item, catalog).select(&:comparable).each do |column|
-              facts = [{ "kind" => "unique", "table" => table, "columns" => [column.name] },
-                       { "kind" => "not_null", "table" => table, "column" => column.name }]
-              return [[item.name, column.name], facts] if facts.all? { catalog.met?(it) }
+            candidates(item, catalog).each do |key|
+              facts = [{ "kind" => "unique", "table" => table, "columns" => key },
+                       *key.map { { "kind" => "not_null", "table" => table, "column" => it } }]
+              return [key.map { [item.name, it] }, facts] if facts.all? { catalog.met?(it) }
             end
             nil
           end
+
+          # The column sets that may be the table's key, each of columns
+          # UNION compares, best first.
+          def self.candidates(item, catalog)
+            comparable = columns(item, catalog).select(&:comparable).map(&:name)
+            several = catalog.keys(item.table.schemaname, item.table.relname)
+                             .select { it.size > 1 && (it - comparable).empty? }
+            comparable.map { [it] } + by_size(several)
+          end
+
+          # Keys by their number of columns, then in their order.
+          def self.by_size(keys) = keys.sort_by.with_index { |key, i| [key.size, i] }
 
           # The name of a select-list entry that is name.*, or nil.
           def self.star(target)
