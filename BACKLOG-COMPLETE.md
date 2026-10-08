@@ -7324,3 +7324,23 @@ From the review of 20261007-62. Servers such as Hugging Face TGI send `{"error":
 - **Design:** LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. For the OpenAI-compatible adapter, a body whose `error` is a non-empty string (Hugging Face TGI) gives that string as the message, scrubbed; every other shape, and Anthropic and Bedrock, are unchanged.
+
+### 20261003-7. Intake unreadable causes: minor findings.
+
+Minor findings from the first review of 20260929-5:
+
+- `start.rb:72`: changing `start_with?("#{home_path}/")` to `start_with?(home_path.to_s)` stays green. Add a test where home is `/Users/bench` and the path is `/Users/benchX/q.sql`.
+- `operator_file.rb:54`: removing `ENOTDIR` (a parent that's a regular file) stays green. That case would then be `not_regular_file` instead of `missing`. Pin it.
+- `error_filter.rb:11`: the comment still says "for two rules" and has a stray indent. Restore the `FUNCTION` comment that was deleted from `reply.rb:55`.
+- The driver repeats the list of four reasons in `reply.rb` and `enclave_error.rb`. Share one constant from the protocol gem.
+- From the second review:
+  - `start.rb:72`: removing `path == home_path` or either `cleanpath` call stays green. Test `--query /Users/bench` and `/Users/bench/../x.sql`.
+  - `operator_file.rb` `reason`: `EIO`, `ENAMETOOLONG`, and `IOError` all become `not_regular_file`, which is misleading. Give them their own reason, or a generic one.
+  - No driver spec checks that `--query '~/q.sql'` reaches the remote `quaacks` as a literal `~/q.sql`.
+  - `error_filter.rb:153`: the `instance_of?(String)` check is an equivalent mutant. Keep it with a comment, or drop it.
+
+- **Depends on:** 20260929-5.
+- **Came from:** The first review of 20260929-5, 2026-10-03.
+- **Design:** input.
+- **Status:** done
+- **Landed:** 2026-10-08, the test and comment items, after one review with no blocking findings. Specs pin `quaack start`'s laptop-home refusal (home itself, `..` and `.` forms, a trailing slash, a path beside home, and `~/` sent as a literal) and intake's ENOTDIR as missing; comments in `error_filter.rb` and `transport/error_fields.rb` are fixed. Code is unchanged. The two items that need an enclave or protocol change moved to 20261007-64.

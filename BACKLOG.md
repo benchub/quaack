@@ -1319,24 +1319,7 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 
 ### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-7. Intake unreadable causes: minor findings.
-
-Minor findings from the first review of 20260929-5:
-
-- `start.rb:72`: changing `start_with?("#{home_path}/")` to `start_with?(home_path.to_s)` stays green. Add a test where home is `/Users/bench` and the path is `/Users/benchX/q.sql`.
-- `operator_file.rb:54`: removing `ENOTDIR` (a parent that's a regular file) stays green. That case would then be `not_regular_file` instead of `missing`. Pin it.
-- `error_filter.rb:11`: the comment still says "for two rules" and has a stray indent. Restore the `FUNCTION` comment that was deleted from `reply.rb:55`.
-- The driver repeats the list of four reasons in `reply.rb` and `enclave_error.rb`. Share one constant from the protocol gem.
-- From the second review:
-  - `start.rb:72`: removing `path == home_path` or either `cleanpath` call stays green. Test `--query /Users/bench` and `/Users/bench/../x.sql`.
-  - `operator_file.rb` `reason`: `EIO`, `ENAMETOOLONG`, and `IOError` all become `not_regular_file`, which is misleading. Give them their own reason, or a generic one.
-  - No driver spec checks that `--query '~/q.sql'` reaches the remote `quaacks` as a literal `~/q.sql`.
-  - `error_filter.rb:153`: the `instance_of?(String)` check is an equivalent mutant. Keep it with a comment, or drop it.
-
-- **Depends on:** 20260929-5.
-- **Came from:** The first review of 20260929-5, 2026-10-03.
-- **Design:** input.
-- **Status:** todo
+### 20261003-7. Intake unreadable causes: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-8. `rake full`: harden the stamp and close test gaps. Done, see BACKLOG-COMPLETE.md.
 
@@ -2228,3 +2211,14 @@ From the review of 20261007-51. Neither is new in that task.
 ### 20261007-62. Router and OpenAI-compatible details: minors from 20261007-42. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-63. OpenAI-compatible details: accept a string `error` as the message. Done, see BACKLOG-COMPLETE.md.
+
+### 20261007-64. Intake unreadable reasons: new causes, and one shared list.
+
+The two items 20261003-7 left, since each changes enclave or protocol behavior and goes in a batch.
+1. Give `EIO`, `ENAMETOOLONG`, and `IOError` their own unreadable reasons in the enclave (`ErrorFilter::UNREADABLE_REASONS`), with the driver's `ErrorFields::REASONS` and `EnclaveError#reason_message` updated to match.
+2. Move the reason list into the protocol gem so the enclave and the driver share one copy; `EnclaveError#reason_message` still repeats the keys in its hash. Under the batching rule this lands with the next version bump, so a jump server never runs a protocol gem without the constant.
+
+- **Depends on:** 20261003-7.
+- **Came from:** The builder of 20261003-7, 2026-10-08.
+- **Design:** intake, trust boundary.
+- **Status:** todo
