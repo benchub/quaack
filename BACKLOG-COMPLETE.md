@@ -7546,3 +7546,13 @@ The review of 20261008-10 found that two branches of the EPERM fallback in `driv
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-14 (commit 26bca3bb). Review clean.
+
+### 20261008-6. `or_to_union`: support composite keys.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to composite keys (a UNION that dedupes on a key of several columns). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-6 (commit bf334df0). Review had no blocking findings; its minors went to 20261008-18.

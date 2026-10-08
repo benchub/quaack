@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-2 (not_in_to_not_exists: row-valued NOT IN).
 - 20261008-11 (or_to_union: LIKE minors, collation check skips dropped columns).
 - 20261007-44 (distinct_join_to_exists: subqueries in conditions on the kept table).
+- 20261008-6 (or_to_union: composite keys).
 
 ## How this file works.
 
@@ -2198,14 +2199,7 @@ One of 20261007-38's extensions, each its own task by the user's decision (2026-
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261008-6. `or_to_union`: support composite keys.
-
-One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to composite keys (a UNION that dedupes on a key of several columns). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-47.
-- **Came from:** The split of 20261007-47, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-6. `or_to_union`: support composite keys. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-7. `or_to_union`: support a query with GROUP BY.
 
@@ -2286,4 +2280,21 @@ The review of 20261008-13 found one stale sentence in DESIGN.md's "Where QUAACK 
 - **Depends on:** 20261008-13.
 - **Came from:** The review of 20261008-13, 2026-10-08.
 - **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261008-18. `or_to_union` composite keys: minors from 20261008-6.
+
+The review of 20261008-6 found these minor issues:
+
+1. **Missing rule-level tests.** The rule refuses these key cases, but `or_to_union_postgres_spec.rb` has no test for them. The fact-level `assumption_check_postgres_spec.rb` covers some of them.
+   - a deferrable composite key
+   - an expression index
+   - a domain key column
+   - a citext key column
+2. **Incomplete refusal bullet.** The bullet in `docs/transforms/or_to_union.md` leaves out two conditions: the key must not be deferrable, and each column must compare as the column's own `=` does.
+3. **Repeated column in the assumption.** An index like `(a, b, a)` states a `unique` assumption that lists a column twice. It's sound, since the carried columns are de-duplicated, but it's untidy.
+
+- **Depends on:** 20261008-6.
+- **Came from:** The review of 20261008-6, 2026-10-08.
+- **Design:** rewrite-rules.
 - **Status:** todo
