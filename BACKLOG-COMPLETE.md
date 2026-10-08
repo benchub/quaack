@@ -6839,3 +6839,15 @@ From the review of 20261007-3. `one_list_per_item?` checks how many MCV null-fla
 - **Design:** statistics, classify, trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-07, after a review with one blocking finding (a vacuous test), a fix round, and a clean second review. The outbound statistics shape now needs one MCV null flag per column of the statistics object (counted from its definition with pg_query, an expression counting as one), `most_common_freqs` and `most_common_base_freqs` together and of one length, and that length equal to the MCV item count when the items go out. Mismatches are `statistics_bad_shape`, naming no value. Real Postgres 18 extended statistics with expressions still pass. Two untested defensive guards (`column_count`'s one-statement check, `!width.nil?`) weren't filed. Enclave change, unreleased until the next batch bump.
+
+### 20261007-35. Run records: read once, and type-check the jump host.
+
+From the reviews of 20261007-23.
+1. `Runs#where` reads the record three times per call (host, server, port). A record that changes between reads gives a clean usage error today, but one read is simpler and can't mix two versions.
+2. `Runs#host` and `where` pass a non-string `jump_host` (`{"jump_host": 5}`) straight through, unlike `server` and `port`, which are checked on read. Refuse it as an unreadable record.
+
+- **Depends on:** 20261007-23.
+- **Came from:** The reviews of 20261007-23, rounds one and two.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `Runs#where` reads the record once, and a record whose `jump_host` isn't a string (missing, null, a number, a list) is refused as unreadable, naming it by `~` and never its contents. Every record `quaack start` has written since 20260926-1 carries a string jump host, so no real record is newly refused.

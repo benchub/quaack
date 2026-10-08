@@ -2270,16 +2270,7 @@ From the review of 20261007-30. `IndexDdlCheck`'s volatility check gets the plan
 - **Design:** qualify, index-test.
 - **Status:** todo
 
-### 20261007-35. Run records: read once, and type-check the jump host.
-
-From the reviews of 20261007-23.
-1. `Runs#where` reads the record three times per call (host, server, port). A record that changes between reads gives a clean usage error today, but one read is simpler and can't mix two versions.
-2. `Runs#host` and `where` pass a non-string `jump_host` (`{"jump_host": 5}`) straight through, unlike `server` and `port`, which are checked on read. Refuse it as an unreadable record.
-
-- **Depends on:** 20261007-23.
-- **Came from:** The reviews of 20261007-23, rounds one and two.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261007-35. Run records: read once, and type-check the jump host. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-36. OpenAI-compatible replies: let driver bugs surface without crashing on bad 200s (item 2 of 20261007-24).
 
