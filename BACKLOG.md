@@ -1265,14 +1265,7 @@ Gemini's OpenAI-compatible endpoint answered a 503 and QUAACK printed no reason.
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261001-6. The `llm` block in driver.json takes an optional `max_retries`.
-
-The openai and anthropic gems retry a 408, 409, 429, or 5xx twice by default, with backoff. That's too few to ride out an overloaded provider during a long run. Add an optional `max_retries` (a non-negative integer) to the `llm` block in `~/.quaack/driver.json`, and pass it to both adapters. Without the key, keep today's default. A value that isn't a non-negative integer is a usage error naming the key, the same way other bad keys in the block are handled.
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-10-01, after Gemini returned 503s.
-- **Design:** LLM client, driver.json.
-- **Status:** todo
+### 20261001-6. The `llm` block in driver.json takes an optional `max_retries`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-7. Send stats only for the columns the query references. Done, see BACKLOG-COMPLETE.md.
 
@@ -2219,4 +2212,13 @@ From the review of 20260929-14. Removing `if found[dir]` from the warning loop i
 - **Depends on:** 20260929-14.
 - **Came from:** The review of 20260929-14.
 - **Design:** Development.
+- **Status:** todo
+
+### 20261007-66. `max_retries`: pin the burndown count per attempt.
+
+From the review of 20261001-6. The new retry specs show `max_retries` bounds attempts but don't assert `burndown.llm_calls` (the reviewer confirmed `{"llm-rewrites"=>2}` and `=>4` by hand). Add the assertion to each adapter's retry spec.
+
+- **Depends on:** 20261001-6.
+- **Came from:** The review of 20261001-6.
+- **Design:** LLM client.
 - **Status:** todo

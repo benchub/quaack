@@ -7358,3 +7358,13 @@ Minor findings from the first review of 20260929-9.
 - **Design:** none. Test harness only.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. CLAUDE.md now says every spec that runs `quaacks` fails without a matching pg_dump, with the replay and scenario-refusal specs each failing as one example, through one shared `TestPgDump.examples` gate. Specs cover the gate, `with_env`'s PATH for PromptPack and E2ERun, and `version`'s exit status, and `find` warns on stderr when it skips a directory holding pg_dump of another major.
+
+### 20261001-6. The `llm` block in driver.json takes an optional `max_retries`.
+
+The openai and anthropic gems retry a 408, 409, 429, or 5xx twice by default, with backoff. That's too few to ride out an overloaded provider during a long run. Add an optional `max_retries` (a non-negative integer) to the `llm` block in `~/.quaack/driver.json`, and pass it to both adapters. Without the key, keep today's default. A value that isn't a non-negative integer is a usage error naming the key, the same way other bad keys in the block are handled.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, after Gemini returned 503s.
+- **Design:** LLM client, driver.json.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The `llm` block and each `llms` entry take an optional `max_retries`, a JSON whole number from 0 to 10 (the range is pending the user's confirmation), that the Anthropic, Bedrock, and OpenAI-compatible adapters use in place of the gem's default of two; copilot_cli refuses it. A bad value is a usage error naming the key or the entry's position, never the value. On a `QUAACK_LLM_PROVIDER` switch it's checked and ignored with the rest of the block, and sentinel probes show no block value reaches the new provider.
