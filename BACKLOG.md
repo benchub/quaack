@@ -2214,11 +2214,4 @@ From the review of 20260929-14. Removing `if found[dir]` from the warning loop i
 - **Design:** Development.
 - **Status:** todo
 
-### 20261007-66. `max_retries`: pin the burndown count per attempt.
-
-From the review of 20261001-6. The new retry specs show `max_retries` bounds attempts but don't assert `burndown.llm_calls` (the reviewer confirmed `{"llm-rewrites"=>2}` and `=>4` by hand). Add the assertion to each adapter's retry spec.
-
-- **Depends on:** 20261001-6.
-- **Came from:** The review of 20261001-6.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261007-66. `max_retries`: pin the burndown count per attempt. Done, see BACKLOG-COMPLETE.md.

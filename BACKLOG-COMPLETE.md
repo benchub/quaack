@@ -7368,3 +7368,13 @@ The openai and anthropic gems retry a 408, 409, 429, or 5xx twice by default, wi
 - **Design:** LLM client, driver.json.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The `llm` block and each `llms` entry take an optional `max_retries`, a JSON whole number from 0 to 10 (the range is pending the user's confirmation), that the Anthropic, Bedrock, and OpenAI-compatible adapters use in place of the gem's default of two; copilot_cli refuses it. A bad value is a usage error naming the key or the entry's position, never the value. On a `QUAACK_LLM_PROVIDER` switch it's checked and ignored with the rest of the block, and sentinel probes show no block value reaches the new provider.
+
+### 20261007-66. `max_retries`: pin the burndown count per attempt.
+
+From the review of 20261001-6. The new retry specs show `max_retries` bounds attempts but don't assert `burndown.llm_calls` (the reviewer confirmed `{"llm-rewrites"=>2}` and `=>4` by hand). Add the assertion to each adapter's retry spec.
+
+- **Depends on:** 20261001-6.
+- **Came from:** The review of 20261001-6.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. Each adapter's `max_retries` spec also asserts the burndown counted every attempt. Specs only.
