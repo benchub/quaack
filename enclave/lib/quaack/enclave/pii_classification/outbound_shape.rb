@@ -34,10 +34,16 @@ module Quaack
       #   but kinds.
       module OutboundShape
         KINDS = %w[d f m e].freeze
-        ATTNUMS = "-?\\d+(?:, -?\\d+)*"
-        NUMBER = "\\d+(?:\\.\\d+)?"
-        NDISTINCT = /\A\{(?:"#{ATTNUMS}": \d+(?:, "#{ATTNUMS}": \d+)*)?\}\z/
-        DEPENDENCY = "\"#{ATTNUMS} => -?\\d+\": #{NUMBER}".freeze
+        # A column number: at most 1600 columns (MaxHeapAttributeNumber), and
+        # negative for an expression, so four digits. A count: Postgres
+        # writes an ndistinct as an int, so ten. A degree is a %f in 0..1,
+        # so ten digits on either side of its point is ample.
+        ATTNUM = "-?\\d{1,4}"
+        ATTNUMS = "#{ATTNUM}(?:, #{ATTNUM})*".freeze
+        COUNT = "\\d{1,10}"
+        NUMBER = "\\d{1,10}(?:\\.\\d{1,10})?"
+        NDISTINCT = /\A\{(?:"#{ATTNUMS}": #{COUNT}(?:, "#{ATTNUMS}": #{COUNT})*)?\}\z/
+        DEPENDENCY = "\"#{ATTNUMS} => #{ATTNUM}\": #{NUMBER}".freeze
         DEPENDENCIES = /\A\{(?:#{DEPENDENCY}(?:, #{DEPENDENCY})*)?\}\z/
 
         # The test each field of a pg_stats row must pass, when it isn't nil.
@@ -63,6 +69,7 @@ module Quaack
         def check_object(table, object)
           need(table, "kinds", object["kinds"].is_a?(Array) && object["kinds"].all? { KINDS.include?(it) })
           check_fields(table, object, OBJECT_FIELDS)
+          need(table, "most_common_val_nulls", one_list_per_item?(object))
         end
 
         def check_fields(table, data, fields)
@@ -84,6 +91,12 @@ module Quaack
         def ndistinct?(value) = value.is_a?(String) && NDISTINCT.match?(value)
 
         def dependencies?(value) = value.is_a?(String) && DEPENDENCIES.match?(value)
+
+        # Null flags come only with MCV items, one list for each.
+        def one_list_per_item?(object)
+          nulls, items = object.values_at("most_common_val_nulls", "most_common_vals")
+          nulls.nil? || (items.is_a?(Array) && nulls.size == items.size)
+        end
 
         def flag_lists?(value)
           value.is_a?(Array) && value.all? { |flags| flags.is_a?(Array) && flags.all? { [true, false].include?(it) } }

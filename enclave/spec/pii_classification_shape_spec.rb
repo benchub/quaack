@@ -91,12 +91,24 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     "an object for most_common_freqs" => -> { { "most_common_freqs" => { sentinel => 1 } } },
     "a string in most_common_val_nulls" => -> { { "most_common_val_nulls" => [[sentinel, false]] } },
     "a flat most_common_val_nulls" => -> { { "most_common_val_nulls" => [false] } },
+    "more null-flag lists than MCV items" => lambda {
+      { "most_common_vals" => [[sentinel, "b"]], "most_common_val_nulls" => [[false, false], [false, false]] }
+    },
+    "fewer null-flag lists than MCV items" => lambda {
+      { "most_common_vals" => [[sentinel, "b"], %w[c d]], "most_common_val_nulls" => [[false, false]] }
+    },
+    "null-flag lists but no MCV items" => -> { { "most_common_vals" => nil } },
     "an unknown kind" => -> { { "kinds" => [sentinel] } },
     "kinds that aren't a list" => -> { { "kinds" => sentinel } },
     "n_distinct that isn't Postgres's text" => -> { { "n_distinct" => "{#{sentinel}}" } },
     "n_distinct keyed by a name" => -> { { "n_distinct" => "{\"#{sentinel}, 2\": 6}" } },
     "n_distinct with a string count" => -> { { "n_distinct" => "{\"1, 2\": \"#{sentinel}\"}" } },
     "a number for n_distinct" => -> { { "n_distinct" => 6 } },
+    "n_distinct keyed by a five-digit column number" => -> { { "n_distinct" => '{"12345, 2": 6}' } },
+    "n_distinct with an 11-digit count" => -> { { "n_distinct" => '{"1, 2": 12345678901}' } },
+    "dependencies on a five-digit column number" => -> { { "dependencies" => '{"1 => -12345": 1.000000}' } },
+    "dependencies with an 11-digit degree" => -> { { "dependencies" => '{"1 => 2": 12345678901.0}' } },
+    "dependencies with an 11-digit fraction" => -> { { "dependencies" => '{"1 => 2": 0.12345678901}' } },
     "dependencies that aren't Postgres's text" => -> { { "dependencies" => sentinel } },
     "dependencies keyed by a name" => -> { { "dependencies" => "{\"1 => #{sentinel}\": 1.000000}" } }
   }.each do |name, change|
@@ -106,6 +118,23 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       expect(error.rule).to eq("statistics_bad_shape")
       expect(error.message).not_to include(sentinel)
     end
+  end
+
+  it "lets one null-flag list per MCV item out" do
+    nulls = [[false, true], [true, false]]
+    two = object.merge("most_common_vals" => [%w[a b], %w[c d]], "most_common_val_nulls" => nulls,
+                       "most_common_freqs" => [0.5, 0.25], "most_common_base_freqs" => [0.25, 0.1])
+
+    expect(outbound(object: two)["extended_statistics"].first["most_common_val_nulls"]).to eq(nulls)
+  end
+
+  # Column numbers run to 1600, and Postgres writes a count as an int: four
+  # digits and ten.
+  it "lets the widest column numbers and counts out" do
+    wide = object.merge("n_distinct" => '{"1600, -8": 2147483647}', "dependencies" => '{"1600, -8 => 1599": 1.000000}')
+
+    expect(outbound(object: wide)["extended_statistics"].first)
+      .to include("n_distinct" => wide["n_distinct"], "dependencies" => wide["dependencies"])
   end
 
   def outbound_error(**) = error_of { outbound(**) }

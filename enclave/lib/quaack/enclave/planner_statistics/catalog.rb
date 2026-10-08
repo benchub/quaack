@@ -11,8 +11,9 @@ module Quaack
       # plain JSON data for the store. See PlannerStatistics for its form.
       # The caller holds the read-only transaction. Every comparison names
       # pg_catalog's operator, and every function and cast pg_catalog's
-      # function and type, so one planted ahead of it on the search_path
-      # can't change what a read finds or write what it returns.
+      # function and type, and every ORDER BY pg_catalog's "C" collation, so
+      # one planted ahead of it on the search_path can't change what a read
+      # finds, the order it finds it in, or write what it returns.
       module Catalog
         TABLE_SQL = <<~SQL
           SELECT c.oid, c.reltuples, c.relpages,
@@ -28,7 +29,7 @@ module Quaack
                  most_common_freqs::pg_catalog.text, histogram_bounds::pg_catalog.text, correlation
           FROM pg_catalog.pg_stats WHERE schemaname OPERATOR(pg_catalog.=) $1
            AND tablename OPERATOR(pg_catalog.=) $2 AND NOT inherited
-          ORDER BY attname COLLATE "C"
+          ORDER BY attname COLLATE pg_catalog."C"
         SQL
 
         INDEXES_SQL = <<~SQL
@@ -36,7 +37,7 @@ module Quaack
           FROM pg_catalog.pg_index i
           JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) i.indexrelid
           WHERE i.indrelid OPERATOR(pg_catalog.=) $1 AND i.indisvalid
-          ORDER BY c.relname COLLATE "C"
+          ORDER BY c.relname COLLATE pg_catalog."C"
         SQL
 
         # array_to_json, because most_common_vals is a two-dimensional
@@ -52,7 +53,7 @@ module Quaack
             ON d.statistics_schemaname OPERATOR(pg_catalog.=) n.nspname
            AND d.statistics_name OPERATOR(pg_catalog.=) s.stxname AND NOT d.inherited
           WHERE s.stxrelid OPERATOR(pg_catalog.=) $1
-          ORDER BY n.nspname COLLATE "C", s.stxname COLLATE "C"
+          ORDER BY n.nspname COLLATE pg_catalog."C", s.stxname COLLATE pg_catalog."C"
         SQL
 
         COLUMN_KEYS = %w[null_frac avg_width n_distinct most_common_vals most_common_freqs histogram_bounds

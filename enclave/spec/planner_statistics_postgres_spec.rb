@@ -317,6 +317,41 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(error_of { run([table("public", "parent")]) }.rule).to eq("inheritance_parent")
     end
 
+    # Each ORDER BY names pg_catalog's "C" collation, so an ICU "C" planted
+    # ahead of it can't reorder the columns, indexes, or statistics
+    # objects. ICU puts "apple" before "Zed", and "public" before "Zs", and
+    # pg_catalog's "C" the reverse. JSON text, since a Hash's == ignores key
+    # order.
+    it "read the same entry, in the same order, with a collation planted ahead of pg_catalog's" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fruit ("Zed" int, apple int);
+        CREATE INDEX "Zed_idx" ON fruit ("Zed");
+        CREATE INDEX apple_idx ON fruit (apple);
+        CREATE STATISTICS "Zed_stats" ON "Zed", apple FROM fruit;
+        CREATE STATISTICS apple_stats ON "Zed", apple FROM fruit;
+        CREATE SCHEMA "Zs";
+        CREATE STATISTICS "Zs".other_stats ON "Zed", apple FROM fruit;
+        INSERT INTO fruit SELECT i, i FROM generate_series(1, 100) AS i;
+        ANALYZE fruit;
+      SQL
+      fruit = table("public", "fruit")
+      described_class.run(store: other_store, relations: [fruit], connection: conn)
+      want = JSON.generate(other_store.read("statistics")["tables"])
+      conn.exec(<<~SQL)
+        CREATE COLLATION public."C" (provider = icu, locale = 'und');
+        SET search_path = public, pg_catalog;
+      SQL
+      run([fruit])
+
+      expect(conn.exec(%(SELECT x FROM (VALUES ('Zed'), ('apple')) v(x) ORDER BY x COLLATE "C")).column_values(0))
+        .to eq(%w[apple Zed])
+      expect(want).to include('"columns":{"Zed":')
+      expect(want.index('"Zed_idx"')).to be < want.index('"apple_idx"')
+      expect(want.index('"Zs"')).to be < want.index('"Zed_stats"')
+      expect(want.index('"Zed_stats"')).to be < want.index('"apple_stats"')
+      expect(JSON.generate(store.read("statistics")["tables"])).to eq(want)
+    end
+
     # Every function and type they name is pg_catalog's too, so one planted
     # ahead of it can't write what they read. These write a sentinel: an
     # array_to_json, and a text type with casts from the types the reads
