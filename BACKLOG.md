@@ -1143,6 +1143,7 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 - **Depends on:** 20261001-9.
 - **Came from:** The user, 2026-10-01.
 - **Design:** schema-dump, arena-setup.
+- **Decided by the user (2026-10-08):** Find the extra objects by walking pg_depend from the dumped objects. The operator names extra schemas in an `extra_dump_schemas` list in ~/.quaack/config.json. When a needed table can't be read, refuse with `dump_object_unreadable` before running pg_dump, and name the unreadable tables. They go to the operator only, through the error line's checked fields, the way `fk_cycle` names its tables, and never to the LLM.
 - **Status:** todo
 
 ### 20261001-11. Progress output: minor findings. Done, see BACKLOG-COMPLETE.md.
