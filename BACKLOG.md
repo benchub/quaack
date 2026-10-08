@@ -2371,3 +2371,15 @@ Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `
 - **Design:** statistics.
 - **Decided by the user (2026-10-08):** Go on without hidden extended and expression-index statistics, and say in the report which were missing. Refuse with a clear rule when row security hides every column's statistics.
 - **Status:** todo
+
+### 20261008-35. Reg literals in candidates: minors from 20261008-31.
+
+The first review of 20261008-31 found these minor issues:
+
+1. **The driver's note for `unsupported_reg_literal` misdescribes a refused candidate.** The note in `FixedNotes` says "The query has a regproc, regprocedure, regoper, or regoperator constant ... can't tune this query." For a refused rewrite candidate, that's wrong. Check whether candidate refusals ever reach that note. If they do, give the candidate case its own rule or words.
+2. **Index DDL predicates weren't checked for the same reg-literal leak.** Check whether an LLM-proposed index predicate, such as `WHERE x = 'hid.t'::regclass`, or its planning, can reveal that a relation exists.
+
+- **Depends on:** 20261008-31.
+- **Came from:** The first review of 20261008-31, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** todo
