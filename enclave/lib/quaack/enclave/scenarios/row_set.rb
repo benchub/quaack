@@ -121,7 +121,7 @@ module Quaack
         def run(row, index)
           return :error unless index.keys.all? { |key| expression?(key) }
 
-          select = index.keys.map { |key| "(#{key})::text" }.join(", ")
+          select = index.keys.map { |key| "(#{key})::pg_catalog.text" }.join(", ")
           @conn.exec_params("SELECT #{select}#{from(row.table, index.columns)}", values(row, index.columns)).values[0]
         rescue PG::Error
           :error

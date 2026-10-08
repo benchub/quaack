@@ -132,6 +132,22 @@ RSpec.describe Quaack::Enclave::Scenarios do
       .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:complex_check) }
   end
 
+  # pg_get_constraintdef names pg_catalog's > with its schema when the
+  # search_path finds public's first (task 20261007-31).
+  it "takes a CHECK on pg_catalog's operator named with its schema, and refuses one on another schema's" do
+    conn.exec(<<~SQL)
+      CREATE FUNCTION fx.big(integer, integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT false $$;
+      CREATE OPERATOR fx.> (LEFTARG = integer, RIGHTARG = integer, FUNCTION = fx.big);
+      CREATE OPERATOR public.> (LEFTARG = integer, RIGHTARG = integer, FUNCTION = fx.big);
+      CREATE TABLE fx.c (id integer PRIMARY KEY, lo integer CHECK (lo OPERATOR(pg_catalog.>) 3));
+      CREATE TABLE fx.o (id integer PRIMARY KEY, lo integer CHECK (lo OPERATOR(fx.>) 3));
+      SET search_path = public, pg_catalog;
+    SQL
+    expect(values(build("SELECT id FROM fx.c WHERE lo IS NULL")[:s1], "c", "lo").compact.map(&:to_i)).to all(be > 3)
+    expect { build("SELECT id FROM fx.o WHERE lo IS NULL") }
+      .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:complex_check) }
+  end
+
   def loads_every_scenario(scenarios, table)
     scenarios.each_value { |rows| expect(run(rows, "SELECT count(*) FROM #{table}")).to eq([[rows.size.to_s]]) }
   end

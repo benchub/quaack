@@ -8,10 +8,15 @@ module Quaack
       # domain is built on, and an enum's labels. Each is looked up once.
       class Types
         INFO_SQL = <<~SQL
-          SELECT t.typcategory, NULLIF(t.typelem, 0)::int, r.rngsubtype::int, format_type(r.rngsubtype, NULL),
-                 NULLIF(t.typbasetype, 0)::int, format_type(NULLIF(t.typbasetype, 0), t.typtypmod), t.typnotnull
-          FROM pg_type t LEFT JOIN pg_range r ON r.rngtypid = t.oid
-          WHERE t.oid = $1
+          SELECT t.typcategory, b.elem::int, r.rngsubtype::int, pg_catalog.format_type(r.rngsubtype, NULL),
+                 b.base::int, pg_catalog.format_type(b.base, t.typtypmod), t.typnotnull
+          FROM pg_catalog.pg_type t
+          LEFT JOIN pg_catalog.pg_range r ON r.rngtypid OPERATOR(pg_catalog.=) t.oid
+          CROSS JOIN LATERAL (
+            SELECT CASE WHEN t.typelem OPERATOR(pg_catalog.=) 0 THEN NULL ELSE t.typelem END,
+                   CASE WHEN t.typbasetype OPERATOR(pg_catalog.=) 0 THEN NULL ELSE t.typbasetype END
+          ) b(elem, base)
+          WHERE t.oid OPERATOR(pg_catalog.=) $1
         SQL
 
         # A type's category, its element type (an array's) or subtype (a
@@ -36,7 +41,8 @@ module Quaack
         end
 
         def labels(col)
-          @conn.exec_params("SELECT enumlabel FROM pg_enum WHERE enumtypid = $1 ORDER BY enumsortorder",
+          @conn.exec_params("SELECT e.enumlabel FROM pg_catalog.pg_enum e " \
+                            "WHERE e.enumtypid OPERATOR(pg_catalog.=) $1 ORDER BY e.enumsortorder",
                             [col.oid]).column_values(0)
         end
 

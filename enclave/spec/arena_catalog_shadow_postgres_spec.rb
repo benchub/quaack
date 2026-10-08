@@ -42,10 +42,12 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
   # them, pg_catalog's own deparsers (format_type, pg_get_expr, and the
   # like) print the names they'd otherwise leave bare with their schema,
   # so they still mean the same, and the reads take them as they are.
-  def bare(found) = found.inspect.gsub(/0x\h+/, "").gsub(/OPERATOR\(pg_catalog\.(\S+?)\)/, '\1').gsub("pg_catalog.", "")
+  def bare(found)
+    found.inspect.gsub(/0x\h+/, "").gsub(/OPERATOR\(pg_catalog\.(\S+?)\)/, '\1').gsub("pg_catalog.", "").gsub("#<data", "\n#<data")
+  end
 
-  def plant(*extra)
-    CatalogShadow.plant(conn, :operators, :count, :to_regclass, *extra)
+  def plant
+    CatalogShadow.plant(conn, :operators, :count, :to_regclass, :text)
     NO.each do |op, left, right|
       fn = "public.quaack_no_#{NO_NAMES.fetch(op)}_#{left}_#{right}"
       conn.exec("CREATE FUNCTION #{fn}(pg_catalog.#{left}, pg_catalog.#{right}) RETURNS pg_catalog.bool " \
@@ -54,6 +56,13 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
                 "FUNCTION = #{fn})")
     end
     FUNCTIONS.each { conn.exec("CREATE FUNCTION #{it.sub(" AS ", " LANGUAGE sql AS ")}") }
+    # Arithmetic that gives 0, for the steps either side of a number.
+    conn.exec("CREATE FUNCTION public.quaack_zero(pg_catalog.int4, pg_catalog.int4) RETURNS pg_catalog.int4 " \
+              "LANGUAGE sql AS $$ SELECT 0 $$")
+    %w[+ -].each do |op|
+      conn.exec("CREATE OPERATOR public.#{op} (LEFTARG = pg_catalog.int4, RIGHTARG = pg_catalog.int4, " \
+                "FUNCTION = public.quaack_zero)")
+    end
     conn.exec("CREATE DOMAIN public.regclass AS pg_catalog.regclass CHECK (false)")
     conn.exec("SET search_path = public, pg_catalog")
   end
@@ -68,17 +77,20 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       CREATE UNIQUE INDEX customers_email ON fx.customers (lower(email));
       CREATE TABLE fx.orders (id bigserial PRIMARY KEY, customer_id integer NOT NULL REFERENCES fx.customers,
                               qty fx.qty, placed date NOT NULL DEFAULT '2026-01-01', span int4range,
-                              tags varchar(10)[], UNIQUE (customer_id, placed));
+                              tags varchar(10)[], mood fx.mood, UNIQUE (customer_id, placed));
       CREATE FUNCTION fx.bump(integer) RETURNS integer LANGUAGE sql VOLATILE AS $$ SELECT $1 $$;
     SQL
   end
 
   describe "rewrite-test's scenarios" do
+    # The query's own operators resolve on the search_path, as they do in
+    # production, so it compares only types nothing here plants an
+    # operator for.
     let(:parse) do
       PgQuery.parse(<<~SQL)
-        SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id
-        WHERE o.qty > 3 AND c.mood = 'happy' AND o.placed >= '2026-02-01' AND c.email LIKE 'a%'
-          AND o.span @> 4 AND o.tags = '{x}'
+        SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.mood > o.mood
+        WHERE o.qty > 3 AND c.mood <= 'happy' AND o.placed >= '2026-02-01' AND c.email >= 'a'
+          AND o.span @> 4 AND o.tags = '{x}' AND (o.placed, o.id) > ('2026-02-01', 5)
         ORDER BY o.placed, o.id LIMIT 5
       SQL
     end
@@ -93,13 +105,16 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       expect(bare(schema)).to eq(bare(baseline))
     end
 
+    COUNTS = "SELECT (SELECT pg_catalog.count(*) FROM fx.orders), (SELECT pg_catalog.count(*) FROM fx.customers)"
+
     it "builds the same scenarios, and each loads as it did" do
       baseline = scenarios
-      loaded = baseline.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query("SELECT 1").rows } }
+      expect(baseline.values.flatten.map(&:table).uniq).to contain_exactly(tn("orders"), tn("customers"))
+      loaded = baseline.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query(COUNTS).rows } }
       plant
 
       expect(bare(scenarios)).to eq(bare(baseline))
-      expect(scenarios.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query("SELECT 1").rows } })
+      expect(scenarios.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query(COUNTS).rows } })
         .to eq(loaded)
     end
   end
@@ -125,7 +140,7 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
                  "INSERT INTO fx.orders (customer_id, qty, placed) VALUES (8, fx.bump(1), '2026-03-01')",
                  "INSERT INTO fx.orders (customer_id, qty, placed) VALUES (9, pg_catalog.abs(-2), '2026-03-02')"]
       baseline = outcome(prepare(*inserts))
-      plant(:text)
+      plant
 
       expect(bare(outcome(prepare(*inserts)))).to eq(bare(baseline))
     end

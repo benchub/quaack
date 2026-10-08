@@ -108,8 +108,13 @@ module Quaack
         def simple_test?(expr)
           return false unless expr && KINDS.include?(expr.kind)
 
-          expr.kind != :AEXPR_OP || OPERATORS.include?(expr.name[0].string.sval)
+          expr.kind != :AEXPR_OP || operator?(expr.name.map { it.string.sval })
         end
+
+        # pg_get_constraintdef puts pg_catalog on an operator that the
+        # search_path finds another of first, such as one a dump plants in
+        # public.
+        def operator?(name) = OPERATORS.include?(name.last) && [[name.last], ["pg_catalog", name.last]].include?(name)
 
         def column_name(node)
           return nil unless node

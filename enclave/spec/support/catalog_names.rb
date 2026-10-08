@@ -14,8 +14,8 @@ require "pg_query"
 # scan reads the source (Source): every Ruby string literal, plain or
 # interpolated, heredocs included, that starts with an upper-case SQL
 # keyword (SQL_START). An interpolation of a constant that the same file
-# assigns a plain string is inlined. Any other interpolation stands for an
-# identifier, a SELECT, a number, a string literal, nothing, or an
+# assigns a plain string is inlined, and one on FORMAT_TYPE_HOLES is a
+# qualified type name. Any other interpolation stands for an identifier, a SELECT, a number, a string literal, nothing, or an
 # assignment, whichever first lets the whole string parse. A string that
 # parses with none must be on SKIP, which says why.
 #
@@ -58,6 +58,18 @@ module CatalogNames
     ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces",
     ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run"
   }.freeze
+
+  # Interpolations that hold a type's name as pg_catalog.format_type printed
+  # it on the same connection, by file and the interpolation's Ruby source,
+  # with why (task 20261007-31). format_type puts the schema on a name that
+  # connection's search_path wouldn't find as that type, pg_catalog's
+  # included, so the name reads back there as the same type. The scan reads
+  # each as a schema-qualified name.
+  FORMAT_TYPE_HOLES = {
+    ["quaack/enclave/value_pools.rb", "col.type"] => "an ArenaSchema column's type, read on the arena connection",
+    ["quaack/enclave/value_pools.rb", "@col.type"] => "an ArenaSchema column's type, read on the arena connection"
+  }.freeze
+  FORMAT_TYPE_STAND_IN = "pg_catalog.quaack_type"
 
   # The 29 files catalog_names_spec's list of files not yet qualified held
   # when task 20260930-14 made it. That list may only shrink, so it must
@@ -143,7 +155,7 @@ module CatalogNames
     end
 
     def site(file, node, constants)
-      texts = texts(node, constants)
+      texts = texts(node, constants, file)
       return unless texts.first.match?(SQL_START)
 
       label = "line #{node.location.start_line}"
@@ -180,12 +192,19 @@ module CatalogNames
 
     # The string's text with each combination of stand-ins, the first
     # stand-in's first.
-    def texts(node, constants)
+    def texts(node, constants, file)
       return [node.unescaped] if node.is_a?(Prism::StringNode)
 
-      choices = node.parts.grep_v(Prism::StringNode).map { |hole| (value = constant(hole, constants)) ? [value] : STAND_INS }
+      choices = node.parts.grep_v(Prism::StringNode).map do |hole|
+        (value = constant(hole, constants)) ? [value] : stand_ins(file, hole)
+      end
       combinations = choices.empty? ? [[]] : choices.first.product(*choices.drop(1))
       combinations.map { |picks| fill(node.parts, picks.dup) }
+    end
+
+    def stand_ins(file, hole)
+      source = hole.is_a?(Prism::EmbeddedStatementsNode) && hole.statements&.slice
+      FORMAT_TYPE_HOLES.key?([file, source]) ? [FORMAT_TYPE_STAND_IN] : STAND_INS
     end
 
     def fill(parts, picks) = parts.map { it.is_a?(Prism::StringNode) ? it.unescaped : picks.shift }.join
