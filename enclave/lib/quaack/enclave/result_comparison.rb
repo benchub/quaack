@@ -91,9 +91,11 @@ module Quaack
     #   When some output column is left out of the tiebreaker, rows equal on
     #   every other column can't be split, and can differ in that column.
     #   So it's unsupported_order when:
-    #   - the original or the candidate has a cut at its top level (a
-    #     LIMIT, an OFFSET, DISTINCT, DISTINCT ON, or a set operation
-    #     without ALL), since the cut can keep either of those rows, or
+    #   - the original or the candidate has DISTINCT, DISTINCT ON, or a set
+    #     operation without ALL at its top level, since it can keep either
+    #     of those rows, or
+    #   - a query's LIMIT or OFFSET reaches a hidden tie, which
+    #     hidden_cut_tie? finds by running it again without them, or
     #   - the original's T run has two rows equal on every tiebreaker
     #     column that differ in a left-out one, since they can come back in
     #     either order.
@@ -229,11 +231,18 @@ module Quaack
         # Whether the top level keeps only some of its rows: a LIMIT, an
         # OFFSET, DISTINCT or DISTINCT ON, or a UNION, INTERSECT, or EXCEPT
         # without ALL. Each can keep either of two rows btree calls equal.
-        def cut?
-          kept(:cut?) do
+        def cut? = kept(:cut?) { dedup? || select_stmt(parse).then { !!(it.limit_count || it.limit_offset) } }
+
+        # Whether the top level's only cut, if any, is a LIMIT or an OFFSET:
+        # no DISTINCT, DISTINCT ON, or set operation that drops duplicates.
+        def limit_cut_only? = !dedup?
+
+        # Whether the top level has DISTINCT, DISTINCT ON, or a set
+        # operation without ALL.
+        def dedup?
+          kept(:dedup?) do
             select = select_stmt(parse)
-            set_dedup = select.op != :SETOP_NONE && !select.all
-            !!(select.limit_count || select.limit_offset || !select.distinct_clause.empty? || set_dedup)
+            !select.distinct_clause.empty? || (select.op != :SETOP_NONE && !select.all)
           end
         end
 
@@ -394,9 +403,10 @@ module Quaack
         return refused unless positions
 
         originals = both_ways(transaction, original_shape, positions)
-        return refused unless ties_faithful?(originals.first, positions)
+        shapes = [original_shape, candidate_shape]
+        return refused unless ties_faithful?(transaction, shapes, originals.first, positions)
 
-        tiebroken_verdict(transaction, originals, [original_shape, candidate_shape], positions)
+        tiebroken_verdict(transaction, originals, shapes, positions)
       end
 
       # The verdict from the original's tiebreaker runs: the candidate's
@@ -436,13 +446,17 @@ module Quaack
         return if Tiebreaker.nondeterministic_collation?(transaction, shapes.flat_map(&:collation_names))
 
         positions = Tiebreaker.positions(types, Tiebreaker.catalog_orderable(transaction, types))
-        positions if positions.size == types.size || shapes.none?(&:cut?)
+        positions if positions.size == types.size || shapes.all? { !it.cut? || it.limit_cut_only? }
       end
 
       # Whether rows the tiebreaker leaves tied are equal in every column,
       # as far as the original's result shows. It always holds when every
-      # column is in the tiebreaker.
-      def ties_faithful?(result, positions) = !Tiebreaker.hidden_differences?(result, positions)
+      # column is in the tiebreaker. And whether no LIMIT or OFFSET reaches
+      # a hidden tie (Tiebreaker.hidden_cut_tie?).
+      def ties_faithful?(transaction, shapes, result, positions)
+        !Tiebreaker.hidden_differences?(result, positions) &&
+          !Tiebreaker.hidden_cut_tie?(transaction, shapes, result, positions)
+      end
 
       # Whether the original returns the same rows whichever way its ties
       # break, as far as the two tiebreaker runs show.
