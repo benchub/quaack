@@ -6,6 +6,10 @@ module Quaack
       # The checks a record read back passes through: each part is kept
       # only if it has exactly the shape a writer gives it.
       module Shape
+        # A unit's keys, and the most rounds a rewrite gets (Counterexamples::ROUNDS).
+        UNIT_KEYS = %w[entry rounds after].freeze
+        MOST_ROUNDS = 3
+
         module_function
 
         def record(raw)
@@ -28,11 +32,15 @@ module Quaack
           raw.slice("name", "provider", "model").merge(rule?(down) ? { "down" => down } : {})
         end
 
+        # A counterexample unit: its entry, its rounds, one to three, since
+        # no rewrite gets more, and, for a fresh start, after, a rule. No
+        # other key.
         def unit(raw)
-          return unless raw.is_a?(Hash) && name?(raw["entry"]) && count?(raw["rounds"])
+          return unless raw.is_a?(Hash) && (raw.keys - UNIT_KEYS).empty? && name?(raw["entry"])
+          return unless (1..MOST_ROUNDS).any? { raw["rounds"].eql?(it) }
           return if raw.key?("after") && !rule?(raw["after"])
 
-          raw.slice("entry", "rounds", "after")
+          raw.slice(*UNIT_KEYS)
         end
 
         def counterexamples(raw)

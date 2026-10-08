@@ -136,6 +136,47 @@ RSpec.describe Quaack::Driver::Provenance do
     )
   end
 
+  it "drops a provider's down or model, a counterexample unit, an index round's counts, or a skip of a bad shape" do
+    good = { "entry" => "groq", "rounds" => 1 }
+    counts = { "written" => 2, "outcomes" => { "accepted" => 2 }, "rules" => { "duplicate" => 1 } }
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, JSON.generate(
+                       "providers" => [{ "name" => "groq", "provider" => "anthropic", "model" => "m",
+                                         "down" => "SELECT 1" },
+                                       { "name" => "opus", "provider" => "anthropic", "model" => "m\nSELECT 1" }],
+                       "counterexamples" => {
+                         "rewrite_1" => [good], "rewrite_2" => [good, { "entry" => "opus", "rounds" => "2" }],
+                         "rewrite_3" => [{ "entry" => "groq", "rounds" => 1, "after" => "SELECT 1" }],
+                         "rewrite_4" => [{ "entry" => "groq", "rounds" => 1, "sql" => "SELECT 1" }],
+                         "rewrite_5" => [{ "entry" => "groq", "rounds" => 0 }],
+                         "rewrite_6" => [{ "entry" => "groq", "rounds" => 4 }],
+                         "rewrite_7" => [{ "entry" => "groq", "rounds" => 10**9 }],
+                         "rewrite_8" => [{ "entry" => "groq", "rounds" => 1.0 }]
+                       },
+                       "index_ideas" => { "original" => {
+                         "first" => { "groq" => counts, "opus" => counts.merge("written" => -1),
+                                      "gpt" => counts.merge("outcomes" => { "SELECT 1" => 1 }),
+                                      "bad" => counts.merge("rules" => { "duplicate" => "1" }),
+                                      "more" => counts.merge("ddl" => "CREATE INDEX x") },
+                         "skipped" => [{ "entry" => "groq", "rule" => "llm_auth" },
+                                       { "entry" => "groq", "rule" => "SELECT 1" },
+                                       { "entry" => "groq", "rule" => "llm_auth", "ddl" => "CREATE INDEX x" }]
+                       } }
+                     ))
+
+    expect(provenance.record).to eq(
+      "providers" => [{ "name" => "groq", "provider" => "anthropic", "model" => "m" }],
+      "counterexamples" => { "rewrite_1" => [good] },
+      "index_ideas" => { "original" => { "first" => { "groq" => counts },
+                                         "skipped" => [{ "entry" => "groq", "rule" => "llm_auth" }] } }
+    )
+  end
+
+  it "caps a unit's rounds at the most a rewrite gets" do
+    require "quaack/driver/counterexamples"
+    expect(described_class::Shape::MOST_ROUNDS).to eq(Quaack::Driver::Counterexamples::ROUNDS)
+  end
+
   it "reads a record that isn't JSON, or isn't an object, as empty" do
     FileUtils.mkdir_p(File.dirname(path))
     ["{", "[1]", "null"].each do |text|
