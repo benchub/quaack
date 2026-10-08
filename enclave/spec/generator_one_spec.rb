@@ -678,6 +678,16 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         .to include(["orders", %w[status region], []])
     end
 
+    it "gives a table with a column alias list no candidates, since the list renames its columns" do
+      # AS o(region) renames orders' first column, status, so o.region is
+      # status and orders' own region is hidden.
+      sql = "SELECT 1 FROM public.orders AS o(region) JOIN public.customers c ON c.id = o.customer_id " \
+            "WHERE o.region = 1 AND c.name = 'x'"
+
+      expect(keys(generate(sql, stats)))
+        .to eq([["customers", %w[id], []], ["customers", %w[id name], []], ["customers", %w[name], []]])
+    end
+
     it "doesn't resolve schema and table name once the table has an alias" do
       expect(generate("SELECT 1 FROM public.orders o WHERE public.orders.status = 1", stats)).to eq([])
     end

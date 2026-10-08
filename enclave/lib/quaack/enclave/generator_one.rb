@@ -38,7 +38,9 @@ module Quaack
     # unqualified when the subquery's FROM is only plain tables and none
     # has it; one that an inner table has resolves to it, as in Postgres)
     # is held to one value, as by
-    # = const. A reference to a CTE isn't a table. A subquery or function
+    # = const. A reference to a CTE isn't a table, and neither is a table
+    # with a column alias list, AS o(a, b), which renames its first
+    # columns: it's read like a subquery. A subquery or function
     # in FROM has no table's columns, so its columns are skipped in the
     # query it's in. A join condition to one touches only the table on the
     # other side, so it counts as that table's ON conjunct does (see Outer
@@ -376,12 +378,17 @@ module Quaack
         def read_item(item)
           @names << item_name(item)
           if item.join_expr then read_join(item.join_expr)
-          elsif item.range_var && !item.range_var.schemaname.empty? then [add_table(item.range_var)]
+          elsif table?(item.range_var) then [add_table(item.range_var)]
           else
             @opaque = true
             []
           end
         end
+
+        # A plain table: schema qualified, so not a CTE, and with no column
+        # alias list, AS o(a, b), which renames its first columns. Anything
+        # else in FROM is opaque, like a subquery.
+        def table?(range) = range && !range.schemaname.empty? && range.alias&.colnames.to_a.empty?
 
         def item_name(item)
           node = item.range_var || item.range_subselect || item.range_function || item.join_expr
