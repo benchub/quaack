@@ -332,14 +332,14 @@ A run can use more than one LLM provider. Different models propose different rew
 
 - A provider type may appear more than once. Each entry is its own provider, so the two `copilot_cli` entries above are two providers.
 - `name` is one to 32 characters of lowercase letters, digits, `_`, and `-`, and no two entries share one. It shows up in progress lines, error messages, and the report, so it mustn't hold anything secret. A bad name is a usage error that names its position, such as `llms[2].name`, never its value.
-- Every other bad key is the usage error it is today, with the entry's position in the key: `llms[3].model in ~/.quaack/driver.json is required unless the provider is anthropic`.
+- Every other bad key is the usage error it is today, with the entry's position in the key: `llms[3].model in ~/.quaack/driver.json is required unless the provider is anthropic`. Positions count from 0, so the first entry is `llms[0]`. A message an adapter gives while its client is built names the entry's key the same way, such as `llms[2].aws_region` for a Bedrock entry with no region.
 - An empty list, a list of something other than objects, or more than nine entries is a usage error.
 
 Backward compatibility:
 
 - An `llm` block alone still works. It becomes a one-entry list, named after its provider (for example `anthropic`).
 - No block at all is still Anthropic with `claude-opus-5-5`, named `anthropic`.
-- Both `llm` and `llms` is a usage error: `use llm or llms in ~/.quaack/driver.json, not both`.
+- Both `llm` and `llms` is a usage error: `use llm or llms in ~/.quaack/driver.json, not both`. An `"llm": null` beside `llms` counts as both.
 - `llm_routing` without `llms` is a usage error, since one provider has nothing to route.
 
 `quaack run` builds a client for every entry before it touches the jump server, as it does for the one client today. So a bad entry, or credentials an adapter can't find at build time (`llm_auth` before any attempt), stops the run at once, even when other entries are fine. The message names the entry: `llm_auth: groq: GROQ_API_KEY is not set`. That's config the operator can fix before anything runs, so it's cheaper to stop than to run a whole pipeline without a provider they asked for. An `llm_auth` that comes back from an attempt, after the run started, is handled differently (see Routing).
@@ -347,6 +347,7 @@ Backward compatibility:
 ##### Environment overrides.
 
 - `QUAACK_LLM=<name>[,<name>...]` keeps only the named entries of `llms`, in the order given, for this run. An unknown name is a usage error that names the variable.
+- Without `llms`, `QUAACK_LLM` applies to the one entry a lone `llm` block, or no block, makes, by its provider's name. After a `QUAACK_LLM_PROVIDER` switch, that's the name of the provider it switched to. Any other value is a usage error: `QUAACK_LLM must be anthropic, the one provider's name, since ~/.quaack/driver.json has no llms`.
 - `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` still override the `llm` block, as today. With `llms`, they're a usage error that says to use `QUAACK_LLM` instead. There's no one entry they'd clearly apply to, and quietly overriding every entry would surprise.
 
 ##### Asks, units, and sessions.
@@ -363,11 +364,11 @@ The driver gets a new front, the router. A step opens a session for a unit, and 
 
 ##### Routing.
 
-Each step has a **pool**: the providers it may use. It's the step's `providers` under `llm_routing.steps`, if given (pinning), or else every entry, in list order. A pinned name that isn't an entry is a usage error.
+Each step has a **pool**: the providers it may use. It's the step's `providers` under `llm_routing.steps`, if given (pinning), in the order pinned, or else every entry, in list order. Either way, the entries `QUAACK_LLM` drops are left out. A pinned name that isn't an entry is a usage error. Pinned names are checked against every entry, including the ones `QUAACK_LLM` drops, so a run that picks fewer entries doesn't turn a good file bad. A pinned step that `QUAACK_LLM` leaves with an empty pool is a usage error too.
 
 `llm_routing.mode`, or a step's own `mode`, picks how a unit chooses from its pool:
 
-- **`round_robin`**, the default: start with the next healthy provider after the one the last unit started on. One cursor turns across the whole list for the run, skipping providers outside the pool. So asks spread evenly across providers, whichever steps make them. That's the default because stretching free tiers is half the point of a list, and spreading asks costs no more calls than sending them all to one provider. The cursor lives in memory, so a resumed run starts it over.
+- **`round_robin`**, the default: start with the next healthy provider after the one the last unit started on. One cursor turns across the whole list for the run, skipping providers outside the pool. So asks spread evenly across providers, whichever steps make them. That's the default because stretching free tiers is half the point of a list, and spreading asks costs no more calls than sending them all to one provider. The cursor lives in memory, so a resumed run starts it over. A unit in a `failover`-mode step doesn't move the cursor (pending the user's confirmation).
 - **`failover`**: start with the pool's first healthy provider. The list is then a primary with backups, for an operator who wants one model's answers unless it's out of reach.
 
 Both modes fail over. When a unit's first ask fails, after its adapter's own retries and the client's re-ask ran out, what happens depends on the rule:
@@ -386,7 +387,7 @@ A later ask in a unit can't move to another provider as it is, since the new pro
 
 An `llm_bad_request` at a later ask fails the step, as at a first ask.
 
-**Fan-out** is opt-in per step, with `"fan_out": true`. Only llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas take it; on any other step it's a usage error. A fan-out step runs its unit once on every healthy provider in its pool, one after another, never at the same time, so progress lines and failures come in a fixed order. It takes the union. The usual checks dedupe it: rewrite-check's for rewrites, and index-dedupe's for indexes. Mode doesn't apply to a fan-out step, and its branches don't fail over, since every healthy provider already has a branch. A branch that fails is dropped, with its provider marked down or dropped by the rule as above, the progress line and the report say which and why, and the step goes on with the rest. The step fails only when every branch failed, or when a branch fails with `llm_bad_request`, as everywhere. A branch whose replacement round fails keeps its first-round ideas, as a unit does. Fan-out multiplies a step's calls by the size of its pool, which is why it's opt-in.
+**Fan-out** is opt-in per step, with `"fan_out": true`. Only llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas take it; on any other step it's a usage error, even as `"fan_out": false`. A fan-out step runs its unit once on every healthy provider in its pool, one after another, never at the same time, so progress lines and failures come in a fixed order. It takes the union. The usual checks dedupe it: rewrite-check's for rewrites, and index-dedupe's for indexes. Mode doesn't apply to a fan-out step, and its branches don't fail over, since every healthy provider already has a branch. A branch that fails is dropped, with its provider marked down or dropped by the rule as above, the progress line and the report say which and why, and the step goes on with the rest. The step fails only when every branch failed, or when a branch fails with `llm_bad_request`, as everywhere. A branch whose replacement round fails keeps its first-round ideas, as a unit does. Fan-out multiplies a step's calls by the size of its pool, which is why it's opt-in.
 
 How they combine, in order: the pool comes from pinning, or from the whole list. Pairing filters it, for llm-counterexamples. Then fan-out runs a branch on every healthy provider left, or the mode picks one and fails over through the rest.
 

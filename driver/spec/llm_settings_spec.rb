@@ -20,7 +20,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     it "is Anthropic with claude-opus-5-5, the gem's own base URL, and no key variable" do
       expect(fields(settings)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                      api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                     command_template: nil, timeout_seconds: nil)
+                                     command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "is the same for an empty block" do
@@ -36,7 +36,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block))).to eq(provider: "anthropic", model: "claude-sonnet-5-5",
                                             base_url: "https://llm.example.com", api_key_env: "MY_ANTHROPIC_KEY",
                                             aws_region: nil, aws_profile: nil, command_template: nil,
-                                            timeout_seconds: nil)
+                                            timeout_seconds: nil, at: "llm")
     end
 
     it "takes an http base URL, for a local server" do
@@ -76,7 +76,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })))
         .to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil, api_key_env: nil, aws_region: nil,
-               aws_profile: nil, command_template: nil, timeout_seconds: nil)
+               aws_profile: nil, command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "takes nothing from the block when QUAACK_LLM_PROVIDER switches from anthropic to openai_compatible" do
@@ -85,7 +85,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block, env:)))
         .to eq(provider: "openai_compatible", model: "gpt-5", base_url: nil, api_key_env: nil, aws_region: nil,
-               aws_profile: nil, command_template: nil, timeout_seconds: nil)
+               aws_profile: nil, command_template: nil, timeout_seconds: nil, at: "llm")
       expect(config_error(block, env: env.except("QUAACK_MODEL")).message)
         .to eq("QUAACK_MODEL is required when QUAACK_LLM_PROVIDER switches to openai_compatible")
     end
@@ -103,7 +103,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block, env:))).to eq(provider: "anthropic", model: "claude-from-config",
                                                   base_url: "https://config.example.com", api_key_env: nil,
                                                   aws_region: nil, aws_profile: nil, command_template: nil,
-                                                  timeout_seconds: nil)
+                                                  timeout_seconds: nil, at: "llm")
     end
 
     it "reads the process environment when no env is given" do
@@ -250,7 +250,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block))).to eq(provider: "openai_compatible", model: "llama-3.3-70b-versatile",
                                             base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
                                             aws_region: nil, aws_profile: nil, command_template: nil,
-                                            timeout_seconds: nil)
+                                            timeout_seconds: nil, at: "llm")
     end
 
     it "has an adapter for every provider it takes" do
@@ -269,7 +269,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block))).to eq(provider: "bedrock", model: "us.anthropic.claude-opus-5-5",
                                             base_url: "https://bedrock.example.com", api_key_env: nil,
                                             aws_region: "us-west-2", aws_profile: "quaack-bedrock",
-                                            command_template: nil, timeout_seconds: nil)
+                                            command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "needs neither the region nor the profile, since the AWS SDK can find them" do
@@ -295,7 +295,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(nil, env:))).to eq(provider: "bedrock", model: "anthropic.claude-opus-5-5",
                                                 base_url: nil, api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                                command_template: nil, timeout_seconds: nil)
+                                                command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "refuses api_key_env, since its credentials come from AWS" do
@@ -324,7 +324,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                   command_template: nil, timeout_seconds: nil)
+                                   command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "takes no block key, not even bedrock's own, when QUAACK_LLM_PROVIDER switches to bedrock" do
@@ -353,7 +353,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(result)).to eq(provider: "copilot_cli", model: "claude-opus-5.5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                   command_template: nil, timeout_seconds: nil)
+                                   command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "is picked by QUAACK_LLM_PROVIDER, with its default model" do
@@ -384,7 +384,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                   command_template: nil, timeout_seconds: nil)
+                                   command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
     it "still checks the ignored keys' values" do

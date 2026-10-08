@@ -329,6 +329,49 @@ RSpec.describe "the bedrock adapter" do
     end
   end
 
+  describe "the build-time messages for an llms entry" do
+    def entry(block = {})
+      block = { "provider" => "bedrock", "model" => FakeBedrock::MODEL, **block }
+      Quaack::Driver::LLM.settings(block, env: {}, at: "llms[2]")
+    end
+
+    it "name the entry's aws_profile when there are no credentials" do
+      expect { build(entry("aws_region" => FakeBedrock::REGION)) }
+        .to raise_error(Quaack::Driver::LLM::Error,
+                        "llm_auth: no AWS credentials: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, name a " \
+                        "profile in llms[2].aws_profile in ~/.quaack/driver.json or AWS_PROFILE, or set " \
+                        "AWS_BEARER_TOKEN_BEDROCK")
+    end
+
+    it "name the entry's aws_region when there's no region" do
+      ENV["AWS_ACCESS_KEY_ID"] = "AKIAQUAACKSPECENV001"
+      ENV["AWS_SECRET_ACCESS_KEY"] = "s"
+
+      expect { build(entry) }
+        .to raise_error(Quaack::Driver::LLM::ConfigError,
+                        "no AWS region for Bedrock: set llms[2].aws_region in ~/.quaack/driver.json, AWS_REGION, " \
+                        "or a region in the AWS profile")
+    end
+
+    it "name the entry's aws_region when a Bedrock API key has no region" do
+      ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
+
+      expect { build(entry) }
+        .to raise_error(Quaack::Driver::LLM::ConfigError,
+                        "no AWS region for Bedrock: set llms[2].aws_region in ~/.quaack/driver.json, AWS_REGION, " \
+                        "or a region in the AWS profile")
+    end
+
+    it "name the entry's aws_profile when it's set beside a Bedrock API key" do
+      ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
+
+      expect { build(entry("aws_region" => FakeBedrock::REGION, "aws_profile" => "quaack-spec")) }
+        .to raise_error(Quaack::Driver::LLM::ConfigError,
+                        "llms[2].aws_profile in ~/.quaack/driver.json can't be used while " \
+                        "AWS_BEARER_TOKEN_BEDROCK is set: unset one")
+    end
+  end
+
   describe "a client with no transport, which would call the real API" do
     it "can't be built while specs run" do
       expect { Quaack::Driver::LLM::Client.new(settings: FakeBedrock.settings, burndown:) }
