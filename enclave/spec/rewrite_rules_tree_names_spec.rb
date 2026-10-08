@@ -25,6 +25,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::Tree::Names do
     expect(made).to eq(["#{"c" * 61}_2", "#{"c" * 61}_3", "#{"c" * 61}_4"])
   end
 
+  # The parser cuts a name over 63 bytes as Postgres does, so the names
+  # Names sees are already cut, and a fresh name can't equal a long name's
+  # cut form (task 20261007-46).
+  it "skips a name that's what the parser cuts a longer name the query uses down to" do
+    fresh = names("SELECT t.#{"x" * 61}_1_more, t.#{"é" * 30}_1éé FROM public.t")
+
+    expect([fresh.fresh("x" * 62), fresh.fresh("é" * 31)]).to eq(["#{"x" * 61}_2", "#{"é" * 30}_2"])
+  end
+
   it "cuts a multibyte base at a character, not inside one" do
     made = names("SELECT 1").fresh("é" * 31)
 
