@@ -28,7 +28,10 @@ module Quaack
       #
       # On one racetrack connection, GeneratorThree.filter checks each DDL
       # (IndexDdlCheck, against the racetrack's catalog, with the input
-      # plan's settings) and runs it through the Dedupe, and
+      # plan's settings and the run's stored search_path, as
+      # RunServer.plan_settings gives them, so "$user" is production's role,
+      # as in the session that builds the index) and runs it through the
+      # Dedupe, and
       # SingleCandidateTest tests the accepted ones for each literal set, on
       # the search's own query: anchored_query, or the rewrite's SQL.
       # Then it rewrites index_search_<search> with the Dedupe as it is now,
@@ -104,7 +107,7 @@ module Quaack
                                                       low_cardinality: PiiClassification.load(store).low_cardinality)
           since = Burndown.dedupe_counts(dedupe)
           result = GeneratorThree.filter(ddls, dedupe:, tables: tables(store),
-                                               settings: store.read("plan")[0]["Settings"], connection:)
+                                               settings: Enclave::RunServer.plan_settings(store), connection:)
           [since, dedupe, result, test(store, search, connection, result.survivors)]
         end
 

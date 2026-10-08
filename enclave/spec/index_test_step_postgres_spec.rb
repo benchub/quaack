@@ -142,6 +142,31 @@ RSpec.describe "quaacks index-test, against a real server" do
     expect(burndown["stages"].except("llm-index-ideas", "llm-index-refine")).to eq(before["stages"])
   end
 
+  # Task 20261007-34: the racetrack connects as the run server's role,
+  # so the plan's default path's "$user" names that role's schema there,
+  # while the hypothetical index is built under the stored path. The
+  # volatility check must resolve through the stored path too.
+  it "checks an index expression's functions through the run's stored search_path, not the plan's" do
+    prepare
+    index_search
+    conn = production.connect
+    role = conn.quote_ident(production.user)
+    conn.exec(<<~SQL)
+      CREATE SCHEMA #{role};
+      CREATE FUNCTION #{role}.twice(int) RETURNS int VOLATILE LANGUAGE sql AS 'SELECT $1 * 2';
+      CREATE FUNCTION public.twice(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT $1 * 2';
+    SQL
+    conn.close
+    plan = stored.read("plan")
+    plan[0]["Settings"]["search_path"] = %("$user", public)
+    stored.write("plan", plan)
+    stored.write("search_path", %w[public])
+
+    outcome = index_test(ddls("CREATE INDEX ON public.orders (twice(total))"))
+
+    expect(lines(outcome).first).to eq(outcome_line(1, "accepted").merge("partial_constant_only" => false))
+  end
+
   it "refuses stdin that isn't {\"ddls\": [strings]}, and a run with no index search, storing nothing" do
     prepare
     expect(index_test(ddls(partial)).stdout).to eq(error_line("index_test_no_index_search"))

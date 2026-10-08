@@ -197,7 +197,8 @@ module Quaack
 
           def prepare(connection, store, inserts, queries)
             Enclave::Counterexamples.prepare(connection, inserts, placeholder_map: Redaction.placeholder_map(store),
-                                                                  tables: tables(store), queries:)
+                                                                  tables: tables(store), queries:,
+                                                                  settings: Enclave::RunServer.plan_settings(store))
           end
 
           def compare(runner, connection, prepared, store, search, number) # rubocop:disable Metrics/ParameterLists
