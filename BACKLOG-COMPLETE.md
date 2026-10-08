@@ -7863,3 +7863,15 @@ Gemini's OpenAI-compatible endpoint answered a 503 and QUAACK printed no reason.
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261001-5 (commits 077e202a, aa03a92b). Review had no blocking findings; its minor went to 20261008-43.
+
+### 20260927-18. Make rewrite-test scenarios load instead of skipping them.
+
+20260926-60 skips a rewrite-test scenario whose fixture won't load and marks its atoms untested. That's acceptable for now, but a scenario that won't load means those atoms go untested. Find out why such scenarios fail (constraints or triggers the scenario builder doesn't model: exclusion constraints, triggers on the arena tables, complex CHECKs, and so on), and make the builder produce rows that load. Or refuse the query up front with a clear rule, so atoms aren't silently left untested.
+
+Also: fixture-compare still disproves every candidate when a scenario won't load (`:fixture_load_failed`). That fails safe for v1, but it rejects correct rewrites; once scenarios load, it stops mattering. And add a guard-level spec that a `:query`-step `ArenaRunner::Error` isn't swallowed by `VacuityGuard.loaded_exercised_atoms` (today, removing the step check stays green).
+
+- **Depends on:** 20260926-60.
+- **Came from:** User direction, 2026-09-27.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260927-18 (commits c0a0ca54, bfc015d2). Review had no blocking findings; its minors went to 20261008-47.

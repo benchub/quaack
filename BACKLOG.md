@@ -22,6 +22,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-6 (fixture-compare: top-N with left-out columns reruns without LIMIT).
 - 20261008-34 (statistics: hidden_statistics in the report, row_security_statistics_hidden).
 - 20261008-32 (rewrite candidates: only the original's names and pg_catalog's; unknown_name).
+- 20260927-18 (rewrite-test: scenarios load with generated columns and = exclusions; exclusion_constraint refused).
 
 ## How this file works.
 
@@ -1009,16 +1010,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Design:** index-from-query.
 - **Status:** todo
 
-### 20260927-18. Make rewrite-test scenarios load instead of skipping them.
-
-20260926-60 skips a rewrite-test scenario whose fixture won't load and marks its atoms untested. That's acceptable for now, but a scenario that won't load means those atoms go untested. Find out why such scenarios fail (constraints or triggers the scenario builder doesn't model: exclusion constraints, triggers on the arena tables, complex CHECKs, and so on), and make the builder produce rows that load. Or refuse the query up front with a clear rule, so atoms aren't silently left untested.
-
-Also: fixture-compare still disproves every candidate when a scenario won't load (`:fixture_load_failed`). That fails safe for v1, but it rejects correct rewrites; once scenarios load, it stops mattering. And add a guard-level spec that a `:query`-step `ArenaRunner::Error` isn't swallowed by `VacuityGuard.loaded_exercised_atoms` (today, removing the step check stays green).
-
-- **Depends on:** 20260926-60.
-- **Came from:** User direction, 2026-09-27.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20260927-18. Make rewrite-test scenarios load instead of skipping them. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-19. Set-aside loose ends.
 
@@ -2425,4 +2417,18 @@ The review of 20261007-21 part 1 found these minor issues:
 - **Depends on:** 20261007-21.
 - **Came from:** The review of 20261007-21 part 1, 2026-10-08.
 - **Design:** qualify.
+- **Status:** todo
+
+### 20261008-47. Scenario loading: minors from 20260927-18.
+
+The review of 20260927-18 found these minor issues:
+
+1. **The booking-table example doesn't test the `&&` part.** The `(room WITH =, during WITH &&)` example stays green when the `=` columns aren't added to `uniques`, because its rows never happen to overlap. Make it force overlapping `during` values.
+2. **The generated-column skip is too broad.** It drops boundary values for every column of the table. Skip only the columns the generation expression reads, from `pg_depend` or by parsing the expression.
+3. **`EXCLUDE USING gist (during WITH &&)` is refused, and that's common.** Booking and scheduling tables use it. Give each row's range column a distinct, non-overlapping value, such as `[2i, 2i+1)`, instead of refusing.
+4. **The equality check matches the operator by name only.** It checks `oprname = '='` but not the namespace, and not that the operator is a btree equality. Check both.
+
+- **Depends on:** 20260927-18.
+- **Came from:** The review of 20260927-18, 2026-10-08.
+- **Design:** rewrite-test.
 - **Status:** todo
