@@ -51,15 +51,16 @@ module Quaack
 
       USER_TRIGGER_TABLES_SQL = <<~SQL
         SELECT DISTINCT n.nspname, c.relname FROM pg_catalog.pg_trigger t
-        JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE NOT t.tgisinternal AND t.tgparentid = 0
+        JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) t.tgrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+        WHERE NOT t.tgisinternal AND t.tgparentid OPERATOR(pg_catalog.=) 0
       SQL
 
       TABLE_COUNT_SQL = <<~SQL
-        SELECT count(*) FROM pg_catalog.pg_class c
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relkind IN ('r', 'p') AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+        SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+        WHERE c.relkind OPERATOR(pg_catalog.=) ANY ('{r,p}'::pg_catalog."char"[])
+          AND n.nspname OPERATOR(pg_catalog.<>) 'information_schema' AND n.nspname OPERATOR(pg_catalog.!~) '^pg_'
       SQL
 
       module_function
@@ -80,7 +81,7 @@ module Quaack
       def recreate(conn, name, database)
         ident = conn.quote_ident(name)
         comment = conn.exec_params("SELECT pg_catalog.shobj_description(oid, 'pg_database') FROM " \
-                                   "pg_catalog.pg_database WHERE datname = $1", [name]).values
+                                   "pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) $1", [name]).values
         unless comment.empty?
           raise Error, "arena_database_foreign" unless comment == [[TAG]]
 

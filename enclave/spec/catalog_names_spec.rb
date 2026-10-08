@@ -17,7 +17,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
   # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
   # doesn't have.
   not_yet_qualified = %w[
-    quaack/enclave/arena.rb
     quaack/enclave/arena_runner/deferred.rb
     quaack/enclave/arena_runner/pipeline.rb
     quaack/enclave/arena_runner/sequences.rb
