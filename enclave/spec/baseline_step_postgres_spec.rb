@@ -106,6 +106,47 @@ RSpec.describe "quaacks baseline, against a real server" do
     conn&.close
   end
 
+  # Task 20260926-32: block counts that move between runs, from a real
+  # server. Each run's LIMIT comes from a function that takes one more
+  # session advisory lock (allowed in READ ONLY, and kept past the
+  # rollback) and returns how many it holds, so every run scans more of
+  # orders than the one before.
+  it "marks a set unstable when a real server's block counts move, keeping every run's redacted plan" do
+    built_run
+    conn = production.connect
+    conn.exec(<<~SQL)
+      CREATE FUNCTION public.quaack_next_run() RETURNS bigint LANGUAGE plpgsql VOLATILE AS $$
+      DECLARE n bigint;
+      BEGIN
+        SELECT count(*) INTO n FROM pg_catalog.pg_locks
+        WHERE locktype = 'advisory' AND pid = pg_catalog.pg_backend_pid() AND classid = 7130;
+        PERFORM pg_catalog.pg_advisory_lock(7130, (n + 1)::int);
+        RETURN n + 1;
+      END $$;
+    SQL
+    # One warm-up call, so the first run doesn't also read the catalog to
+    # compile the function.
+    conn.exec("SELECT public.quaack_next_run(); SELECT pg_catalog.pg_advisory_unlock_all()")
+    sql = "SELECT count(*) FROM (SELECT o.id FROM public.orders o WHERE o.note <> $1::text AND $2::text IS NOT NULL " \
+          "LIMIT public.quaack_next_run() * 1500) s"
+
+    slow = Quaack::Enclave::Measurement.measure(connection: conn, store: stored, sql:, combination: nil,
+                                                timeout_ms: 5_000)["slow"]
+
+    totals = slow["runs"].map { it["total_blocks"] }
+    expect(totals).to eq(totals.sort.uniq)
+    expect(totals.size).to eq(3)
+    expect(slow["stable"]).to be(false)
+    expect(slow["total_blocks"]).to eq(totals.last)
+    expect(slow["plans"].size).to eq(3)
+    expect(slow["plans"].map { it[0]["Plan"]["Shared Hit Blocks"] + it[0]["Plan"]["Shared Read Blocks"] }).to eq(totals)
+    expect(Quaack::Enclave::Measurement.plan(slow)).to eq(slow["plans"].last)
+    expect(slow["plans"].to_json).not_to include(sentinels.text)
+  ensure
+    conn&.exec("SELECT pg_catalog.pg_advisory_unlock_all()")
+    conn&.close
+  end
+
   it "sums every block kind, marks moving counts unstable with each run's redacted plan, and keeps the max" do
     map = { "$1" => { "value" => "secret-7", "type" => "unknown" } }
     runs = [plan(10, 5), plan(10, 5, temp_written: 4), plan(10, 5)]
