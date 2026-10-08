@@ -24,6 +24,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-45 (Equality refuses when an exact-type `=` exists outside the family).
 - 20261007-46 (or_to_union refuses LIKE patterns that can raise).
 - 20261007-43 (unique checks compare with the column's own type's `=`; fixes citext with text classes).
+- 20261003-22, item 1 (`run_server_unspecified`).
 
 ## How this file works.
 
@@ -1515,6 +1516,7 @@ Minor findings from the build and review of 20260928-1:
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
 - **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
 - **Landed (2026-10-08), items 2 and 4:** after one review with no blocking findings. When the run server is already checked, `quaack setup` (and `quaack run`, whether or not it runs setup) prints a line naming the run-server flags it ignores, never their values; a unit case covers skipping racetrack-setup. Still open: item 1, which needs an enclave rule (`run_server_unspecified` is decided on the jump server, so it goes in the batch), and item 3, which changes the teardown policy and needs the user: keep the run after a setup failure under `quaack run` (nothing expensive has run, and the operator may only need different flags), or tear it down (a permanent failure such as `volatile_function` leaves no run server or data copy behind).
+- **Landed (2026-10-08), item 1:** after one review with no blocking findings. With run-server flags missing and no `run_server_command`, the enclave refuses as `run_server_unspecified` (exit 70, no value in the line), and the driver adds a fixed note saying what to give. Still open: item 3, for the user. When it lands, also: under `quaack run` without `--keep` the run is torn down, so the note's "give the flags" fix needs a new `quaack start` that the line doesn't say (append `Teardown.next_step` for this rule, or keep the run); and DESIGN.md (~285) says a failed setup step prints only its rule, but rules with a fixed note print `<rule>: <note>`.
 - **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
