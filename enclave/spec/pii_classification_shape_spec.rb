@@ -98,6 +98,35 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       { "most_common_vals" => [[sentinel, "b"], %w[c d]], "most_common_val_nulls" => [[false, false]] }
     },
     "null-flag lists but no MCV items" => -> { { "most_common_vals" => nil } },
+    "a null-flag list with fewer flags than columns" => lambda {
+      { "most_common_vals" => [[sentinel, "b"]], "most_common_val_nulls" => [[false]] }
+    },
+    "a null-flag list with more flags than columns" => lambda {
+      { "most_common_vals" => [[sentinel, "b"]], "most_common_val_nulls" => [[false, false, false]] }
+    },
+    "null-flag lists of two flags on a three-column object" => lambda {
+      { "definition" => "CREATE STATISTICS public.s ON status, kind, (lower(kind)) FROM public.t",
+        "most_common_vals" => [[sentinel, "b"]] }
+    },
+    "more MCV frequencies than MCV items" => lambda {
+      { "most_common_vals" => [[sentinel, "b"]], "most_common_freqs" => [0.5, 0.1],
+        "most_common_base_freqs" => [0.25, 0.1] }
+    },
+    "fewer MCV frequencies than MCV items" => lambda {
+      { "most_common_vals" => [[sentinel, "b"], %w[c d]], "most_common_val_nulls" => [[false, false]] * 2 }
+    },
+    "more MCV base frequencies than MCV items" => -> { { "most_common_base_freqs" => [0.25, 0.1] } },
+    "fewer MCV base frequencies than MCV items" => -> { { "most_common_base_freqs" => [] } },
+    "MCV frequencies without base frequencies" => -> { { "most_common_base_freqs" => nil } },
+    "MCV base frequencies without frequencies or MCV items" => lambda {
+      { "most_common_vals" => nil, "most_common_val_nulls" => nil, "most_common_freqs" => nil }
+    },
+    "MCV items without frequencies" => lambda {
+      { "most_common_vals" => [[sentinel, "b"]], "most_common_freqs" => nil, "most_common_base_freqs" => nil }
+    },
+    "more MCV frequencies than base frequencies, without MCV items" => lambda {
+      { "most_common_vals" => nil, "most_common_val_nulls" => nil, "most_common_freqs" => [0.5, 0.1] }
+    },
     "an unknown kind" => -> { { "kinds" => [sentinel] } },
     "kinds that aren't a list" => -> { { "kinds" => sentinel } },
     "n_distinct that isn't Postgres's text" => -> { { "n_distinct" => "{#{sentinel}}" } },
@@ -126,6 +155,34 @@ RSpec.describe Quaack::Enclave::PiiClassification do
                        "most_common_freqs" => [0.5, 0.25], "most_common_base_freqs" => [0.25, 0.1])
 
     expect(outbound(object: two)["extended_statistics"].first["most_common_val_nulls"]).to eq(nulls)
+  end
+
+  # MCV values leave only for a low-cardinality object, but its frequencies
+  # leave for any that isn't PII.
+  it "lets MCV frequencies out without their MCV items" do
+    freqs = object.merge("most_common_vals" => nil, "most_common_val_nulls" => nil,
+                         "most_common_freqs" => [0.5, 0.25], "most_common_base_freqs" => [0.25, 0.1])
+
+    expect(outbound(object: freqs)["extended_statistics"].first["most_common_freqs"]).to eq([0.5, 0.25])
+  end
+
+  # Postgres counts an expression as a column of the object.
+  it "lets one null flag per column out, counting expressions" do
+    three = object.merge("definition" => "CREATE STATISTICS public.s ON status, (lower(kind)), kind FROM public.t",
+                         "most_common_vals" => [%w[a b c]], "most_common_val_nulls" => [[false, true, false]])
+
+    expect(outbound(object: three)["extended_statistics"].first["most_common_val_nulls"]).to eq([[false, true, false]])
+  end
+
+  # classify sends no MCV data for a definition that won't parse, so this
+  # reaches the check only if that ever changes. It fails closed.
+  it "refuses null flags on a statistics object whose definition won't parse" do
+    bad = object.merge("definition" => "CREATE STATISTICS #{sentinel} ON")
+    table = { "schema" => "public", "name" => "t", "columns" => [], "indexes" => [], "extended_statistics" => [bad] }
+    error = error_of { described_class::OutboundShape.check(table) }
+
+    expect(error.rule).to eq("statistics_bad_shape")
+    expect(error.message).not_to include(sentinel)
   end
 
   # Column numbers run to 1600, and Postgres writes a count as an int: four
