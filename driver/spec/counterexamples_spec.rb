@@ -167,8 +167,9 @@ RSpec.describe Quaack::Driver::Counterexamples do
         expect(second.map { it[:role] }).to eq(%i[user assistant user])
         expect(fakes["b"].asks.map { it.body[:system] }).to all(eq(fake.asks.first.body[:system]))
         expect(fakes["c"].asks).to eq([])
-        expect(notes).to include("a is rate limited, so the rest of this run skips it; asking b for the remaining " \
-                                 "rounds, starting fresh (llm-counterexamples, Rewrite Silver Fox)")
+        expect(notes).to include("a is rate limited (the API answered 429: fake rate_limit_error), so the rest of " \
+                                 "this run skips it; asking b for the remaining rounds, starting fresh " \
+                                 "(llm-counterexamples, Rewrite Silver Fox)")
       end
 
       it "starts fresh again, off every provider this rewrite's rounds failed on, with every earlier round" do
@@ -212,7 +213,9 @@ RSpec.describe Quaack::Driver::Counterexamples do
         expect { run }.to raise_error(Quaack::Driver::LLM::Error) { |e|
           expect(e.rule).to eq("llm_rate_limited")
           expect(e.message).to include("every LLM provider llm-counterexamples may use failed: " \
-                                       "a (llm_rate_limited), b (llm_rate_limited), c (llm_rate_limited)")
+                                       "a (llm_rate_limited: the API answered 429: fake rate_limit_error); " \
+                                       "b (llm_rate_limited: the API answered 429: fake rate_limit_error); " \
+                                       "c (llm_rate_limited: the API answered 429: fake rate_limit_error)")
         }
       end
 

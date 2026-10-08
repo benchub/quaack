@@ -57,10 +57,10 @@ module Quaack
         class LaterError < Error
           attr_reader :provider, :step
 
-          def initialize(rule, detail, provider:, step:)
+          def initialize(rule, detail, provider:, step:, reason: detail)
             @provider = provider
             @step = step
-            super(rule, detail)
+            super(rule, detail, reason:)
           end
         end
 
@@ -132,7 +132,7 @@ module Quaack
         end
 
         # Every client's counts, added up, by step and by provider.
-        def burndown = Burndown.sum(@clients.values.map(&:burndown).uniq(&:object_id))
+        def burndown = Burndown.sum(@clients.values.map(&:burndown))
 
         def session(pairing: nil) = Session.new(self, pairing:)
 
@@ -156,14 +156,14 @@ module Quaack
         # its first ask fails the step with the last failure's rule.
         def fresh(error, skip:, label:, pairing: nil)
           Session.new(self, skip:, pairing:, fresh: lambda { |name|
-            note(error.provider, error.rule, "asking #{name} for the remaining rounds, starting fresh " \
-                                             "(#{[error.step, label].compact.join(", ")})")
+            note(error.provider, error, "asking #{name} for the remaining rounds, starting fresh " \
+                                        "(#{[error.step, label].compact.join(", ")})")
           })
         end
 
         # Says the step goes on without error's provider, error a
         # LaterError, doing what: "going on without replacement ideas".
-        def going_on(error, what) = note(error.provider, error.rule, "#{what} (#{error.step})")
+        def going_on(error, what) = note(error.provider, error, "#{what} (#{error.step})")
 
         # Asks as a unit of one.
         def ask(**) = session.ask(**)
@@ -194,10 +194,10 @@ module Quaack
         rescue Error => e
           failed(name, e)
           failures[name] = e
-          raise named(e, name) unless FAILS_OVER.include?(e.rule)
+          raise named(e, name), cause: nil unless FAILS_OVER.include?(e.rule)
 
           raise LaterError.new(e.rule, named(e, name).message.delete_prefix("#{e.rule}: "),
-                               provider: name, step: ask.fetch(:step))
+                               provider: name, step: ask.fetch(:step), reason: e.reason), cause: nil
         end
 
         private
@@ -231,13 +231,14 @@ module Quaack
 
         # error, once its provider, name, is marked down or dropped as its
         # rule says, and the line says why the unit tries next_name, if
-        # there's one. Raises error, named, for a rule that doesn't fail
-        # over.
+        # there's one. With none, only a dropped provider gets a line, so
+        # llm_auth always stands out. Raises error, named, for a rule that
+        # doesn't fail over.
         def failover(error, name, next_name, step)
-          raise named(error, name) unless FAILS_OVER.include?(error.rule)
+          raise named(error, name), cause: nil unless FAILS_OVER.include?(error.rule)
 
           failed(name, error)
-          note(name, error.rule, "trying #{next_name} (#{step})") if next_name
+          next_name ? note(name, error, "trying #{next_name} (#{step})") : none_left(name, error, step)
           error
         end
 
@@ -245,27 +246,27 @@ module Quaack
           @down[name] = error if MARKS_DOWN.include?(error.rule) && !@down.key?(name)
         end
 
-        # The line saying why name was left, by rule, then what happens
-        # next, rest: "trying groq (llm-rewrites)" (RouterLines).
-        def note(name, rule, rest) = @progress&.note(line(name, rule, rest))
+        # The line saying why name was left, by error's rule and reason,
+        # then what happens next, rest: "trying groq (llm-rewrites)"
+        # (RouterLines).
+        def note(name, error, rest) = @progress&.note(line(name, error, rest))
 
         # The line itself, as RouterLines words it.
-        def line(name, rule, rest) = RouterLines.line(name, rule, rest, named: @named, copilot: copilot?(name))
+        def line(name, error, rest) = RouterLines.line(name, error, rest, named: @named, copilot: copilot?(name))
 
         # error, naming the provider after its rule, when the providers are
         # named.
-        def named(error, name)
-          @named ? Error.new(error.rule, "#{name}: #{error.message.delete_prefix("#{error.rule}: ")}") : error
-        end
+        def named(error, name) = @named ? error.naming(name) : error
 
         # The step's failure when its unit has no provider left: the last
-        # rule of tried, with each provider and its rule, and the request's
-        # sizes. From an llm block, it's the one provider's failure as it
-        # is, though an earlier unit's, with the API's own detail.
+        # rule of tried, with each provider, its rule, and its short reason,
+        # and the request's sizes. From an llm block, it's the one
+        # provider's failure as it is, though an earlier unit's, with the
+        # API's own detail.
         def exhausted(ask, tried)
           return tried.last.last unless @named
 
-          list = tried.map { |name, error| "#{name} (#{error.rule})" }.join(", ")
+          list = tried.map { |name, error| "#{name} (#{RouterLines.failed(error.rule, error.reason)})" }.join("; ")
           Error.new(tried.last.last.rule, "every LLM provider #{ask[:step]} may use failed: #{list}. #{sizes(ask)}")
         end
 

@@ -120,7 +120,8 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
 
       expect([result.entries, result.providers]).to eq([%w[b c], %w[b c]])
       expect(sent.map { |call| call.map { it["sql"] } }).to eq([%w[B1 C1]])
-      expect(notes).to include("a failed with llm_unavailable; going on with the others (llm-rewrites)")
+      expect(notes).to include("a failed with llm_unavailable: the API answered 503: fake api_error; going on with " \
+                               "the others (llm-rewrites)")
     end
 
     it "still has the enclave record that the step ran when no branch proposed anything" do

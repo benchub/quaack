@@ -226,6 +226,70 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(seen.map { error_text(it) }.join).not_to include("SENTINEL-BODY-KEY")
     end
 
+    # A gateway or proxy at base_url can echo a key in its error body on any
+    # status, so the detail is the status and the body's message, never the
+    # gem's URL, with the adapter's own key and what base_url holds scrubbed.
+    describe "a body that echoes a secret" do
+      let(:key) { "SENTINELKEY0123456789" }
+      let(:query) { "SENTINELQUERY0123" }
+      let(:settings) { FakeOpenAI.settings("base_url" => "#{FakeOpenAI::BASE_URL}?api-key=#{query}") }
+
+      def echoed(status, client)
+        fake.error_body("llm-index-ideas", status:, body: { error: { message: "bad, key #{key} #{query}" } })
+        client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      [400, 429, 500].each do |status|
+        it "scrubs the key and base_url's query value from a #{status}'s detail, and shows no URL" do
+          error = echoed(status, fake.client(burndown:, max_retries: 0, api_key: key, settings:))
+
+          expect(error_text(error)).not_to include(key, query, "url=", "llm.example.com")
+          expect(error.reason).to eq("the API answered #{status}: bad, key [key] [key]")
+        end
+      end
+
+      it "scrubs a key from the variable api_key_env names" do
+        settings = Quaack::Driver::LLM.settings({ "provider" => "openai_compatible", "model" => "m",
+                                                  "base_url" => FakeOpenAI::BASE_URL,
+                                                  "api_key_env" => "QUAACK_SENTINEL_KEY" }, env: {})
+        client = with_env("QUAACK_SENTINEL_KEY" => key) do
+          Quaack::Driver::LLM::Client.new(settings:, burndown:, transport: fake, max_retries: 0)
+        end
+
+        expect(echoed(429, client).reason).to eq("the API answered 429: bad, key [key] #{query}")
+      end
+
+      it "scrubs OpenAI's organization and project, which go only to OpenAI's API" do
+        org = "SENTINEL-ORG-0123456789"
+        project = "SENTINEL-PROJECT-0123456789"
+        settings = Quaack::Driver::LLM.settings({ "provider" => "openai_compatible", "model" => "m" }, env: {})
+        client = with_env("OPENAI_ORG_ID" => org, "OPENAI_PROJECT_ID" => project) do
+          Quaack::Driver::LLM::Client.new(settings:, api_key: "k", burndown:, transport: fake, max_retries: 0)
+        end
+        fake.error_body("llm-index-ideas", status: 429, body: { error: { message: "org #{org} project #{project}" } })
+
+        error = client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        expect(error_text(e)).not_to include(org, project)
+        expect(e.reason).to eq("the API answered 429: org [key] project [key]")
+      else
+        raise "expected an LLM::Error, got #{error.inspect}"
+      end
+
+      it "would show the secret if the body echoed one that isn't the adapter's" do
+        fake.error_body("llm-index-ideas", status: 429, body: { error: { message: "other SENTINEL-OTHER-0123456789" } })
+
+        error = fake.client(burndown:, max_retries: 0, api_key: key).ask(step: "llm-index-ideas", messages:,
+                                                                         max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        expect(e.reason).to eq("the API answered 429: other SENTINEL-OTHER-0123456789")
+      else
+        raise "expected an LLM::Error, got #{error.inspect}"
+      end
+    end
+
     it "keeps an llm_auth detail to the status, without the body" do
       fake.error_body("llm-index-ideas", status: 401, body: { error: { message: "sentinel key sk-123" } })
 

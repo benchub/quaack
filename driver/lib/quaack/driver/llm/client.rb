@@ -113,7 +113,8 @@ module Quaack
                    count: counter(step, purpose, provider, shown))
         rescue Error => e
           sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
-          raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}"), cause: e.cause
+          raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}", reason: e.reason),
+                cause: e.cause
         end
 
         # The system prompt an ask sends: system, ending with JSON_ONLY when

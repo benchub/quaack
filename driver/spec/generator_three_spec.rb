@@ -170,16 +170,16 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       expect([result.providers, result.skipped]).to eq([["a"], { "a" => "llm_rate_limited" }])
       expect(rounds).to eq([first])
       expect(other.asks).to eq([])
-      expect(notes.last).to eq("a is rate limited, so the rest of this run skips it; going on without replacement " \
-                               "ideas (llm-index-ideas)")
+      expect(notes.last).to eq("a is rate limited (the API answered 429: fake rate_limit_error), so the rest of this " \
+                               "run skips it; going on without replacement ideas (llm-index-ideas)")
     end
 
     it "names the rewrite's step when it searches for a rewrite" do
       fake.reply("rewrite-llm-index-ideas", { "indexes" => first }).cut_short("rewrite-llm-index-ideas", "par")
       described_class.new(client:, index_test:, step: described_class::REWRITE_STEP).run(payload)
 
-      expect(notes.last).to eq("a's reply couldn't be used, though later asks may still use it; going on without " \
-                               "replacement ideas (rewrite-llm-index-ideas)")
+      expect(notes.last).to eq("a's reply couldn't be used (the reply stopped for max_tokens), though later asks " \
+                               "may still use it; going on without replacement ideas (rewrite-llm-index-ideas)")
     end
 
     it "fails the step on llm_bad_request" do
@@ -276,8 +276,8 @@ RSpec.describe Quaack::Driver::GeneratorThree do
 
       expect(rounds.last).to eq([ddl("a3")])
       expect(result.skipped).to eq("c" => "llm_rate_limited")
-      expect(notes).to include("c is rate limited, so the rest of this run skips it; going on without replacement " \
-                               "ideas (llm-index-ideas)")
+      expect(notes).to include("c is rate limited (the API answered 429: fake rate_limit_error), so the rest of this " \
+                               "run skips it; going on without replacement ideas (llm-index-ideas)")
     end
 
     it "fails the step when a replacement ask fails with llm_bad_request" do
