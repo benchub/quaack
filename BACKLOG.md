@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260923-30 (vacuity-guard: NATURAL JOIN marker atom, protocol rule natural_join_unreplaceable).
 - 20260924-8 (burndown: once-per-search refusals, proposals check, unrenderable counted on its own).
 - 20260923-36 (index-dedupe: WITH and NULLS NOT DISTINCT existing indexes cover, boolean folding).
+- 20260924-24 (inventory: production read timeout, null config commands refused, memory cap, ShellCommand drain).
 
 ## How this file works.
 
@@ -337,22 +338,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 ### 20260924-23. Deparse loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-24. Production inventory loose ends.
-
-Still open from the build and reviews of 20260922-16:
-- No `statement_timeout` on the production connection, so a host that silently drops packets hangs the step. The operator's `PGCONNECT_TIMEOUT` covers only the connect.
-- The recorded "production values" are the operator's session values, including `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the DESIGN.md wording, or connect with `options: ""`.
-- Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`, so a role's search_path can't shadow them.
-- `"memory_command": null` counts as not configured, but DESIGN.md says it's `bad_config`. There's no upper bound on the memory size.
-- A background child holding stdout makes the memory command wait out its timeout, and a `setsid` child escapes the process-group kill.
-- `ProductionServer` prints NOTICE lines into the rake output.
-- **Surviving mutants:** config's invalid UTF-8 handling; memory's double space before the unit, `reap`, TIMEOUT and MAX_OUTPUT values, and spawn failure; inventory closing its connection; the step's hardcoded `major_version`.
-
-- **Depends on:** 20260922-16.
-- **Came from:** The build and reviews of 20260922-16.
-- **Design:** inventory.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-24. Production inventory loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-25. redact loose ends.
 
@@ -2333,4 +2319,18 @@ The first review of 20260923-57 found these minor issues:
 - **Depends on:** 20260923-57.
 - **Came from:** The first review of 20260923-57, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-30. Production inventory: minors from 20260924-24, and silent packet drops.
+
+The build and review of 20260924-24 found these:
+
+1. **The final drain isn't tested.** No test pins `ShellCommand`'s drain after the shell exits. A mutant that returns as soon as the status shows an exit, before the final drain, survives every spec. It would only lose output when the shell writes and exits between a drain and the next status check. A test that delays `Process.wait2` at the edge would pin it.
+2. **DESIGN.md overstates schema-dump's timeout.** It says schema-dump "gets the same timeout". Only its catalog walk inside `read_only` does. Its `pg_dump` child has only `lock_wait_timeout`, so a silently dropping host can still hang it. Reword this, and consider a time limit on the pg_dump child.
+3. **DESIGN.md names `null` only for `memory_command`.** A null `run_server_command`, `destroy_command`, or `pii_columns` is `bad_config` too. Say so in the run-server and teardown sections.
+4. **Silent packet drops can still hang the production connection.** A server-side `statement_timeout` doesn't fully cover a host that silently drops packets, because the error reply can be lost too, and libpq keeps waiting. Client-side TCP keepalives or `tcp_user_timeout` on the production connection would cover it. This came from the builder.
+
+- **Depends on:** 20260924-24.
+- **Came from:** The builder and review of 20260924-24, 2026-10-08.
+- **Design:** inventory.
 - **Status:** todo

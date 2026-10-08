@@ -7687,3 +7687,21 @@ Still open from the reviews of 20260922-32 and 20260923-31:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260923-36 (commit e79c7628). Review had no blocking findings; its minors went to 20261008-28. normalize_predicate's re-parse was already fixed by 20260923-55, and ON ONLY is unreachable in v1. Also covers 20261008-23 item 3 (boolean folding).
+
+### 20260924-24. Production inventory loose ends.
+
+Still open from the build and reviews of 20260922-16:
+- No `statement_timeout` on the production connection, so a host that silently drops packets hangs the step. The operator's `PGCONNECT_TIMEOUT` covers only the connect.
+- The recorded "production values" are the operator's session values, including `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the DESIGN.md wording, or connect with `options: ""`.
+- Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`, so a role's search_path can't shadow them.
+- `"memory_command": null` counts as not configured, but DESIGN.md says it's `bad_config`. There's no upper bound on the memory size.
+- A background child holding stdout makes the memory command wait out its timeout, and a `setsid` child escapes the process-group kill.
+- `ProductionServer` prints NOTICE lines into the rake output.
+- **Surviving mutants:** config's invalid UTF-8 handling; memory's double space before the unit, `reap`, TIMEOUT and MAX_OUTPUT values, and spawn failure; inventory closing its connection; the step's hardcoded `major_version`.
+
+- **Depends on:** 20260922-16.
+- **Came from:** The build and reviews of 20260922-16.
+- **Design:** inventory.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-24 (commits 48cd01ac, 7b852462, 5b5fb6bc). Review had no blocking findings. The pg_catalog qualification was already done. The review's minors and the builder's keepalive note went to 20261008-30.
