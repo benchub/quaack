@@ -6,25 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261006-19 (one stored plan per measurement).
-- 20260926-56 (the shared parse helper, the error rules, and NameQualifier with the stored search_path).
-- 20261007-3 (statistics hardening).
-- 20261001-4 (refused candidates never best in the index payload).
-- 20261007-9 (racetrack catalog names qualified; denormalized-equal uses each type's own `=`).
-- 20261007-22 (an unreachable rescue removed).
-- 20261007-30 (HypoPG in the quaack schema; stored search_path without unusable schemas).
-- 20261002-3 (fresh aliases avoid every table and alias name).
-- 20261007-26 (outbound statistics per-column counts).
-- 20261007-34 (index-test and counterexample-round check volatility on the stored path).
-- 20261007-31 (arena catalog names qualified; the allowlist is empty).
-- 20261002-4 (composite keys; unique checks compare opclass and collation).
-- 20261007-39 (same-type arrays, ranges, and composites compare in denormalized_equal).
-- 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
-- 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
-- 20261007-45 (Equality refuses when an exact-type `=` exists outside the family).
-- 20261007-46 (or_to_union refuses LIKE patterns that can raise).
-
-Known open bug in this batch (found 2026-10-08): the shared `unique` check counts a `text_ops` unique index on a citext column as unique, though citext compares case-blind. 20261007-43 fixes it; close the batch only after it lands.
+- None. The last batch closed at 0.1.22 on 2026-10-08.
 
 ## How this file works.
 
@@ -612,20 +594,7 @@ Minor findings from the review of 20260929-8.
 
 ### 20260929-17. Test the prompt-pack template's recovery from a failed build. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
-
-A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
-
-- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-4/reply-claude-3.md`
-- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-5/reply-gemini-3.md`
-- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-9/reply-claude-3.md`
-
-It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
-
-- **Depends on:** nothing open.
-- **Came from:** Review of 20260929-13, round one.
-- **Design:** none. Test harness and prompt pack only.
-- **Status:** todo
+### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there. Done, see BACKLOG-COMPLETE.md.
 
@@ -1528,6 +1497,8 @@ Minor findings from the build and review of 20260928-1:
 - **Depends on:** 20260928-1.
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
 - **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
+- **Landed (2026-10-08), items 2 and 4:** after one review with no blocking findings. When the run server is already checked, `quaack setup` (and `quaack run`, whether or not it runs setup) prints a line naming the run-server flags it ignores, never their values; a unit case covers skipping racetrack-setup. Still open: item 1, which needs an enclave rule (`run_server_unspecified` is decided on the jump server, so it goes in the batch), and item 3, which changes the teardown policy and needs the user: keep the run after a setup failure under `quaack run` (nothing expensive has run, and the operator may only need different flags), or tear it down (a permanent failure such as `volatile_function` leaves no run server or data copy behind).
+- **Landed (2026-10-08), item 1:** after one review with no blocking findings. With run-server flags missing and no `run_server_command`, the enclave refuses as `run_server_unspecified` (exit 70, no value in the line), and the driver adds a fixed note saying what to give. Still open: item 3, for the user. When it lands, also: under `quaack run` without `--keep` the run is torn down, so the note's "give the flags" fix needs a new `quaack start` that the line doesn't say (append `Teardown.next_step` for this rule, or keep the run); and DESIGN.md (~285) says a failed setup step prints only its rule, but rules with a fixed note print `<rule>: <note>`.
 - **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
@@ -2204,16 +2175,7 @@ From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-oper
 
 ### 20261007-39. denormalized_equal: accept same-type arrays, ranges, and composites. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-40. LLM errors: Copilot token patterns, and causes on other rules.
-
-From the reviews of 20261007-24.
-1. The Copilot CLI tail redaction misses `Bearer:`, two spaces or a tab after "Bearer", and Copilot API session tokens with no prefix (`tid=...;exp=...;8kp=1:...`). It matters only for llm_unavailable stderr, so this is defense in depth.
-2. Only llm_auth drops its cause. The Anthropic and OpenAI-compatible adapters' other API errors still keep the gem error, body included, as their cause. Decide whether any of those bodies can hold a secret, and drop or trim the cause where one could.
-
-- **Depends on:** 20261007-24.
-- **Came from:** The reviews of 20261007-24.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-40. LLM errors: Copilot token patterns, and causes on other rules. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-41. Arena qualification: minors from 20261007-31. Done, see BACKLOG-COMPLETE.md.
 
@@ -2231,17 +2193,7 @@ From the review of 20261007-14.
 - **Design:** Several LLM providers.
 - **Status:** todo
 
-### 20261007-43. Unique keys: minors from 20261002-4.
-
-From the review of 20261002-4.
-1. `catalog/keys.rb`'s `u.n <= i.indnkeyatts` filter is untested; dropping it lets INCLUDE columns join candidate keys, which would refuse `SELECT DISTINCT t.a` for `UNIQUE (a) INCLUDE (b)` and demand `b` not null. Add a test with an INCLUDE index.
-2. The per-catalog `@keys` memo in `keys.rb` is untested (performance only).
-3. The shared check refuses a unique index with a non-default operator class even when its `=` matches the default's (`text_pattern_ops`, `varchar_pattern_ops`). Allow a class whose equality operator is the default class's, with a test.
-
-- **Depends on:** 20261002-4.
-- **Came from:** The review of 20261002-4.
-- **Design:** rewrite-rules, assumption checks.
-- **Status:** todo
+### 20261007-43. Unique keys: minors from 20261002-4. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table.
 
@@ -2269,14 +2221,7 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 
 ### 20261007-49. A lone `llm` block: keep the API's detail after a skipped replacement round. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-50. Bedrock region lookup: match the SDK on empty variables.
-
-From the review of 20261007-28. `env_region` skips an empty region variable and moves on to the next. The AWS SDK takes the first variable that's set (`compact.first`); when that one is empty it skips the rest and goes to the profile's region. So `AWS_REGION=""` with a valid `AWS_DEFAULT_REGION` gives a different region in bearer mode, and in SigV4 mode a bad `AMAZON_REGION` behind an empty `AWS_REGION` is refused though the SDK would never read it. Match the SDK's rule, or document the difference. Also, the `no_region` message names only `AWS_REGION`; mention `AMAZON_REGION` and `AWS_DEFAULT_REGION` too.
-
-- **Depends on:** 20261007-28.
-- **Came from:** The review of 20261007-28.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261007-50. Bedrock region lookup: match the SDK on empty variables. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-51. Equality: refuse a half-exact `=` too.
 
@@ -2297,4 +2242,29 @@ From the builder and review of 20261007-46.
 - **Depends on:** 20261007-46.
 - **Came from:** The builder and review of 20261007-46.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
+
+### 20261007-54. Anthropic and Bedrock error details print the whole response body.
+
+From the builder of 20261007-40. For rules other than llm_auth, the Anthropic adapter's detail (and so Bedrock's) is the gem's own message, which is `{url:, status:, body:}`, so the whole error body prints. Anthropic's own bodies hold only a type, a message, and a request ID, but a `base_url` can point at a gateway or proxy (LiteLLM, a corporate gateway) whose 4xx or 5xx body could echo a key or other secret. The OpenAI-compatible adapter shows only `error.message`, or the body when it has none. Show only the body's `error.message` for Anthropic and Bedrock too, and scrub the adapter's own key from any detail, with sentinel tests through a fake gateway that echoes the key in a 400 and a 500 body.
+
+The URL prints too, so also scrub a key in a `base_url` query string (from the review of 20261007-40).
+
+- **Depends on:** 20261007-40.
+- **Came from:** The builder of 20261007-40, 2026-10-08.
+- **Design:** LLM providers, trust boundary.
+- **Status:** todo
+
+### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps.
+
+From the review of 20261007-40.
+1. Regression: the old pattern redacted `Bearer "SECRET"` and `Bearer 'SECRET'`; the new `[^\s"']+` can't start at a quote, so those print unredacted. Redact a quoted token too, with tests for both quote kinds.
+2. The shared "keeps no cause on any API error" example plants sentinels in response headers, but `error_text` never reads headers, so that half can't fail. Have `error_text` include `headers.inspect` when the error has headers, and prove it catches a planted header sentinel in a kept cause.
+3. No test has a session token holding `tid=` without `8kp=`, so a mutation to only `8kp=` survives. Add one.
+
+- **Depends on:** 20261007-40.
+- **Came from:** The review of 20261007-40.
+- **Design:** LLM providers.
 - **Status:** todo

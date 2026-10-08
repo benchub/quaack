@@ -206,6 +206,26 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(sans_sizes(ask_error.message)).to end_with("sentinel text body")
     end
 
+    # A gateway's error body can carry more than its message, such as the
+    # request's settings with the key. The detail is only the message, and
+    # the gem's error, which holds the whole body, isn't kept as the cause.
+    it "shows only the error's message from a body, never the rest of it, on any rule" do
+      body = { error: { message: "sentinel reason", type: "server_error" },
+               debug: { api_key: "SENTINEL-BODY-KEY", headers: { authorization: "Bearer SENTINEL-BODY-KEY" } } }
+      [400, 429, 500].each { fake.error_body("llm-index-ideas", status: it, body: body) }
+      client = fake.client(burndown: burndown, max_retries: 0)
+
+      seen = Array.new(3) do
+        client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(seen.map(&:rule)).to eq(%w[llm_bad_request llm_rate_limited llm_unavailable])
+      expect(seen.map { sans_sizes(it.message) }).to all(end_with("sentinel reason"))
+      expect(seen.map { error_text(it) }.join).not_to include("SENTINEL-BODY-KEY")
+    end
+
     it "keeps an llm_auth detail to the status, without the body" do
       fake.error_body("llm-index-ideas", status: 401, body: { error: { message: "sentinel key sk-123" } })
 

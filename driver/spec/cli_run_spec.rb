@@ -420,6 +420,24 @@ RSpec.describe "quaack run" do
     )
   end
 
+  # Task 20261003-22: run-server flags given to a run that's had setup go
+  # unused, so it says so, naming only the flags.
+  it "warns that the run-server flags go unused when the run has had setup" do
+    status = cli.run(["run", "--run", run_id, "--out", out, "--arena-db", "ar", "--host", "rs-1"])
+
+    expect(status).to eq(0)
+    expect(transport.calls.map(&:first)).not_to include("run-server")
+    expect(errors).to eq(
+      "quaack: Ignoring --host and --arena-db, since the run already checked its run server. " \
+      "To use another run server, start a new run with `quaack start`\n#{torn}"
+    )
+  end
+
+  it "doesn't warn about run-server flags when none are given to a run that's had setup" do
+    expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+    expect(errors).to eq(torn)
+  end
+
   # Task 20261004-17: the note names the jump host and production server
   # from the laptop's record of the run, and what to do next once the run
   # is torn down.
@@ -643,6 +661,7 @@ RSpec.describe "quaack run" do
                         "--racetrack-db", "rt", "--arena-db", "ar"])
 
       expect([status, errors]).to eq([0, torn])
+      expect(stderr.string).not_to include("Ignoring")
       expect(transport.calls.map(&:first).take(12)).to eq(%w[version status] + setup.drop(1))
       expect(transport.calls.map(&:first)[12]).to eq("index-feedback")
       expect(transport.calls.to_h["run-server"][:args])
@@ -1346,7 +1365,8 @@ RSpec.describe "quaack run" do
 
           expect([status, stdout.string, stderr.string])
             .to eq([64, "", "quaack run: no AWS region for Bedrock: set llm.aws_region in ~/.quaack/driver.json, " \
-                            "AWS_REGION, or a region in the AWS profile\n"])
+                            "one of AWS_REGION, AMAZON_REGION, and AWS_DEFAULT_REGION, or a region in the AWS " \
+                            "profile\n"])
           expect([hosts, transport.calls]).to eq([[], []])
         end
 
@@ -1357,7 +1377,8 @@ RSpec.describe "quaack run" do
 
           expect([status, stdout.string, stderr.string])
             .to eq([64, "", "quaack run: bed: no AWS region for Bedrock: set llms[0].aws_region in " \
-                            "~/.quaack/driver.json, AWS_REGION, or a region in the AWS profile\n"])
+                            "~/.quaack/driver.json, one of AWS_REGION, AMAZON_REGION, and AWS_DEFAULT_REGION, or a " \
+                            "region in the AWS profile\n"])
           expect([hosts, transport.calls]).to eq([[], []])
         end
       end

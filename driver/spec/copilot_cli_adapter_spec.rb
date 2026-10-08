@@ -223,6 +223,32 @@ RSpec.describe "the copilot_cli adapter" do
     }
   end
 
+  it "keeps bearer tokens in other spellings and Copilot session tokens out of a failure's stderr tail" do
+    command = File.join(@dir, "fake-copilot")
+    script(command, <<~'RUBY')
+      warn "a Bearer:SENTINELD1 b bearer:  SENTINELD2 c BEARER=SENTINELD3"
+      warn "two Bearer  SENTINELE1 tab Bearer\tSENTINELE2"
+      warn "session tid=SENTINELG;exp=1700000000;sku=free;proxy-ep=proxy.individual.githubcopilot.com;8kp=1:SENTINELH"
+      warn "json {\"token\":\"tid=SENTINELI;exp=1;8kp=1:SENTINELJ\",\"expires_at\":1} done"
+      warn "reordered exp=1;sku=x;8kp=1:SENTINELK ok; retrying"
+      exit 7
+    RUBY
+    template = [command, "{prompt_file}", "{model}"]
+
+    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+      expect(e.rule).to eq("llm_unavailable")
+      expect(sans_sizes(e.message)).to eq(
+        "llm_unavailable: copilot_cli exited with status 7: " \
+        "a Bearer:[token] b bearer:  [token] c BEARER=[token]\n" \
+        "two Bearer  [token] tab Bearer\t[token]\n" \
+        "session [token]\n" \
+        "json {\"token\":\"[token]\",\"expires_at\":1} done\n" \
+        "reordered [token] ok; retrying"
+      )
+      expect(error_text(e)).not_to include("SENTINEL")
+    }
+  end
+
   it "maps a non-zero status to llm_unavailable with a short stderr tail" do
     command = File.join(@dir, "fake-copilot")
     record_cwd_script(command, '100.times { |i| warn "line " + i.to_s }; exit 7')

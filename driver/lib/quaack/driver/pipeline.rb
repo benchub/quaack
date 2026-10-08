@@ -104,9 +104,9 @@ module Quaack
         def generate(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           step = search == SEARCH ? GeneratorThree::STEP : GeneratorThree::REWRITE_STEP
           test = GeneratorThree.index_test(transport, run_id:, search:)
-          index_test = Pipeline.noting(progress, step, "Testing the LLM's index ideas", test)
+          index_test = StepSummary.noting(progress, step, "Testing the LLM's index ideas", test)
           result = GeneratorThree.new(client:, index_test:, step:).run(payload)
-          none = Pipeline.noting(progress, step, "Recording that the LLM gave no index ideas", test)
+          none = StepSummary.noting(progress, step, "Recording that the LLM gave no index ideas", test)
           none.call([]) if result.rounds.empty?
           record.call { it.index_ideas!(search, result) }
           result
@@ -117,10 +117,10 @@ module Quaack
         def refine(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           feedback = nil
           step = search == SEARCH ? RefinementRound::STEP : RefinementRound::REWRITE_STEP
-          fetch = Pipeline.noting(progress, step, "Reading how the LLM's index ideas did",
-                                  RefinementRound.index_feedback(transport, run_id:, search:))
-          index_test = Pipeline.noting(progress, step, "Testing the LLM's revised index ideas",
-                                       RefinementRound.index_test(transport, run_id:, search:))
+          fetch = StepSummary.noting(progress, step, "Reading how the LLM's index ideas did",
+                                     RefinementRound.index_feedback(transport, run_id:, search:))
+          index_test = StepSummary.noting(progress, step, "Testing the LLM's revised index ideas",
+                                          RefinementRound.index_test(transport, run_id:, search:))
           result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:, step:)
                                   .run(-> { payload.call(step) })
           record.call { it.refinement!(search, result) } if result
@@ -199,8 +199,8 @@ module Quaack
 
         # llm-rewrites, recording who wrote what it stored.
         def llm(transport, client, run_id, payload, progress, record) # rubocop:disable Metrics/ParameterLists
-          rewrite_check = Pipeline.noting(progress, RewriteGeneration::STEP, "Checking the LLM's rewrites",
-                                          RewriteGeneration.rewrite_check(transport, run_id:))
+          rewrite_check = StepSummary.noting(progress, RewriteGeneration::STEP, "Checking the LLM's rewrites",
+                                             RewriteGeneration.rewrite_check(transport, run_id:))
           result = RewriteGeneration.new(client:, rewrite_check:).run(payload)
           record.call { it.rewrites!(result.provider, result.outcomes, proposed: result.rewrites.size) }
           result
@@ -211,8 +211,8 @@ module Quaack
           Pipeline.run_step(progress, entries["operator_rewrites_checked"], "operator-rewrites") do
             raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
 
-            rewrite_check = Pipeline.noting(progress, OperatorCandidates::STEP, OPERATOR_CHECK,
-                                            OperatorCandidates.rewrite_check(transport, run_id:))
+            rewrite_check = StepSummary.noting(progress, OperatorCandidates::STEP, OPERATOR_CHECK,
+                                               OperatorCandidates.rewrite_check(transport, run_id:))
             result = OperatorCandidates.new(client:, rewrite_check:).run(payload, rewrites)
             record.call { it.operator_inference!(result.provider) } if result.provider
             result
@@ -281,8 +281,8 @@ module Quaack
         def survives_counterexamples?(transport, client, args, progress, record)
           progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-          rounds = Pipeline.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
-                                   compare(transport, args))
+          rounds = StepSummary.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
+                                      compare(transport, args))
           label = RewriteNames.label(args[:run], args[:search])
           result = Counterexamples.new(client:, label:).run(payload, compare: rounds)
           record.call { it.counterexamples!(args[:search], result.units) }
@@ -457,16 +457,6 @@ module Quaack
 
       def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
 
-      # call, an enclave call that runs under an LLM step's lines, such as
-      # its index-test, with a note of its own under the step name first
-      # each time, so the LLM's line isn't left open over it.
-      def self.noting(progress, name, text, call)
-        lambda do |*args, **options|
-          progress.step_note(name, text)
-          call.call(*args, **options)
-        end
-      end
-
       # Progress for rewrite number's sub-steps, under its name, such as
       # "Rewrite Silver Fox" (RewriteNames).
       def self.within(progress, run_id, number) = progress.within(RewriteNames.label(run_id, "rewrite_#{number}"))
@@ -538,7 +528,7 @@ module Quaack
         entries = self.class.status(@transport, @run_id)
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
-        Setup.run(transport: @transport, run_id: @run_id, entries:, server: @setup, progress: @progress) if setup
+        set_up(setup, entries)
         [*STAGES, MeasurementStage].each { it.run(**options(entries)) }
         ReportStage.run(**options(entries))
       end
@@ -549,6 +539,15 @@ module Quaack
       def options(entries)
         { transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites, out: @out,
           progress: @progress, record: Provenance.recorder(@provenance, @client), provenance: @provenance }
+      end
+
+      # Runs setup when setup says to. A run that's had all of setup skips
+      # it, so it says which run-server flags given go unused (Setup.ignored).
+      def set_up(setup, entries)
+        return Setup.run(transport: @transport, run_id: @run_id, entries:, server: @setup, progress: @progress) if setup
+
+        ignored = @setup && Setup.ignored(@setup)
+        @stderr&.print("quaack: #{ignored}\n") if ignored
       end
 
       # With stderr, a Progress there, which the client is given too.

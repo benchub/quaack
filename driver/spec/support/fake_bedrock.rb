@@ -46,9 +46,10 @@ class FakeBedrock < FakeLLM
   end
 
   # Queues one failed attempt for step, an HTTP error the way Bedrock sends
-  # it: the exception's name in a header, and a message.
-  def error(step, status:, retry_after_ms: "1", message: "fake error #{status}")
-    @scripts[step] << [status, { "retry-after-ms" => retry_after_ms, "x-amzn-errortype" => "FakeException" },
+  # it: the exception's name in a header, and a message. `headers` adds
+  # response headers.
+  def error(step, status:, retry_after_ms: "1", message: "fake error #{status}", headers: {})
+    @scripts[step] << [status, { "retry-after-ms" => retry_after_ms, "x-amzn-errortype" => "FakeException", **headers },
                        { message: message }]
     self
   end

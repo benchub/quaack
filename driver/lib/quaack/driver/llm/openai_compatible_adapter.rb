@@ -88,10 +88,11 @@ module Quaack
           params = { model: @model, max_completion_tokens: max_tokens, messages: chat(system, messages) }
           @attempts.during(count, step) { reply_text(complete(params, schema)) }
         rescue ::OpenAI::Errors::APIError => e
-          # The gem's error for a refused key holds the body, which can quote
-          # the key, so an llm_auth doesn't keep it as the cause.
-          rule = rule_for(e)
-          raise Error.new(rule, detail(e)), cause: (e unless rule == "llm_auth")
+          # The gem's error holds the response's headers and whole body,
+          # which a refused key's can quote, and which a gateway or proxy's
+          # can echo a key or cookie in on any status, so no rule keeps it
+          # as the cause. The detail takes only the body's error message.
+          raise Error.new(rule_for(e), detail(e)), cause: nil
         rescue ::OpenAI::Errors::Error, JSON::ParserError, Unreadable
           # A reply the gem can't read raises from its parsing, some of these
           # quoting the body, so they aren't kept as the cause.

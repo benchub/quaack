@@ -140,6 +140,17 @@ RSpec.describe "quaack setup" do
                          "and this version can't resume it. Start a new run with quaack start.\n")
   end
 
+  it "says where the run server comes from when run-server was given none" do
+    failing["run-server"] = Quaack::Driver::EnclaveError.new(subcommand: "run-server", rule: "run_server_unspecified",
+                                                             exit_status: 70)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(1)
+
+    expect(errors).to eq("quaack setup failed: run_server_unspecified: name the run server with --host, --port, " \
+                         "--racetrack-db, and --arena-db, or set run_server_command in ~/.quaack/config.json " \
+                         "on the jump server\n")
+  end
+
   # Task 20261004-17: the note names the jump host and production server
   # from the laptop's record of the run.
   describe "a connection failure" do

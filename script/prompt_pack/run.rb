@@ -16,8 +16,8 @@
 #
 # Each prompt goes to <query>/<step>-<n>/prompt.md. If the enclave stops the
 # run, stopped.md says where and why. Reply files in the pack are never
-# touched. Last, every prompt file is scanned for the sentinels, the
-# queries' literals, and the run fails if one shows up.
+# touched. Last, every file in the pack but the replies is scanned for the
+# sentinels, the queries' literals, and the run fails if one shows up.
 #
 # It's not part of `rake`: it runs the whole pipeline four times.
 
@@ -404,11 +404,25 @@ module PromptPack
   end
 
   def check_leaks
-    sentinels = LeakCheck::Sentinels.new(extra: SENTINELS)
-    files = Dir.glob(File.join(CORPUS, "*", "**", "*.md"))
-    found = files.flat_map { |f| LeakCheck.findings(sentinels, objects: { f => File.read(f) }) }
+    found = leaks
     abort "sentinels leaked into the pack:\n#{found.map { "  #{it}" }.join("\n")}" unless found.empty?
-    puts "#{files.size} files, no sentinel in any"
+    puts "#{scanned.size} files, no sentinel in any"
+  end
+
+  def leaks(corpus = CORPUS)
+    sentinels = LeakCheck::Sentinels.new(extra: SENTINELS)
+    scanned(corpus).flat_map { |f| LeakCheck.findings(sentinels, objects: { f => File.read(f) }) }
+  end
+
+  # A committed LLM reply, named as spec/support/pipeline_replay.rb reads it.
+  # The leak check skips replies: a reply can't leak a sentinel that no
+  # prompt held, and models invent dates that can match one (20260929-18).
+  # Every other file stays scanned, so a reply that echoes a leaked prompt
+  # is still caught through that prompt.
+  REPLY = /\Areply-[a-z0-9]+-\d+\.md\z/
+
+  def scanned(corpus = CORPUS)
+    Dir.glob(File.join(corpus, "*", "**", "*.md")).grep_v(->(f) { REPLY.match?(File.basename(f)) })
   end
 end
 
