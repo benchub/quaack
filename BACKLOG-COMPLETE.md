@@ -7023,3 +7023,15 @@ From the reviews of 20261001-16.
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. Region variables are read in the AWS SDK's order, `AWS_REGION`, `AMAZON_REGION`, then `AWS_DEFAULT_REGION`, and a bad value in any of them is a usage error naming the variable, in both bearer and SigV4 mode. Specs pin the order and refuse a five-letter region prefix. On a `QUAACK_LLM_PROVIDER` switch, keys that don't apply to the block's own provider are refused, while a valid block switched for one run still works.
+
+### 20261007-45. denormalized_equal: minors from 20261007-39.
+
+From the review of 20261007-39.
+1. `DenormalizedFixture.update_sql` has no refusal test sensitive to the same-type rule: its "different composite types" example fails on the copy's own cast first. Find a pair that only the rule refuses, or say why none exists.
+2. A user-made `=` on one specific composite or array type (with no default btree opclass) is what a bare `=` picks, but `Equality` uses the generic `record_eq` or `array_eq`, as it does for enums with `anyenum`. Refuse when an exact-type `=` exists outside the family, or note it in DESIGN.md as unsupported in v1.
+
+- **Depends on:** 20261007-39.
+- **Came from:** The review of 20261007-39.
+- **Design:** trust boundary, assumption checks.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `Equality.operator` refuses when the `=` it found doesn't take exactly the columns' types and an `=` that does exists in any schema, since a bare `=` would pick that one; across 55 realistic type pairs with common extensions installed, nothing newly refuses. The denormalized fixture's different-composite-types test now depends on the same-type rule, through an assignment cast. Enclave change, unreleased until the next batch bump.

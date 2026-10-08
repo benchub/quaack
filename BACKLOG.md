@@ -21,6 +21,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-39 (same-type arrays, ranges, and composites compare in denormalized_equal).
 - 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
 - 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
+- 20261007-45 (Equality refuses when an exact-type `=` exists outside the family).
 
 Known open bug in this batch (found 2026-10-08): the shared `unique` check counts a `text_ops` unique index on a citext column as unique, though citext compares case-blind. 20261007-43 fixes it; close the batch only after it lands.
 
@@ -2250,16 +2251,7 @@ From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261007-45. denormalized_equal: minors from 20261007-39.
-
-From the review of 20261007-39.
-1. `DenormalizedFixture.update_sql` has no refusal test sensitive to the same-type rule: its "different composite types" example fails on the copy's own cast first. Find a pair that only the rule refuses, or say why none exists.
-2. A user-made `=` on one specific composite or array type (with no default btree opclass) is what a bare `=` picks, but `Equality` uses the generic `record_eq` or `array_eq`, as it does for enums with `anyenum`. Refuse when an exact-type `=` exists outside the family, or note it in DESIGN.md as unsupported in v1.
-
-- **Depends on:** 20261007-39.
-- **Came from:** The review of 20261007-39.
-- **Design:** trust boundary, assumption checks.
-- **Status:** todo
+### 20261007-45. denormalized_equal: minors from 20261007-39. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-46. `or_to_union` and `Tree::Names`: minors from 20261002-5.
 
@@ -2314,4 +2306,13 @@ From the review of 20261007-28. `env_region` skips an empty region variable and 
 - **Depends on:** 20261007-28.
 - **Came from:** The review of 20261007-28.
 - **Design:** LLM client.
+- **Status:** todo
+
+### 20261007-51. Equality: refuse a half-exact `=` too.
+
+From the review of 20261007-45. `EXACT_SQL` looks only for an `=` taking exactly (left, right). Postgres's operator resolution prefers the candidate with the most exact argument matches, so a user `=` with one side exact (`=(pair, record)`, `=(varchar, text)` against varchar columns, `=(mood, anyenum)`) also wins over the polymorphic one, and `Equality.operator` still picks the family's. Refuse when an `=` exists whose argument types exactly match either column's while the family's inputs differ, or list it in DESIGN.md as unsupported in v1. Needs a user-planted, unusual operator.
+
+- **Depends on:** 20261007-45.
+- **Came from:** The review of 20261007-45.
+- **Design:** trust boundary, assumption checks.
 - **Status:** todo
