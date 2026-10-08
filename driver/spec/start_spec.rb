@@ -304,6 +304,17 @@ RSpec.describe Quaack::Driver::Start do
     expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
   end
 
+  # Task 20261007-23: a ~/.quaack symlink whose target is there counts as
+  # that target does, as with dotfiles.
+  it "counts a ~/.quaack symlink to a directory without a driver.json, or to a file, as no config" do
+    quaack = File.join(home, ".quaack")
+    File.symlink(File.join(dir, "dotfiles").tap { FileUtils.mkdir_p(it) }, quaack)
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
+    File.delete(quaack)
+    File.symlink(File.join(dir, "plain").tap { File.write(it, "") }, quaack)
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
+  end
+
   it "times out a jump_command that runs too long" do
     configure("sleep 5; echo jump-1")
     expect { start(jump_timeout: 0.3) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")

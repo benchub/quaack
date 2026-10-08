@@ -371,6 +371,17 @@ RSpec.describe "quaack setup" do
       expect(timeouts).to eq([3600])
     end
 
+    # Task 20261007-23: a ~/.quaack linked to a real directory, as with
+    # dotfiles, with no driver.json there, gets the defaults.
+    it "gives the transport 3600 seconds for a symlinked ~/.quaack without a driver.json" do
+      quaack = File.join(home, ".quaack")
+      File.rename(quaack, File.join(home, "dotfiles-quaack"))
+      File.symlink(File.join(home, "dotfiles-quaack"), quaack)
+
+      expect([cli.run(["setup", "--run", run_id]), errors]).to eq([0, ""])
+      expect(timeouts).to eq([3600])
+    end
+
     it "gives the transport the config's enclave_timeout_seconds" do
       write_config("enclave_timeout_seconds" => 7200)
 

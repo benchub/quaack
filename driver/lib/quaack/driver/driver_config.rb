@@ -76,8 +76,9 @@ module Quaack
       end
       private_class_method :there?
 
+      # Whether path is a symlink whose target is missing.
       def self.dangling_symlink?(path)
-        File.lstat(path).symlink?
+        File.lstat(path).symlink? && !File.exist?(path)
       rescue SystemCallError
         false
       end
