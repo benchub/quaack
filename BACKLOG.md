@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-34 (index-test and counterexample-round check volatility on the stored path).
 - 20261007-31 (arena catalog names qualified; the allowlist is empty).
 - 20261002-4 (composite keys; unique checks compare opclass and collation).
+- 20261007-39 (same-type arrays, ranges, and composites compare in denormalized_equal).
 
 ## How this file works.
 
@@ -2255,14 +2256,7 @@ From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-oper
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261007-39. denormalized_equal: accept same-type arrays, ranges, and composites.
-
-From the review of 20261007-32. `AssumptionCheck::Equality` refuses two columns of the same array, range, multirange, or composite type, since their default btree opclasses take polymorphic input types. That's a false refusal in the safe direction, and rare, since denormalized_equal compares an id copy, a join key, and a type column. Accept the polymorphic `array_ops`, `range_ops`, `multirange_ops`, and `record_ops` `=` when both sides have exactly the same type, and drop them from DESIGN.md's v1-unsupported list.
-
-- **Depends on:** 20261007-32.
-- **Came from:** The review of 20261007-32.
-- **Design:** trust boundary, assumption checks.
-- **Status:** todo
+### 20261007-39. denormalized_equal: accept same-type arrays, ranges, and composites. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-40. LLM errors: Copilot token patterns, and causes on other rules.
 
@@ -2321,4 +2315,15 @@ From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept
 - **Depends on:** 20261002-4.
 - **Came from:** The builder of 20261002-4.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261007-45. denormalized_equal: minors from 20261007-39.
+
+From the review of 20261007-39.
+1. `DenormalizedFixture.update_sql` has no refusal test sensitive to the same-type rule: its "different composite types" example fails on the copy's own cast first. Find a pair that only the rule refuses, or say why none exists.
+2. A user-made `=` on one specific composite or array type (with no default btree opclass) is what a bare `=` picks, but `Equality` uses the generic `record_eq` or `array_eq`, as it does for enums with `anyenum`. Refuse when an exact-type `=` exists outside the family, or note it in DESIGN.md as unsupported in v1.
+
+- **Depends on:** 20261007-39.
+- **Came from:** The review of 20261007-39.
+- **Design:** trust boundary, assumption checks.
 - **Status:** todo

@@ -6924,3 +6924,13 @@ Minor findings from the build and both reviews of 20261001-26:
 - **Design:** assumption-check, rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. A `quaacks rewrite-rules` spec runs the rule end to end with a sentinel. The rule takes a key of several columns: a unique index whose columns are all selected (and all in the ORDER BY under a LIMIT), with `unique` over them and `not_null` for each; `Catalog#keys` reads a table's unique indexes once. The shared `unique` assumption check (`assumption_check/index_equality.rb`) now needs each key column's default operator class and the column's own collation unless both are deterministic, so a `COLLATE "C"` index on a case-blind column no longer counts (this also covers 20261003-35's nondeterministic-key item); ordinary unique indexes, including on ICU databases, still count. Test Postgres treats "removal already in progress" as removed. Item 2 was stale (the guard was already there); item 5's subqueries moved to 20261007-44. Enclave change, unreleased until the next batch bump.
+
+### 20261007-39. denormalized_equal: accept same-type arrays, ranges, and composites.
+
+From the review of 20261007-32. `AssumptionCheck::Equality` refuses two columns of the same array, range, multirange, or composite type, since their default btree opclasses take polymorphic input types. That's a false refusal in the safe direction, and rare, since denormalized_equal compares an id copy, a join key, and a type column. Accept the polymorphic `array_ops`, `range_ops`, `multirange_ops`, and `record_ops` `=` when both sides have exactly the same type, and drop them from DESIGN.md's v1-unsupported list.
+
+- **Depends on:** 20261007-32.
+- **Came from:** The review of 20261007-32.
+- **Design:** trust boundary, assumption checks.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. When both columns have exactly the same array, range, multirange, or composite type, `AssumptionCheck::Equality` uses the polymorphic `=` of `array_ops`, `range_ops`, `multirange_ops`, or `record_ops`, which matches a bare `=` (citext elements and fields stay case-insensitive); different such types are still refused. Both denormalized_equal and the denormalized fixture take it, and DESIGN.md's v1-unsupported list names only different types. Enclave change, unreleased until the next batch bump.
