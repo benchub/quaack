@@ -70,7 +70,15 @@ module Quaack
       #   rewrite wrong. A bare name there may be an output column's, as in
       #   ORDER BY x for SELECT a.title AS x, so it doesn't count.
       # - Every column in the conditions is name.column or a bare column
-      #   of one FROM table, never a star, and nowhere is there a subquery.
+      #   of one FROM table, never a star.
+      # - A subquery is only in a condition that reads the kept table alone,
+      #   which stays in the WHERE as it was. The kept table is still there
+      #   under its name, and a subquery's own columns are its own, so each
+      #   column reads what it read before. Its FROM is plain tables, and a
+      #   column of it that reads the outer query reads the kept table: a
+      #   correlated column of another table would have nothing to read
+      #   (see Columns). None is in the select list, ORDER BY, LIMIT, or
+      #   OFFSET.
       class DistinctJoinToExists
         def name = "distinct_join_to_exists"
 

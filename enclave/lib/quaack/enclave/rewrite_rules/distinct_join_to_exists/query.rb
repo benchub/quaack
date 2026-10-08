@@ -28,7 +28,7 @@ module Quaack
             conditions = conditions.map { [it, condition_reads(columns, it)] }
             shown = shown(select)
             kept = kept(items, columns.reads(shown)) if conditions.all?(&:last)
-            return unless kept
+            return unless kept && kept_alone?(conditions, kept)
 
             new(kept:, others: items - [kept], conditions:, selected: selected(select, columns), sorted: sorted(select),
                 limited: limited?(select), shown:)
@@ -39,13 +39,25 @@ module Quaack
           end
 
           # The FROM's items and every condition, if it's two or more
-          # tables and nowhere in the query is there a subquery.
+          # tables and no subquery is in the select list, ORDER BY, LIMIT,
+          # or OFFSET.
           def self.from(select)
             items = Tree.from_items(select.from_clause)
             ons = Tree.inner_conditions(select.from_clause)
-            return unless ons && items.size > 1 && Tree.tables?(items) && Tree.find(select, PgQuery::SubLink).empty?
+            outside = [*shown(select), select.limit_count, select.limit_offset].compact
+            return unless ons && items.size > 1 && Tree.tables?(items) && Tree.find(outside, PgQuery::SubLink).empty?
 
             [items, ons + Tree.conjuncts(select.where_clause)]
+          end
+
+          # Whether each of conditions, with the names of the items it
+          # reads, has no subquery or reads no item but kept. One that reads
+          # another table would go into the EXISTS, and the rule leaves
+          # those alone.
+          def self.kept_alone?(conditions, kept)
+            conditions.all? do |condition, names|
+              Tree.find(condition, PgQuery::SubLink).empty? || (names - [kept.name]).empty?
+            end
           end
 
           # The names of the items condition reads, or nil if it has a
