@@ -286,6 +286,23 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect(outcome.status.exitstatus).to eq(0)
     end
 
+    # Task 20260926-56: a name qualify leaves bare resolves as it did in
+    # production. A run from before the entry keeps the session's own path.
+    it "sets the search path qualify resolved names with, on both databases, when the run has one" do
+      env = { PGUSER: production.user, PGPASSWORD: production.password }
+      script = <<~RUBY
+        %i[racetrack arena].each do |database|
+          conn = Quaack::Enclave::RunServer.connect(store, database)
+          print conn.exec("SELECT current_setting('search_path')").getvalue(0, 0), "|"
+          conn.close
+        end
+      RUBY
+      expect(connect_in_child(script, **env).stdout).not_to include("sales")
+      store.write("search_path", ["pg_catalog", "sales", "Odd \"Name\"", "public"])
+      expect(connect_in_child(script, **env).stdout)
+        .to eq('pg_catalog, sales, "Odd ""Name""", public|pg_catalog, sales, "Odd ""Name""", public|')
+    end
+
     it "raises run_server_connection_failed with nothing from libpq" do
       outcome = connect_in_child(<<~RUBY, PGUSER: sentinels.word, PGPASSWORD: sentinels.text)
         begin

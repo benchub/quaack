@@ -47,9 +47,9 @@ module Quaack
     # can differ (qualify refuses some such paths: see UserSchema). The
     # implicit pg_temp at the front of the path is ignored, so a temp
     # relation in the plan's session that shadowed a real one isn't seen.
-    # Only relation names are qualified: functions, types, operators,
-    # collations, and names inside string literals such as
-    # 'orders'::regclass still resolve through search_path.
+    # Only relation names are qualified here. NameQualifier does the rest:
+    # functions, types, operators, collations, and names inside string
+    # literals such as 'orders'::regclass.
     #
     # The result's sql is the rewritten query, deparsed by pg_query, parse
     # is that SQL's own parse, and resolved maps each name that had no

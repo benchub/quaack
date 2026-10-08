@@ -63,7 +63,7 @@ RSpec.describe "quaacks qualify, against a real server" do
 
   def expect_failed(outcome, rule)
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([error_line(rule), "", 70])
-    expect(%w[qualified_query relations].select { stored.entry?(it) }).to eq([])
+    expect(%w[qualified_query relations search_path].select { stored.entry?(it) }).to eq([])
     expect_no_leaks(sentinels, outcome)
   end
 
@@ -80,6 +80,14 @@ RSpec.describe "quaacks qualify, against a real server" do
     expect(stored.read("relations")).to eq([{ "schema" => "sales", "name" => "orders" },
                                             { "schema" => "public", "name" => "items" }])
     expect_no_leaks(sentinels, outcome)
+  end
+
+  # Task 20260926-56: for RunServer.connect, so later steps resolve a name
+  # qualify leaves bare the same way.
+  it "stores the search path it resolved names through, as the plan wrote it" do
+    pgpass
+    expect(qualify.stdout).to eq(done)
+    expect(stored.read("search_path")).to eq(%w[sales public])
   end
 
   context "with a CTE, a subquery, a quoted name, and an already-qualified one" do
@@ -245,7 +253,7 @@ RSpec.describe "quaacks qualify, against a real server" do
 
       expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
         .to eq([%({"type":"error","step":"qualify","rule":"production_read_failed","sqlstate":"42501"}\n), "", 70])
-      expect(%w[qualified_query relations].select { stored.entry?(it) }).to eq([])
+      expect(%w[qualified_query relations search_path].select { stored.entry?(it) }).to eq([])
       expect_no_leaks(sentinels, outcome)
     end
   end

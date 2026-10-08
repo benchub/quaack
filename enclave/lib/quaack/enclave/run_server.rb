@@ -48,6 +48,12 @@ module Quaack
     # which run-server checks against production's. A run with no inventory
     # can't connect to arena (Store's missing_inventory).
     #
+    # Both connections set the session's search_path to the run's
+    # search_path entry, the one qualify resolved names through, so a name
+    # qualify leaves bare, such as an extension's =, resolves as it did in
+    # production (DESIGN.md's qualify). A run without the entry keeps the
+    # role's own path.
+    #
     # A connection that fails is run_server_connection_failed, with nothing
     # from libpq's message, which can name the host or the user.
     module RunServer
@@ -79,7 +85,7 @@ module Quaack
       # dropped (see Connections).
       def connect(store, database)
         time_zone = store.read("inventory").fetch("settings").fetch("TimeZone") if database == :arena
-        connect_to(store.read("run_server"), database, time_zone:)
+        connect_to(store.read("run_server"), database, time_zone:).tap { search_path!(it, store) }
       end
 
       # The same, for a run server entry that isn't stored yet. time_zone is
@@ -91,6 +97,18 @@ module Quaack
         conn
       rescue PG::Error
         raise Error, "run_server_connection_failed", cause: nil
+      end
+
+      SEARCH_PATH_SQL = "SELECT pg_catalog.set_config('search_path', $1, false)"
+      PLAIN_SCHEMA = /\A[a-z_][a-z0-9_$]*\z/
+
+      # Sets the search path qualify resolved names through, if the run has
+      # one.
+      def search_path!(conn, store)
+        return unless store.entry?("search_path")
+
+        path = store.read("search_path").map { it.match?(PLAIN_SCHEMA) ? it : %("#{it.gsub('"', '""')}") }
+        conn.exec_params(SEARCH_PATH_SQL, [path.join(", ")])
       end
 
       def plain?(value, pattern) = value.is_a?(String) && value.ascii_only? && pattern.match?(value)
