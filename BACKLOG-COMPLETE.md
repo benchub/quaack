@@ -7378,3 +7378,13 @@ From the review of 20261001-6. The new retry specs show `max_retries` bounds att
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. Each adapter's `max_retries` spec also asserts the burndown counted every attempt. Specs only.
+
+### 20261007-65. pg_dump finder: pin the no-warning case.
+
+From the review of 20260929-14. Removing `if found[dir]` from the warning loop in `spec/support/test_pg_dump.rb` `find` stays green, though it would warn about a `QUAACK_TEST_PG_BIN` holding no pg_dump ("which holds , not pg_dump 18"). Add `warn_to:` to the "skips a directory with no pg_dump in it" example and assert nothing is printed.
+
+- **Depends on:** 20260929-14.
+- **Came from:** The review of 20260929-14.
+- **Design:** Development.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The finder's "skips a directory with no pg_dump in it" example asserts nothing is printed. Specs only.

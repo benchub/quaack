@@ -2205,13 +2205,6 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 - **Design:** intake, trust boundary.
 - **Status:** todo
 
-### 20261007-65. pg_dump finder: pin the no-warning case.
-
-From the review of 20260929-14. Removing `if found[dir]` from the warning loop in `spec/support/test_pg_dump.rb` `find` stays green, though it would warn about a `QUAACK_TEST_PG_BIN` holding no pg_dump ("which holds , not pg_dump 18"). Add `warn_to:` to the "skips a directory with no pg_dump in it" example and assert nothing is printed.
-
-- **Depends on:** 20260929-14.
-- **Came from:** The review of 20260929-14.
-- **Design:** Development.
-- **Status:** todo
+### 20261007-65. pg_dump finder: pin the no-warning case. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-66. `max_retries`: pin the burndown count per attempt. Done, see BACKLOG-COMPLETE.md.
