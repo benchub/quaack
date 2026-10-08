@@ -64,35 +64,28 @@ module Quaack
           # What ref, inside subqueries whose items are scopes, innermost
           # first, reads: :inner for a column of one of their items, the
           # query's column as resolve gives it, or nil. Postgres takes
-          # name.column from the nearest item of that name, and a bare
-          # column from the nearest scope with an item that has it. A star
-          # of the query's items is refused, and a bare one is the
-          # innermost subquery's own.
+          # name.column and name.* from the nearest item of that name, so
+          # one a subquery's item has a name for is that item's, even when
+          # it hasn't the column: then it's a function of the item's row,
+          # f(name), which reads nothing else. A bare column is the nearest
+          # scope's whose items have it. A star of the query's items is
+          # refused, and a bare one is the innermost subquery's own, since
+          # Postgres refuses a bare * with no FROM.
           def inner(ref, scopes)
             fields = fields(ref)
             case ref.fields.map(&:node)
             when %i[string string] then inner_qualified(scopes, *fields)
-            when %i[string a_star], %i[a_star] then inner_star(scopes, fields)
+            when %i[string a_star] then (:inner if inner?(scopes, fields.first))
+            when %i[a_star] then :inner
             when %i[string] then inner_bare(scopes, fields.first)
             end
           end
 
           def fields(ref) = ref.fields.map { it.node == :string ? it.string.sval : it.node }
 
-          # name.* is the nearest item of that name's, and a bare * the
-          # innermost subquery's.
-          def inner_star(scopes, fields)
-            return (:inner if scopes.first.any?) if fields.size == 1
+          def inner?(scopes, name) = scopes.any? { |items| items.any? { it.name == name } }
 
-            :inner if scopes.any? { |items| items.any? { it.name == fields.first } }
-          end
-
-          def inner_qualified(scopes, name, column)
-            scope = scopes.find { |items| items.any? { it.name == name } }
-            return qualified(name, column) unless scope
-
-            :inner if own?(scope.find { it.name == name }, column)
-          end
+          def inner_qualified(scopes, name, column) = inner?(scopes, name) ? :inner : qualified(name, column)
 
           def inner_bare(scopes, column)
             owners = scopes.lazy.map { |items| items.select { own?(it, column) } }.find(&:any?)
