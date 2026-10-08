@@ -137,6 +137,12 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                                 "llm.base_url in ~/.quaack/driver.json must be an http or https URL"],
       "a base_url with a space" => [{ "base_url" => "https://a b/SENTINEL-VALUE" },
                                     "llm.base_url in ~/.quaack/driver.json must be an http or https URL"],
+      # Task 20261007-57: the gem parses base_url, and its error would quote
+      # the whole URL, a key in it too.
+      "a base_url that can't be parsed as a URI" => [
+        { "base_url" => "https://gateway.example.test/a%zz?key=SENTINEL-VALUE" },
+        "llm.base_url in ~/.quaack/driver.json must be an http or https URL"
+      ],
       "a base_url that's a chat completions endpoint" => [
         { "provider" => "openai_compatible", "model" => "m",
           "base_url" => "https://api.groq.com/openai/v1/chat/completions" },

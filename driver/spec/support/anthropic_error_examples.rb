@@ -87,6 +87,61 @@ RSpec.shared_examples "an Anthropic API's error detail" do
     expect(error_text(e)).not_to include("SENTINEL")
   end
 
+  # The LLM::Error an ask raises through a client built with options.
+  def error_from(**)
+    fake.client(burndown:, max_retries: 0, **).ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+    raise "expected an LLM::Error, but the ask succeeded"
+  rescue Quaack::Driver::LLM::Error => e
+    e
+  end
+
+  def echo(message) = fake.error_body("llm-index-ideas", status: 400, body: { error: { message: } })
+
+  # Task 20261007-57: a key too short to be a real one is scrubbed only as
+  # a whole token, a run of the characters keys are made of, so it can't
+  # cut words apart; next to punctuation, quotes, or slashes it still goes.
+  it "scrubs a short own key only where it stands as a whole token" do
+    echo("the answer for s was s, (s), \"s\", 's', /s/, key=s; s.")
+
+    expect(without_sizes(error_from(api_key: "s").message))
+      .to eq("llm_bad_request: the API answered 400: the answer for [key] was [key], ([key]), \"[key]\", " \
+             "'[key]', /[key]/, key=[key]; [key].")
+  end
+
+  it "scrubs a key of real length even inside a longer token" do
+    key = "SENTINELKEY0123456789"
+    echo("saw x#{key}y, #{key}-suffix, and prefix_#{key}")
+
+    e = error_from(api_key: key)
+
+    expect(without_sizes(e.message)).to eq("llm_bad_request: the API answered 400: saw x[key]y, [key]-suffix, " \
+                                           "and prefix_[key]")
+    expect(error_text(e)).not_to include("SENTINEL")
+  end
+
+  it "scrubs a short base_url query value only as a whole token, and a long one anywhere" do
+    gateway = "https://gateway.example.test/anthropic?provider=anthropic&key=SENTINELQUERYKEY0123456789"
+    echo("anthropic-version too old at anthropicgateway for provider anthropic, keyed xSENTINELQUERYKEY0123456789")
+
+    e = error_from(settings: fake.class.settings("base_url" => gateway))
+
+    expect(without_sizes(e.message))
+      .to eq("llm_bad_request: the API answered 400: anthropic-version too old at anthropicgateway for provider " \
+             "[key], keyed x[key]")
+    expect(error_text(e)).not_to include("SENTINEL")
+  end
+
+  it "scrubs base_url's user, its password as written and decoded, and a long path segment" do
+    gateway = "https://SENTINEL-USER:SENTINEL-PASS%21@gateway.example.test/SENTINELPATHKEY0123456789/anthropic"
+    echo("user SENTINEL-USER, pass SENTINEL-PASS%21 or SENTINEL-PASS!, path /SENTINELPATHKEY0123456789/anthropic")
+
+    e = error_from(settings: fake.class.settings("base_url" => gateway))
+
+    expect(without_sizes(e.message))
+      .to eq("llm_bad_request: the API answered 400: user [key], pass [key] or [key], path /[key]/anthropic")
+    expect(error_text(e)).not_to include("SENTINEL")
+  end
+
   it "shows a top-level message, the way Bedrock sends one, scrubbed" do
     fake.error_body("llm-index-ideas", status: 400, body: { message: "bad input for SENTINEL-OWN-KEY", other: "x" })
 
