@@ -113,15 +113,16 @@ RSpec.describe "the bedrock adapter" do
 
       expect { fewer.ask(step: "llm-rewrites", messages:, max_tokens: 10) }
         .to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_unavailable") }
-      expect(fake.asks.size).to eq(2)
+      expect([fake.asks.size, burndown.llm_calls]).to eq([2, { "llm-rewrites" => 2 }])
     end
 
     it "retries more than the gem's default with a larger max_retries" do
       3.times { fake.error("llm-rewrites", status: 503) }
       fake.reply("llm-rewrites", "ok")
       more = fake.client(burndown:, settings: FakeBedrock.settings("max_retries" => 3))
+      reply = more.ask(step: "llm-rewrites", messages:, max_tokens: 10)
 
-      expect([more.ask(step: "llm-rewrites", messages:, max_tokens: 10), fake.asks.size]).to eq(["ok", 4])
+      expect([reply, fake.asks.size, burndown.llm_calls]).to eq(["ok", 4, { "llm-rewrites" => 4 }])
     end
 
     it "goes to the settings' base URL when there is one" do
