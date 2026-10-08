@@ -68,11 +68,11 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     end
 
     # Task 20260926-56 qualified a bare function only one schema has, as
-    # the original's are. Since 20261008-32, a bare name the original
-    # doesn't use is pinned to pg_catalog instead.
-    it "pins a bare function the original doesn't use to pg_catalog, even one only a user schema has" do
-      expect(check("SELECT steady(), lower(status) FROM orders").sql)
-        .to eq("SELECT pg_catalog.steady(), pg_catalog.lower(status) FROM public.orders")
+    # the original's are. Since 20261008-32, a bare name gets the schema the
+    # original writes it with, or else pg_catalog.
+    it "gives a bare function the original's schema for it, or else pg_catalog" do
+      expect(check("SELECT steady(), lower(status), shout() FROM orders").sql)
+        .to eq("SELECT public.steady(), pg_catalog.lower(status), pg_catalog.shout() FROM public.orders")
       expect { check("SELECT 'lower'::regproc FROM orders") }.to rejected("unsupported_reg_literal")
     end
 
@@ -589,6 +589,29 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     it "keeps the original's names as written, its own user function included" do
       expect(outcome("SELECT public.steady() FROM orders WHERE id = $1"))
         .to eq("SELECT public.steady() FROM public.orders WHERE id = $1")
+    end
+
+    # The fix round of 20261008-32: the original's qualified query writes
+    # its user names with their schema, and the LLM may write them bare.
+    it "gives a bare name the schema the original writes it with" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.sim(text, text) RETURNS real LANGUAGE sql IMMUTABLE AS $$SELECT 1::real$$;
+        CREATE FUNCTION public.close_to(text, text) RETURNS bool LANGUAGE sql IMMUTABLE AS $$SELECT true$$;
+        CREATE OPERATOR public.%% (LEFTARG = text, RIGHTARG = text, FUNCTION = public.close_to);
+      SQL
+      trgm = described_class::Original.new(
+        relations:, placeholders: 1,
+        sql: "SELECT public.sim(status, $1) FROM public.orders WHERE status OPERATOR(public.%%) $1"
+      )
+      expect(outcome("SELECT sim(status, $1) FROM orders WHERE status %% $1", original: trgm))
+        .to eq("SELECT public.sim(status, $1) FROM public.orders WHERE status OPERATOR(public.%%) $1")
+    end
+
+    it "refuses a bare name the original writes with more than one schema" do
+      two = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT public.steady(), sales.steady() FROM public.orders"
+      )
+      expect(outcome("SELECT steady() FROM orders", original: two).first).to start_with("unknown_name: ")
     end
 
     it "accepts names written in pg_catalog" do

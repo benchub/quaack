@@ -35,7 +35,7 @@ module Quaack
           names(parse.tree).each do |kind, list|
             next if allowed.include?(key(kind, list))
 
-            pin_one!(list)
+            pin_one!(list, schemas(allowed, kind, list))
           end
         end
 
@@ -44,12 +44,22 @@ module Quaack
           original_sql ? names(PgQuery.parse(original_sql).tree).to_set { key(*it) } : Set.new
         end
 
-        def pin_one!(list)
+        # The schemas the original writes a bare name's kind and name with.
+        def schemas(allowed, kind, list)
+          return [] unless list.size == 1
+
+          name = list.first.string.sval
+          allowed.filter_map { |k, names| names.first if k == kind && names.size == 2 && names.last == name }.uniq
+        end
+
+        # A bare name gets the original's one schema for it, or pg_catalog.
+        # The original's more than one is refused, as is any other name.
+        def pin_one!(list, schemas)
           strings = list.map { it.string.sval }
           return if strings.size == 2 && strings.first == "pg_catalog"
-          raise Error.new(RULE, DETAIL) unless strings.size == 1
+          raise Error.new(RULE, DETAIL) unless strings.size == 1 && schemas.size <= 1
 
-          list.unshift(PgQuery::Node.new(string: PgQuery::String.new(sval: "pg_catalog")))
+          list.unshift(PgQuery::Node.new(string: PgQuery::String.new(sval: schemas.first || "pg_catalog")))
         end
 
         def key(kind, list) = [kind, list.map { it.string.sval }]
