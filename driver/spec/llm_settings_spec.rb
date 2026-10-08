@@ -20,7 +20,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     it "is Anthropic with claude-opus-5-5, the gem's own base URL, and no key variable" do
       expect(fields(settings)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                      api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                     command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+                                     command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                     token_limit_param: nil, at: "llm")
     end
 
     it "is the same for an empty block" do
@@ -36,7 +37,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block))).to eq(provider: "anthropic", model: "claude-sonnet-5-5",
                                             base_url: "https://llm.example.com", api_key_env: "MY_ANTHROPIC_KEY",
                                             aws_region: nil, aws_profile: nil, command_template: nil,
-                                            timeout_seconds: nil, max_retries: nil, at: "llm")
+                                            timeout_seconds: nil, max_retries: nil, token_limit_param: nil, at: "llm")
     end
 
     it "takes an http base URL, for a local server" do
@@ -76,7 +77,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })))
         .to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil, api_key_env: nil, aws_region: nil,
-               aws_profile: nil, command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+               aws_profile: nil, command_template: nil, timeout_seconds: nil, max_retries: nil,
+               token_limit_param: nil, at: "llm")
     end
 
     it "takes nothing from the block when QUAACK_LLM_PROVIDER switches from anthropic to openai_compatible" do
@@ -85,7 +87,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block, env:)))
         .to eq(provider: "openai_compatible", model: "gpt-5", base_url: nil, api_key_env: nil, aws_region: nil,
-               aws_profile: nil, command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+               aws_profile: nil, command_template: nil, timeout_seconds: nil, max_retries: nil,
+               token_limit_param: nil, at: "llm")
       expect(config_error(block, env: env.except("QUAACK_MODEL")).message)
         .to eq("QUAACK_MODEL is required when QUAACK_LLM_PROVIDER switches to openai_compatible")
     end
@@ -103,7 +106,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block, env:))).to eq(provider: "anthropic", model: "claude-from-config",
                                                   base_url: "https://config.example.com", api_key_env: nil,
                                                   aws_region: nil, aws_profile: nil, command_template: nil,
-                                                  timeout_seconds: nil, max_retries: nil, at: "llm")
+                                                  timeout_seconds: nil, max_retries: nil,
+                                                  token_limit_param: nil, at: "llm")
     end
 
     it "reads the process environment when no env is given" do
@@ -121,7 +125,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       "an unknown key" => [{ "api_key" => "SENTINEL-VALUE" }, "llm.api_key in ~/.quaack/driver.json isn't a " \
                                                               "setting: use provider, model, base_url, api_key_env, " \
                                                               "aws_region, aws_profile, command_template, " \
-                                                              "timeout_seconds, or max_retries"],
+                                                              "timeout_seconds, max_retries, or token_limit_param"],
       "an unknown provider" => [{ "provider" => "SENTINEL-VALUE" },
                                 "llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
                                 "bedrock, or copilot_cli"],
@@ -256,7 +260,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block))).to eq(provider: "openai_compatible", model: "llama-3.3-70b-versatile",
                                             base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
                                             aws_region: nil, aws_profile: nil, command_template: nil,
-                                            timeout_seconds: nil, max_retries: nil, at: "llm")
+                                            timeout_seconds: nil, max_retries: nil, token_limit_param: nil, at: "llm")
     end
 
     it "has an adapter for every provider it takes" do
@@ -275,7 +279,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(block))).to eq(provider: "bedrock", model: "us.anthropic.claude-opus-5-5",
                                             base_url: "https://bedrock.example.com", api_key_env: nil,
                                             aws_region: "us-west-2", aws_profile: "quaack-bedrock",
-                                            command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+                                            command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                            token_limit_param: nil, at: "llm")
     end
 
     it "needs neither the region nor the profile, since the AWS SDK can find them" do
@@ -308,6 +313,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(settings(nil, env:))).to eq(provider: "bedrock", model: "anthropic.claude-opus-5-5",
                                                 base_url: nil, api_key_env: nil, aws_region: nil, aws_profile: nil,
                                                 command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                                token_limit_param: nil,
                                                 at: "llm")
     end
 
@@ -337,7 +343,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                   command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+                                   command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                   token_limit_param: nil, at: "llm")
     end
 
     it "takes no block key when QUAACK_LLM_PROVIDER switches to bedrock" do
@@ -375,7 +382,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(result)).to eq(provider: "copilot_cli", model: "claude-opus-5.5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                   command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+                                   command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                   token_limit_param: nil, at: "llm")
     end
 
     it "is picked by QUAACK_LLM_PROVIDER, with its default model" do
@@ -406,7 +414,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                   command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm")
+                                   command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                   token_limit_param: nil, at: "llm")
     end
 
     it "refuses api_key_env on a copilot_cli block even when QUAACK_LLM_PROVIDER switches away" do
@@ -512,6 +521,39 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       result = settings({ "max_retries" => 4 }, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
 
       expect(result.max_retries).to eq(4)
+    end
+  end
+
+  # Task 20261007-25: Ollama reads only max_tokens, so an entry can say
+  # which name the token limit goes under.
+  describe "token_limit_param" do
+    def block(**) = { "provider" => "openai_compatible", "model" => "m", ** }
+
+    it "takes max_tokens and max_completion_tokens" do
+      values = %w[max_tokens max_completion_tokens]
+
+      expect(values.map { settings(block("token_limit_param" => it)).token_limit_param }).to eq(values)
+    end
+
+    it "is nil without the key" do
+      expect(settings(block).token_limit_param).to be_nil
+    end
+
+    ["SENTINEL-VALUE", "max_output_tokens", nil, 5].each do |value|
+      it "fails on #{value.inspect}, naming the key and not the value" do
+        e = config_error(block("token_limit_param" => value))
+
+        expect(e.message).to eq("llm.token_limit_param in ~/.quaack/driver.json must be max_completion_tokens " \
+                                "or max_tokens")
+      end
+    end
+
+    %w[anthropic bedrock copilot_cli].each do |provider|
+      it "doesn't apply to #{provider}" do
+        e = config_error({ "provider" => provider, "model" => "m", "token_limit_param" => "max_tokens" })
+
+        expect(e.message).to eq("llm.token_limit_param in ~/.quaack/driver.json doesn't apply to provider #{provider}")
+      end
     end
   end
 end
