@@ -392,6 +392,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         error = run_error(described_class.new(slow, statement_timeout_ms: 100)) { |tx| tx.query("SELECT pg_sleep(5)") }
 
         expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
+        expect(slow.slowed).to eq(%i[send_query_params exec])
         expect_nothing_persisted
       end
     end
@@ -403,9 +404,9 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     # afterwards. The slow clock read is planted as above.
     describe "a nonzero session default" do
       def timed_out_on(connection)
-        runner = described_class.new(slow_clock_read(connection), statement_timeout_ms: 100)
-        error = run_error(runner) { |tx| tx.query("SELECT pg_sleep(5)") }
-        [error.rule, error.sqlstate, error.step, error.index, connection.transaction_status]
+        slow = slow_clock_read(connection)
+        error = run_error(described_class.new(slow, statement_timeout_ms: 100)) { |tx| tx.query("SELECT pg_sleep(5)") }
+        [error.rule, error.sqlstate, error.step, error.index, connection.transaction_status, slow.slowed]
       end
 
       def setting_on(connection) = connection.exec("SHOW statement_timeout").getvalue(0, 0)
@@ -415,7 +416,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         defaulted = arena.connect
         expect(setting_on(defaulted)).to eq("50ms")
 
-        expect(timed_out_on(defaulted)).to eq([:statement_timeout, "57014", :query, 0, 0])
+        expect(timed_out_on(defaulted)).to eq([:statement_timeout, "57014", :query, 0, 0, %i[send_query_params exec]])
         expect(setting_on(defaulted)).to eq("50ms")
       ensure
         defaulted&.close
@@ -424,7 +425,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       it "doesn't keep a timed-out statement from reading as statement_timeout under a session SET" do
         conn.exec("SET statement_timeout = 50")
 
-        expect(timed_out_on(conn)).to eq([:statement_timeout, "57014", :query, 0, 0])
+        expect(timed_out_on(conn)).to eq([:statement_timeout, "57014", :query, 0, 0, %i[send_query_params exec]])
         expect(setting_on(conn)).to eq("50ms")
       end
     end

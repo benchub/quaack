@@ -149,6 +149,45 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       expect([differs, met?(assumption)]).to eq([false, false])
     end
 
+    # Task 20261007-32: IS NOT DISTINCT FROM, written out, calls a NULL
+    # copy of a NULL id equal.
+    it "is met when a joined row of that type has a NULL copy of a NULL id" do
+      conn.exec("INSERT INTO public.assignments VALUES (4, 'Course', NULL)")
+      conn.exec("INSERT INTO public.submissions VALUES (6, 4, NULL)")
+
+      expect(met?(assumption)).to be(true)
+    end
+
+    # Task 20261007-32: a domain, even one over another domain, is compared
+    # by its base type's =.
+    it "checks the data when the columns are domains" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN public.ident AS bigint;
+        CREATE DOMAIN public.course_ref AS public.ident;
+        CREATE DOMAIN public.label AS varchar(255);
+        ALTER TABLE public.submissions ALTER course_id TYPE public.course_ref, ALTER assignment_id TYPE public.ident;
+        ALTER TABLE public.assignments ALTER context_id TYPE public.course_ref, ALTER context_type TYPE public.label;
+      SQL
+      met = met?(assumption)
+      conn.exec("UPDATE public.submissions SET course_id = 21 WHERE id = 3")
+
+      expect([met, met?(assumption)]).to eq([true, false])
+    end
+
+    # Task 20261007-32: the type value is cast to the type column's type by
+    # its schema-qualified name, so a type planted ahead of it on the
+    # search_path, here a text domain that refuses every value (see
+    # CatalogShadow), can't make the check fail.
+    it "casts the type value to the type column's own type" do
+      conn.exec("ALTER TABLE public.assignments ALTER context_type TYPE text")
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :operators, :text)
+      met = met?(assumption)
+      conn.exec("UPDATE public.submissions SET course_id = 21 WHERE id OPERATOR(pg_catalog.=) 3")
+
+      expect([met, met?(assumption)]).to eq([true, false])
+    end
+
     # Task 20261007-9: public's comparisons, ahead of pg_catalog's on the
     # search_path, say no (see CatalogShadow), so an unqualified join would
     # find no rows, and nothing to contradict the assumption.
@@ -223,6 +262,36 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       expect([met?(assumption.merge("type_column" => "context_id")),
               met?(assumption.merge("table" => "public.nowhere"))]).to eq([false, false])
       expect([conn.transaction_status, met?(assumption)]).to eq([PG::PQTRANS_IDLE, true])
+    end
+
+    # Task 20261007-32: the = must be one operator. Postgres keeps one
+    # default btree opclass per type, but the catalog doesn't enforce it,
+    # so two are planted here, and two types a type coerces to.
+    describe "when the catalog gives more than one =" do
+      def oid(type) = Integer(conn.exec("SELECT '#{type}'::pg_catalog.regtype::pg_catalog.oid").getvalue(0, 0))
+      def equality(type) = described_class::Equality.operator(conn, oid(type), oid(type))
+
+      # Postgres itself then fails to plan the check, so only the = says
+      # what Equality does.
+      it "refuses two default btree opclasses for the type" do
+        before = equality("bigint")
+        conn.exec(<<~SQL)
+          CREATE FUNCTION public.same(bigint, bigint) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
+          CREATE OPERATOR public.= (LEFTARG = bigint, RIGHTARG = bigint, FUNCTION = public.same);
+          CREATE OPERATOR CLASS public.loose_ops FOR TYPE bigint USING btree
+            AS OPERATOR 3 public.= (bigint, bigint), FUNCTION 1 pg_catalog.btint8cmp(bigint, bigint);
+          UPDATE pg_catalog.pg_opclass SET opcdefault = true WHERE opcname = 'loose_ops';
+        SQL
+
+        expect([before, equality("bigint")]).to eq(["OPERATOR(pg_catalog.=)", nil])
+      end
+
+      it "refuses a type with no opclass of its own that coerces to two preferred types" do
+        before = [equality("varchar"), met?(assumption)]
+        conn.exec("CREATE CAST (varchar AS inet) WITHOUT FUNCTION AS IMPLICIT")
+
+        expect([*before, equality("varchar"), met?(assumption)]).to eq(["OPERATOR(pg_catalog.=)", true, nil, false])
+      end
     end
   end
 end

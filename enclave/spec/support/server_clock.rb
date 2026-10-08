@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "delegate"
+require "quaack/enclave/server_clock"
+
 # Helpers for specs of the timeout checks that read the server's clock
 # (Quaack::Enclave::ServerClock), shared by RunDiscipline, ArenaRunner, and
 # ProductionComparison's specs.
@@ -81,17 +84,27 @@ module ServerClockHelpers
   # Models a loaded server, whose reads of its clock take 300ms: every read
   # conn sends, by exec or in a pipeline, sleeps first. NOW_SQL names
   # pg_catalog's clock_timestamp(), so nothing planted on the search_path
-  # can slow it (task 20261007-9).
-  def slow_clock_read(conn)
-    now = Quaack::Enclave::ServerClock::NOW_SQL
-    slow = now.sub("pg_catalog.clock_timestamp()",
-                   "(SELECT pg_catalog.clock_timestamp() FROM pg_catalog.pg_sleep(0.3))")
-    raise "NOW_SQL doesn't read pg_catalog.clock_timestamp()" if slow == now
+  # can slow it (task 20261007-9). slowed lists the reads it slowed, by how
+  # each was sent, :exec or :send_query_params, so a spec can show that its
+  # slow read was the one it's about (task 20261007-32).
+  def slow_clock_read(conn) = SlowClockRead.new(conn)
 
-    Class.new(SimpleDelegator) do
-      define_method(:exec) { |sql, *args, &block| __getobj__.exec(sql.sub(now, slow), *args, &block) }
-      define_method(:send_query_params) { |sql, *args| __getobj__.send_query_params(sql.sub(now, slow), *args) }
-    end.new(conn)
+  class SlowClockRead < SimpleDelegator
+    NOW = Quaack::Enclave::ServerClock::NOW_SQL
+    SLOW = NOW.sub("pg_catalog.clock_timestamp()",
+                   "(SELECT pg_catalog.clock_timestamp() FROM pg_catalog.pg_sleep(0.3))")
+    raise "NOW_SQL doesn't read pg_catalog.clock_timestamp()" if SLOW == NOW
+
+    def slowed = (@slowed ||= [])
+    def exec(sql, *, &) = __getobj__.exec(slowed_sql(sql, :exec), *, &)
+    def send_query_params(sql, *) = __getobj__.send_query_params(slowed_sql(sql, :send_query_params), *)
+
+    private
+
+    def slowed_sql(sql, sent)
+      slowed << sent if sql.include?(NOW)
+      sql.sub(NOW, SLOW)
+    end
   end
 
   def wait_until_sleeping(other, pid)
