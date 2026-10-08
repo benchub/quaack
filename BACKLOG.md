@@ -2386,3 +2386,16 @@ The review of 20260924-3 found this. A table whose RLS policy queries another ta
 - **Came from:** The review of 20260924-3, 2026-10-08.
 - **Design:** input.
 - **Status:** todo
+
+### 20261008-38. Tablespace check: narrow it to the query's tables.
+
+The review of 20260924-29 found these:
+
+1. **The check covers more than the query needs.** Inventory records every tablespace any relation uses, so `run_server_tablespace_mismatch` can refuse over a tablespace none of the query's tables use. Two realistic cases hit this: a run server restored with `pg_dump --no-tablespaces`, and an RDS production with a custom tablespace that holds only unrelated tables. Record each relation's tablespace, and check only the query's tables and their indexes, after qualify.
+2. **The operator can't tell which tablespace failed.** The fixed note doesn't say, by design. Have it say how to compare `pg_tablespace` on both servers.
+3. **The missing-tablespace path has no mutation coverage.** Add a test where a tablespace is missing by name.
+
+- **Depends on:** 20260924-29.
+- **Came from:** The review of 20260924-29, 2026-10-08.
+- **Design:** inventory and run-server.
+- **Status:** todo
