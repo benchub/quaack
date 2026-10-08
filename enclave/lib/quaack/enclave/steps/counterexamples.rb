@@ -27,6 +27,8 @@ module Quaack
       # Store entries, which the driver resumes by and rewrite-index-ideas reads:
       #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
       #                          "untested_atoms" }, rewrite-test's result, plus
+      #                          "dropped", ScenarioTests' count of scenario
+      #                          groups a unique key left out, or
       #                          "refused" true when rewrite-test couldn't build
       #                          scenarios for the query: then the rule is
       #                          the refusal's, and the rewrite is untested
@@ -116,7 +118,7 @@ module Quaack
           def outcome(report)
             result = report.results.first
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
-              **({ "refused" => true } if report.refused),
+              **(report.refused ? { "refused" => true } : { "dropped" => report.dropped }),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
               "untested" => report.untested, "untested_atoms" => report.untested_atoms }
           end

@@ -29,8 +29,21 @@ module Quaack
         def parts(raw)
           { "counterexamples" => counterexamples(raw["counterexamples"]),
             "index_ideas" => index_ideas(raw["index_ideas"]),
-            "failed_branches" => list(raw["failed_branches"]) { branch(it) } }
+            "failed_branches" => list(raw["failed_branches"]) { branch(it) },
+            "llm_calls" => llm_calls(raw["llm_calls"]) }
         end
+
+        # The run's LLM calls so far: steps, by LLM step, and providers, by
+        # name and then LLM step. Any other count is dropped.
+        def llm_calls(raw)
+          return unless raw.is_a?(Hash)
+
+          providers = map(raw["providers"]) { |name, _| name?(name) } || {}
+          { "steps" => steps(raw["steps"]), "providers" => providers.transform_values { steps(it) } }
+        end
+
+        # Counts by LLM step, each of zero or more.
+        def steps(raw) = map(raw) { |step, n| Protocol::Burndown::LLM_STEPS.include?(step) && count?(n) } || {}
 
         def rewrites(raw)
           { "rewrites" => map(raw["rewrites"]) { |k, v| REWRITE.match?(k) && name?(v) },

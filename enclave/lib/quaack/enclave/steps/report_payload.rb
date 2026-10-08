@@ -164,9 +164,14 @@ module Quaack
         # indexes counterexamples reads), the shapes of those the
         # counterexample rounds covered, and whether counterexamples had
         # evidence, which only a rewrite that survived counterexamples has.
+        # dropped is how many scenario groups rewrite-test left out because
+        # they collide on a unique key, sent only as a count.
         def checks(store, number)
           survived = NegativeResult.optional(store, "rewrite_survived_#{number}")
-          { "untested_atoms" => NegativeResult.optional(store, "rewrite_tested_#{number}")&.fetch("untested"),
+          tested = NegativeResult.optional(store, "rewrite_tested_#{number}")
+          dropped = tested&.fetch("dropped", nil)
+          { "untested_atoms" => tested&.fetch("untested"),
+            "dropped" => (dropped if dropped.is_a?(Integer) && !dropped.negative?),
             "covered" => NegativeResult.optional(store, "rewrite_round_#{number}")&.fetch("covered", nil),
             "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
         end

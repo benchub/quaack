@@ -99,7 +99,7 @@ RSpec.describe "quaacks report-payload" do
     # their indexes into the original's atoms, for counterexamples.
     store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil,
                                     "untested" => ["o.note = $2", "o.created_at > (now() - $1)"],
-                                    "untested_atoms" => [0, 3])
+                                    "untested_atoms" => [0, 3], "dropped" => 2)
     store.write("rewrite_round_1", "round" => 3, "evidence" => true, "rule" => nil, "covered" => ["o.note = $2"])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
@@ -296,7 +296,7 @@ RSpec.describe "quaacks report-payload" do
       expect(rewrite(1)).to include(
         "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
         "untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"], "covered" => ["o.note = $2"],
-        "evidence" => false
+        "evidence" => false, "dropped" => 2
       )
       expect(rewrite(1)["plan"]).to eq(
         [{ "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 5, "actual_rows" => 5,
@@ -307,6 +307,20 @@ RSpec.describe "quaacks report-payload" do
       )
     end
 
+    # Task 20260926-42: only a count leaves, never what else the entry holds.
+    context "with a dropped count in rewrite_tested_<n> that isn't a count" do
+      let(:outcome) do
+        payload_of do |store|
+          store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("dropped" => "#{sentinel} 7"))
+        end
+      end
+
+      it "sends no dropped count, and nothing of what it held" do
+        expect(rewrite(1)["dropped"]).to be_nil
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
     context "with a rewrite that was stored and taken no further" do
       let(:outcome) { payload_of { it.write("rewrite_2", "sql" => "SELECT $1", "source" => "operator") } }
 
@@ -315,7 +329,7 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "covered" => nil, "evidence" => nil)
+                                 "untested_atoms" => nil, "covered" => nil, "evidence" => nil, "dropped" => nil)
       end
     end
   end

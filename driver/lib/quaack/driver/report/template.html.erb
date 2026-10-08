@@ -74,6 +74,9 @@
 <div class="untested"><p><%= h Rewrites::UNTESTED %> <%= h atoms_note(r) %></p>
 <% if unchecked_atoms(r).empty? %><details class="untested"><summary><%= h "The #{atoms(r).size} conditions" %></summary><% end %><ul><% atoms(r).each do |a| %><li><%= sql_code(a) %><%= h " (#{Rewrites::CHECKED_LATER})" if checked_later(r).include?(a) %></li><% end %></ul><% if unchecked_atoms(r).empty? %></details><% end %></div>
 <% end %>
+<% if (left = dropped_line(r)) %>
+<p class="dropped"><%= h left %></p>
+<% end %>
 <% if (line = counterexample_line(r)) %>
 <p class="counterexamples"><%= h line %></p>
 <% end %>
@@ -271,7 +274,7 @@
 <% end %>
 </tbody></table>
 <% end %>
-<p class="note">These are the calls this run of quaack made. If you resumed the run, they leave out the calls made before it stopped.</p>
+<p class="note">These are the calls the run made. If you resumed the run, they include the calls made before it stopped.</p>
 <h3>Other work</h3>
 <ul id="burndown-totals"><% total_lines.each do |line| %><li><%= h line %></li><% end %></ul>
 </section>

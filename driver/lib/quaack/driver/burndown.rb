@@ -23,6 +23,16 @@ module Quaack
       # One Burndown that holds every count of burndowns, added up.
       def self.sum(burndowns) = new.tap { |sum| burndowns.each { sum.add_all(it) } }
 
+      # A Burndown holding steps, counts by step, and providers, each
+      # provider's counts by step, as llm_calls and llm_calls_by_provider
+      # give them (Provenance's record of earlier processes).
+      def self.restore(steps, providers)
+        new.tap do |burndown|
+          steps.each { |step, count| burndown.send(:add, step, nil, count) }
+          providers.each { |name, calls| calls.each { |step, count| burndown.send(:add, step, name, count, 0) } }
+        end
+      end
+
       def initialize
         @llm_calls = {}
         @by_provider = {}
