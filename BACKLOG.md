@@ -1354,27 +1354,60 @@ These are minor findings from the review of 20260927-24:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260929-2. Several LLM providers in one run.
+### 20260929-2. Several LLM providers in one run. Done, see BACKLOG-COMPLETE.md.
 
-Let one run use more than one LLM provider, for two reasons. Different models propose different rewrites, indexes, and counterexamples, which is more of the chaos QUAACK wants. And spreading asks across providers stretches free tiers further, since each has its own rate and daily limits.
+### 20261007-13. The `llms` list and its config.
 
-Each ask is stateless: it sends its whole conversation, and no provider holds a session. So asks can move between providers freely, with one exception. A multi-turn exchange must stay on one provider: llm-index-ideas' replacement round, llm-counterexamples' counterexample rounds, and the re-ask from 20260928-4. Otherwise a model is shown another model's reply as if it were its own.
-
-Ideas to settle before building:
-- **Configuration.** An `llms` list in driver.json, each entry shaped like today's `llm` block, with a name.
-- **Routing policy.** Options:
-  - round-robin per ask;
-  - pinning steps to providers;
-  - fan-out, where llm-rewrites and llm-index-ideas ask every provider and take the union, deduplicated by the usual checks;
-  - failover, moving on to the next provider after `llm_rate_limited` or `llm_unavailable`, and remembering that for the rest of the run.
-- **Adversarial pairing.** Have llm-counterexamples use a different model from the one that wrote the rewrite, so the model hunting for counterexamples isn't grading its own work.
-- **Burndown.** Count calls per provider as well as per step (burndown), so the report shows where the calls went.
-- **Cost.** Fan-out multiplies calls, so make it opt-in per step.
+Parse and check `llms` and `llm_routing` in `~/.quaack/driver.json`, as DESIGN.md's "Several LLM providers" says: names, per-entry keys with their position, the list's size, both `llm` and `llms`, and `llm_routing` without `llms`. Keep `llm` working as a one-entry list, and no block as Anthropic named `anthropic`. Add `QUAACK_LLM`, and refuse `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` with `llms`. Build every entry's client before touching the jump server, so a bad entry or startup `llm_auth` stops the run, naming the entry. Check `llm_routing`'s keys too (modes, pinned names, `fan_out` only on its three steps, `counterexample_pairing`'s values, and `require_different` with fewer than two providers), even though nothing acts on them yet. Routing is "always the first entry," so behavior doesn't change yet. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
 
 - **Depends on:** 20260928-4.
-- **Came from:** The user, 2026-09-29.
-- **Design:** Where QUAACK runs, llm-index-ideas, llm-rewrites, llm-counterexamples, burndown.
-- **Decided by the user (2026-10-07):** Make routing configurable among all the ideas above: failover, round-robin per ask, fan-out (opt-in per step), and pinning steps to providers. A provider type may appear more than once. For example, two `copilot_cli` entries with different models count as two providers. Make adversarial pairing configurable too, with the complementary model as an option: llm-counterexamples uses a different provider from the one that wrote the rewrite. That means tracking which provider and model produced each idea, rewrite, and counterexample, and the final report should show it.
+- **Came from:** The split of 20260929-2.
+- **Design:** Where QUAACK runs, Several LLM providers.
+- **Status:** todo
+
+### 20261007-14. The router: sessions, failover, round-robin, and pinning.
+
+Add the router and its sessions, and move every LLM caller onto them, so each multi-turn unit stays on one provider. Add pools from pinning, `round_robin` (the default) and `failover`, with the one cursor for the run. Fail over at a unit's first ask on `llm_rate_limited` and `llm_unavailable` (mark the provider down), `llm_auth` (drop it for the run, with the loud line), and `llm_bad_response` (move on without marking it down). Keep `llm_bad_request` failing the step. Fail the step with the last rule and the list of what was tried when a unit runs out of providers. A later ask that fails keeps today's behavior, failing the step, though it marks or drops the provider; 20261007-15 softens that. Count calls per provider in the burndown's in-memory counts, and add the progress and failure lines. Reword llm-index-refine's prompt from "You already proposed candidates" to say an LLM already proposed them. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-13.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Asks, units, and sessions; Routing; Accounting; Progress and failure messages), llm-index-refine.
+- **Status:** todo
+
+### 20261007-15. A later turn that fails.
+
+Add DESIGN.md's softer handling of a later ask that fails with a rule that fails over. llm-index-ideas and rewrite-llm-index-ideas keep their first-round ideas and skip the replacement round. llm-counterexamples starts the rewrite's remaining rounds fresh on another provider from its pool, less those its rounds already failed on: one user message with the payload as the first round sent it, then each earlier round's inserts and that round's feedback, in the words already sent, under "Earlier rounds, run by another model." Never as the model's own turns. Rounds count on, so no rewrite gets more than three. The step fails when no provider is left. `llm_bad_request` still fails the step. Add their progress lines. Test with sentinels that the fresh start's prompt holds only the payload, the earlier inserts, and the feedback text, and that the enclave sees no new input. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-14.
+- **Came from:** The split of 20260929-2, and the user's answer on 2026-10-07 to take the softer option in v1.
+- **Design:** Several LLM providers (Routing), llm-index-ideas, llm-counterexamples.
+- **Status:** todo
+
+### 20261007-16. Provenance and the report.
+
+Write `~/.quaack/runs/<run ID>.llm.json` as DESIGN.md's Provenance says: mode 0600, written whole and renamed into place after each LLM step, kept across resumes, with names, models, store names, rules, and counts only. Record the fresh starts and skipped replacement rounds from 20261007-15. Show in the report the provider and model for each rewrite, which providers ran each rewrite's counterexample rounds, the per-provider rows in the who-proposed tables, the "LLM providers" table, and LLM calls by step and provider. Anything the record lacks is "not recorded." Pairing's outcome and warning come in 20261007-17. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-15.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Provenance), report, burndown.
+- **Status:** todo
+
+### 20261007-17. Adversarial pairing.
+
+Add `counterexample_pairing` with `any`, `prefer_different`, and `require_different`. The author is the entry that wrote the rewrite, or any entry with the same `model` string, read from the provenance record. Apply it to a fresh start of the remaining rounds too. Add the run-time failure for `require_different`, the outcome in the provenance record, and the report's pairing line and its warning when the pairing wasn't met or couldn't be checked. The startup check is 20261007-13's. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-16, since pairing reads a rewrite's author from the provenance record.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Adversarial pairing), llm-counterexamples, report.
+- **Status:** todo
+
+### 20261007-18. Fan-out.
+
+Add `fan_out` for llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas. Run branches one after another, never at once. Send each union in one interleaved call after dropping exact repeats, so the caps of five stay the step's in all. Drop a failed branch with its line and go on, failing the step only when every branch failed or one hit `llm_bad_request`. Give each branch its own replacement round, keeping its first-round ideas if that round fails. Map outcomes back to branches by position for provenance. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-16.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Routing, Limits), llm-index-ideas, llm-rewrites.
 - **Status:** todo
 
 ### 20260929-20. `quaack deploy` removes old enclave versions. Done, see BACKLOG-COMPLETE.md.

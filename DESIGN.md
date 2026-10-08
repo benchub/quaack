@@ -4,7 +4,7 @@ QUAACK takes a slow production query and works through it in stages. It proposes
 
 ## Overview.
 
-The driver on the engineer's laptop talks to the LLM. The enclave script on the jump server touches the databases and every real value. Only shapes cross the line between them.
+The driver on the engineer's laptop talks to the LLM, which can be several models from several providers in one run. The enclave script on the jump server touches the databases and every real value. Only shapes cross the line between them.
 
 ```mermaid
 flowchart TB
@@ -284,7 +284,7 @@ A connection failure gets a fixed note from the driver, after its rule, since th
 
 `quaack setup --run <ID>` then runs setup: `quaacks inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `clock-anchor`, and `racetrack-setup`, in that order, each over ssh. It takes `--host`, `--port`, `--racetrack-db`, and `--arena-db`, and passes only those given to `quaacks run-server`, which takes the rest from `run_server_command` (run-server). It resumes the way `quaack run` does: `quaacks status` says which of these steps' outputs the store holds, each step's last-written entry, and those steps are skipped, run-server's flags with it. It prints the same numbered progress lines as `quaack run`, each ending with the step's slug in parentheses, one per step with a plain-English description, and then `<run ID> set up`. A step that fails stops it with only its rule, as `quaack setup failed: <rule>`, and keeps the run, so the operator can fix the problem and run it again. Its output is only for show, as every `quaack` command's is (see `quaack run`): once a write to stderr or stdout finds the stream gone, such as a pipe whose reader has exited, the rest of that stream's output is skipped quietly, `quaack setup failed` and usage messages included, and setup goes on to the exit status it would have had. `quaack run` takes the same four flags, and when the store says the run hasn't had all of setup, it runs them first, the same way, counting their eleven steps before its own in its progress. There, a failing setup step fails the run, which is torn down unless `--keep` or the step failed as `ssh_failed`, as for any step of `quaack run`. `quaack start` does no setup.
 
-The driver talks to the LLM through one provider-neutral client. It owns what's the same for every provider: the burndown count for every attempt (burndown), the JSON-only instruction and the parsing and checking of JSON replies, and the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`). Behind it, one adapter per provider holds everything provider-specific: the request's shape, structured output, stop reasons, the SDK's retries, credentials, and which SDK error is which rule. An adapter that needs an SDK loads it only when its client is built, so commands that make no LLM calls start without paying about a second to load the anthropic and openai gems. There are four adapters:
+The driver talks to each LLM provider through a provider-neutral client, one per provider, behind the router, which owns routing, failover, and fan-out (Several LLM providers). The client owns what's the same for every provider: the burndown count for every attempt (burndown), the JSON-only instruction and the parsing and checking of JSON replies, and the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`). Behind it, one adapter per provider holds everything provider-specific: the request's shape, structured output, stop reasons, the SDK's retries, credentials, and which SDK error is which rule. An adapter that needs an SDK loads it only when its client is built, so commands that make no LLM calls start without paying about a second to load the anthropic and openai gems. There are four adapters:
 
 - **Anthropic**, the Messages API through the anthropic gem. Its structured output holds every reply to the schema.
 - **OpenAI-compatible**, the Chat Completions API through the openai gem, at the block's `base_url`. One adapter serves OpenAI, Groq, Gemini's OpenAI-compatible endpoint, OpenRouter, and local servers such as Ollama. Not all of them hold a reply to a schema, and some take `response_format` and still don't, so this adapter says it doesn't enforce schemas. It puts the schema in the system prompt, and also sends it as a `response_format` of type `json_schema`. When the API rejects a request for its `response_format` (a 400 or 422 whose `param` is `response_format`, or whose body names it), the adapter asks again without it, and if that works it stops sending it for the rest of the run. Any other 400 or 422 is `llm_bad_request` at once. Its key comes from the variable `api_key_env` names, or `OPENAI_API_KEY`, and a missing or empty one is `llm_auth` before any attempt. Without a `base_url` it goes to OpenAI; the gem's `OPENAI_BASE_URL` is ignored. The gem's `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS` go only to OpenAI's own API. A `base_url` that ends in `/chat/completions` is a usage error, since the gem adds that path itself.
@@ -293,13 +293,163 @@ The driver talks to the LLM through one provider-neutral client. It owns what's 
 
 For an adapter that doesn't enforce schemas, the client checks each JSON reply against the schema, and when one doesn't match, it asks once more: the same conversation, then the reply, then what was wrong with it (the check's message, which never quotes the reply). A second reply that doesn't match is `llm_bad_response`. The re-ask lives in the client, not the adapter, because the check it repeats is the client's, and it's the same for every such provider. Every attempt counts in the burndown, the re-ask and the one without `response_format` included.
 
-The `llm` block of `~/.quaack/driver.json` picks the provider (`anthropic`, `openai_compatible`, `bedrock`, or `copilot_cli`), the `model`, a `base_url`, and `api_key_env`, the name of the environment variable that holds the key. A key never goes in the file. `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` override the block. With no block, it's Anthropic with `claude-opus-5-5`; `copilot_cli` defaults to `claude-opus-5.5`; any other provider needs a `model`. `quaack run` reads the block, and builds the client, before it touches the jump server. A bad block is a usage error that names the key, never the value. For Anthropic, the driver needs no API key of its own. Unless `api_key_env` names one, the anthropic gem finds credentials in its usual order. It tries `ANTHROPIC_API_KEY`, then `ANTHROPIC_AUTH_TOKEN`, then a profile such as the one `ant auth login` saves. It takes the first of those two variables that's set, even an empty one, and looks no further. So an empty value there is `llm_auth`. An empty one after it goes unread. Finding no credentials is `llm_auth` too. So are a profile that can't be read and an API that refuses the credentials.
+The `llm` block of `~/.quaack/driver.json` picks the provider (`anthropic`, `openai_compatible`, `bedrock`, or `copilot_cli`), the `model`, a `base_url`, and `api_key_env`, the name of the environment variable that holds the key. A key never goes in the file. `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` override the block, and only the block. An `llms` list may replace the block, to use several providers in one run, and `QUAACK_LLM` picks entries of it (Several LLM providers). With no block, it's Anthropic with `claude-opus-5-5`; `copilot_cli` defaults to `claude-opus-5.5`; any other provider needs a `model`. `quaack run` reads the block, and builds the client, before it touches the jump server. A bad block is a usage error that names the key, never the value. For Anthropic, the driver needs no API key of its own. Unless `api_key_env` names one, the anthropic gem finds credentials in its usual order. It tries `ANTHROPIC_API_KEY`, then `ANTHROPIC_AUTH_TOKEN`, then a profile such as the one `ant auth login` saves. It takes the first of those two variables that's set, even an empty one, and looks no further. So an empty value there is `llm_auth`. An empty one after it goes unread. Finding no credentials is `llm_auth` too. So are a profile that can't be read and an API that refuses the credentials.
 
 For `"provider": "bedrock"`, the block also takes `aws_region` and `aws_profile`, and not `api_key_env`, since the credentials come from AWS. `aws_region` and `aws_profile` apply to no other provider. Either mistake is a usage error naming the key. `QUAACK_LLM_PROVIDER` takes `bedrock` too.
 
 For `"provider": "copilot_cli"`, the block also takes `command_template` and `timeout_seconds`, and not `base_url`, `api_key_env`, `aws_region`, or `aws_profile`. `command_template` and `timeout_seconds` apply to no other provider. Any mismatch is a usage error naming the key. `QUAACK_LLM_PROVIDER` takes `copilot_cli` too.
 
 Access control comes from ssh. Anyone who can ssh into the jump server already has production access, so they can run the enclave script too. There's no separate login or service to secure.
+
+#### Several LLM providers.
+
+A run can use more than one LLM provider. Different models propose different rewrites, indexes, and counterexamples, and each provider has its own rate and daily limits, so spreading asks across them stretches free tiers.
+
+##### The `llms` list.
+
+`~/.quaack/driver.json` takes an `llms` list in place of the `llm` block. Each entry is shaped like the `llm` block, with the same keys and the same per-provider rules, plus a required `name`:
+
+```json
+{
+  "jump_command": "...",
+  "llms": [
+    { "name": "opus", "provider": "anthropic" },
+    { "name": "copilot-opus", "provider": "copilot_cli", "model": "claude-opus-5.5" },
+    { "name": "copilot-gpt", "provider": "copilot_cli", "model": "gpt-5.5" },
+    { "name": "groq", "provider": "openai_compatible", "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEY", "model": "..." }
+  ],
+  "llm_routing": {
+    "mode": "round_robin",
+    "counterexample_pairing": "prefer_different",
+    "steps": {
+      "llm-rewrites": { "fan_out": true },
+      "llm-counterexamples": { "providers": ["opus", "copilot-gpt"] }
+    }
+  }
+}
+```
+
+- A provider type may appear more than once. Each entry is its own provider, so the two `copilot_cli` entries above are two providers.
+- `name` is one to 32 characters of lowercase letters, digits, `_`, and `-`, and no two entries share one. It shows up in progress lines, error messages, and the report, so it mustn't hold anything secret. A bad name is a usage error that names its position, such as `llms[2].name`, never its value.
+- Every other bad key is the usage error it is today, with the entry's position in the key: `llms[3].model in ~/.quaack/driver.json is required unless the provider is anthropic`.
+- An empty list, a list of something other than objects, or more than nine entries is a usage error.
+
+Backward compatibility:
+
+- An `llm` block alone still works. It becomes a one-entry list, named after its provider (for example `anthropic`).
+- No block at all is still Anthropic with `claude-opus-5-5`, named `anthropic`.
+- Both `llm` and `llms` is a usage error: `use llm or llms in ~/.quaack/driver.json, not both`.
+- `llm_routing` without `llms` is a usage error, since one provider has nothing to route.
+
+`quaack run` builds a client for every entry before it touches the jump server, as it does for the one client today. So a bad entry, or credentials an adapter can't find at build time (`llm_auth` before any attempt), stops the run at once, even when other entries are fine. The message names the entry: `llm_auth: groq: GROQ_API_KEY is not set`. That's config the operator can fix before anything runs, so it's cheaper to stop than to run a whole pipeline without a provider they asked for. An `llm_auth` that comes back from an attempt, after the run started, is handled differently (see Routing).
+
+##### Environment overrides.
+
+- `QUAACK_LLM=<name>[,<name>...]` keeps only the named entries of `llms`, in the order given, for this run. An unknown name is a usage error that names the variable.
+- `QUAACK_MODEL`, `QUAACK_LLM_PROVIDER`, and `QUAACK_LLM_BASE_URL` still override the `llm` block, as today. With `llms`, they're a usage error that says to use `QUAACK_LLM` instead. There's no one entry they'd clearly apply to, and quietly overriding every entry would surprise.
+
+##### Asks, units, and sessions.
+
+An ask is stateless. It sends the whole conversation, and no provider holds a session, so asks can move between providers. A **unit** is one ask, or one multi-turn exchange that must stay on one provider. Otherwise a model would see another model's reply as if it were its own. The multi-turn units are:
+
+- llm-index-ideas and rewrite-llm-index-ideas: the first ask and its replacement round.
+- llm-counterexamples: one rewrite's rounds, up to three.
+- The client's re-ask for a reply that doesn't match its schema. It already lives inside one ask, so it stays on that ask's provider for free.
+
+Every other ask is a unit of one: llm-rewrites, operator-rewrites' inference, llm-index-refine, and rewrite-llm-index-refine.
+
+The driver gets a new front, the router. A step opens a session for a unit, and the session picks one provider and keeps it for every ask in the unit. The router owns the routing rules below. Each provider's client keeps everything it owns today: JSON parsing, the re-ask, the error rules, and its adapter's retries.
+
+##### Routing.
+
+Each step has a **pool**: the providers it may use. It's the step's `providers` under `llm_routing.steps`, if given (pinning), or else every entry, in list order. A pinned name that isn't an entry is a usage error.
+
+`llm_routing.mode`, or a step's own `mode`, picks how a unit chooses from its pool:
+
+- **`round_robin`**, the default: start with the next healthy provider after the one the last unit started on. One cursor turns across the whole list for the run, skipping providers outside the pool. So asks spread evenly across providers, whichever steps make them. That's the default because stretching free tiers is half the point of a list, and spreading asks costs no more calls than sending them all to one provider. The cursor lives in memory, so a resumed run starts it over.
+- **`failover`**: start with the pool's first healthy provider. The list is then a primary with backups, for an operator who wants one model's answers unless it's out of reach.
+
+Both modes fail over. When a unit's first ask fails, after its adapter's own retries and the client's re-ask ran out, what happens depends on the rule:
+
+- **`llm_rate_limited` and `llm_unavailable`**: the router marks that provider down and starts the unit again on the next healthy provider in the pool. A provider marked down stays down for the rest of the process. A resumed run tries it again.
+- **`llm_auth`**: the API refused the credentials, or the command said it wasn't logged in. The router drops that provider for the rest of the run, as for a provider marked down, and says so loudly (see the messages below), since the operator has a setup problem to fix. Then it starts the unit again on the next healthy provider.
+- **`llm_bad_response`**: a reply that can't be used, a refusal included. It's the error most tied to one model and one prompt, so the router starts the unit again on the next healthy provider in the pool, but doesn't mark the provider down. Later units may still use it.
+- **`llm_bad_request`** doesn't fail over. It means the driver sent something the API won't take, which another provider is unlikely to fix and the operator should hear about at once. It fails the step, as it does today, and the message names the provider.
+
+A unit that has tried every healthy provider in its pool fails the step with the last failure's rule. So the run fails on `llm_auth` only when no provider it may use is left.
+
+A later ask in a unit can't move to another provider as it is, since the new provider would be shown another model's turns as its own. So a later ask that fails with a rule that fails over marks or drops the provider as above, and then:
+
+- **llm-index-ideas and rewrite-llm-index-ideas** keep their first-round ideas, which index-test has already tested and stored, and skip the replacement round. The step goes on as if the replacements had come back empty. The progress line says so, and so does the provenance record.
+- **llm-counterexamples** starts the rewrite's remaining rounds as a new unit, fresh, on another provider from the step's pool. The rounds count on: a rewrite that had one round on the first provider gets at most two more, so no rewrite gets more than three in all. The new unit picks its provider as any unit does, from the pool less the providers this rewrite's rounds have already failed on, under the step's mode and pairing. Its first ask is one user message holding the payload, exactly as the first round sent it, and then, under the heading "Earlier rounds, run by another model," each earlier round's inserts and that round's feedback: which inserts were refused and by which rule, whether the accepted ones loaded, and which untested atoms they exercised, in the same words the follow-up after that round already sent. Then it asks for inserts that try something different from all of them. None of it is put in the model's mouth as its own turns. The inserts are the earlier LLM's reply, and the feedback is the driver's text from counterexample-compare's outcome, both of which the driver already holds and already sends to an LLM, so the enclave sends nothing new. A later ask in the new unit that fails is handled the same way. When no provider is left, the step fails with the last failure's rule, as for any unit.
+
+An `llm_bad_request` at a later ask fails the step, as at a first ask.
+
+**Fan-out** is opt-in per step, with `"fan_out": true`. Only llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas take it; on any other step it's a usage error. A fan-out step runs its unit once on every healthy provider in its pool, one after another, never at the same time, so progress lines and failures come in a fixed order. It takes the union. The usual checks dedupe it: rewrite-check's for rewrites, and index-dedupe's for indexes. Mode doesn't apply to a fan-out step, and its branches don't fail over, since every healthy provider already has a branch. A branch that fails is dropped, with its provider marked down or dropped by the rule as above, the progress line and the report say which and why, and the step goes on with the rest. The step fails only when every branch failed, or when a branch fails with `llm_bad_request`, as everywhere. A branch whose replacement round fails keeps its first-round ideas, as a unit does. Fan-out multiplies a step's calls by the size of its pool, which is why it's opt-in.
+
+How they combine, in order: the pool comes from pinning, or from the whole list. Pairing filters it, for llm-counterexamples. Then fan-out runs a branch on every healthy provider left, or the mode picks one and fails over through the rest.
+
+##### Adversarial pairing.
+
+`llm_routing.counterexample_pairing` makes llm-counterexamples use a different provider from the one that wrote the rewrite, so the model hunting for counterexamples isn't grading its own work. It takes:
+
+- **`any`**, the default: pick as for any other step.
+- **`prefer_different`**: drop the rewrite's author from the pool, then pick as usual. If nothing healthy is left, use the author, and record that the pairing wasn't met.
+- **`require_different`**: the same, but with nothing healthy left the step fails as `llm_unavailable`, naming the rewrite and its author.
+
+Pairing applies to a fresh start of the remaining rounds too, so a rewrite's rounds stay off its author's provider whenever another is healthy.
+
+A provider counts as the author if it's the entry that wrote the rewrite, or another entry with the same `model` string. That catches two keys for the same Groq model, but not the same model spelled differently by two vendors, such as `claude-opus-5-5` and `claude-opus-5.5`. There's no key to say two spellings are the same model in v1. Pairing only applies to llm-rewrites' rewrites. Rule-made and operator rewrites have no author model, so they pick as with `any`. A rewrite whose author wasn't recorded (see provenance) picks as with `any` too, and the report says the pairing couldn't be checked.
+
+`require_different` with fewer than two providers in llm-counterexamples' pool is a usage error at startup.
+
+##### Provenance.
+
+The driver records which provider and model produced each idea, rewrite, and counterexample round. It's all driver-side, on the laptop, in `~/.quaack/runs/<run ID>.llm.json`, next to the run's record. It's mode 0600 in the 0700 runs directory, written whole to a temporary file and renamed into place after each LLM step. It holds:
+
+- `providers`: each entry's name, provider type, and model, as this run used them. A resumed run adds any new entries and keeps the old ones, so a rewrite's author stays named even after the config changes.
+- `rewrites`: for each stored llm-rewrites rewrite, by its store name (`rewrite_<n>`, from rewrite-check's `rewrite_outcome`), the entry that wrote it.
+- `counterexamples`: for each rewrite, each entry that ran its rounds, in order, with how many rounds it asked and, for each fresh start, the rule that ended the entry before it, plus the pairing's outcome: met, not met, not applicable, or couldn't be checked.
+- `index_ideas`: for each search and LLM round (first, replacement, refinement), and each entry, how many statements it wrote and how index-test's `index_outcome`s for them came out, as counts by outcome and rule, plus each replacement round skipped and the rule that skipped it.
+- `operator_inference`: the entry that inferred the operator rewrites' transformations and assumptions.
+
+It holds names, models, store names, rules, and counts only. It never holds SQL, DDL, a prompt, or a reply. The driver never holds a production value, so none can get in.
+
+The router reports which provider answered each unit, and the step that called it writes the record. For a fan-out step, the driver maps each outcome back to its branch by its position in the input, since rewrite-check and index-test answer one outcome per input, in order.
+
+A run started by an older driver, or on another laptop, has no record, or a partial one. Anything it lacks is "not recorded" in the report, never a guess.
+
+##### Limits.
+
+Every limit keeps its place and its number. Fan-out doesn't raise any of them:
+
+- llm-rewrites' cap of five, which rewrite-check enforces per call. A fan-out step sends the union in one call, interleaved: each branch's first rewrite, then each branch's second, and so on, after dropping exact repeats of the SQL text. So every provider gets its best in, and rewrite-check drops the rest as `too_many`, which the burndown already counts as over the cap. Five is the cap for the step in all, not per provider, in v1.
+- llm-index-ideas' cap of five per index-test call, the same way: one interleaved call for the first round, and one for the replacements.
+- The replacement round still runs at most once per unit. Under fan-out, each branch asks for replacements for its own dropped ideas, since that's a turn in its own conversation, and the replacements go to index-test together.
+- llm-index-refine runs once, as one unit on one provider, with every LLM candidate that fell short, whoever wrote it.
+- llm-counterexamples' three rounds per rewrite, on one provider unless a later round's failure starts the rest fresh on another.
+
+##### Accounting.
+
+The burndown counts every attempt under its step, as today, and now also under its provider. The adapter's retries and the client's re-ask count under the provider that made them. A failed-over unit counts its attempts on every provider it tried, and so does a counterexample unit started fresh. Counts stay in memory, so a resumed run counts only the calls since it resumed, as today. The protocol gem's `LLM_STEPS` doesn't change, and nothing about calls goes to the enclave.
+
+##### Progress and failure messages.
+
+- Each ask's progress line names its provider: `Asking the LLM (llm-rewrites, groq)`.
+- A failover gets its own line: `groq is rate limited, so the rest of this run skips it; trying opus (llm-rewrites)`. For `llm_bad_response`, it says the reply couldn't be used and that later asks may still use the provider.
+- A provider dropped for `llm_auth` gets a line that stands out, starting with the rule: `llm_auth: opus: the API refused the credentials, so the rest of this run skips opus. Fix its credentials before the next run. Trying groq (llm-rewrites)`.
+- A replacement round skipped: `groq is rate limited, so the rest of this run skips it; going on without replacement ideas (llm-index-ideas)`.
+- A counterexample unit started fresh: `groq is rate limited, so the rest of this run skips it; asking opus for the remaining rounds, starting fresh (llm-counterexamples, Rewrite Silver Fox)`.
+- A fan-out branch that fails: `copilot-gpt failed with llm_unavailable; going on with the others (llm-rewrites)`.
+- When every provider in a pool is down, or every branch failed, the step fails with the last failure's rule, and the message lists what was tried: `llm_rate_limited: every LLM provider llm-rewrites may use failed: groq (llm_rate_limited), opus (llm_unavailable). <request sizes>`.
+- An error that doesn't fail over names its provider after the rule: `llm_bad_request: opus: <detail>`.
+
+Every message names entries by their `name`, which comes from the operator's own config. None of it comes from the enclave or the LLM.
+
+##### Trust boundary.
+
+Nothing new crosses the boundary in either direction. Provenance, names, models, and per-provider counts stay on the laptop. The enclave sees the same inputs it sees today, from the same steps, under the same checks and caps. A fan-out union is still LLM output, sent through rewrite-check and index-test as before. The driver reads only what already comes out: `rewrite_outcome`'s store name and `index_outcome`'s position, outcome, and rule. A counterexample unit started fresh sends only what an earlier round already sent to an LLM: the payload, the earlier LLM's inserts, and the driver's feedback on them. No provider name or model goes into any prompt either, so an LLM never learns which model wrote what it's shown.
 
 #### Deploying the enclave.
 
@@ -750,7 +900,7 @@ Ask for up to five candidates. Tell the LLM that the existing indexes and the ca
 
 The `mechanical_results` field shows the LLM where to aim. It can see which mechanical indexes the planner used, how much each one helped for each literal, and what's still expensive in the best plan. It doesn't have to guess at those.
 
-The enclave script runs the LLM's output through index-dedupe right away. If any candidates get dropped, the driver tells the LLM which ones and why, such as "already covered by `orders_status_created_at_idx`," and asks for replacements. Do this once. After that, go ahead with whatever survived, if anything.
+The enclave script runs the LLM's output through index-dedupe right away. If any candidates get dropped, the driver tells the LLM which ones and why, such as "already covered by `orders_status_created_at_idx`," and asks for replacements. Do this once. After that, go ahead with whatever survived, if anything. The first ask and the replacement round are one unit, on one provider (Several LLM providers). A fan-out runs one branch per provider, sends the union to index-test in one interleaved call, and asks each branch for replacements for its own dropped ideas.
 
 Only ask for partial indexes whose predicates use low-cardinality columns. Tag every partial index candidate with a note: it only works if the predicate's literal is a constant in the application's SQL. A generic plan for a bind parameter can't use a partial index. That tag stays with the candidate all the way into the report.
 
@@ -778,7 +928,7 @@ Otherwise, send the LLM the index-test results for its own candidates:
 
 Then ask it to revise. A model that sees the planner ignored its partial index, or that its four-column key lost to a two-column prefix, can usually fix the problem on a second try.
 
-This is the feedback loop people want when they talk about giving an LLM database access. It doesn't need a connection. The enclave script runs `EXPLAIN` and hands the driver the redacted result. Run index-dedupe and index-test on whatever comes back. Do only one round.
+This is the feedback loop people want when they talk about giving an LLM database access. It doesn't need a connection. The enclave script runs `EXPLAIN` and hands the driver the redacted result. Run index-dedupe and index-test on whatever comes back. Do only one round. It's one unit, on one provider, which may not have written every candidate it's shown, so its prompt says an LLM already proposed them, not that it did.
 
 An LLM candidate fell short if the planner didn't use it, or if a simpler mechanical candidate did at least as well. Simpler means fewer key and `INCLUDE` columns, with ties broken by smaller estimated size. At least as well means its worst-case cost across the set of literals is no higher. The driver gets the feedback from `quaacks index-feedback --run <run ID> [--search original]`, which sends one `index_feedback` message: whether to revise, whether the round already ran, the baseline cost per literal set, and each of the LLM's llm-index-ideas candidates with its DDL redacted as in llm-index-ideas, its index-test results, its shortfall, and the simpler mechanical candidate that beat it, if any. The LLM's revisions go to `quaacks index-test` with `--round refinement`, which tags their results and records that the round ran.
 
@@ -852,9 +1002,11 @@ Give the LLM the redacted query and annotated plan from redact, plus the schema 
 
 Attach these statements to each candidate. Later steps use them to guide adversarial testing.
 
+The ask is one unit, routed like any other (Several LLM providers). A fan-out sends the union, interleaved, in one rewrite-check call, so the cap of five still holds for the step in all.
+
 ### operator-rewrites. Operator candidates.
 
-Operators can submit their own rewrites through the driver as plain SQL. They write them with the redact placeholders in place of literals, because the laptop never holds real values. For each one, ask the LLM to compare it with the redacted original query and infer the transformation and the assumptions it seems to rely on. Mark these as inferred.
+Operators can submit their own rewrites through the driver as plain SQL. They write them with the redact placeholders in place of literals, because the laptop never holds real values. For each one, ask the LLM to compare it with the redacted original query and infer the transformation and the assumptions it seems to rely on. Mark these as inferred. The inference is routed like any one-ask unit (Several LLM providers), and the rewrite's source stays the operator.
 
 Run the assumption-check constraint check on operator candidates too. But an unmet inferred assumption only adds a warning to the report. It doesn't reject the candidate, because the operator may know something the schema doesn't capture. The candidate still has to survive plan-pruning and rewrite-correctness like any other.
 
@@ -1070,6 +1222,8 @@ Give the LLM:
 - The constraint list.
 - Any atoms that vacuity-guard marked as untested. Ask the LLM to make sure its counterexamples exercise these, since rewrite-test couldn't.
 
+A rewrite's rounds are one unit, on one provider, unless a later round's ask fails and the remaining rounds start fresh on another, and `counterexample_pairing` can keep them off the provider that wrote the rewrite (Several LLM providers).
+
 Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints, except to honour a rule's `denormalized_equal`, as in rewrite-test: once the inserts have loaded, and after any deferred `UPDATE`s, the copy column's foreign keys are dropped and the copy is set on the class's rows.
 
 The enclave evaluates each value of an accepted insert in arena, once, to find its FK gaps and its deferred values (below). A value Postgres can't evaluate, such as `'abc'::integer`, refuses its insert with `bad_value`, and the round goes on without it. That's a data error (SQLSTATE class 22), a domain's CHECK or NOT NULL rejecting the value (class 23), or an expression that doesn't type-check, such as `abs('a'::text)` (class 42). Postgres's message can quote the value, so it's dropped: the refusal names only the rule. Any other error, such as a statement timeout or a dropped connection, isn't the value's fault. It fails the step, reported by rule and SQLSTATE alone.
@@ -1090,7 +1244,7 @@ Roll back the transaction.
 
 For each candidate that survived rewrite-test and counterexamples, and that plan-pruning didn't prune, run the LLM half of the index search that plan-pruning started.
 
-The LLM asks here are the rewrite's own: the burndown and the progress lines count them as rewrite-llm-index-ideas and rewrite-llm-index-refine, never as the original query's llm-index-ideas or llm-index-refine.
+The LLM asks here are the rewrite's own: the burndown and the progress lines count them as rewrite-llm-index-ideas and rewrite-llm-index-refine, never as the original query's llm-index-ideas or llm-index-refine. They route as llm-index-ideas and llm-index-refine do, under their own step names, so pinning and fan-out treat them apart (Several LLM providers).
 
 The candidate's plan came from the racetrack, so its quals contain real literals. The enclave script redacts it through redact before sending it to the driver. The placeholder rules apply to candidate plans exactly as they apply to the production plan.
 
@@ -1210,7 +1364,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 
 Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. A `rewrite_test_untested` rewrite isn't wrong either, and it's no rewrite-rules bug: the report says QUAACK never tested it and won't recommend it, and why, by the refusal's rule in words, and for `fk_cycle` by the cycle's tables. Fates, rules, and scenarios are fixed words in the code, so they're shape, and table names are schema, checked against the run's `schema_subset`.
 
-Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that vacuity-guard marked as untested, by their redacted shapes, and say which of them counterexamples exercised. Say where each rewrite came from: the rules in rewrite-rules that made it, the LLM, or the operator. Each rule's name links to its page on GitHub, `https://github.com/benchub/quaack/blob/main/docs/transforms/<rule>.md`. The driver builds that link only from a name on `Protocol::StepCounts::RULE_NAMES`, never from text the enclave sent, and escapes it; a name not on the list is shown as plain text. For a rule-made rewrite resting on a `denormalized_equal` assumption, say that it rests on something the data holds today but the schema doesn't enforce, and name the columns.
+Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that vacuity-guard marked as untested, by their redacted shapes, and say which of them counterexamples exercised. Say where each rewrite came from: the rules in rewrite-rules that made it, the LLM, or the operator. For the LLM, name the provider entry and model from the driver's provenance record (Several LLM providers), as "the LLM (groq, `model`)", or say the model wasn't recorded when the record lacks it. The rewrite's `<details>` summary says so too. For each rewrite that had counterexample rounds, say which provider or providers ran them, and whether the pairing was met, not met, or couldn't be checked. A pairing that wasn't met is a warning line in the summary, since a model graded its own work. Each rule's name links to its page on GitHub, `https://github.com/benchub/quaack/blob/main/docs/transforms/<rule>.md`. The driver builds that link only from a name on `Protocol::StepCounts::RULE_NAMES`, never from text the enclave sent, and escapes it; a name not on the list is shown as plain text. For a rule-made rewrite resting on a `denormalized_equal` assumption, say that it rests on something the data holds today but the schema doesn't enforce, and name the columns.
 
 If a test disproved a rule-made rewrite (rewrite-rules), say so first, above the ranking, as a bug in QUAACK, naming the rewrite, its rules, and the step that disproved it. It appears whether or not anything beat the original.
 
@@ -1238,8 +1392,9 @@ Write the report for a reader who hasn't read this document:
 - Give sizes in the unit that fits (kB, MB, GB).
 - Set apart every piece of SQL the report puts in a sentence or a table cell, such as an index's definition or columns and predicate, a table, column, or index name, or a condition, in monospace on a subtle background, so it doesn't read as part of the words around it. It stays HTML-escaped, and long index definitions wrap inside the page.
 - Call an index proposed only if a ranked candidate ran with it. The rest are indexes QUAACK built and measured. When nothing is ranked, none is proposed.
-- Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, by proposed, not kept, same plan as the original, wrong results, not better, ranked, and stopped for another reason. Not kept is every proposal that wasn't stored, whichever check dropped it, so it holds more than the burndown's refused on arrival, which is only llm-rewrites' and operator-rewrites' own rules. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try counts index-test's `never_used` and `hypopg_refused` drops, and the report says the planner was never asked about the second. Proposed, already existed, and planner ignored come from the burndown, over the original's search and every rewrite's, so an idea that came up in two searches counts twice, and all sources together's are the generators' index-dedupe and index-test drops plus the LLM rounds' own. Built and measured, not better, and ranked count each built index once. A built index is ranked if a ranked label ran with it. It's not better only if at least one measured label ran with it and selection excluded every one of them as `not_better`. So an index with mixed labels, one not better and one that beat the original and tied, is neither, and so is one whose label tied, fell below the top three, was dropped in result-comparison, or timed out. Those count only as built, and the report says the two columns needn't add up to the built ones. By source, built and measured, not better, and ranked come from the payload's `index_sources`: for each of QUAACK's index sources, `generator_one`, `generator_two`, and `llm`, how many of the built indexes it proposed, and of those how many were not better and how many were ranked, as all sources together counts them. A built index's sources are those of every candidate with its definition that any search holds, including the sources index-dedupe merged into a proposal when a later generator or LLM round repeated it. So an index more than one source proposed, such as an LLM idea that repeats a generator's, or one that came up in two searches from different sources, counts in each of their rows. The rows by source can then add up to more than all sources together, which stays the true count, and the report says so under the table. The generators' already existed and planner ignored stay not recorded, since the burndown counts index-dedupe's and index-test's drops for both generators together. `index_sources` carries only counts, under those three names from a fixed list in the protocol gem, never an index name, DDL, or anything else a store entry holds, and a stored source that isn't one of QUAACK's three, such as an existing index's, counts nowhere. The egress function sends a report only if `index_sources` has exactly those three sources, each with exactly those three counts, each an Integer of zero or more with no more not better or ranked than built, and the driver refuses a report that doesn't.
+- Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, with the LLM row split into one row per provider under an LLM total row that keeps the LLM's numbers, from the provenance record, by proposed, not kept, same plan as the original, wrong results, not better, ranked, and stopped for another reason. Not kept is every proposal that wasn't stored, whichever check dropped it, so it holds more than the burndown's refused on arrival, which is only llm-rewrites' and operator-rewrites' own rules. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try counts index-test's `never_used` and `hypopg_refused` drops, and the report says the planner was never asked about the second. Proposed, already existed, and planner ignored come from the burndown, over the original's search and every rewrite's, so an idea that came up in two searches counts twice, and all sources together's are the generators' index-dedupe and index-test drops plus the LLM rounds' own. Built and measured, not better, and ranked count each built index once. A built index is ranked if a ranked label ran with it. It's not better only if at least one measured label ran with it and selection excluded every one of them as `not_better`. So an index with mixed labels, one not better and one that beat the original and tied, is neither, and so is one whose label tied, fell below the top three, was dropped in result-comparison, or timed out. Those count only as built, and the report says the two columns needn't add up to the built ones. By source, built and measured, not better, and ranked come from the payload's `index_sources`: for each of QUAACK's index sources, `generator_one`, `generator_two`, and `llm`, how many of the built indexes it proposed, and of those how many were not better and how many were ranked, as all sources together counts them. A built index's sources are those of every candidate with its definition that any search holds, including the sources index-dedupe merged into a proposal when a later generator or LLM round repeated it. So an index more than one source proposed, such as an LLM idea that repeats a generator's, or one that came up in two searches from different sources, counts in each of their rows. The rows by source can then add up to more than all sources together, which stays the true count, and the report says so under the table. The generators' already existed and planner ignored stay not recorded, since the burndown counts index-dedupe's and index-test's drops for both generators together. `index_sources` carries only counts, under those three names from a fixed list in the protocol gem, never an index name, DDL, or anything else a store entry holds, and a stored source that isn't one of QUAACK's three, such as an existing index's, counts nowhere. In the indexes table, the LLM row splits by provider the same way for proposed, already existed, and planner ignored, from the provenance record's per-provider `index_outcome` counts. Built and measured, not better, and ranked stay on the LLM total row only, since `index_sources` counts by source, not by provider, so the per-provider rows say "not recorded" there, and the note under the table says so. The egress function sends a report only if `index_sources` has exactly those three sources, each with exactly those three counts, each an Integer of zero or more with no more not better or ranked than built, and the driver refuses a report that doesn't.
 - Where the payload doesn't carry a count, say "not recorded". Never show a zero for something that wasn't counted.
+- Add an "LLM providers" table: one row per entry, with its name, provider type, model, calls, and whether the run marked it down or dropped it, and why, by rule. It comes from the driver's own provenance record and counts, never from the enclave.
 
 The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network. Its only links, to the rules' pages, load nothing until the reader follows one. Its only drawings are the burndown's funnels, inline SVG the driver writes, with no external assets.
 
@@ -1283,7 +1438,7 @@ Draw each of the two tables below, index candidates for the original query and r
 
 **Work totals:**
 
-- LLM calls, by step. The driver counts them in memory, so a resumed run counts only the calls since it resumed, and the report says so. A rewrite's own index asks count as rewrite-llm-index-ideas and rewrite-llm-index-refine, apart from the original query's.
+- LLM calls, by step and by provider, as a table with a row per step and a column per provider. The driver counts them in memory, so a resumed run counts only the calls since it resumed, and the report says so. A rewrite's own index asks count as rewrite-llm-index-ideas and rewrite-llm-index-refine, apart from the original query's.
 - Hypothetical-index `EXPLAIN`s on the racetrack.
 - Real indexes built in index-build.
 - Measurement runs in baseline and candidate-runs, including literals marked unstable.
