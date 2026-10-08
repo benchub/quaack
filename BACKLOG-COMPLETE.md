@@ -7460,3 +7460,16 @@ One of 20261007-38's extensions, each its own task by the user's decision (2026-
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. `(t.a, t.b) NOT IN (SELECT s.x, s.y ...)` becomes a NOT EXISTS correlated on each pair, when it's a top-level WHERE conjunct and the catalog proves every column on both sides not null; it states those assumptions per pair and refuses a nullable column, an unqualified or expression column, a column-count mismatch, an empty row, and a row column on the nullable side of a LEFT JOIN. A reviewer's 22 real-Postgres probes found no case where the rewrite returns different rows. Enclave change, unreleased until the next batch bump.
+
+### 20261008-11. or_to_union LIKE checks: minors from 20261007-52.
+
+From the review of 20261007-52.
+1. `standard_conforming_strings` is read on the racetrack session, not production's, and nothing records production's value. Say so in DESIGN.md and the rule's page ("off for the run" reads as production's), or have inventory record production's database default and refuse on that.
+2. The nondeterministic-collation check counts dropped columns (`pg_attribute` keeps a dropped column's collation), so one dropped column refuses every LIKE arm database-wide. Add `NOT attisdropped`, with a test.
+3. The `typcollation` and `rngcollation` branches of the `NONDETERMINISTIC` query have no test. Test them or drop them.
+
+- **Depends on:** 20261007-52.
+- **Came from:** The review of 20261007-52.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-11 (commit 5ac3c90a). Review clean.

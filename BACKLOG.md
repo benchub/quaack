@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261007-52 (or_to_union: parameter LIKE patterns, and LIKE edge cases refused).
 - 20261008-2 (not_in_to_not_exists: row-valued NOT IN).
+- 20261008-11 (or_to_union: LIKE minors, collation check skips dropped columns).
 
 ## How this file works.
 
@@ -2255,17 +2256,7 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 - **Design:** Development, driver transport.
 - **Status:** todo
 
-### 20261008-11. or_to_union LIKE checks: minors from 20261007-52.
-
-From the review of 20261007-52.
-1. `standard_conforming_strings` is read on the racetrack session, not production's, and nothing records production's value. Say so in DESIGN.md and the rule's page ("off for the run" reads as production's), or have inventory record production's database default and refuse on that.
-2. The nondeterministic-collation check counts dropped columns (`pg_attribute` keeps a dropped column's collation), so one dropped column refuses every LIKE arm database-wide. Add `NOT attisdropped`, with a test.
-3. The `typcollation` and `rngcollation` branches of the `NONDETERMINISTIC` query have no test. Test them or drop them.
-
-- **Depends on:** 20261007-52.
-- **Came from:** The review of 20261007-52.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-11. or_to_union LIKE checks: minors from 20261007-52. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-12. Setup failures: minors from 20261003-22 item 3.
 
