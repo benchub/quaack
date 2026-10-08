@@ -12,7 +12,8 @@ module Quaack
                  bad_literal_sets bad_placeholder bad_placeholder_map bad_port bad_run bad_run_server_database
                  bad_run_server_host bad_run_server_port bad_search_path bad_server bad_statistics bad_store_base
                  bad_type bad_value begin_failed cleanup_failed clock_anchor_in_query clock_function_search_path
-                 clock_literal complex_check composite_type_relation concurrently connection_unusable
+                 clock_literal column_statistics_hidden complex_check composite_type_relation concurrently
+                 connection_unusable
                  counterexample_payload_unknown_search counterexample_payload_untested
                  counterexample_round_bad_inserts counterexample_round_bad_round counterexample_round_decided
                  counterexample_round_no_arena_setup counterexample_round_out_of_order
@@ -37,7 +38,7 @@ module Quaack
                  plan_unreadable prepare_failed production_connection_failed production_read_failed query_failed
                  query_has_parameters query_not_one_statement query_not_text query_too_large query_unparsable
                  query_unreadable racetrack_bad_clock_anchor racetrack_quaack_schema_foreign
-                 racetrack_setup_no_run_server restore_mismatch returning reverse_load_failed
+                 racetrack_setup_no_run_server restore_mismatch returning reverse_load_failed rotated_load_failed
                  rewrite_check_bad_rewrites rewrite_prune_no_ranking rewrite_prune_unknown_search
                  rewrite_test_no_arena_setup rewrite_test_unknown_search rollback_failed run_from_older_version
                  run_server_autovacuum_on run_server_command_bad_output run_server_command_failed

@@ -83,6 +83,7 @@ module Quaack
         @connection = connection
         @statement_timeout_ms = statement_timeout_ms
         @loads = 0
+        @self_references = {}
       end
 
       # Opens the transaction, loads rows (FixtureRows) and then inserts (raw
@@ -104,7 +105,7 @@ module Quaack
       # the transaction (NO_INDEX_SCANS), so each table is read in heap
       # order. fixture-compare compares results only, so the plan doesn't matter,
       # and an index would hand back tied rows in its own order however the
-      # fixture was loaded (see ResultComparison.compare_in_both_orders).
+      # fixture was loaded (see ResultComparison.compare_in_load_orders).
       #
       # It checks the rows and inserts before it touches the connection. If
       # the connection is already inside a transaction, it raises
@@ -262,3 +263,4 @@ require_relative "arena_runner/transaction_status"
 require_relative "arena_runner/cancel"
 require_relative "arena_runner/pipeline"
 require_relative "arena_runner/deferred"
+require_relative "arena_runner/self_references"

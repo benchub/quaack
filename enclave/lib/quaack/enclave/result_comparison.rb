@@ -19,9 +19,10 @@ module Quaack
     #     ResultComparison.compare(tx, original:, candidate:)
     #   end
     #
-    # rewrite-test calls compare_in_both_orders (result_comparison/load_orders.rb)
-    # instead, which runs compare twice, with the fixture loaded forward and
-    # then in reverse, and matches only if both runs match. That covers much
+    # rewrite-test calls compare_in_load_orders (result_comparison/load_orders.rb)
+    # instead, which runs compare three times, with the fixture loaded
+    # forward, in reverse, and rotated, and matches only if every run
+    # matches. That covers much
     # of the first gap below.
     #
     # Only the top level of the original counts. The mode, by its ORDER BY
@@ -135,7 +136,7 @@ module Quaack
     # - A nondeterministic collation outside the ordered mode, where no
     #   tiebreaker runs but a DISTINCT or GROUP BY can still pick either
     #   of 'a' and 'A'.
-    # The reverse load in compare_in_both_orders catches both when the
+    # The reverse load in compare_in_load_orders catches both when the
     # pick follows the order rows reach it in, as a small sort or a first
     # row kept does. It can't when the pick follows something else that
     # comes out the same both ways, such as a hash table's order. It turns

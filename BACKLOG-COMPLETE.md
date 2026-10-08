@@ -7717,3 +7717,32 @@ Still open from the reviews of 20260922-10:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260923-57 (commits 13575877, 59be0414, 272f3382, 6d829843) after a fix round. The second review was clean. Its findings on main's behavior went to 20261008-31 and -32, and the first review's minors are in 20261008-29.
+
+### 20260924-9. Load-order loose ends.
+
+**Needs a decision,** from the reviews of 20260924-5:
+- A third load order, such as rotating each table's run by one. It would catch a tie pick exactly in the middle of an odd-sized group, and a rare top-N heapsort pick, which both orders agree on today.
+- Self-referencing foreign keys always fail the reverse load, as `reverse_load_failed`, which discards every candidate for tree-shaped tables. Keep such tables in forward order, or reverse them level by level.
+
+- **Depends on:** 20260924-5.
+- **Came from:** Both reviews of 20260924-5.
+- **Design:** fixture-compare.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Fix self-referencing FKs (reverse them level by level, or keep such tables in forward order, whichever is sound) and add a third load order.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-9 (commit 59b1b63b). Review had no blocking findings; its minors and cost note went to 20261008-33.
+
+### 20260924-26. statistics loose ends.
+
+Still open from the build and reviews of 20260922-19:
+- pg_stats and pg_stats_ext silently hide columns the operator can't SELECT, so a role with limited privileges gets missing statistics with no error. Detect it, and refuse or record it.
+- Values and names aren't converted to UTF-8, unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
+- The pg_stats inherited-filter mutant is killed only by luck, since row order decides which duplicate wins.
+- A column type whose array delimiter isn't a comma, such as `box`, makes PgArray raise and abort statistics. List it as unsupported in v1, or skip it.
+
+- **Depends on:** 20260922-19.
+- **Came from:** The build and reviews of 20260922-19.
+- **Design:** statistics.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-26 (commit 73dbb2f2). Review had no blocking findings. Hidden table columns are refused as column_statistics_hidden. What non-owner roles still lose (pg_stats_ext, expression-index statistics, row security) went to 20261008-34.

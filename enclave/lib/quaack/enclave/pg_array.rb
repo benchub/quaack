@@ -22,9 +22,9 @@ module Quaack
     # like [0:2]={...}, whitespace around elements (which array_in accepts
     # but array_out never prints), and other malformed text. A type with
     # another delimiter parses wrong, without an error: box uses ;, so
-    # {(1,1),(0,0);(2,2),(1,1)} splits on its inner commas. A PostGIS
-    # geometry MCV list would split the same way, and then fail loudly in
-    # ColumnStatistics, whose value and frequency counts no longer match.
+    # {(1,1),(0,0);(2,2),(1,1)} splits on its inner commas. So
+    # PlannerStatistics reads each column's typdelim and skips the array
+    # statistics of any whose delimiter isn't a comma.
     #
     # The text holds real values, so no error message quotes it.
     module PgArray
