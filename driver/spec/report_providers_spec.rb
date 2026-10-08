@@ -183,8 +183,17 @@ RSpec.describe Quaack::Driver::Report do
     it "says not recorded for every provider when the record's counts don't add up to the LLM's" do
       record["rewrites_proposed"] = { "groq" => 3 }
       record["index_ideas"].delete("rewrite_1")
-      expect(rows("accountability-rewrites")["The LLM: groq"].take(2)).to eq(["not recorded"] * 2)
-      expect(rows("accountability-indexes")["The LLM: groq"].take(2)).to eq(["not recorded"] * 2)
+      rewrites = rows("accountability-rewrites")
+      expect(rewrites.keys).to include("The LLM: groq", "The LLM: opus", "The LLM: not recorded")
+      expect(rewrites.select { |name, _| name.start_with?("The LLM: ") }.values).to all(eq(["not recorded"] * 7))
+      expect(rewrites["The LLM"]).to eq(%w[5 2 1 0 1 1 0])
+      expect(rows("accountability-indexes")["The LLM: groq"]).to eq(["not recorded"] * 6)
+    end
+
+    it "has no note on the rows by provider when the tables don't split" do
+      record["providers"] = record["providers"].take(1)
+      expect(rows("accountability-indexes").keys).not_to include("The LLM: groq")
+      expect(html).not_to include(Quaack::Driver::Report::Providers::PER_PROVIDER)
     end
   end
 

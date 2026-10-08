@@ -65,21 +65,27 @@ module Quaack
         end
 
         # The LLM rewrites' rows by provider, each kept from kept, under the
-        # LLM row, whose proposals were total. A provider's proposals are
-        # not recorded unless the record's add up to total.
+        # LLM row, whose proposals were total. Every count in them is not
+        # recorded unless the record's proposals add up to total.
         def llm_rewrite_rows(kept, total)
           return [] unless split?
 
-          proposed = rewrite_proposals(total)
+          proposed = llm_record.fetch("rewrites_proposed", {})
+          added_up(provider_rewrite_rows(kept, proposed), proposed.values.sum, total)
+        end
+
+        # A row per provider that wrote one of kept or proposed some, then
+        # one for those of kept whose author the record lacks.
+        def provider_rewrite_rows(kept, proposed)
           by = kept.group_by { author(it)&.fetch("name") }
-          rows = recorded_names(proposed.keys | by.keys).map do |name|
-            ["The LLM: #{name}", *rewrite_counts(by.fetch(name, []), proposed[name])]
-          end
+          rows = recorded_names(proposed.keys | by.keys).map { llm_row(it, by.fetch(it, []), proposed[it]) }
           rows + unattributed(by[nil])
         end
 
         # The row of LLM rewrites whose author the record lacks, if any.
-        def unattributed(kept) = kept ? [["The LLM: #{Words::MISSING}", *rewrite_counts(kept, nil)]] : []
+        def unattributed(kept) = kept ? [llm_row(Words::MISSING, kept, nil)] : []
+
+        def llm_row(name, kept, proposed) = ["The LLM: #{name}", *rewrite_counts(kept, proposed)]
 
         # The LLM indexes' rows by provider: what each wrote and how many of
         # those already existed, over every search and round, when the
@@ -89,10 +95,8 @@ module Quaack
           return [] unless split?
 
           counts = index_counts
-          whole = total && counts.values.sum(&:first) == total
-          recorded_names(counts.keys).map do |name|
-            ["The LLM: #{name}", *(whole ? counts[name] : [nil, nil]), *([nil] * 4)]
-          end
+          rows = recorded_names(counts.keys).map { ["The LLM: #{it}", *counts[it], *([nil] * 4)] }
+          added_up(rows, counts.values.sum(&:first), total)
         end
 
         # Each entry in this run's record or calls: its name, provider type,
@@ -134,12 +138,10 @@ module Quaack
         # names, of those recorded, in the record's order.
         def recorded_names(names) = llm_providers.map { it["name"] } & names
 
-        # How many rewrites each provider proposed, or none if the record's
-        # counts don't add up to total.
-        def rewrite_proposals(total)
-          proposed = llm_record.fetch("rewrites_proposed", {})
-          total && proposed.values.sum == total ? proposed : {}
-        end
+        # rows by provider, whose counts add up to sum: as they are if
+        # that's total, the LLM row's, else with every count not recorded
+        # (DESIGN.md, "Several LLM providers": Provenance).
+        def added_up(rows, sum, total) = total == sum ? rows : rows.map { |name, *counts| [name, *[nil] * counts.size] }
 
         # Whether the run marked the recorded entry down or dropped it, and
         # why, or nil if it isn't recorded.
