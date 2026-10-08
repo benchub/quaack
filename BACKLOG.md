@@ -1515,6 +1515,7 @@ Minor findings from the build and review of 20260928-1:
 - **Depends on:** 20260928-1.
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
 - **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
+- **Landed (2026-10-08), items 2 and 4:** after one review with no blocking findings. When the run server is already checked, `quaack setup` (and `quaack run`, whether or not it runs setup) prints a line naming the run-server flags it ignores, never their values; a unit case covers skipping racetrack-setup. Still open: item 1, which needs an enclave rule (`run_server_unspecified` is decided on the jump server, so it goes in the batch), and item 3, which changes the teardown policy and needs the user: keep the run after a setup failure under `quaack run` (nothing expensive has run, and the operator may only need different flags), or tear it down (a permanent failure such as `volatile_function` leaves no run server or data copy behind).
 - **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
@@ -2284,4 +2285,15 @@ From the builder and review of 20261007-46.
 - **Depends on:** 20261007-46.
 - **Came from:** The builder and review of 20261007-46.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261007-53. Unused run-server flags: minors from 20261003-22.
+
+From the review of 20261003-22.
+1. No test pins that no warning prints when the flags are used: making it print even when run-server runs with flags keeps every spec green. Add one (run-server runs with `--host`, and stderr has no "Ignoring").
+2. README's example line drops the backticks around `quaack start` and shows only the setup form; under `quaack run` with setup all done, the line has no step number and no `(run-server)` suffix. Match the real lines.
+
+- **Depends on:** 20261003-22.
+- **Came from:** The review of 20261003-22.
+- **Design:** `quaack setup`.
 - **Status:** todo
