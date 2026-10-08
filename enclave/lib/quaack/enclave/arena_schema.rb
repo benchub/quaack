@@ -2,6 +2,7 @@
 
 require "json"
 require_relative "table_name"
+require_relative "arena_schema/foreign_operator"
 
 module Quaack
   module Enclave
@@ -47,9 +48,12 @@ module Quaack
       # collide (NULLS NOT DISTINCT). A partial unique index counts as
       # always unique, which is conservative. user_function is whether an
       # expression unique index calls a function outside pg_catalog, which
-      # rewrite-test won't evaluate.
+      # rewrite-test won't evaluate. foreign_operator is whether a CHECK,
+      # the table's or a domain's, uses an operator outside pg_catalog that
+      # no extension owns (FOREIGN_OPERATOR_SQL), which rewrite-test won't
+      # take as simple.
       Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
-                                :user_function) do
+                                :user_function, :foreign_operator) do
         # The names of the columns of free (Columns a row may set freely)
         # that need a distinct value per row. A unique key, or an
         # expression unique index's key columns, needs only one of its
@@ -76,7 +80,7 @@ module Quaack
         def pick(options) = options.each_with_index.min_by { |col, i| [yield(col), i] }.first.name
       end
 
-      CONSTRAINTS_SQL = <<~SQL
+      CONSTRAINTS_SQL = <<~SQL.freeze
         SELECT c.contype,
                pg_catalog.array_to_json(ARRAY(
                  SELECT a.attname FROM pg_catalog.unnest(c.conkey) WITH ORDINALITY k(n, o)
@@ -89,7 +93,7 @@ module Quaack
                  JOIN pg_catalog.pg_attribute a
                    ON a.attrelid OPERATOR(pg_catalog.=) c.confrelid AND a.attnum OPERATOR(pg_catalog.=) k.n
                  ORDER BY k.o)),
-               pg_catalog.pg_get_constraintdef(c.oid)
+               pg_catalog.pg_get_constraintdef(c.oid), #{FOREIGN_OPERATOR_SQL}
         FROM pg_catalog.pg_constraint c
         LEFT JOIN pg_catalog.pg_class pc ON pc.oid OPERATOR(pg_catalog.=) c.confrelid
         LEFT JOIN pg_catalog.pg_namespace pn ON pn.oid OPERATOR(pg_catalog.=) pc.relnamespace
@@ -118,16 +122,19 @@ module Quaack
       end
 
       def self.read_constraints(conn, table)
-        rows = conn.exec_params(CONSTRAINTS_SQL, [regclass(conn, table)]).values
-        of = rows.group_by(&:first)
+        of = conn.exec_params(CONSTRAINTS_SQL, [regclass(conn, table)]).values.group_by(&:first)
         Constraints.new(**UniqueIndexes.read(conn, regclass(conn, table), keys(of)),
-                        foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) },
-                        checks: checks(conn, table, of))
+                        foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) }, **checks(conn, table, of))
       end
 
       def self.keys(of) = (of.fetch("p", []) + of.fetch("u", [])).map { |r| JSON.parse(r[1]) }
 
-      def self.checks(conn, table, of) = of.fetch("c", []).map(&:last) + DomainChecks.read(conn, regclass(conn, table))
+      # The table's CHECKs and its columns' domains', and whether any uses a
+      # foreign operator.
+      def self.checks(conn, table, of)
+        found = of.fetch("c", []).map { |r| r.values_at(5, 6) } + DomainChecks.read(conn, regclass(conn, table))
+        { checks: found.map(&:first), foreign_operator: found.any? { |_, foreign| foreign == "t" } }
+      end
 
       def self.foreign_key(row)
         _, cols, schema, name, parent_cols = row

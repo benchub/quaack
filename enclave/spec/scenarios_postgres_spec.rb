@@ -148,6 +148,37 @@ RSpec.describe Quaack::Enclave::Scenarios do
       .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:complex_check) }
   end
 
+  # pg_get_constraintdef prints an operator bare when the search_path finds
+  # it first, whatever its schema, so the catalog says whose it is (task
+  # 20261007-41).
+  it "refuses a CHECK, a table's or a domain's, on another schema's operator that prints bare" do
+    conn.exec(<<~SQL)
+      CREATE FUNCTION fx.big(integer, integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT false $$;
+      CREATE OPERATOR public.> (LEFTARG = integer, RIGHTARG = integer, FUNCTION = fx.big);
+      SET search_path = public, pg_catalog;
+      CREATE TABLE fx.p (id integer PRIMARY KEY, lo integer CHECK (lo > 3));
+      CREATE DOMAIN fx.over AS integer CHECK (VALUE > 3);
+      CREATE TABLE fx.q (id integer PRIMARY KEY, lo fx.over);
+    SQL
+    printed = conn.exec("SELECT pg_get_constraintdef(oid) FROM pg_constraint " \
+                        "WHERE conname IN ('p_lo_check', 'over_check') ORDER BY conname").values.flatten
+    expect(printed).to eq(["CHECK ((VALUE > 3))", "CHECK ((lo > 3))"])
+    %w[p q].each do |table|
+      expect { build("SELECT id FROM fx.#{table} WHERE lo IS NULL") }
+        .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:complex_check) }
+    end
+  end
+
+  it "takes a CHECK on an extension's operator, such as citext's" do
+    conn.exec(<<~SQL)
+      CREATE EXTENSION citext SCHEMA public;
+      CREATE TABLE fx.e (id integer PRIMARY KEY, code public.citext NOT NULL CHECK (code <> ''), v text);
+    SQL
+    scenarios = build("SELECT id FROM fx.e WHERE v = 'x'")
+    expect(values(scenarios[:s1], "e", "code")).to all(satisfy { !it.empty? })
+    loads_every_scenario(scenarios, "fx.e")
+  end
+
   def loads_every_scenario(scenarios, table)
     scenarios.each_value { |rows| expect(run(rows, "SELECT count(*) FROM #{table}")).to eq([[rows.size.to_s]]) }
   end
