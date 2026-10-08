@@ -17,7 +17,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
   # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
   # doesn't have.
   not_yet_qualified = %w[
-    quaack/enclave/clock_defaults.rb
     quaack/enclave/rewrite_rules/existence_in_flip.rb
   ].freeze
 
