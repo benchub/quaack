@@ -317,6 +317,23 @@ RSpec.shared_examples "an LLM client" do
     end
   end
 
+  # A bug in the driver itself, such as in the burndown count, isn't a reply
+  # that can't be read: it surfaces as itself.
+  describe "a bug in the driver during an ask" do
+    let(:buggy) do
+      Class.new(Quaack::Driver::Burndown) do
+        def llm_call(_step, _provider = nil) = nil.planted_driver_bug
+      end.new
+    end
+
+    it "raises as itself, not as an LLM::Error" do
+      fake.reply("llm-index-ideas", "ok")
+
+      expect { fake.client(burndown: buggy).ask(step: "llm-index-ideas", messages: messages, max_tokens: 10) }
+        .to raise_error(NoMethodError, /planted_driver_bug/)
+    end
+  end
+
   describe "the settings" do
     it "take a model given over the settings'" do
       fake.reply("llm-index-ideas", "ok")
