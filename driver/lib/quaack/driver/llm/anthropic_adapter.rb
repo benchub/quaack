@@ -70,7 +70,10 @@ module Quaack
           timeout = nonstreaming_timeout(max_tokens)
           reply_text(send_message(params(system, messages, max_tokens, schema), step, count, timeout))
         rescue ::Anthropic::Errors::APIError => e
-          raise Error.new(rule_for(e), detail(e))
+          # The gem's error for a refused key can quote it, so an llm_auth
+          # doesn't keep it as the cause.
+          rule = rule_for(e)
+          raise Error.new(rule, detail(e)), cause: (e unless rule == "llm_auth")
         rescue *CREDENTIAL_ERRORS
           raise Error.new("llm_auth", UNLOADABLE), cause: nil
         rescue ::Anthropic::Errors::Error, TypeError, JSON::ParserError
@@ -166,10 +169,12 @@ module Quaack
         # An API can quote part of a refused key back, so an llm_auth
         # message is only the status. Any other message is the gem's.
         def detail(error)
-          return "the API refused the key (#{error.status})" if rule_for(error) == "llm_auth"
+          return refused(error.status) if rule_for(error) == "llm_auth"
 
           error.message
         end
+
+        def refused(status) = "the API refused the key (#{status})"
 
         def reply_text(message)
           reason = message.stop_reason

@@ -196,6 +196,33 @@ RSpec.describe "the copilot_cli adapter" do
     expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e| expect(e.rule).to eq("llm_auth") }
   end
 
+  it "keeps a login failure's message to a fixed sentence, so a token in stderr never shows" do
+    command = File.join(@dir, "fake-copilot")
+    script(command, 'warn "using token gho_SENTINELTOKEN0123456789"; warn "not logged in"; exit 1')
+    template = [command, "{prompt_file}", "{model}"]
+
+    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+      expect(e.rule).to eq("llm_auth")
+      expect(sans_sizes(e.message))
+        .to eq("llm_auth: the copilot_cli command exited with status 1 and says it isn't logged in")
+      expect(error_text(e)).not_to include("SENTINEL")
+    }
+  end
+
+  it "keeps GitHub tokens and bearer tokens out of a failure's stderr tail, but keeps the rest" do
+    command = File.join(@dir, "fake-copilot")
+    script(command, 'warn "fetch failed with ghp_SENTINELA123456789 and github_pat_SENTINELB_123456789"; ' \
+                    'warn "header Authorization: Bearer SENTINELC.abc-123"; exit 7')
+    template = [command, "{prompt_file}", "{model}"]
+
+    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+      expect(e.rule).to eq("llm_unavailable")
+      expect(sans_sizes(e.message)).to eq("llm_unavailable: copilot_cli exited with status 7: fetch failed with " \
+                                          "[token] and [token]\nheader Authorization: Bearer [token]")
+      expect(error_text(e)).not_to include("SENTINEL")
+    }
+  end
+
   it "maps a non-zero status to llm_unavailable with a short stderr tail" do
     command = File.join(@dir, "fake-copilot")
     record_cwd_script(command, '100.times { |i| warn "line " + i.to_s }; exit 7')

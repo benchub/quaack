@@ -1272,6 +1272,18 @@ RSpec.describe "quaack run" do
         expect([hosts, transport.calls]).to eq([[], []])
       end
 
+      it "prints no key the API quotes back when it refuses one" do
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => { "api_key_env" => "QUAACK_SPEC_KEY" }))
+        fake.error("operator-rewrites", status: 401, message: "Incorrect API key provided: SENTINEL-KEY")
+        status = without_anthropic_credentials("QUAACK_SPEC_KEY" => "SENTINEL-KEY") do
+          with_env(overrides) { cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out]) }
+        end
+
+        expect(status).to eq(1)
+        expect(errors).to include("quaack run failed: llm_auth: the API refused the key (401)")
+        expect(stdout.string + stderr.string).not_to include("SENTINEL")
+      end
+
       it "fails the same way for openai_compatible when the variable api_key_env names is unset" do
         block = { "provider" => "openai_compatible", "model" => "m", "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }
         write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))

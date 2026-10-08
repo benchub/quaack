@@ -287,6 +287,34 @@ RSpec.shared_examples "an LLM client" do
       expect(seen).to match([/\Allm_auth: /, /\Allm_bad_request: /, /\Allm_rate_limited: /])
       expect(seen.join).not_to include("SENTINEL-KEY")
     end
+
+    # A crash report prints the whole cause chain, so a refused key the API
+    # quotes back mustn't be in any of it.
+    it "keeps a key the API quotes back out of an llm_auth's whole cause chain" do
+      [401, 403].each do |status|
+        fake.error("llm-index-ideas", status: status, message: "Incorrect API key provided: SENTINEL-KEY")
+
+        e = ask_error
+
+        expect(e.rule).to eq("llm_auth")
+        expect(error_text(e)).to include("(#{status})")
+        expect(error_text(e)).not_to include("SENTINEL-KEY")
+      end
+    end
+
+    it "checks the whole cause chain, so a planted key in a cause would show" do
+      planted = begin
+        begin
+          raise "SENTINEL-KEY"
+        rescue StandardError
+          raise Quaack::Driver::LLM::Error.new("llm_auth", "the API refused the key (401)")
+        end
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(error_text(planted)).to include("SENTINEL-KEY")
+    end
   end
 
   describe "the settings" do
