@@ -26,6 +26,10 @@ module Quaack
       # Postgres sent one: libpq's and Postgres's messages can name the host,
       # the user, the database, or a value.
       module Production
+        # Far longer than any catalog read takes, and a step that reads
+        # production still ends when one hangs.
+        STATEMENT_TIMEOUT = "60s"
+        TIMEOUT_SQL = "SELECT pg_catalog.set_config('statement_timeout', $1, true)"
         # Postgres 17 added pg_database.datlocale.
         OLDEST_MAJOR = 17
         # DESIGN.md's inventory, in its order. The last four change plans, or how
@@ -90,12 +94,15 @@ module Quaack
 
         # Runs the block inside a read-only, repeatable read transaction on
         # connection, so every read sees one snapshot and nothing can be
-        # written, and rolls it back after. A Postgres error in the block,
-        # or in starting or ending the transaction, is
-        # production_read_failed, with its SQLSTATE.
-        def read_only(connection)
+        # written, and rolls it back after. The transaction has
+        # statement_timeout, STATEMENT_TIMEOUT unless it's given, so a read
+        # that hangs on production fails. A Postgres error in the block,
+        # or in starting or ending the transaction, a timeout's 57014
+        # included, is production_read_failed, with its SQLSTATE.
+        def read_only(connection, statement_timeout: STATEMENT_TIMEOUT)
           connection.exec("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
           begin
+            connection.exec_params(TIMEOUT_SQL, [statement_timeout])
             yield
           ensure
             connection.exec("ROLLBACK")

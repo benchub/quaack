@@ -67,7 +67,7 @@ module Quaack
           text = +""
           loop do
             status = exited(pid)
-            closed = drain(reader, text, status ? 0 : [POLL, @deadline - now].min)
+            closed = drained_to_eof?(reader, text, status ? 0 : [POLL, @deadline - now].min)
             return [text, status] if status
             return [text, wait(pid)] if closed
 
@@ -77,7 +77,7 @@ module Quaack
 
         # Adds what reader has to text, waiting up to wait seconds for the
         # first of it. Whether stdout has closed.
-        def drain(reader, text, wait)
+        def drained_to_eof?(reader, text, wait)
           while reader.wait_readable([wait, 0].max)
             chunk = reader.read_nonblock(@max_output + 1, exception: false)
             return true if chunk.nil?
