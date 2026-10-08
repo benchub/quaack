@@ -4,7 +4,6 @@ require_relative "../run_server"
 require_relative "../run_server_check"
 require_relative "../run_server_command"
 require_relative "../config"
-require_relative "../cli/refused"
 
 module Quaack
   module Enclave
@@ -16,7 +15,8 @@ module Quaack
       # and records it in the run's run_server entry (see RunServer), for
       # later steps to connect with (RunServer.connect).
       #
-      # It checks the arguments first, then that the run has an inventory
+      # It checks the arguments first (run_server_unspecified when some flag
+      # is missing and there's no run_server_command), then that the run has an inventory
       # (run_server_no_inventory), both before any connection. Then it
       # connects to the racetrack database with the operator's libpq setup
       # and runs RunServerCheck there. It checks only the racetrack: arena-setup
@@ -46,7 +46,8 @@ module Quaack
 
         # From the flags when all four are given. Otherwise from the
         # configured run_server_command, each given flag overriding its
-        # value, or usage without one.
+        # value, or run_server_unspecified without one. The rule names no
+        # flag and no value.
         def entry(store, options)
           if OPTIONS.keys.all? { options.key?(it) }
             return Enclave::RunServer.record(host: options["host"], port: options["port"],
@@ -54,7 +55,7 @@ module Quaack
           end
 
           command = Config.load.run_server_command
-          raise CLI::Refused, "usage" unless command
+          raise Enclave::RunServer::Error, "run_server_unspecified" unless command
 
           RunServerCommand.entry(command, server: store.read("server"), run: store.run_id, overrides: options)
         end
