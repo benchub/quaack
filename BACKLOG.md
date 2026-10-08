@@ -2047,14 +2047,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-24. LLM adapter errors: keep keys and driver bugs out of them. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-25. Ollama replies have no token cap.
-
-From the builder of 20261007-12. Ollama's OpenAI-compatible API ignores `max_completion_tokens` and reads only `max_tokens`, so a reply from Ollama has no limit. Sending `max_tokens` as well to hosts other than OpenAI's would cap it, but OpenAI's reasoning models reject `max_tokens`, and how other providers handle both isn't checked. Find a safe way, such as a per-provider setting, and test it.
-
-- **Depends on:** 20261007-12.
-- **Came from:** The builder of 20261007-12.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-25. Ollama replies have no token cap. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-26. Outbound statistics shape: per-column counts. Done, see BACKLOG-COMPLETE.md.
 
@@ -2297,4 +2290,13 @@ The review of 20261008-6 found these minor issues:
 - **Depends on:** 20261008-6.
 - **Came from:** The review of 20261008-6, 2026-10-08.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-19. `token_limit_param` in an `llms` entry: add the missing test.
+
+The review of 20261007-25 found that no spec covers `token_limit_param` inside an `llms` entry. That leaves two things untested: whether the value carries through, and the `llms[N].token_limit_param` error text. It works, but DESIGN.md's claim that "an `llms` entry takes it the same way" isn't pinned. Add tests like the `max_retries` ones in `driver/spec/llm_providers_spec.rb`.
+
+- **Depends on:** 20261007-25.
+- **Came from:** The review of 20261007-25, 2026-10-08.
+- **Design:** LLM providers.
 - **Status:** todo

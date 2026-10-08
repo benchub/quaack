@@ -7556,3 +7556,13 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-6 (commit bf334df0). Review had no blocking findings; its minors went to 20261008-18.
+
+### 20261007-25. Ollama replies have no token cap.
+
+From the builder of 20261007-12. Ollama's OpenAI-compatible API ignores `max_completion_tokens` and reads only `max_tokens`, so a reply from Ollama has no limit. Sending `max_tokens` as well to hosts other than OpenAI's would cap it, but OpenAI's reasoning models reject `max_tokens`, and how other providers handle both isn't checked. Find a safe way, such as a per-provider setting, and test it.
+
+- **Depends on:** 20261007-12.
+- **Came from:** The builder of 20261007-12.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261007-25 (commit ecd65fb1). Review had no blocking findings; its minor went to 20261008-19.
