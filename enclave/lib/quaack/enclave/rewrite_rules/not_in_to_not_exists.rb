@@ -3,6 +3,8 @@
 require "pg_query"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "not_in_to_not_exists/columns"
+require_relative "not_in_to_not_exists/shadows"
 
 module Quaack
   module Enclave
@@ -32,7 +34,28 @@ module Quaack
       # either side each comparison is true or false and the two agree. One
       # NULL anywhere would make a comparison unknown when the other pairs
       # match, which NOT IN drops and NOT EXISTS keeps, so every column on
-      # both sides must be not null.
+      # both sides must be not null. Postgres also refuses a row comparison
+      # unless each pair's = is an operator of a btree family, as box's
+      # isn't, so the rule asks Postgres whether it takes each pair (see
+      # Catalog#row_equality?): NOT EXISTS would give rows where NOT IN is
+      # an error.
+      #
+      # A UNION, or UNION ALL, of SELECTs becomes one NOT EXISTS per branch,
+      # ANDed in the NOT IN's place:
+      #
+      #   t.x NOT IN (SELECT s.y ... UNION SELECT r.z ...)
+      #
+      # becomes NOT EXISTS (... AND t.x = s.y) AND NOT EXISTS (... AND t.x = r.z).
+      # x is in a UNION when it's in one of its branches, and one that
+      # dedupes keeps every value it drops a copy of, so with no NULL in any
+      # branch the two agree. That needs every branch's selected columns not
+      # null, and each branch's column in a place of the same type and
+      # collation as the others': the UNION compares as its columns' common
+      # type, so a numeric branch under a float8 one would be compared as
+      # float8 by NOT IN and as numeric by NOT EXISTS. INTERSECT and EXCEPT
+      # are refused: x is in an INTERSECT when it's in every branch, which
+      # would be an OR of NOT EXISTS, and an EXCEPT's rows hang on which
+      # values the other branch has, not on x.
       #
       # It gives one rewrite per NOT IN it can rewrite, each changing only
       # that NOT IN, and each stating each tested column and the column
@@ -51,23 +74,24 @@ module Quaack
       #   where each name is a table in the outer FROM that
       #   Tree.plain_table_named accepts: so no outer join can fill it with
       #   NULLs.
-      # - The subquery is one plain SELECT (see Tree.plain_select?), not a
-      #   set operation or a VALUES list. A plain DISTINCT is dropped,
-      #   since NOT IN doesn't count rows. Its select list is only name2.y,
-      #   one such column for each column NOT IN tests, where name2 is a
-      #   table in the subquery's own FROM that Tree.plain_table_named
-      #   accepts.
+      # - The subquery is one plain SELECT (see Tree.plain_select?), or a
+      #   UNION or UNION ALL, nested any way, of such SELECTs, with no WITH,
+      #   ORDER BY, or LIMIT of its own. A VALUES list is refused. A plain
+      #   DISTINCT is dropped, since NOT IN doesn't count rows. Each SELECT's
+      #   select list is only name2.y, one such column for each column NOT
+      #   IN tests, where name2 is a table in that SELECT's own FROM that
+      #   Tree.plain_table_named accepts.
       # - The catalog proves every tested and selected column not null (see
       #   Catalog). A column whose type is a domain with NOT NULL doesn't
       #   count: Postgres lets such a column hold NULL, as when an INSERT
       #   copies a scalar subquery that found no row.
-      # - The correlation can read the outer row. If the subquery's FROM
-      #   has an item under the name of an outer table NOT IN tests, as an
-      #   ORM that never aliases a table writes, each such item gets an
-      #   alias no name in the query uses, and every column of it is
-      #   renamed. That needs every column in the subquery written
-      #   name.column, and no subquery inside it, in its FROM or anywhere
-      #   else, or the columns to rename can't all be found.
+      # - The correlation can read the outer row. If a SELECT's FROM has an
+      #   item under the name of an outer table NOT IN tests, as an ORM
+      #   that never aliases a table writes, each such item gets an alias no
+      #   name in the query uses, and every column of it is renamed. That
+      #   needs every column in that SELECT written name.column, and no
+      #   subquery inside it, in its FROM or anywhere else, or the columns
+      #   to rename can't all be found.
       #
       # What it doesn't check is that = gives true or false for two values
       # that aren't NULL. Every = Postgres ships does.
@@ -92,11 +116,19 @@ module Quaack
           tree = Deparse.copy(original)
           select = Tree.select(tree)
           link = not_in(Tree.conjuncts(select.where_clause)[index])
-          assumptions = link && assumptions(select, link)
-          return unless assumptions&.all? { catalog.met?(it) } && correlatable?(link)
+          branches = link && branches(link.subselect.select_stmt)
+          assumptions = branches && proven(select, tested(link), branches, catalog)
+          return unless assumptions
 
-          correlate!(link, Tree::Names.new(tree))
+          correlate!(select, index, link, branches, Tree::Names.new(tree))
           Rewrite.new(tree:, assumptions: assumptions.uniq)
+        end
+
+        # The rewrite's assumptions, if the catalog proves them and NOT
+        # EXISTS compares as NOT IN does, or nil.
+        def proven(select, tested, branches, catalog)
+          assumptions = assumptions(select, tested, branches)
+          assumptions if assumptions&.all? { catalog.met?(it) } && comparable?(select, tested, branches, catalog)
         end
 
         # The SubLink of a condition that is name.column NOT IN (SELECT ...),
@@ -122,45 +154,76 @@ module Quaack
           condition.bool_expr.args.first.sub_link
         end
 
-        # That each tested column and the one selected in its place are not
-        # null, pair by pair, or nil if any isn't a column of a table no
-        # outer join can fill with NULLs, or the subquery isn't one plain
-        # SELECT of as many columns as NOT IN tests.
-        def assumptions(select, link)
-          sub = link.subselect.select_stmt
-          tested = tested(link)
-          return unless Tree.plain_select?(sub) && sub.target_list.size == tested.size
+        # The SELECTs whose rows the subquery is: itself, or each branch of
+        # a UNION or UNION ALL with no WITH, ORDER BY, or LIMIT of its own,
+        # or nil for any other set operation.
+        def branches(sub)
+          return [sub] if sub.op == :SETOP_NONE
+          return unless sub.op == :SETOP_UNION && Tree.unlimited?(sub) && sub.with_clause.nil?
 
-          pairs = tested.zip(sub.target_list).flat_map { pair(select, sub, *it) }
+          left = branches(sub.larg)
+          right = branches(sub.rarg)
+          left + right if left && right
+        end
+
+        # That each tested column and the one each branch selects in its
+        # place are not null, pair by pair, or nil if any isn't a column of
+        # a table no outer join can fill with NULLs, or a branch isn't one
+        # plain SELECT of as many columns as NOT IN tests.
+        def assumptions(select, tested, branches)
+          return unless branches.all? { Tree.plain_select?(it) && it.target_list.size == tested.size }
+
+          pairs = branches.flat_map { |sub| tested.zip(sub.target_list).flat_map { pair(select, sub, *it) } }
           pairs if pairs.all?
         end
 
         # That a tested column and the target selected in its place are
         # not null, each nil if it isn't a column of a plain table.
         def pair(select, sub, column, target)
-          [not_null(select.from_clause, Tree.qualified(column)), not_null(sub.from_clause, selected(target))]
+          [not_null(Columns.outer(select, column)), not_null(Columns.inner(sub, target))]
         end
 
-        # [name, column] for a target of the subquery's select list, if it's
-        # a column written name.column. A set operation and a VALUES list
-        # have no select list of their own, so they never get here.
-        def selected(target)
-          val = target.res_target.val
-          Tree.qualified(val.column_ref) if val.node == :column_ref
+        def not_null(column)
+          schema, table, name = column
+          { "kind" => "not_null", "table" => "#{schema}.#{table}", "column" => name } if column
         end
 
-        def not_null(from, (name, column))
-          table = Tree.plain_table_named(from, name)
-          { "kind" => "not_null", "table" => "#{table.schemaname}.#{table.relname}", "column" => column } if table
+        # Whether NOT EXISTS compares as NOT IN does: the branches' columns
+        # in each place have one type and collation, Postgres takes each
+        # pair of a row, and every branch's correlation can read the outer
+        # row.
+        def comparable?(select, tested, branches, catalog)
+          Columns.same_types?(branches, catalog) && Columns.row_equalities?(select, tested, branches, catalog) &&
+            branches.all? { Shadows.correlatable?(tested, it) }
         end
 
-        # Makes the NOT IN's SubLink an EXISTS whose subquery also asks that
-        # the tested column equal the selected one.
-        def correlate!(link, names)
-          unshadow!(link, names)
-          exists!(link.subselect.select_stmt, tested(link))
+        # Makes the NOT IN NOT EXISTS of its first branch, and ANDs a NOT
+        # EXISTS of each other branch after it, each asking that the tested
+        # columns equal the ones selected in their place.
+        def correlate!(select, index, link, branches, names)
+          tested = tested(link)
+          branches.each do |sub|
+            Shadows.unshadow!(tested, sub, names)
+            exists!(sub, tested)
+          end
           link.sub_link_type = :EXISTS_SUBLINK
           link.testexpr = nil
+          split!(select, index, link, branches) if branches.size > 1
+        end
+
+        # Makes the EXISTS the first branch's, and ANDs a NOT EXISTS of each
+        # other branch after it.
+        def split!(select, index, link, branches)
+          link.subselect = PgQuery::Node.new(select_stmt: branches.first)
+          conditions = Tree.conjuncts(select.where_clause)
+          conditions.insert(index + 1, *branches.drop(1).map { not_exists(it) })
+          select.where_clause = Tree.all_of(conditions)
+        end
+
+        def not_exists(sub)
+          link = PgQuery::SubLink.new(sub_link_type: :EXISTS_SUBLINK, subselect: PgQuery::Node.new(select_stmt: sub))
+          PgQuery::Node.new(bool_expr: PgQuery::BoolExpr.new(boolop: :NOT_EXPR,
+                                                             args: [PgQuery::Node.new(sub_link: link)]))
         end
 
         # Makes sub a SELECT 1 of its rows whose selected columns each equal
@@ -175,57 +238,12 @@ module Quaack
         # The select list of SELECT 1.
         def one = Tree.exists.sub_link.subselect.select_stmt.target_list.to_a
 
-        # tested = right, for a tested ColumnRef.
+        # tested = right, for a tested ColumnRef, which is copied, since
+        # each branch's correlation has its own.
         def equals(tested, right)
-          left = PgQuery::Node.new(column_ref: tested)
+          left = PgQuery::Node.new(column_ref: PgQuery::ColumnRef.decode(PgQuery::ColumnRef.encode(tested)))
           name = [PgQuery::Node.new(string: PgQuery::String.new(sval: "="))]
           PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name:, lexpr: left, rexpr: right))
-        end
-
-        # The subquery's FROM items under the name of an outer table NOT IN
-        # tests, which would hide the outer row from the correlation.
-        def shadows(link)
-          outer = tested(link).map { Tree.qualified(it).first }
-          Tree.from_items(link.subselect.select_stmt.from_clause).select { outer.include?(it.name) }
-        end
-
-        # Whether the correlation can read the outer row: nothing in the
-        # subquery's FROM has an outer table's name, or each that has is a
-        # table that can be given another alias. That needs every column
-        # the subquery reads written name.column, and no deeper scope to
-        # hide a name.
-        def correlatable?(link)
-          shadows = shadows(link)
-          return true if shadows.empty?
-
-          shadows.none? { it.table.nil? } && columns(link).all? { Tree.qualified(it) } &&
-            [PgQuery::SubLink, PgQuery::RangeSubselect].all? { Tree.find(link.subselect.select_stmt, it).empty? }
-        end
-
-        # Gives each subquery FROM item under an outer table's name a fresh
-        # alias, and renames its columns.
-        def unshadow!(link, names)
-          shadows = shadows(link)
-          return if shadows.empty?
-
-          renames = shadows.to_h { [it.name, names.fresh(it.name)] }
-          rename!(columns(link), renames)
-          shadows.each { realias!(it.table, renames[it.name]) }
-        end
-
-        # Requalifies each column whose name renames has a new name for.
-        def rename!(columns, renames)
-          columns.each do |column|
-            fresh = renames[Tree.qualified(column).first]
-            Tree.qualify!(column, fresh) if fresh
-          end
-        end
-
-        # Every column the subquery reads.
-        def columns(link) = Tree.find(link.subselect.select_stmt, PgQuery::ColumnRef)
-
-        def realias!(range, name)
-          range.alias ? range.alias.aliasname = name : range.alias = PgQuery::Alias.new(aliasname: name)
         end
       end
     end

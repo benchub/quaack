@@ -58,7 +58,24 @@ module Quaack
             end
           end
 
+          # Whether Postgres takes = between two columns, each [schema,
+          # table, column], as one pair of a row comparison: it does only
+          # when that = is an operator of a btree family, which box's isn't.
+          # It asks Postgres, with the connection's search path, by
+          # preparing a comparison of the pair beside a pair of booleans,
+          # since a row of one column isn't held to that.
+          def row_equality?(left, right)
+            (@row_equality ||= {}).fetch([left, right]) do
+              @row_equality[[left, right]] =
+                self_contained?("SELECT FROM #{relation(left)} l, #{relation(right)} r " \
+                                "WHERE (l.#{@connection.quote_ident(left.last)}, true) = " \
+                                "(r.#{@connection.quote_ident(right.last)}, true)")
+            end
+          end
+
           private
+
+          def relation((schema, table)) = "#{@connection.quote_ident(schema)}.#{@connection.quote_ident(table)}"
 
           def default_btree_family?(schema, table, column)
             families = @connection.exec_params(BTREE_FAMILY, [schema, table, column]).values

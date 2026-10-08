@@ -504,9 +504,9 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     "the subquery has DISTINCT ON" =>
       "SELECT users.id FROM public.users WHERE users.id NOT IN " \
       "(SELECT DISTINCT ON (memberships.group_id) memberships.user_id FROM public.memberships)",
-    "the subquery is a UNION ALL" =>
+    "the subquery is an INTERSECT" =>
       "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id FROM public.memberships " \
-      "UNION ALL SELECT memberships.user_id FROM public.memberships)",
+      "INTERSECT SELECT groups.id FROM public.groups)",
     "the subquery is an EXCEPT" =>
       "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id FROM public.memberships " \
       "EXCEPT SELECT groups.id FROM public.groups)"
@@ -514,6 +514,195 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     it "doesn't fire when #{why}" do
       expect(rewritten(fires).size).to eq(1)
       expect(rewritten(sql)).to eq([])
+    end
+  end
+
+  # Ban 1 bans user 3 and has no loose_user_id; ban 2 bans user 5.
+  context "when the subquery is a UNION" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.bans (id int PRIMARY KEY, user_id int NOT NULL, loose_user_id int,
+                                  big_user_id bigint NOT NULL);
+        INSERT INTO public.bans VALUES (1, 3, NULL, 3), (2, 5, 5, 5);
+      SQL
+    end
+
+    let(:union) do
+      "SELECT users.id FROM public.users WHERE users.account_id = $1 AND users.id NOT IN " \
+        "(SELECT memberships.user_id FROM public.memberships WHERE memberships.group_id = $2 " \
+        "UNION SELECT bans.user_id FROM public.bans WHERE bans.id < $3)"
+    end
+
+    let(:union_rewrite) do
+      "SELECT users.id FROM public.users WHERE users.account_id = $1 AND NOT EXISTS (SELECT 1 " \
+        "FROM public.memberships WHERE memberships.group_id = $2 AND users.id = memberships.user_id) " \
+        "AND NOT EXISTS (SELECT 1 FROM public.bans WHERE bans.id < $3 AND users.id = bans.user_id)"
+    end
+
+    it "makes it one NOT EXISTS per branch, ANDed, each correlated as a single SELECT would be" do
+      expect(rewritten(union)).to eq([union_rewrite])
+      expect(rewritten(union.sub("UNION", "UNION ALL"))).to eq([union_rewrite])
+    end
+
+    it "returns the same rows with matches in both branches, in one, and in neither" do
+      [union, union.sub("UNION", "UNION ALL")].each do |sql|
+        rewrites = rewritten(sql)
+
+        expect(same_rows(sql, rewrites, [1, 7, 99]).map(&:first)).to eq(%w[2])
+        expect(same_rows(sql, rewrites, [1, 8, 0]).map(&:first)).to eq(%w[1 3 5])
+        expect(same_rows(sql, rewrites, [1, 99, 2]).map(&:first)).to eq(%w[1 2 5])
+        expect(same_rows(sql, rewrites, [1, 99, 0]).map(&:first)).to eq(%w[1 2 3 5])
+      end
+    end
+
+    it "states every branch's selected column not null, and each column once" do
+      sql = "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id " \
+            "FROM public.memberships UNION SELECT bans.user_id FROM public.bans " \
+            "UNION SELECT memberships.user_id FROM public.memberships WHERE memberships.group_id = 8)"
+
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "not_null", "table" => "public.users", "column" => "id" },
+          { "kind" => "not_null", "table" => "public.memberships", "column" => "user_id" },
+          { "kind" => "not_null", "table" => "public.bans", "column" => "user_id" }]]
+      )
+    end
+
+    it "takes three branches, nested either way, as a NOT EXISTS each" do
+      left = "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id " \
+             "FROM public.memberships WHERE memberships.group_id = 8 UNION ALL SELECT bans.user_id FROM public.bans " \
+             "UNION SELECT users.id FROM public.users WHERE users.account_id = 2)"
+      right = "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id " \
+              "FROM public.memberships WHERE memberships.group_id = 8 UNION ALL (SELECT bans.user_id " \
+              "FROM public.bans UNION SELECT users.id FROM public.users WHERE users.account_id = 2))"
+
+      [left, right].each do |sql|
+        expect(rewritten(sql)).to eq(
+          ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.memberships " \
+           "WHERE memberships.group_id = 8 AND users.id = memberships.user_id) AND NOT EXISTS (SELECT 1 " \
+           "FROM public.bans WHERE users.id = bans.user_id) AND NOT EXISTS (SELECT 1 FROM public.users users_1 " \
+           "WHERE users_1.account_id = 2 AND users.id = users_1.id)"]
+        )
+        expect(same_rows(sql, rewritten(sql))).to eq([["1"]])
+      end
+    end
+
+    it "gives a fresh alias to a branch's table under the outer table's name" do
+      sql = "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT users.id FROM public.users " \
+            "WHERE users.account_id = 2 UNION SELECT bans.user_id FROM public.bans)"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.users users_1 " \
+         "WHERE users_1.account_id = 2 AND users.id = users_1.id) AND NOT EXISTS (SELECT 1 FROM public.bans " \
+         "WHERE users.id = bans.user_id)"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([["1"], ["2"]])
+    end
+
+    it "drops a branch's plain DISTINCT, and takes NOT (x IN ...)" do
+      sql = "SELECT users.id FROM public.users WHERE NOT (users.id IN (SELECT DISTINCT bans.user_id " \
+            "FROM public.bans UNION SELECT memberships.user_id FROM public.memberships WHERE memberships.id = 3))"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.bans " \
+         "WHERE users.id = bans.user_id) AND NOT EXISTS (SELECT 1 FROM public.memberships " \
+         "WHERE memberships.id = 3 AND users.id = memberships.user_id)"]
+      )
+      expect(same_rows(sql, rewrites)).to eq([["1"], ["4"]])
+    end
+
+    # Each is the UNION query changed in one way that makes it unsafe or
+    # unproven.
+    {
+      "the first branch's selected column is nullable" => ["SELECT memberships.user_id",
+                                                           "SELECT memberships.loose_user_id"],
+      "the second branch's selected column is nullable" => ["SELECT bans.user_id", "SELECT bans.loose_user_id"],
+      "the branches select columns of different types" => ["SELECT bans.user_id", "SELECT bans.big_user_id"],
+      "it's an INTERSECT" => %w[UNION INTERSECT],
+      "it's an EXCEPT" => %w[UNION EXCEPT],
+      "it's an EXCEPT ALL" => ["UNION", "EXCEPT ALL"],
+      "the UNION is under an EXCEPT" => ["WHERE bans.id < $3)",
+                                         "WHERE bans.id < $3 EXCEPT SELECT groups.id FROM public.groups)"],
+      "an EXCEPT is under the UNION" => ["UNION SELECT bans.user_id FROM public.bans WHERE bans.id < $3)",
+                                         "UNION (SELECT bans.user_id FROM public.bans WHERE bans.id < $3 " \
+                                         "EXCEPT SELECT groups.id FROM public.groups))"],
+      "an INTERSECT is under the UNION" => ["UNION SELECT bans.user_id FROM public.bans WHERE bans.id < $3)",
+                                            "UNION (SELECT bans.user_id FROM public.bans WHERE bans.id < $3 " \
+                                            "INTERSECT SELECT groups.id FROM public.groups))"],
+      "the UNION has ORDER BY" => ["WHERE bans.id < $3)", "WHERE bans.id < $3 ORDER BY 1)"],
+      "the UNION has LIMIT" => ["WHERE bans.id < $3)", "WHERE bans.id < $3 LIMIT 1)"],
+      "the UNION has a WITH" => ["NOT IN (SELECT", "NOT IN (WITH w AS (SELECT 1) SELECT"],
+      "a branch has LIMIT" => ["UNION SELECT bans.user_id FROM public.bans WHERE bans.id < $3)",
+                               "UNION (SELECT bans.user_id FROM public.bans WHERE bans.id < $3 LIMIT 1))"],
+      "a branch has GROUP BY" => ["WHERE bans.id < $3)", "WHERE bans.id < $3 GROUP BY bans.user_id)"],
+      "a branch is a VALUES list" => ["SELECT bans.user_id FROM public.bans WHERE bans.id < $3)", "VALUES ($3))"],
+      "a branch selects an expression" => ["SELECT bans.user_id", "SELECT bans.user_id + 0"],
+      "a branch's table under the outer name can't be renamed" =>
+        ["SELECT bans.user_id FROM public.bans WHERE bans.id < $3)",
+         "SELECT users.id FROM public.users WHERE account_id < $3)"]
+    }.each do |why, (from, to)|
+      it "doesn't fire when #{why}" do
+        sql = union.sub(from, to)
+
+        expect(sql).not_to eq(union)
+        expect(rewritten(union).size).to eq(1)
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
+    it "doesn't fire when the branches' columns have different collations" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.labels (id int PRIMARY KEY, a text NOT NULL, b text COLLATE "C" NOT NULL);
+        INSERT INTO public.labels VALUES (1, 'a', 'b');
+      SQL
+      same = "SELECT groups.id FROM public.groups WHERE groups.kind NOT IN " \
+             "(SELECT labels.a FROM public.labels UNION ALL SELECT l.a FROM public.labels l)"
+
+      expect(rewritten(same).size).to eq(1)
+      expect(rewritten(same.sub("l.a", "l.b"))).to eq([])
+    end
+
+    {
+      "a NULL in the first branch" =>
+        ["SELECT memberships.loose_user_id FROM public.memberships UNION SELECT bans.user_id FROM public.bans",
+         "NOT EXISTS (SELECT 1 FROM public.memberships WHERE users.id = memberships.loose_user_id) AND " \
+         "NOT EXISTS (SELECT 1 FROM public.bans WHERE users.id = bans.user_id)"],
+      "a NULL in the second branch" =>
+        ["SELECT memberships.user_id FROM public.memberships WHERE memberships.group_id = 8 " \
+         "UNION ALL SELECT bans.loose_user_id FROM public.bans",
+         "NOT EXISTS (SELECT 1 FROM public.memberships WHERE memberships.group_id = 8 " \
+         "AND users.id = memberships.user_id) AND " \
+         "NOT EXISTS (SELECT 1 FROM public.bans WHERE users.id = bans.loose_user_id)"]
+    }.each do |why, (subquery, forced)|
+      it "would be wrong with #{why}: one NULL makes NOT IN give no rows" do
+        original = "SELECT users.id FROM public.users WHERE users.id NOT IN (#{subquery})"
+
+        expect(rows(original)).to eq([])
+        expect(rows("SELECT users.id FROM public.users WHERE #{forced}")).not_to be_empty
+        expect(rewritten(original)).to eq([])
+      end
+    end
+
+    it "would be wrong when the branches' types differ: the UNION compares as their common type" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.amounts (id int PRIMARY KEY, n numeric NOT NULL, f float8 NOT NULL);
+        CREATE TABLE public.prices (id int PRIMARY KEY, n numeric NOT NULL);
+        INSERT INTO public.amounts VALUES (1, 0.1, 0.5);
+        INSERT INTO public.prices VALUES (1, 0.10000000000000000001);
+      SQL
+      original = "SELECT prices.id FROM public.prices WHERE prices.n NOT IN " \
+                 "(SELECT amounts.n FROM public.amounts UNION SELECT a.f FROM public.amounts a)"
+      not_exists = "SELECT prices.id FROM public.prices WHERE " \
+                   "NOT EXISTS (SELECT 1 FROM public.amounts WHERE prices.n = amounts.n) AND " \
+                   "NOT EXISTS (SELECT 1 FROM public.amounts a WHERE prices.n = a.f)"
+
+      expect(rows(original)).to eq([])
+      expect(rows(not_exists)).to eq([["1"]])
+      expect(rewritten(original)).to eq([])
+      expect(rewritten(original.sub("a.f", "a.n")).size).to eq(1)
     end
   end
 
@@ -605,6 +794,61 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
          "AND g.account_id = g_1.account_id)"]
       )
       expect(same_rows(sql, rewrites).map(&:first)).to eq(%w[3 4])
+    end
+
+    it "doesn't fire when a subquery FROM item under the name of the row's second table isn't a table" do
+      sql = "SELECT u.id FROM public.users u, public.grants g WHERE g.id = 1 AND (u.id, g.account_id) NOT IN " \
+            "(SELECT u.user_id, u.account_id FROM public.grants u, generate_series(1, 2) g)"
+      renamable = sql.sub("generate_series(1, 2) g", "public.groups g")
+
+      expect(rewritten(renamable).size).to eq(1)
+      expect(rewritten(sql)).to eq([])
+    end
+
+    it "takes a UNION of rows, one NOT EXISTS per branch" do
+      sql = "SELECT users.id FROM public.users WHERE (users.id, users.account_id) NOT IN " \
+            "(SELECT grants.user_id, grants.account_id FROM public.grants WHERE grants.id = 1 " \
+            "UNION ALL SELECT grants.user_id, grants.account_id FROM public.grants WHERE grants.id = 3)"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).to eq(
+        ["SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM public.grants WHERE grants.id = 1 " \
+         "AND users.id = grants.user_id AND users.account_id = grants.account_id) AND NOT EXISTS (SELECT 1 " \
+         "FROM public.grants WHERE grants.id = 3 AND users.id = grants.user_id " \
+         "AND users.account_id = grants.account_id)"]
+      )
+      expect(same_rows(sql, rewrites).map(&:first)).to eq(%w[2 3 4 5])
+    end
+
+    context "with a type whose = isn't a btree operator" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE TABLE public.shapes (id int PRIMARY KEY, a box NOT NULL, b box NOT NULL);
+          INSERT INTO public.shapes VALUES (1, '((0,0),(1,1))', '((5,5),(7,7))');
+        SQL
+      end
+
+      let(:shapes) do
+        "SELECT s.id FROM public.shapes s WHERE (s.id, s.a) NOT IN (SELECT t.id, t.b FROM public.shapes t)"
+      end
+
+      it "doesn't fire on a row, where Postgres refuses the comparison and NOT EXISTS would give rows" do
+        forced = "SELECT s.id FROM public.shapes s WHERE NOT EXISTS (SELECT 1 FROM public.shapes t " \
+                 "WHERE s.id = t.id AND s.a = t.b)"
+
+        expect { rows(shapes) }.to raise_error(PG::Error, /could not determine interpretation of row comparison/)
+        expect(rows(forced)).to eq([["1"]])
+        expect(rewritten(shapes)).to eq([])
+        expect(rewritten(shapes.sub("s.a) NOT IN (SELECT t.id, t.b", "s.id) NOT IN (SELECT t.id, t.id")).size)
+          .to eq(1)
+      end
+
+      it "fires on one column, where NOT IN uses that = too" do
+        sql = "SELECT s.id FROM public.shapes s WHERE s.a NOT IN (SELECT t.b FROM public.shapes t)"
+
+        expect(same_rows(sql, rewritten(sql))).to eq([["1"]])
+      end
     end
 
     # Each is the row query changed in one way that makes it unsafe or
