@@ -7805,3 +7805,14 @@ The fix is to check the relations named in regclass literals against the origina
 - **Design:** What goes into the enclave.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-31 (commits c6ba58b6, f4f8f78d, db0d6aeb, 456556a8) after a fix round. The second review was clean. Its minors went to 20261008-39; the first round's are in 20261008-35.
+
+### 20260924-6. Narrow the fixture-compare fail-closed rule for top-N queries.
+
+Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker (json, jsonb, xml, citext, hstore, PostGIS, interval, numeric[], and composites of those) is refused, even when the sort key is unique. That refuses every candidate for common top-N queries over such tables, and those are prime rewrite targets. Options: rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie. Or add `::text` sort keys for left-out columns.
+
+- **Depends on:** 20260922-47.
+- **Came from:** Second review of 20260923-54.
+- **Design:** fixture-compare.
+- **Decided by the user (2026-10-08):** Rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-6 (commit 8c118441). Review had no blocking findings; its minors went to 20261008-40.

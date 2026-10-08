@@ -633,6 +633,62 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           .to include(match: false, rule: :value)
       end
 
+      describe "top-N over a jsonb column" do
+        let(:docs) do
+          rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'], [3, 2, '{"a": 3}'], [4, 3, '{"a": 4}'])
+        end
+
+        it "compares a top-N query whose sort key is unique, rerunning both without their LIMIT" do
+          original = "SELECT id, jb FROM items ORDER BY id LIMIT 3"
+          candidate = "SELECT id, jb FROM #{reversed} WHERE id > 0 ORDER BY id LIMIT 3"
+          sent = nil
+          verdict = runner.with_fixture(docs) do |tx|
+            sent = SentQueries.new(tx)
+            described_class.compare(sent, original:, candidate:)
+          end
+
+          expect(verdict.match?).to be(true)
+          expect(sent.unlimited.size).to eq(2)
+          expect(fields(compare(original, "SELECT id, jb FROM items ORDER BY id DESC LIMIT 3", rows: docs)))
+            .to include(match: false, rule: :value)
+        end
+
+        it "refuses a tie that straddles the LIMIT and hides a different jsonb value" do
+          original = "SELECT grp, jb FROM items ORDER BY grp LIMIT 1"
+
+          expect(fields(compare(original, original, rows: docs))).to include(match: false, rule: :unsupported_order)
+        end
+
+        it "compares a LIMIT that a tie with a different jsonb value doesn't reach" do
+          verdict = compare("SELECT grp, jb FROM items ORDER BY grp DESC LIMIT 2",
+                            "SELECT grp, jb FROM #{reversed} ORDER BY grp DESC LIMIT 2", rows: docs)
+
+          expect(verdict.match?).to be(true)
+        end
+
+        it "refuses a tie that straddles only the candidate's LIMIT" do
+          verdict = compare("SELECT grp, jb FROM items WHERE id = 1 ORDER BY grp",
+                            "SELECT grp, jb FROM items ORDER BY grp LIMIT 1", rows: docs)
+
+          expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        end
+
+        it "still catches a candidate that drops a sort key" do
+          rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1}'], [2, 1, '{"a": 2}'], [3, 2, '{"a": 3}'])
+          verdict = compare("SELECT id, grp, jb FROM items ORDER BY grp, id LIMIT 3",
+                            "SELECT id, grp, jb FROM #{forward} ORDER BY grp LIMIT 3", rows:)
+
+          expect(fields(verdict)).to include(match: false, mode: :ordered)
+          expect(fields(verdict)[:rule]).not_to eq(:unsupported_order)
+        end
+
+        it "still refuses DISTINCT over a jsonb column" do
+          sql = "SELECT DISTINCT id, jb FROM items ORDER BY id"
+
+          expect(fields(compare(sql, sql, rows: docs))).to include(match: false, rule: :unsupported_order)
+        end
+      end
+
       it "refuses a numeric array in a tie, since {1.0} and {1.00} are equal" do
         rows = rows_of(%w[id grp na], [1, 1, "{1.0}"], [2, 1, "{1.00}"])
 
