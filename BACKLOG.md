@@ -13,6 +13,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260929-22 (qualify: system_relation).
 
+- 20260929-29 (counterexample-round and rewrite-test: a foreign cancel ends the step).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -452,14 +454,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 ### 20260929-28. Arena runner cancel tests: pin the start time, and bound the wait. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-29. An operator's cancel shouldn't count as disproving a rewrite.
-
-In Counterexamples (`counterexamples.rb:89-91`) and ScenarioTests (`scenario_tests.rb`), a candidate query that fails with `statement_canceled` is recorded as a disproof, `match` false, just like a timeout. It errs on the safe side, since it can only reject a rewrite. But a cancel from someone else says nothing about the candidate: a valid rewrite is silently lost, and the report says "disproved in rewrite-test ... (rule statement_canceled)". RunDiscipline raises on a cancel that isn't its timeout. The arena side should probably do the same, and end the step with an environment error instead of recording a verdict.
-
-- **Depends on:** 20260923-37.
-- **Came from:** Review of 20260923-37, round one.
-- **Design:** rewrite-test and counterexamples.
-- **Status:** todo
+### 20260929-29. An operator's cancel shouldn't count as disproving a rewrite. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-30. Step 8 pruning doesn't test its reliance on HypoPG oid maps. Done, see BACKLOG-COMPLETE.md.
 
@@ -2377,4 +2372,16 @@ The review of 20260929-22 and -16 found these minor issues:
 - **Depends on:** 20260929-22, 20260929-16.
 - **Came from:** The review of 20260929-22 and -16, 2026-10-08.
 - **Design:** qualify, run-server.
+- **Status:** todo
+
+### 20261008-55. Foreign cancels: minors from 20260929-29.
+
+The review of 20260929-29 found these minor issues:
+
+1. **A cancel on BEGIN or ROLLBACK still counts as a disproof.** It arrives through `TransactionStatus` with `step: :transaction`, so `Cancel.foreign?` misses it. In `Counterexamples.compare` it still gives `match: false`. Treat a `statement_canceled` there the same way.
+2. **No spec reruns a step after a cancel.** Add one that reruns the step and checks that it succeeds and stores exactly one result.
+
+- **Depends on:** 20260929-29.
+- **Came from:** The review of 20260929-29, 2026-10-08.
+- **Design:** rewrite-test and counterexamples.
 - **Status:** todo
