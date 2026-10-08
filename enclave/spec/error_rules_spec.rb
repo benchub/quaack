@@ -42,7 +42,6 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "redaction/binding.rb" => "guarded's callers",
     "relation_qualifier.rb" => "a message for an Error whose rule is fixed",
     "relations.rb" => "its rule locals, and KINDS and OTHER, read below",
-    "rewrite_candidate_check.rb" => "its rule locals",
     "run_server_check.rb" => "fail!'s callers",
     "scenarios/values.rb" => "its rule local",
     "single_candidate_test.rb" => "guarded's and hypopg's callers",
@@ -144,7 +143,8 @@ RSpec.describe Quaack::Protocol::ErrorRules do
              *Quaack::Enclave::ArenaRunner::RULES.keys.map(&:to_s),
              *Quaack::Enclave::ResultComparison::RULES.keys.map(&:to_s),
              *Quaack::Enclave::InsertCheck::REFUSED_FORMS.map(&:first), *Quaack::Enclave::IndexDdlCheck::RULES,
-             *Quaack::Enclave::Relations::KINDS.values.map(&:first), Quaack::Enclave::ErrorFilter::INTERNAL_ERROR]
+             *Quaack::Enclave::Relations::KINDS.values.map(&:first), Quaack::Enclave::Relations::OTHER.first,
+             Quaack::Enclave::ErrorFilter::INTERNAL_ERROR]
 
     expect(names - built).to eq([])
   end
