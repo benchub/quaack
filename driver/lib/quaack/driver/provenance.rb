@@ -73,6 +73,15 @@ module Quaack
         end
       end
 
+      # What the report reads of the driver's own (Report::Providers):
+      # provenance's record, and each of the router's (client's) providers'
+      # calls in this run of quaack, by step.
+      def self.for_report(provenance, client)
+        by = client ? client.burndown.llm_calls_by_provider : {}
+        calls = client ? client.entries.to_h { [it["name"], by.fetch(it["name"], {})] } : {}
+        { "record" => provenance&.record || {}, "calls" => calls }
+      end
+
       def self.path(home, run_id)
         raise ArgumentError, "not a run ID" unless Runs::RUN_ID.match?(run_id)
 

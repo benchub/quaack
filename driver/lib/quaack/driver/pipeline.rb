@@ -155,7 +155,7 @@ module Quaack
 
         module_function
 
-        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           entries = generated(transport, client, run_id, entries, rewrites, progress, record)
           Pipeline.step(progress, "plan-pruning") do
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
@@ -241,7 +241,7 @@ module Quaack
       module CounterexampleStage
         module_function
 
-        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           Pipeline.step(progress, "rewrite-correctness") do
             entries = Pipeline.status(transport, run_id) unless Pipeline.checked?(entries, rewrites)
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
@@ -418,12 +418,13 @@ module Quaack
       module ReportStage
         module_function
 
-        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, **) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, provenance: nil, **) # rubocop:disable Metrics/ParameterLists
           return unless out
 
           Pipeline.step(progress, "report") do
             payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
-            Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {})
+            Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {},
+                                  llm: Provenance.for_report(provenance, client))
           end
         end
       end
@@ -531,7 +532,6 @@ module Quaack
         @rewrites = rewrites
         @setup = setup
         @provenance = Provenance.open(home, run_id) if home
-        @record = Provenance.recorder(@provenance, client)
       end
 
       def run
@@ -539,15 +539,17 @@ module Quaack
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
         Setup.run(transport: @transport, run_id: @run_id, entries:, server: @setup, progress: @progress) if setup
-        STAGES.each do |stage|
-          stage.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites,
-                    progress: @progress, record: @record)
-        end
-        MeasurementStage.run(transport: @transport, run_id: @run_id, entries:, progress: @progress)
-        ReportStage.run(transport: @transport, client: @client, run_id: @run_id, out: @out, progress: @progress)
+        [*STAGES, MeasurementStage].each { it.run(**options(entries)) }
+        ReportStage.run(**options(entries))
       end
 
       private
+
+      # What every stage runs with, each taking what it needs.
+      def options(entries)
+        { transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites, out: @out,
+          progress: @progress, record: Provenance.recorder(@provenance, @client), provenance: @provenance }
+      end
 
       # With stderr, a Progress there, which the client is given too.
       def progress(setup)

@@ -74,7 +74,8 @@ RSpec.describe "The pipeline's provenance record" do
       "rewrite-test" => [{ "type" => "rewrite_test", "passed" => true }],
       "counterexample-payload" => [{ "type" => "counterexample_payload", "original" => "SELECT SENTINEL_PAYLOAD" }],
       "counterexample-round" => [{ "type" => "counterexample_round", "match" => true, "rule" => nil,
-                                   "covered" => [], "refused" => [{ "index" => 0, "rule" => "SENTINEL_REASON" }] }]
+                                   "covered" => [], "refused" => [{ "index" => 0, "rule" => "SENTINEL_REASON" }] }],
+      "report-payload" => [report]
     }
     Class.new do
       attr_reader :calls
@@ -93,8 +94,15 @@ RSpec.describe "The pipeline's provenance record" do
 
   let(:path) { File.join(@home, ".quaack", "runs", "#{run_id}.llm.json") }
 
-  def run
-    Quaack::Driver::Pipeline.new(transport:, client: router, run_id:, home: @home).run
+  let(:report) do
+    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "original_sql" => "SELECT 1",
+      "original_measurements" => {}, "labels" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0,
+      "rewrites" => [{ "rewrite" => "rewrite_1", "sql" => "SELECT 2", "source" => "llm", "fate" => "same_plans",
+                       "covered" => [] }] }
+  end
+
+  def run(out: nil)
+    Quaack::Driver::Pipeline.new(transport:, client: router, run_id:, home: @home, out:).run
   end
 
   def script
@@ -158,6 +166,23 @@ RSpec.describe "The pipeline's provenance record" do
   it "would catch a sentinel planted where it mustn't be" do
     expect(found("x SENTINEL_DDL y", secret)).to eq(["SENTINEL_DDL"])
     expect(found(JSON.generate([["opus", names[1]]]), names + models)).to eq([names[1]])
+  end
+
+  it "builds the report from the record and this run's calls by provider" do
+    script
+    out = File.join(@home, "report.html")
+    run(out:)
+    html = File.read(out)
+
+    expect(html).to include("suggested by the LLM (#{names[1]}, <code>#{models[1]}</code>).")
+    expect(html).to include("#{names[0]} wrote the test data meant to break it in round 1, then #{names[1]} in " \
+                            "rounds 2 and 3, starting fresh after #{names[0]} was rate limited.")
+    expect(html[%r{<table id="llm-providers">.*?</table>}m])
+      .to include("<tr><th scope=\"row\">#{names[0]}</th><td>anthropic</td><td><code>#{models[0]}</code></td>" \
+                  "<td class=\"num\">4</td><td>marked down, since it was rate limited</td></tr>")
+    expect(html[%r{<table id="llm-calls">.*?</table>}m])
+      .to include("<tr><th scope=\"row\">Rewrite suggestions</th><td class=\"num\">0</td><td class=\"num\">1</td>" \
+                  "<td class=\"num\">1</td></tr>")
   end
 
   it "keeps the record from before a resume, and adds to it" do

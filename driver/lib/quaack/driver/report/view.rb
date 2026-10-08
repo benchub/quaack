@@ -12,6 +12,7 @@ require_relative "accountability"
 require_relative "plans"
 require_relative "stages"
 require_relative "funnel"
+require_relative "providers"
 
 module Quaack
   module Driver
@@ -29,6 +30,7 @@ module Quaack
         include Plans
         include Stages
         include Funnel
+        include Providers
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze
         MISSING = %(<td class="missing">#{Words::MISSING}</td>).freeze
@@ -42,10 +44,13 @@ module Quaack
         ESTIMATED_PLAN = "The plan below is the one Postgres expected, from EXPLAIN without running the query, " \
                          "which counts no blocks."
 
-        def initialize(payload, run_id, llm_calls = {})
+        # llm is the driver's own: "record", the run's provenance record,
+        # and "calls", each provider's calls by step (Providers).
+        def initialize(payload, run_id, llm_calls = {}, llm = {})
           @payload = Format.unmarked(payload)
           @run_id = Format.unmarked(run_id)
           @llm_calls = Format.unmarked(llm_calls)
+          @llm = Format.unmarked(llm)
         end
 
         attr_reader :run_id

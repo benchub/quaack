@@ -538,16 +538,16 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
     expect(t.calls.map(&:first).last(2)).to eq(%w[selection report-payload])
   end
 
-  it "puts the client's LLM call counts in the report's burndown" do
+  it "puts the client's LLM call counts in the report's burndown, by provider" do
     burndown = Quaack::Driver::Burndown.new
-    burndown.llm_call("llm-index-ideas")
-    burndown.llm_call("llm-index-ideas")
+    2.times { burndown.llm_call("llm-index-ideas", "anthropic") }
     client = Quaack::Driver::LLM::Router.one(FakeLLM.new.client(burndown:))
     t = transport(done.merge("selection" => true), "report-payload" => [report])
 
     described_class.new(transport: t, client:, run_id: "RUN", out:).run
 
-    expect(File.read(out)).to include("<li>Index suggestions for the original query: 2 calls</li>")
+    expect(File.read(out)).to include('<th scope="col" class="num">anthropic</th></tr>')
+      .and include('<tr><th scope="row">Index suggestions for the original query</th><td class="num">2</td></tr>')
   end
 
   it "fails with no_report when the enclave sends no report" do
