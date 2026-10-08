@@ -80,7 +80,7 @@ module Quaack
         def exec_params(sql, params) = Rows.new(run.call(sql, params).rows)
         def quote_ident(name) = quote.call(name)
       end
-      Rows = Struct.new(:values)
+      Rows = Data.define(:values)
 
       # statement is the runner's; quote quotes an identifier.
       def load(copies, statement, quote)

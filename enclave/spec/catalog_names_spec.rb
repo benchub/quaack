@@ -11,14 +11,11 @@ require_relative "support/catalog_names"
 RSpec.describe "catalog names in the enclave's SQL" do
   root = File.join(GEM_ROOT, "lib")
 
-  # The files whose SQL isn't qualified yet, all arena reads, for what's
-  # left of task 20261007-9. The list may only shrink: a file on it with nothing left
-  # to qualify fails, as does a file off it with something to qualify, or
-  # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
-  # doesn't have.
-  not_yet_qualified = %w[
-    quaack/enclave/rewrite_rules/existence_in_flip.rb
-  ].freeze
+  # The files whose SQL isn't qualified yet, empty since task 20261007-31.
+  # The list may only shrink: a file on it with nothing left to qualify
+  # fails, as does a file off it with something to qualify, or a file that
+  # CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form, doesn't have.
+  not_yet_qualified = [].freeze
 
   # The source scan, and every loaded constant's SQL, which finds SQL a
   # constant builds from others.
@@ -40,7 +37,7 @@ RSpec.describe "catalog names in the enclave's SQL" do
   end
 
   it "names a file the list gains that it didn't start with, and none it already had" do
-    grown = [*not_yet_qualified.drop(1), "quaack/enclave/run_server_check.rb", not_yet_qualified.first]
+    grown = [*CatalogNames::NOT_YET_QUALIFIED_AT_START.first(2), "quaack/enclave/run_server_check.rb"]
 
     expect(CatalogNames.added(grown)).to eq(["quaack/enclave/run_server_check.rb"])
   end

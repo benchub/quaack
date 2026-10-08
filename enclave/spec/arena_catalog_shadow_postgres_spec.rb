@@ -8,17 +8,10 @@ require "quaack/enclave/denormalized_fixture"
 require "quaack/enclave/scenarios"
 require_relative "support/catalog_shadow"
 
-# Task 20261007-31: the arena's catalog reads, when public's relations,
-# functions, operators, and types sit ahead of pg_catalog's on the
-# search_path, as an arena loaded from a production dump can have them (see
-# CatalogShadow). The scenarios rewrite-test builds, the counterexamples it
-# prepares, and what they load are the same as with nothing planted.
-RSpec.describe "the arena's catalog reads with catalog names shadowed" do
-  let(:conn) { racetrack_and_arena.arena.connection }
-  let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
-
-  def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
-
+# What the arena's reads find in public, beyond CatalogShadow's, when it's
+# ahead of pg_catalog on the search_path. Every name in the DDL is
+# qualified.
+module ArenaShadow
   # Comparisons that say no, for the types the arena reads compare beyond
   # CatalogShadow's: attnum against a number, and ordinalities.
   NO = [["=", "int2", "int2"], [">", "int2", "int4"], ["<=", "int8", "int2"], [">=", "int4", "int4"],
@@ -26,7 +19,8 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
   NO_NAMES = { "=" => "eq", ">" => "gt", "<=" => "le", ">=" => "ge", "!~" => "nre", "!~~" => "nlike" }.freeze
 
   # Functions that answer wrong, by name: no type, a CHECK that refuses
-  # everything, no key, no default, and nothing valid.
+  # everything, no key, no default, nothing valid, no keys, no sequence
+  # moved, and arithmetic that gives 0.
   FUNCTIONS = [
     "public.format_type(pg_catalog.oid, pg_catalog.int4) RETURNS pg_catalog.text AS $$ SELECT 'shadow' $$",
     "public.pg_get_constraintdef(pg_catalog.oid) RETURNS pg_catalog.text AS $$ SELECT 'CHECK (false)' $$",
@@ -35,35 +29,54 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
     "public.pg_get_expr(pg_catalog.pg_node_tree, pg_catalog.oid) RETURNS pg_catalog.text AS $$ SELECT NULL $$",
     "public.pg_input_is_valid(pg_catalog.text, pg_catalog.text) RETURNS pg_catalog.bool AS $$ SELECT false $$",
     "public.array_to_json(pg_catalog.anyarray) RETURNS pg_catalog.json AS $$ SELECT '[]'::pg_catalog.json $$",
-    "public.setval(pg_catalog.regclass, pg_catalog.int8) RETURNS pg_catalog.int8 AS $$ SELECT 0::pg_catalog.int8 $$"
+    "public.setval(pg_catalog.regclass, pg_catalog.int8) RETURNS pg_catalog.int8 AS $$ SELECT 0::pg_catalog.int8 $$",
+    "public.quaack_zero(pg_catalog.int4, pg_catalog.int4) RETURNS pg_catalog.int4 AS $$ SELECT 0 $$"
   ].freeze
+
+  STATEMENTS = [
+    *NO.flat_map do |op, left, right|
+      fn = "public.quaack_no_#{NO_NAMES.fetch(op)}_#{left}_#{right}"
+      ["CREATE FUNCTION #{fn}(pg_catalog.#{left}, pg_catalog.#{right}) RETURNS pg_catalog.bool " \
+       "LANGUAGE sql AS $$ SELECT false $$",
+       "CREATE OPERATOR public.#{op} (LEFTARG = pg_catalog.#{left}, RIGHTARG = pg_catalog.#{right}, FUNCTION = #{fn})"]
+    end,
+    *FUNCTIONS.map { "CREATE FUNCTION #{it.sub(" AS ", " LANGUAGE sql AS ")}" },
+    *%w[+ -].map do |op|
+      "CREATE OPERATOR public.#{op} (LEFTARG = pg_catalog.int4, RIGHTARG = pg_catalog.int4, " \
+        "FUNCTION = public.quaack_zero)"
+    end,
+    "CREATE DOMAIN public.regclass AS pg_catalog.regclass CHECK (false)"
+  ].freeze
+
+  COUNTS = "SELECT (SELECT pg_catalog.count(*) FROM fx.orders), (SELECT pg_catalog.count(*) FROM fx.customers)"
 
   # What a read gave, with pg_catalog's names bare: with public's ahead of
   # them, pg_catalog's own deparsers (format_type, pg_get_expr, and the
   # like) print the names they'd otherwise leave bare with their schema,
   # so they still mean the same, and the reads take them as they are.
-  def bare(found)
-    found.inspect.gsub(/0x\h+/, "").gsub(/OPERATOR\(pg_catalog\.(\S+?)\)/, '\1').gsub("pg_catalog.", "").gsub("#<data", "\n#<data")
+  def self.bare(found)
+    found.inspect.gsub(/0x\h+/, "").gsub(/OPERATOR\(pg_catalog\.(\S+?)\)/, '\1').gsub("pg_catalog.", "")
+         .gsub("#<data", "\n#<data")
   end
+end
+
+# Task 20261007-31: the arena's catalog reads, when public's relations,
+# functions, operators, and types sit ahead of pg_catalog's on the
+# search_path, as an arena loaded from a production dump can have them (see
+# CatalogShadow and ArenaShadow). The scenarios rewrite-test builds, the
+# counterexamples it prepares, and what they load are the same as with
+# nothing planted.
+RSpec.describe "the arena's catalog reads with catalog names shadowed" do
+  let(:conn) { racetrack_and_arena.arena.connection }
+  let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
+
+  def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
+
+  def bare(found) = ArenaShadow.bare(found)
 
   def plant
     CatalogShadow.plant(conn, :operators, :count, :to_regclass, :text)
-    NO.each do |op, left, right|
-      fn = "public.quaack_no_#{NO_NAMES.fetch(op)}_#{left}_#{right}"
-      conn.exec("CREATE FUNCTION #{fn}(pg_catalog.#{left}, pg_catalog.#{right}) RETURNS pg_catalog.bool " \
-                "LANGUAGE sql AS $$ SELECT false $$")
-      conn.exec("CREATE OPERATOR public.#{op} (LEFTARG = pg_catalog.#{left}, RIGHTARG = pg_catalog.#{right}, " \
-                "FUNCTION = #{fn})")
-    end
-    FUNCTIONS.each { conn.exec("CREATE FUNCTION #{it.sub(" AS ", " LANGUAGE sql AS ")}") }
-    # Arithmetic that gives 0, for the steps either side of a number.
-    conn.exec("CREATE FUNCTION public.quaack_zero(pg_catalog.int4, pg_catalog.int4) RETURNS pg_catalog.int4 " \
-              "LANGUAGE sql AS $$ SELECT 0 $$")
-    %w[+ -].each do |op|
-      conn.exec("CREATE OPERATOR public.#{op} (LEFTARG = pg_catalog.int4, RIGHTARG = pg_catalog.int4, " \
-                "FUNCTION = public.quaack_zero)")
-    end
-    conn.exec("CREATE DOMAIN public.regclass AS pg_catalog.regclass CHECK (false)")
+    ArenaShadow::STATEMENTS.each { conn.exec(it) }
     conn.exec("SET search_path = public, pg_catalog")
   end
 
@@ -105,17 +118,19 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       expect(bare(schema)).to eq(bare(baseline))
     end
 
-    COUNTS = "SELECT (SELECT pg_catalog.count(*) FROM fx.orders), (SELECT pg_catalog.count(*) FROM fx.customers)"
-
     it "builds the same scenarios, and each loads as it did" do
       baseline = scenarios
       expect(baseline.values.flatten.map(&:table).uniq).to contain_exactly(tn("orders"), tn("customers"))
-      loaded = baseline.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query(COUNTS).rows } }
+      loaded = load(baseline)
       plant
 
       expect(bare(scenarios)).to eq(bare(baseline))
-      expect(scenarios.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query(COUNTS).rows } })
-        .to eq(loaded)
+      expect(load(scenarios)).to eq(loaded)
+    end
+
+    # Each scenario's row counts, once loaded.
+    def load(scenarios)
+      scenarios.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query(ArenaShadow::COUNTS).rows } }
     end
   end
 

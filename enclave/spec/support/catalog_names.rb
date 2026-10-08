@@ -15,9 +15,10 @@ require "pg_query"
 # interpolated, heredocs included, that starts with an upper-case SQL
 # keyword (SQL_START). An interpolation of a constant that the same file
 # assigns a plain string is inlined, and one on FORMAT_TYPE_HOLES is a
-# qualified type name. Any other interpolation stands for an identifier, a SELECT, a number, a string literal, nothing, or an
-# assignment, whichever first lets the whole string parse. A string that
-# parses with none must be on SKIP, which says why.
+# qualified type name. Any other interpolation stands for an identifier, a
+# SELECT, a number, a string literal, nothing, or an assignment, whichever
+# first lets the whole string parse. Adjacent literals are one string. A
+# string that parses with none must be on SKIP, which says why.
 #
 # loaded reads every String constant under a loaded namespace that starts
 # like SQL (Loaded), so it finds SQL a constant builds from others, such as

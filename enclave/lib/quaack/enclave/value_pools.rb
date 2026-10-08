@@ -54,7 +54,6 @@ module Quaack
 
       # One unit, by type category (pg_type.typcategory).
       STEPS = { "N" => ["1"], "D" => ["1", "interval '1 second'", "interval '1 day'"] }.freeze
-      STEP_OPERATORS = ["OPERATOR(pg_catalog.+)", "OPERATOR(pg_catalog.-)"].freeze
 
       module_function
 
@@ -140,15 +139,17 @@ module Quaack
 
       def candidates(conn, node, col)
         literals = Sides.literals(conn, node, col)
-        category = category(conn, col)
+        category = Category.of(conn, col)
         near = literals.flat_map { |v| steps(conn, v, col, category) }
         literals + near + variants(node, literals, category) + (col.nullable ? [nil] : []) + boundaries(col.type)
       end
 
-      CATEGORY_SQL = "SELECT t.typcategory FROM pg_catalog.pg_type t WHERE t.oid OPERATOR(pg_catalog.=) $1"
-
       # The column's type's category, such as N for a number or S for text.
-      def category(conn, col) = conn.exec_params(CATEGORY_SQL, [col.oid]).getvalue(0, 0)
+      module Category
+        SQL = "SELECT t.typcategory FROM pg_catalog.pg_type t WHERE t.oid OPERATOR(pg_catalog.=) $1"
+
+        def self.of(conn, col) = conn.exec_params(SQL, [col.oid]).getvalue(0, 0)
+      end
 
       # Case variants for text, and a LIKE pattern's matching and
       # non-matching values.
@@ -160,7 +161,7 @@ module Quaack
 
       def steps(conn, value, col, category)
         STEPS.fetch(category, []).flat_map do |step|
-          STEP_OPERATORS.filter_map do |op|
+          %w[OPERATOR(pg_catalog.+) OPERATOR(pg_catalog.-)].filter_map do |op|
             sql = "SELECT (CAST($1 AS #{col.type}) #{op} #{step})::#{col.type}::pg_catalog.text"
             conn.exec_params(sql, [value]).getvalue(0, 0)
           rescue PG::Error

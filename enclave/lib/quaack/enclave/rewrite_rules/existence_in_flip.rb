@@ -169,12 +169,12 @@ module Quaack
           exists
         end
 
-        # left = right, with the operator IN would use.
+        # left = right, with the operator IN would use: the bare =, which
+        # the search_path resolves as it does the query's own, so it isn't
+        # qualified (task 20261007-31).
         def equals(left, right)
-          condition = Tree.where_of("SELECT WHERE 1 = 1")
-          condition.a_expr.lexpr = left
-          condition.a_expr.rexpr = right
-          condition
+          name = [PgQuery::Node.new(string: PgQuery::String.new(sval: "="))]
+          PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name:, lexpr: left, rexpr: right))
         end
       end
     end

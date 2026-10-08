@@ -36,7 +36,7 @@ module Quaack
       TIME_CASTS = { SVFOP_CURRENT_TIME: "pg_catalog.timetz", SVFOP_CURRENT_TIME_N: "pg_catalog.timetz" }.freeze
       TEXT_TYPES = %w[text varchar bpchar].freeze
 
-      SYSTEM_SCHEMAS = <<~SQL.freeze
+      SYSTEM_SCHEMAS = <<~SQL
         n.nspname OPERATOR(pg_catalog.<>) ALL ('{pg_catalog,information_schema}'::pg_catalog.name[])
           AND n.nspname OPERATOR(pg_catalog.!~~) 'pg\\_%'
       SQL
