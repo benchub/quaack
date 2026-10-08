@@ -231,8 +231,11 @@ RSpec.describe Quaack::Driver::Report do
                                  "the step went on without it.")])
     end
 
-    it "isn't there when no branch was dropped, or the record's list isn't well formed" do
+    it "isn't there when no branch was dropped" do
       expect(dropped).to be_nil
+    end
+
+    it "isn't there when the record's list isn't well formed" do
       record["failed_branches"] = [{ "step" => "llm-rewrites", "entry" => "gpt", "rule" => "llm_auth",
                                      "reason" => "<b>SELECT 1</b>" }]
       expect(dropped).to be_nil
