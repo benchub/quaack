@@ -19,6 +19,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-3 (intake: orphan sweep, plan_statement_mismatch; qualify: plan_table_mismatch).
 - 20260924-29 (run-server: tablespace and preload checks; StoreFormat 5).
 - 20261008-31 (rewrite candidates: reg literals, name-lookup functions, and reg-typed literals refused).
+- 20260924-6 (fixture-compare: top-N with left-out columns reruns without LIMIT).
 
 ## How this file works.
 
@@ -272,15 +273,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-6. Narrow the fixture-compare fail-closed rule for top-N queries.
-
-Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker (json, jsonb, xml, citext, hstore, PostGIS, interval, numeric[], and composites of those) is refused, even when the sort key is unique. That refuses every candidate for common top-N queries over such tables, and those are prime rewrite targets. Options: rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie. Or add `::text` sort keys for left-out columns.
-
-- **Depends on:** 20260922-47.
-- **Came from:** Second review of 20260923-54.
-- **Design:** fixture-compare.
-- **Decided by the user (2026-10-08):** Rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie.
-- **Status:** todo
+### 20260924-6. Narrow the fixture-compare fail-closed rule for top-N queries. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2386,4 +2379,18 @@ The second review of 20261008-31 found these:
 - **Depends on:** 20261008-31.
 - **Came from:** The second review of 20261008-31, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6.
+
+The review of 20260924-6 found these test gaps. In each case the code behaves correctly today.
+
+1. **Nonzero constant OFFSET.** No test covers one, such as `OFFSET 1 LIMIT 1` with a tie at the window's edge. A mutation of the window's start would likely survive.
+2. **Non-constant OFFSET.** No test covers its refusal (`shape.offset.nil?`).
+3. **LIMIT inside a subquery or CTE.** No test covers it.
+4. **ORDER BY an expression.** No test covers a tie on an expression sort key that straddles the window.
+
+- **Depends on:** 20260924-6.
+- **Came from:** The review of 20260924-6, 2026-10-08.
+- **Design:** fixture-compare.
 - **Status:** todo
