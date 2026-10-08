@@ -7773,3 +7773,18 @@ Still open from the reviews of 20260922-13:
 - **Decided by the user (2026-10-08):** Intake sweeps old orphans on its own: each `quaacks start` deletes run directories older than about a day that never finished intake. Intake also refuses a plan whose statement type differs from the query's, or whose tables differ from the query's in either direction.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-3 (commit 0996366c). Review had no blocking findings. The table check runs in qualify, since intake can't see the catalog. The RLS minor went to 20261008-37.
+
+### 20260924-29. Run server check loose ends.
+
+Still open from the build and reviews of 20260922-25:
+- Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked. Record production's tablespace spcoptions in inventory, then compare them.
+- `shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.
+- PGTZ and PGDATESTYLE in the operator's environment change both sessions' TimeZone and DateStyle, so the check compares session values, not server values.
+- The debug_parallel_query test goes through the recorded-value path, not the boot_val path its name suggests.
+
+- **Depends on:** 20260922-25.
+- **Came from:** The build and reviews of 20260922-25.
+- **Design:** inventory and run-server.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-29 (commits c69dbddd, 48beeaaa, d4691891, b4bce20e) after a fix round that bumped StoreFormat to 5. The second review was clean. Minors went to 20261008-38.

@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-26 (statistics: column_statistics_hidden, UTF-8, non-comma array delimiters skipped).
 - 20260924-28 (literals: cast placeholders get statistics values; statistics records column_types).
 - 20260924-3 (intake: orphan sweep, plan_statement_mismatch; qualify: plan_table_mismatch).
+- 20260924-29 (run-server: tablespace and preload checks; StoreFormat 5).
 
 ## How this file works.
 
@@ -339,19 +340,7 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 
 ### 20260924-28. literals loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-29. Run server check loose ends.
-
-Still open from the build and reviews of 20260922-25:
-- Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked. Record production's tablespace spcoptions in inventory, then compare them.
-- `shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.
-- PGTZ and PGDATESTYLE in the operator's environment change both sessions' TimeZone and DateStyle, so the check compares session values, not server values.
-- The debug_parallel_query test goes through the recorded-value path, not the boot_val path its name suggests.
-
-- **Depends on:** 20260922-25.
-- **Came from:** The build and reviews of 20260922-25.
-- **Design:** inventory and run-server.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-29. Run server check loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-30. Include extensions in the 3b schema dump. Done, see BACKLOG-COMPLETE.md.
 
