@@ -102,6 +102,13 @@ RSpec.describe Quaack::Driver::Setup do
     expect(io.string).not_to include("Ignoring")
   end
 
+  it "doesn't warn when run-server runs with the run-server flags it's given" do
+    run(server: { "host" => "rs-1" })
+
+    expect(transport.calls.to_h["run-server"][:args]).to eq(run: "RUN", "host" => "rs-1")
+    expect(io.string).not_to include("Ignoring")
+  end
+
   it "says it's done only when the store holds every step's output" do
     expect(described_class.done?(outputs.to_h { [it, true] })).to be(true)
     outputs.each do |missing|

@@ -651,6 +651,7 @@ RSpec.describe "quaack run" do
                         "--racetrack-db", "rt", "--arena-db", "ar"])
 
       expect([status, errors]).to eq([0, torn])
+      expect(stderr.string).not_to include("Ignoring")
       expect(transport.calls.map(&:first).take(12)).to eq(%w[version status] + setup.drop(1))
       expect(transport.calls.map(&:first)[12]).to eq("index-feedback")
       expect(transport.calls.to_h["run-server"][:args])
