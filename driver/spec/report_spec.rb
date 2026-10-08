@@ -1569,8 +1569,9 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says not recorded in the went-on cell of a stage that counted what came in but not what went on" do
       burndown["stages"]["index-test"] = { "original" => rec(3, nil, dropped: { "never_used" => 1 }).except("out") }
-      expect(index_table).to include(row("Asking the planner whether it would use each one", 3, "none",
-                                         "never used by the planner: 1", 0, "not recorded", "none"))
+      expect(index_table).to include('<tr><th scope="row">Asking the planner whether it would use each one</th>' \
+                                     '<td class="num">3</td><td>none</td><td>never used by the planner: 1</td>' \
+                                     '<td class="num">0</td><td class="missing">not recorded</td><td>none</td></tr>')
     end
 
     it "shows the rewrite stages in words, in order, with their other counts" do
