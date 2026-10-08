@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260923-21 (index-from-query: join reduction, pattern keys, alias lists).
 - 20260923-30 (vacuity-guard: NATURAL JOIN marker atom, protocol rule natural_join_unreplaceable).
 - 20260924-8 (burndown: once-per-search refusals, proposals check, unrenderable counted on its own).
+- 20260923-36 (index-dedupe: WITH and NULLS NOT DISTINCT existing indexes cover, boolean folding).
 
 ## How this file works.
 
@@ -231,19 +232,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260923-35. Volatility check loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-36. index-dedupe loose ends.
-
-Still open from the reviews of 20260922-32 and 20260923-31:
-- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for `ON ONLY` indexes on a partitioned parent, for any `WITH (...)` index, and for `NULLS NOT DISTINCT` unique indexes. A candidate identical to one is tested as new, and negative-result won't report it as a duplicate.
-- `IndexSql.normalize_predicate` should re-parse its output. `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`.
-- The doc comment should say array bounds on a cast (`status::text[12345]`) aren't checked, like integer typmods.
-- Dead code: `left = unwrap(node.lexpr)` in `column_comparison?`, and the unreachable `A_Const` check in `plain_type?`.
-
-- **Depends on:** 20260923-31.
-- **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
-- **Design:** index-dedupe.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260923-36. index-dedupe loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-37. Arena runner loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2262,6 +2251,7 @@ The review of 20260923-24 found these minor issues:
 - **Depends on:** 20260923-24.
 - **Came from:** The review of 20260923-24, 2026-10-08.
 - **Design:** index-from-plan.
+- **Item 3 done:** 20260923-36 added `BooleanFold`, so an existing `WHERE (deleted = true)` now covers `WHERE deleted`. Items 1 and 2 are still open.
 - **Status:** todo
 
 ### 20261008-24. index-from-query: incremental sort, derived-table reduction, and whole-row reads.
@@ -2317,4 +2307,17 @@ The review of 20260924-8 found these minor issues:
 - **Depends on:** 20260924-8.
 - **Came from:** The review of 20260924-8, 2026-10-08.
 - **Design:** burndown.
+- **Status:** todo
+
+### 20261008-28. Boolean folding in index-dedupe: minors from 20260923-36.
+
+The review of 20260923-36 found these minor issues:
+
+1. **`BooleanFold` folds only once, so it isn't idempotent.** `(f = true) = true` becomes `f = true`, and only a second normalization, after an `IndexStore` round trip, takes it to `f`. Fold until nothing changes.
+2. **A double NOT isn't collapsed.** `NOT (f = false)` folds to `NOT NOT f`, not to `f`. Postgres prints an existing index as `WHERE (NOT (f = false))`, and the planner uses it for `WHERE f`, so a matching candidate is tested as new. Collapse double NOT.
+3. **One guard has no test.** The `expr.name.size == 1` guard in `BooleanFold.operator` can be replaced with `true` and every test stays green. Either drop it or add a test with `OPERATOR(pg_catalog.=)`.
+
+- **Depends on:** 20260923-36.
+- **Came from:** The review of 20260923-36, 2026-10-08.
+- **Design:** index-dedupe.
 - **Status:** todo

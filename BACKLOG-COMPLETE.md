@@ -7672,3 +7672,18 @@ Still open from the reviews of 20260922-43:
 - **Decided by the user (2026-10-05):** Build all three.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-8 (commit d5f08f76). Review had no blocking findings; its minors went to 20261008-27.
+
+### 20260923-36. index-dedupe loose ends.
+
+Still open from the reviews of 20260922-32 and 20260923-31:
+- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for `ON ONLY` indexes on a partitioned parent, for any `WITH (...)` index, and for `NULLS NOT DISTINCT` unique indexes. A candidate identical to one is tested as new, and negative-result won't report it as a duplicate.
+- `IndexSql.normalize_predicate` should re-parse its output. `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`.
+- The doc comment should say array bounds on a cast (`status::text[12345]`) aren't checked, like integer typmods.
+- Dead code: `left = unwrap(node.lexpr)` in `column_comparison?`, and the unreachable `A_Const` check in `plain_type?`.
+
+- **Depends on:** 20260923-31.
+- **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
+- **Design:** index-dedupe.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260923-36 (commit e79c7628). Review had no blocking findings; its minors went to 20261008-28. normalize_predicate's re-parse was already fixed by 20260923-55, and ON ONLY is unreachable in v1. Also covers 20261008-23 item 3 (boolean folding).
