@@ -6486,3 +6486,16 @@ The 20260930-9 builder listed catalog relations and functions the enclave still 
 Forms that can't take a qualified operator were restructured (`IN`, `LIKE`, `IS NOT DISTINCT FROM`, row `=`, simple CASE). The review checked each one against the original on real Postgres, NULLs included. HypoPG's schema is read from `pg_extension`.
 
 `enclave/spec/catalog_names_spec.rb` scans the enclave's SQL for any unqualified name. It allows only files on a frozen list of 29 for 20261007-9, and the list may only shrink. Planted-shadow tests cover every read it fixed. All three gems went to 0.1.21, with the `rake full` stamp. It passed its second review after one fix round, which pinned the list so it can't grow. Stage 2 is 20261007-9.
+
+### 20261003-13. `quaack deploy` diagnosis: minor findings, round three.
+
+Minor findings from the review of 20261003-9:
+
+- **The ruby half of the `PLAIN_PATH` filter is untested** (`deploy_diagnosis.rb:126`, `other_gem`). Checking only the gem path keeps all specs green. Add a test with ESC in the ruby path, and expect the general sentence.
+- **The advice can leave quaacks uninstalled** (`deploy_diagnosis.rb:105-107`). If the first `ruby` on PATH is 3.4 but the first `gem` belongs to an older Ruby, putting 3.4's bin first doesn't install quaacks for 3.4. Add "then run `quaack deploy` again". The older `other_ruby` message has the same gap.
+
+- **Depends on:** 20261003-9.
+- **Came from:** The review of 20261003-9, 2026-10-03.
+- **Design:** Deploy.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. The ruby half of the plain-path check is tested, and both PATH messages now end by saying to run `quaack deploy` again. The builder's check had three timing or docker-race failures on a loaded machine (deploy_spec.rb:141 and :271, test_postgres_spec.rb:596), and each passed when rerun alone.

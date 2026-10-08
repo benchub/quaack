@@ -1542,17 +1542,7 @@ Minor findings from the review of 20261003-8:
 - **Design:** none (development tooling).
 - **Status:** todo
 
-### 20261003-13. `quaack deploy` diagnosis: minor findings, round three.
-
-Minor findings from the review of 20261003-9:
-
-- **The ruby half of the `PLAIN_PATH` filter is untested** (`deploy_diagnosis.rb:126`, `other_gem`). Checking only the gem path keeps all specs green. Add a test with ESC in the ruby path, and expect the general sentence.
-- **The advice can leave quaacks uninstalled** (`deploy_diagnosis.rb:105-107`). If the first `ruby` on PATH is 3.4 but the first `gem` belongs to an older Ruby, putting 3.4's bin first doesn't install quaacks for 3.4. Add "then run `quaack deploy` again". The older `other_ruby` message has the same gap.
-
-- **Depends on:** 20261003-9.
-- **Came from:** The review of 20261003-9, 2026-10-03.
-- **Design:** Deploy.
-- **Status:** todo
+### 20261003-13. `quaack deploy` diagnosis: minor findings, round three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-14. `cte_hoist_dedupe`: build-time loose ends.
 
@@ -2299,4 +2289,13 @@ From the builder of 20260929-1.
 - **Depends on:** 20260929-1.
 - **Came from:** The builder of 20260929-1.
 - **Design:** Where QUAACK runs, LLM providers.
+- **Status:** todo
+
+### 20261007-19. Deploy diagnosis: sentence order in the not-installed message.
+
+From the review of 20261003-13. In the `not_installed` message (`driver/lib/quaack/driver/deploy_diagnosis.rb`), "Then run `quaack deploy` again." now comes before "The quaacks on PATH there, <path>, is another one, ...". Move the other-quaacks sentence before the advice, so the message ends with what to do.
+
+- **Depends on:** 20261003-13.
+- **Came from:** The review of 20261003-13.
+- **Design:** Deploy.
 - **Status:** todo
