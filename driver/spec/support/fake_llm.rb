@@ -73,6 +73,14 @@ class FakeLLM
     self
   end
 
+  # Queues one failed attempt for step whose body is `body` as it is: a
+  # Hash goes out as JSON, text as it is. A gateway or proxy in front of the
+  # API can send any body, such as one that echoes the key.
+  def error_body(step, status:, body:, headers: {})
+    @scripts[step] << [status, { "retry-after-ms" => "1", **headers }, body]
+    self
+  end
+
   # Queues one attempt for step that answers 200 with `body`, text sent as
   # it is, such as a body that isn't a message.
   def raw(step, body)
@@ -86,6 +94,10 @@ class FakeLLM
     @scripts[step] << :drop
     self
   end
+
+  # The settings of the anthropic provider, with block's keys, such as a
+  # base_url.
+  def self.settings(block = {}) = Quaack::Driver::LLM.settings(block, env: {})
 
   # A real LLM::Client whose every attempt comes here.
   def client(burndown:, model: Quaack::Driver::LLM::DEFAULT_MODEL, api_key: "fake-key", **)

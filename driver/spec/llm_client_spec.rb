@@ -5,6 +5,7 @@ require "quaack/driver/burndown"
 require "quaack/driver/llm"
 require_relative "support/anthropic_credentials"
 require_relative "support/fake_llm"
+require_relative "support/anthropic_error_examples"
 require_relative "support/llm_client_examples"
 
 # The exact text of the errors both groups below expect.
@@ -27,6 +28,10 @@ end
 # shares is in support/llm_client_examples.rb.
 RSpec.describe Quaack::Driver::LLM::Client do
   it_behaves_like "an LLM client" do
+    let(:fake) { FakeLLM.new }
+  end
+
+  it_behaves_like "an Anthropic API's error detail" do
     let(:fake) { FakeLLM.new }
   end
 

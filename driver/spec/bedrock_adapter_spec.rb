@@ -4,6 +4,7 @@ require "quaack/driver/burndown"
 require "quaack/driver/llm"
 require_relative "support/aws_credentials"
 require_relative "support/fake_bedrock"
+require_relative "support/anthropic_error_examples"
 require_relative "support/llm_client_examples"
 
 # The bedrock adapter behind LLM::Client: Anthropic models on AWS Bedrock,
@@ -19,6 +20,10 @@ RSpec.describe "the bedrock adapter" do
   around { |example| without_aws_credentials { |dir| (@aws_dir = dir) && example.run } }
 
   it_behaves_like "an LLM client" do
+    let(:fake) { FakeBedrock.new }
+  end
+
+  it_behaves_like "an Anthropic API's error detail" do
     let(:fake) { FakeBedrock.new }
   end
 

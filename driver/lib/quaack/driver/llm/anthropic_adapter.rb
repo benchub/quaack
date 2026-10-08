@@ -2,6 +2,7 @@
 
 require "anthropic"
 require "json"
+require_relative "api_error_detail"
 require_relative "error"
 
 module Quaack
@@ -60,6 +61,8 @@ module Quaack
           refuse_empty_default unless api_key
           @anthropic = anthropic(api_key, settings.base_url, max_retries)
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials?
+
+          @secrets = APIErrorDetail.secrets(settings.base_url, [@anthropic.api_key, @anthropic.auth_token])
         end
 
         # Structured output holds every reply to the schema, so the front
@@ -169,11 +172,18 @@ module Quaack
         end
 
         # An API can quote part of a refused key back, so an llm_auth
-        # message is only the status. Any other message is the gem's.
+        # message is only the status. Any other answer from the API gives
+        # its status and the body's own error message, never the whole body
+        # or the URL, which the gem's message holds: base_url can name a
+        # gateway or proxy whose body echoes a key or anything else. With no
+        # answer, such as a dropped connection, it's the gem's message, a
+        # fixed sentence. Either way, the adapter's own keys and base_url's
+        # query values are scrubbed out.
         def detail(error)
           return refused(error.status) if rule_for(error) == "llm_auth"
 
-          error.message
+          text = error.status ? APIErrorDetail.answered(error.status, error.body) : error.message
+          APIErrorDetail.scrub(text, @secrets)
         end
 
         def refused(status) = "the API refused the key (#{status})"
