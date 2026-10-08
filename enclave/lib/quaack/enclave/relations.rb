@@ -23,7 +23,7 @@ module Quaack
     # This is the one entry point for the relation check. The inbound check
     # for rewrite candidates (RewriteCandidateCheck) calls it too, with
     # allowed: the relations the original uses. Then a relation outside that
-    # set is refused as unknown_relation before any relkind is read, so the
+    # set is refused as unknown_relation before its relkind is read, so the
     # refusal doesn't say what kind of relation it is.
     #
     # The inputs are the ones RelationQualifier takes: the query text,
@@ -132,8 +132,7 @@ module Quaack
         qualified = qualify(parse.tree, settings, connection)
         functions!(parse.tree, settings, connection)
         relations = tables(parse.tree)
-        allowed!(relations.keys, allowed) if allowed
-        relations.each { |table, inherits| plain_table!(table, inherits, connection) }
+        relations.each { |table, inherits| plain_table!(table, inherits, connection, allowed || relations.keys) }
         Result.new(sql: qualified.query, parse: qualified, relations: relations.keys)
       end
 
@@ -180,18 +179,16 @@ module Quaack
         end
       end
 
-      def allowed!(relations, allowed)
-        unknown = relations.find { |table| !allowed.include?(table) }
-        raise Error.new("unknown_relation", "#{unknown} isn't a relation the original uses") if unknown
-      end
-
       def functions!(tree, settings, connection)
         return unless FromFunctions.user_function?(tree, settings, connection)
 
         raise Error.new("user_function_in_from", "a function in FROM isn't in pg_catalog"), cause: nil
       end
 
-      def plain_table!(table, inherits, connection)
+      # A relation that isn't listed is refused before its relkind is read.
+      def plain_table!(table, inherits, connection, listed)
+        raise Error.new("unknown_relation", "#{table} isn't a relation the original uses") unless listed.include?(table)
+
         rows = connection.exec_params(RELKIND_SQL, [table.schema, table.name, inherits.to_s]).values
         (_, _, relkind), *descendants = rows
         raise Error.new("unknown_relation", "#{table} doesn't exist") unless relkind
