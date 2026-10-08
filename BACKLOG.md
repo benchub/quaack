@@ -7,7 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261006-19 (one stored plan per measurement).
-- 20260926-56, partly (the shared parse helper and the error rules).
+- 20260926-56 (the shared parse helper, the error rules, and NameQualifier with the stored search_path).
 - 20261007-3 (statistics hardening).
 - 20261001-4 (refused candidates never best in the index payload).
 
@@ -1164,22 +1164,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260926-56. Items left from 20260923-27, -28, -35, -38.
-
-- **Needs a decision:** functions, types, operators, and names inside string literals aren't qualified. Rewrite them, or refuse them?
-- **Shared parse helper:** merge PlanExpression's parse helper with CanonicalPlan's parse step. Refactor only, but it changes a shared signature.
-- **ArgumentError rules:** give rules to the ArgumentErrors raised in PredicateAtoms and IndexCandidate. For IndexCandidate, decide whether to change the error class callers rescue.
-- **Operator messages:** a driver-side table mapping rules to text for operators. The texts need deciding.
-
-- **Depends on:** 20260923-27, -28, -35, -38.
-- **Came from:** Their build and reviews.
-- **Design:** qualify, volatility, input.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Rewrite them (schema-qualify functions, types, operators and names inside string literals).
-- **Decided by the user (2026-10-07):** Give IndexCandidate its own error class, `IndexCandidate::Error`, with a fixed rule name, and update callers to rescue it.
-- **Decided by the user (2026-10-07), on the builder's finding:** the general version needs a type checker, so qualify only what's exact for now. Qualify relations, types, collations, and `regclass` and `regtype` literals exactly. Qualify a function or explicit operator only when exactly one schema on the path other than pg_catalog has that name. Leave names found only in pg_catalog bare. Names that several schemas define (the citext `=` case) stay bare, and later steps run with the plan's `search_path`. Refuse `regproc`, `regprocedure`, `regoper`, and `regoperator` literals as unsupported in v1. The full version is 20261007-21.
-- **Landed (2026-10-07):** the shared parse helper (`PlanExpression.parse_bare`, used by `CanonicalPlan#fingerprint`) and the error rules (`PredicateAtoms::Error` with `not_a_query_parse` and `using_column_unreplaceable`; `IndexCandidate::Error`, rule `invalid_index_candidate`, rescued by its callers), after one review with no blocking findings. Still open: the qualification above, and "Operator messages", whose texts need the user. Enclave change, unreleased until the next batch bump.
-- **Status:** todo
+### 20260926-56. Items left from 20260923-27, -28, -35, -38. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
 
@@ -2325,4 +2310,32 @@ From the reviews of 20261001-16.
 - **Depends on:** 20261001-16.
 - **Came from:** The reviews of 20261001-16, rounds one and two.
 - **Design:** LLM client.
+- **Status:** todo
+
+### 20261007-29. Operator messages for enclave rules.
+
+The last item left from 20260926-56: a driver-side table that maps enclave rules to text for operators. The texts need the user's decision. Draft them for the rules that reach an operator and show the user before building.
+
+- **Depends on:** 20260926-56.
+- **Came from:** 20260926-56.
+- **Design:** input.
+- **Status:** todo
+
+### 20261007-30. NameQualifier: test gaps and two edge cases.
+
+From the review of 20260926-56's qualification. These pieces have no test that goes red when they break:
+1. The USAGE filter in the Catalog SQL (`has_schema_privilege(n.oid, 'USAGE')`). The test role is a superuser. Use a non-superuser role and a schema it can't use.
+2. The `"$user"` substitution in `steps/qualify.rb` `written_path`. The stored-path spec uses `sales, public`.
+3. Lowercasing unquoted regclass names in `RegLiteral.identifier` (`'ORDERS'::regclass`).
+4. The regtype round-trip check `same?`.
+5. The collation encoding filter (`EXTRA`).
+6. The `OPERATOR_KINDS` filter changes nothing today: the keyword operators all exist in pg_catalog. Keep it as defense, and say so, or drop it.
+
+Edge cases:
+7. Racetrack setup's `CREATE EXTENSION IF NOT EXISTS hypopg` now follows the stored path, so it fails when the path names only schemas the dump didn't restore (`search_path = reporting` with a query on `public.orders`). Use `WITH SCHEMA`, or refuse the run.
+8. The rewrite candidate check qualifies candidates on the racetrack, so `"$user"` and USAGE come from the run server's role, while the original was qualified on production. A function production has but the racetrack subset lacks would stay bare in a candidate.
+
+- **Depends on:** 20260926-56.
+- **Came from:** The review of 20260926-56's qualification.
+- **Design:** qualify.
 - **Status:** todo

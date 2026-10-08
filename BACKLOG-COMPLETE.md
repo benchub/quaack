@@ -6664,3 +6664,21 @@ Minor findings from the review of 20260930-11:
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 2026-10-07, after a review with one blocking finding, a fix round, and a clean second review. With `QUAACK_LLM_PROVIDER` naming another provider, the block is checked and then ignored whole, so its `base_url`, `api_key_env`, and `model` can't carry a credential to a host meant for another provider; `openai_compatible` and `bedrock` then need `QUAACK_MODEL`. A bad `AWS_REGION` or `AWS_DEFAULT_REGION` is a usage error naming the variable, the region pattern takes a two-to-four-letter prefix (`eusc-de-east-1`), the Bedrock network-guard spec no longer reads the real `~/.aws`, `.set?` has a spec, and DESIGN.md and the README cover the override and `ANTHROPIC_BEDROCK_BASE_URL`.
+
+### 20260926-56. Items left from 20260923-27, -28, -35, -38.
+
+- **Needs a decision:** functions, types, operators, and names inside string literals aren't qualified. Rewrite them, or refuse them?
+- **Shared parse helper:** merge PlanExpression's parse helper with CanonicalPlan's parse step. Refactor only, but it changes a shared signature.
+- **ArgumentError rules:** give rules to the ArgumentErrors raised in PredicateAtoms and IndexCandidate. For IndexCandidate, decide whether to change the error class callers rescue.
+- **Operator messages:** a driver-side table mapping rules to text for operators. The texts need deciding.
+
+- **Depends on:** 20260923-27, -28, -35, -38.
+- **Came from:** Their build and reviews.
+- **Design:** qualify, volatility, input.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Rewrite them (schema-qualify functions, types, operators and names inside string literals).
+- **Decided by the user (2026-10-07):** Give IndexCandidate its own error class, `IndexCandidate::Error`, with a fixed rule name, and update callers to rescue it.
+- **Decided by the user (2026-10-07), on the builder's finding:** the general version needs a type checker, so qualify only what's exact for now. Qualify relations, types, collations, and `regclass` and `regtype` literals exactly. Qualify a function or explicit operator only when exactly one schema on the path other than pg_catalog has that name. Leave names found only in pg_catalog bare. Names that several schemas define (the citext `=` case) stay bare, and later steps run with the plan's `search_path`. Refuse `regproc`, `regprocedure`, `regoper`, and `regoperator` literals as unsupported in v1. The full version is 20261007-21.
+- **Landed (2026-10-07):** the shared parse helper (`PlanExpression.parse_bare`, used by `CanonicalPlan#fingerprint`) and the error rules (`PredicateAtoms::Error` with `not_a_query_parse` and `using_column_unreplaceable`; `IndexCandidate::Error`, rule `invalid_index_candidate`, rescued by its callers), after one review with no blocking findings. The qualification landed later the same day (see below). "Operator messages" moved to 20261007-29. Enclave change, unreleased until the next batch bump.
+- **Status:** done
+- **Landed:** 2026-10-07, the qualification, after one review with no blocking findings. NameQualifier qualifies relations, types, collations, and regclass and regtype literals exactly, and a function or explicit operator only when exactly one schema on the path other than pg_catalog has it. qualify stores the plan's search_path, with "$user" as the production role, and RunServer.connect sets it on every racetrack and arena connection. regproc, regprocedure, regoper, and regoperator literals are refused as unsupported_reg_literal. Rewrite candidates get the same treatment. Earlier the same day: the shared parse helper and the error rules. Operator messages were left for the user, as 20261007-29. Enclave change, unreleased until the next batch bump.
