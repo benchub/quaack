@@ -6995,3 +6995,17 @@ Add DESIGN.md's softer handling of a later ask that fails with a rule that fails
 - **Design:** Several LLM providers (Routing), llm-index-ideas, llm-counterexamples.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. A later ask that fails over raises `Router::LaterError`. llm-index-ideas and rewrite-llm-index-ideas then keep their first-round ideas and go on without replacements. llm-counterexamples starts the remaining rounds fresh on a provider this rewrite hasn't failed on, in one user message holding the payload as round one sent it and each earlier round's inserts and feedback under "Earlier rounds, run by another model.", never as the model's own turns; rounds keep counting, so no rewrite gets more than three, and with no provider left the step fails. Sentinel tests show no provider name or model in any prompt. For the user to confirm: with a lone `llm` block the index-ideas steps now keep their first-round ideas where they used to fail, and the new lines call the provider "The LLM"; a rewrite's fresh start also skips a provider whose first-round reply couldn't be used. The lone-block message regression the review found is 20261007-49.
+
+### 20261007-41. Arena qualification: minors from 20261007-31.
+
+From the builder and review of 20261007-31.
+1. The `tableoid`/`ctid` qualification in `arena_runner/deferred.rb` has no test that goes red. With `public.=(oid,oid)` planted, the old code fails loudly with `insert_failed` rather than giving a wrong answer, so add a deferred-rows shadow example.
+2. `ValuePools::BOUNDARIES` matches format_type names with `\A(text|...)`. Under a shadowed `text`, the name becomes `pg_catalog.text`, so text boundaries are skipped. Values are less thorough, never wrong.
+3. The catalog-names scanner can't see SQL built from pieces that don't start with a keyword, such as `row_set.rb`'s `$i::#{type}` (the same format_type case as `FORMAT_TYPE_HOLES`).
+4. Older than 20261007-31: `scenarios/checks.rb` takes a bare operator from `pg_get_constraintdef` as pg_catalog's, so a CHECK bound to a `public.>` that sits first on the path prints bare and is accepted as simple. The likely effect is a scenario load failure, not a wrong result.
+
+- **Depends on:** 20261007-31.
+- **Came from:** The builder and review of 20261007-31.
+- **Design:** trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. A shadow example covers deferred rows; value pools match boundaries on a pg_catalog-qualified type name; the catalog-names scan reads placeholder casts built on their own, with `TYPE_NAME_HOLES` (renamed from `FORMAT_TYPE_HOLES`) exempting two qualified type names; and Scenarios refuse, as `complex_check`, a table or domain CHECK that depends on an operator outside pg_catalog that no extension owns, read from `pg_depend`, not the printed text (citext, ltree, hstore, enum, and domain CHECKs still pass). Not filed, from the review: a CHECK on a hand-made non-extension operator is now refused, and an extension-owned operator that shadows a builtin is trusted. Enclave change, unreleased until the next batch bump.

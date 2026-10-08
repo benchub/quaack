@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261002-4 (composite keys; unique checks compare opclass and collation).
 - 20261007-39 (same-type arrays, ranges, and composites compare in denormalized_equal).
 - 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
+- 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
 
 ## How this file works.
 
@@ -2221,18 +2222,7 @@ From the reviews of 20261007-24.
 - **Design:** LLM providers.
 - **Status:** todo
 
-### 20261007-41. Arena qualification: minors from 20261007-31.
-
-From the builder and review of 20261007-31.
-1. The `tableoid`/`ctid` qualification in `arena_runner/deferred.rb` has no test that goes red. With `public.=(oid,oid)` planted, the old code fails loudly with `insert_failed` rather than giving a wrong answer, so add a deferred-rows shadow example.
-2. `ValuePools::BOUNDARIES` matches format_type names with `\A(text|...)`. Under a shadowed `text`, the name becomes `pg_catalog.text`, so text boundaries are skipped. Values are less thorough, never wrong.
-3. The catalog-names scanner can't see SQL built from pieces that don't start with a keyword, such as `row_set.rb`'s `$i::#{type}` (the same format_type case as `FORMAT_TYPE_HOLES`).
-4. Older than 20261007-31: `scenarios/checks.rb` takes a bare operator from `pg_get_constraintdef` as pg_catalog's, so a CHECK bound to a `public.>` that sits first on the path prints bare and is accepted as simple. The likely effect is a scenario load failure, not a wrong result.
-
-- **Depends on:** 20261007-31.
-- **Came from:** The builder and review of 20261007-31.
-- **Design:** trust boundary.
-- **Status:** todo
+### 20261007-41. Arena qualification: minors from 20261007-31. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-42. The router: minors from 20261007-14.
 
