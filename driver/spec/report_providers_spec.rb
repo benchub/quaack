@@ -96,6 +96,61 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
+  # DESIGN.md, "Several LLM providers" (Adversarial pairing) and report:
+  # each rewrite's pairing outcome, from the record, and a warning in its
+  # summary when the pairing wasn't met or couldn't be checked.
+  describe "the counterexample pairing" do
+    let(:rewrites) do
+      [fated(1, "not_better", source: "llm", covered: []), fated(2, "not_better", source: "llm", covered: []),
+       fated(3, "not_better", source: "llm", covered: []), fated(4, "not_better", source: "rule", covered: []),
+       fated(5, "not_better", source: "operator", covered: []), fated(6, "not_better", source: "llm", covered: []),
+       fated(7, "not_better", source: "llm", covered: [])]
+    end
+    let(:record) do
+      unit = ->(entry, pairing, **more) { { "entry" => entry, "rounds" => 1, "pairing" => pairing, **more } }
+      { "providers" => [provider("groq", "openai_compatible", "llama"), provider("opus", "anthropic", "opus-m")],
+        "rewrites" => { "rewrite_1" => "groq", "rewrite_2" => "groq", "rewrite_6" => "groq" },
+        "counterexamples" => {
+          "rewrite_1" => [unit.call("opus", "met")],
+          "rewrite_2" => [unit.call("opus", "met"), unit.call("groq", "not_met", "after" => "llm_rate_limited")],
+          "rewrite_3" => [unit.call("groq", "unchecked")], "rewrite_4" => [unit.call("groq", "unchecked")],
+          "rewrite_5" => [unit.call("groq", "unchecked")], "rewrite_6" => [unit.call("groq", "not_applicable")],
+          "rewrite_7" => [{ "entry" => "groq", "rounds" => 1 }]
+        } }
+    end
+
+    def line(number) = details(number)[%r{<p class="counterexamples">(.*?)</p>}, 1]
+    def warn(number) = summary(number)[%r{<span class="warn">(.*?)</span>}, 1]
+
+    it "says the pairing was met, with no warning" do
+      expect(line(1)).to eq("opus wrote #{Quaack::Driver::Report::Providers::TEST_DATA} in round 1. " \
+                            "The pairing was met: a different model from the one that wrote the rewrite wrote all " \
+                            "its test data.")
+      expect(warn(1)).to be_nil
+    end
+
+    it "says the pairing wasn't met when any unit ran on the author, with a warning in the summary" do
+      expect(line(2)).to end_with("starting fresh after opus was rate limited. The pairing wasn&#39;t met: no other " \
+                                  "provider was left, so the model that wrote the rewrite also wrote test data " \
+                                  "meant to break it.")
+      expect(warn(2)).to eq("Read it with care: a model checked its own work, since the one that wrote it also " \
+                            "wrote test data meant to break it.")
+    end
+
+    it "says the pairing couldn't be checked for an LLM rewrite whose author wasn't recorded, with a warning" do
+      expect(line(3)).to end_with(" The pairing couldn&#39;t be checked, since the record doesn&#39;t say which " \
+                                  "model wrote the rewrite.")
+      expect(warn(3)).to eq("Read it with care: nothing could check that a different model wrote its test data.")
+    end
+
+    it "says nothing of pairing for a rule-made or operator rewrite, or when the pairing is any or unrecorded" do
+      [4, 5, 6, 7].each do |number|
+        expect(line(number)).to eq("groq wrote #{Quaack::Driver::Report::Providers::TEST_DATA} in round 1.")
+        expect(warn(number)).to be_nil
+      end
+    end
+  end
+
   describe "who proposed what" do
     it "splits the LLM's rewrites row into a row per provider, under the LLM total" do
       counted = rows("accountability-rewrites")

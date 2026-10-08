@@ -72,6 +72,20 @@ RSpec.describe Quaack::Driver::Provenance do
     )
   end
 
+  it "records each unit's pairing outcome, of the four, and reads back only those" do
+    outcomes = %w[met not_met not_applicable unchecked]
+    outcomes.each_with_index do |pairing, i|
+      provenance.counterexamples!("rewrite_#{i + 1}", [{ "entry" => "groq", "rounds" => 1, "pairing" => pairing }])
+    end
+    provenance.counterexamples!("rewrite_9", [{ "entry" => "groq", "rounds" => 1, "pairing" => "SELECT 1" }])
+    provenance.save
+
+    expect(saved["counterexamples"].transform_values { it.first["pairing"] })
+      .to eq(outcomes.each_with_index.to_h { |pairing, i| ["rewrite_#{i + 1}", pairing] })
+    expect(described_class.open(@home, run_id).record["counterexamples"].keys).to eq(%w[rewrite_1 rewrite_2 rewrite_3
+                                                                                        rewrite_4])
+  end
+
   it "counts each index round's statements and outcomes by entry, and each skipped replacement round" do
     provenance.index_round!("original", "first", "groq", 3,
                             [outcome(1, "accepted"), outcome(2, "dropped", "duplicate"), outcome(3, "set_aside")])
@@ -151,7 +165,9 @@ RSpec.describe Quaack::Driver::Provenance do
                          "rewrite_5" => [{ "entry" => "groq", "rounds" => 0 }],
                          "rewrite_6" => [{ "entry" => "groq", "rounds" => 4 }],
                          "rewrite_7" => [{ "entry" => "groq", "rounds" => 10**9 }],
-                         "rewrite_8" => [{ "entry" => "groq", "rounds" => 1.0 }]
+                         "rewrite_8" => [{ "entry" => "groq", "rounds" => 1.0 }],
+                         "rewrite_9" => [{ "entry" => "groq", "rounds" => 1, "pairing" => "SELECT 1" }],
+                         "rewrite_10" => [{ "entry" => "groq", "rounds" => 1, "pairing" => "met" }]
                        },
                        "index_ideas" => { "original" => {
                          "first" => { "groq" => counts, "opus" => counts.merge("written" => -1),
@@ -166,7 +182,8 @@ RSpec.describe Quaack::Driver::Provenance do
 
     expect(provenance.record).to eq(
       "providers" => [{ "name" => "groq", "provider" => "anthropic", "model" => "m" }],
-      "counterexamples" => { "rewrite_1" => [good] },
+      "counterexamples" => { "rewrite_1" => [good],
+                             "rewrite_10" => [{ "entry" => "groq", "rounds" => 1, "pairing" => "met" }] },
       "index_ideas" => { "original" => { "first" => { "groq" => counts },
                                          "skipped" => [{ "entry" => "groq", "rule" => "llm_auth" }] } }
     )

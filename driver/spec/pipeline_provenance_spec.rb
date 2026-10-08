@@ -26,12 +26,16 @@ RSpec.describe "The pipeline's provenance record" do
   let(:fakes) { names.to_h { [it, FakeLLM.new] } }
   let(:fa) { fakes[names[0]] }
   let(:fb) { fakes[names[1]] }
+  # The entry llm-rewrites is pinned to, and llm_routing's
+  # counterexample_pairing, if any.
+  let(:rewriter) { names[1] }
+  let(:pairing) { nil }
   let(:router) do
     config = { "llms" => names.zip(models).map do |name, model|
       { "name" => name, "provider" => "anthropic", "model" => model }
     end,
-               "llm_routing" => { "mode" => "failover",
-                                  "steps" => { "llm-rewrites" => { "providers" => [names[1]] } } } }
+               "llm_routing" => { "mode" => "failover", "counterexample_pairing" => pairing,
+                                  "steps" => { "llm-rewrites" => { "providers" => [rewriter] } } }.compact }
     clients = names.zip(models).map do |name, model|
       fakes[name].client(burndown: Quaack::Driver::Burndown.new, model:, max_retries: 0)
     end
@@ -141,10 +145,44 @@ RSpec.describe "The pipeline's provenance record" do
       } },
       "rewrites" => { "rewrite_1" => names[1] },
       "rewrites_proposed" => { names[1] => 2 },
-      "counterexamples" => { "rewrite_1" => [{ "entry" => names[0], "rounds" => 1 },
-                                             { "entry" => names[1], "rounds" => 2, "after" => "llm_rate_limited" }] }
+      "counterexamples" => { "rewrite_1" => [{ "entry" => names[0], "rounds" => 1, "pairing" => "not_applicable" },
+                                             { "entry" => names[1], "rounds" => 2, "after" => "llm_rate_limited",
+                                               "pairing" => "not_applicable" }] }
     )
     expect(File.stat(path).mode & 0o777).to eq(0o600)
+  end
+
+  # DESIGN.md, "Several LLM providers" (Adversarial pairing): the
+  # rewrite's author comes from the record, so its rounds go elsewhere.
+  context "with counterexample_pairing prefer_different, and the first entry writing the rewrite" do
+    let(:rewriter) { names[0] }
+    let(:pairing) { "prefer_different" }
+
+    def script
+      fa.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.t (a)", "CREATE INDEX ON public.t (b)"] })
+      fa.cut_short("llm-index-ideas", "par")
+      rewrite = { "sql" => "SELECT 2", "transformation" => "t", "assumptions" => [] }
+      fa.reply("llm-rewrites", { "rewrites" => [rewrite] })
+      3.times { fb.reply("llm-counterexamples", { "inserts" => ["INSERT INTO public.t (a) VALUES (1)"] }) }
+    end
+
+    it "runs the rewrite's counterexample rounds off its author, and records that the pairing was met" do
+      script
+      run
+
+      expect(JSON.parse(File.read(path))["counterexamples"])
+        .to eq("rewrite_1" => [{ "entry" => names[1], "rounds" => 3, "pairing" => "met" }])
+      expect(fa.asks.map(&:step)).not_to include("llm-counterexamples")
+    end
+
+    it "says in the report that the pairing was met" do
+      script
+      out = File.join(@home, "report.html")
+      run(out:)
+
+      expect(File.read(out)).to include("#{names[1]} wrote the test data meant to break it in rounds 1, 2, and 3. " \
+                                        "The pairing was met: ")
+    end
   end
 
   it "keeps SQL, DDL, payloads, replies, and the enclave's words out of the record" do

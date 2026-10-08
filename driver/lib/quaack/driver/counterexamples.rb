@@ -29,6 +29,12 @@ module Quaack
     # rounds count on, so no rewrite gets more than three. label, such as
     # "Rewrite Silver Fox", names the rewrite in the progress line.
     #
+    # author is the rewrite's author, from the provenance record: a Hash
+    # with its entry's name and model, or nil when none was recorded, as
+    # for a rule-made or operator rewrite. Under counterexample_pairing,
+    # each unit, a fresh start's too, keeps off the author when it can
+    # (DESIGN.md, "Several LLM providers": Adversarial pairing).
+    #
     # Trust boundary. The prompt carries only the payload, which is shape
     # data, the LLM's own inserts, and the driver's feedback on them. A
     # fresh start sends nothing else, and no provider's name or model.
@@ -58,9 +64,10 @@ module Quaack
         Answer with JSON: {"inserts": ["INSERT INTO ...", ...]}.
       PROMPT
 
-      def initialize(client:, label: nil)
+      def initialize(client:, label: nil, author: nil)
         @client = client
         @label = label
+        @pairing = client.pairing(author, label:)
       end
 
       ROUNDS = 3
@@ -70,10 +77,11 @@ module Quaack
       EARLIER = "Earlier rounds, run by another model."
       DIFFERENT = "Write a new set of inserts that tries something different from all of them. #{ANSWER}".freeze
 
-      # provider is the entry that wrote the inserts, and after, for a fresh
-      # start's first round, the rule that ended the unit before it.
-      Round = Data.define(:inserts, :outcome, :provider, :after) do
-        def initialize(inserts:, outcome:, provider: nil, after: nil) = super
+      # provider is the entry that wrote the inserts; after, for a fresh
+      # start's first round, the rule that ended the unit before it; and
+      # pairing, the pairing's outcome for its unit (Router::Pairing).
+      Round = Data.define(:inserts, :outcome, :provider, :after, :pairing) do
+        def initialize(inserts:, outcome:, provider: nil, after: nil, pairing: nil) = super
       end
       Result = Data.define(:rounds, :disproved, :covered, :units) do
         def initialize(rounds:, disproved:, covered:, units: []) = super
@@ -90,12 +98,13 @@ module Quaack
       # nil) disproves nothing, and the rounds go on.
       #
       # The result's units say, for the provenance record, which entry ran
-      # each unit, in order, how many rounds it asked, and, for a fresh
-      # start, after, the rule that ended the unit before it.
+      # each unit, in order, how many rounds it asked, for a fresh start,
+      # after, the rule that ended the unit before it, and the pairing's
+      # outcome.
       def run(payload, compare:)
         rounds = []
         failed = {}
-        unit = [@client.session, [payload_message(payload)]]
+        unit = [@client.session(pairing: @pairing), [payload_message(payload)]]
         until over?(rounds)
           unit = turn(unit, rounds, compare) { |error, session| fresh(error, session, failed, payload, rounds) }
         end
@@ -116,7 +125,8 @@ module Quaack
       # given the error and the session.
       def turn((session, messages, after), rounds, compare)
         inserts = ask_with(messages, rounds.empty? ? FIRST : AGAIN, session)
-        rounds << Round.new(inserts:, outcome: compare.call(inserts), provider: session.provider, after:)
+        rounds << Round.new(inserts:, outcome: compare.call(inserts), provider: session.provider, after:,
+                            pairing: session.pairing)
         [session, messages + follow_up(rounds.last)]
       rescue LLM::Router::LaterError => e
         yield e, session
@@ -126,16 +136,21 @@ module Quaack
       # every provider this rewrite's rounds failed on, which failed
       # collects, session's among them.
       def fresh(error, session, failed, payload, rounds)
-        [@client.fresh(error, skip: failed.merge!(session.failures), label: @label), [fresh_message(payload, rounds)],
-         error.rule]
+        [@client.fresh(error, skip: failed.merge!(session.failures), label: @label, pairing: @pairing),
+         [fresh_message(payload, rounds)], error.rule]
       end
 
       def result(rounds)
-        units = rounds.slice_before(&:after).map do |unit|
-          { "entry" => unit.first.provider, "rounds" => unit.size, "after" => unit.first.after }.compact
-        end
         Result.new(rounds:, disproved: rounds.any? { it.outcome["match"] == false },
-                   covered: rounds.flat_map { it.outcome["covered"] }.uniq, units:)
+                   covered: rounds.flat_map { it.outcome["covered"] }.uniq, units: units(rounds))
+      end
+
+      # Each unit of rounds, for the provenance record.
+      def units(rounds)
+        rounds.slice_before(&:after).map do |unit|
+          { "entry" => unit.first.provider, "rounds" => unit.size, "after" => unit.first.after,
+            "pairing" => unit.first.pairing }.compact
+        end
       end
 
       def follow_up(round)
