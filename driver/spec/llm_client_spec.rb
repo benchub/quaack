@@ -265,6 +265,32 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(error_text(e)).not_to include("SENTINEL")
     end
 
+    # Task 20261007-57: an `ant auth login` profile's token goes out as a
+    # bearer token too, and a 401 makes the gem reread it, so every token
+    # an attempt sent is scrubbed.
+    it "scrubs every token an `ant auth login` profile sent, after a 401 rereads it" do
+      echo = { error: { message: "not SENTINEL-PROFILE-OLD or SENTINEL-PROFILE-NEW" } }
+      fake.error_body("llm-index-ideas", status: 401, body: { error: { message: "expired" } })
+          .error_body("llm-index-ideas", status: 400, body: echo)
+      sent = []
+      e = without_anthropic_credentials do |dir|
+        write_profile(dir, "SENTINEL-PROFILE-OLD")
+        # The token rotates once the first attempt has gone out.
+        rotating = lambda do |request, step:|
+          sent << request.headers["authorization"]
+          fake.call(request, step:).tap { write_profile(dir, "SENTINEL-PROFILE-NEW") }
+        end
+        described_class.new(burndown: burndown, transport: rotating, max_retries: 1)
+                       .ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(sent).to eq(["Bearer SENTINEL-PROFILE-OLD", "Bearer SENTINEL-PROFILE-NEW"])
+      expect(sans_sizes(e.message)).to eq("llm_bad_request: the API answered 400: not [key] or [key]")
+      expect(error_text(e)).not_to include("SENTINEL")
+    end
+
     # FakeLLM never records headers, so this transport looks only at the
     # ones that carry credentials, and answers every attempt.
     let(:key_transport) do

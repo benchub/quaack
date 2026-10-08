@@ -75,8 +75,9 @@ module Quaack
           options = ENV.key?(BEARER_ENV) ? bearer(settings) : signing(settings, given)
           edge = transport && ->(request) { transport.call(request, step: @step) }
           @anthropic = EdgeClient.new(edge:, base_url: settings.base_url, max_retries:, **options)
-          keys = [ENV.fetch(BEARER_ENV, nil), *options.values_at(:aws_access_key, :aws_secret_key, :aws_session_token)]
-          @secrets = APIErrorDetail.secrets(settings.base_url, keys)
+          @base_url = settings.base_url
+          @own_keys = [ENV.fetch(BEARER_ENV, nil),
+                       *options.values_at(:aws_access_key, :aws_secret_key, :aws_session_token)]
         end
 
         # The gem's BedrockClient, with an edge standing in for HTTP past
@@ -102,6 +103,10 @@ module Quaack
         # Anthropic adapter's does: AWS's message about a signature can
         # describe the request that was signed.
         def refused(status) = "AWS refused the credentials (#{status})"
+
+        # The keys the detail scrubs: the Bedrock API key, or the AWS
+        # credentials it signs with.
+        attr_reader :own_keys
 
         def no_region = self.class.no_region(@at)
 

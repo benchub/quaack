@@ -62,7 +62,8 @@ module Quaack
           @anthropic = anthropic(api_key, settings.base_url, max_retries)
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials?
 
-          @secrets = APIErrorDetail.secrets(settings.base_url, [@anthropic.api_key, @anthropic.auth_token])
+          @base_url = settings.base_url
+          @sent_tokens = []
         end
 
         # Structured output holds every reply to the schema, so the front
@@ -152,9 +153,14 @@ module Quaack
 
         # Each attempt passes through `count`, inside the gem's retry loop,
         # and then through the transport, if there is one, in place of HTTP.
+        # The bearer token each attempt sends is kept for the scrub: a
+        # profile's is read only when the request is made, and a 401 makes
+        # the gem read it again.
         def send_message(params, step, count, timeout)
           counting = lambda do |request, nxt|
             count.call
+            bearer = request.headers["authorization"].to_s.delete_prefix("Bearer ")
+            @sent_tokens |= [bearer]
             nxt.call(request)
           end
           middleware = [counting]
@@ -177,14 +183,17 @@ module Quaack
         # or the URL, which the gem's message holds: base_url can name a
         # gateway or proxy whose body echoes a key or anything else. With no
         # answer, such as a dropped connection, it's the gem's message, a
-        # fixed sentence. Either way, the adapter's own keys and base_url's
-        # query values are scrubbed out.
+        # fixed sentence. Either way, the adapter's own keys, every bearer
+        # token an attempt sent, and what base_url holds are scrubbed out.
         def detail(error)
           return refused(error.status) if rule_for(error) == "llm_auth"
 
           text = error.status ? APIErrorDetail.answered(error.status, error.body) : error.message
-          APIErrorDetail.scrub(text, @secrets)
+          APIErrorDetail.scrub(text, APIErrorDetail.secrets(@base_url, own_keys))
         end
+
+        # The keys the detail scrubs. The Bedrock adapter has its own.
+        def own_keys = [@anthropic.api_key, @anthropic.auth_token, *@sent_tokens]
 
         def refused(status) = "the API refused the key (#{status})"
 
