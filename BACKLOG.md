@@ -23,6 +23,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260927-17 and 20260926-55 (index-from-query correlated reads; generated-column expression keys refused).
 
+- 20261008-55 (a foreign cancel on BEGIN or ROLLBACK ends the step).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -2320,17 +2322,7 @@ The review of 20260929-22 and -16 found these minor issues:
 - **Design:** qualify, run-server.
 - **Status:** todo
 
-### 20261008-55. Foreign cancels: minors from 20260929-29.
-
-The review of 20260929-29 found these minor issues:
-
-1. **A cancel on BEGIN or ROLLBACK still counts as a disproof.** It arrives through `TransactionStatus` with `step: :transaction`, so `Cancel.foreign?` misses it. In `Counterexamples.compare` it still gives `match: false`. Treat a `statement_canceled` there the same way.
-2. **No spec reruns a step after a cancel.** Add one that reruns the step and checks that it succeeds and stores exactly one result.
-
-- **Depends on:** 20260929-29.
-- **Came from:** The review of 20260929-29, 2026-10-08.
-- **Design:** rewrite-test and counterexamples.
-- **Status:** todo
+### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-56. Rule generator: leftovers from 20261002-1.
 
@@ -2356,14 +2348,7 @@ The review of 20260929-29 found these minor issues:
 - **Design:** rewrite-rules, report.
 - **Status:** todo
 
-### 20261008-58. Report `dropped`: pin the non-negative guard.
-
-From the review of 20260926-42. The `!dropped.negative?` half of the egress guard in `report_payload.rb` has no test, and removing it keeps everything green. Add a test that stores `"dropped" => -1` and expects nil.
-
-- **Depends on:** 20260926-42.
-- **Came from:** The review of 20260926-42, 2026-10-08.
-- **Design:** report.
-- **Status:** todo
+### 20261008-58. Report `dropped`: pin the non-negative guard. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-59. Correlated-subquery read columns: minors from 20260927-17.
 
@@ -2374,4 +2359,16 @@ From the review of 20260926-42. The `!dropped.negative?` half of the egress guar
 - **Depends on:** 20260927-17.
 - **Came from:** The review of 20260927-17, 2026-10-08.
 - **Design:** index-from-query.
+- **Status:** todo
+
+### 20261008-60. Foreign cancels on BEGIN and ROLLBACK: DESIGN.md and a Postgres test.
+
+The review of 20261008-55 found two gaps:
+
+1. **DESIGN.md is out of date.** Its rewrite-test section, around line 1225, still says the runner records the closing ROLLBACK being canceled. That case now ends the step.
+2. **No real Postgres test for the new steps.** Only the unit spec covers `:begin`, `:rollback`, and `:transaction`. Add a Postgres-backed test, if there's a reliable way to cancel a BEGIN or ROLLBACK from a second session.
+
+- **Depends on:** 20261008-55.
+- **Came from:** The review of 20261008-55, 2026-10-08.
+- **Design:** rewrite-test.
 - **Status:** todo

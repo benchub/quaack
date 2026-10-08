@@ -8136,3 +8136,26 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Design:** index-from-query.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260927-17 (commit 6b09c8ff). Review had no blocking findings; its minors went to 20261008-59.
+
+### 20261008-55. Foreign cancels: minors from 20260929-29.
+
+The review of 20260929-29 found these minor issues:
+
+1. **A cancel on BEGIN or ROLLBACK still counts as a disproof.** It arrives through `TransactionStatus` with `step: :transaction`, so `Cancel.foreign?` misses it. In `Counterexamples.compare` it still gives `match: false`. Treat a `statement_canceled` there the same way.
+2. **No spec reruns a step after a cancel.** Add one that reruns the step and checks that it succeeds and stores exactly one result.
+
+- **Depends on:** 20260929-29.
+- **Came from:** The review of 20260929-29, 2026-10-08.
+- **Design:** rewrite-test and counterexamples.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-55 (commit a0d6c6b0). Review had no blocking findings; its minors went to 20261008-60.
+
+### 20261008-58. Report `dropped`: pin the non-negative guard.
+
+From the review of 20260926-42. The `!dropped.negative?` half of the egress guard in `report_payload.rb` has no test, and removing it keeps everything green. Add a test that stores `"dropped" => -1` and expects nil.
+
+- **Depends on:** 20260926-42.
+- **Came from:** The review of 20260926-42, 2026-10-08.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-55 (commit ecb82cbc). Review clean.
