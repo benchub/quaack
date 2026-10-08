@@ -110,10 +110,10 @@ module Quaack
             "set_aside" => entry["dedupe"]["set_aside"].map { candidate(it, redaction) } }
         end
 
-        # The candidate the planner used whose total cost, summed over the
-        # literals, is lowest: the only one whose plans go out in full.
+        # The unrefused candidate the planner used whose total cost, summed
+        # over the literals, is lowest: the only one whose plans go out in full.
         def best(results)
-          results.select { |r| r["plans"].values.any? { it["used"] } }
+          results.select { |r| !r["refusal"] && r["plans"].values.any? { it["used"] } }
                  .min_by { |r| r["plans"].values.sum { it["total_cost"] } }
         end
 

@@ -123,10 +123,12 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(payload(index_payload)["schema"]["ddl"]).to eq("CREATE TABLE public.orders (id integer);\n")
   end
 
-  # The used candidate with the lowest total cost summed over the literals.
+  # This run's best candidate, the used one with the lowest total cost
+  # summed over the literals: the two-column index on the query's equalities.
+  let(:best_ddl) { "CREATE INDEX ON public.orders USING btree (note, status)" }
+
   def best(results)
-    results.select { |r| r["plans"].values.any? { it["used"] } }
-           .min_by { |r| r["plans"].values.sum { it["total_cost"] } }
+    results.find { Quaack::Enclave::IndexStore.candidate(it["candidate"]).to_ddl == best_ddl }
   end
 
   it "sends each mechanical result as redacted DDL, with its size, refusal, and costs, and only the best one's plans" do
@@ -155,6 +157,23 @@ RSpec.describe "quaacks index-payload, against a real server" do
     first = entry["results"].first
     entry["results"] << first.merge(
       "plans" => first["plans"].transform_values { it.merge("used" => false, "total_cost" => 0.0) }
+    )
+    stored.write("index_search_original", entry)
+
+    candidates = payload(index_payload)["mechanical_results"]["candidates"]
+
+    expect(candidates.last["plans"].values.map(&:keys).uniq).to eq([%w[used total_cost]])
+    index = entry["results"].index { it.equal?(best(entry["results"])) }
+    expect(candidates[index]["plans"]).to eq(entry["results"][index]["plans"])
+  end
+
+  it "never keeps the plans of a refused candidate, even one marked used and cheaper" do
+    searched
+    entry = stored.read("index_search_original")
+    first = entry["results"].first
+    entry["results"] << first.merge(
+      "refusal" => { "rule" => "hypopg_refused", "sqlstate" => "42703" },
+      "plans" => first["plans"].transform_values { it.merge("used" => true, "total_cost" => 0.0) }
     )
     stored.write("index_search_original", entry)
 
