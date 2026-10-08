@@ -50,6 +50,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
     expect(columns("t").slice("nick", "plain")).to eq("nick" => false, "plain" => true)
   end
 
+  # The cache is keyed by schema and table (task 20261002-5).
+  it "keeps apart the columns of two tables of one name in different schemas" do
+    conn.exec("CREATE SCHEMA other; CREATE TABLE other.t (other_id int)")
+
+    expect([columns("t").keys.first, catalog.columns("other", "t").map(&:name)]).to eq(["id", %w[other_id]])
+  end
+
   it "gives no columns for a table that doesn't exist" do
     expect(columns("missing")).to eq({})
   end

@@ -10,7 +10,7 @@ module Quaack
     # and 'tomorrow', where Postgres reads them as a date or timestamp.
     # They read the clock just as now() does (DESIGN.md's clock-anchor).
     #
-    #   found = ClockLiterals.find(placeholder_map, statistics) { |column_names| LiteralSet.feeds(parse, column_names) }
+    #   found = ClockLiterals.find(placeholder_map, statistics) { LiteralSet.column_feeds(parse, it) }
     #   # => Found(words: {1 => "today"}, types: {1 => "timestamptz"})
     #   ClockLiterals.anchored_node(node, found)   # => the node that replaces node, or nil
     #
@@ -27,7 +27,11 @@ module Quaack
     #   words aren't valid times.
     # - A comparison with a column (col = $n, col < $n, BETWEEN, IN, as
     #   literals' feeds find them) whose type, from statistics' clock_columns, is date,
-    #   timestamp, or timestamptz. A placeholder redact shares isn't one.
+    #   timestamp, or timestamptz. A placeholder that appears more than
+    #   once, as a condition a rewrite copies into each arm does, is one
+    #   only when every place it appears is such a comparison, and all
+    #   with columns of one type. Otherwise it would be anchored where
+    #   it's compared with no column too, or cast to the wrong type.
     #
     # The replacement is the word's value from the anchor, cast to the
     # target type: 'now' is quaack.clock_anchor(), 'today' its date,
@@ -56,9 +60,10 @@ module Quaack
       # The clock words by placeholder number, and each one's implicit
       # type, from a column it's compared with, where it has one.
       #
-      # The block takes the column names by TableName, and returns literals'
-      # feeds for the query (LiteralSet.feeds). It runs only when there are
-      # words and statistics.
+      # The block takes the column names by TableName, and returns the
+      # column predicates each placeholder feeds in the query
+      # (LiteralSet.column_feeds). It runs only when there are words and
+      # statistics.
       def find(placeholder_map, statistics, &)
         words = placeholder_map.to_h.filter_map do |number, entry|
           match = WORD.match(entry["value"].to_s) if entry["type"] == "unknown"
@@ -71,13 +76,15 @@ module Quaack
         tables = statistics.fetch("tables").to_h { [TableName.new(schema: it["schema"], name: it["name"]), it] }
         feeds = yield tables.transform_values { it["column_names"] }
         words.keys.filter_map do |number|
-          type = column_type(tables, feeds["$#{number}"])
+          type = column_type(tables, feeds.fetch("$#{number}", []))
           [number, type] if DATE_TYPES.include?(type)
         end.to_h
       end
 
-      def column_type(tables, feed)
-        tables[feed.table].fetch("clock_columns", {})[feed.column] if feed.respond_to?(:table)
+      # The one type of every column the feeds compare with, or nil.
+      def column_type(tables, feeds)
+        types = feeds.map { tables[it.table].fetch("clock_columns", {})[it.column] }.uniq
+        types.first if types.size == 1
       end
 
       # The node that replaces node, or nil when it isn't a clock literal.

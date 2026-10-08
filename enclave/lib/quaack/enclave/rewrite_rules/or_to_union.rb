@@ -52,7 +52,8 @@ module Quaack
       #   function, WINDOW, DISTINCT ON, locking clause, WITH, or INTO. An
       #   aggregate with no GROUP BY is fine, and so is a plain DISTINCT.
       # - The OR is one of the conditions its WHERE ANDs together, and its
-      #   arms read different tables or subqueries (see Arms).
+      #   arms read different tables or subqueries, and none can raise on
+      #   some rows (see Arms).
       # - The FROM and every column used outside the WHERE are ones Reads
       #   takes, and the catalog proves a key of every table.
       # - Outside the WHERE there's no subquery, and each select-list
@@ -62,6 +63,13 @@ module Quaack
       #
       # A volatile function would run once per arm, but volatility refuses a
       # query that calls one, so none gets here.
+      #
+      # Postgres runs an OR's arms in order and stops at the first true
+      # one, so in i.qty = 0 OR i.total / i.qty > 10 the first arm keeps
+      # the division from running where it would raise. Split, every arm
+      # runs on its own, so the rule refuses an OR with an arm that can
+      # raise (Arms.raises?), and keeps arms that read the same tables
+      # together in one branch, as an OR in their order.
       class OrToUnion
         # A select-list entry of one of these is named for itself, not for
         # a column inside it.

@@ -90,6 +90,45 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
       result = anchor(sql, map("yesterday", "now", "tomorrow"))
       expect(result.replacements.map(&:original)).to eq(%w[$1 $2 $3])
     end
+
+    # or_to_union copies a condition outside the OR into each arm, so its
+    # placeholder appears once per arm (task 20261002-5).
+    it "anchors a placeholder that appears more than once, when each is compared with the same column type" do
+      sql = "SELECT o.id FROM public.orders o WHERE o.created_at >= $1 AND o.status = $2 " \
+            "UNION SELECT o.id FROM public.orders o WHERE o.created_at >= $1 AND o.id = $3"
+      result = anchor(sql, map("today", "open", "7"))
+      cast = "(#{today})::pg_catalog.timestamptz"
+      expect(result.sql).to eq(deparse(
+                                 "SELECT o.id FROM public.orders o WHERE o.created_at >= #{cast} AND o.status = $2 " \
+                                 "UNION SELECT o.id FROM public.orders o WHERE o.created_at >= #{cast} AND o.id = $3"
+                               ))
+      expect(restore(result)).to eq(deparse(sql))
+    end
+  end
+
+  describe "a placeholder that appears more than once, left alone" do
+    let(:statistics) do
+      { "tables" => [{ "schema" => "public", "name" => "orders", "column_names" => %w[id status created_at due_on],
+                       "clock_columns" => { "created_at" => "timestamptz", "due_on" => "date" } }] }
+    end
+
+    {
+      "one appearance isn't compared with a column" =>
+        "SELECT $1 AS x FROM public.orders o WHERE o.created_at >= $1",
+      "one appearance is compared with a text column" =>
+        "SELECT o.id FROM public.orders o WHERE o.created_at >= $1 OR o.status = $1",
+      "the columns' types differ" =>
+        "SELECT o.id FROM public.orders o WHERE o.created_at >= $1 OR o.due_on >= $1"
+    }.each do |what, sql|
+      it "when #{what}" do
+        expect(anchor(sql, map("today")).replacements).to eq([])
+      end
+    end
+
+    it "anchors it when every appearance is compared with a date column" do
+      sql = "SELECT o.id FROM public.orders o WHERE o.due_on >= $1 OR o.due_on < $1"
+      expect(anchor(sql, map("today")).replacements.map(&:original)).to eq(%w[$1 $1])
+    end
   end
 
   describe "what it leaves alone" do

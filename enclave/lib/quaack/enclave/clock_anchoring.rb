@@ -123,7 +123,7 @@ module Quaack
       end
 
       def clock_literals(sql, placeholder_map, statistics)
-        ClockLiterals.find(placeholder_map, statistics) { LiteralSet.feeds(parse(sql), it) }
+        ClockLiterals.find(placeholder_map, statistics) { LiteralSet.column_feeds(parse(sql), it) }
       end
 
       def result(tree, replacements, added_names)

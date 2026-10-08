@@ -251,6 +251,19 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(same_rows(sql, rewrites)).to eq([["1"], ["3"]])
     end
 
+    # Postgres would cut each column's name plus _1 to the same 63 bytes.
+    it "names the UNION's columns apart when the columns' names are 62 and 63 characters long" do
+      long = "x" * 62
+      conn.exec(%(CREATE TABLE public.wide (id int PRIMARY KEY, #{long} int, #{long}_ int)))
+      conn.exec("INSERT INTO public.wide VALUES (1, 10, 11), (3, 30, 31), (4, 40, 41)")
+      sql = "SELECT w.#{long}, w.#{long}_ FROM public.wide w JOIN public.s ON s.a_id = w.id WHERE s.flag OR w.id = 3"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.first).to start_with("SELECT arms_1.#{"x" * 61}_1 AS #{long}, arms_1.#{"x" * 61}_2 AS #{long}_ ")
+      expect(same_rows(sql, rewrites)).to eq([%w[10 11], %w[30 31]])
+    end
+
     it "splits the OR that key_in_self_join makes of an IN over a UNION ALL, when the generator chains them" do
       sql = "SELECT count(*) #{from} WHERE a.id IN (SELECT a2.id FROM public.a a2 JOIN public.s s2 " \
             "ON s2.a_id = a2.id JOIN public.cp ON cp.s_id = s2.id WHERE cp.user_id = 7 UNION ALL " \
@@ -357,7 +370,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "a table's alias renames columns" =>
         "SELECT a.id FROM public.a JOIN public.s s (id, a_id) ON s.a_id = a.id WHERE s.flag OR a.loose = 3",
       "two tables are read by one name" =>
-        "SELECT s.id FROM public.s, public.a, other.a WHERE s.flag OR a.loose = 3"
+        "SELECT s.id FROM public.s, public.a, other.a WHERE s.flag OR a.loose = 3",
+      # An arm that can raise on some rows (task 20261002-5).
+      "an arm casts a column" => "SELECT a.id FROM_ WHERE s.flag OR a.title::int = 3",
+      "an arm divides by a column" => "SELECT a.id FROM_ WHERE s.flag OR 6 / a.loose = 3",
+      "an arm compares with a modulo of a column" => "SELECT a.id FROM_ WHERE s.flag OR a.loose = 6 % a.id",
+      "an arm calls a function on a column" => "SELECT a.id FROM_ WHERE s.flag OR length(a.title) = 3",
+      "an arm matches a column with a regular expression" => "SELECT a.id FROM_ WHERE s.flag OR a.title ~ a.code",
+      "an arm has a scalar subquery" =>
+        "SELECT a.id FROM_ WHERE s.flag OR a.loose = (SELECT cp.user_id FROM public.cp WHERE cp.s_id = s.id)",
+      "an arm's subquery casts a column" =>
+        "SELECT a.id FROM_ WHERE s.flag OR EXISTS (SELECT 1 FROM public.cp WHERE cp.s_id::text = '1')"
     }.each do |why, sql|
       it "doesn't fire when #{why}" do
         expect(rewritten("SELECT a.id, a.title #{from} WHERE s.flag OR a.loose = 3").size).to eq(1)
@@ -374,6 +397,55 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         expect([conn.exec("SELECT a.id #{from} WHERE #{arm} OR a.loose = 1").ntuples, conn.exec(union).ntuples])
           .to eq([3, 2])
       end
+    end
+  end
+
+  # Postgres runs an OR's arms left to right and stops at the first true
+  # one, so an earlier arm can guard a later one that would raise. Split,
+  # every arm runs on its own rows, and the guarded one raises (task
+  # 20261002-5). Order 1 is 'n' kind, a VIP, and its item's qty is 0 and
+  # its val isn't a number. Order 2's item is ordinary.
+  context "with orders and their items, where an arm guards another" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.o (id int PRIMARY KEY, vip boolean NOT NULL, kind text NOT NULL);
+        CREATE TABLE public.i (id int PRIMARY KEY, order_id int NOT NULL, qty int NOT NULL, total int NOT NULL,
+                               val text NOT NULL);
+        INSERT INTO public.o VALUES (1, true, 'n'), (2, false, 'm');
+        INSERT INTO public.i VALUES (10, 1, 0, 50, 'abc'), (20, 2, 1, 50, '9');
+      SQL
+    end
+
+    let(:from) { "FROM public.o JOIN public.i ON i.order_id = o.id" }
+
+    {
+      "a cast" => "o.kind = 'n' OR i.val::int > 5",
+      "a division" => "o.vip OR i.total / i.qty > 10",
+      "a division guarded by an arm on its own table" => "i.qty = 0 OR i.total / i.qty > 10 OR o.vip"
+    }.each do |what, where|
+      it "refuses an OR with #{what} an earlier arm guards, which the original runs" do
+        sql = "SELECT o.id, i.id AS item #{from} WHERE #{where}"
+
+        expect(conn.exec(sql).values.sort).to eq([%w[1 10], %w[2 20]])
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
+    it "still splits an OR with no such arm, and a cast with no column in it" do
+      sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.total > '10'::int"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[1 10], %w[2 20]])
+    end
+
+    it "keeps the arms that read the same table together in one branch" do
+      sql = "SELECT o.id #{from} WHERE i.qty = 0 OR i.val = '9' OR o.kind = 'x'"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(rewrites.first.scan(" UNION ").size).to eq(1)
+      expect(rewrites.first).to include("WHERE i.qty = 0 OR i.val = '9' UNION")
+      expect(same_rows(sql, rewrites)).to eq([["1"], ["2"]])
     end
   end
 end

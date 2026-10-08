@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "../../deparse"
 require_relative "../tree"
+require_relative "arms"
 require_relative "reads"
 
 module Quaack
@@ -10,13 +11,14 @@ module Quaack
     module RewriteRules
       class OrToUnion
         # Builds the rewrite: a copy of the original tree whose SELECT
-        # reads, in place of its tables, the UNION of one branch per arm of
-        # the OR that is the WHERE's index-th condition.
+        # reads, in place of its tables, the UNION of one branch per group
+        # of arms (Arms.groups) of the OR that is the WHERE's index-th
+        # condition.
         #
         #   Union.new(parse.tree, index, reads).tree
         #
-        # A branch is the query's FROM and WHERE with one arm in the OR's
-        # place, selecting reads.columns, each under an alias of its own.
+        # A branch is the query's FROM and WHERE with one group's arms, ORed
+        # in their order, in the OR's place, selecting reads.columns, each under an alias of its own.
         # It has no DISTINCT, ORDER BY, LIMIT, or OFFSET: those stay
         # outside. Outside, each column is renamed to the UNION's, each
         # name.* becomes the table's columns, and a select-list entry that
@@ -44,8 +46,8 @@ module Quaack
           private
 
           def subselect
-            arms = Tree.conjuncts(Tree.select(@original).where_clause)[@index].bool_expr.args.size
-            union = Array.new(arms) { branch(it) }.reduce { |left, right| union(left, right) }
+            groups = Arms.groups(Tree.conjuncts(Tree.select(@original).where_clause)[@index])
+            union = groups.map { branch(it) }.reduce { |left, right| union(left, right) }
             PgQuery::Node.new(range_subselect: PgQuery::RangeSubselect.new(
               subquery: PgQuery::Node.new(select_stmt: union), alias: PgQuery::Alias.new(aliasname: @name)
             ))
@@ -55,18 +57,20 @@ module Quaack
             PgQuery::SelectStmt.new(op: :SETOP_UNION, larg: left, rarg: right, limit_option: :LIMIT_OPTION_DEFAULT)
           end
 
-          def branch(arm)
+          def branch(group)
             select = Tree.select(Deparse.copy(@original))
-            select.where_clause = where(select, arm)
+            select.where_clause = where(select, group)
             select.target_list.replace(@aliases.map { |(table, column), as| target(column(table, column), as) })
             unlimit!(select)
             select
           end
 
-          # The WHERE with only one arm in the OR's place.
-          def where(select, arm)
+          # The WHERE with only one group of arms, an OR of them in their
+          # order, in the OR's place.
+          def where(select, group)
             conditions = Tree.conjuncts(select.where_clause)
-            conditions[@index, 1] = Tree.conjuncts(conditions[@index].bool_expr.args[arm])
+            arms = conditions[@index].bool_expr.args
+            conditions[@index, 1] = Tree.conjuncts(Tree.any_of(group.map { arms[it] }))
             Tree.all_of(conditions)
           end
 

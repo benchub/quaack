@@ -6,7 +6,21 @@ It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](.
 
 ## What it does.
 
-A top-level `OR` whose arms read different tables or subqueries becomes a `UNION` of one query per arm: the query's `FROM` and `WHERE` with only that arm in the `OR`'s place. Each arm selects the columns the rest of the query uses and a key of every `FROM` table. The query then reads the `UNION` in place of its tables, so its select list, aggregates, `DISTINCT`, `ORDER BY`, and `LIMIT` apply to the whole `UNION`. It leaves alone a query with `GROUP BY`, `HAVING`, a window function, `DISTINCT ON`, a locking clause, `WITH`, an outer join, or a `FROM` item that isn't a table, and one that uses a column of a type `UNION` can't compare, such as `json`.
+A top-level `OR` whose arms read different tables or subqueries becomes a `UNION` of one query per arm: the query's `FROM` and `WHERE` with only that arm in the `OR`'s place. Each arm selects the columns the rest of the query uses and a key of every `FROM` table. The query then reads the `UNION` in place of its tables, so its select list, aggregates, `DISTINCT`, `ORDER BY`, and `LIMIT` apply to the whole `UNION`.
+
+It leaves a query alone when:
+
+- It has `GROUP BY`, `HAVING`, a window function, `DISTINCT ON`, a locking clause, `WITH`, or `INTO`.
+- Its `FROM` has an outer join, a `NATURAL` join, a join with `USING`, a join with an alias, or an item that isn't a schema-qualified table. A table read with `ONLY`, or under an alias that renames its columns, counts too.
+- Outside the `WHERE`, it has a subquery, in the select list or the `ORDER BY`.
+- Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column or a bare `*`, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
+- A select-list entry with no `AS` has a column in it but isn't a column, a function call, or an operator, such as a cast, a `COALESCE`, or a `CASE` over a column. A cast takes its name from its column, which the `UNION` renames, so the rule leaves all of these alone.
+- It uses a column of a type `UNION` can't compare, such as `json`.
+- An arm of the `OR`, its subqueries included, has something that can raise an error on some rows: a cast, a function call, or an operator other than a comparison (such as `/` or `%`) over a column, an index into a column, or a subquery used as a value. One with no column in it, such as `'10'::int`, is fine.
+
+That last refusal matters because Postgres runs an `OR`'s arms in order and stops at the first true one. In `o.vip OR i.total / i.qty > 10`, the first arm keeps the division from running on a VIP's rows, where `i.qty` may be 0. Split, each arm runs on its own, and the division would raise where the original returns rows.
+
+Arms with no subquery that read the same tables stay together in one query of the `UNION`, as an `OR` in their order. So `i.qty = 0 OR i.total > 10 OR o.vip` becomes two queries, not three.
 
 ## What it rests on.
 
