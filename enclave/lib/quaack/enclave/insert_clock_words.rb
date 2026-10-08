@@ -71,37 +71,40 @@ module Quaack
       # The types of that name in the schemas, or their array types.
       TYPES_SQL = <<~SQL
         SELECT CASE WHEN $3 THEN t.typarray ELSE t.oid END FROM pg_catalog.pg_type t
-        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-        WHERE n.nspname = ANY ($1::text[]) AND t.typname = $2
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) t.typnamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) ANY ($1::pg_catalog.text[]) AND t.typname OPERATOR(pg_catalog.=) $2
       SQL
 
       # The type of argument $4 (from 0) of each function the call could
       # resolve to, as InsertValues finds them.
       PARAMETER_TYPES_SQL = <<~SQL
-        SELECT CASE WHEN p.provariadic <> 0 AND $4::int >= p.pronargs - 1 THEN p.provariadic
+        SELECT CASE WHEN p.provariadic OPERATOR(pg_catalog.<>) 0
+                     AND $4::int OPERATOR(pg_catalog.>=) (p.pronargs OPERATOR(pg_catalog.-) 1) THEN p.provariadic
                     ELSE p.proargtypes[$4::int] END
         FROM pg_catalog.pg_proc p
-        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = ANY ($1::text[]) AND p.proname = $2
-          AND $3::int >= p.pronargs - p.pronargdefaults
-          AND ($3::int <= p.pronargs OR p.provariadic <> 0)
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) ANY ($1::pg_catalog.text[]) AND p.proname OPERATOR(pg_catalog.=) $2
+          AND $3::int OPERATOR(pg_catalog.>=) (p.pronargs OPERATOR(pg_catalog.-) p.pronargdefaults)
+          AND ($3::int OPERATOR(pg_catalog.<=) p.pronargs OR p.provariadic OPERATOR(pg_catalog.<>) 0)
       SQL
 
       # What a type is: whether it's a date or time type, its kind, its
       # domain's base type, its array's element type, its range's subtype,
       # its multirange's range type, and its composite's field types.
       TYPE_SQL = <<~SQL
-        SELECT t.oid IN ('pg_catalog.date'::pg_catalog.regtype, 'pg_catalog.time'::pg_catalog.regtype,
-                         'pg_catalog.timetz'::pg_catalog.regtype, 'pg_catalog.timestamp'::pg_catalog.regtype,
-                         'pg_catalog.timestamptz'::pg_catalog.regtype),
-               t.typtype::text, t.typbasetype,
-               CASE WHEN t.typsubscript = 'pg_catalog.array_subscript_handler'::pg_catalog.regproc
+        SELECT t.oid OPERATOR(pg_catalog.=) ANY (ARRAY[
+                 'pg_catalog.date'::pg_catalog.regtype, 'pg_catalog.time'::pg_catalog.regtype,
+                 'pg_catalog.timetz'::pg_catalog.regtype, 'pg_catalog.timestamp'::pg_catalog.regtype,
+                 'pg_catalog.timestamptz'::pg_catalog.regtype]::pg_catalog.oid[]),
+               t.typtype::pg_catalog.text, t.typbasetype,
+               CASE WHEN t.typsubscript OPERATOR(pg_catalog.=) 'pg_catalog.array_subscript_handler'::pg_catalog.regproc
                     THEN t.typelem ELSE 0 END,
-               (SELECT r.rngsubtype FROM pg_catalog.pg_range r WHERE r.rngtypid = t.oid),
-               (SELECT r.rngtypid FROM pg_catalog.pg_range r WHERE r.rngmultitypid = t.oid),
+               (SELECT r.rngsubtype FROM pg_catalog.pg_range r WHERE r.rngtypid OPERATOR(pg_catalog.=) t.oid),
+               (SELECT r.rngtypid FROM pg_catalog.pg_range r WHERE r.rngmultitypid OPERATOR(pg_catalog.=) t.oid),
                (SELECT pg_catalog.array_agg(a.atttypid ORDER BY a.attnum) FROM pg_catalog.pg_attribute a
-                WHERE a.attrelid = t.typrelid AND a.attnum > 0 AND NOT a.attisdropped)
-        FROM pg_catalog.pg_type t WHERE t.oid = $1
+                WHERE a.attrelid OPERATOR(pg_catalog.=) t.typrelid AND a.attnum OPERATOR(pg_catalog.>) 0
+                  AND NOT a.attisdropped)
+        FROM pg_catalog.pg_type t WHERE t.oid OPERATOR(pg_catalog.=) $1
       SQL
 
       TypeInfo = Data.define(:clock, :kind, :base, :element, :subtype, :range, :fields)

@@ -98,7 +98,7 @@ module Quaack
         def readable?(col, value)
           @readable.fetch([col.type, value]) do
             @readable[[col.type, value]] =
-              @conn.exec_params("SELECT pg_input_is_valid($1, $2)", [value, col.type]).getvalue(0, 0) == "t"
+              @conn.exec_params("SELECT pg_catalog.pg_input_is_valid($1, $2)", [value, col.type]).getvalue(0, 0) == "t"
           rescue PG::Error
             @readable[[col.type, value]] = false
           end

@@ -84,7 +84,7 @@ module Quaack
 
         def level(conn, cols, literals, index)
           col = cols[index]
-          category = conn.exec_params("SELECT typcategory FROM pg_type WHERE oid = $1", [col.oid]).getvalue(0, 0)
+          category = ValuePools::Category.of(conn, col)
           prefix = cols.first(index).map(&:name).zip(literals.first(index)).to_h
           values = [literals[index]] + ValuePools.steps(conn, literals[index], col, category)
           values.map { |v| prefix.merge(col.name => v) }

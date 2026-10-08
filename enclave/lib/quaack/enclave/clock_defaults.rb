@@ -36,19 +36,23 @@ module Quaack
       TIME_CASTS = { SVFOP_CURRENT_TIME: "pg_catalog.timetz", SVFOP_CURRENT_TIME_N: "pg_catalog.timetz" }.freeze
       TEXT_TYPES = %w[text varchar bpchar].freeze
 
-      SYSTEM_SCHEMAS = "n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_%'"
+      SYSTEM_SCHEMAS = <<~SQL
+        n.nspname OPERATOR(pg_catalog.<>) ALL ('{pg_catalog,information_schema}'::pg_catalog.name[])
+          AND n.nspname OPERATOR(pg_catalog.!~~) 'pg\\_%'
+      SQL
       COLUMN_DEFAULTS_SQL = <<~SQL.freeze
         SELECT n.nspname, c.relname, a.attname, pg_catalog.pg_get_expr(d.adbin, d.adrelid)
         FROM pg_catalog.pg_attrdef d
-        JOIN pg_catalog.pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-        JOIN pg_catalog.pg_class c ON c.oid = d.adrelid
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE a.attgenerated = '' AND NOT a.attisdropped AND #{SYSTEM_SCHEMAS}
+        JOIN pg_catalog.pg_attribute a
+          ON a.attrelid OPERATOR(pg_catalog.=) d.adrelid AND a.attnum OPERATOR(pg_catalog.=) d.adnum
+        JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) d.adrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+        WHERE a.attgenerated OPERATOR(pg_catalog.=) '' AND NOT a.attisdropped AND #{SYSTEM_SCHEMAS}
       SQL
       DOMAIN_DEFAULTS_SQL = <<~SQL.freeze
         SELECT n.nspname, t.typname, pg_catalog.pg_get_expr(t.typdefaultbin, 0)
-        FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-        WHERE t.typtype = 'd' AND t.typdefaultbin IS NOT NULL AND #{SYSTEM_SCHEMAS}
+        FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) t.typnamespace
+        WHERE t.typtype OPERATOR(pg_catalog.=) 'd' AND t.typdefaultbin IS NOT NULL AND #{SYSTEM_SCHEMAS}
       SQL
 
       module_function

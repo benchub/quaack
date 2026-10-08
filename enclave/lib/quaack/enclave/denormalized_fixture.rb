@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "arena_runner"
+require_relative "assumption_check/denormalized_equal"
 require_relative "rewrite_assumptions"
 require_relative "table_name"
 
@@ -37,9 +38,10 @@ module Quaack
 
       FOREIGN_KEYS = <<~SQL
         SELECT c.conname FROM pg_catalog.pg_constraint c
-        WHERE c.conrelid = $1::regclass AND c.contype = 'f'
+        WHERE c.conrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND c.contype OPERATOR(pg_catalog.=) 'f'
           AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
-                      WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) AND a.attname = $2)
+                      WHERE a.attrelid OPERATOR(pg_catalog.=) c.conrelid
+                        AND a.attnum OPERATOR(pg_catalog.=) ANY (c.conkey) AND a.attname OPERATOR(pg_catalog.=) $2)
       SQL
 
       module_function
@@ -72,6 +74,14 @@ module Quaack
 
       def table(name) = RewriteAssumptions.split(name).then { |schema, relname| TableName.new(schema:, name: relname) }
 
+      # The arena's catalog, read through the runner's statement, as
+      # AssumptionCheck::Equality reads a connection.
+      Catalog = Struct.new(:run, :quote) do
+        def exec_params(sql, params) = Rows.new(run.call(sql, params).rows)
+        def quote_ident(name) = quote.call(name)
+      end
+      Rows = Data.define(:values)
+
       # statement is the runner's; quote quotes an identifier.
       def load(copies, statement, quote)
         copies.each_with_index do |copy, index|
@@ -80,17 +90,24 @@ module Quaack
           run.call(FOREIGN_KEYS, [child, copy.column]).rows.each do |(name)|
             run.call("ALTER TABLE #{child} DROP CONSTRAINT #{quote.call(name)}")
           end
-          run.call(update_sql(copy, child, quote), [copy.type_value])
+          run.call(update_sql(copy, child, Catalog.new(run, quote), index), [copy.type_value])
         end
       end
 
-      def update_sql(copy, child, quote)
-        name = ->(key) { quote.call(copy.public_send(key)) }
-        "UPDATE #{child} c SET #{name.call(:column)} = p.#{name.call(:id_column)} " \
-          "FROM #{table_sql(copy.references_table, quote)} p " \
-          "WHERE c.#{name.call(:join_column)} = p.#{name.call(:references_column)} " \
-          "AND p.#{name.call(:type_column)} = $1 " \
-          "AND c.#{name.call(:column)} IS DISTINCT FROM p.#{name.call(:id_column)}"
+      # Its comparisons are the columns' types' own =, as assumption-check
+      # compares them (AssumptionCheck::DenormalizedEqual), named with
+      # their schema, so one planted ahead of it on the search_path can't
+      # skip a row, and citext's stays citext's. Columns whose types share
+      # no = fail the load.
+      def update_sql(copy, child, catalog, index)
+        parent = table_sql(copy.references_table, catalog.quote)
+        assumption = copy.to_h.slice(*NAMES.map(&:to_sym)).transform_keys(&:to_s)
+        joined, typed, same = AssumptionCheck::DenormalizedEqual.conditions(assumption, catalog, child, parent)
+        name = ->(key) { catalog.quote_ident(copy.public_send(key)) }
+        "UPDATE #{child} c SET #{name.call(:column)} = p.#{name.call(:id_column)} FROM #{parent} p " \
+          "WHERE #{joined} AND #{typed} AND NOT COALESCE(#{same})"
+      rescue AssumptionCheck::DenormalizedEqual::Unmet
+        raise ArenaRunner::Error.new(:fixture_load_failed, step: :load, index:), cause: nil
       end
 
       def table_sql(table, quote) = [table.schema, table.name].map { quote.call(it) }.join(".")

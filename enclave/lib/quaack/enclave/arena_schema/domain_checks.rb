@@ -11,14 +11,16 @@ module Quaack
         # domain is built on, as column name and pg_get_constraintdef.
         QUERY = <<~SQL
           WITH RECURSIVE d(attname, typid) AS (
-            SELECT a.attname, a.atttypid FROM pg_attribute a
-            WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
+            SELECT a.attname, a.atttypid FROM pg_catalog.pg_attribute a
+            WHERE a.attrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND a.attnum OPERATOR(pg_catalog.>) 0
+              AND NOT a.attisdropped
             UNION ALL
-            SELECT d.attname, t.typbasetype FROM d JOIN pg_type t ON t.oid = d.typid WHERE t.typtype = 'd'
+            SELECT d.attname, t.typbasetype FROM d JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) d.typid
+            WHERE t.typtype OPERATOR(pg_catalog.=) 'd'
           )
-          SELECT d.attname, pg_get_constraintdef(c.oid)
-          FROM d JOIN pg_constraint c ON c.contypid = d.typid
-          WHERE c.contype = 'c' AND c.convalidated
+          SELECT d.attname, pg_catalog.pg_get_constraintdef(c.oid)
+          FROM d JOIN pg_catalog.pg_constraint c ON c.contypid OPERATOR(pg_catalog.=) d.typid
+          WHERE c.contype OPERATOR(pg_catalog.=) 'c' AND c.convalidated
           ORDER BY d.attname, c.conname
         SQL
 

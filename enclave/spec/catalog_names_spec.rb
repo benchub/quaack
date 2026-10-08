@@ -11,31 +11,11 @@ require_relative "support/catalog_names"
 RSpec.describe "catalog names in the enclave's SQL" do
   root = File.join(GEM_ROOT, "lib")
 
-  # The files whose SQL isn't qualified yet, all arena reads, for what's
-  # left of task 20261007-9. The list may only shrink: a file on it with nothing left
-  # to qualify fails, as does a file off it with something to qualify, or
-  # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
-  # doesn't have.
-  not_yet_qualified = %w[
-    quaack/enclave/arena.rb
-    quaack/enclave/arena_runner/deferred.rb
-    quaack/enclave/arena_runner/pipeline.rb
-    quaack/enclave/arena_runner/sequences.rb
-    quaack/enclave/arena_schema.rb
-    quaack/enclave/arena_schema/domain_checks.rb
-    quaack/enclave/arena_schema/unique_indexes.rb
-    quaack/enclave/clock_defaults.rb
-    quaack/enclave/counterexamples/evaluated.rb
-    quaack/enclave/denormalized_fixture.rb
-    quaack/enclave/insert_check.rb
-    quaack/enclave/insert_clock_words.rb
-    quaack/enclave/insert_values.rb
-    quaack/enclave/rewrite_rules/existence_in_flip.rb
-    quaack/enclave/scenarios/ties.rb
-    quaack/enclave/scenarios/types.rb
-    quaack/enclave/scenarios/values.rb
-    quaack/enclave/value_pools.rb
-  ].freeze
+  # The files whose SQL isn't qualified yet, empty since task 20261007-31.
+  # The list may only shrink: a file on it with nothing left to qualify
+  # fails, as does a file off it with something to qualify, or a file that
+  # CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form, doesn't have.
+  not_yet_qualified = [].freeze
 
   # The source scan, and every loaded constant's SQL, which finds SQL a
   # constant builds from others.
@@ -57,7 +37,7 @@ RSpec.describe "catalog names in the enclave's SQL" do
   end
 
   it "names a file the list gains that it didn't start with, and none it already had" do
-    grown = [*not_yet_qualified.drop(1), "quaack/enclave/run_server_check.rb", not_yet_qualified.first]
+    grown = [*CatalogNames::NOT_YET_QUALIFIED_AT_START.first(2), "quaack/enclave/run_server_check.rb"]
 
     expect(CatalogNames.added(grown)).to eq(["quaack/enclave/run_server_check.rb"])
   end
@@ -67,6 +47,11 @@ RSpec.describe "catalog names in the enclave's SQL" do
     expect(sites.size).to be > 150
     skipped = sites.reject(&:parse).map { |site| CatalogNames::SKIP.keys.find { |file, start| site.file == file && site.text.start_with?(start) } }
     expect(skipped.uniq).to match_array(CatalogNames::SKIP.keys)
+  end
+
+  it "finds every FORMAT_TYPE_HOLES entry's interpolation in its file" do
+    missing = CatalogNames::FORMAT_TYPE_HOLES.keys.reject { |file, source| File.read(File.join(root, file)).include?("\#{#{source}}") }
+    expect(missing).to eq([])
   end
 
   describe "the scan itself" do
@@ -109,6 +94,19 @@ RSpec.describe "catalog names in the enclave's SQL" do
         B = "SELECT 1 FROM \#{WHERE_SQL}"
       RUBY
       expect(scan(source)).to eq(["line 5: operator ="])
+    end
+
+    it "reads adjacent literals as one string, even when the first is interpolated" do
+      expect(scan(%(A = "UPDATE \#{t} SET a = 1 " \\\n  "WHERE b = 2"\n))).to eq(["line 1: operator ="])
+    end
+
+    it "reads a FORMAT_TYPE_HOLES interpolation as a qualified type, only in its file, and flags any other" do
+      source = %(A = "SELECT CAST($1 AS \#{col.type})::\#{other.type}"\n)
+      stub_const("CatalogNames::FORMAT_TYPE_HOLES", { ["x.rb", "col.type"] => "a test" })
+
+      expect(scan(source)).to eq(["line 1: type quaack_x"])
+      File.write(File.join(dir, "y.rb"), source)
+      expect(CatalogNames.scan(dir).fetch("y.rb")).to eq(["line 1: type quaack_x", "line 1: type quaack_x"])
     end
 
     it "flags a loaded constant built from others, which the source scan sees only in pieces" do

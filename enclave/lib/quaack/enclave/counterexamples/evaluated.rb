@@ -43,7 +43,8 @@ module Quaack
         def self.text(conn, value)
           return :default if value.set_to_default
 
-          conn.exec("SELECT (#{ValuePools::Sides.select_of(value).delete_prefix("SELECT ")})::text").getvalue(0, 0)
+          conn.exec("SELECT (#{ValuePools::Sides.select_of(value).delete_prefix("SELECT ")})::pg_catalog.text")
+              .getvalue(0, 0)
         end
 
         def table = insert.table

@@ -5,6 +5,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/denormalized_fixture"
 require "quaack/enclave/scenario_tests"
 require "quaack/enclave/table_name"
+require_relative "support/catalog_shadow"
 
 # Arena fixtures that honour a rule's denormalized_equal assumption (DESIGN.md
 # rewrite-rules, rewrite-test, llm-counterexamples), in Canvas's shape: a submission of an assignment whose
@@ -66,6 +67,29 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
       expect(honoured).to eq([%w[1 50], %w[2 1], %w[3 50]])
       expect(foreign_keys).to eq(2)
       expect(conn.exec("SELECT count(*) FROM cv.submissions").getvalue(0, 0)).to eq("0")
+    end
+
+    # Task 20261007-31: the copy's comparisons are its columns' types' own
+    # = (AssumptionCheck::Equality), named with their schema.
+    it "sets the copy when public's text and bigint comparisons, ahead of pg_catalog's, say no" do
+      CatalogShadow.plant(conn, :operators)
+      conn.exec("SET search_path = public, pg_catalog")
+
+      expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 1], %w[3 50]])
+    end
+
+    it "matches the class with the type column's own =, as citext's case-insensitive one" do
+      conn.exec("CREATE EXTENSION citext SCHEMA public")
+      conn.exec("ALTER TABLE cv.assignments ALTER COLUMN context_type TYPE public.citext")
+
+      expect(copies(described_class.new(conn, [copy.with(type_value: "COURSE")]))).to eq([%w[1 50], %w[2 1], %w[3 50]])
+    end
+
+    it "fails the load when the copy and the parent's id share no =, as bigint and numeric don't" do
+      conn.exec("ALTER TABLE cv.assignments ALTER COLUMN context_id TYPE pg_catalog.numeric")
+
+      expect { copies(described_class.new(conn, [copy])) }
+        .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect([it.rule, it.step]).to eq(%i[fixture_load_failed load]) }
     end
 
     it "leaves the fixture as built without a copy to honour" do
