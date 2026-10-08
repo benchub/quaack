@@ -21,6 +21,23 @@ RSpec.describe Quaack::Driver::FixedNotes do
     expect(error("teardown_failed").to_go_on?).to be(false)
   end
 
+  # The review of 20261007-29: a plan gate mismatch is the operator's to
+  # fix, from PlanGate::MISMATCH_DETAIL's words.
+  it "says a plan gate mismatch likely means stale statistics, and how to fix them" do
+    expect(error("plan_gate_mismatch_likely_stale_statistics").rule_with_note(next_step:))
+      .to eq("plan_gate_mismatch_likely_stale_statistics: The racetrack's plan for the slow literals doesn't " \
+             "match production's plan. The likely cause is that the racetrack's statistics don't match " \
+             "production's, such as a backup older than the statistics QUAACK read from production. Restore a " \
+             "fresh backup on the run server, or run ANALYZE in the racetrack database. To go on, resume with " \
+             "`quaack setup --run R1`")
+  end
+
+  it "says a plan the gate can't compare is a query QUAACK v1 can't tune, not a bug" do
+    expect(error("plan_gate_not_comparable").rule_with_note(next_step:))
+      .to eq("plan_gate_not_comparable: A plan has a condition QUAACK can't compare, so it can't tell whether " \
+             "the racetrack plans the query as production did. QUAACK v1 can't tune this query")
+  end
+
   it "leaves the next step to teardown for a teardown rule" do
     expect(error("teardown_failed").rule_with_note(next_step:))
       .to eq("teardown_failed: QUAACK couldn't finish deleting the run's store on the jump server, " \

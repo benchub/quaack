@@ -220,6 +220,17 @@ module Quaack
                                     "that database yourself. #{GO_ON}",
         "arena_dump_load_failed" => "Production's schema didn't load into the arena database on the run " \
                                     "server. The run server's log names the statement that failed. #{GO_ON}",
+        # index-search's plan gate, worded from PlanGate's details.
+        "plan_gate_mismatch_likely_stale_statistics" => "The racetrack's plan for the slow literals doesn't " \
+                                                        "match production's plan. The likely cause is that the " \
+                                                        "racetrack's statistics don't match production's, such " \
+                                                        "as a backup older than the statistics QUAACK read " \
+                                                        "from production. Restore a fresh backup on the run " \
+                                                        "server, or run ANALYZE in the racetrack database. " \
+                                                        "#{GO_ON}",
+        "plan_gate_not_comparable" => "A plan has a condition QUAACK can't compare, so it can't tell whether " \
+                                      "the racetrack plans the query as production did. QUAACK v1 can't tune " \
+                                      "this query.",
         "statement_canceled" => "Something other than QUAACK's own time limit canceled one of QUAACK's queries " \
                                 "on the run server: another session, or a statement_timeout set on the server, " \
                                 "database, or role. Make sure nothing else uses the run server and that " \
@@ -275,7 +286,7 @@ module Quaack
         invalid_index_candidate indexes_hidden in_transaction session_closed hypopg_failed explain_failed
         cleanup_failed prepare_failed execute_failed bad_type not_one_select unknown_placeholder bad_placeholder
         bad_placeholder_map bad_literal bad_literal_sets bad_statistics statistics_bad_shape bad_value
-        plan_gate_bad_plan plan_gate_not_comparable plan_gate_mismatch_likely_stale_statistics
+        plan_gate_bad_plan
         not_a_query_parse using_column_unreplaceable deparse_mismatch parse_error restore_mismatch unparsable
         bad_conninfo_key secret_in_conninfo
         already_in_transaction connection_unusable begin_failed statement_not_allowed statement_unparsable
