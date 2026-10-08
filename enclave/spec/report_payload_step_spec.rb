@@ -5,6 +5,7 @@ require "quaack/enclave/burndown"
 require "quaack/enclave/clock_anchoring"
 require "quaack/enclave/index_candidate"
 require "quaack/enclave/index_store"
+require "quaack/enclave/steps/result_comparison"
 require "quaack/enclave/store"
 
 # `quaacks report-payload --run <run ID>` (DESIGN.md's report): one report
@@ -349,14 +350,13 @@ RSpec.describe "quaacks report-payload" do
       store.write("selection", selection.merge("excluded" => selection["excluded"].merge(labels)))
     end
 
-    # result-comparison's entry, as ResultComparison.entry writes it, from each
+    # result-comparison's entry, by ResultComparison.entry, from each
     # rewrite's verdict rule by literal set (nil for a pass).
     def compared(store, rules)
       verdicts = rules.to_h do |number, sets|
         ["rewrite_#{number}", sets.transform_values { { "result" => it ? "fail" : "pass", "rule" => it } }]
       end
-      failed = verdicts.select { |_, sets| sets.values.any? { it["result"] == "fail" } }.keys
-      store.write("result_comparison", "verdicts" => verdicts, "discarded" => failed, "partial_count" => 0)
+      store.write("result_comparison", Quaack::Enclave::Steps::ResultComparison.entry(verdicts))
     end
 
     def fate(number) = rewrite(number).slice("fate", "scenario", "rule", "round", "after").compact
@@ -651,7 +651,7 @@ RSpec.describe "quaacks report-payload" do
         store.write("rewrite_survived_#{number}", "survived" => survived)
       end
 
-      # Writes result-comparison's entry as ResultComparison.entry does, from each
+      # Writes result-comparison's entry, by ResultComparison.entry, from each
       # rewrite's verdict rules by literal set (nil for a pass).
       def compared(store, **rules)
         verdicts = rules.to_h do |number, sets|
@@ -659,8 +659,7 @@ RSpec.describe "quaacks report-payload" do
             { "result" => rule ? "fail" : "pass", "rule" => rule }
           end]
         end
-        failed = verdicts.select { |_, sets| sets.values.any? { it["result"] == "fail" } }.keys
-        store.write("result_comparison", "verdicts" => verdicts, "discarded" => failed, "partial_count" => 0)
+        store.write("result_comparison", Quaack::Enclave::Steps::ResultComparison.entry(verdicts))
       end
 
       it "is empty when no rule-made rewrite was disproved" do
@@ -685,6 +684,21 @@ RSpec.describe "quaacks report-payload" do
              { "rewrite" => "rewrite_3", "rules" => both, "step" => "counterexamples" },
              { "rewrite" => "rewrite_4", "rules" => both, "step" => "result-comparison" }]
           )
+        end
+      end
+
+      context "with a rule-made rewrite rewrite-test disproved, when nothing beat the original" do
+        let(:outcome) do
+          with_rewrite do |store|
+            store.write("selection", store.read("selection").merge("top" => []))
+            rule_made(store, 2, tested(false, "multiset", "s3"), false)
+          end
+        end
+
+        it "still names it" do
+          expect(report["top"]).to eq([])
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "rewrite-test",
+                                               "rules" => %w[key_in_self_join key_in_self_join] }])
         end
       end
 

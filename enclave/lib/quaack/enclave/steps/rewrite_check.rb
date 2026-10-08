@@ -99,22 +99,12 @@ module Quaack
         # after a call that died before its marker, store no rewrite twice.
         def check(store, source:, also: ->(_) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
-          context = context(store, connection, source).merge(stored: stored(store, source))
+          context = context(store, connection, source).merge(stored: StoredRewrites.call(store, source))
           tagged = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
           RewriteBurndown.record_check(store, source, tagged, also)
           tagged.map(&:first)
         ensure
           connection&.close
-        end
-
-        # { accepted SQL => entry name } for the rewrites of source the store
-        # already holds, the earliest of each.
-        def stored(store, source)
-          names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
-          names.each_with_object({}) do |name, found|
-            entry = store.read(name)
-            found[entry["sql"]] ||= name if entry["source"] == source
-          end
         end
 
         # What every rewrite of a call is checked with.
@@ -227,6 +217,20 @@ module Quaack
           store = context[:store]
           ClockAnchoring.anchor(sql, context[:settings], placeholder_map: store.read("placeholder_map"),
                                                          statistics: store.read("statistics")).sql
+        end
+      end
+
+      # { accepted SQL => entry name } for the rewrites of source the store
+      # already holds, the earliest of each, for RewriteCheck.check.
+      module StoredRewrites
+        module_function
+
+        def call(store, source)
+          names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
+          names.each_with_object({}) do |name, found|
+            entry = store.read(name)
+            found[entry["sql"]] ||= name if entry["source"] == source
+          end
         end
       end
     end

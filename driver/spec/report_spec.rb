@@ -1216,6 +1216,15 @@ RSpec.describe Quaack::Driver::Report do
                               "ended without comparing results")
     end
 
+    it "labels a rule-made rewrite that rewrite-test disproved with its rules" do
+      line = fated(2, "rewrite_test_disproved", scenario: "s3", rule: "multiset", source: "rule",
+                                                rules: %w[or_to_union key_in_self_join])
+      list = section(render(negative_payload.merge("rewrites" => [line])), "negative-result")
+      expect(list).to include(esc("<li>Rewrite Smooth Kayak (made by QUAACK's own rewrite rules or_to_union, then " \
+                                  "key_in_self_join): It returned different results from your query on made-up " \
+                                  "test data (duplicate join keys), so it's wrong.</li>"))
+    end
+
     it "says so when no rewrite was kept" do
       expect(section(render(negative_payload.merge("rewrites" => [])), "negative-result"))
         .to include("QUAACK kept no rewrite to test.")
