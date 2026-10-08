@@ -113,7 +113,7 @@ RSpec.describe Quaack::Enclave::IndexBurndown, ".record_rank" do
       generated = { generator_one: 0, generator_two: 0 }
 
       expect { described_class.record_search(store, :original, generated, dedupe:, test: [report, []]) }
-        .to raise_error(Quaack::Enclave::Burndown::Error, "an index-test report must test exactly the Dedupe's proposals")
+        .to raise_error(Quaack::Enclave::Burndown::Error, /must test exactly the Dedupe's proposals/)
       expect(Quaack::Enclave::Burndown.read(store)["stages"]).to eq({})
     end
   end
