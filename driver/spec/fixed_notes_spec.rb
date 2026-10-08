@@ -35,16 +35,18 @@ RSpec.describe Quaack::Driver::FixedNotes do
   # 20261008-16: an orphaned build is the operator's to clear.
   it "says an orphaned build still running after the wait can be waited out" do
     expect(error("index_build_orphan_running", step: "index-build").rule_with_note(next_step:))
-      .to eq("index_build_orphan_running: A CREATE INDEX from an earlier, timed-out index-build call is still " \
-             "running on the run server, and it didn't stop when QUAACK canceled it. Wait for it to finish " \
-             "or stop it yourself. To go on, resume with `quaack setup --run R1`")
+      .to eq("index_build_orphan_running: A CREATE INDEX from an earlier, timed-out index-build call was still " \
+             "running on the run server, and it didn't stop when QUAACK canceled it. If the run server is " \
+             "torn down, the build went with it. If you kept it, wait for the build to finish or stop it " \
+             "yourself. To go on, resume with `quaack setup --run R1`")
   end
 
   it "says an orphaned build QUAACK may not cancel can be canceled by hand" do
     expect(error("index_build_orphan_cancel_denied", step: "index-build").rule_with_note(next_step:))
-      .to eq("index_build_orphan_cancel_denied: A CREATE INDEX from an earlier, timed-out index-build call is " \
-             "still running on the run server, and QUAACK's role may not cancel it. Cancel that backend " \
-             "yourself, with pg_cancel_backend as a role that may. To go on, resume with `quaack setup --run R1`")
+      .to eq("index_build_orphan_cancel_denied: A CREATE INDEX from an earlier, timed-out index-build call " \
+             "was still running on the run server, and QUAACK's role may not cancel it. If the run server is torn " \
+             "down, the build went with it. If you kept it, cancel that backend yourself, with " \
+             "pg_cancel_backend as a role that may. To go on, resume with `quaack setup --run R1`")
   end
 
   it "ends no note with a period, so a caller can add a sentence after it" do

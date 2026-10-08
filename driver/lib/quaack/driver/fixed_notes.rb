@@ -275,13 +275,15 @@ module Quaack
                                       "the racetrack plans the query as production did. QUAACK v1 can't tune " \
                                       "this query.",
         # index-build's guards against an orphaned build (BuildConnection).
-        "index_build_orphan_running" => "A CREATE INDEX from an earlier, timed-out index-build call is still " \
+        "index_build_orphan_running" => "A CREATE INDEX from an earlier, timed-out index-build call was still " \
                                         "running on the run server, and it didn't stop when QUAACK canceled " \
-                                        "it. Wait for it to finish or stop it yourself. #{GO_ON}",
-        "index_build_orphan_cancel_denied" => "A CREATE INDEX from an earlier, timed-out index-build call is " \
+                                        "it. If the run server is torn down, the build went with it. If you " \
+                                        "kept it, wait for the build to finish or stop it yourself. #{GO_ON}",
+        "index_build_orphan_cancel_denied" => "A CREATE INDEX from an earlier, timed-out index-build call was " \
                                               "still running on the run server, and QUAACK's role may not " \
-                                              "cancel it. Cancel that backend yourself, with pg_cancel_backend " \
-                                              "as a role that may. #{GO_ON}",
+                                              "cancel it. If the run server is torn down, the build went with " \
+                                              "it. If you kept it, cancel that backend yourself, with " \
+                                              "pg_cancel_backend as a role that may. #{GO_ON}",
         "statement_canceled" => "Something other than QUAACK's own time limit canceled one of QUAACK's queries " \
                                 "on the run server: another session, or a statement_timeout set on the server, " \
                                 "database, or role. Make sure nothing else uses the run server and that " \

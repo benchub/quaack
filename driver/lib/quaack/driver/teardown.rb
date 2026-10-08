@@ -9,7 +9,7 @@ module Quaack
     # Runs `quaacks teardown --run <id>` when a run ends, however it ends
     # (DESIGN.md, "Where QUAACK runs"):
     #
-    #   Teardown.around(transport:, run_id:, stderr:, keep: false) { ... }
+    #   Teardown.around(transport:, run_id:, stderr:, jump:, keep: false) { ... }
     #   # => the block's value
     #
     # It tears down in an ensure, so a run that succeeds, aborts, or raises
