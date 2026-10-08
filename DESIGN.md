@@ -844,7 +844,7 @@ Each problem pattern in the plan points to a potentially-helpful index:
 
 This filter runs on each generator's output as soon as the generator produces it, not once at the end.
 
-Normalize every definition. Drop any candidate whose key columns and `INCLUDE` columns are a leading prefix of an existing index. Also drop any candidate that matches one an earlier generator already proposed, but add the later generator to its list of sources.
+Normalize every definition. Normalizing folds a column compared with true or false to the bare test, as the planner does, so an existing `WHERE (deleted = true)`, which pg_indexes keeps as written, matches a candidate's `WHERE deleted`. An existing index's `WITH (...)` storage parameters, such as fillfactor, are dropped, and a `NULLS NOT DISTINCT` unique index reads as plain unique, since neither changes what the index serves. Drop any candidate whose key columns and `INCLUDE` columns are a leading prefix of an existing index. Also drop any candidate that matches one an earlier generator already proposed, but add the later generator to its list of sources.
 
 A dropped duplicate isn't lost work. If generator one's ideal key already exists, the query isn't slow for lack of that index, and that's worth knowing. Record every duplicate and the index that covers it, so negative-result can report it.
 

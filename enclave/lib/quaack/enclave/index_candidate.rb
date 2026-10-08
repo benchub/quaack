@@ -102,9 +102,23 @@ module Quaack
       # shape can't represent: an opclass with parameters, NULLS
       # NOT DISTINCT, ON ONLY, WITH options, TABLESPACE, CONCURRENTLY, IF NOT
       # EXISTS, an unqualified table, or anything the constructor refuses.
-      # Raises Error if the SQL isn't exactly one CREATE INDEX. No
+      # For an existing index, use from_indexdef. Raises Error if the SQL isn't exactly one CREATE INDEX. No
       # error message includes the SQL.
       def self.from_ddl(sql, sources:) = IndexSql.read_index(sql, sources)
+
+      # Reads an existing index, as pg_get_indexdef prints it, with sources
+      # [:existing]. Like from_ddl, but it drops WITH (...) storage
+      # parameters, such as fillfactor, and reads a NULLS NOT DISTINCT
+      # unique index as plain unique: neither changes which queries the
+      # index serves, so it still covers a candidate in index-dedupe. A
+      # NULLS NOT DISTINCT index is a stricter unique than plain UNIQUE, so
+      # as a uniqueness fact it only says less than is true. ON ONLY still
+      # gives nil: Postgres prints it only for an index on a partitioned
+      # table, and v1 refuses a query on one, so no run reads one.
+      # from_ddl keeps refusing these, since it also reads the LLM's DDL,
+      # where dropping an option would test something other than what was
+      # proposed.
+      def self.from_indexdef(sql) = IndexSql.read_index(sql, [:existing], existing: true)
 
       # Pattern matching sees every member but the predicate, so a failed
       # match can't quote it. There's no positional (array) pattern.

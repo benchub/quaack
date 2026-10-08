@@ -28,8 +28,8 @@ module Quaack
     #       columns: { "status" => ColumnStatistics.new(n_distinct: 5, null_frac: 0, correlation: nil,
     #                                                   most_common_vals: %w[delivered shipped],  # optional
     #                                                   most_common_freqs: [0.7, 0.2]) },         # optional
-    #       indexes: { "orders_pkey" => IndexCandidate.from_ddl(pkey_indexdef, sources: [:existing]),
-    #                  "orders_note_trgm_idx" => nil }  # nil: from_ddl couldn't represent it
+    #       indexes: { "orders_pkey" => IndexCandidate.from_indexdef(pkey_indexdef),
+    #                  "orders_note_trgm_idx" => nil }  # nil: from_indexdef couldn't represent it
     #     )
     #   ])
     #   stats.table(orders).distinct_count("status")              # => 5.0
@@ -42,7 +42,7 @@ module Quaack
     # One table: its name, pg_class.reltuples, every column's name in attnum
     # order, the pg_stats row for each column that has one, and the existing
     # indexes by name. No column name can appear twice. An index maps to nil
-    # when IndexCandidate.from_ddl couldn't represent it. Primary keys and
+    # when IndexCandidate.from_indexdef couldn't represent it. Primary keys and
     # other unique indexes are candidates with unique: true. A negative
     # reltuples means the table has never been analyzed.
     TableStatistics = Data.define(:name, :reltuples, :columns, :column_names, :indexes) do

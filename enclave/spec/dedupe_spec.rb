@@ -468,7 +468,7 @@ RSpec.describe Quaack::Enclave::Dedupe do
          "status = ANY(ARRAY['open', lower('bob@x.com')])", "lower(status)::text = 'x'",
          "(status || 'a')::text = 'x'", "status = 'x'::mytype('secret')", "status IN ('a'::mytype('secret'))",
          "status::mytype('secret') = 'x'", "status = ANY(ARRAY['a'::mytype('secret')])",
-         "status::text BETWEEN 'a'::mytype('secret') AND 'm'"].each do |predicate|
+         "status::text BETWEEN 'a'::mytype('secret') AND 'm'", "status = 'x'::mytype(kind)"].each do |predicate|
           expect(kept?(predicate)).to be(false), predicate
         end
       end

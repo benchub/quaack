@@ -66,7 +66,7 @@ module Quaack
     #   aren't read.
     #
     # The Result's statistics is built from that entry, with each index as
-    # IndexCandidate.from_ddl reads its definition, sources [:existing], or
+    # IndexCandidate.from_indexdef reads its definition, sources [:existing], or
     # nil where it can't. DESIGN.md's classify (PiiClassification) reads the entry for
     # the low-cardinality set that Dedupe takes.
     #
@@ -114,7 +114,7 @@ module Quaack
           name:, reltuples: table["reltuples"], column_names: table["column_names"],
           columns: table["columns"].transform_values { column_statistics(it) },
           indexes: table["indexes"].to_h do |index|
-            [index["name"], IndexCandidate.from_ddl(index["definition"], sources: [:existing])]
+            [index["name"], IndexCandidate.from_indexdef(index["definition"])]
           end
         )
       end
