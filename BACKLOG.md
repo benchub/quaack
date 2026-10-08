@@ -2200,14 +2200,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-19. Deploy diagnosis: sentence order in the not-installed message. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-20. Measurement: pin which run a stable set keeps.
-
-From the review of 20261006-19. Changing `runs.take(1)` to `runs.last(1)` in `enclave/lib/quaack/enclave/measurement.rb` keeps every spec green: the only stable fixture is three identical runs. Give the stable fixture different Execution Times and assert the first run's plan is the one stored.
-
-- **Depends on:** 20261006-19.
-- **Came from:** The review of 20261006-19.
-- **Design:** measure.
-- **Status:** todo
+### 20261007-20. Measurement: pin which run a stable set keeps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification).
 

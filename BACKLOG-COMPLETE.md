@@ -6719,3 +6719,13 @@ From the review of 20261002-14. The AWS SDK's default credential chain, used by 
 - **Design:** Development.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. `NoRealCredentials` also points `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` at empty files and sets `AWS_EC2_METADATA_DISABLED=true` for every spec process and its children, and a trapped-HOME test proves the SDK reads neither default file nor the metadata endpoint. The review's two minors weren't filed: the root suite builds no Bedrock client in-process, and the SSO and login caches are reached only through the now-empty config files.
+
+### 20261007-20. Measurement: pin which run a stable set keeps.
+
+From the review of 20261006-19. Changing `runs.take(1)` to `runs.last(1)` in `enclave/lib/quaack/enclave/measurement.rb` keeps every spec green: the only stable fixture is three identical runs. Give the stable fixture different Execution Times and assert the first run's plan is the one stored.
+
+- **Depends on:** 20261006-19.
+- **Came from:** The review of 20261006-19.
+- **Design:** measure.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. A stable fixture whose runs differ only in Execution Time pins that the first run's plan is the one stored; keeping the last, the middle, or the slowest run turns it red. Test only.
