@@ -19,7 +19,7 @@ RSpec.describe Quaack::Enclave::PiiClassification do
               "indexes" => [{ "name" => "i", "definition" => definition, "columns" => { "lower" => mcv } }],
               "extended_statistics" => [{ "schema" => "public", "name" => "s", "definition" => definition,
                                           "kinds" => ["m"], "most_common_vals" => [%w[a b]],
-                                          "most_common_freqs" => [0.5] }] }
+                                          "most_common_freqs" => [0.5], "most_common_base_freqs" => [0.25] }] }
     described_class.outbound({ "tables" => [table] }, columns)["tables"].first
   end
 
