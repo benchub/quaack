@@ -272,6 +272,7 @@ Still open from the reviews of 20260922-13:
 - **Came from:** Both reviews of 20260922-13.
 - **Design:** input.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-08):** Intake sweeps old orphans on its own: each `quaacks start` deletes run directories older than about a day that never finished intake. Intake also refuses a plan whose statement type differs from the query's, or whose tables differ from the query's in either direction.
 - **Status:** todo
 
 ### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
@@ -285,6 +286,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Depends on:** 20260922-47.
 - **Came from:** Second review of 20260923-54.
 - **Design:** fixture-compare.
+- **Decided by the user (2026-10-08):** Rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie.
 - **Status:** todo
 
 ### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -2336,6 +2338,7 @@ The second review of 20260923-57 found these. Both are already true on main.
 - **Depends on:** 20260923-57.
 - **Came from:** The second review of 20260923-57, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Decided by the user (2026-10-08):** Lock it down and document it. Candidates may use only the original's functions, types, collations, and operators, plus pg_catalog's. If a rewrite needs a new user-defined function to be faster, that function isn't coming from the mechanical rewrite rules, and an LLM can't be trusted blindly to provide one.
 - **Status:** todo
 
 ### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run.
@@ -2366,4 +2369,5 @@ Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `
 - **Depends on:** 20260924-26.
 - **Came from:** The builder and review of 20260924-26, 2026-10-08.
 - **Design:** statistics.
+- **Decided by the user (2026-10-08):** Go on without hidden extended and expression-index statistics, and say in the report which were missing. Refuse with a clear rule when row security hides every column's statistics.
 - **Status:** todo
