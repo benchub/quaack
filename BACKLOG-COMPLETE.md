@@ -7126,3 +7126,15 @@ From the review of 20261003-22.
 - **Design:** `quaack setup`.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. Specs pin that no warning prints when run-server runs with the flags it's given, and the README shows both forms of the line exactly as printed. Not filed: the warning joins three or more flags without an Oxford comma.
+
+### 20261007-40. LLM errors: Copilot token patterns, and causes on other rules.
+
+From the reviews of 20261007-24.
+1. The Copilot CLI tail redaction misses `Bearer:`, two spaces or a tab after "Bearer", and Copilot API session tokens with no prefix (`tid=...;exp=...;8kp=1:...`). It matters only for llm_unavailable stderr, so this is defense in depth.
+2. Only llm_auth drops its cause. The Anthropic and OpenAI-compatible adapters' other API errors still keep the gem error, body included, as their cause. Decide whether any of those bodies can hold a secret, and drop or trim the cause where one could.
+
+- **Depends on:** 20261007-24.
+- **Came from:** The reviews of 20261007-24.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The Copilot CLI stderr redaction also catches `Bearer` with a colon, an equals sign, extra spaces, or a tab, in any case, and Copilot API session tokens with no prefix (`tid=` or `8kp=`); it stays linear on a megabyte of stderr. No API error from the Anthropic, Bedrock, or OpenAI-compatible adapters keeps the SDK's error as its cause, since a gateway's headers or body could echo a key; the visible detail is unchanged. The Anthropic and Bedrock detail itself still prints the whole body and URL: that's 20261007-54.
