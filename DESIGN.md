@@ -813,7 +813,7 @@ For each table in the query, including the tables of every subquery and CTE body
 2. Rank the equality columns by selectivity using `pg_stats`. Watch out: a negative `n_distinct` means it's a fraction of the row count. Convert it by taking the absolute value times `reltuples`, then discount by `null_frac`.
 3. Build the index key in this order:
    - Equality columns, most selective first.
-   - At most one range column. A keyset row comparison, `(created_at, id) < ($1, $2)`, takes its place with all of its columns, in order.
+   - At most one range column. A keyset row comparison, `(created_at, id) < ($1, $2)`, takes its place with all of its columns, in order. A prefix `LIKE 'abc%'` can be the range column too. A plain btree serves it only under the C collation, so it also gets a key with that column under `text_pattern_ops`, unless the `LIKE` is under `COLLATE "C"`.
    - The `ORDER BY` columns, but only if they come after the equality columns and their sort directions match. That lets the planner drop the sort.
    - As a separate key, the `GROUP BY` columns after the equality columns, when every `GROUP BY` item is a plain column of the table. The scan then comes out grouped.
 4. Cap the key at three or four columns.

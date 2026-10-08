@@ -928,6 +928,31 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(equality_columns("note LIKE 'abc%'")).to eq(%w[note])
     end
 
+    describe "text_pattern_ops" do
+      def key_column(name, **) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, **)
+
+      def keys_of(where) = generate("SELECT 1 FROM public.orders WHERE #{where}", stats).map(&:key)
+
+      it "also keys a prefix LIKE range column with text_pattern_ops, which serves it under any collation" do
+        expect(keys_of("a = 1 AND note LIKE 'abc%'"))
+          .to eq([[key_column("a")], [key_column("a"), key_column("note")],
+                  [key_column("a"), key_column("note", opclass: "text_pattern_ops")]])
+      end
+
+      it "keeps a COLLATE other than C on the text_pattern_ops key column" do
+        expect(keys_of("note COLLATE \"en-x-icu\" LIKE 'abc%'"))
+          .to eq([[key_column("note", collation: "en-x-icu")],
+                  [key_column("note", collation: "en-x-icu", opclass: "text_pattern_ops")]])
+      end
+
+      it "leaves text_pattern_ops out for a LIKE under C or POSIX, or when a comparison or keyset is the range" do
+        ["note COLLATE \"POSIX\" LIKE 'abc%'", "note COLLATE pg_catalog.\"C\" LIKE 'abc%'",
+         "note LIKE 'abc%' AND r > $1", "note LIKE 'abc%' AND (r, s) > ($1, $2)"].each do |where|
+          expect(keys_of(where).flatten.map(&:opclass)).to all(be_nil), where
+        end
+      end
+    end
+
     it "doesn't count a LIKE that starts with a wildcard or an escape, or isn't a constant, or ILIKE" do
       ["note LIKE '%abc'", "note LIKE '_bc%'", "note LIKE '\\%x'", "note LIKE $1", "note ILIKE 'abc%'",
        "note NOT LIKE 'abc%'", "r NOT BETWEEN 1 AND 2", "r BETWEEN 1 AND s", "note LIKE ''", "r < s",

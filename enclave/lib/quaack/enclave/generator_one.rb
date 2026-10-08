@@ -94,9 +94,12 @@ module Quaack
     #   SYMMETRIC) with value bounds, and col LIKE 'constant' when the
     #   pattern isn't empty and its first character isn't %, _, or a
     #   backslash. A LIKE with ESCAPE doesn't count. A btree only serves that
-    #   LIKE under the C collation or text_pattern_ops, which this shape
-    #   can't express, so index-test finds out whether the planner uses it. A
-    #   column with both an equality and a range predicate is equality.
+    #   LIKE under the C collation or text_pattern_ops, so when it's the
+    #   range column, there's also a key with it under text_pattern_ops,
+    #   unless the LIKE is under COLLATE "C" or "POSIX". The plain key stays,
+    #   for a database whose collation is C, and index-test finds out which
+    #   the planner uses. A column with both an equality and a range
+    #   predicate is equality.
     #
     # - Keyset: a row comparison, (a, b) < ($1, $2) with <, <=, >, or >=,
     #   whose one row is bare columns of one table and whose other row is
@@ -814,6 +817,9 @@ module Quaack
         # The range columns without the prefix LIKEs, which BRIN can't serve.
         def comparison_range(table) = @predicates.range[table] - equality(table)
 
+        # The prefix LIKE column that range puts first, or nil.
+        def prefix_like(table) = (range(table).first if comparison_range(table).empty?)
+
         # Held to one value, by = const or IN with one item. Postgres drops
         # such a column from a sort. It doesn't for IS NULL.
         def pinned?(table, name) = @predicates.kinds(table, name).include?(:one)
@@ -1081,7 +1087,18 @@ module Quaack
           range = range_columns(equality_names)
           range_tail = range.map { |name| key_column(name) }
           order_tail = order_columns(equality_names)
-          with_group(range_tail, order_tail, range, equality_names)
+          with_group(range_tail, order_tail, range, equality_names) + pattern_tails(range)
+        end
+
+        # When the range column is a prefix LIKE, a key with it under
+        # text_pattern_ops too, since a plain btree serves that LIKE only
+        # under the C collation. Not when the LIKE is under C or POSIX.
+        def pattern_tails(range)
+          like = @uses.prefix_like(@table)
+          collation = @uses.collation(@table, like)
+          return [] if like.nil? || range != [like] || %w[C POSIX].include?(collation&.last)
+
+          [[IndexCandidate::KeyColumn.new(name: like, opclass: "text_pattern_ops", collation:)]]
         end
 
         def with_group(range_tail, order_tail, range, equality_names)
