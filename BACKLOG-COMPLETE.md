@@ -8111,3 +8111,17 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Design:** rewrite-rules, rewrite-test, counterexamples, report, burndown.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261002-2 (commits d5a007c5, 41e442d1, 9b146ef8). Review had no blocking findings. Leftovers and minors went to 20261008-57.
+
+### 20260926-42. Report loose ends, part three.
+
+- The ScenarioTests dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
+- "Whether counterexamples covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
+- A plan node with no `Schema` is matched to a table by name only when exactly one subset table has that name.
+- LLM call counts on a resumed run include only calls from the current process.
+
+- **Depends on:** 20260926-34, -38.
+- **Came from:** Their build and review.
+- **Design:** report.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260926-42 (commits f2182682, 5ae8fa31). Review had no blocking findings. Item 2 was already done, and item 4 is documented only. The minor went to 20261008-58.

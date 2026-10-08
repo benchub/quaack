@@ -19,6 +19,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261002-2 (report rule_bugs counts only mismatches; rewrite-check stores no rewrite twice).
 
+- 20260926-42 (rewrite-test stores dropped; report-payload sends it).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -759,18 +761,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-41. Step 9: support expression unique indexes instead of refusing. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-42. Report loose ends, part three.
-
-- The ScenarioTests dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
-- "Whether counterexamples covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
-- A plan node with no `Schema` is matched to a table by name only when exactly one subset table has that name.
-- LLM call counts on a resumed run include only calls from the current process.
-
-- **Depends on:** 20260926-34, -38.
-- **Came from:** Their build and review.
-- **Design:** report.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260926-42. Report loose ends, part three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-43. Payload fidelity loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2368,4 +2359,13 @@ The review of 20260929-29 found these minor issues:
 - **Depends on:** 20261002-2.
 - **Came from:** The build and review of 20261002-2, 2026-10-08.
 - **Design:** rewrite-rules, report.
+- **Status:** todo
+
+### 20261008-58. Report `dropped`: pin the non-negative guard.
+
+From the review of 20260926-42. The `!dropped.negative?` half of the egress guard in `report_payload.rb` has no test, and removing it keeps everything green. Add a test that stores `"dropped" => -1` and expects nil.
+
+- **Depends on:** 20260926-42.
+- **Came from:** The review of 20260926-42, 2026-10-08.
+- **Design:** report.
 - **Status:** todo
