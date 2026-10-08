@@ -7049,3 +7049,19 @@ From the review of 20261007-36.
 - **Design:** LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. TypeError is out of the adapter's rescue list, so a driver bug surfaces as itself; a float past the double range anywhere in a reply is `llm_bad_response` instead of crashing the gem's coercion; a custom tool call is read whatever `custom` holds, as the gem does; and the redundant inner ParserError rescue is gone. A reviewer's probes of about 140 shapes found no malformed reply that crashes. Not filed: an overflowing float in a field the gem never reads is now refused where main read the text.
+
+### 20261007-46. `or_to_union` and `Tree::Names`: minors from 20261002-5.
+
+From the reviews of 20261002-5.
+1. LIKE or ILIKE whose pattern is a column can raise only in the rewrite (`o.vip OR i.name LIKE i.pat` with `pat = 'ab\'`: "LIKE pattern must not end with escape character"). `AEXPR_LIKE` and `AEXPR_ILIKE` sit in `SAFE_KINDS` whatever the pattern is. Treat them as safe only when the pattern side has no column.
+2. No test covers refusing an index into a column (`A_Indirection`) or the `expr.name.size == 1` check in `safe?`. Add tests, or drop what can't raise.
+3. Implicit casts the planner inserts aren't in the parse tree (`numeric_col = real_col` casts to float4, which can overflow). Note it in the rule's page.
+4. `Tree::Names` records taken names as written, but Postgres cuts identifiers over 63 bytes, so a fresh name can equal a taken name's cut form (61 `x`s plus `_1_more` against `fresh("x" * 62)`). Add each taken name's 63-byte cut to the set.
+5. Item 3's test comment says rewrite-test and counterexamples compare this way, but the test exercises only `ResultComparison.compare_in_both_orders`. Reword it.
+6. 20261003-3 says "20261002-5 moves `RuleBugs` onto an allowlist"; that's item 1 of 20261002-2. Fix the reference there.
+
+- **Depends on:** 20261002-5.
+- **Came from:** The builder and reviews of 20261002-5.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. or_to_union counts a LIKE or ILIKE arm as safe only when its pattern is a string constant whose trailing backslashes pair off; a column, a parameter, NULL, or ESCAPE refuses the rewrite, since Postgres checks a pattern only as it reads rows and a constant or parameter pattern ending in a lone backslash raises too. Because QUAACK turns constants into parameters before the rule runs, an OR with a LIKE arm now never splits. Tests pin the index-into-a-value and qualified-operator refusals, the page notes the planner's own casts, and the result-comparison comment is reworded. Item 4 was stale: pg_query already cuts identifiers to 63 bytes, so `Names` only sees cut names, and a test pins that. Enclave change, unreleased until the next batch bump. For the user: whether to allow parameter LIKE patterns anyway.

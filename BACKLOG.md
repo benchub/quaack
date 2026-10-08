@@ -22,6 +22,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261002-5 (or_to_union refuses arms that can raise; clock anchoring per occurrence; 63-byte aliases).
 - 20261007-41 (Scenarios refuse CHECKs on foreign operators; scanner reads placeholder casts).
 - 20261007-45 (Equality refuses when an exact-type `=` exists outside the family).
+- 20261007-46 (or_to_union refuses LIKE patterns that can raise).
 
 Known open bug in this batch (found 2026-10-08): the shared `unique` check counts a `text_ops` unique index on a citext column as unique, though citext compares case-blind. 20261007-43 fixes it; close the batch only after it lands.
 
@@ -2253,20 +2254,7 @@ From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept
 
 ### 20261007-45. denormalized_equal: minors from 20261007-39. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-46. `or_to_union` and `Tree::Names`: minors from 20261002-5.
-
-From the reviews of 20261002-5.
-1. LIKE or ILIKE whose pattern is a column can raise only in the rewrite (`o.vip OR i.name LIKE i.pat` with `pat = 'ab\'`: "LIKE pattern must not end with escape character"). `AEXPR_LIKE` and `AEXPR_ILIKE` sit in `SAFE_KINDS` whatever the pattern is. Treat them as safe only when the pattern side has no column.
-2. No test covers refusing an index into a column (`A_Indirection`) or the `expr.name.size == 1` check in `safe?`. Add tests, or drop what can't raise.
-3. Implicit casts the planner inserts aren't in the parse tree (`numeric_col = real_col` casts to float4, which can overflow). Note it in the rule's page.
-4. `Tree::Names` records taken names as written, but Postgres cuts identifiers over 63 bytes, so a fresh name can equal a taken name's cut form (61 `x`s plus `_1_more` against `fresh("x" * 62)`). Add each taken name's 63-byte cut to the set.
-5. Item 3's test comment says rewrite-test and counterexamples compare this way, but the test exercises only `ResultComparison.compare_in_both_orders`. Reword it.
-6. 20261003-3 says "20261002-5 moves `RuleBugs` onto an allowlist"; that's item 1 of 20261002-2. Fix the reference there.
-
-- **Depends on:** 20261002-5.
-- **Came from:** The builder and reviews of 20261002-5.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261007-46. `or_to_union` and `Tree::Names`: minors from 20261002-5. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-47. `or_to_union`: extensions.
 
@@ -2304,4 +2292,16 @@ From the review of 20261007-45. `EXACT_SQL` looks only for an `=` taking exactly
 - **Depends on:** 20261007-45.
 - **Came from:** The review of 20261007-45.
 - **Design:** trust boundary, assumption checks.
+- **Status:** todo
+
+### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns.
+
+From the builder and review of 20261007-46.
+1. **Needs the user:** an OR with a LIKE arm no longer splits, since its pattern is a parameter by the time the rule runs, and a parameter ending in a lone backslash raises only in the rewrite. Ask whether to accept that risk for parameter patterns (a one-line change) or keep refusing.
+2. With `standard_conforming_strings = off`, pg_query reads `'ab\\'` as two backslashes while the server reads one, so the parity rule misjudges it. Refuse cleanly, or list the setting as unsupported in v1.
+3. ILIKE on a column with a nondeterministic collation raises only when its arm runs (`b OR v ILIKE 'x'` returns rows; the arm alone raises). Refuse it, or note it as unsupported.
+
+- **Depends on:** 20261007-46.
+- **Came from:** The builder and review of 20261007-46.
+- **Design:** rewrite-rules.
 - **Status:** todo
