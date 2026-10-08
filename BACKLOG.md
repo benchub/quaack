@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-52 (or_to_union: parameter LIKE patterns, and LIKE edge cases refused).
 - 20261008-2 (not_in_to_not_exists: row-valued NOT IN).
 - 20261008-11 (or_to_union: LIKE minors, collation check skips dropped columns).
+- 20261007-44 (distinct_join_to_exists: subqueries in conditions on the kept table).
 
 ## How this file works.
 
@@ -2098,14 +2099,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 
 ### 20261007-43. Unique keys: minors from 20261002-4. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table.
-
-From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept table. Allowing it needs the column resolver to understand subquery scopes, so inner columns aren't resolved against outer tables. Must stay sound; refuse anything unclear.
-
-- **Depends on:** 20261002-4.
-- **Came from:** The builder of 20261002-4.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-45. denormalized_equal: minors from 20261007-39. Done, see BACKLOG-COMPLETE.md.
 
@@ -2269,4 +2263,23 @@ The review of 20261008-10 found that two branches of the EPERM fallback in `driv
 - **Depends on:** 20261008-10.
 - **Came from:** The review of 20261008-10, 2026-10-08.
 - **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261008-15. `distinct_join_to_exists` subqueries: minors from 20261007-44.
+
+The review of 20261007-44 found these minor issues:
+
+1. Four mutations of the new resolver in `columns.rb` survive. None changes the result for valid SQL, but each leaves a line untested:
+   - dropping `own?` in `inner_qualified`;
+   - reversing the scope order;
+   - dropping `scopes.first.any?` in `inner_star`;
+   - removing `select.limit_offset` from the `from` check (no test has a subquery in `OFFSET`, though the docs say it's refused).
+
+   Add tests that pin each line, or remove the ones that can't matter.
+2. The docs page says "a column it reads from outside itself must be the kept table's". It doesn't say that the kept table's `a.*` inside a subquery is refused too, or that `ONLY` and column aliases in the subquery's `FROM` are refused.
+3. `EXISTS (SELECT 1 FROM public.comments c WHERE ROW(c.id, a.id) IS NOT NULL)` is refused even though it only reads the kept table. It's a missed rewrite, not a correctness problem.
+
+- **Depends on:** 20261007-44.
+- **Came from:** The review of 20261007-44, 2026-10-08.
+- **Design:** rewrite-rules.
 - **Status:** todo

@@ -7508,3 +7508,13 @@ From the review of 20261003-22 item 3.
 - **Design:** Development, driver transport.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-10 (commit c61b34c7). Review had no blocking findings; its minors went to 20261008-14.
+
+### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table.
+
+From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept table. Allowing it needs the column resolver to understand subquery scopes, so inner columns aren't resolved against outer tables. Must stay sound; refuse anything unclear.
+
+- **Depends on:** 20261002-4.
+- **Came from:** The builder of 20261002-4.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261007-44 (commit 6042d237). Review had no blocking findings; its minors went to 20261008-15.
