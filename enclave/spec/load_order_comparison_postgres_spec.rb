@@ -4,11 +4,12 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/result_comparison"
 require "quaack/enclave/table_name"
 
-# fixture-compare runs each comparison twice: with the fixture loaded forward, and
-# again loaded in reverse. A rewrite that drops a sort key below the top
+# fixture-compare runs each comparison three times: with the fixture loaded
+# forward, again loaded in reverse, and again with each table's rows rotated
+# by one. A rewrite that drops a sort key below the top
 # level, or keeps a different representative of equal values, matches the
 # forward load only because the rows went in in that order.
-RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
+RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
 
@@ -38,7 +39,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
   end
 
   def both(original, candidate, rows: items, inserts: [])
-    described_class.compare_in_both_orders(runner, rows, inserts:, original:, candidate:)
+    described_class.compare_in_load_orders(runner, rows, inserts:, original:, candidate:)
   end
 
   # The comparison as it was before, with only the forward load.
@@ -73,6 +74,31 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
 
       expect(fields(verdict)).to eq(match: true, mode: :multiset, rule: nil, load_order: nil)
       expect(conn.exec("SELECT count(*) FROM items").getvalue(0, 0)).to eq("0")
+    end
+  end
+
+  describe "the rotated load" do
+    it "loads each table's rows rotated by one, so a seq scan returns the first row last" do
+      scan = "SELECT string_agg(id::text, ',') FROM items"
+      expect(runner.with_fixture(described_class.reordered_load(items, :rotated, runner)) { |tx| tx.query(scan).rows })
+        .to eq([["2,3,4,5,1"]])
+
+      expect(fields(both(scan, "SELECT '1,2,3,4,5'"))).to include(match: false, load_order: :reverse)
+      expect(fields(both(scan, "SELECT '5,4,3,2,1'"))).to include(match: false, load_order: :forward)
+    end
+
+    # Three ties, and the pick in the middle: forward and reverse both hand
+    # the sort 2 in the middle, so only the rotated load catches it.
+    it "catches a tie pick in the middle of an odd-sized group, which forward and reverse agree on" do
+      original = "SELECT id FROM (SELECT * FROM items WHERE grp = 1 ORDER BY grp, id OFFSET 1 LIMIT 1) s"
+      candidate = "SELECT id FROM (SELECT * FROM items WHERE grp = 1 ORDER BY grp OFFSET 1 LIMIT 1) s"
+      picks = [items, described_class.reverse_load(items)].map do |rows|
+        runner.with_fixture(rows, index_scans: false) { |tx| tx.query(candidate).rows }
+      end
+      expect(picks).to eq([[["2"]], [["2"]]])
+
+      expect(fields(both(original, candidate))).to eq(match: false, mode: :multiset, rule: :multiset,
+                                                      load_order: :rotated)
     end
   end
 
@@ -195,14 +221,63 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
       expect(fields(both(join, semi, rows:))).to include(match: true, load_order: nil)
     end
 
-    it "can't reverse a table whose foreign key references itself, so that reverse load fails" do
-      conn.exec("CREATE TABLE node (id integer PRIMARY KEY, up integer REFERENCES node)")
-      rows = rows_of("node", %w[id up], [1, nil], [2, 1])
+    describe "a table whose foreign key references itself" do
+      before { conn.exec("CREATE TABLE node (id integer PRIMARY KEY, up integer REFERENCES node)") }
 
-      expect { both("SELECT id FROM node", "SELECT id FROM node", rows:) }
+      # A tree: 1 at the root, 2 and 3 under it, 4 under 2, 5 under 3.
+      let(:tree) { rows_of("node", %w[id up], [1, nil], [2, 1], [3, 1], [4, 2], [5, 3]) }
+      let(:scan) { "SELECT string_agg(id::text, ',') FROM node" }
+
+      it "reorders the rows level by level, so every parent still loads first" do
+        scans = %i[reverse rotated].map do |load_order|
+          runner.with_fixture(described_class.reordered_load(tree, load_order, runner)) { |tx| tx.query(scan).rows }
+        end
+
+        expect(scans).to eq([[["1,3,2,5,4"]], [["1,3,2,5,4"]]])
+      end
+
+      it "loads in every order, and catches a dropped sort key in the reverse load" do
+        original = "SELECT id FROM (SELECT * FROM node WHERE up = 1 ORDER BY up, id LIMIT 1) s"
+        candidate = "SELECT id FROM (SELECT * FROM node WHERE up = 1 ORDER BY up LIMIT 1) s"
+
+        expect(fields(both(original, original, rows: tree))).to include(match: true, load_order: nil)
+        expect(fields(both(original, candidate, rows: tree))).to include(match: false, load_order: :reverse)
+      end
+
+      it "puts a row below its deepest parent when two foreign keys reference the table" do
+        conn.exec("ALTER TABLE node ADD COLUMN root integer REFERENCES node")
+        rows = rows_of("node", %w[id up root], [1, nil, nil], [2, 1, 1], [3, 2, 1], [4, 1, 1])
+
+        expect(described_class.reordered_load(rows, :reverse, runner).map { it.values.first }).to eq(%w[1 4 2 3])
+        expect(fields(both("SELECT id FROM node", "SELECT id FROM node", rows:))).to include(match: true)
+      end
+
+      it "still fails the reverse load, as reverse_load_failed, when a parent doesn't match its key's text" do
+        rows = rows_of("node", %w[id up], [1, nil], [2, "01"])
+
+        expect { both("SELECT id FROM node", "SELECT id FROM node", rows:) }
+          .to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
+            expect([e.rule, e.step, e.sqlstate, e.index]).to eq([:reverse_load_failed, :load, "23503", 1])
+            expect(e.message).to eq("a fixture row failed to load when the fixture was loaded in reverse")
+          end
+      end
+    end
+
+    it "fails a row that loads forward and in reverse but not rotated as rotated_load_failed" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION not_first() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.id = 2 AND NOT EXISTS (SELECT FROM parent) THEN RAISE EXCEPTION 'first'; END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER not_first BEFORE INSERT ON parent FOR EACH ROW EXECUTE FUNCTION not_first();
+      SQL
+      rows = rows_of("parent", %w[id], [1], [2], [3])
+
+      expect { both("SELECT id FROM parent", "SELECT id FROM parent", rows:) }
         .to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
-          expect([e.rule, e.step, e.sqlstate, e.index]).to eq([:reverse_load_failed, :load, "23503", 1])
-          expect(e.message).to eq("a fixture row failed to load when the fixture was loaded in reverse")
+          expect([e.rule, e.step, e.sqlstate, e.index]).to eq([:rotated_load_failed, :load, "P0001", 1])
+          expect(e.message).to eq("a fixture row failed to load when the fixture was loaded rotated")
         end
     end
 

@@ -291,7 +291,8 @@ module Quaack
         restore_mismatch unparsable
         bad_conninfo_key secret_in_conninfo
         already_in_transaction connection_unusable begin_failed statement_not_allowed statement_unparsable
-        fixture_load_failed reverse_load_failed insert_failed query_failed statement_timeout transaction_ended
+        fixture_load_failed reverse_load_failed rotated_load_failed insert_failed query_failed statement_timeout
+        transaction_ended
         transaction_closed rollback_failed
         not_insert missing_columns unknown_column insert_select alias with on_conflict returning not_immutable
         not_plain_value

@@ -43,6 +43,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "relation_qualifier.rb" => "a message for an Error whose rule is fixed",
     "relations.rb" => "its rule locals, and KINDS and OTHER, read below",
     "rewrite_candidate_check.rb" => "its rule locals",
+    "result_comparison/load_orders.rb" => "LOAD_FAILED, read below",
     "run_server_check.rb" => "fail!'s callers",
     "scenarios/values.rb" => "its rule local",
     "single_candidate_test.rb" => "guarded's and hypopg's callers",
@@ -84,6 +85,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
 
   it "holds every rule a constant table raises by variable" do
     tables = [*Quaack::Enclave::ArenaRunner::RULES.keys, *Quaack::Enclave::ResultComparison::RULES.keys,
+              *Quaack::Enclave::ResultComparison::LOAD_FAILED.values,
               *Quaack::Enclave::InsertCheck::REFUSED_FORMS.map(&:first),
               *Quaack::Enclave::IndexDdlCheck::RULES,
               *Quaack::Enclave::Relations::KINDS.values.map(&:first), Quaack::Enclave::Relations::OTHER.first]

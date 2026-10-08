@@ -18,7 +18,7 @@ module Quaack
     # It builds the scenarios (Scenarios), runs vacuity-guard on S1
     # (VacuityGuard), and then, for each candidate in order, runs S0
     # through S6 through fixture-compare's comparison (ResultComparison.
-    # compare_in_both_orders), each in its own arena transactions that roll
+    # compare_in_load_orders), each in its own arena transactions that roll
     # back. The first scenario that doesn't match disproves the candidate,
     # and the rest don't run. Its Result names the scenario, the verdict's
     # rule (such as :multiset, or :unsupported_order for a refusal) and
@@ -79,7 +79,7 @@ module Quaack
       def test(runner, scenarios, spills, sql, candidate)
         Scenarios::NAMES.each do |name|
           [scenarios.fetch(name), *spills.fetch(name, [])].each do |rows|
-            verdict = ResultComparison.compare_in_both_orders(runner, rows, original: sql, candidate:)
+            verdict = ResultComparison.compare_in_load_orders(runner, rows, original: sql, candidate:)
             next if verdict.match?
 
             return Result.new(passed: false, scenario: name, rule: verdict.rule, load_order: verdict.load_order)
