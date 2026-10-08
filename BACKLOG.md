@@ -2203,20 +2203,7 @@ From the builder and review of 20261007-46.
 
 ### 20261007-55. Copilot token redaction: quoted Bearer tokens, and test gaps. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-56. Provenance: minors from 20261007-16.
-
-From the reviews of 20261007-16.
-1. Untested: recording the refinement round (`Provenance#refinement!` and its pipeline call), the rewrite searches' index ideas (`record:` on `RewriteIndexStage`), "records the first round even when it wrote none", and the writer-side filters (`rewrites!`'s `.grep(REWRITE)`, `down!`'s rule check, `Shape.tallies`'s `.slice`).
-2. Untested: "kept as first recorded" on a resume, the `File::EXCL` guard, and tightening an existing looser runs directory to 0700.
-3. DESIGN.md says every per-provider count blanks when the record doesn't add up, but in the rewrites table only proposed and not kept do; the outcome columns, attributed by store name, stay. Fix the wording or the code, and the spec that checks only `.take(2)`.
-4. `skipped!` appends, so a rerun of a search's llm-index-ideas step can repeat a skipped round.
-5. A provider marked down in an earlier run still shows as marked down after a resume where it worked, since `down!` only adds. Decide, and say so in DESIGN.md.
-6. The template's per-provider note shows even when the rows don't split, under mutation; add a test that it's absent.
-
-- **Depends on:** 20261007-16.
-- **Came from:** The reviews of 20261007-16.
-- **Design:** Several LLM providers, report.
-- **Status:** todo
+### 20261007-56. Provenance: minors from 20261007-16. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-57. Error-detail scrub: minors from 20261007-54. Done, see BACKLOG-COMPLETE.md.
 
@@ -2240,6 +2227,9 @@ From the builder and review of 20261007-18.
 1. A fan-out branch dropped for `llm_bad_response` isn't in the report, though DESIGN.md says "the progress line and the report say which and why". Branches dropped for rate limits, unavailability, or credentials show only as "marked down" in the providers table, with no step named. Record each failed fan-out branch with its step and rule in the provenance record, and show it in the report.
 2. When two branches propose the same SQL or DDL, only the first writer gets credit in `rewrites_proposed` and the index counts (so the per-provider counts add up). Say so in DESIGN.md, or record repeats separately.
 
+3. From the review of 20261007-56: no test checks that a provider configured but never asked in a resumed run keeps its earlier "marked down" (`up!` given every entry minus `client.down` stays green); add one.
+4. From the review of 20261007-56: DESIGN.md should say a provider whose replies this run were all bad responses counts as asked and not down, without saying its replies were usable.
+5. From the review of 20261007-56: when counts are blanked, the "The LLM: not recorded" row reads oddly as all "not recorded"; relabel it or drop it from a blanked table.
 - **Depends on:** 20261007-18.
 - **Came from:** The builder and review of 20261007-18.
 - **Design:** Several LLM providers, report.

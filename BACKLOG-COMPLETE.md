@@ -7268,3 +7268,19 @@ From the review of 20261007-14.
 - **Design:** Several LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after a review with two blocking findings, a fix round, and a clean second review. With an `llms` list, router lines and the list of what was tried carry each provider's reason (the adapter's scrubbed detail, one line, at most 120 characters), and an `llm_auth` on the last provider still prints its loud line; a lone `llm` block reads as before. The router raises with `cause: nil`, the `@down` guard has a test, and the unused `.uniq` is gone. The corpus README records which replies answer an older prompt. Found in review and fixed here: the OpenAI-compatible adapter's detail was the gem's `status=… url=…` message with nothing scrubbed, so a gateway-echoed key could reach step failures (already on main) and now router lines; it now reads `the API answered <status>: <message>` through the same scrub, covering its key, OpenAI organization and project, and `base_url` secrets.
+
+### 20261007-56. Provenance: minors from 20261007-16.
+
+From the reviews of 20261007-16.
+1. Untested: recording the refinement round (`Provenance#refinement!` and its pipeline call), the rewrite searches' index ideas (`record:` on `RewriteIndexStage`), "records the first round even when it wrote none", and the writer-side filters (`rewrites!`'s `.grep(REWRITE)`, `down!`'s rule check, `Shape.tallies`'s `.slice`).
+2. Untested: "kept as first recorded" on a resume, the `File::EXCL` guard, and tightening an existing looser runs directory to 0700.
+3. DESIGN.md says every per-provider count blanks when the record doesn't add up, but in the rewrites table only proposed and not kept do; the outcome columns, attributed by store name, stay. Fix the wording or the code, and the spec that checks only `.take(2)`.
+4. `skipped!` appends, so a rerun of a search's llm-index-ideas step can repeat a skipped round.
+5. A provider marked down in an earlier run still shows as marked down after a resume where it worked, since `down!` only adds. Decide, and say so in DESIGN.md.
+6. The template's per-provider note shows even when the rows don't split, under mutation; add a test that it's absent.
+
+- **Depends on:** 20261007-16.
+- **Came from:** The reviews of 20261007-16.
+- **Design:** Several LLM providers, report.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. Tests now cover the refinement round, the rewrite searches' index ideas, an empty first round, the writer-side filters, keeping an entry as first recorded, the `File::EXCL` guard, and tightening an existing runs directory. When the record doesn't add up, every per-provider count in the rewrites table says "not recorded", as DESIGN.md says. A rerun of llm-index-ideas replaces its rounds and skips instead of appending. A resumed run clears an earlier "marked down" for each provider it asked and didn't mark down (pending the user's confirmation). The template's per-provider note is absent when rows don't split.
