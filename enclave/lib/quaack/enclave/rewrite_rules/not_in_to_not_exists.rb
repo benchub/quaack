@@ -52,7 +52,9 @@ module Quaack
       # null, and each branch's column in a place of the same type and
       # collation as the others': the UNION compares as its columns' common
       # type, so a numeric branch under a float8 one would be compared as
-      # float8 by NOT IN and as numeric by NOT EXISTS. INTERSECT and EXCEPT
+      # float8 by NOT IN and as numeric by NOT EXISTS. A UNION that dedupes
+      # also needs a type Postgres can dedupe, which box isn't, or NOT IN
+      # is an error (see Catalog#unionable?). INTERSECT and EXCEPT
       # are refused: x is in an INTERSECT when it's in every branch, which
       # would be an OR of NOT EXISTS, and an EXCEPT's rows hang on which
       # values the other branch has, not on x.
@@ -117,7 +119,7 @@ module Quaack
           select = Tree.select(tree)
           link = not_in(Tree.conjuncts(select.where_clause)[index])
           branches = link && branches(link.subselect.select_stmt)
-          assumptions = branches && proven(select, tested(link), branches, catalog)
+          assumptions = branches && proven(select, link, branches, catalog)
           return unless assumptions
 
           correlate!(select, index, link, branches, Tree::Names.new(tree))
@@ -126,9 +128,9 @@ module Quaack
 
         # The rewrite's assumptions, if the catalog proves them and NOT
         # EXISTS compares as NOT IN does, or nil.
-        def proven(select, tested, branches, catalog)
-          assumptions = assumptions(select, tested, branches)
-          assumptions if assumptions&.all? { catalog.met?(it) } && comparable?(select, tested, branches, catalog)
+        def proven(select, link, branches, catalog)
+          assumptions = assumptions(select, tested(link), branches)
+          assumptions if assumptions&.all? { catalog.met?(it) } && comparable?(select, link, branches, catalog)
         end
 
         # The SubLink of a condition that is name.column NOT IN (SELECT ...),
@@ -189,11 +191,13 @@ module Quaack
         end
 
         # Whether NOT EXISTS compares as NOT IN does: the branches' columns
-        # in each place have one type and collation, Postgres takes each
-        # pair of a row, and every branch's correlation can read the outer
-        # row.
-        def comparable?(select, tested, branches, catalog)
-          Columns.same_types?(branches, catalog) && Columns.row_equalities?(select, tested, branches, catalog) &&
+        # in each place have one type and collation, which Postgres can
+        # dedupe if the UNION does, Postgres takes each pair of a row, and
+        # every branch's correlation can read the outer row.
+        def comparable?(select, link, branches, catalog)
+          tested = tested(link)
+          Columns.same_types?(link.subselect.select_stmt, branches, catalog) &&
+            Columns.row_equalities?(select, tested, branches, catalog) &&
             branches.all? { Shadows.correlatable?(tested, it) }
         end
 

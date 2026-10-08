@@ -27,12 +27,25 @@ module Quaack
           end
 
           # Whether every branch's column in each place has one type and
-          # collation, as a UNION compares its columns as their common type.
-          def same_types?(branches, catalog)
+          # collation, as a UNION compares its columns as their common type,
+          # and, when the UNION dedupes, Postgres can dedupe that type.
+          def same_types?(sub, branches, catalog)
             return true if branches.size == 1
 
-            places = branches.map { |sub| sub.target_list.map { catalog.column_info(*inner(sub, it)) } }.transpose
-            places.all? { |infos| infos.first && infos.uniq.size == 1 }
+            places = branches.map { |branch| infos(branch, catalog) }.transpose
+            places.all? { |infos| infos.first && infos.uniq.size == 1 } &&
+              (!deduped?(sub) || unionable?(branches.first, catalog))
+          end
+
+          # The type and collation of each column a branch selects.
+          def infos(branch, catalog) = branch.target_list.map { catalog.column_info(*inner(branch, it)) }
+
+          # Whether Postgres can dedupe each column a branch selects.
+          def unionable?(branch, catalog) = branch.target_list.all? { catalog.unionable?(inner(branch, it)) }
+
+          # Whether a set operation has a UNION without ALL anywhere in it.
+          def deduped?(sub)
+            sub.op == :SETOP_UNION && (!sub.all || deduped?(sub.larg) || deduped?(sub.rarg))
           end
 
           # Whether Postgres takes each pair of a row comparison, as it does

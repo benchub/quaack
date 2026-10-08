@@ -73,6 +73,16 @@ module Quaack
             end
           end
 
+          # Whether Postgres can dedupe a column, [schema, table, column], in
+          # a UNION: its type has an equality to sort or hash by, which box's
+          # = isn't. It asks Postgres, as row_equality? does.
+          def unionable?(column)
+            (@unionable ||= {}).fetch(column) do
+              read = "SELECT l.#{@connection.quote_ident(column.last)} FROM #{relation(column)} l"
+              @unionable[column] = self_contained?("#{read} UNION #{read}")
+            end
+          end
+
           private
 
           def relation((schema, table)) = "#{@connection.quote_ident(schema)}.#{@connection.quote_ident(table)}"

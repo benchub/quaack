@@ -653,6 +653,23 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
       end
     end
 
+    it "doesn't fire on a UNION of a type it can't dedupe, where NOT IN is an error and NOT EXISTS gives rows" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.shapes (id int PRIMARY KEY, a box NOT NULL, b box NOT NULL);
+        INSERT INTO public.shapes VALUES (1, '((0,0),(1,1))', '((5,5),(7,7))');
+      SQL
+      sql = "SELECT s.id FROM public.shapes s WHERE s.a NOT IN " \
+            "(SELECT t.b FROM public.shapes t UNION SELECT r.b FROM public.shapes r)"
+      forced = "SELECT s.id FROM public.shapes s WHERE NOT EXISTS (SELECT 1 FROM public.shapes t WHERE s.a = t.b) " \
+               "AND NOT EXISTS (SELECT 1 FROM public.shapes r WHERE s.a = r.b)"
+      all = sql.sub("UNION", "UNION ALL")
+
+      expect { rows(sql) }.to raise_error(PG::Error, /could not identify an equality operator for type box/)
+      expect(rows(forced)).to eq([["1"]])
+      expect(rewritten(sql)).to eq([])
+      expect(same_rows(all, rewritten(all))).to eq([["1"]])
+    end
+
     it "doesn't fire when the branches' columns have different collations" do
       conn.exec(<<~SQL)
         CREATE TABLE public.labels (id int PRIMARY KEY, a text NOT NULL, b text COLLATE "C" NOT NULL);
