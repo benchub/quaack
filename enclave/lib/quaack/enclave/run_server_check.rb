@@ -2,6 +2,7 @@
 
 require "json"
 require_relative "inventory/production"
+require_relative "run_server_check/server_options"
 
 module Quaack
   module Enclave
@@ -31,12 +32,17 @@ module Quaack
     #    name can differ.
     # 6. run_server_guc_mismatch: a planner setting isn't production's (see
     #    PLANNER_SQL and planner_settings).
-    # 7. run_server_other_clients: pg_stat_activity shows another client
+    # 7. run_server_tablespace_mismatch: a tablespace production's
+    #    relations use isn't on the run server, or its spcoptions aren't
+    #    production's (see ServerOptions).
+    # 8. run_server_preload_mismatch: one side preloads one of
+    #    ServerOptions::PLANNER_LIBRARIES and the other doesn't.
+    # 9. run_server_other_clients: pg_stat_activity shows another client
     #    backend.
-    # 8. run_server_cron_elsewhere and run_server_cron_active: pg_cron runs
+    # 10. run_server_cron_elsewhere and run_server_cron_active: pg_cron runs
     #    its jobs from another database, whose cron.job this connection
     #    can't read, or cron.job here has an active job.
-    # 9. run_server_autovacuum_on: autovacuum is on. With it off, a table's
+    # 11. run_server_autovacuum_on: autovacuum is on. With it off, a table's
     #    autovacuum_enabled can't turn it back on, so reloptions aren't read.
     #
     # An Error's message is its rule and the name of what failed, such as
@@ -56,9 +62,13 @@ module Quaack
     # function, or operator there, such as a public.pg_stat_activity, or a
     # public <> that says no, either of which hides the other clients.
     #
-    # Not checked, so unsupported in v1: per-tablespace random_page_cost
-    # and seq_page_cost, which the inventory doesn't record, and schedulers
-    # outside Postgres, which are the operator's to stop.
+    # Settings are compared as this session sees them, so the operator's
+    # PGTZ and PGDATESTYLE change both sides alike.
+    #
+    # Not checked, so unsupported in v1: preloaded libraries outside
+    # ServerOptions::PLANNER_LIBRARIES, production's preloaded libraries when its role
+    # can't see them, and schedulers outside Postgres, which are the
+    # operator's to stop.
     module RunServerCheck
       class Error < StandardError
         attr_reader :rule, :clients
@@ -110,13 +120,13 @@ module Quaack
 
       def run(store:, connection:, own_connections: [])
         inventory = store.read("inventory")
-        own_pids = [connection, *own_connections].map { server_pid(it) }
         check_access(connection)
         check_version(connection, inventory)
         check_extensions(connection, inventory)
         check_locale(connection, inventory)
         check_planner_settings(connection, inventory)
-        check_quiet(connection, own_pids)
+        ServerOptions.check(connection, inventory)
+        check_quiet(connection, [connection, *own_connections].map { server_pid(it) })
         nil
       end
 

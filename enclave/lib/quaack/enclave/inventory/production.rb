@@ -54,6 +54,24 @@ module Quaack
         DATABASE_SQL = "SELECT datname, datcollate, datctype, datlocprovider::pg_catalog.text, datlocale, " \
                        "datcollversion " \
                        "FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
+        # Each tablespace's name and its spcoptions, sorted, as a JSON array.
+        # A tablespace's random_page_cost and seq_page_cost override the
+        # settings' for the relations in it.
+        TABLESPACE_COLUMNS = "spcname, pg_catalog.array_to_json(ARRAY(" \
+                             "SELECT o FROM pg_catalog.unnest(spcoptions) AS o ORDER BY o))::pg_catalog.text"
+        # The tablespaces this database's relations use: its default, which
+        # a relation whose reltablespace is 0 is in, and every other one a
+        # relation names. pg_global holds only the shared catalogs.
+        TABLESPACES_SQL = "SELECT #{TABLESPACE_COLUMNS} FROM pg_catalog.pg_tablespace " \
+                          "WHERE oid OPERATOR(pg_catalog.=) ANY (ARRAY(" \
+                          "SELECT dattablespace FROM pg_catalog.pg_database " \
+                          "WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database() " \
+                          "UNION SELECT reltablespace FROM pg_catalog.pg_class)) " \
+                          "AND spcname OPERATOR(pg_catalog.<>) 'pg_global' ORDER BY spcname".freeze
+        # pg_settings leaves shared_preload_libraries out for a role without
+        # pg_read_all_settings, where current_setting would fail.
+        PRELOAD_SQL = "SELECT setting FROM pg_catalog.pg_settings " \
+                      "WHERE name OPERATOR(pg_catalog.=) 'shared_preload_libraries'"
 
         module_function
 
@@ -88,8 +106,21 @@ module Quaack
             "parallel_settings" => pairs(connection.exec(PARALLEL_SQL)),
             "plan_settings" => settings(connection, plan_settings),
             "database" => connection.exec(DATABASE_SQL).first,
-            "default_text_search_config" => connection.exec("SHOW default_text_search_config").getvalue(0, 0)
+            "default_text_search_config" => connection.exec("SHOW default_text_search_config").getvalue(0, 0),
+            "tablespaces" => tablespaces(connection.exec(TABLESPACES_SQL)),
+            "preload_libraries" => library_names(connection.exec(PRELOAD_SQL).first&.fetch("setting"))
           }
+        end
+
+        # A tablespace query's rows, as each name and its sorted options.
+        def tablespaces(result) = result.values.to_h { |name, options| [name, JSON.parse(options)] }
+
+        # The libraries a shared_preload_libraries value names, each as its
+        # file's base name without .so, since Postgres loads
+        # '$libdir/pg_hint_plan.so' and pg_hint_plan alike. nil, for a value
+        # the role can't see, stays nil.
+        def library_names(value)
+          value&.split(",")&.map { File.basename(it.strip.delete('"'), ".so") }&.reject(&:empty?)
         end
 
         # Runs the block inside a read-only, repeatable read transaction on

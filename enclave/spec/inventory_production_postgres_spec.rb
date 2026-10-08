@@ -22,6 +22,13 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
 
   def conn = @conn ||= production.connect
 
+  # A tablespace in a fresh directory of the harness's container.
+  def create_tablespace(name)
+    dir = "/tmp/#{name}"
+    TestPostgres.docker("exec", "-u", "postgres", TestPostgres.server.container_id, "mkdir", "-p", dir)
+    TestPostgres.server.admin.exec("CREATE TABLESPACE #{name} LOCATION '#{dir}'")
+  end
+
   def show(name) = conn.exec("SELECT current_setting($1)", [name]).getvalue(0, 0)
 
   def error_of
@@ -110,6 +117,43 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
       expect(inventory["default_text_search_config"]).to eq("public.#{production.ts_config}")
     end
 
+    # The common case: everything in pg_default, which has no options.
+    it "records the database's default tablespace and its options, which are none" do
+      expect(inventory["tablespaces"]).to eq("pg_default" => [])
+    end
+
+    # A tablespace's random_page_cost and seq_page_cost override the
+    # settings' for the relations in it, so run-server compares them.
+    it "records each tablespace a relation uses, with its options sorted, and leaves unused ones out" do
+      used = "quaack_ts_used_#{SecureRandom.hex(4)}"
+      unused = "quaack_ts_unused_#{SecureRandom.hex(4)}"
+      [used, unused].each { create_tablespace(it) }
+      TestPostgres.server.admin.exec("ALTER TABLESPACE #{used} SET (seq_page_cost = 2, random_page_cost = 1.1)")
+      conn.exec("CREATE TABLE quaack_in_ts (id int) TABLESPACE #{used}")
+
+      expect(inventory["tablespaces"]).to eq("pg_default" => [], used => %w[random_page_cost=1.1 seq_page_cost=2])
+    ensure
+      conn.exec("DROP TABLE IF EXISTS quaack_in_ts")
+      [used, unused].each { TestPostgres.server.admin.exec("DROP TABLESPACE IF EXISTS #{it}") }
+    end
+
+    it "records shared_preload_libraries as a list of library names" do
+      expect(inventory["preload_libraries"]).to eq([])
+    end
+
+    # shared_preload_libraries is hidden from a role without
+    # pg_read_all_settings, and production's role may be one.
+    it "records nil for shared_preload_libraries when the role can't see it" do
+      role = "quaack_plain_#{SecureRandom.hex(4)}"
+      TestPostgres.server.admin.exec("CREATE ROLE #{role} NOLOGIN")
+      conn.exec("SET ROLE #{role}")
+
+      expect(inventory).to include("preload_libraries" => nil, "tablespaces" => { "pg_default" => [] })
+    ensure
+      conn.exec("RESET ROLE")
+      TestPostgres.server.admin.exec("DROP ROLE IF EXISTS #{role}")
+    end
+
     it "reads inside one read-only, repeatable read transaction, and ends it" do
       inventory = production_module.read(conn, plan_settings: %w[transaction_read_only transaction_isolation])
 
@@ -130,6 +174,17 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
 
       expect(production_module.read(conn, plan_settings:)).to eq(before)
       expect(before["extensions"]).to include("hypopg")
+    end
+  end
+
+  describe ".library_names" do
+    # Postgres loads '$libdir/pg_hint_plan.so' and pg_hint_plan alike.
+    it "names each library in a shared_preload_libraries value without its quotes, directory, or .so" do
+      value = %(pg_stat_statements, "$libdir/pg_hint_plan.so" ,auto_explain)
+
+      expect(production_module.library_names(value)).to eq(%w[pg_stat_statements pg_hint_plan auto_explain])
+      expect(production_module.library_names("")).to eq([])
+      expect(production_module.library_names(nil)).to be_nil
     end
   end
 

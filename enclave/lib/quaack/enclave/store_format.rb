@@ -9,11 +9,12 @@ module Quaack
     # stages (format 2), or the rewrite stages' records moving to each
     # rewrite's own search (format 3), or classify's allowlist of sendable
     # types (format 4), since an older run's stored classification may let
-    # a bytea or inet column's MCV values out. A run with another format,
+    # a bytea or inet column's MCV values out, or inventory's tablespaces
+    # and preload_libraries (format 5), which run-server reads. A run with another format,
     # or none, was started by an older version, and the CLI refuses to open
     # it (see CLI#open_store).
     module StoreFormat
-      FORMAT = 4
+      FORMAT = 5
       ENTRY = "store_format"
 
       module_function

@@ -163,7 +163,9 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect_failure("run_server_guc_mismatch", "enable_seqscan")
     end
 
-    it "fails the developer setting debug_parallel_query when it isn't at its default" do
+    # Inventory records it as a parallel setting, so the check compares it
+    # with production's recorded value, not with its built-in default.
+    it "fails the developer setting debug_parallel_query when it isn't production's recorded value" do
       record_inventory
       run_server.exec("SET debug_parallel_query = on")
 
@@ -238,6 +240,70 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "4")
       expect(line).to eq('{"type":"error","step":"4","rule":"run_server_guc_mismatch"}')
       expect_no_leaks(sentinels, stdout: line, objects: { error: })
+    end
+  end
+
+  describe "tablespaces" do
+    it "passes production's default tablespace with no options" do
+      record_inventory
+
+      expect(store.read("inventory")["tablespaces"]).to eq("pg_default" => [])
+      expect(run_check).to be_nil
+    end
+
+    # A tablespace's random_page_cost overrides the setting's for the
+    # relations in it.
+    it "fails a tablespace whose options aren't production's" do
+      record_inventory
+      TestPostgres.server.admin.exec("ALTER TABLESPACE pg_default SET (random_page_cost = 1.1)")
+
+      expect_failure("run_server_tablespace_mismatch", "spcoptions")
+    ensure
+      TestPostgres.server.admin.exec("ALTER TABLESPACE pg_default RESET (random_page_cost)")
+    end
+
+    # The name is production configuration, so the error doesn't carry it.
+    it "fails when the run server has no tablespace of a name production's relations use, and doesn't name it" do
+      record_inventory { it["tablespaces"][sentinels.word] = [] }
+      error = failure
+
+      expect([error.rule, error.message])
+        .to eq(["run_server_tablespace_mismatch", "run_server_tablespace_mismatch: spcoptions"])
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "4"),
+                                 objects: { error: })
+    end
+  end
+
+  describe "shared_preload_libraries" do
+    it "fails when production preloads a library that changes plans and the run server doesn't" do
+      record_inventory { it["preload_libraries"] = %w[pg_stat_statements pg_hint_plan] }
+
+      expect_failure("run_server_preload_mismatch", "pg_hint_plan")
+    end
+
+    it "passes libraries that don't change plans, such as pg_stat_statements and auto_explain" do
+      record_inventory { it["preload_libraries"] = %w[pg_stat_statements auto_explain rdsutils] }
+
+      expect(run_check).to be_nil
+    end
+
+    # Production's role may lack pg_read_all_settings.
+    it "passes when inventory couldn't see production's list" do
+      record_inventory { it["preload_libraries"] = nil }
+
+      expect(run_check).to be_nil
+    end
+
+    describe "ServerOptions.preload_mismatch" do
+      let(:options) { described_class::ServerOptions }
+
+      it "names the first planner library one side preloads and the other doesn't, either way round" do
+        expect(options.preload_mismatch(%w[pg_hint_plan], [])).to eq("pg_hint_plan")
+        expect(options.preload_mismatch(%w[auto_explain], %w[auto_explain pg_dbms_stats])).to eq("pg_dbms_stats")
+        expect(options.preload_mismatch(%w[aqo plantuner], %w[plantuner aqo])).to be_nil
+        expect(options.preload_mismatch(%w[pg_stat_statements], [])).to be_nil
+        expect(options.preload_mismatch(nil, %w[pg_hint_plan])).to be_nil
+      end
     end
   end
 

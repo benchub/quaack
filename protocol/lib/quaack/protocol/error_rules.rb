@@ -47,7 +47,8 @@ module Quaack
                  run_server_cron_elsewhere run_server_extension_missing run_server_extension_version
                  run_server_guc_mismatch run_server_hypopg_missing run_server_locale_mismatch
                  run_server_major_version run_server_no_inventory run_server_not_superuser run_server_other_clients
-                 run_server_same_database run_server_unspecified secret_in_conninfo sequence_relation session_closed
+                 run_server_preload_mismatch run_server_same_database run_server_tablespace_mismatch
+                 run_server_unspecified secret_in_conninfo sequence_relation session_closed
                  sql_ascii_database statement_canceled statement_not_allowed statement_timeout statement_unparsable
                  statistics_bad_shape storage_options store_error tablespace teardown_failed toast_relation
                  transaction_closed transaction_ended unique unknown_column unknown_placeholder unknown_relation

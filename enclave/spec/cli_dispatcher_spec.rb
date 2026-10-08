@@ -184,7 +184,9 @@ RSpec.describe Quaack::Enclave::CLI do
     # to each rewrite's search, so its plan-pruning record counts survivors
     # that resumed steps would count again. One with format 3 may hold a
     # classification made before the sendable-type allowlist, which let a
-    # bytea or inet column's MCV values out.
+    # bytea or inet column's MCV values out. One with format 4 may hold an
+    # inventory without tablespaces or preload_libraries, which run-server
+    # needs.
     it "refuses a run an older version started as run_from_older_version, before the step runs" do
       old = Quaack::Enclave::Store.create(base:)
       FileUtils.rm_f(File.join(old.path, "store_format.json"))
@@ -192,8 +194,9 @@ RSpec.describe Quaack::Enclave::CLI do
       other = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 1 }) }
       per_rewrite = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 2 }) }
       denylist = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 3 }) }
+      inventory = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 4 }) }
 
-      [old, other, per_rewrite, denylist].each do |store|
+      [old, other, per_rewrite, denylist, inventory].each do |store|
         out.truncate(0) && out.rewind
         expect(cli(steps).run(["echo", "--run", store.run_id])).to eq(64)
         expect(out.string).to eq(error_line("echo", "run_from_older_version"))

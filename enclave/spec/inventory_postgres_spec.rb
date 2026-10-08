@@ -89,11 +89,12 @@ RSpec.describe "quaacks inventory, against a real server" do
       "plan_settings" => { "enable_hashjoin" => "on", "search_path" => production.search_path,
                            "quaack.no_such_setting" => nil },
       "database" => include("datname" => production.name, "datlocprovider" => "b", "datlocale" => "C.UTF-8"),
-      "default_text_search_config" => "public.#{production.ts_config}"
+      "default_text_search_config" => "public.#{production.ts_config}",
+      "tablespaces" => { "pg_default" => [] }, "preload_libraries" => []
     )
     expect(recorded.keys).to contain_exactly("server_version_num", "major_version", "extensions", "memory_bytes",
                                              "settings", "parallel_settings", "plan_settings", "database",
-                                             "default_text_search_config")
+                                             "default_text_search_config", "tablespaces", "preload_libraries")
     expect(recorded["extensions"]).to include("hypopg", "plpgsql")
     expect_exposed(recorded, %i[word text tsconfig])
     expect_no_leaks(sentinels, outcome)
