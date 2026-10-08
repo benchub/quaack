@@ -110,8 +110,20 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
       expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
                                       "scenario" => nil, "rule" => nil }, { "type" => "done" }])
-      expect(stored.read("rewrite_tested_1")).to include("passed" => true)
+      expect(stored.read("rewrite_tested_1")).to include("passed" => true, "dropped" => 0)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # Task 20260926-42: the report says how many scenario groups a unique
+    # key left out. The near misses need the hit's note, which is unique.
+    it "stores how many scenario groups it left out because they collide on a unique key" do
+      ready(same, arena_sql: "CREATE UNIQUE INDEX ON public.orders (note)")
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      expect(stored.read("rewrite_tested_1")["dropped"]).to be_positive
       expect_no_leaks(sentinels, outcome)
     end
 

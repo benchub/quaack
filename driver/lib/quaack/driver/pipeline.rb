@@ -431,7 +431,7 @@ module Quaack
 
           Pipeline.step(progress, "report") do
             payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
-            Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {},
+            Report.write(payload, run_id:, path: out, llm_calls: Provenance.llm_calls(provenance, client),
                                   llm: Provenance.for_report(provenance, client))
           end
         end

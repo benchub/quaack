@@ -313,6 +313,24 @@ RSpec.describe Quaack::Driver::Report do
       expect(queries).to include("<code>SELECT FROM WHERE &lt;b&gt; $1</code>")
     end
 
+    # Task 20260926-42: rewrite-test's dropped count.
+    describe "the test cases a unique key left out" do
+      def dropped(count)
+        payload["rewrites"].first["dropped"] = count
+        section(render(payload), "queries")
+      end
+
+      it "says how many test cases QUAACK left out, and why" do
+        expect(dropped(2)).to include('<p class="dropped">QUAACK left out 2 test cases, since their made-up rows ' \
+                                      "would have broken a unique key.</p>")
+        expect(dropped(1)).to include("QUAACK left out 1 test case, since")
+      end
+
+      it "says nothing when it left none out, or the count isn't one" do
+        [0, nil, -1, "2"].each { expect(dropped(it)).not_to include('class="dropped"') }
+      end
+    end
+
     describe "the conditions QUAACK's made-up rows never checked (vacuity-guard)" do
       let(:explained) do
         esc("QUAACK tests a rewrite on rows it makes up, to check that it returns what your query returns. " \
@@ -1755,11 +1773,11 @@ RSpec.describe Quaack::Driver::Report do
                 ["Index suggestions for the rewrites", "4"], ["Revised index suggestions for the rewrites", "2"]])
     end
 
-    # Task 20261003-4: the driver counts its calls in memory, so a resumed
-    # run counts only those since it resumed.
-    it "says the LLM calls are this run of quaack's, so a resumed run leaves out the earlier ones" do
-      note = "<p class=\"note\">These are the calls this run of quaack made. If you resumed the run, they " \
-             "leave out the calls made before it stopped.</p>"
+    # Task 20260926-42: provenance keeps the counts, so a resumed run
+    # counts the calls made before it stopped too.
+    it "says the LLM calls count those made before a resumed run stopped" do
+      note = "<p class=\"note\">These are the calls the run made. If you resumed the run, they include " \
+             "the calls made before it stopped.</p>"
       expect(burndown_section).to include("</table>\n#{note}")
       expect(section(html, "burndown")).to include(note)
     end

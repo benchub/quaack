@@ -5,6 +5,7 @@ require "json"
 
 require_relative "runs"
 require_relative "provenance/branches"
+require_relative "provenance/calls"
 require_relative "provenance/entries"
 require_relative "provenance/saving"
 require_relative "provenance/shape"
@@ -60,6 +61,7 @@ module Quaack
       ROUNDS = %w[first replacement refinement].freeze
       OUTCOMES = %w[accepted set_aside dropped].freeze
 
+      include Calls
       include Entries
       include Saving
 
@@ -70,7 +72,7 @@ module Quaack
       # A callable, given a block, that has the block record what an LLM
       # step did in provenance, with the router's (client's) entries, the
       # fan-out branches it dropped, the providers it marked down or dropped, and those it asked and didn't,
-      # whose earlier downs it clears (up!), then saves the record
+      # whose earlier downs it clears (up!), and the run's LLM calls (Calls), then saves the record
       # whole. Each LLM step calls it once it's done. NONE without
       # provenance.
       def self.recorder(provenance, client)
@@ -80,15 +82,22 @@ module Quaack
           provenance.providers!(client.entries)
           block&.call(provenance)
           provenance.failed_branches!(client.failed_branches)
-          provenance.down!(client.down).up!(client.burndown.llm_calls_by_provider.keys - client.down.keys).save
+          provenance.router!(client).save
         end
       end
 
+      # The run's LLM calls: those earlier processes of the run recorded
+      # (llm_calls in the record) and the router's (client's) in this one.
+      def self.burndown(provenance, client) = Burndown.sum([provenance&.earlier, client&.burndown].compact)
+
+      # The run's LLM calls by step, from every process of the run.
+      def self.llm_calls(provenance, client) = burndown(provenance, client).llm_calls
+
       # What the report reads of the driver's own (Report::Providers):
       # provenance's record, and each of the router's (client's) providers'
-      # calls in this run of quaack, by step.
+      # calls in the run, by step, from every process of the run.
       def self.for_report(provenance, client)
-        by = client ? client.burndown.llm_calls_by_provider : {}
+        by = burndown(provenance, client).llm_calls_by_provider
         calls = client ? client.entries.to_h { [it["name"], by.fetch(it["name"], {})] } : {}
         { "record" => provenance&.record || {}, "calls" => calls }
       end
@@ -117,6 +126,7 @@ module Quaack
       def initialize(path = nil, record = {})
         @path = path
         @record = record
+        earlier
       end
 
       # The record, as it would be saved.

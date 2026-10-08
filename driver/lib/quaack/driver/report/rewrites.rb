@@ -137,6 +137,15 @@ module Quaack
         # Those no test exercised.
         def unchecked_atoms(entry) = atoms(entry) - checked_later(entry)
 
+        # How many of rewrite-test's scenario groups it left out because
+        # their rows would collide on a unique key, or nil for none.
+        def dropped_line(entry)
+          count = entry["dropped"]
+          return unless count.is_a?(Integer) && count.positive?
+
+          "QUAACK left out #{Words.count(count, "test case")}, since their made-up rows would have broken a unique key."
+        end
+
         # Whether a counterexample round exercised them. covered is nil
         # when no round ran.
         def atoms_note(entry)
