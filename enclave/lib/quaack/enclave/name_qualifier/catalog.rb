@@ -25,19 +25,17 @@ module Quaack
 
         # The schemas on path $1 the role may use that have one of name $2,
         # in path order.
-        TEMPLATE = <<~SQL
-          SELECT n.nspname
-          FROM pg_catalog.unnest($1::pg_catalog.text[]) WITH ORDINALITY AS path(nspname, position)
-          JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) path.nspname
-          WHERE pg_catalog.has_schema_privilege(n.oid, 'USAGE')
-            AND EXISTS (SELECT FROM pg_catalog.%<table>s o
-                        WHERE o.%<namespace>s OPERATOR(pg_catalog.=) n.oid
-                          AND o.%<name>s OPERATOR(pg_catalog.=) $2%<extra>s)
-          ORDER BY path.position
-        SQL
-
         SQL = CATALOGS.to_h do |kind, (table, namespace, name)|
-          [kind, format(TEMPLATE, table:, namespace:, name:, extra: EXTRA.fetch(kind, ""))]
+          [kind, <<~SQL]
+            SELECT n.nspname
+            FROM pg_catalog.unnest($1::pg_catalog.text[]) WITH ORDINALITY AS path(nspname, position)
+            JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) path.nspname
+            WHERE pg_catalog.has_schema_privilege(n.oid, 'USAGE')
+              AND EXISTS (SELECT FROM pg_catalog.#{table} o
+                          WHERE o.#{namespace} OPERATOR(pg_catalog.=) n.oid
+                            AND o.#{name} OPERATOR(pg_catalog.=) $2#{EXTRA.fetch(kind, "")})
+            ORDER BY path.position
+          SQL
         end.freeze
 
         def initialize(path, connection)

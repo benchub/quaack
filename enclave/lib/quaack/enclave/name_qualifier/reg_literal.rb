@@ -26,6 +26,8 @@ module Quaack
         HANDLED = %w[regclass regtype].freeze
         PLAIN = /\A[a-z_][a-z0-9_$]*\z/
         MAX_IDENTIFIER_BYTES = 63
+        # What a regtype literal's text is read after, as a cast's type.
+        CAST_PREFIX = "SELECT NULL::"
 
         module_function
 
@@ -114,7 +116,7 @@ module Quaack
 
         # The one type the text reads as, the way a cast reads it.
         def type_name(text)
-          select = bare_select(PgQuery.parse("SELECT NULL::#{text}").tree.stmts)
+          select = bare_select(PgQuery.parse(CAST_PREFIX + text).tree.stmts)
           cast = select.target_list.first.res_target.val.type_cast if select
           refuse!("a regtype literal that isn't a type") unless cast && cast.arg.a_const&.isnull
           cast.type_name
