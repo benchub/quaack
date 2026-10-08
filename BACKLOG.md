@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-9 (racetrack catalog names qualified; denormalized-equal uses each type's own `=`).
 - 20261007-22 (an unreachable rescue removed).
 - 20261007-30 (HypoPG in the quaack schema; stored search_path without unusable schemas).
+- 20261002-3 (fresh aliases avoid every table and alias name).
 
 ## How this file works.
 
@@ -820,20 +821,7 @@ Minor findings from the build and both reviews of 20261001-23:
 
 ### 20261002-14. The network guard specs read the real `~/.config/anthropic`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-3. `not_in_to_not_exists`: minor findings.
-
-Minor findings from both reviews of 20261001-25:
-
-- The fresh alias can collide with a table name or alias that no column mentions: `Tree::Names` collects only names in column references. The rewrite then fails to plan and plan-pruning drops it. Collect FROM names too.
-- Untested lines: the fresh alias avoiding a taken name (`not_in_to_not_exists.rb:178`); `assumptions.uniq` (`:83`); `realias!` keeping column aliases (`:187`).
-- A column whose type is a domain with a NOT NULL constraint doesn't count as not null, since `AssumptionCheck` reads only `pg_constraint`'s `n` and `p`. Conservative: a missed rewrite, not a wrong one.
-- The rule assumes `=` gives true or false for two non-NULL values. A user-defined `=` that returns NULL breaks that. Noted in the rule's header.
-- Extensions for later: row-valued NOT IN, set-operation subqueries arm by arm, NOT IN outside the top-level WHERE, `<> ALL`.
-
-- **Depends on:** 20261001-25.
-- **Came from:** The build and both reviews of 20261001-25.
-- **Design:** assumption-check, rewrite-rules.
-- **Status:** todo
+### 20261002-3. `not_in_to_not_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-4. `distinct_join_to_exists`: minor findings.
 
@@ -2334,4 +2322,13 @@ From the review of 20261004-79. The new went-on cell renders `<td class="num">no
 - **Depends on:** 20261004-79.
 - **Came from:** The review of 20261004-79.
 - **Design:** report.
+- **Status:** todo
+
+### 20261007-38. `not_in_to_not_exists`: extensions.
+
+From 20261002-3's item 5. New features, not fixes: row-valued `NOT IN`, set-operation subqueries, `NOT IN` outside the top-level WHERE, and `<> ALL`. Ask the user which are worth building before starting; each must stay sound.
+
+- **Depends on:** 20261002-3.
+- **Came from:** 20261002-3.
+- **Design:** rewrite-rules.
 - **Status:** todo

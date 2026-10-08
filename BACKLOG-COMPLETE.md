@@ -6798,3 +6798,19 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 3. The hatch on a partial band spans the band's full width. Hatching only `known` wide stays green.
 5. From the review of 20261004-69: passing `stage` to a partial band's label (`funnel.rb` ~118) is untested; replacing it with `nil` stays green.
 4. While here: the table's "Went on" cell for a stage with "came in" but no "went on" is an empty `<td>`, not "not recorded".
+
+### 20261002-3. `not_in_to_not_exists`: minor findings.
+
+Minor findings from both reviews of 20261001-25:
+
+- The fresh alias can collide with a table name or alias that no column mentions: `Tree::Names` collects only names in column references. The rewrite then fails to plan and plan-pruning drops it. Collect FROM names too.
+- Untested lines: the fresh alias avoiding a taken name (`not_in_to_not_exists.rb:178`); `assumptions.uniq` (`:83`); `realias!` keeping column aliases (`:187`).
+- A column whose type is a domain with a NOT NULL constraint doesn't count as not null, since `AssumptionCheck` reads only `pg_constraint`'s `n` and `p`. Conservative: a missed rewrite, not a wrong one.
+- The rule assumes `=` gives true or false for two non-NULL values. A user-defined `=` that returns NULL breaks that. Noted in the rule's header.
+- Extensions for later: row-valued NOT IN, set-operation subqueries arm by arm, NOT IN outside the top-level WHERE, `<> ALL`.
+
+- **Depends on:** 20261001-25.
+- **Came from:** The build and both reviews of 20261001-25.
+- **Design:** assumption-check, rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. Item 1 was a real bug (`FROM public.users users_1 CROSS JOIN public.groups users_1`): the shared `Tree::Names` now also takes every table and alias name in the query, so every rule that makes fresh aliases avoids them. Item 2's lines have tests. Item 3 won't be done: a NOT NULL domain column can still hold NULL, so counting the domain would be unsound; a test pins the refusal and the rule's header says why. Item 4 was stale (the header already states it). Item 5's extensions are new features, filed as 20261007-38. The review noted that a 62- or 63-character base name plus `_N` passes Postgres's 63-byte limit, already listed in 20261002-5 for or_to_union but true of every rule using `Tree::Names`. Enclave change, unreleased until the next batch bump.
