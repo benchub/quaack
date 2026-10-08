@@ -11,6 +11,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260924-25 (redact: plan_too_deep, cast type preference, boolean masks, 42P18 by SQLSTATE).
 
+- 20260929-22 (qualify: system_relation).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -409,17 +411,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260929-15. `TestPgDump.server_major`'s regex is under-tested. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-16. PgBouncer support: minor findings.
-
-Minor findings from the review of 20260929-8.
-
-- DESIGN.md's run-server says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
-- `TestPostgres::Server#pgbouncer_port`: if PgBouncer's startup fails partway, such as on the readiness timeout, the next call starts `pgbouncer -d` again, and probably fails with a confusing error because one is already running.
-
-- **Depends on:** 20260929-8.
-- **Came from:** Review of 20260929-8, round one.
-- **Design:** run-server.
-- **Status:** todo
+### 20260929-16. PgBouncer support: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-17. Test the prompt-pack template's recovery from a failed build. Done, see BACKLOG-COMPLETE.md.
 
@@ -429,16 +421,7 @@ Minor findings from the review of 20260929-8.
 
 ### 20260929-21. The full schema dump misses schemas that FK parent tables live in. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-22. The subset dump takes a query table in a system schema.
-
-With a `pg_toast` table as a query relation, the subset's `--table` dump fails with `pg_dump_failed`. With `pg_catalog.pg_namespace`, the subset probably gets catalog DDL. `Relations.check` may let catalog tables through, since they're relkind `r`. A query on a system catalog isn't something QUAACK can tune, so refuse it cleanly, with a rule such as `system_relation`, early in qualify. List it as unsupported in v1.
-
-- Also from the 20260929-19 review: suppose no `public` schema exists, and every query relation and extension is in a system schema. Then the full dump gets no `--schema` flags, and pg_dump dumps every schema. Refusing system relations fixes this too.
-
-- **Depends on:** 20260929-19.
-- **Came from:** The build and review of 20260929-19.
-- **Design:** qualify, schema-dump.
-- **Status:** todo
+### 20260929-22. The subset dump takes a query table in a system schema. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2399,4 +2382,19 @@ Split from 20260924-25, with that task's review findings:
 - **Depends on:** 20260924-25.
 - **Came from:** The build and review of 20260924-25, 2026-10-08.
 - **Design:** redact.
+- **Status:** todo
+
+### 20261008-54. system_relation and PgBouncer docs: minors from 20260929-22 and -16.
+
+The review of 20260929-22 and -16 found these minor issues:
+
+1. **No test pins a `pg`-prefixed app schema.** Add a schema like `pgapp` that resolves and passes, so a mutation to `start_with?("pg")` goes red.
+2. **`toast_relation` is unreachable.** Every TOAST table is in `pg_toast`, so `system_relation` now catches them first. Remove the rule and its fixed note, or document them as a backstop.
+3. **`KILL` leaves the database paused.** PgBouncer's `KILL` pauses new client connections to that database until `RESUME`, and the docs don't say so. Add "then `RESUME <db>`", or recommend `RECONNECT` first.
+4. **`TestPostgres::PgBouncer.stop` can hang.** Its wait loop has no timeout. Bound it.
+5. **The "fails partway" spec ignores a failed restart.** Its `ensure` runs `start` again without checking the result.
+
+- **Depends on:** 20260929-22, 20260929-16.
+- **Came from:** The review of 20260929-22 and -16, 2026-10-08.
+- **Design:** qualify, run-server.
 - **Status:** todo

@@ -7997,3 +7997,28 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-25 (commit c5c275ef). Review had no blocking findings. The items left out, and the review's minors, went to 20261008-53.
+
+### 20260929-22. The subset dump takes a query table in a system schema.
+
+With a `pg_toast` table as a query relation, the subset's `--table` dump fails with `pg_dump_failed`. With `pg_catalog.pg_namespace`, the subset probably gets catalog DDL. `Relations.check` may let catalog tables through, since they're relkind `r`. A query on a system catalog isn't something QUAACK can tune, so refuse it cleanly, with a rule such as `system_relation`, early in qualify. List it as unsupported in v1.
+
+- Also from the 20260929-19 review: suppose no `public` schema exists, and every query relation and extension is in a system schema. Then the full dump gets no `--schema` flags, and pg_dump dumps every schema. Refusing system relations fixes this too.
+
+- **Depends on:** 20260929-19.
+- **Came from:** The build and review of 20260929-19.
+- **Design:** qualify, schema-dump.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260929-22 (commit 4241e14f). Review had no blocking findings. The main session ran the mutations: dropping system! made 7 tests fail, and changing the pg_ prefix made 6 fail. Minors went to 20261008-54.
+
+### 20260929-16. PgBouncer support: minor findings.
+
+Minor findings from the review of 20260929-8.
+
+- DESIGN.md's run-server says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
+- `TestPostgres::Server#pgbouncer_port`: if PgBouncer's startup fails partway, such as on the readiness timeout, the next call starts `pgbouncer -d` again, and probably fails with a confusing error because one is already running.
+
+- **Depends on:** 20260929-8.
+- **Came from:** Review of 20260929-8, round one.
+- **Design:** run-server.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260929-22 (commit 11f6b224). Review had no blocking findings; its minors went to 20261008-54.
