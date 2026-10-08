@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "enclave_error"
 require_relative "progress"
 
 module Quaack
@@ -41,6 +42,10 @@ module Quaack
       SERVER_OPTIONS = %w[host port racetrack-db arena-db].freeze
 
       module_function
+
+      # Whether error is a setup step's failure: an EnclaveError from one of
+      # STEPS' subcommands, which nothing else calls.
+      def failed?(error) = error.is_a?(EnclaveError) && STEPS.any? { it.subcommand == error.subcommand }
 
       # Whether entries say every step has run.
       def done?(entries) = STEPS.all? { entries[it.output] }

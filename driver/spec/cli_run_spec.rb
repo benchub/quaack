@@ -438,22 +438,75 @@ RSpec.describe "quaack run" do
     expect(errors).to eq(torn)
   end
 
-  # Task 20261004-17: the note names the jump host and production server
-  # from the laptop's record of the run, and what to do next once the run
-  # is torn down.
-  it "names production and the jump host when a setup step can't connect to production" do
-    Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
-    entries.merge!(setup_done.transform_values { false })
-    failing["inventory"] = Quaack::Driver::EnclaveError.new(subcommand: "inventory",
-                                                            rule: "production_connection_failed", exit_status: 70)
+  # Task 20261003-22, item 3: a setup step's failure keeps the run for
+  # debugging, so the error says to resume it or how to tear it down.
+  describe "when a setup step fails" do
+    before { entries.merge!(setup_done.transform_values { false }) }
 
-    status = cli.run(["run", "--run", run_id, "--out", out])
+    let(:kept) { "quaack: kept run #{run_id}, since a setup step failed.\n" }
+    let(:go_on) do
+      "resume with `quaack run --run #{run_id}`, or tear the run down by running this on the jump server: " \
+        "quaacks teardown --run #{run_id}\n"
+    end
 
-    expect([status, errors]).to match(
-      [1, start_with("#{torn}quaack run failed: production_connection_failed: couldn't connect to production at " \
-                     "prod-1. ") & include("Test it with `ssh jump-1 'psql -h prod-1 -c ") &
-          end_with("Otherwise fix your libpq setup, then start a new run with `quaack start`\n")]
-    )
+    it "keeps the run, and says to resume it or how to tear it down" do
+      failing["volatility"] = Quaack::Driver::EnclaveError.new(subcommand: "volatility", rule: "volatile_function",
+                                                               exit_status: 70)
+
+      status = cli.run(["run", "--run", run_id, "--out", out])
+
+      expect(transport.calls.map(&:first)).not_to include("teardown")
+      expect([status, errors]).to eq([1, "#{kept}quaack run failed: volatile_function. To go on, #{go_on}"])
+    end
+
+    it "keeps the run when the run server isn't named, so the flags can be given when it resumes" do
+      failing["run-server"] = Quaack::Driver::EnclaveError.new(subcommand: "run-server",
+                                                               rule: "run_server_unspecified", exit_status: 70)
+
+      status = cli.run(["run", "--run", run_id, "--out", out])
+
+      expect(transport.calls.map(&:first)).not_to include("teardown")
+      expect([status, errors]).to eq(
+        [1, "#{kept}quaack run failed: run_server_unspecified: name the run server with --host, --port, " \
+            "--racetrack-db, and --arena-db, or set run_server_command in ~/.quaack/config.json on the jump " \
+            "server. To go on, #{go_on}"]
+      )
+    end
+
+    # Task 20261004-17: the note names the jump host and production server
+    # from the laptop's record of the run, and what to do next.
+    it "names production and the jump host when it can't connect to production" do
+      Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
+      failing["inventory"] = Quaack::Driver::EnclaveError.new(subcommand: "inventory",
+                                                              rule: "production_connection_failed", exit_status: 70)
+
+      status = cli.run(["run", "--run", run_id, "--out", out])
+
+      expect([status, errors]).to match(
+        [1, start_with("#{kept}quaack run failed: production_connection_failed: couldn't connect to production at " \
+                       "prod-1. ") & include("Test it with `ssh jump-1 'psql -h prod-1 -c ") &
+            end_with("Otherwise fix your libpq setup, then #{go_on}")]
+      )
+    end
+
+    it "says only what --keep says, with --keep" do
+      failing["volatility"] = Quaack::Driver::EnclaveError.new(subcommand: "volatility", rule: "volatile_function",
+                                                               exit_status: 70)
+
+      expect(cli.run(["run", "--run", run_id, "--out", out, "--keep"])).to eq(1)
+      expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
+                           "quaacks teardown --run #{run_id}\nquaack run failed: volatile_function\n")
+    end
+
+    it "skips teardown as for any step when ssh failed" do
+      failing["qualify"] = Quaack::Driver::EnclaveError.new(subcommand: "qualify", rule: "ssh_failed", exit_status: 255)
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect(errors).to eq("quaack: skipped the teardown of run #{run_id}, since ssh to the jump server failed. " \
+                           "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" \
+                           "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login " \
+                           "or network, then resume with `quaack run --run #{run_id}`\n")
+    end
   end
 
   # Task 20261004-37: quaack run reads the port from the same record.
@@ -690,15 +743,20 @@ RSpec.describe "quaack run" do
                                    "Checking the query plan and searching for indexes (index-search)\n")
     end
 
-    it "stops at a setup step that fails, prints only its rule, and tears the run down" do
+    # Task 20261003-22, item 3: and keeps the run, for debugging.
+    it "stops at a setup step that fails, prints its rule, and keeps the run" do
       entries["qualified_query"] = false
       failing["qualify"] = Quaack::Driver::EnclaveError.new(subcommand: "qualify", rule: "unknown_relation",
                                                             sqlstate: "42P01", exit_status: 70)
 
       status = cli.run(["run", "--run", run_id, "--out", out])
 
-      expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: unknown_relation\n"])
-      expect(transport.calls.map(&:first)).to eq(%w[version status qualify teardown])
+      expect([status, stdout.string, errors]).to eq(
+        [1, "", "quaack: kept run #{run_id}, since a setup step failed.\nquaack run failed: unknown_relation. " \
+                "To go on, resume with `quaack run --run #{run_id}`, or tear the run down by running this on the " \
+                "jump server: quaacks teardown --run #{run_id}\n"]
+      )
+      expect(transport.calls.map(&:first)).to eq(%w[version status qualify])
     end
 
     it "rejects a repeated run-server flag or one without a value" do
