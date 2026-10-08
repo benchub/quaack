@@ -2257,14 +2257,7 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 
 ### 20261007-49. A lone `llm` block: keep the API's detail after a skipped replacement round. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-50. Bedrock region lookup: match the SDK on empty variables.
-
-From the review of 20261007-28. `env_region` skips an empty region variable and moves on to the next. The AWS SDK takes the first variable that's set (`compact.first`); when that one is empty it skips the rest and goes to the profile's region. So `AWS_REGION=""` with a valid `AWS_DEFAULT_REGION` gives a different region in bearer mode, and in SigV4 mode a bad `AMAZON_REGION` behind an empty `AWS_REGION` is refused though the SDK would never read it. Match the SDK's rule, or document the difference. Also, the `no_region` message names only `AWS_REGION`; mention `AMAZON_REGION` and `AWS_DEFAULT_REGION` too.
-
-- **Depends on:** 20261007-28.
-- **Came from:** The review of 20261007-28.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261007-50. Bedrock region lookup: match the SDK on empty variables. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-51. Equality: refuse a half-exact `=` too.
 

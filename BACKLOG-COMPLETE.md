@@ -7091,3 +7091,13 @@ It's a false positive. No prompt in the corpus holds that date. The models gener
 - **Design:** none. Test harness and prompt pack only.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The prompt pack's leak check (`PromptPack.leaks`) no longer scans LLM reply files, matched by the same exact name rule the replay uses, so a model that invents a sentinel-like date isn't flagged. Every prompt, chat, and other file stays scanned, and everything QUAACK sent, earlier turns included, lives in a scanned `prompt.md` or `chat.md`, so a reply that echoes a leak is still caught through its prompt. Planted-leak tests cover every scanned kind of file. Not filed: the glob skips the corpus root's README and the replay's planted root, as before.
+
+### 20261007-50. Bedrock region lookup: match the SDK on empty variables.
+
+From the review of 20261007-28. `env_region` skips an empty region variable and moves on to the next. The AWS SDK takes the first variable that's set (`compact.first`); when that one is empty it skips the rest and goes to the profile's region. So `AWS_REGION=""` with a valid `AWS_DEFAULT_REGION` gives a different region in bearer mode, and in SigV4 mode a bad `AMAZON_REGION` behind an empty `AWS_REGION` is refused though the SDK would never read it. Match the SDK's rule, or document the difference. Also, the `no_region` message names only `AWS_REGION`; mention `AMAZON_REGION` and `AWS_DEFAULT_REGION` too.
+
+- **Depends on:** 20261007-28.
+- **Came from:** The review of 20261007-28.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `env_region` takes the first region variable that's set, as aws-sdk-core does, and an empty one hides the rest: bearer mode then has no region, and SigV4 mode falls to the profile. The no-region message names all three variables and the profile. Not filed: "one of X, Y, and Z" could read "X, Y, or Z".
