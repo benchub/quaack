@@ -33,10 +33,29 @@ module TestPgDump
   end
 
   # The first of dirs whose pg_dump has major version major. Raises NotFound,
-  # saying what each held and what to install or set, when none does.
-  def find(major, dirs)
+  # saying what each held and what to install or set, when none does. When
+  # it skips a directory whose pg_dump is of another major version, such as
+  # QUAACK_TEST_PG_BIN's, it says so on warn_to.
+  def find(major, dirs, warn_to: $stderr)
     found = dirs.to_h { [it, version(File.join(it, "pg_dump"))] }
-    dirs.find { found[it]&.match(VERSION)&.[](1).to_i == major } or raise NotFound, not_found(major, found)
+    chosen = dirs.find { found[it]&.match(VERSION)&.[](1).to_i == major } or raise NotFound, not_found(major, found)
+    dirs.take_while { it != chosen }.each do |dir|
+      warn_to.puts "Skipped #{dir}, which holds #{found[dir]}, not pg_dump #{major}. Using #{chosen}." if found[dir]
+    end
+    chosen
+  end
+
+  # Gives group (an example group) its examples from the block when a
+  # pg_dump of the server's major version is found, and otherwise a single
+  # example, named description, that fails with what to install or set. It
+  # looks as the spec file loads, so one missing pg_dump is one failure
+  # rather than one per example.
+  def examples(group, description, find: -> { bin }, &)
+    find.call
+  rescue NotFound => e
+    group.it(description) { raise e }
+  else
+    group.class_exec(&)
   end
 
   # What pg_dump --version printed, or nil if it couldn't be run.
