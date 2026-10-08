@@ -2269,13 +2269,4 @@ From the builder and review of 20261007-46.
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261007-53. Unused run-server flags: minors from 20261003-22.
-
-From the review of 20261003-22.
-1. No test pins that no warning prints when the flags are used: making it print even when run-server runs with flags keeps every spec green. Add one (run-server runs with `--host`, and stderr has no "Ignoring").
-2. README's example line drops the backticks around `quaack start` and shows only the setup form; under `quaack run` with setup all done, the line has no step number and no `(run-server)` suffix. Match the real lines.
-
-- **Depends on:** 20261003-22.
-- **Came from:** The review of 20261003-22.
-- **Design:** `quaack setup`.
-- **Status:** todo
+### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.

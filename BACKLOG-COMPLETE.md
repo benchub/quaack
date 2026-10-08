@@ -7114,3 +7114,15 @@ From the review of 20261002-4.
 - **Design:** rewrite-rules, assumption checks.
 - **Status:** done
 - **Landed:** 2026-10-08, after a review with one blocking finding, a fix round, and a clean second review. The shared `unique` check compares a unique index's operator class `=` with the default btree class's for the column's own type (domains unwrapped), falling back to the class's input type when the column's type has none of its own, so a `text_ops` or `text_pattern_ops` index on a citext column no longer counts as unique; that closes a hole 20261002-4 had put on main. A class whose `=` matches the default's, such as `text_pattern_ops` on text, now counts. Tests cover INCLUDE columns in candidate keys and the keys memo. DESIGN.md (finished at landing) says what happens with no default class. Not filed: three defensive guards reachable only with planted classes. Enclave change, unreleased until the next batch bump.
+
+### 20261007-53. Unused run-server flags: minors from 20261003-22.
+
+From the review of 20261003-22.
+1. No test pins that no warning prints when the flags are used: making it print even when run-server runs with flags keeps every spec green. Add one (run-server runs with `--host`, and stderr has no "Ignoring").
+2. README's example line drops the backticks around `quaack start` and shows only the setup form; under `quaack run` with setup all done, the line has no step number and no `(run-server)` suffix. Match the real lines.
+
+- **Depends on:** 20261003-22.
+- **Came from:** The review of 20261003-22.
+- **Design:** `quaack setup`.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. Specs pin that no warning prints when run-server runs with the flags it's given, and the README shows both forms of the line exactly as printed. Not filed: the warning joins three or more flags without an Oxford comma.
