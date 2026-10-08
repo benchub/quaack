@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
 require_relative "from_functions"
+require_relative "name_qualifier"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
 require_relative "table_name"
@@ -154,12 +155,12 @@ module Quaack
         rule = "bad_search_path"
         RelationQualifier.search_path(settings, connection)
         rule = "unknown_relation"
-        resolved = RelationQualifier.qualify_tree(tree, settings, connection)
-        UserSchema.check!(tree, resolved, settings, connection)
+        UserSchema.check!(tree, RelationQualifier.qualify_tree(tree, settings, connection), settings, connection)
+        NameQualifier.qualify!(tree, RelationQualifier.search_path(settings, connection), connection)
         Deparse.faithful_parse(tree)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil
-      rescue Deparse::Error, UserSchema::Error => e
+      rescue Deparse::Error, UserSchema::Error, NameQualifier::Error => e
         raise Error.from(e), cause: nil
       end
 

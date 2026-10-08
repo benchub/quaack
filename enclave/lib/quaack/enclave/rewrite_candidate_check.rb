@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
+require_relative "name_qualifier"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
 require_relative "table_name"
@@ -138,14 +139,23 @@ module Quaack
       # first, so a bad one gets its own rule rather than unknown_relation.
       def qualify(sql, settings, connection)
         rule = "bad_search_path"
-        RelationQualifier.search_path(settings, connection)
+        path = RelationQualifier.search_path(settings, connection)
         rule = "unknown_relation"
-        qualified = RelationQualifier.qualify(sql, settings, connection)
-        Accepted.new(sql: qualified.sql, parse: qualified.parse)
+        qualified = qualified_parse(sql, path, settings, connection)
+        Accepted.new(sql: qualified.query, parse: qualified)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil
-      rescue Deparse::Error => e
+      rescue Deparse::Error, NameQualifier::Error => e
         raise Error.from(e), cause: nil
+      end
+
+      # The candidate's parse with its relations qualified, as
+      # RelationQualifier.qualify does, and its other names (NameQualifier).
+      def qualified_parse(sql, path, settings, connection)
+        tree = RelationQualifier.parse(sql).tree
+        RelationQualifier.qualify_tree(tree, settings, connection)
+        NameQualifier.qualify!(tree, path, connection)
+        Deparse.faithful_parse(tree)
       end
 
       def relations!(parse, allowed, connection)

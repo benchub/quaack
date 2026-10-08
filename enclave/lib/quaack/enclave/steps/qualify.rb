@@ -18,12 +18,16 @@ module Quaack
       # Production.read_only transaction, so a failed read is
       # production_read_failed, with its SQLSTATE.
       #
-      # It writes two entries, for the later steps of 3 to read:
+      # It writes three entries, for later steps to read:
       #
       # - qualified_query: the query's text with every relation naming its
       #   schema, a String. It holds the query's literals.
       # - relations: each relation the query uses, once, in the order its
       #   text first names it, as an Array of {"schema", "name"} Hashes.
+      # - search_path: the plan's search path, or the default, as an Array of
+      #   schema names in order, with "$user" as the role it connects as.
+      #   It lists pg_catalog only where the path does, so a session that
+      #   sets it searches what qualify did. RunServer.connect sets it.
       #
       # Anything that fails writes nothing. Its only line is DONE: the
       # query and its literals stay in the store, and the driver sees the
@@ -34,8 +38,9 @@ module Quaack
         def call(store:, **)
           query = store.read("query")
           settings = store.read("plan")[0]["Settings"]
-          result = check(Enclave::Inventory::Production.params(store), query, settings)
+          result, path = check(Enclave::Inventory::Production.params(store), query, settings)
           store.write("relations", result.relations.map { { "schema" => it.schema, "name" => it.name } })
+          store.write("search_path", path)
           store.write("qualified_query", result.sql)
           []
         end
@@ -43,10 +48,17 @@ module Quaack
         def check(production, query, settings)
           connection = Enclave::Inventory::Production.connect(production)
           Enclave::Inventory::Production.read_only(connection) do
-            Relations.check(query, settings, connection)
+            [Relations.check(query, settings, connection), written_path(settings, connection)]
           end
         ensure
           connection&.close
+        end
+
+        # The path as the plan wrote it, with "$user" as the role qualify
+        # connects as. Relations.check has read it already.
+        def written_path(settings, connection)
+          user = connection.exec("SELECT current_user").getvalue(0, 0)
+          RelationQualifier.path_entries(settings).map { it == "$user" ? user : it }
         end
       end
     end

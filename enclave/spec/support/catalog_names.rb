@@ -50,6 +50,7 @@ module CatalogNames
   SKIP = {
     ["quaack/enclave/build_connection.rb", "CREATE INDEX "] => "a LIKE pattern passed as a parameter",
     ["quaack/enclave/deparse.rb", "SELECT WHERE "] => "a prefix pg_query deparses a bare expression after",
+    ["quaack/enclave/name_qualifier/reg_literal.rb", "SELECT NULL::"] => "a prefix a regtype literal is read after",
     ["quaack/enclave/index_ddl_check.rb", "WITH (...)"] => "the name of a refused form",
     ["quaack/enclave/insert_check.rb", "WITH"] => "the name of a refused form",
     ["quaack/enclave/steps/index_build.rb", "CREATE INDEX "] => "a replacement String#sub writes into DDL",

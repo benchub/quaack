@@ -58,6 +58,13 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect(accepted.parse.deparse).to eq(accepted.sql)
     end
 
+    # Task 20260926-56: the same as the original's names (see NameQualifier).
+    it "names the schema of a function only one schema on the path has, as the original's are" do
+      expect(check("SELECT steady(), lower(status) FROM orders").sql)
+        .to eq("SELECT public.steady(), lower(status) FROM public.orders")
+      expect { check("SELECT 'lower'::regproc FROM orders") }.to rejected("unsupported_reg_literal")
+    end
+
     it "may drop a relation the original uses, since a rewrite can eliminate a join" do
       expect(check("SELECT id FROM public.orders WHERE status = $1").sql)
         .to eq("SELECT id FROM public.orders WHERE status = $1")
