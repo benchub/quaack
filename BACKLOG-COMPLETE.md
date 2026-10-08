@@ -7009,3 +7009,17 @@ From the builder and review of 20261007-31.
 - **Design:** trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. A shadow example covers deferred rows; value pools match boundaries on a pg_catalog-qualified type name; the catalog-names scan reads placeholder casts built on their own, with `TYPE_NAME_HOLES` (renamed from `FORMAT_TYPE_HOLES`) exempting two qualified type names; and Scenarios refuse, as `complex_check`, a table or domain CHECK that depends on an operator outside pg_catalog that no extension owns, read from `pg_depend`, not the printed text (citext, ltree, hstore, enum, and domain CHECKs still pass). Not filed, from the review: a CHECK on a hand-made non-extension operator is now refused, and an extension-owned operator that shadows a builtin is trusted. Enclave change, unreleased until the next batch bump.
+
+### 20261007-28. Bedrock region and override checks: minors from 20261001-16.
+
+From the reviews of 20261001-16.
+1. Changing `REGION_VARIABLES.find` to `.reverse.find` in `env_region` (`bedrock_adapter.rb`) survives: no bearer-mode spec sets both `AWS_REGION` and `AWS_DEFAULT_REGION` to valid, different values. Add one that asserts `AWS_REGION` wins.
+2. `AMAZON_REGION` isn't checked. The AWS SDK reads `AWS_REGION`, then `AMAZON_REGION`, then `AWS_DEFAULT_REGION`. Add it to `REGION_VARIABLES` in that order, or say it's unsupported.
+3. Widening the region prefix from `[a-z]{2,4}` to `[a-z]{2,9}` survives. Add a spec that refuses a five-letter prefix.
+4. On a provider switch, a block key that doesn't apply even to the block's own provider (such as `api_key_env` on a `copilot_cli` block) isn't refused, so the mistake shows up only on the next run without the override. Refuse it on a switch too.
+
+- **Depends on:** 20261001-16.
+- **Came from:** The reviews of 20261001-16, rounds one and two.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. Region variables are read in the AWS SDK's order, `AWS_REGION`, `AMAZON_REGION`, then `AWS_DEFAULT_REGION`, and a bad value in any of them is a usage error naming the variable, in both bearer and SigV4 mode. Specs pin the order and refuse a five-letter region prefix. On a `QUAACK_LLM_PROVIDER` switch, keys that don't apply to the block's own provider are refused, while a valid block switched for one run still works.

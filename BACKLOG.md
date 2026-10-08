@@ -2164,18 +2164,7 @@ From the builder of 20261007-12. Ollama's OpenAI-compatible API ignores `max_com
 
 ### 20261007-27. Specs: keep the AWS SDK off the real `~/.aws`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-28. Bedrock region and override checks: minors from 20261001-16.
-
-From the reviews of 20261001-16.
-1. Changing `REGION_VARIABLES.find` to `.reverse.find` in `env_region` (`bedrock_adapter.rb`) survives: no bearer-mode spec sets both `AWS_REGION` and `AWS_DEFAULT_REGION` to valid, different values. Add one that asserts `AWS_REGION` wins.
-2. `AMAZON_REGION` isn't checked. The AWS SDK reads `AWS_REGION`, then `AMAZON_REGION`, then `AWS_DEFAULT_REGION`. Add it to `REGION_VARIABLES` in that order, or say it's unsupported.
-3. Widening the region prefix from `[a-z]{2,4}` to `[a-z]{2,9}` survives. Add a spec that refuses a five-letter prefix.
-4. On a provider switch, a block key that doesn't apply even to the block's own provider (such as `api_key_env` on a `copilot_cli` block) isn't refused, so the mistake shows up only on the next run without the override. Refuse it on a switch too.
-
-- **Depends on:** 20261001-16.
-- **Came from:** The reviews of 20261001-16, rounds one and two.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261007-28. Bedrock region and override checks: minors from 20261001-16. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-29. Operator messages for enclave rules.
 
@@ -2316,4 +2305,13 @@ From the review of 20261007-15. With a lone `llm` block, an `llm_rate_limited`, 
 - **Depends on:** 20261007-15.
 - **Came from:** The review of 20261007-15.
 - **Design:** Several LLM providers.
+- **Status:** todo
+
+### 20261007-50. Bedrock region lookup: match the SDK on empty variables.
+
+From the review of 20261007-28. `env_region` skips an empty region variable and moves on to the next. The AWS SDK takes the first variable that's set (`compact.first`); when that one is empty it skips the rest and goes to the profile's region. So `AWS_REGION=""` with a valid `AWS_DEFAULT_REGION` gives a different region in bearer mode, and in SigV4 mode a bad `AMAZON_REGION` behind an empty `AWS_REGION` is refused though the SDK would never read it. Match the SDK's rule, or document the difference. Also, the `no_region` message names only `AWS_REGION`; mention `AMAZON_REGION` and `AWS_DEFAULT_REGION` too.
+
+- **Depends on:** 20261007-28.
+- **Came from:** The review of 20261007-28.
+- **Design:** LLM client.
 - **Status:** todo
