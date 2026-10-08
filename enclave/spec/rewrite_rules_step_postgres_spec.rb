@@ -370,6 +370,33 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     end
   end
 
+  # Task 20261002-4: distinct_join_to_exists through the step. orders.id is
+  # its primary key, so a DISTINCT over the self-join that holds it becomes
+  # one read with an EXISTS.
+  context "when distinct_join_to_exists fires" do
+    let(:query) do
+      "SELECT DISTINCT o.id, o.note FROM public.orders o JOIN public.orders o2 ON o2.total = o.total " \
+        "WHERE o2.note = '#{sentinels.text}'"
+    end
+    let(:rewritten) do
+      "SELECT o.id, o.note FROM public.orders o WHERE EXISTS (SELECT 1 FROM public.orders o2 " \
+        "WHERE o2.total = o.total AND o2.note = $1)"
+    end
+
+    it "stores the rule's rewrite with its key assumptions, and never sends the sentinel out" do
+      prepare
+
+      outcome = rewrite_rules
+
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"),
+                                    rules_line(["distinct_join_to_exists"]), { "type" => "done" }])
+      expect(stored.read("rewrite_1")).to include(
+        "sql" => rewritten, "assumptions" => key_assumptions, "source" => "rule", "rules" => ["distinct_join_to_exists"]
+      )
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
+
   # Task 20261001-28: DESIGN.md's llm-rewrites. rewrite-payload sends the rule-made
   # rewrites' SQL and rule names, so the LLM doesn't repeat them.
   describe "rewrite-payload's rule_rewrites" do

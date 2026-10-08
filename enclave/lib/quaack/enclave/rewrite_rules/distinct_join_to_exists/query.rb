@@ -78,21 +78,31 @@ module Quaack
             select.sort_clause.filter_map { (ref = it.sort_by.node.column_ref) && Tree.qualified(ref)&.last }
           end
 
-          # The first selected column the catalog proves unique and not
-          # null, or nil. With a LIMIT or OFFSET, it must be sorted by too.
           # The kept table's column names, which its star stands for.
           def star(catalog) = catalog.column_names(kept.table.schemaname, kept.table.relname)
 
+          # The columns of a key the catalog proves unique and not null,
+          # every one of them selected, or nil. With a LIMIT or OFFSET, they
+          # must all be sorted by too. One read of the table's indexes gives
+          # the candidates (Catalog#keys). The fewest columns win, then the
+          # one whose last column comes first in the select list, then the
+          # index made first.
           def key(catalog)
             columns = selected.flat_map { it == :star ? star(catalog) : [it] }.uniq
             columns &= sorted if limited
-            columns.find { |column| assumptions(column).all? { catalog.met?(it) } }
+            candidates(catalog, columns).find { |key| assumptions(key).all? { catalog.met?(it) } }
+          end
+
+          # The catalog's candidate keys made of columns alone, best first.
+          def candidates(catalog, columns)
+            keys = catalog.keys(kept.table.schemaname, kept.table.relname).select { (it - columns).empty? }
+            keys.sort_by.with_index { |key, i| [key.size, key.map { columns.index(it) }.max, i] }
           end
 
           def assumptions(key)
             table = "#{kept.table.schemaname}.#{kept.table.relname}"
-            [{ "kind" => "unique", "table" => table, "columns" => [key] },
-             { "kind" => "not_null", "table" => table, "column" => key }]
+            [{ "kind" => "unique", "table" => table, "columns" => key },
+             *key.map { { "kind" => "not_null", "table" => table, "column" => it } }]
           end
 
           # Makes select the kept table alone, with no DISTINCT: the

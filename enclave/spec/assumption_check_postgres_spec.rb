@@ -72,6 +72,28 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       .to eq([false, true, true, false])
   end
 
+  # Task 20261002-4: a rule reads unique as "no two rows are equal in these
+  # columns", by the column's own =. An index that compares more finely
+  # than that lets two rows the column calls equal both in: under a
+  # case-blind collation, b's 'Ann' and 'ann'. A deterministic collation's
+  # = is byte equality, so two of those agree, as on d. A non-default
+  # operator class is refused even where it agrees, as text_pattern_ops
+  # does on e, since one such as record_image_ops compares more finely.
+  it "meets a unique set only when its index compares as the column does" do
+    conn.exec(<<~SQL)
+      CREATE COLLATION public.blind (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+      CREATE TABLE public.people (a text COLLATE public.blind NOT NULL, b text COLLATE public.blind NOT NULL,
+                                  d text NOT NULL, e text NOT NULL);
+      CREATE UNIQUE INDEX ON public.people (a);
+      CREATE UNIQUE INDEX ON public.people (b COLLATE "C");
+      CREATE UNIQUE INDEX ON public.people (d COLLATE "C");
+      CREATE UNIQUE INDEX ON public.people (e text_pattern_ops);
+      INSERT INTO public.people VALUES ('Ann', 'Ann', 'Ann', 'Ann'), ('x', 'ann', 'x', 'x');
+    SQL
+
+    expect(%w[a b d e].map { met?(unique("public.people", it)) }).to eq([true, false, true, false])
+  end
+
   it "meets a CHECK despite the casts Postgres adds, and one marked NO INHERIT" do
     items = ->(expression) { check(expression).merge("table" => "public.items") }
     expect([met?(items.call("price > 0")), met?(items.call("price > 1")), met?(items.call("lot > 0"))])

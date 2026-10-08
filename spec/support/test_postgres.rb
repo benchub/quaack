@@ -259,9 +259,23 @@ module TestPostgres
     format = "{{.ID}} {{.Label \"#{OWNER_LABEL}\"}} {{.Label \"#{HOST_LABEL}\"}}"
     docker("ps", "-a", "--filter", "label=#{LABEL}", "--format", format).lines.map(&:split).each do |id, pid, host|
       foreign = host && host != Socket.gethostname
-      docker("rm", "-f", "-v", id) unless foreign || process_alive?(Integer(pid.to_s, exception: false))
+      remove_container(id) unless foreign || process_alive?(Integer(pid.to_s, exception: false))
     end
   end
+
+  # Another spec process may have found the same stale container and be
+  # removing it already. Then it's as good as removed. (One that's gone
+  # already is no error: rm -f succeeds.)
+  module StaleContainer
+    def self.remove(id)
+      TestPostgres.docker("rm", "-f", "-v", id)
+      nil
+    rescue RuntimeError => e
+      raise unless e.message.include?("is already in progress")
+    end
+  end
+
+  def remove_container(id) = StaleContainer.remove(id)
 
   def process_alive?(pid)
     return false unless pid&.positive?
