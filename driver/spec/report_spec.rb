@@ -1339,7 +1339,8 @@ RSpec.describe Quaack::Driver::Report do
       it "says under the table that an index it couldn't try never reached the planner" do
         expect(section(html, "accountability")).to include(
           "<p class=\"note\">Planner ignored or couldn't try also counts the ideas QUAACK couldn't try, because " \
-          "HypoPG, which it uses to try an index without building it, couldn't create them. The planner was never " \
+          "HypoPG, which it uses to try an index without building it, couldn't create them, or because it couldn't " \
+          "write their definition. The planner was never " \
           "asked about those.</p>"
         )
       end
@@ -1472,6 +1473,19 @@ RSpec.describe Quaack::Driver::Report do
           rows(rendered, "indexes")["All sources together"].first(3)
         end
 
+        # Task 20260924-8: index-test counts an idea QUAACK couldn't write
+        # as unrenderable, apart from what HypoPG refused.
+        it "counts an idea QUAACK couldn't write as one it couldn't try" do
+          stages["index-test"]["original"] = rec(5, 2, dropped: { "never_used" => 1, "hypopg_refused" => 1,
+                                                                  "unrenderable" => 1 })
+          stages["llm-index-ideas"]["original"] =
+            rec(0, 1, added: { "llm" => 6 }, dropped: { "covered_by_existing" => 1, "duplicate" => 1, "never_used" => 1,
+                                                        "hypopg_refused" => 1, "unrenderable" => 1 })
+          counted = rows(accountable, "indexes")
+          expect(counted["The LLM"][2]).to eq("4")
+          expect(counted["All sources together"][2]).to eq("9")
+        end
+
         it "says under the table what each column counts" do
           expect(section(html, "accountability")).to include(
             "Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for " \
@@ -1574,6 +1588,14 @@ RSpec.describe Quaack::Driver::Report do
       expect(index_table).to include('<tr><th scope="row">Asking the planner whether it would use each one</th>' \
                                      '<td class="num">3</td><td>none</td><td>never used by the planner: 1</td>' \
                                      '<td class="num">0</td><td class="missing">not recorded</td><td>none</td></tr>')
+    end
+
+    it "puts index-test's drops in words, an idea QUAACK couldn't write apart from what HypoPG refused" do
+      burndown["stages"]["index-test"] = { "original" => rec(3, 1, dropped: { "hypopg_refused" => 1,
+                                                                              "unrenderable" => 1 }) }
+      expect(index_table).to include(row("Asking the planner whether it would use each one", 3, "none",
+                                         "HypoPG couldn&#39;t create: 1; QUAACK couldn&#39;t write its " \
+                                         "definition: 1", 0, 1, "none"))
     end
 
     it "shows the rewrite stages in words, in order, with their other counts" do

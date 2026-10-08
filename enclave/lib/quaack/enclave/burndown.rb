@@ -21,7 +21,7 @@ module Quaack
     # Stages that have a result object record it through an adapter:
     #
     #   since = Burndown.record_dedupe(store, dedupe, search: :original)               # index-dedupe
-    #   Burndown.record_single_candidate_test(store, report, search: :original)        # index-test
+    #   Burndown.record_single_candidate_test(store, report, search: :original, dedupe:) # index-test
     #   Burndown.record_llm_round(store, stage: "llm-index-ideas", search: :original,  # llm-index-ideas
     #                             dedupe:, since:, report: llm_report)
     #
@@ -130,10 +130,13 @@ module Quaack
       # considered, dropped is by Drop reason, set_aside is its GIN, GiST,
       # and SP-GiST candidates, and out is its proposals, which go on to
       # index-test. It returns the counts it recorded, for the since of the LLM
-      # round that follows (see record_llm_round).
+      # round that follows (see record_llm_round). index-dedupe runs once per
+      # search, so a search that already has an index-dedupe record is
+      # refused, and nothing is stored. An LLM round's filtering records
+      # under its own stage (record_llm_round).
       def record_dedupe(store, dedupe, search:)
         record = dedupe_record(dedupe, search:)
-        add(store, [record], {})
+        add(store, [record], {}, once: true)
         record.last
       end
 
@@ -151,16 +154,30 @@ module Quaack
       # one to the hypothetical_explains total. The baseline's plans have
       # none, so they don't count. set_aside is the unused candidates held
       # for index-build to build for real (IndexSearch's "set_aside"), which count
-      # as set aside rather than never_used.
-      def record_single_candidate_test(store, report, search:, set_aside: [])
-        add(store, [single_candidate_test_record(report, search:, set_aside:)], tested_totals(report))
+      # as set aside rather than never_used. A candidate whose DDL couldn't be
+      # rendered is dropped as unrenderable, apart from what HypoPG refused.
+      #
+      # index-test tests the search's Dedupe's proposals, so report must test
+      # exactly them, each once, in any order (IndexCandidate's equality
+      # ignores sources), or it's refused. Like index-dedupe, it runs once per
+      # search, so a search that already has an index-test record is refused.
+      def record_single_candidate_test(store, report, search:, dedupe:, set_aside: [])
+        add(store, [single_candidate_test_record(report, search:, dedupe:, set_aside:)], tested_totals(report),
+            once: true)
       end
 
       # record_single_candidate_test's [stage, search, counts], and its
-      # totals, tested_totals, for record_all or record_once.
-      def single_candidate_test_record(report, search:, set_aside: [])
+      # totals, tested_totals, for record_all or record_once. It checks the
+      # report against the Dedupe's proposals the same way.
+      def single_candidate_test_record(report, search:, dedupe:, set_aside: [])
+        Adapters.proposals_tested(report, dedupe)
         ["index-test", search, Adapters.tested_counts(report, set_aside)]
       end
+
+      # A SingleCandidateTest report's counts as index-test records them, for
+      # a stage that tests candidates again, such as index-rank, whose
+      # candidates aren't a Dedupe's proposals.
+      def tested_counts(report) = Adapters.tested_counts(report)
 
       def tested_totals(report) = Adapters.tested_totals(report)
 
@@ -217,11 +234,13 @@ module Quaack
       end
 
       # Checks every record and total, then adds them all to the entry in
-      # one write. records are [stage, search, counts] triples.
-      def add(store, records, totals, replace: false)
+      # one write. records are [stage, search, counts] triples. With once,
+      # a record whose search already has one for its stage is refused.
+      def add(store, records, totals, replace: false, once: false)
         records = records.map { |stage, search, counts| Input.stage_record(stage, search, counts) }
         totals = Input.breakdown(totals, "totals")
         burndown = read(store)
+        Entry.check_once(burndown, records) if once
         records.each { |stage, search, record| Entry.add_record(burndown, stage, search, record, replace:) }
         burndown["totals"] = Entry.add_breakdowns(burndown["totals"], totals)
         store.write(ENTRY, burndown)
@@ -239,13 +258,31 @@ module Quaack
             set_aside: dedupe.set_aside.size, out: dedupe.proposals.size }
         end
 
+        # SingleCandidateTest's refusal rules, each its own drop reason.
+        REFUSALS = { hypopg_refused: :hypopg_refused, unrenderable: :unrenderable }.freeze
+
         def tested_counts(report, set_aside = [])
           results = report.results
           used = results.count(&:used?)
-          refused = results.count(&:refusal)
+          refused = refusals(results)
           held = held(results, set_aside)
-          dropped = { never_used: results.size - used - refused - held, hypopg_refused: refused }
+          dropped = { never_used: results.size - used - refused.values.sum - held, **refused }
           { in: results.size, dropped: dropped.reject { |_, n| n.zero? }, set_aside: held, out: used }
+        end
+
+        # The refused results by rule, named by REFUSALS, never by the rule
+        # itself.
+        def refusals(results)
+          results.filter_map(&:refusal).map do |refusal|
+            REFUSALS.fetch(refusal.rule) { raise Error, "an index-test refusal must be hypopg_refused or unrenderable" }
+          end.tally
+        end
+
+        # Refuses a report that didn't test exactly the Dedupe's proposals.
+        def proposals_tested(report, dedupe)
+          return if report.results.map(&:candidate).tally == dedupe.proposals.tally
+
+          raise Error, "an index-test report must test exactly the Dedupe's proposals"
         end
 
         def held(results, set_aside) = results.count { !it.used? && !it.refusal && set_aside.include?(it.candidate) }
@@ -367,6 +404,13 @@ module Quaack
         end
 
         def add_breakdowns(old, new) = old.merge(new) { |_, a, b| a + b }
+
+        # Refuses a record whose search already has one for its stage.
+        def check_once(burndown, records)
+          records.each do |stage, search, _|
+            raise Error, "#{stage} already has a record for this search" if burndown["stages"][stage]&.key?(search)
+          end
+        end
 
         # Whether data is a whole burndown, stages and totals and nothing
         # else. Protocol::Burndown.valid? is the check, the same one egress

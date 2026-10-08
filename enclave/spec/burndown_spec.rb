@@ -425,6 +425,112 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
   end
 
+  # Task 20260924-8: index-dedupe and index-test run once per search, so a
+  # second record of either for the same search is misuse, and index-test
+  # tests exactly the Dedupe's proposals.
+  describe "the once-per-search records" do
+    let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
+    let(:sct) { Quaack::Enclave::SingleCandidateTest }
+    let(:dedupe) do
+      table = Quaack::Enclave::TableStatistics.new(name: orders, reltuples: 1000, columns: {},
+                                                   column_names: %w[id status], indexes: {})
+      Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::Statistics.new(tables: [table]), low_cardinality: [])
+    end
+
+    def candidate(key, sources: [:parse]) = Quaack::Enclave::IndexCandidate.new(table: orders, key:, sources:)
+
+    def result(candidate, used: false, refusal: nil)
+      plans = refusal ? {} : { slow: sct::Plan.new(used:, total_cost: 1.0, canonical_plan: nil, raw_plan: nil) }
+      sct::Result.new(candidate:, size: 1, plans:, refusal:, literal_sets: {})
+    end
+
+    def report(*results) = sct::Report.new(baseline: nil, results:)
+
+    def stored = described_class.read(store)
+
+    it "refuses a second index-dedupe record for the same search, and keeps the first" do
+      dedupe.filter([candidate(["id"]), candidate(["id"], sources: [:plan])])
+      described_class.record_dedupe(store, dedupe, search: :original)
+      first = stored
+
+      expect_refused(/index-dedupe already has a record for this search/) do
+        described_class.record_dedupe(store, dedupe, search: :original)
+      end
+      expect(stored).to eq(first)
+    end
+
+    it "still records index-dedupe for another search" do
+      described_class.record_dedupe(store, dedupe, search: :original)
+      described_class.record_dedupe(store, dedupe, search: :rewrite)
+
+      expect(stored["stages"]["index-dedupe"].keys).to eq(%w[original rewrite])
+    end
+
+    it "refuses a second index-test record for the same search, and keeps the first" do
+      proposals = dedupe.filter([candidate(["id"])])
+      tested = report(result(proposals.first, used: true))
+      described_class.record_single_candidate_test(store, tested, search: :original, dedupe:)
+      first = stored
+
+      expect_refused(/index-test already has a record for this search/) do
+        described_class.record_single_candidate_test(store, tested, search: :original, dedupe:)
+      end
+      expect(stored).to eq(first)
+    end
+
+    it "refuses an index-test report that didn't test exactly the Dedupe's proposals" do
+      dedupe.filter([candidate(["id"]), candidate(["status"])])
+      id, status = dedupe.proposals
+      [report(result(id)), report(result(id), result(status), result(candidate(%w[id status]))),
+       report(result(id), result(candidate(%w[id status]))), report(result(id), result(id))].each do |tested|
+        expect_refused(/index-test report must test exactly the Dedupe's proposals/) do
+          described_class.record_single_candidate_test(store, tested, search: :original, dedupe:)
+        end
+      end
+      expect(store.entry?("burndown")).to be(false)
+    end
+
+    it "records a report of the Dedupe's proposals, whatever their order and sources" do
+      dedupe.filter([candidate(["id"]), candidate(["status"]), candidate(["id"], sources: [:plan])])
+      tested = report(result(candidate(["status"]), used: true), result(candidate(["id"], sources: [:llm])))
+      described_class.record_single_candidate_test(store, tested, search: :original, dedupe:)
+
+      expect(stored.dig("stages", "index-test", "original")).to include("in" => 2, "out" => 1)
+    end
+
+    it "checks the report through the record record_once takes too" do
+      dedupe.filter([candidate(["id"])])
+
+      expect_refused(/exactly the Dedupe's proposals/) do
+        described_class.single_candidate_test_record(report, search: :original, dedupe:)
+      end
+    end
+
+    it "counts an unrenderable candidate as its own drop, apart from what HypoPG refused" do
+      dedupe.filter([candidate(["id"]), candidate(["status"]), candidate(%w[id status])])
+      id, status, both = dedupe.proposals
+      unrenderable = sct::Refusal.new(rule: :unrenderable, sqlstate: nil)
+      hypopg_refused = sct::Refusal.new(rule: :hypopg_refused, sqlstate: "42704")
+      tested = report(result(id, used: true), result(status, refusal: unrenderable),
+                      result(both, refusal: hypopg_refused))
+      described_class.record_single_candidate_test(store, tested, search: :original, dedupe:)
+
+      expect(stored.dig("stages", "index-test", "original", "dropped"))
+        .to eq("unrenderable" => 1, "hypopg_refused" => 1)
+    end
+
+    it "refuses a refusal rule that isn't one of SingleCandidateTest's" do
+      dedupe.filter([candidate(["id"])])
+      refused = sct::Refusal.new(rule: BURNDOWN_SENTINEL.to_sym, sqlstate: nil)
+
+      expect_refused(/refusal/) do
+        described_class.record_single_candidate_test(store, report(result(dedupe.proposals.first, refusal: refused)),
+                                                     search: :original, dedupe:)
+      end
+      expect(store.entry?("burndown")).to be(false)
+    end
+  end
+
   describe ".record_llm_round, before it looks at the report" do
     let(:report) { Quaack::Enclave::SingleCandidateTest::Report.new(baseline: nil, results: []) }
     let(:since) { { in: 0, dropped: {}, set_aside: 0, out: 0 } }

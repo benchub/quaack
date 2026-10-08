@@ -28,7 +28,7 @@ module Quaack
           store, [generated_record("index-from-query", search, :generator_one, generated),
                   generated_record("index-from-plan", search, :generator_two, generated),
                   Burndown.dedupe_record(dedupe, search:),
-                  Burndown.single_candidate_test_record(report, search:, set_aside:)],
+                  Burndown.single_candidate_test_record(report, search:, dedupe:, set_aside:)],
           totals: Burndown.tested_totals(report)
         )
       end
@@ -101,7 +101,7 @@ module Quaack
       # drops them, then the ranked ones below the top three, then the
       # combinations not kept.
       def rank_counts(report, ranking)
-        tested = Burndown.single_candidate_test_record(report, search: :original).last
+        tested = Burndown.tested_counts(report)
         top = ranking.top.size
         kept = ranking.combination ? 1 : 0
         dropped = tested[:dropped].merge(rank_drops(ranking.tally, top, kept))
