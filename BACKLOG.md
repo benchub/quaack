@@ -2398,3 +2398,18 @@ From the review of 20261008-16. `index_build_orphan_running` and `index_build_or
 - **Came from:** The review of 20261008-16, 2026-10-08.
 - **Design:** Where QUAACK runs.
 - **Status:** todo
+
+### 20261008-51. `quaack start --database`: name production's database.
+
+The user is blocked (2026-10-08): `PGDATABASE` lives in their login profile on the jump server, and a non-interactive ssh session doesn't load it, so the production connection goes to the wrong database. Add an optional `--database <name>` to `quaack start` and `quaacks intake`, mirroring `--port`:
+
+- Check it the same way as a run-server database name.
+- Record it as a `production_database` entry, kept beside `server` and `production_port`, and also in the driver's run record.
+- Use it in every production connection (inventory, qualify, statistics, volatility, and the schema-dump catalog reads) and in pg_dump's `--dbname`.
+
+Without the flag, nothing changes, and libpq's setup picks the database, as today. The database name is the operator's own configuration, like the server name, and it never goes out. Update the connection-failure note, which today says the database comes from libpq, and DESIGN.md.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-08, blocked on a run.
+- **Design:** input, inventory.
+- **Status:** todo
