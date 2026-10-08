@@ -6486,3 +6486,35 @@ The 20260930-9 builder listed catalog relations and functions the enclave still 
 Forms that can't take a qualified operator were restructured (`IN`, `LIKE`, `IS NOT DISTINCT FROM`, row `=`, simple CASE). The review checked each one against the original on real Postgres, NULLs included. HypoPG's schema is read from `pg_extension`.
 
 `enclave/spec/catalog_names_spec.rb` scans the enclave's SQL for any unqualified name. It allows only files on a frozen list of 29 for 20261007-9, and the list may only shrink. Planted-shadow tests cover every read it fixed. All three gems went to 0.1.21, with the `rake full` stamp. It passed its second review after one fix round, which pinned the list so it can't grow. Stage 2 is 20261007-9.
+
+### 20260929-2. Several LLM providers in one run.
+
+Let one run use more than one LLM provider, for two reasons. Different models propose different rewrites, indexes, and counterexamples, which is more of the chaos QUAACK wants. And spreading asks across providers stretches free tiers further, since each has its own rate and daily limits.
+
+Each ask is stateless: it sends its whole conversation, and no provider holds a session. So asks can move between providers freely, with one exception. A multi-turn exchange must stay on one provider: llm-index-ideas' replacement round, llm-counterexamples' counterexample rounds, and the re-ask from 20260928-4. Otherwise a model is shown another model's reply as if it were its own.
+
+Ideas to settle before building:
+- **Configuration.** An `llms` list in driver.json, each entry shaped like today's `llm` block, with a name.
+- **Routing policy.** Options:
+  - round-robin per ask;
+  - pinning steps to providers;
+  - fan-out, where llm-rewrites and llm-index-ideas ask every provider and take the union, deduplicated by the usual checks;
+  - failover, moving on to the next provider after `llm_rate_limited` or `llm_unavailable`, and remembering that for the rest of the run.
+- **Adversarial pairing.** Have llm-counterexamples use a different model from the one that wrote the rewrite, so the model hunting for counterexamples isn't grading its own work.
+- **Burndown.** Count calls per provider as well as per step (burndown), so the report shows where the calls went.
+- **Cost.** Fan-out multiplies calls, so make it opt-in per step.
+
+- **Depends on:** 20260928-4.
+- **Came from:** The user, 2026-09-29.
+- **Design:** Where QUAACK runs, llm-index-ideas, llm-rewrites, llm-counterexamples, burndown.
+- **Decided by the user (2026-10-07):** Make routing configurable among all the ideas above: failover, round-robin per ask, fan-out (opt-in per step), and pinning steps to providers. A provider type may appear more than once. For example, two `copilot_cli` entries with different models count as two providers. Make adversarial pairing configurable too, with the complementary model as an option: llm-counterexamples uses a different provider from the one that wrote the rewrite. That means tracking which provider and model produced each idea, rewrite, and counterexample, and the final report should show it.
+- **Decided by the user (2026-10-07), on the drafted design:**
+  1. Cap under fan-out: five in all per call for v1, interleaved across providers.
+  2. Pairing author: the same entry, or any entry with the same `model` string. No family key.
+  3. A later turn that fails: the softer option, in v1. Generator three keeps its first-round ideas and skips the replacements. llm-counterexamples starts the remaining rounds fresh on another provider, passing what earlier rounds found as plain context, not as the model's own turns, and only what the driver already holds and already sends to an LLM.
+  4. Fail over on more rules: `llm_bad_response` fails over to the next provider. `llm_auth` from an attempt drops that provider for the run with a loud progress line and goes on, and the run fails only if no provider is left. `llm_bad_request` still fails the step. Startup `llm_auth` (credentials missing when the client is built) still stops the run at startup, since that's config the operator can fix before anything runs.
+  5. Fan-out branches run one after another.
+  6. A list with no routing defaults to `round_robin`, not `failover`.
+- **Design landed:** DESIGN.md's "Several LLM providers," under "Where QUAACK runs," with edits to the LLM client and `llm` block paragraphs, llm-index-ideas, llm-index-refine, llm-rewrites, operator-rewrites, llm-counterexamples, rewrite-index-ideas, report, and burndown.
+- **Status:** done
+- **Landed:** Split into 20261007-13, 20261007-14, 20261007-15, 20261007-16, 20261007-17, and 20261007-18; design landed in DESIGN.md.
