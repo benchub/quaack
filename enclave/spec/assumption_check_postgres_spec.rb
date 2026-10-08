@@ -393,6 +393,29 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
             .to eq([true, "OPERATOR(pg_catalog.=)", false, nil])
         end
       end
+
+      # Task 20261007-51: Postgres prefers the = with the most exact
+      # argument matches, so an = exact on just one side also beats the
+      # family's when the family's matches neither.
+      [["public.pair", "ROW({}::int4, 'z')::public.pair", "public.pair", "record"],
+       ["varchar", "{}::text", "varchar", "text"],
+       ["varchar", "{}::text", "text", "varchar"],
+       ["public.mood", "'Foo'::public.mood", "public.mood", "anyenum"]].each do |type, using, left, right|
+        it "refuses #{type} when an = (#{left}, #{right}) is planted" do
+          conn.exec("CREATE TYPE public.mood AS ENUM ('Foo', 'Bar')")
+          retype("submissions", "course_id", type, using)
+          retype("assignments", "context_id", type, using)
+          oid = described_class::Equality.column_type(conn, "public.submissions", "course_id")
+          before = [met?(assumption), described_class::Equality.operator(conn, oid, oid)]
+          conn.exec(<<~SQL)
+            CREATE FUNCTION public.same(#{left}, #{right}) RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS 'BEGIN RETURN true; END';
+            CREATE OPERATOR public.= (LEFTARG = #{left}, RIGHTARG = #{right}, FUNCTION = public.same);
+          SQL
+
+          expect([*before, met?(assumption), described_class::Equality.operator(conn, oid, oid)])
+            .to eq([true, "OPERATOR(pg_catalog.=)", false, nil])
+        end
+      end
     end
 
     it "checks only rows of the stated type" do

@@ -24,8 +24,9 @@ module Quaack
       # anymultirange, record), whose = is the application's only when
       # both sides have exactly the same type, so it's taken only then. When
       # the = is one for other types than the columns' own, as these all
-      # are, an = taking exactly the columns' types, in any schema, is what
-      # a bare = would pick instead, so it's nil then too.
+      # are, an = taking the columns' types exactly in more places than it
+      # does, even on one side, in any schema, is what a bare = would pick
+      # instead, so it's nil then too.
       module Equality
         ANYENUM = 3500
         # The polymorphic btree input type of a true array, then by typtype.
@@ -73,12 +74,15 @@ module Quaack
             AND o.amoplefttype OPERATOR(pg_catalog.=) $1 AND o.amoprighttype OPERATOR(pg_catalog.=) $2
         SQL
 
-        # Whether an = takes exactly the two types ($1, $2), in any schema.
+        # Whether an =, in any schema, takes the two types ($1, $2) exactly
+        # in more places than the family's = does ($3, 0 to 2).
         EXACT_SQL = <<~SQL
           SELECT EXISTS (
             SELECT 1 FROM pg_catalog.pg_operator op
             WHERE op.oprname OPERATOR(pg_catalog.=) '='
-              AND op.oprleft OPERATOR(pg_catalog.=) $1 AND op.oprright OPERATOR(pg_catalog.=) $2)
+              AND (op.oprleft OPERATOR(pg_catalog.=) $1)::pg_catalog.int4
+                  OPERATOR(pg_catalog.+) (op.oprright OPERATOR(pg_catalog.=) $2)::pg_catalog.int4
+                  OPERATOR(pg_catalog.>) $3::pg_catalog.int4)
         SQL
 
         module_function
@@ -119,10 +123,13 @@ module Quaack
           [left_in, right_in] unless shadowed?(connection, [left, right], [left_in, right_in])
         end
 
-        # Whether an = takes exactly the types when the family's takes
-        # others, such as anyenum or record: a bare = picks it over those.
+        # Whether an = matches the types exactly in more places than the
+        # family's, which takes others, such as anyenum, record, or text for
+        # varchar: Postgres prefers the candidate with the most exact
+        # matches, so a bare = picks it, even when it's exact on one side.
         def shadowed?(connection, types, inputs)
-          inputs != types && connection.exec_params(EXACT_SQL, types).values.dig(0, 0) == "t"
+          exact = types.zip(inputs).count { |type, input| type == input }
+          connection.exec_params(EXACT_SQL, [*types, exact]).values.dig(0, 0) == "t"
         end
 
         # The polymorphic type a type's default opclass takes, or nil.
