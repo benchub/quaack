@@ -11,8 +11,10 @@ module Routers
 
   # The router of an llms list with one Anthropic entry per name of fakes, a
   # Hash of name to FakeLLM, in its order, and routing as llm_routing.
-  def router_over(fakes, routing: nil, **)
-    config = { "llms" => fakes.keys.map { { "name" => it, "provider" => "anthropic" } } }
+  # models gives an entry's model, by name; the rest have Anthropic's
+  # default.
+  def router_over(fakes, routing: nil, models: {}, **)
+    config = { "llms" => fakes.keys.map { { "name" => it, "provider" => "anthropic", "model" => models[it] }.compact } }
     config["llm_routing"] = routing if routing
     clients = fakes.values.map { it.client(burndown: Quaack::Driver::Burndown.new, **) }
     Quaack::Driver::LLM::Router.for(Quaack::Driver::LLM.providers(config, env: {}), clients)

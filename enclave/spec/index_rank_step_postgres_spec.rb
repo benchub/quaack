@@ -145,6 +145,32 @@ RSpec.describe "quaacks index-rank, against a real server" do
     end
   end
 
+  # Task 20261006-24: a self-join where an index on o finds o's few rows and
+  # one on p finds each one's partners, so index-search's mechanical
+  # candidates combine to beat any single one, and step_counts counts the
+  # combination's indexes.
+  context "when a combination of indexes beats the best single one" do
+    let(:query) do
+      "SELECT o.id, p.id FROM public.orders o JOIN public.orders p ON p.total = o.total " \
+        "WHERE o.note = '#{sentinels.text}' AND p.status = 'held'"
+    end
+
+    it "stores the combination and counts its indexes as combined" do
+      prepare
+      index_search
+
+      outcome = index_rank
+
+      ranking = stored.read("index_ranking_original")
+      expect(ranking["combination"]["ddl"])
+        .to contain_exactly(*["(note, total)", "(total, status)", "(status)"]
+                               .map { "CREATE INDEX ON public.orders USING btree #{it}" })
+      expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+        .to eq([counts_then_done(ranked: ranking["top"].size, combined: 3), "", 0])
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
+
   it "refuses an unknown search, and a run with no index search" do
     prepare
 

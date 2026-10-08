@@ -75,6 +75,8 @@ module Quaack
           options = ENV.key?(BEARER_ENV) ? bearer(settings) : signing(settings, given)
           edge = transport && ->(request) { transport.call(request, step: @step) }
           @anthropic = EdgeClient.new(edge:, base_url: settings.base_url, max_retries:, **options)
+          keys = [ENV.fetch(BEARER_ENV, nil), *options.values_at(:aws_access_key, :aws_secret_key, :aws_session_token)]
+          @secrets = APIErrorDetail.secrets(settings.base_url, keys)
         end
 
         # The gem's BedrockClient, with an edge standing in for HTTP past

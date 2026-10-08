@@ -283,10 +283,18 @@ module Quaack
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
           rounds = StepSummary.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
                                       compare(transport, args))
-          label = RewriteNames.label(args[:run], args[:search])
-          result = Counterexamples.new(client:, label:).run(payload, compare: rounds)
+          result = counterexamples(client, args, record).run(payload, compare: rounds)
           record.call { it.counterexamples!(args[:search], result.units) }
           !result.disproved
+        end
+
+        # The rewrite's Counterexamples, with its recorded author, from the
+        # provenance record, for counterexample_pairing, or none without one.
+        # Reading it through record saves the record too, which is harmless.
+        def counterexamples(client, args, record)
+          author = nil
+          record.call { author = it.author(args[:search]) }
+          Counterexamples.new(client:, label: RewriteNames.label(args[:run], args[:search]), author:)
         end
 
         def compare(transport, args)

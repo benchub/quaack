@@ -7161,3 +7161,45 @@ Write `~/.quaack/runs/<run ID>.llm.json` as DESIGN.md's Provenance says: mode 06
 - **Design:** Several LLM providers (Provenance), report, burndown.
 - **Status:** done
 - **Landed:** 2026-10-08, after a review with one blocking finding (a partly vacuous test), a fix round, a clean second review, and a merge of main. The driver keeps `~/.quaack/runs/<run ID>.llm.json` (mode 0600, written to a temporary file and renamed) with which provider and model wrote each rewrite, ran each rewrite's counterexample rounds, and wrote each round of index ideas, plus the providers marked down. It holds names, models, store names, rules, and counts only, and is read back through a strict shape check. The report shows each LLM rewrite's provider and model, who wrote each round of test data, per-provider rows in the who-proposed tables ("not recorded" when they don't add up), an LLM providers table, and LLM calls by step and provider. Nothing new crosses the trust boundary. For the user: per-provider "planner ignored or couldn't try" stays "not recorded" (it would need an enclave change); a resumed run keeps an entry's model as first recorded.
+
+### 20261007-54. Anthropic and Bedrock error details print the whole response body.
+
+From the builder of 20261007-40. For rules other than llm_auth, the Anthropic adapter's detail (and so Bedrock's) is the gem's own message, which is `{url:, status:, body:}`, so the whole error body prints. Anthropic's own bodies hold only a type, a message, and a request ID, but a `base_url` can point at a gateway or proxy (LiteLLM, a corporate gateway) whose 4xx or 5xx body could echo a key or other secret. The OpenAI-compatible adapter shows only `error.message`, or the body when it has none. Show only the body's `error.message` for Anthropic and Bedrock too, and scrub the adapter's own key from any detail, with sentinel tests through a fake gateway that echoes the key in a 400 and a 500 body.
+
+The URL prints too, so also scrub a key in a `base_url` query string (from the review of 20261007-40).
+
+- **Depends on:** 20261007-40.
+- **Came from:** The builder of 20261007-40, 2026-10-08.
+- **Design:** LLM providers, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after a review with one blocking finding (untested scrub entries), a fix round, and a clean second review. Anthropic and Bedrock errors other than llm_auth read `the API answered <status>: <message>`, with the body's `error.message` (or Bedrock's top-level `message`), never the gem's `{url:, status:, body:}`; with no usable message, only the status. Every detail has the adapter's own credentials (Anthropic `api_key` and `auth_token`; Bedrock's bearer token and AWS access key, secret key, and session token) and each `base_url` query value of eight characters or more, raw and decoded, replaced with `[key]`. Each scrub entry has a sentinel test through a fake gateway that echoes it.
+
+### 20261007-51. Equality: refuse a half-exact `=` too.
+
+From the review of 20261007-45. `EXACT_SQL` looks only for an `=` taking exactly (left, right). Postgres's operator resolution prefers the candidate with the most exact argument matches, so a user `=` with one side exact (`=(pair, record)`, `=(varchar, text)` against varchar columns, `=(mood, anyenum)`) also wins over the polymorphic one, and `Equality.operator` still picks the family's. Refuse when an `=` exists whose argument types exactly match either column's while the family's inputs differ, or list it in DESIGN.md as unsupported in v1. Needs a user-planted, unusual operator.
+
+- **Depends on:** 20261007-45.
+- **Came from:** The review of 20261007-45.
+- **Design:** trust boundary, assumption checks.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `Equality` refuses when any `=`, in any schema, matches the column types exactly in more argument positions than the family's `=` does, since Postgres keeps the candidates with the most exact matches first; so `=(pair, record)`, `=(varchar, text)`, and `=(mood, anyenum)` now refuse. Probes of 60 and 33 realistic type pairs with common extensions show nothing newly refused. Enclave change, unreleased until the next batch bump.
+
+### 20261006-24. index-rank: cover a non-zero `combined` count with a real run.
+
+Set aside from 20261006-13. No realistic index-rank run in the specs gives a non-zero `combined` (the number of indexes in the best combination), so only a direct unit test of the count function covers it. Add a Postgres fixture where a combination of two indexes beats the best single index, and assert the step_counts line's `combined`.
+
+- **Depends on:** 20261006-13.
+- **Came from:** The builder and review of 20261004-1, then 20261006-13.
+- **Design:** index-rank, progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. A real index-search run on a self-join of orders produces a three-index combination that beats the best single index, and the spec checks `combined: 3` in step_counts, the combination's DDLs, and no leaks. Test only; ten runs gave the same order, since index-rank breaks every tie on the DDL.
+
+### 20261007-17. Adversarial pairing.
+
+Add `counterexample_pairing` with `any`, `prefer_different`, and `require_different`. The author is the entry that wrote the rewrite, or any entry with the same `model` string, read from the provenance record. Apply it to a fresh start of the remaining rounds too. Add the run-time failure for `require_different`, the outcome in the provenance record, and the report's pairing line and its warning when the pairing wasn't met or couldn't be checked. The startup check is 20261007-13's. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-16, since pairing reads a rewrite's author from the provenance record.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Adversarial pairing), llm-counterexamples, report.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `llm_routing.counterexample_pairing` works for llm-counterexamples. Under `prefer_different`, the rewrite's author (the entry that wrote it, or one with the same model string, read from the provenance record) goes last; under `require_different` it's left out, and with nothing else left the step fails as `llm_unavailable`, naming the rewrite and its author. Fresh starts keep the pairing. Each counterexample unit records met, not_met, not_applicable, or unchecked, and the report says whether each rewrite's pairing was met, with a warning when it wasn't or couldn't be checked. No provider name or model reaches a prompt or the enclave.

@@ -7,8 +7,10 @@ module Quaack
       # only if it has exactly the shape a writer gives it.
       module Shape
         # A unit's keys, and the most rounds a rewrite gets (Counterexamples::ROUNDS).
-        UNIT_KEYS = %w[entry rounds after].freeze
+        UNIT_KEYS = %w[entry rounds after pairing].freeze
         MOST_ROUNDS = 3
+        # A unit's pairing outcomes (LLM::Router::Pairing#outcome).
+        PAIRINGS = %w[met not_met not_applicable unchecked].freeze
 
         module_function
 
@@ -33,14 +35,19 @@ module Quaack
         end
 
         # A counterexample unit: its entry, its rounds, one to three, since
-        # no rewrite gets more, and, for a fresh start, after, a rule. No
-        # other key.
+        # no rewrite gets more, for a fresh start, after, a rule, and
+        # pairing, one of PAIRINGS. No other key.
         def unit(raw)
           return unless raw.is_a?(Hash) && (raw.keys - UNIT_KEYS).empty? && name?(raw["entry"])
-          return unless (1..MOST_ROUNDS).any? { raw["rounds"].eql?(it) }
-          return if raw.key?("after") && !rule?(raw["after"])
+          return unless (1..MOST_ROUNDS).any? { raw["rounds"].eql?(it) } && optional?(raw)
 
           raw.slice(*UNIT_KEYS)
+        end
+
+        # Whether a unit's after, if given, is a rule, and its pairing, if
+        # given, one of PAIRINGS.
+        def optional?(raw)
+          (!raw.key?("after") || rule?(raw["after"])) && (!raw.key?("pairing") || PAIRINGS.include?(raw["pairing"]))
         end
 
         def counterexamples(raw)

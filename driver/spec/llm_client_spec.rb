@@ -5,6 +5,7 @@ require "quaack/driver/burndown"
 require "quaack/driver/llm"
 require_relative "support/anthropic_credentials"
 require_relative "support/fake_llm"
+require_relative "support/anthropic_error_examples"
 require_relative "support/llm_client_examples"
 
 # The exact text of the errors both groups below expect.
@@ -27,6 +28,10 @@ end
 # shares is in support/llm_client_examples.rb.
 RSpec.describe Quaack::Driver::LLM::Client do
   it_behaves_like "an LLM client" do
+    let(:fake) { FakeLLM.new }
+  end
+
+  it_behaves_like "an Anthropic API's error detail" do
     let(:fake) { FakeLLM.new }
   end
 
@@ -246,6 +251,20 @@ RSpec.describe Quaack::Driver::LLM::Client do
   end
 
   describe "the credentials" do
+    # Task 20261007-54: a gateway's body can echo the bearer token too.
+    it "scrubs ANTHROPIC_AUTH_TOKEN from an error detail" do
+      fake.error_body("llm-index-ideas", status: 400, body: { error: { message: "bad token SENTINEL-AUTH-TOKEN" } })
+      e = without_anthropic_credentials("ANTHROPIC_AUTH_TOKEN" => "SENTINEL-AUTH-TOKEN") do
+        described_class.new(burndown: burndown, transport: fake).ask(step: "llm-index-ideas", messages:,
+                                                                     max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(sans_sizes(e.message)).to eq("llm_bad_request: the API answered 400: bad token [key]")
+      expect(error_text(e)).not_to include("SENTINEL")
+    end
+
     # FakeLLM never records headers, so this transport looks only at the
     # ones that carry credentials, and answers every attempt.
     let(:key_transport) do

@@ -443,6 +443,139 @@ RSpec.describe Quaack::Driver::LLM::Router do
     end
   end
 
+  # DESIGN.md, "Several LLM providers" (Adversarial pairing): a and c
+  # share a model, so either counts as the author of a rewrite a wrote.
+  describe "adversarial pairing" do
+    let(:models) { { "a" => "model-one", "b" => "model-two", "c" => "model-one" } }
+    let(:pairing) { "prefer_different" }
+    let(:routing) do
+      { "mode" => "failover", "counterexample_pairing" => pairing,
+        "steps" => { "llm-index-refine" => { "providers" => ["b"] } } }
+    end
+
+    # Marks b down, by a failed llm-index-refine unit, pinned to b.
+    def b_down(status)
+      fakes["b"].error("llm-index-refine", status:)
+      llm_error { ask(router, "llm-index-refine") }
+    end
+    let(:providers) do
+      config = { "llms" => names.map { { "name" => it, "provider" => "anthropic", "model" => models[it] } },
+                 "llm_routing" => routing }
+      Quaack::Driver::LLM.providers(config, env: {})
+    end
+    let(:author) { { "name" => "a", "provider" => "anthropic", "model" => "model-one" } }
+
+    def paired(author = self.author) = router.session(pairing: router.pairing(author, label: "Rewrite Silver Fox"))
+
+    def counter(session) = ask(session, "llm-counterexamples")
+
+    it "keeps the unit off the author and every entry with its model, and says the pairing was met" do
+      fakes["b"].reply("llm-counterexamples", "paired")
+      session = paired
+
+      expect(counter(session)).to eq("paired")
+      expect([session.provider, session.pairing]).to eq(%w[b met])
+      expect(fakes["a"].asks).to eq([])
+    end
+
+    it "counts the entry that wrote the rewrite as its author, though its model has changed since" do
+      fakes["b"].reply("llm-counterexamples", "paired")
+      session = paired({ "name" => "a", "provider" => "anthropic", "model" => "an-older-model" })
+
+      expect([counter(session), session.provider, session.pairing]).to eq(%w[paired b met])
+    end
+
+    it "starts a round_robin unit on the next provider it may use, and turns the cursor to it" do
+      routing.delete("mode")
+      fakes["b"].reply("llm-counterexamples", "paired")
+      fakes["c"].reply("llm-rewrites", "next")
+      session = paired
+
+      expect([counter(session), session.provider, ask]).to eq(%w[paired b next])
+    end
+
+    context "with prefer_different" do
+      it "falls back to the author when every other provider fails, and says the pairing wasn't met" do
+        fakes["b"].error("llm-counterexamples", status: 429)
+        fakes["a"].reply("llm-counterexamples", "own")
+        session = paired
+
+        expect([counter(session), session.provider, session.pairing]).to eq(%w[own a not_met])
+      end
+
+      it "uses the author when no other provider is healthy at the start" do
+        b_down(429)
+        fakes["a"].reply("llm-counterexamples", "own")
+        session = paired
+
+        expect([counter(session), session.provider, session.pairing]).to eq(%w[own a not_met])
+      end
+    end
+
+    context "with require_different" do
+      let(:pairing) { "require_different" }
+
+      it "fails the step as llm_unavailable, naming the rewrite and its author, when every other provider fails" do
+        fakes["b"].error("llm-counterexamples", status: 429)
+        failure = llm_error { counter(paired) }
+
+        expect(failure.rule).to eq("llm_unavailable")
+        expect(failure.message)
+          .to eq("llm_unavailable: llm-counterexamples: Rewrite Silver Fox was written by a, and " \
+                 "counterexample_pairing is require_different, but no provider it may use is left that didn't " \
+                 "write it or share its model: b (llm_rate_limited)")
+        expect([fakes["a"].asks, fakes["c"].asks]).to eq([[], []])
+      end
+
+      it "fails at once when no other provider is healthy at the start" do
+        b_down(503)
+        failure = llm_error { counter(paired) }
+
+        expect(failure.message).to end_with("share its model: b (llm_unavailable)")
+        expect(fakes["a"].asks).to eq([])
+      end
+    end
+
+    context "with any" do
+      let(:pairing) { "any" }
+
+      it "picks as for any other step, and says pairing doesn't apply" do
+        fakes["a"].reply("llm-counterexamples", "own")
+        session = paired
+
+        expect([counter(session), session.provider, session.pairing]).to eq(%w[own a not_applicable])
+      end
+    end
+
+    it "picks as with any when the rewrite's author wasn't recorded, and says the pairing couldn't be checked" do
+      fakes["a"].reply("llm-counterexamples", "own")
+      session = paired(nil)
+
+      expect([counter(session), session.provider, session.pairing]).to eq(%w[own a unchecked])
+    end
+
+    it "keeps a fresh start off the author too" do
+      by_b = { "name" => "b", "provider" => "anthropic", "model" => "model-two" }
+      fakes["a"].reply("llm-counterexamples", "first").cut_short("llm-counterexamples", "par")
+      fakes["c"].reply("llm-counterexamples", "fresh")
+      session = paired(by_b)
+      counter(session)
+      error = llm_error { counter(session) }
+      fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox",
+                                  pairing: router.pairing(by_b, label: "Rewrite Silver Fox"))
+
+      expect([counter(fresh), fresh.provider, fresh.pairing]).to eq(%w[fresh c met])
+      expect(fakes["b"].asks).to eq([])
+    end
+
+    it "leaves a session without pairing as it was" do
+      fakes["a"].reply("llm-counterexamples", "plain")
+      session = router.session
+
+      expect([counter(session), session.provider, session.pairing]).to eq(["plain", "a", nil])
+    end
+  end
+
   describe "accounting and progress" do
     it "counts every attempt under its step and its provider, a failed-over unit's on each provider it tried" do
       fakes["a"].error("llm-rewrites", status: 429)

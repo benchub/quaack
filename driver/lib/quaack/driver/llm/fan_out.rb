@@ -67,6 +67,10 @@ module Quaack
           error
         end
 
+        # Whether name is a copilot command, whose llm_auth means it isn't
+        # logged in (Router#line).
+        def copilot?(name) = @kinds[name] == "copilot_cli"
+
         # llm_auth's line stands out, starting with the rule.
         def branch_line(name, rule, rest)
           rule == "llm_auth" ? line(name, rule, rest) : "#{name} failed with #{rule}; #{rest}"

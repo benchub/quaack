@@ -61,7 +61,7 @@ module Quaack
           return "Who wrote #{TEST_DATA}: #{Words::MISSING}." if units.nil? && entry["covered"].is_a?(Array)
           return if units.nil? || units.empty?
 
-          "#{said_units(units)}."
+          ["#{said_units(units)}.", Cautions::PAIRED[pairing(entry)]].compact.join(" ")
         end
 
         # The LLM rewrites' rows by provider, each kept from kept, under the
