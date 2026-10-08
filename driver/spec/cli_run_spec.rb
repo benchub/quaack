@@ -1173,8 +1173,8 @@ RSpec.describe "quaack run" do
         expect([run_rewrites, errors]).to eq([0, torn])
         expect(seen.map(&:model)).to eq(%w[model-one model-two model-three])
         expect([fake.asks.map(&:step), other.asks.map(&:step)]).to eq([["operator-rewrites"], ["operator-rewrites"]])
-        expect(stderr.string).to include("first is rate limited, so the rest of this run skips it; " \
-                                         "trying second (operator-rewrites)")
+        expect(stderr.string).to include("first is rate limited (the API answered 429: fake rate_limit_error), so " \
+                                         "the rest of this run skips it; trying second (operator-rewrites)")
         expect(stderr.string).to include("Asking the LLM (operator-rewrites, second)")
       end
 

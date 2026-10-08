@@ -65,6 +65,16 @@ Every step asks for one JSON object and nothing else. The driver reads it with t
 
 Every prompt's system section ends with "Reply with only the JSON object, with no code fences, commentary, or trailing text." (`LLM::Client::JSON_ONLY`, added to every ask with a schema). The real driver also asks the API for structured output with that schema, so the API holds the model to it. A pasted chat doesn't, so a reply may still wrap the JSON in a code fence or add prose. Save it anyway, as it is. The driver's client reads the JSON object out of such a reply: if the whole reply isn't JSON, it takes the longest span from the first `{` to a `}` that parses.
 
+## Replies that answer an older prompt
+
+The replies were collected on September 27 and 28, 2026, after the pack was regenerated for 20260927-20. Since then, three tasks changed a prompt's wording without rerunning the pack. Each edited the `prompt.md` files (and `chat.md`, where there is one) by hand to match the driver, so the replay's drift check passes, and kept the replies. So those replies answer the older wording below, not the `prompt.md` beside them:
+
+- **20261001-28** (October 6): every query's `llm-rewrites-1`. The system section now says the payload holds `rule_rewrites` and not to repeat them. The replies answer a prompt with no `rule_rewrites`.
+- **20261004-95** (October 6): every query's `llm-counterexamples-<n>`. The system section now says not to read the clock and to write fixed dates and times. The replies answer a prompt without that sentence, and some use `now()` or `CURRENT_TIMESTAMP`, which the enclave refuses as `not_immutable`.
+- **20261007-14** (October 7): every query's `llm-index-refine-1` and `rewrite-llm-index-refine-<n>`. The prompt now says "An LLM already proposed candidates" and "The candidates' results". The replies answer "You already proposed candidates" and "Your candidates' results".
+
+Any other ask directory's replies answer its `prompt.md` as it is. A task that hand-edits a prompt again adds its entry here. Rerunning the pack for an ask, with new replies, removes its entry.
+
 ## The archive
 
 `archive/equivalent-rewrite/` holds the first 18 replies, to `correlated_exists/10a-1` and `10a-2` from before task 20260927-20, with the prompts they answered. Those prompts asked for a counterexample to the old, exactly equivalent fake rewrite, so they don't match the live prompts. Its README says more. The generator never touches `archive/`.

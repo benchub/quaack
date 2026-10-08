@@ -15,6 +15,14 @@ RSpec.describe Quaack::Driver::LLM::Router do
   let(:notes) { [] }
   let(:messages) { [{ role: "user", content: "Propose rewrites for this shape." }] }
 
+  # Each scripted failure's reason, as the adapter words it from FakeLLM's
+  # bodies: what the router's lines and lists show for it.
+  let(:rate_limited) { "the API answered 429: fake rate_limit_error" }
+  let(:overloaded) { "the API answered 529: fake overloaded_error" }
+  let(:api_error) { "the API answered 503: fake api_error" }
+  let(:cut_short) { "the reply stopped for max_tokens" }
+  let(:refused_key) { "the API refused the key (401)" }
+
   let(:providers) do
     config = { "llms" => names.map { { "name" => it, "provider" => "anthropic" } } }
     config["llm_routing"] = routing if routing
@@ -134,7 +142,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
 
       expect([ask, ask]).to eq(%w[b b])
       expect(fakes["a"].asks.size).to eq(1)
-      expect(notes).to include("a is rate limited, so the rest of this run skips it; trying b (llm-rewrites)")
+      expect(notes).to include("a is rate limited (#{rate_limited}), so the rest of this run skips it; " \
+                               "trying b (llm-rewrites)")
     end
 
     it "marks an unavailable provider down too" do
@@ -142,7 +151,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
       2.times { fakes["b"].reply("llm-rewrites", "b") }
 
       expect([ask, ask]).to eq(%w[b b])
-      expect(notes).to include("a is unavailable, so the rest of this run skips it; trying b (llm-rewrites)")
+      expect(notes).to include("a is unavailable (#{overloaded}), so the rest of this run skips it; " \
+                               "trying b (llm-rewrites)")
     end
 
     it "drops a provider whose credentials were refused, saying so loudly" do
@@ -177,7 +187,7 @@ RSpec.describe Quaack::Driver::LLM::Router do
       fakes["b"].reply("llm-rewrites", "b")
 
       expect([ask, ask]).to eq(%w[b a])
-      expect(notes).to include("a's reply couldn't be used, though later asks may still use it; " \
+      expect(notes).to include("a's reply couldn't be used (#{cut_short}), though later asks may still use it; " \
                                "trying b (llm-rewrites)")
     end
 
@@ -198,8 +208,20 @@ RSpec.describe Quaack::Driver::LLM::Router do
       error = llm_error { ask }
       expect(error.rule).to eq("llm_unavailable")
       expect(error.message).to eq("llm_unavailable: every LLM provider llm-rewrites may use failed: " \
-                                  "a (llm_rate_limited), b (llm_bad_response), c (llm_unavailable). " \
+                                  "a (llm_rate_limited: #{rate_limited}); b (llm_bad_response: #{cut_short}); " \
+                                  "c (llm_unavailable: #{overloaded}). " \
                                   "[step llm-rewrites, max_tokens 100, system 0 chars, messages: user 32]")
+    end
+
+    it "keeps each provider's reason short, on one line" do
+      fakes["a"].error("llm-rewrites", status: 529, message: "busy\n\n#{"x" * 200}")
+      fakes["b"].reply("llm-rewrites", "b")
+
+      expect(ask).to eq("b")
+      reason = "the API answered 529: busy #{"x" * 90}..."
+      expect(reason.length).to eq(Quaack::Driver::LLM::RouterLines::REASON_MAX)
+      expect(notes).to include("a is unavailable (#{reason}), so the rest of this run skips it; " \
+                               "trying b (llm-rewrites)")
     end
 
     it "fails a later unit at once when every provider in its pool is down, listing why" do
@@ -211,8 +233,101 @@ RSpec.describe Quaack::Driver::LLM::Router do
       error = llm_error { ask(router, "llm-index-ideas") }
       expect([error.rule, sans_sizes(error.message)])
         .to eq(["llm_unavailable", "llm_unavailable: every LLM provider llm-index-ideas may use failed: " \
-                                   "a (llm_rate_limited), b (llm_auth), c (llm_unavailable)."])
+                                   "a (llm_rate_limited: #{rate_limited}); b (llm_auth: #{refused_key}); " \
+                                   "c (llm_unavailable: #{overloaded})."])
       expect(asked.size).to eq(3)
+    end
+  end
+
+  describe "a unit whose last provider's credentials were refused" do
+    let(:routing) { { "mode" => "failover" } }
+
+    it "still says so loudly, though no provider is left to try" do
+      fakes["a"].error("llm-rewrites", status: 429)
+      fakes["b"].error("llm-rewrites", status: 529)
+      fakes["c"].error("llm-rewrites", status: 401)
+
+      expect(llm_error { ask }.rule).to eq("llm_auth")
+      expect(notes).to include("llm_auth: c: the API refused the credentials, so the rest of this run skips c. " \
+                               "Fix its credentials before the next run. No other provider is left (llm-rewrites)")
+    end
+
+    context "in a fan-out step" do
+      let(:routing) { { "steps" => { "llm-rewrites" => { "fan_out" => true } } } }
+
+      it "says so loudly for the last branch too" do
+        fakes["a"].error("llm-rewrites", status: 429)
+        fakes["b"].error("llm-rewrites", status: 529)
+        fakes["c"].error("llm-rewrites", status: 401)
+
+        expect(llm_error { router.branches(step: "llm-rewrites", messages:, max_tokens: 100) }.rule)
+          .to eq("llm_auth")
+        expect(notes.last).to eq("llm_auth: c: the API refused the credentials, so the rest of this run skips c. " \
+                                 "Fix its credentials before the next run. No other provider is left (llm-rewrites)")
+      end
+    end
+  end
+
+  describe "the errors it raises" do
+    let(:routing) { { "mode" => "failover" } }
+
+    # The router's errors carry no cause, as the adapters' don't
+    # (20261007-24), so a crash backtrace shows no chain behind them.
+    it "gives a failure naming its provider no cause" do
+      fakes["a"].error("llm-rewrites", status: 400, message: "unknown model")
+
+      error = llm_error { ask }
+      expect(error.message).to start_with("llm_bad_request: a: ")
+      expect(error.cause).to be_nil
+    end
+
+    it "gives a LaterError no cause" do
+      fakes["a"].reply("llm-index-ideas", "first").error("llm-index-ideas", status: 503)
+      session = router.session
+      ask(session, "llm-index-ideas")
+
+      error = llm_error { ask(session, "llm-index-ideas") }
+      expect(error).to be_a(Quaack::Driver::LLM::Router::LaterError)
+      expect(error.cause).to be_nil
+    end
+
+    it "gives a later ask's failure that doesn't fail over no cause" do
+      fakes["a"].reply("llm-index-ideas", "first").error("llm-index-ideas", status: 400)
+      session = router.session
+      ask(session, "llm-index-ideas")
+
+      error = llm_error { ask(session, "llm-index-ideas") }
+      expect(error.message).to start_with("llm_bad_request: a: ")
+      expect(error.cause).to be_nil
+    end
+
+    context "in a fan-out step" do
+      let(:routing) { { "steps" => { "llm-rewrites" => { "fan_out" => true } } } }
+
+      it "gives a branch's failure naming its provider no cause" do
+        fakes["a"].error("llm-rewrites", status: 400)
+
+        error = llm_error { router.branches(step: "llm-rewrites", messages:, max_tokens: 100) }
+        expect(error.message).to start_with("llm_bad_request: a: ")
+        expect(error.cause).to be_nil
+      end
+    end
+  end
+
+  describe "a provider that fails again once it's down" do
+    let(:routing) { { "mode" => "failover" } }
+
+    it "keeps the failure that marked it down" do
+      fakes["a"].reply("llm-index-ideas", "1").reply("llm-index-ideas", "2")
+                .error("llm-index-ideas", status: 429).error("llm-index-ideas", status: 503)
+      first = router.session
+      second = router.session
+      ask(first, "llm-index-ideas")
+      ask(second, "llm-index-ideas")
+      llm_error { ask(first, "llm-index-ideas") }
+      llm_error { ask(second, "llm-index-ideas") }
+
+      expect(router.down).to eq("a" => "llm_rate_limited")
     end
   end
 
@@ -273,10 +388,10 @@ RSpec.describe Quaack::Driver::LLM::Router do
       end
 
       expect(notes.grep_v(/\AAsking/))
-        .to eq(["a is rate limited, so the rest of this run skips it; going on without replacement ideas " \
-                "(llm-index-ideas)",
-                "b's reply couldn't be used, though later asks may still use it; going on without replacement " \
-                "ideas (llm-index-ideas)",
+        .to eq(["a is rate limited (#{rate_limited}), so the rest of this run skips it; going on without " \
+                "replacement ideas (llm-index-ideas)",
+                "b's reply couldn't be used (#{cut_short}), though later asks may still use it; going on without " \
+                "replacement ideas (llm-index-ideas)",
                 "llm_auth: b: the API refused the credentials, so the rest of this run skips b. Fix its " \
                 "credentials before the next run. Going on without replacement ideas (llm-index-ideas)"])
     end
@@ -302,8 +417,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(ask(fresh, "llm-counterexamples")).to eq("fresh")
       expect(fresh.provider).to eq("b")
       expect(notes.last(2))
-        .to eq(["a's reply couldn't be used, though later asks may still use it; asking b for the remaining rounds, " \
-                "starting fresh (llm-counterexamples, Rewrite Silver Fox)",
+        .to eq(["a's reply couldn't be used (#{cut_short}), though later asks may still use it; asking b for the " \
+                "remaining rounds, starting fresh (llm-counterexamples, Rewrite Silver Fox)",
                 "Asking the LLM (llm-counterexamples, b)"])
     end
 
@@ -318,7 +433,7 @@ RSpec.describe Quaack::Driver::LLM::Router do
         .to eq(["llm_auth: a: the API refused the credentials, so the rest of this run skips a. Fix its credentials " \
                 "before the next run. Asking b for the remaining rounds, starting fresh (llm-counterexamples, " \
                 "Rewrite Silver Fox)",
-                "b is unavailable, so the rest of this run skips it; trying c (llm-counterexamples)"])
+                "b is unavailable (#{api_error}), so the rest of this run skips it; trying c (llm-counterexamples)"])
       expect(fresh.failures.transform_values(&:rule)).to eq("b" => "llm_unavailable")
     end
 
@@ -337,7 +452,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
         expect(failure.rule).to eq("llm_bad_response")
         expect(failure.message)
           .to start_with("llm_bad_response: every LLM provider llm-counterexamples may use failed: " \
-                         "b (llm_rate_limited), c (llm_rate_limited), a (llm_bad_response).")
+                         "b (llm_rate_limited: #{rate_limited}); c (llm_rate_limited: #{rate_limited}); " \
+                         "a (llm_bad_response: #{cut_short}).")
         expect(notes).to eq([])
       end
     end
@@ -396,8 +512,9 @@ RSpec.describe Quaack::Driver::LLM::Router do
 
       expect(branches.map { |session, reply| [session.provider, reply] }).to eq([%w[c c]])
       expect(router.down).to eq("a" => "llm_unavailable")
-      expect(notes).to include("a failed with llm_unavailable; going on with the others (llm-rewrites)",
-                               "b failed with llm_bad_response; going on with the others (llm-rewrites)")
+      expect(notes).to include("a failed with llm_unavailable: #{overloaded}; going on with the others (llm-rewrites)",
+                               "b failed with llm_bad_response: #{cut_short}; going on with the others " \
+                               "(llm-rewrites)")
     end
 
     it "says loudly when a branch's credentials were refused" do
@@ -427,7 +544,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
 
       error = llm_error { branches }
       expect(error.message).to eq("llm_unavailable: every LLM provider llm-rewrites may use failed: " \
-                                  "a (llm_rate_limited), b (llm_bad_response), c (llm_unavailable). " \
+                                  "a (llm_rate_limited: #{rate_limited}); b (llm_bad_response: #{cut_short}); " \
+                                  "c (llm_unavailable: #{overloaded}). " \
                                   "[step llm-rewrites, max_tokens 100, system 0 chars, messages: user 32]")
       expect(notes.grep(/going on with the others/).size).to eq(2)
     end
@@ -438,7 +556,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
 
       expect(sans_sizes(llm_error { branches }.message))
         .to eq("llm_rate_limited: every LLM provider llm-rewrites may use failed: " \
-               "a (llm_rate_limited), b (llm_rate_limited), c (llm_rate_limited).")
+               "a (llm_rate_limited: #{rate_limited}); b (llm_rate_limited: #{rate_limited}); " \
+               "c (llm_rate_limited: #{rate_limited}).")
       expect(asked.size).to eq(3)
     end
   end
@@ -696,6 +815,13 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(error.message).to start_with("llm_rate_limited: ").and include("slow down")
       expect(error.message).not_to include("anthropic:")
       expect(error.message).not_to include("every LLM provider")
+    end
+
+    it "prints no drop line when its credentials are refused, since the step's failure says so" do
+      fake.error("llm-rewrites", status: 401)
+
+      expect(llm_error { ask }.message).to start_with("llm_auth: the API refused the key (401) [step llm-rewrites")
+      expect(notes).to eq(["Asking the LLM (llm-rewrites)"])
     end
 
     it "fails a fresh start with the later failure itself, since no provider is left" do

@@ -314,8 +314,9 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
         run
 
-        expect(stderr.string).to include("a is rate limited, so the rest of this run skips it; asking b for the " \
-                                         "remaining rounds, starting fresh (llm-counterexamples, #{name})")
+        expect(stderr.string).to include("a is rate limited (the API answered 429: fake rate_limit_error), so the " \
+                                         "rest of this run skips it; asking b for the remaining rounds, starting " \
+                                         "fresh (llm-counterexamples, #{name})")
       end
     end
 

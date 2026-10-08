@@ -57,14 +57,26 @@ module Quaack
 
         # A branch's error, once its provider, name, is marked down or
         # dropped as its rule says, and the line says the step goes on with
-        # the others, unless last says none is left. Raises error, named, for
-        # a rule that doesn't fail over.
+        # the others, unless last says none is left, when only a dropped
+        # provider gets a line. Raises error, named, for a rule that doesn't
+        # fail over.
         def branch_failed(error, name, step, last:)
-          raise named(error, name) unless Router::FAILS_OVER.include?(error.rule)
+          raise named(error, name), cause: nil unless Router::FAILS_OVER.include?(error.rule)
 
           failed(name, error)
-          @progress&.note(branch_line(name, error.rule, "going on with the others (#{step})")) unless last
+          if last
+            none_left(name, error, step)
+          else
+            @progress&.note(branch_line(name, error, "going on with the others (#{step})"))
+          end
           error
+        end
+
+        # The loud line for name, dropped as error says, when no provider
+        # is left to try, for a unit's first ask or a fan-out step. From an
+        # llm block, the step's failure says it.
+        def none_left(name, error, step)
+          note(name, error, "no other provider is left (#{step})") if @named && error.rule == "llm_auth"
         end
 
         # Whether name is a copilot command, whose llm_auth means it isn't
@@ -72,8 +84,10 @@ module Quaack
         def copilot?(name) = @kinds[name] == "copilot_cli"
 
         # llm_auth's line stands out, starting with the rule.
-        def branch_line(name, rule, rest)
-          rule == "llm_auth" ? line(name, rule, rest) : "#{name} failed with #{rule}; #{rest}"
+        def branch_line(name, error, rest)
+          return line(name, error, rest) if error.rule == "llm_auth"
+
+          "#{name} failed with #{RouterLines.failed(error.rule, error.reason)}; #{rest}"
         end
       end
     end

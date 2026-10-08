@@ -438,12 +438,13 @@ The burndown counts every attempt under its step, as today, and now also under i
 ##### Progress and failure messages.
 
 - Each ask's progress line names its provider: `Asking the LLM (llm-rewrites, groq)`.
-- A failover gets its own line: `groq is rate limited, so the rest of this run skips it; trying opus (llm-rewrites)`. For `llm_bad_response`, it says the reply couldn't be used and that later asks may still use the provider.
-- A provider dropped for `llm_auth` gets a line that stands out, starting with the rule: `llm_auth: opus: the API refused the credentials, so the rest of this run skips opus. Fix its credentials before the next run. Trying groq (llm-rewrites)`.
-- A replacement round skipped: `groq is rate limited, so the rest of this run skips it; going on without replacement ideas (llm-index-ideas)`.
-- A counterexample unit started fresh: `groq is rate limited, so the rest of this run skips it; asking opus for the remaining rounds, starting fresh (llm-counterexamples, Rewrite Silver Fox)`.
-- A fan-out branch that fails: `copilot-gpt failed with llm_unavailable; going on with the others (llm-rewrites)`.
-- When every provider in a pool is down, or every branch failed, the step fails with the last failure's rule, and the message lists what was tried: `llm_rate_limited: every LLM provider llm-rewrites may use failed: groq (llm_rate_limited), opus (llm_unavailable). <request sizes>`.
+- A failover gets its own line, with the failure's short reason: `groq is rate limited (the API answered 429: Rate limit reached), so the rest of this run skips it; trying opus (llm-rewrites)`. For `llm_bad_response`, it says the reply couldn't be used, and why, and that later asks may still use the provider.
+- A provider dropped for `llm_auth` gets a line that stands out, starting with the rule: `llm_auth: opus: the API refused the credentials, so the rest of this run skips opus. Fix its credentials before the next run. Trying groq (llm-rewrites)`. It gets the line even when no provider is left to try: `... Fix its credentials before the next run. No other provider is left (llm-rewrites)`.
+- A replacement round skipped: `groq is rate limited (<reason>), so the rest of this run skips it; going on without replacement ideas (llm-index-ideas)`.
+- A counterexample unit started fresh: `groq is rate limited (<reason>), so the rest of this run skips it; asking opus for the remaining rounds, starting fresh (llm-counterexamples, Rewrite Silver Fox)`.
+- A fan-out branch that fails: `copilot-gpt failed with llm_unavailable: <reason>; going on with the others (llm-rewrites)`.
+- When every provider in a pool is down, or every branch failed, the step fails with the last failure's rule, and the message lists what was tried, each with its reason: `llm_rate_limited: every LLM provider llm-rewrites may use failed: groq (llm_rate_limited: <reason>); opus (llm_unavailable: <reason>). <request sizes>`.
+- A reason is the adapter's detail for that failure, before the request's sizes: the API's own message, already scrubbed of keys, or the adapter's own words, such as `the reply stopped for max_tokens`. It's on one line and cut to 120 characters. It's the detail a step's failure already showed before several providers, so it shows nothing new. `llm_auth`'s line already says why, so it shows no reason.
 - An error that doesn't fail over names its provider after the rule: `llm_bad_request: opus: <detail>`.
 
 Every message names entries by their `name`, which comes from the operator's own config. None of it comes from the enclave or the LLM.
