@@ -63,14 +63,18 @@ module Quaack
     # such as now(), $1 - interval '1 day', or a column of a
     # subquery, a function, or an outer query.
     #
-    # Outer joins. An outer join makes a table nullable when the table is on
-    # its nullable side, at any depth: the right of LEFT, the left of RIGHT,
-    # or either side of FULL. Every predicate read here is strict except IS
-    # NULL. When a strict qual above an outer join rejects the nulls on its
+    # Outer joins. First comes join reduction, as Postgres does it. When a
+    # strict qual above an outer join rejects the nulls of a table on its
     # nullable side, Postgres turns a LEFT or RIGHT JOIN inner, and a FULL
-    # JOIN into a LEFT or RIGHT JOIN that keeps the qual's side, then
-    # pushes the qual down to that side's scan. So an IS NULL
-    # that touches a table made nullable by an outer join below it is
+    # JOIN into a LEFT or RIGHT JOIN that keeps the qual's side, or inner
+    # when quals reject both sides. A qual is above the join when it's in
+    # WHERE, in the ON of an inner join over it, or in the ON of an outer
+    # join whose nullable side it's under, with no FULL JOIN between. Only
+    # plainly strict conjuncts reduce (see Strict). Then an outer join
+    # makes a table nullable when the table is on its nullable side, at
+    # any depth: the right of LEFT, the left of RIGHT, or either side of
+    # FULL. Every predicate read here is strict except IS NULL, so an IS
+    # NULL that touches a table made nullable by an outer join below it is
     # skipped: in WHERE, by any outer join; in an ON, by an outer join
     # under that join. An anti-join's IS NULL is the usual case. Other
     # conjuncts count, in WHERE or in an inner join's ON. An outer join's
@@ -303,11 +307,13 @@ module Quaack
           @statistics = statistics
           @tables = []
           @joins = []
+          @join_of = {}.compare_by_identity
           @using = []
-          @nullable = Set.new.compare_by_identity
           @names = []
           @opaque = false
           select.from_clause.each { |item| read_item(item) }
+          Reduction.new(self, @join_of).run(select)
+          @nullable = nullable_tables
         end
 
         # On the nullable side of some outer join.
@@ -382,15 +388,18 @@ module Quaack
         def read_join(join)
           left = read_item(join.larg)
           right = read_item(join.rarg)
-          add_join(join, left, right)
+          @joins << (@join_of[join] = Join.new(join.jointype, join.quals, left, right, []))
           join.using_clause.each { |name| @using << [name.string.sval, left, right] }
           left + right
         end
 
-        def add_join(join, left, right)
-          below = (left + right).select { |table| nullable?(table) }
-          @joins << Join.new(join.jointype, join.quals, left, right, below)
-          @nullable.merge(@joins.last.nullable)
+        # Bottom up, once Reduction has set the join types: the tables an
+        # outer join below each join made nullable, and every nullable table.
+        def nullable_tables
+          @joins.each_with_object(Set.new.compare_by_identity) do |join, nullable|
+            join.nullable_below = (join.left + join.right).select { |table| nullable.include?(table) }
+            nullable.merge(join.nullable)
+          end
         end
 
         def add_table(range)
@@ -444,6 +453,96 @@ module Quaack
 
           !(node.a_const || node.param_ref).nil?
         end
+      end
+
+      # Join reduction, as Postgres does it, top down from WHERE. rejected
+      # is the tables whose nulls a strict qual above a FROM item rejects
+      # (see Strict). An outer join keeps a side nullable only while no
+      # table under it is rejected, so LEFT or RIGHT becomes inner, and
+      # FULL becomes LEFT or RIGHT, or inner when both sides are rejected.
+      # Below it, an inner join's children get what its parent rejects and
+      # what its own ON rejects. An outer join's preserved side gets what
+      # its parent rejects, and its nullable side what its own ON rejects.
+      # A FULL JOIN's children get nothing.
+      class Reduction
+        # Which sides stay nullable => the join type.
+        TYPES = { [false, false] => :JOIN_INNER, [false, true] => :JOIN_LEFT, [true, false] => :JOIN_RIGHT,
+                  [true, true] => :JOIN_FULL }.freeze
+
+        def initialize(scope, join_of)
+          @scope = scope
+          @join_of = join_of
+        end
+
+        def run(select)
+          rejected = rejected(select.where_clause)
+          select.from_clause.each { |item| reduce(item, rejected) }
+        end
+
+        private
+
+        def reduce(item, rejected)
+          return unless item.join_expr
+
+          join = @join_of[item.join_expr]
+          join.type = reduced_type(join, rejected)
+          left, right = passed(join.type, rejected, rejected(join.quals))
+          reduce(item.join_expr.larg, left)
+          reduce(item.join_expr.rarg, right)
+        end
+
+        def passed(type, rejected, local)
+          { JOIN_INNER: [rejected + local] * 2, JOIN_LEFT: [rejected, local], JOIN_RIGHT: [local, rejected] }
+            .fetch(type, [[], []])
+        end
+
+        def reduced_type(join, rejected)
+          left = %i[JOIN_RIGHT JOIN_FULL].include?(join.type) && !rejects?(join.left, rejected)
+          right = %i[JOIN_LEFT JOIN_FULL].include?(join.type) && !rejects?(join.right, rejected)
+          TYPES.fetch([left, right])
+        end
+
+        def rejects?(side, rejected) = side.any? { |t| rejected.any? { |r| r.equal?(t) } }
+
+        def rejected(node)
+          Uses.conjuncts(node).flat_map { |c| Strict.columns(c) }.filter_map { |ref| @scope.column(ref)&.first }
+        end
+      end
+
+      # Which columns a conjunct rejects the nulls of, for join reduction.
+      # Only the plainly strict forms count, each with a bare column (or
+      # one under COLLATE) as an operand: =, <>, <, <=, >, >=, IN, NOT IN,
+      # = ANY, BETWEEN, LIKE, ILIKE, and IS NOT NULL. A row comparison, a
+      # cast, an expression, OR, NOT, and IS NULL don't, so a join they'd
+      # reduce stays outer, which only costs a candidate.
+      module Strict
+        OPERATORS = %w[= <> < <= > >= ~~ !~~ ~~* !~~*].freeze
+        KINDS = %i[AEXPR_OP AEXPR_IN AEXPR_OP_ANY AEXPR_LIKE AEXPR_ILIKE].freeze
+        BETWEEN = %i[AEXPR_BETWEEN AEXPR_NOT_BETWEEN AEXPR_BETWEEN_SYM AEXPR_NOT_BETWEEN_SYM].freeze
+
+        module_function
+
+        # The ColumnRefs a conjunct rejects the nulls of.
+        def columns(node)
+          if node.null_test then node.null_test.nulltesttype == :IS_NOT_NULL ? [bare(node.null_test.arg)].compact : []
+          elsif node.a_expr then expression(node.a_expr)
+          else []
+          end
+        end
+
+        def expression(expr)
+          return [bare(expr.lexpr)].compact if BETWEEN.include?(expr.kind)
+          return [] unless strict_operator?(expr)
+
+          sides = expr.kind == :AEXPR_OP ? [expr.lexpr, expr.rexpr] : [expr.lexpr]
+          sides.filter_map { |side| bare(side) }
+        end
+
+        def strict_operator?(expr)
+          KINDS.include?(expr.kind) && OPERATORS.include?(expr.name.map { |n| n.string.sval }.join("."))
+        end
+
+        def bare(node) = node.column_ref || node.collate_clause&.arg&.column_ref
       end
 
       # Each table's columns in some role, in query order, once each.
@@ -1064,8 +1163,8 @@ module Quaack
         end
       end
 
-      private_constant :Input, :Table, :Join, :Scope, :Keyset, :Columns, :Values, :Predicates, :Uses, :ColumnRefs,
-                       :OrderBy, :GroupBy, :OrderTail, :TableCandidates
+      private_constant :Input, :Table, :Join, :Scope, :Reduction, :Strict, :Keyset, :Columns, :Values, :Predicates,
+                       :Uses, :ColumnRefs, :OrderBy, :GroupBy, :OrderTail, :TableCandidates
     end
   end
 end

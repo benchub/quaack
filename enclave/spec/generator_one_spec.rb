@@ -540,6 +540,124 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       end
     end
 
+    describe "join reduction" do
+      it "makes a LEFT JOIN inner when a strict WHERE conjunct rejects its nullable side, so IS NULL counts" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+              "WHERE o.region = 3 AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region total], []])
+      end
+
+      it "counts a reduced LEFT JOIN's ON conjunct on the preserved side" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id AND c.region = 5 " \
+              "WHERE o.status = 1"
+
+        expect(keys(generate(sql, stats))).to include(["customers", %w[region], []])
+      end
+
+      it "makes a FULL JOIN a LEFT JOIN when WHERE rejects its left side's nulls" do
+        sql = "SELECT 1 FROM public.orders o FULL JOIN public.customers c " \
+              "ON o.customer_id = c.id AND o.region = 2 AND c.region = 5 WHERE o.status = 1 AND c.name IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id status], []], ["orders", %w[status], []],
+                                                  ["customers", %w[id], []],
+                                                  ["customers", %w[id region], []], ["customers", %w[region], []]])
+      end
+
+      it "makes a FULL JOIN a RIGHT JOIN when WHERE rejects its right side's nulls" do
+        sql = "SELECT 1 FROM public.orders o FULL JOIN public.customers c " \
+              "ON o.customer_id = c.id AND o.region = 2 AND c.region = 5 WHERE c.name = 'x' AND o.status IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id region], []], ["orders", %w[region], []],
+                                                  ["customers", %w[id], []],
+                                                  ["customers", %w[id name], []], ["customers", %w[name], []]])
+      end
+
+      it "makes a FULL JOIN inner when WHERE rejects both sides' nulls" do
+        sql = "SELECT 1 FROM public.orders o FULL JOIN public.customers c " \
+              "ON o.customer_id = c.id AND o.region = 2 AND c.region = 5 WHERE c.name = 'x' AND o.status = 1"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region status], []],
+                                                      ["customers", %w[name region], []])
+      end
+
+      it "reduces a lower outer join by a strict conjunct in a higher inner join's ON" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+              "JOIN public.customers i ON i.id = c.id AND o.region = 7 WHERE o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region total], []])
+      end
+
+      it "reduces an outer join under a LEFT JOIN's nullable side by that LEFT JOIN's ON" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN " \
+              "(public.orders o LEFT JOIN public.orders p ON p.parent_id = o.id) " \
+              "ON o.customer_id = c.id AND p.status = 1 AND p.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[status total], []])
+      end
+
+      it "doesn't reduce an outer join under a LEFT JOIN's preserved side by that LEFT JOIN's ON" do
+        sql = "SELECT 1 FROM (public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id) " \
+              "LEFT JOIN public.orders p ON p.id = o.parent_id AND o.status = 1 WHERE o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["customers", %w[id], []], ["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id parent_id], []], ["orders", %w[id], []]])
+      end
+
+      it "doesn't reduce an outer join by its own ON, an IS NULL, or a conjunct that isn't plainly strict" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id AND o.status = 1 " \
+              "WHERE coalesce(o.region, 0) = 0 AND o.parent_id IS NULL AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["customers", %w[id], []], ["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id status], []], ["orders", %w[status], []]])
+      end
+
+      it "doesn't reduce a FULL JOIN's children by its ON" do
+        sql = "SELECT 1 FROM (public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id) " \
+              "FULL JOIN public.orders p ON p.id = o.parent_id AND o.region = 1 WHERE o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to eq([["customers", %w[id], []], ["orders", %w[customer_id], []],
+                                                  ["orders", %w[customer_id parent_id], []], ["orders", %w[id], []]])
+      end
+
+      it "makes a RIGHT JOIN inner when a strict WHERE conjunct rejects its left side" do
+        sql = "SELECT 1 FROM public.orders o RIGHT JOIN public.customers c ON o.customer_id = c.id " \
+              "WHERE o.region = 3 AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats))).to include(["orders", %w[region total], []])
+      end
+
+      it "reduces an outer join under a RIGHT JOIN's nullable side by its ON, but not under its preserved side" do
+        nullable = "SELECT 1 FROM (public.orders o LEFT JOIN public.orders p ON p.parent_id = o.id) " \
+                   "RIGHT JOIN public.customers c ON o.customer_id = c.id AND p.status = 1 AND p.total IS NULL"
+        preserved = "SELECT 1 FROM public.orders p RIGHT JOIN " \
+                    "(public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id) " \
+                    "ON p.id = o.parent_id AND o.status = 1 WHERE o.total IS NULL"
+
+        expect(keys(generate(nullable, stats))).to include(["orders", %w[status total], []])
+        expect(keys(generate(preserved, stats)).flat_map { |_, key, _| key }).not_to include("total", "status")
+      end
+
+      it "doesn't reduce by <> ALL, which an empty array makes true for a null" do
+        sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+              "WHERE o.region <> ALL('{1}') AND o.total IS NULL"
+
+        expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).not_to include("total")
+      end
+
+      it "reads each strict form: IS NOT NULL, <>, BETWEEN, IN, = ANY, LIKE, and a join condition" do
+        ["o.region IS NOT NULL", "o.region <> 1", "3 < o.region", "o.region BETWEEN 1 AND 2", "o.region IN (1, 2)",
+         "o.region = ANY('{1}')", "o.region LIKE 'a%'", "o.parent_id = c.id"].each do |conjunct|
+          sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+                "WHERE #{conjunct} AND o.total IS NULL"
+
+          expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).to include("total"), conjunct
+        end
+      end
+    end
+
     it "doesn't resolve schema and table name once the table has an alias" do
       expect(generate("SELECT 1 FROM public.orders o WHERE public.orders.status = 1", stats)).to eq([])
     end
