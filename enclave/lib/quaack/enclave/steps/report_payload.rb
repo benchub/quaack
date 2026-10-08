@@ -9,6 +9,7 @@ require_relative "../measurement"
 require_relative "../planner_statistics"
 require_relative "../table_name"
 require_relative "existing_indexes"
+require_relative "hidden_statistics"
 require_relative "index_sources"
 require_relative "measured_labels"
 require_relative "negative_result"
@@ -124,21 +125,7 @@ module Quaack
         # negative-result, rewrite-rules, and burndown: what the report says beyond the candidates.
         def findings(store, top)
           { negative: top.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
-            burndown: Burndown.read(store), hidden_statistics: hidden_statistics(store) }
-        end
-
-        # The statistics the production role couldn't see (PlannerStatistics'
-        # statistics_hidden): each hidden index's name, only if it's one of
-        # the table's stored indexes, and only a count of the extended
-        # statistics objects, whose names the report doesn't carry. An
-        # entry stored before statistics_hidden existed hides nothing.
-        def hidden_statistics(store)
-          tables = store.read("statistics")["tables"]
-          { "indexes" => tables.flat_map do |table|
-            known = table["indexes"].map { it["name"] }
-            Array(table.dig("statistics_hidden", "indexes")).select { known.include?(it) }
-          end.uniq,
-            "extended_statistics" => tables.sum { Array(it.dig("statistics_hidden", "extended_statistics")).size } }
+            burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store) }
         end
 
         def original(store, stats)

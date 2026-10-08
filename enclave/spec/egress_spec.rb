@@ -324,7 +324,9 @@ RSpec.describe Quaack::Enclave::Egress do
       end
 
       [
-        ["a name in place of the extended statistics count", ->(f) { f.merge("extended_statistics" => [EGRESS_SENTINEL]) }],
+        ["a name in place of the extended statistics count", lambda { |f|
+          f.merge("extended_statistics" => [EGRESS_SENTINEL])
+        }],
         ["a String in place of the count", ->(f) { f.merge("extended_statistics" => EGRESS_SENTINEL) }],
         ["a negative count", ->(f) { f.merge("extended_statistics" => -1) }],
         ["a planted key", ->(f) { f.merge(EGRESS_SENTINEL => 1) }],
@@ -335,10 +337,12 @@ RSpec.describe Quaack::Enclave::Egress do
       ].each do |what, changed|
         it "refuses one with #{what}, without quoting it" do
           refusal = "a value in this report message has hidden statistics that aren't index names and a count"
-          expect { egress.serialize(report_with(changed.call(hidden))) }.to raise_error(described_class::Error, refusal) { |e|
-            expect(e.message).not_to include(EGRESS_SENTINEL)
-            expect(e.cause).to be_nil
-          }
+          expect do
+            egress.serialize(report_with(changed.call(hidden)))
+          end.to raise_error(described_class::Error, refusal) { |e|
+                   expect(e.message).not_to include(EGRESS_SENTINEL)
+                   expect(e.cause).to be_nil
+                 }
         end
       end
     end

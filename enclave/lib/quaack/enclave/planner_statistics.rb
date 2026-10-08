@@ -70,8 +70,14 @@ module Quaack
     #   data: n_distinct and dependencies as the text Postgres prints, and
     #   most_common_vals (an Array of Arrays of Strings), most_common_val_nulls,
     #   most_common_freqs, and most_common_base_freqs. The data is nil until
-    #   ANALYZE fills it. Statistics on expressions (pg_stats_ext_exprs)
+    #   ANALYZE fills it, or when the role can't see it. Statistics on expressions (pg_stats_ext_exprs)
     #   aren't read.
+    #
+    # - statistics_hidden: { "indexes", "extended_statistics" }, the names,
+    #   sorted, of the expression indexes and the extended statistics
+    #   objects ("schema.name") whose statistics the role can't see, since
+    #   it doesn't own the table or row security is active for it. The run
+    #   goes on without them, and the report says so (see Catalog).
     #
     # The Result's statistics is built from that entry, with each index as
     # IndexCandidate.from_indexdef reads its definition, sources [:existing], or
@@ -85,6 +91,8 @@ module Quaack
     # unknown_relation (the catalog doesn't have one),
     # inheritance_parent (a table has inheritance children, so pg_stats has
     # two rows for each column, and v1 doesn't choose between them), and
+    # row_security_statistics_hidden (row security hides every column's
+    # statistics from the role), and
     # column_statistics_hidden (pg_stats hides the statistics of a column
     # query references, since the role can't SELECT it; see Visibility).
     # query is the qualified query, and nil checks every column. A
