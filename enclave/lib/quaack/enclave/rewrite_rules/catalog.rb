@@ -108,6 +108,15 @@ module Quaack
           ORDER BY 1
         SQL
 
+        NONDETERMINISTIC = <<~SQL.freeze
+          SELECT EXISTS (
+            SELECT FROM pg_catalog.pg_collation c
+            WHERE NOT c.collisdeterministic
+              AND (c.oid #{EQ} ANY (SELECT attcollation FROM pg_catalog.pg_attribute)
+                OR c.oid #{EQ} ANY (SELECT typcollation FROM pg_catalog.pg_type)
+                OR c.oid #{EQ} ANY (SELECT rngcollation FROM pg_catalog.pg_range)))
+        SQL
+
         def initialize(connection)
           @connection = connection
           @met = {}
@@ -133,6 +142,21 @@ module Quaack
             row = @connection.exec_params(COLUMN_INFO, [schema, table, column]).first
             Info.new(type: row["type"], collation: row["collation"], deterministic: row["deterministic"] == "t") if row
           end
+        end
+
+        # Whether the connection reads a string constant's backslashes as
+        # pg_query does: standard_conforming_strings is on.
+        def standard_strings?
+          @standard_strings = @connection.exec("SHOW standard_conforming_strings").getvalue(0, 0) == "on" if
+            @standard_strings.nil?
+          @standard_strings
+        end
+
+        # Whether a column, domain, or range in the database uses a
+        # nondeterministic collation.
+        def nondeterministic_collations?
+          @nondeterministic = @connection.exec(NONDETERMINISTIC).getvalue(0, 0) == "t" if @nondeterministic.nil?
+          @nondeterministic
         end
 
         def met?(assumption)
