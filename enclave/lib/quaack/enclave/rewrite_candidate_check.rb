@@ -2,7 +2,9 @@
 
 require "pg_query"
 require_relative "parser_version"
+require_relative "deparse"
 require_relative "relations"
+require_relative "rewrite_candidate_check/names"
 require_relative "rewrite_candidate_check/reg_types"
 require_relative "rewrite_candidate_check/reg_values"
 require_relative "supported_sql"
@@ -53,7 +55,15 @@ module Quaack
     #    catalog, so whether the candidate plans would say whether the name
     #    exists (20261008-31). The original's literals are redacted, so a
     #    candidate keeps the original's as its $n, such as $1::regclass.
-    # 5. Relations, through Relations.check, the check intake uses, with
+    # 5. unknown_name (see Names), from the parse alone: a candidate may
+    #    use only the original's functions, types, collations, and
+    #    operators, as it writes them, and pg_catalog's. A bare name the
+    #    original doesn't use is pinned to pg_catalog, and any other is
+    #    refused with one message, so whether a name exists outside
+    #    pg_catalog never shows (20261008-32). A rewrite that would need a
+    #    new user-defined function isn't one an LLM should be trusted to
+    #    provide. With a pin, the candidate goes on as Deparse writes it.
+    # 6. Relations, through Relations.check, the check intake uses, with
     #    the same Settings, so the candidate is qualified the way the
     #    original was. bad_search_path if the Settings' search_path doesn't
     #    read, and unknown_relation if a relation doesn't resolve, isn't one
@@ -70,13 +80,13 @@ module Quaack
     #    rules, and deparse_mismatch if the qualified candidate, as pg_query
     #    deparses it, doesn't parse back to the tree it came from (see
     #    Deparse). So Accepted's parse is the candidate's own parse with
-    #    schemas added, and checks 2 to 4 hold for it without being run
+    #    schemas added, and checks 2 to 5 hold for it without being run
     #    again.
-    # 6. volatile_function (or bad_search_path): volatility's VolatilityCheck
+    # 7. volatile_function (or bad_search_path): volatility's VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
     #    arena's transaction or change the session.
-    # 7. unsupported_reg_literal or untyped_literal (see RegTypes): with
+    # 8. unsupported_reg_literal or untyped_literal (see RegTypes): with
     #    each string literal a $n of no type, the candidate is prepared,
     #    which evaluates nothing, and a literal Postgres would read as a
     #    reg type from where it is, such as pg_relation_filenode('s.t'),
@@ -126,6 +136,7 @@ module Quaack
         supported!(parse)
         placeholders!(parse, original.placeholders)
         RegValues.syntactic!(parse, original.sql)
+        sql = pinned(sql, parse, original.sql)
         accepted = relations!(sql, original.relations, settings, connection)
         volatility!(accepted.sql, settings, connection)
         RegTypes.check!(accepted.parse, original, connection)
@@ -136,6 +147,16 @@ module Quaack
         PgQuery.parse(sql)
       rescue PgQuery::ParseError
         raise Error.new("unparsable", ParserVersion.unparsable("the candidate doesn't parse")), cause: nil
+      end
+
+      # The candidate with Names' pins, as Deparse writes it if any were
+      # made, so its own spelling is still what Relations checks otherwise.
+      def pinned(sql, parse, original_sql)
+        before = parse.tree.to_proto
+        Names.pin!(parse, original_sql)
+        parse.tree.to_proto == before ? sql : Deparse.faithfully(parse.tree)
+      rescue Deparse::Error => e
+        raise Error.from(e), cause: nil
       end
 
       def supported!(parse)

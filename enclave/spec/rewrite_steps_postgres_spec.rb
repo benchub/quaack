@@ -140,7 +140,9 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
     # Task 20261007-30: the racetrack connects as another role than
     # qualify did, so the plan's path would give another "$user" there.
     # The stored path is the one qualify resolved the original through.
-    it "qualifies a rewrite's names through the run's stored search_path, not the plan's" do
+    # Since 20261008-32, a bare function the original doesn't use is pinned
+    # to pg_catalog instead, so app.shout on the stored path never supplies it.
+    it "pins a rewrite's new bare function to pg_catalog, whatever the stored search_path holds" do
       ready
       conn = production.connect
       conn.exec("CREATE SCHEMA app; CREATE FUNCTION app.shout(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT $1'")
@@ -150,8 +152,8 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       outcome = rewrite_check(rewrites(rewrite("SELECT o.note, o.status FROM public.orders o " \
                                                "WHERE o.status = $2 AND o.note = shout($1)")))
 
-      expect(lines(outcome).first).to eq(outcome_line(1, "accepted", nil, "rewrite_1"))
-      expect(stored.read("rewrite_1")["sql"]).to include("o.note = app.shout($1)")
+      expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "failed_to_plan", nil))
+      expect(stored.entry?("rewrite_1")).to be(false)
     end
 
     it "records that llm-rewrites ran when the LLM proposed no rewrites" do

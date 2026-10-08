@@ -14,9 +14,17 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
   def table_name(schema, name) = Quaack::Enclave::TableName.new(schema:, name:)
 
   # What the original query uses: public.orders, public.customers, and
-  # sales.items, with three placeholders.
+  # sales.items, with three placeholders. Its SQL gives the user functions,
+  # the domain, and the bare operators and types the examples use, since a
+  # candidate may use only the original's names and pg_catalog's, and pins
+  # a new bare one to pg_catalog (see "functions, types, collations, and
+  # operators").
   let(:relations) { [table_name("public", "orders"), table_name("public", "customers"), table_name("sales", "items")] }
-  let(:original) { described_class::Original.new(relations:, placeholders: 3) }
+  let(:original_sql) do
+    "SELECT public.steady(), public.bump(), public.ids(), $1::regclass, $2::text, $3::name, $1::public.reg_dom " \
+      "FROM public.orders WHERE id = $1 AND id > $2 AND id < $3 AND id - $1 IS NULL"
+  end
+  let(:original) { described_class::Original.new(relations:, placeholders: 3, sql: original_sql) }
 
   before do
     conn.exec(<<~SQL)
@@ -59,10 +67,12 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect(accepted.parse.deparse).to eq(accepted.sql)
     end
 
-    # Task 20260926-56: the same as the original's names (see NameQualifier).
-    it "names the schema of a function only one schema on the path has, as the original's are" do
-      expect(check("SELECT steady(), lower(status) FROM orders").sql)
-        .to eq("SELECT public.steady(), lower(status) FROM public.orders")
+    # Task 20260926-56 qualified a bare function only one schema has, as
+    # the original's are. Since 20261008-32, a bare name gets the schema the
+    # original writes it with, or else pg_catalog.
+    it "gives a bare function the original's schema for it, or else pg_catalog" do
+      expect(check("SELECT steady(), lower(status), shout() FROM orders").sql)
+        .to eq("SELECT public.steady(), pg_catalog.lower(status), pg_catalog.shout() FROM public.orders")
       expect { check("SELECT 'lower'::regproc FROM orders") }.to rejected("unsupported_reg_literal")
     end
 
@@ -307,8 +317,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       "lo_import('/x')" => "function pg_catalog.lo_import is volatile",
       "nextval('orders_id_seq')" => "function pg_catalog.nextval is volatile",
       "random()" => "function pg_catalog.random is volatile",
-      "public.bump()" => "function public.bump is volatile",
-      "bump()" => "function public.bump is volatile"
+      "public.bump()" => "function public.bump is volatile"
     }.each do |call, detail|
       it "refuses #{call}" do
         expect { check("SELECT #{call} FROM orders") }.to rejected("volatile_function", "volatile_function: #{detail}")
@@ -494,7 +503,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
             "AND created_at > now() - interval '1 day' AND created_at AT TIME ZONE 'UTC' < $2"
       expect(check(sql).sql).to eq(
         "SELECT id, 'x' AS label, COALESCE(status, '') FROM public.orders WHERE status LIKE 'a%' " \
-        "AND created_at > (now() - '1 day'::interval) AND created_at AT TIME ZONE 'UTC' < $2"
+        "AND created_at > (pg_catalog.now() - '1 day'::interval) AND created_at AT TIME ZONE 'UTC' < $2"
       )
     end
 
@@ -504,7 +513,119 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     end
   end
 
+  # Task 20261008-32: a candidate may use only the original's functions,
+  # types, collations, and operators, and pg_catalog's. A name in another
+  # schema is refused the same way whether it exists or not, and a bare
+  # name the original doesn't use is pinned to pg_catalog, so a user
+  # schema on the path, such as one named for a role, can never supply it.
+  describe "functions, types, collations, and operators" do
+    let(:role) { "sentinelrole_#{SecureRandom.hex(4)}" }
+    let(:path) { { "search_path" => '"$user", public' } }
+    let(:named) do
+      described_class::Original.new(relations:, placeholders: 3,
+                                    sql: "SELECT public.steady() FROM public.orders WHERE id = $1")
+    end
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA hidden_sentinel;
+        CREATE FUNCTION hidden_sentinel.vfn_sentinel() RETURNS int LANGUAGE sql VOLATILE AS $$SELECT 1$$;
+        CREATE FUNCTION hidden_sentinel.lower(text) RETURNS text LANGUAGE sql IMMUTABLE AS $$SELECT 'x'$$;
+        CREATE TYPE hidden_sentinel.type_sentinel AS (a int);
+        CREATE COLLATION hidden_sentinel.coll_sentinel FROM "C";
+        CREATE FUNCTION hidden_sentinel.eq(int, int) RETURNS bool LANGUAGE sql IMMUTABLE AS $$SELECT true$$;
+        CREATE OPERATOR hidden_sentinel.=== (LEFTARG = int, RIGHTARG = int, FUNCTION = hidden_sentinel.eq);
+        CREATE ROLE "#{role}"; CREATE SCHEMA "#{role}";
+        CREATE FUNCTION "#{role}".fn_sentinel() RETURNS int LANGUAGE sql VOLATILE AS $$SELECT 1$$;
+        CREATE FUNCTION "#{role}".lower(varchar) RETURNS text LANGUAGE sql IMMUTABLE AS $$SELECT 'x'$$;
+      SQL
+    end
+
+    after do
+      conn.exec(%(SET client_min_messages = warning; DROP SCHEMA IF EXISTS "#{role}" CASCADE; DROP ROLE "#{role}"))
+    end
+
+    def outcome(sql, original: named)
+      check(sql, path, original:).sql
+    rescue described_class::Error => e
+      [e.message, Quaack::Enclave::ErrorFilter.to_egress(e, step: "llm-rewrites")]
+    end
+
+    it "refuses a name in another schema the same way, whether it exists or not" do
+      candidates = [
+        "SELECT hidden_sentinel.vfn_sentinel() FROM orders", "SELECT hidden_sentinel.nothere_sentinel() FROM orders",
+        "SELECT \"#{role}\".fn_sentinel() FROM orders", "SELECT \"#{role}\".nothere_sentinel() FROM orders",
+        "SELECT $1::hidden_sentinel.type_sentinel FROM orders",
+        "SELECT $1::hidden_sentinel.nothere_sentinel FROM orders",
+        "SELECT status COLLATE hidden_sentinel.coll_sentinel FROM orders",
+        "SELECT status COLLATE hidden_sentinel.nothere_sentinel FROM orders",
+        "SELECT id FROM orders WHERE id OPERATOR(hidden_sentinel.===) 1",
+        "SELECT id FROM orders WHERE id OPERATOR(hidden_sentinel.=~=) 1",
+        "SELECT id FROM orders ORDER BY id USING OPERATOR(hidden_sentinel.===)",
+        "SELECT public.bump() FROM orders"
+      ]
+      outcomes = candidates.map { outcome(it) }
+
+      expect(outcomes.uniq.size).to eq(1)
+      message, line = outcomes.first
+      expect(message).to eq("unknown_name: a rewrite may use only the original's functions, types, collations, " \
+                            "and operators, and pg_catalog's")
+      expect(line).to include('"rule":"unknown_name"')
+      [message, line].each { expect(it).not_to include("sentinel") }
+    end
+
+    it "pins a bare name the original doesn't use to pg_catalog, so a user schema can't supply it" do
+      expect(%w[fn_sentinel nothere_sentinel].map { outcome("SELECT #{it}() FROM orders") })
+        .to eq(%w[fn_sentinel nothere_sentinel].map { "SELECT pg_catalog.#{it}() FROM public.orders" })
+      expect(outcome("SELECT lower(status) FROM orders WHERE total_cents > $3"))
+        .to eq("SELECT pg_catalog.lower(status) FROM public.orders WHERE total_cents OPERATOR(pg_catalog.>) $3")
+    end
+
+    it "pins bare types and collations too" do
+      expect(outcome("SELECT $1::text, status COLLATE \"C\" FROM orders"))
+        .to eq('SELECT $1::pg_catalog.text, status COLLATE pg_catalog."C" FROM public.orders')
+    end
+
+    it "keeps the original's names as written, its own user function included" do
+      expect(outcome("SELECT public.steady() FROM orders WHERE id = $1"))
+        .to eq("SELECT public.steady() FROM public.orders WHERE id = $1")
+    end
+
+    # The fix round of 20261008-32: the original's qualified query writes
+    # its user names with their schema, and the LLM may write them bare.
+    it "gives a bare name the schema the original writes it with" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.sim(text, text) RETURNS real LANGUAGE sql IMMUTABLE AS $$SELECT 1::real$$;
+        CREATE FUNCTION public.close_to(text, text) RETURNS bool LANGUAGE sql IMMUTABLE AS $$SELECT true$$;
+        CREATE OPERATOR public.%% (LEFTARG = text, RIGHTARG = text, FUNCTION = public.close_to);
+      SQL
+      trgm = described_class::Original.new(
+        relations:, placeholders: 1,
+        sql: "SELECT public.sim(status, $1) FROM public.orders WHERE status OPERATOR(public.%%) $1"
+      )
+      expect(outcome("SELECT sim(status, $1) FROM orders WHERE status %% $1", original: trgm))
+        .to eq("SELECT public.sim(status, $1) FROM public.orders WHERE status OPERATOR(public.%%) $1")
+    end
+
+    it "refuses a bare name the original writes with more than one schema" do
+      two = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT public.steady(), sales.steady() FROM public.orders"
+      )
+      expect(outcome("SELECT steady() FROM orders", original: two).first).to start_with("unknown_name: ")
+    end
+
+    it "accepts names written in pg_catalog" do
+      expect(outcome("SELECT pg_catalog.upper(status) FROM orders WHERE id OPERATOR(pg_catalog.<) $2"))
+        .to eq("SELECT pg_catalog.upper(status) FROM public.orders WHERE id OPERATOR(pg_catalog.<) $2")
+    end
+  end
+
   describe "the order of the checks" do
+    it "checks unknown names after reg literals, and before relations" do
+      expect { check("SELECT 'x'::regclass, hidden.f() FROM orders") }.to rejected("unsupported_reg_literal")
+      expect { check("SELECT hidden.f() FROM public.nowhere") }.to rejected("unknown_name")
+    end
+
     it "checks reg literals after placeholders, and before relations" do
       expect { check("SELECT 'x'::regclass, $7 FROM orders") }.to rejected("bad_placeholder")
       expect { check("SELECT 'x'::regclass FROM public.nowhere") }.to rejected("unsupported_reg_literal")

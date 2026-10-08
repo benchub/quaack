@@ -62,7 +62,7 @@ RSpec.describe "clock anchoring in rewrite candidates, against a real server" do
                   "transformation" => "t", "assumptions" => [] }
       checked = run("rewrite-check", stdin: JSON.generate("rewrites" => [rewrite]))
       expect(JSON.parse(checked.stdout.lines.first).slice("outcome", "rule"))
-        .to eq("outcome" => "rejected", "rule" => "clock_anchor_in_query")
+        .to eq("outcome" => "rejected", "rule" => "unknown_name")
     end
   end
 

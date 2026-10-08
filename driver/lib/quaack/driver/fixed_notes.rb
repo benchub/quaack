@@ -114,6 +114,8 @@ module Quaack
                                      "tune this query.",
         "name_lookup_function" => "A rewrite calls a function that looks up a name given as text, such as " \
                                   "to_regclass, and the query doesn't make the same call. QUAACK dropped it.",
+        "unknown_name" => "A rewrite uses a function, type, collation, or operator that's neither the " \
+                          "query's nor a built-in one. QUAACK dropped it.",
         "untyped_literal" => "A rewrite has a string constant whose type Postgres can't work out without its " \
                              "value. QUAACK dropped it.",
         "clock_literal" => "The query has 'now', 'today', 'tomorrow', or 'yesterday' in a string Postgres " \
