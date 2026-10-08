@@ -117,4 +117,11 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.untested_atoms).to eq([0])
     expect(result.retries).to eq(3)
   end
+
+  it "raises a query that fails on the loaded fixture, instead of reporting its atoms untested" do
+    # Division by zero fails at the query step, after the fixture loaded.
+    # Only a load failure may be read as "exercised nothing".
+    expect { guard("SELECT o.id FROM fx.orders o WHERE o.qty / 0 > 1 AND o.status = 'open'") }
+      .to raise_error(Quaack::Enclave::ArenaRunner::Error) { |e| expect([e.rule, e.step]).to eq(%i[query_failed query]) }
+  end
 end

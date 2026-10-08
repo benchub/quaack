@@ -19,7 +19,8 @@ module Quaack
                  counterexample_round_no_arena_setup counterexample_round_out_of_order
                  counterexample_round_unknown_search counterexample_round_untested database_qualified_function
                  deparse_mismatch destroy_command_bad_output destroy_command_failed destroy_command_not_run
-                 destroy_command_timed_out domain_check execute_failed explain_failed expression_unique_index
+                 destroy_command_timed_out domain_check exclusion_constraint execute_failed explain_failed
+                 expression_unique_index
                  fixture_load_failed fk_cycle forbidden_in_index foreign_relation hypopg_failed in_transaction
                  index_build_bad_index index_build_hidden_index_used index_build_orphan_cancel_denied
                  index_build_orphan_running index_build_unique index_build_unqualified index_build_wrong_set_hidden

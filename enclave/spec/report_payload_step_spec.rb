@@ -407,7 +407,8 @@ RSpec.describe "quaacks report-payload" do
         store.write("rewrite_tested_23", tested(false, "s1", "value"))
         # rewrite-test couldn't build scenarios for the query, so it refused.
         { 24 => "complex_check", 25 => "fk_cycle", 26 => REPORT_WORD_SENTINEL, 27 => "unsatisfiable_check",
-          28 => "expression_unique_index", 29 => "unsupported_type", 30 => "domain_check" }.each do |number, rule|
+          28 => "expression_unique_index", 29 => "unsupported_type", 30 => "domain_check",
+          31 => "exclusion_constraint" }.each do |number, rule|
           stored(store, number, tested: tested(false, nil, rule).merge("refused" => true), survived: false)
         end
       end
@@ -443,7 +444,8 @@ RSpec.describe "quaacks report-payload" do
       27 => { "fate" => "rewrite_test_untested", "rule" => "unsatisfiable_check" },
       28 => { "fate" => "rewrite_test_untested", "rule" => "expression_unique_index" },
       29 => { "fate" => "rewrite_test_untested", "rule" => "unsupported_type" },
-      30 => { "fate" => "rewrite_test_untested", "rule" => "domain_check" }
+      30 => { "fate" => "rewrite_test_untested", "rule" => "domain_check" },
+      31 => { "fate" => "rewrite_test_untested", "rule" => "exclusion_constraint" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)

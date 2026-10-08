@@ -51,9 +51,13 @@ module Quaack
       # rewrite-test won't evaluate. foreign_operator is whether a CHECK,
       # the table's or a domain's, uses an operator outside pg_catalog that
       # no extension owns (FOREIGN_OPERATOR_SQL), which rewrite-test won't
-      # take as simple.
+      # take as simple. An exclusion constraint counts as a unique key over
+      # its plain columns compared with =, since rows that differ in one of
+      # them never conflict, which is conservative. unequal_exclusion is
+      # whether an exclusion constraint has no such column, so rewrite-test
+      # can't keep its rows apart.
       Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
-                                :user_function, :foreign_operator) do
+                                :user_function, :foreign_operator, :unequal_exclusion) do
         # The names of the columns of free (Columns a row may set freely)
         # that need a distinct value per row. A unique key, or an
         # expression unique index's key columns, needs only one of its
@@ -123,7 +127,8 @@ module Quaack
 
       def self.read_constraints(conn, table)
         of = conn.exec_params(CONSTRAINTS_SQL, [regclass(conn, table)]).values.group_by(&:first)
-        Constraints.new(**UniqueIndexes.read(conn, regclass(conn, table), keys(of)),
+        rel = regclass(conn, table)
+        Constraints.new(**Exclusions.add(conn, rel, UniqueIndexes.read(conn, rel, keys(of))),
                         foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) }, **checks(conn, table, of))
       end
 
@@ -173,4 +178,5 @@ module Quaack
 end
 
 require_relative "arena_schema/domain_checks"
+require_relative "arena_schema/exclusions"
 require_relative "arena_schema/unique_indexes"
