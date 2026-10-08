@@ -6968,3 +6968,20 @@ Minor findings from both reviews of 20261001-24:
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
+
+### 20261007-36. OpenAI-compatible replies: let driver bugs surface without crashing on bad 200s (item 2 of 20261007-24).
+
+Split from 20261007-24, whose item 2 didn't pass its second review. The goal: a NoMethodError from a driver bug (in `Attempts`, the burndown count, or the transport) must surface as itself, not as `llm_bad_response`, while every malformed 200 reply still ends as `llm_bad_response` with no cause. Main today wraps the whole `chat.completions.create` in `rescue NoMethodError`, which hides driver bugs.
+
+What the 20261007-24 attempt learned, on branch `task/20261007-24` (commits aeb1e19 and 89f5b24, kept for reference until this task lands):
+- Checking the reply's shape before the gem coerces it works for JSON bodies: empty, `null`, `true`, numbers, arrays, strings, non-JSON text, `choices` that aren't an array of objects, a `message` that isn't an object, `tool_calls` that aren't an array of objects.
+- Round one: a check that passed non-Hash bodies through let `""`, `null`, `true`, and `tool_calls: "x"` crash with NoMethodError.
+- Round two: the check parsed every 200 body as JSON whatever its content-type, but the gem's `Util.decode_content` parses only when the content-type matches its `JSON_CONTENT` pattern and otherwise hands back a `StringIO`, so a 200 with `text/plain` or no content-type (hand-rolled shims, some proxies) crashed with `undefined method '[]' for an instance of StringIO`. Treat a non-JSON content-type on a 200 as unreadable.
+- Also crashing: a tool call whose `function` is a string (`fetch` on String). Pre-existing on main: a choice with no `message`, and a tool call with no `function`.
+- FakeOpenAI always sends `application/json`; let it send other content types. The round-two reviewer's probe ran about 50 body shapes through the real adapter.
+
+- **Depends on:** 20261007-24.
+- **Came from:** The second review of 20261007-24, 2026-10-07.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The OpenAI-compatible adapter checks every 2xx reply before the gem reads it: a content-type the gem wouldn't parse as JSON, a body that isn't a JSON object, and any malformed `choices`, `message`, `tool_calls`, or `function` shape are `llm_bad_response` with no cause. main's `rescue NoMethodError` is gone, so a driver bug surfaces as itself. A reviewer's probe of about 80 bodies, and of gzip, deflate, chunked, and truncated replies over a real socket, found no crash the branch has that main doesn't. Builds on 20261007-24's item 2.

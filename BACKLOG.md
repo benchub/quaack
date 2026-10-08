@@ -2202,21 +2202,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 
 ### 20261007-35. Run records: read once, and type-check the jump host. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-36. OpenAI-compatible replies: let driver bugs surface without crashing on bad 200s (item 2 of 20261007-24).
-
-Split from 20261007-24, whose item 2 didn't pass its second review. The goal: a NoMethodError from a driver bug (in `Attempts`, the burndown count, or the transport) must surface as itself, not as `llm_bad_response`, while every malformed 200 reply still ends as `llm_bad_response` with no cause. Main today wraps the whole `chat.completions.create` in `rescue NoMethodError`, which hides driver bugs.
-
-What the 20261007-24 attempt learned, on branch `task/20261007-24` (commits aeb1e19 and 89f5b24, kept for reference until this task lands):
-- Checking the reply's shape before the gem coerces it works for JSON bodies: empty, `null`, `true`, numbers, arrays, strings, non-JSON text, `choices` that aren't an array of objects, a `message` that isn't an object, `tool_calls` that aren't an array of objects.
-- Round one: a check that passed non-Hash bodies through let `""`, `null`, `true`, and `tool_calls: "x"` crash with NoMethodError.
-- Round two: the check parsed every 200 body as JSON whatever its content-type, but the gem's `Util.decode_content` parses only when the content-type matches its `JSON_CONTENT` pattern and otherwise hands back a `StringIO`, so a 200 with `text/plain` or no content-type (hand-rolled shims, some proxies) crashed with `undefined method '[]' for an instance of StringIO`. Treat a non-JSON content-type on a 200 as unreadable.
-- Also crashing: a tool call whose `function` is a string (`fetch` on String). Pre-existing on main: a choice with no `message`, and a tool call with no `function`.
-- FakeOpenAI always sends `application/json`; let it send other content types. The round-two reviewer's probe ran about 50 body shapes through the real adapter.
-
-- **Depends on:** 20261007-24.
-- **Came from:** The second review of 20261007-24, 2026-10-07.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-36. OpenAI-compatible replies: let driver bugs surface without crashing on bad 200s (item 2 of 20261007-24). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-37. Report: the went-on "not recorded" cell uses the number style. Done, see BACKLOG-COMPLETE.md.
 
@@ -2323,4 +2309,17 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 - **Depends on:** 20261002-5.
 - **Came from:** 20261002-5.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261007-48. OpenAI-compatible replies: minors from 20261007-36.
+
+From the review of 20261007-36.
+1. `TypeError` is still in the adapter's rescue list, so a TypeError from a driver bug shows up as `llm_bad_response`. Narrow it the way NoMethodError was.
+2. A float overflow such as `"created":1e400` crashes with FloatDomainError from the gem's coercion (main too). Refuse it at the edge.
+3. A custom tool call whose `custom` is missing or a string is now refused where main read the text. QUAACK sends no tools, so it's harmless; note it or relax it.
+4. The `rescue JSON::ParserError` in `completion?` is redundant with the outer rescue.
+
+- **Depends on:** 20261007-36.
+- **Came from:** The review of 20261007-36.
+- **Design:** LLM providers.
 - **Status:** todo
