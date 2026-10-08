@@ -80,6 +80,19 @@ RSpec.describe IsolatedInstall do
     expect(probe("puts ENV['ANTHROPIC_CONFIG_DIR']", leak)).to eq("#{NoRealCredentials::DIR}\n")
   end
 
+  # It builds a Bedrock client there too, and the AWS SDK reads its config
+  # and credentials files, then the EC2 metadata endpoint, unless told not
+  # to, so the child gets the spec process's empty files and the endpoint
+  # off, not the parent's or the default ~/.aws.
+  it "points the child's AWS config and credentials files at the specs' empty ones" do
+    names = %w[AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_EC2_METADATA_DISABLED]
+    leak = names.to_h { [it, File.join(@dir, "real-aws")] }
+
+    expect(probe("puts #{names}.map { ENV[it] }", leak))
+      .to eq("#{File.join(NoRealCredentials::AWS_DIR, "config")}\n" \
+             "#{File.join(NoRealCredentials::AWS_DIR, "credentials")}\ntrue\n")
+  end
+
   it "still passes its own GEM_HOME and GEM_PATH to the child" do
     home = File.realpath(@install.home)
 
