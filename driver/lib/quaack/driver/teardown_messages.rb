@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "shellwords"
 require_relative "enclave_error"
 
 module Quaack
@@ -18,7 +19,7 @@ module Quaack
       module_function
 
       def command(run_id, jump = nil)
-        "#{"ssh #{jump} " if jump}quaacks teardown --run #{run_id}"
+        "#{"ssh -- #{Shellwords.escape(jump)} " if jump}quaacks teardown --run #{run_id}"
       end
 
       # How to run command: "run" followed by it, as in "run: <command>".
