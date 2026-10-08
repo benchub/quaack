@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-24 (inventory: production read timeout, null config commands refused, memory cap, ShellCommand drain).
 - 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
 - 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
+- 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
 
 ## How this file works.
 
