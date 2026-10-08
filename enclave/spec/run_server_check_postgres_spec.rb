@@ -350,8 +350,10 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
     # The example above can't choose its clients' start times, so whether it
     # catches a 12-hour clock depends on the hour it runs. This runs the
     # check's own start time expression on an afternoon start, from a session
-    # at +05:30.
+    # at +05:30. It also checks that the check's query uses that expression,
+    # so an HH12 format inlined into the query goes red too.
     it "shows a start time on a 24-hour clock, in UTC" do
+      expect(described_class::OTHER_CLIENTS_SQL).to include(described_class::BACKEND_START_SQL)
       conn = connect
       conn.exec("SET TimeZone = 'Asia/Kolkata'")
       started = conn.exec(

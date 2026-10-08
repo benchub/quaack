@@ -235,7 +235,8 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
 
       good = "2026-09-29T16:01:02Z"
-      # A subclass of base that writes itself out as a sentinel.
+      # A subclass of base. Its to_json override never runs, since egress's
+      # plain-data check rejects any subclass first.
       sneaky = ->(base) { Class.new(base) { def to_json(*) = ERROR_SENTINEL.to_json } }
       [
         ["an application_name beside the pid",
