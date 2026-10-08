@@ -197,6 +197,30 @@ RSpec.describe TestPostgres do
     expect(TestPostgres.process_alive?(1)).to be(true)
   end
 
+  # Task 20261002-4: two spec processes can find the same stale container at
+  # once, and the second one's rm finds the first one's already under way.
+  # Docker itself is faked here, since the race can't be set up on demand.
+  describe "removing a stale container" do
+    def docker_rm_fails_with(message)
+      failed = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3).and_call_original
+      allow(Open3).to receive(:capture3).with("docker", "rm", "-f", "-v", "abc123", stdin_data: "")
+                                        .and_return(["", message, failed])
+    end
+
+    it "counts one whose removal is already in progress as removed" do
+      docker_rm_fails_with("Error response from daemon: removal of container abc123 is already in progress\n")
+
+      expect(TestPostgres.remove_container("abc123")).to be_nil
+    end
+
+    it "still raises when docker rm fails for another reason" do
+      docker_rm_fails_with("Error response from daemon: permission denied\n")
+
+      expect { TestPostgres.remove_container("abc123") }.to raise_error(RuntimeError, /permission denied/)
+    end
+  end
+
   it "returns the same database for every call within one example" do
     expect(test_database).to equal(test_database)
     expect(racetrack_and_arena).to equal(racetrack_and_arena)
