@@ -7629,3 +7629,18 @@ Still open from the reviews of 20260922-31:
 - **Decided by the user (2026-10-05):** Treat a non-MCV literal as unknown when MCVs plus nulls cover about all rows.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260923-24 (commit edd75d97). Review had no blocking findings. The grammar slip, the blanket rescue, and max_nesting were already fixed. InitPlan and COLLATE moved to 20261008-21, and the review's minors to 20261008-23.
+
+### 20260923-21. index-from-query loose ends.
+
+Still open from the reviews of 20260922-30 and 20260923-20:
+- **Join reduction.** index-from-query decides nullability from syntax alone. Once a strict WHERE conjunct on a table rejects its nulls, Postgres reduces the outer join. Then it pushes down that table's `IS NULL` and the ON conjuncts `Join#keeps?` drops, but index-from-query still skips them. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)`. `c LEFT JOIN o ON o.customer_id = c.id AND c.region = 5 WHERE o.status = 1` uses `customers(region)`.
+- **Tests:** nullability at depth for RIGHT and FULL joins (two mutants survive), "USING always counts" for outer joins, and the error sentinel test checking `full_message` and the cause.
+- **Comment:** "a join to one still counts for the table on the other side" isn't true for an outer join to a derived table.
+- **Smaller gaps:** an ORDER BY on a nullable-side table's columns becomes a wasted key; `FOR UPDATE OF o` is falsely refused; `(o).*` isn't recognized as a star; `AS o(a, b)` alias lists aren't modeled; INCLUDE covers only the select list and GROUP BY; a prefix LIKE needs `text_pattern_ops` unless the collation is C; incremental sort isn't handled.
+
+- **Depends on:** 20260923-20.
+- **Came from:** Both reviews of 20260922-30, both reviews of 20260923-20, and the 20260922-30 builder's notes.
+- **Design:** index-from-query.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260923-21 (commits e052bacf..b8503f7d). Review had no blocking findings. FOR UPDATE OF and (o).* were stale: SupportedSql refuses both. Left-out items went to 20261008-24, and the review's minors to 20261008-25.

@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20260923-24 (index-from-plan: MCV coverage rule, boolean partials).
+- 20260923-21 (index-from-query: join reduction, pattern keys, alias lists).
 
 ## How this file works.
 
@@ -198,19 +199,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260923-20. Finish 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-21. index-from-query loose ends.
-
-Still open from the reviews of 20260922-30 and 20260923-20:
-- **Join reduction.** index-from-query decides nullability from syntax alone. Once a strict WHERE conjunct on a table rejects its nulls, Postgres reduces the outer join. Then it pushes down that table's `IS NULL` and the ON conjuncts `Join#keeps?` drops, but index-from-query still skips them. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)`. `c LEFT JOIN o ON o.customer_id = c.id AND c.region = 5 WHERE o.status = 1` uses `customers(region)`.
-- **Tests:** nullability at depth for RIGHT and FULL joins (two mutants survive), "USING always counts" for outer joins, and the error sentinel test checking `full_message` and the cause.
-- **Comment:** "a join to one still counts for the table on the other side" isn't true for an outer join to a derived table.
-- **Smaller gaps:** an ORDER BY on a nullable-side table's columns becomes a wasted key; `FOR UPDATE OF o` is falsely refused; `(o).*` isn't recognized as a star; `AS o(a, b)` alias lists aren't modeled; INCLUDE covers only the select list and GROUP BY; a prefix LIKE needs `text_pattern_ops` unless the collation is C; incremental sort isn't handled.
-
-- **Depends on:** 20260923-20.
-- **Came from:** Both reviews of 20260922-30, both reviews of 20260923-20, and the 20260922-30 builder's notes.
-- **Design:** index-from-query.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260923-21. index-from-query loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-22. MCV statistics loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2293,4 +2282,34 @@ The review of 20260923-24 found these minor issues:
 - **Depends on:** 20260923-24.
 - **Came from:** The review of 20260923-24, 2026-10-08.
 - **Design:** index-from-plan.
+- **Status:** todo
+
+### 20261008-24. index-from-query: incremental sort, derived-table reduction, and whole-row reads.
+
+The builder of 20260923-21 left these items out:
+
+1. **Incremental sort isn't handled.** This one is large.
+2. **INCLUDE beyond the select list and GROUP BY.** DESIGN.md step 5 limits INCLUDE to those two on purpose, so changing it is a design question for the user.
+3. **No join reduction through derived-table columns.** In `o LEFT JOIN (subquery) s ... WHERE s.x = 1`, the strict WHERE on the subquery's column doesn't reduce the join, because subquery columns aren't tracked.
+4. **Whole-row references.** `SELECT o FROM public.orders o` isn't counted as reading every column, so an INCLUDE could look covering when it isn't.
+
+- **Depends on:** 20260923-21.
+- **Came from:** The builder of 20260923-21, 2026-10-08.
+- **Design:** index-from-query.
+- **Status:** todo
+
+### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21.
+
+The review of 20260923-21 found these minor issues:
+
+1. **`IS DISTINCT FROM` has no test.** Adding `AEXPR_DISTINCT` to `Strict::KINDS` keeps every test green. Add it to the "isn't plainly strict" test.
+2. **A column under COLLATE has no test.** Dropping the `collate_clause` arm of `Strict.bare` keeps every test green.
+3. **The pattern key's opclass is wrong for `char(n)`.** A prefix LIKE on a `char(n)` column gets a `text_pattern_ops` key, which HypoPG refuses. The column needs `bpchar_pattern_ops`. The refusal is recorded and costs only a wasted candidate, but the useful key is missed.
+4. **The skip rule and its docs don't match.**
+   - Under `COLLATE "ucs_basic"`, a prefix LIKE still gets a `text_pattern_ops` key, though a plain btree already serves it.
+   - DESIGN.md says the extra key is skipped only under `COLLATE "C"`, but the code also skips it under POSIX.
+
+- **Depends on:** 20260923-21.
+- **Came from:** The review of 20260923-21, 2026-10-08.
+- **Design:** index-from-query.
 - **Status:** todo
