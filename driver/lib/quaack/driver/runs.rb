@@ -38,30 +38,33 @@ module Quaack
       end
 
       # The run's jump host, or nil if this laptop never started it. Each
-      # reader raises Unreadable for a record it can't read.
-      def host(run_id) = read(run_id)&.fetch("jump_host", nil)
+      # reader reads the record once, and raises Unreadable for a record it
+      # can't read, including one whose jump host isn't a string.
+      def host(run_id) = where(run_id)&.fetch(:jump)
 
       # The run's production server, or nil if this laptop never started it,
       # an older driver did without recording it, or it isn't a host name.
-      def server(run_id)
-        server = read(run_id)&.fetch("server", nil)
-        server if server.is_a?(String) && SERVER.match?(server)
-      end
+      def server(run_id) = where(run_id)&.fetch(:server)
 
       # The run's production port, the quaack start --port the operator
       # gave, or nil if they gave none, an older driver didn't record it, or
       # it isn't a port (Protocol::Port), checked again on read, since a
       # note shows it.
-      def port(run_id)
-        port = read(run_id)&.fetch("port", nil)
-        port if Protocol::Port.valid?(port)
-      end
+      def port(run_id) = where(run_id)&.fetch(:port)
 
       # The run's jump host, production server and port, as jump:, server:
-      # and port:, for a connection failure's note
-      # (EnclaveError#rule_with_note), or nil if this laptop never started
-      # it.
-      def where(run_id) = (jump = host(run_id)) && { jump:, server: server(run_id), port: port(run_id) }
+      # and port:, all from one read of the record, for a connection
+      # failure's note (EnclaveError#rule_with_note), or nil if this laptop
+      # never started it.
+      def where(run_id)
+        record = read(run_id) or return
+        jump = record["jump_host"]
+        raise Unreadable.new(run_id, " (jump host isn't a string)") unless jump.is_a?(String)
+
+        server, port = record.values_at("server", "port")
+        { jump:, server: (server if server.is_a?(String) && SERVER.match?(server)),
+          port: (port if Protocol::Port.valid?(port)) }
+      end
 
       private
 

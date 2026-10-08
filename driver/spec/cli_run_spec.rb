@@ -780,7 +780,9 @@ RSpec.describe "quaack run" do
 
   # Task 20261007-23: the record's JSON is checked, never quoted.
   { "isn't valid JSON" => ["{\"jump_host\": \"sentinel-7f3a", "not valid JSON"],
-    "isn't a JSON object" => ['"sentinel-7f3a"', "not a JSON object"] }.each do |what, (text, problem)|
+    "isn't a JSON object" => ['"sentinel-7f3a"', "not a JSON object"],
+    "has a jump host that isn't a string" => ['{"jump_host": {"sentinel-7f3a": 1}}',
+                                              "jump host isn't a string"] }.each do |what, (text, problem)|
     it "refuses a run record that #{what} as a usage error, naming it by ~" do
       File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"), text)
 

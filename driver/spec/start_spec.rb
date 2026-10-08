@@ -439,4 +439,41 @@ RSpec.describe Quaack::Driver::Start do
   it "reads back no host for a run it never recorded" do
     expect(Quaack::Driver::Runs.new(home).host(run_id)).to be_nil
   end
+
+  # Task 20261007-35: where reads the record once, so it can't mix the
+  # jump host of one version with the server of another.
+  it "reads the record once for where" do
+    Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1", port: "6543")
+    path = File.join(home, ".quaack", "runs", "#{run_id}.json")
+    allow(File).to receive(:read).and_call_original
+
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: "6543")
+    expect(File).to have_received(:read).with(path).once
+  end
+
+  # Task 20261007-35: a jump host that isn't a string is refused, like a
+  # record that isn't JSON, and the message never quotes it.
+  [5, ["sentinel-7f3a"], { "sentinel-7f3a" => 1 }, nil].each do |jump|
+    it "refuses a record whose jump host is #{jump.inspect}, never quoting it" do
+      FileUtils.mkdir_p(File.join(home, ".quaack", "runs"))
+      File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"),
+                 JSON.generate("jump_host" => jump, "server" => "prod-1"))
+      runs = Quaack::Driver::Runs.new(home)
+
+      %i[host where].each do |reader|
+        expect { runs.public_send(reader, run_id) }
+          .to raise_error(Quaack::Driver::Runs::Unreadable,
+                          "can't read ~/.quaack/runs/#{run_id}.json (jump host isn't a string)")
+      end
+    end
+  end
+
+  it "refuses a record with no jump host, rather than calling the run unknown" do
+    FileUtils.mkdir_p(File.join(home, ".quaack", "runs"))
+    File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"), JSON.generate("server" => "prod-1"))
+
+    expect { Quaack::Driver::Runs.new(home).where(run_id) }
+      .to raise_error(Quaack::Driver::Runs::Unreadable,
+                      "can't read ~/.quaack/runs/#{run_id}.json (jump host isn't a string)")
+  end
 end
