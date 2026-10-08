@@ -612,20 +612,7 @@ Minor findings from the review of 20260929-8.
 
 ### 20260929-17. Test the prompt-pack template's recovery from a failed build. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
-
-A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
-
-- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-4/reply-claude-3.md`
-- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-5/reply-gemini-3.md`
-- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-9/reply-claude-3.md`
-
-It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
-
-- **Depends on:** nothing open.
-- **Came from:** Review of 20260929-13, round one.
-- **Design:** none. Test harness and prompt pack only.
-- **Status:** todo
+### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there. Done, see BACKLOG-COMPLETE.md.
 

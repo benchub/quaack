@@ -7075,3 +7075,19 @@ From the review of 20261007-15. With a lone `llm` block, an `llm_rate_limited`, 
 - **Design:** Several LLM providers.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. With a lone `llm` block, the router stores each marked-down provider's original `Error`, and the next unit re-raises it unchanged, so the operator sees the API's own detail and the skipped ask's sizes, with no provider name and no list form; across 70 lone-block cases every line and error reads as before 20261007-14. A pipeline spec pins the enclave's round numbers 1, 2, 3 across a fresh start. DESIGN.md describes the lone-block behavior, pending the user's confirmation, and (fixed at landing) says `llm_bad_response` marks nothing. For the user: after a skipped round, the step that fails is a later one, while the message's sizes name llm-index-ideas.
+
+### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
+
+A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
+
+- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-4/reply-claude-3.md`
+- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-5/reply-gemini-3.md`
+- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-9/reply-claude-3.md`
+
+It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
+
+- **Depends on:** nothing open.
+- **Came from:** Review of 20260929-13, round one.
+- **Design:** none. Test harness and prompt pack only.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The prompt pack's leak check (`PromptPack.leaks`) no longer scans LLM reply files, matched by the same exact name rule the replay uses, so a model that invents a sentinel-like date isn't flagged. Every prompt, chat, and other file stays scanned, and everything QUAACK sent, earlier turns included, lives in a scanned `prompt.md` or `chat.md`, so a reply that echoes a leak is still caught through its prompt. Planted-leak tests cover every scanned kind of file. Not filed: the glob skips the corpus root's README and the replay's planted root, as before.
