@@ -7213,3 +7213,18 @@ Add `fan_out` for llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas. Ru
 - **Design:** Several LLM providers (Routing, Limits), llm-index-ideas, llm-rewrites.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings, and a merge of main (with 20261007-17). With `"fan_out": true` on llm-rewrites, llm-index-ideas, or rewrite-llm-index-ideas, the step runs its unit on every healthy provider in its pool, one after another. The union goes to the enclave in one interleaved call per round, with exact repeats dropped, so the enclave's cap of five still holds and drops the rest as `too_many`. Each branch asks for its own replacements, a branch whose replacement round fails keeps its first-round ideas, a branch that fails over is dropped with a progress line, and `llm_bad_request` fails the step. Provenance credits each outcome to its branch by position, and the report's per-provider rows read it. Driver only; no enclave or protocol change. This finishes the split of 20260929-2.
+
+### 20261007-57. Error-detail scrub: minors from 20261007-54.
+
+From the builder and reviews of 20261007-54.
+1. A token from an `ant auth login` profile isn't scrubbed, though it's sent as `Authorization: Bearer` like `auth_token`, so a gateway could echo it. Unusual (a profile with a gateway `base_url`), and the token rotates. Scrub the profile's current token too, read when the error happens.
+2. A non-secret query value of eight characters or more (`?provider=anthropic`) is replaced everywhere in the message, so "anthropic" becomes `[key]`. Scrub only whole tokens, or only values that look like secrets.
+3. A very short own key (a one-character test secret) wrecks the message (`the API an[key]wered`). Real keys are long; scrub own keys only above a minimum length or at token boundaries.
+4. A password in the `base_url` itself (`https://user:pass@host`) and a key in the `base_url` path aren't scrubbed. Scrub them, or list them as unsupported in DESIGN.md.
+5. `APIErrorDetail.query_values`'s `rescue URI::InvalidURIError` is untested, and `LLM::URL` allows strings `URI.parse` rejects. Add a test.
+
+- **Depends on:** 20261007-54.
+- **Came from:** The builder and reviews of 20261007-54.
+- **Design:** LLM providers, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. The error-detail scrub also covers every bearer token the Anthropic adapter actually sent (so an `ant auth login` profile token too), a password or user in `base_url`, and its path segments of 16 characters or more. Secrets of 16 characters or more are scrubbed anywhere; shorter ones only as whole tokens, so `anthropic-version` stays readable. `LLM::URL` now refuses a `base_url` that `URI.parse` rejects, since the anthropic gem would otherwise raise with the whole URL, key included, in its message. DESIGN.md lists the two cases left unsupported in v1.

@@ -2230,19 +2230,7 @@ From the reviews of 20261007-16.
 - **Design:** Several LLM providers, report.
 - **Status:** todo
 
-### 20261007-57. Error-detail scrub: minors from 20261007-54.
-
-From the builder and reviews of 20261007-54.
-1. A token from an `ant auth login` profile isn't scrubbed, though it's sent as `Authorization: Bearer` like `auth_token`, so a gateway could echo it. Unusual (a profile with a gateway `base_url`), and the token rotates. Scrub the profile's current token too, read when the error happens.
-2. A non-secret query value of eight characters or more (`?provider=anthropic`) is replaced everywhere in the message, so "anthropic" becomes `[key]`. Scrub only whole tokens, or only values that look like secrets.
-3. A very short own key (a one-character test secret) wrecks the message (`the API an[key]wered`). Real keys are long; scrub own keys only above a minimum length or at token boundaries.
-4. A password in the `base_url` itself (`https://user:pass@host`) and a key in the `base_url` path aren't scrubbed. Scrub them, or list them as unsupported in DESIGN.md.
-5. `APIErrorDetail.query_values`'s `rescue URI::InvalidURIError` is untested, and `LLM::URL` allows strings `URI.parse` rejects. Add a test.
-
-- **Depends on:** 20261007-54.
-- **Came from:** The builder and reviews of 20261007-54.
-- **Design:** LLM providers, trust boundary.
-- **Status:** todo
+### 20261007-57. Error-detail scrub: minors from 20261007-54. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-58. Equality: planted operators on domains and same-signature shadows.
 
@@ -2277,4 +2265,15 @@ From the builder and review of 20261007-18.
 - **Depends on:** 20261007-18.
 - **Came from:** The builder and review of 20261007-18.
 - **Design:** Several LLM providers, report.
+- **Status:** todo
+
+### 20261007-61. Error-detail scrub: invalid percent encodings, and encoded own keys.
+
+From the review of 20261007-57.
+1. A `base_url` with an invalid UTF-8 percent sequence (`?k=SECRET%E2`, `/SECRETPATHKEY0123%E2/`) passes `LLM::URL`, but decoding it gives an invalid byte string, and `APIErrorDetail.scrub` then raises a `RegexpError` whose message quotes the secret, escaping `detail` with the SDK's error as its implicit cause. Main already had this for query values; 20261007-57 extended it to path segments. Drop decoded values that aren't valid encoding, or refuse such a `base_url` in the settings, with a sentinel test.
+2. A URL-encoded echo of a Bedrock bearer token or AWS session token (base64, with `+`, `/`, `=` as `%2B`, `%2F`, `%3D`) isn't scrubbed, since own keys get no encoded form. Scrub the encoded form too, or list it as unsupported in v1.
+
+- **Depends on:** 20261007-57.
+- **Came from:** The review of 20261007-57.
+- **Design:** LLM providers, trust boundary.
 - **Status:** todo
