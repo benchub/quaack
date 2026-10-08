@@ -7203,3 +7203,13 @@ Add `counterexample_pairing` with `any`, `prefer_different`, and `require_differ
 - **Design:** Several LLM providers (Adversarial pairing), llm-counterexamples, report.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. `llm_routing.counterexample_pairing` works for llm-counterexamples. Under `prefer_different`, the rewrite's author (the entry that wrote it, or one with the same model string, read from the provenance record) goes last; under `require_different` it's left out, and with nothing else left the step fails as `llm_unavailable`, naming the rewrite and its author. Fresh starts keep the pairing. Each counterexample unit records met, not_met, not_applicable, or unchecked, and the report says whether each rewrite's pairing was met, with a warning when it wasn't or couldn't be checked. No provider name or model reaches a prompt or the enclave.
+
+### 20261007-18. Fan-out.
+
+Add `fan_out` for llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas. Run branches one after another, never at once. Send each union in one interleaved call after dropping exact repeats, so the caps of five stay the step's in all. Drop a failed branch with its line and go on, failing the step only when every branch failed or one hit `llm_bad_request`. Give each branch its own replacement round, keeping its first-round ideas if that round fails. Map outcomes back to branches by position for provenance. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-16.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Routing, Limits), llm-index-ideas, llm-rewrites.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings, and a merge of main (with 20261007-17). With `"fan_out": true` on llm-rewrites, llm-index-ideas, or rewrite-llm-index-ideas, the step runs its unit on every healthy provider in its pool, one after another. The union goes to the enclave in one interleaved call per round, with exact repeats dropped, so the enclave's cap of five still holds and drops the rest as `too_many`. Each branch asks for its own replacements, a branch whose replacement round fails keeps its first-round ideas, a branch that fails over is dropped with a progress line, and `llm_bad_request` fails the step. Provenance credits each outcome to its branch by position, and the report's per-provider rows read it. Driver only; no enclave or protocol change. This finishes the split of 20260929-2.

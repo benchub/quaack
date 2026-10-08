@@ -1254,14 +1254,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261007-17. Adversarial pairing. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-18. Fan-out.
-
-Add `fan_out` for llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas. Run branches one after another, never at once. Send each union in one interleaved call after dropping exact repeats, so the caps of five stay the step's in all. Drop a failed branch with its line and go on, failing the step only when every branch failed or one hit `llm_bad_request`. Give each branch its own replacement round, keeping its first-round ideas if that round fails. Map outcomes back to branches by position for provenance. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
-
-- **Depends on:** 20261007-16.
-- **Came from:** The split of 20260929-2.
-- **Design:** Several LLM providers (Routing, Limits), llm-index-ideas, llm-rewrites.
-- **Status:** todo
+### 20261007-18. Fan-out. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-20. `quaack deploy` removes old enclave versions. Done, see BACKLOG-COMPLETE.md.
 
@@ -2273,4 +2266,15 @@ From the review of 20261007-17.
 - **Depends on:** 20261007-17.
 - **Came from:** The review of 20261007-17.
 - **Design:** Several LLM providers.
+- **Status:** todo
+
+### 20261007-60. Fan-out: minors from 20261007-18.
+
+From the builder and review of 20261007-18.
+1. A fan-out branch dropped for `llm_bad_response` isn't in the report, though DESIGN.md says "the progress line and the report say which and why". Branches dropped for rate limits, unavailability, or credentials show only as "marked down" in the providers table, with no step named. Record each failed fan-out branch with its step and rule in the provenance record, and show it in the report.
+2. When two branches propose the same SQL or DDL, only the first writer gets credit in `rewrites_proposed` and the index counts (so the per-provider counts add up). Say so in DESIGN.md, or record repeats separately.
+
+- **Depends on:** 20261007-18.
+- **Came from:** The builder and review of 20261007-18.
+- **Design:** Several LLM providers, report.
 - **Status:** todo
