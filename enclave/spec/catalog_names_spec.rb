@@ -25,7 +25,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
     quaack/enclave/arena_schema/unique_indexes.rb
     quaack/enclave/clock_defaults.rb
     quaack/enclave/counterexamples/evaluated.rb
-    quaack/enclave/denormalized_fixture.rb
     quaack/enclave/insert_check.rb
     quaack/enclave/insert_clock_words.rb
     quaack/enclave/insert_values.rb

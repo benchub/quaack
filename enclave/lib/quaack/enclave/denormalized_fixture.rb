@@ -37,9 +37,10 @@ module Quaack
 
       FOREIGN_KEYS = <<~SQL
         SELECT c.conname FROM pg_catalog.pg_constraint c
-        WHERE c.conrelid = $1::regclass AND c.contype = 'f'
+        WHERE c.conrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND c.contype OPERATOR(pg_catalog.=) 'f'
           AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
-                      WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) AND a.attname = $2)
+                      WHERE a.attrelid OPERATOR(pg_catalog.=) c.conrelid
+                        AND a.attnum OPERATOR(pg_catalog.=) ANY (c.conkey) AND a.attname OPERATOR(pg_catalog.=) $2)
       SQL
 
       module_function
