@@ -1857,6 +1857,7 @@ From the builder and review of 20261004-80.
 - **Depends on:** 20261004-80.
 - **Came from:** The builder and review of 20261004-80.
 - **Design:** report, burndown.
+- **Landed so far:** item 1, 2026-10-08 (task/20261004-89, commit 835eb325; review clean). Items 2 and 3 wait on a user decision, since DESIGN.md keeps both cells "not recorded" on purpose. Item 2 would add a `sources` list to each `indexes` entry in the payload, checked on the way out, and the user would also choose what the cell says for a rewrite with new indexes. Item 3 would record index-dedupe's and index-test's drops by generator in the burndown, which changes its shape.
 - **Status:** todo
 
 ### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values. Done, see BACKLOG-COMPLETE.md.
