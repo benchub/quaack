@@ -53,7 +53,7 @@ module Quaack
     # Casts don't normalize away: "status::text = 'open'" stays different.
     # A predicate that pg_query deparses as SQL that doesn't parse back to the
     # same expression, even with Deparse::Parentheses, such as 't'::boolean, is
-    # refused with ArgumentError, since stored that way it would mean
+    # refused with Error, since stored that way it would mean
     # something else. from_ddl returns nil for one.
     # The constructor refuses a predicate with a parameter ($1), a subquery,
     # or an aggregate, window, or grouping call. It finds a plain call like
@@ -86,7 +86,7 @@ module Quaack
     IndexCandidate = Data.define(:table, :key, :include, :access_method, :predicate, :unique, :sources) do
       # One keyword per member, which is more than the cop allows.
       def initialize(table:, key:, sources:, include: [], access_method: :btree, predicate: nil, unique: false) # rubocop:disable Metrics/ParameterLists
-        raise ArgumentError, "table must be a schema-qualified TableName" unless table.is_a?(TableName)
+        raise IndexCandidateError, "table must be a schema-qualified TableName" unless table.is_a?(TableName)
 
         key = key_columns(key)
         include = include_columns(include, key)
@@ -102,7 +102,7 @@ module Quaack
       # shape can't represent: an opclass with parameters, NULLS
       # NOT DISTINCT, ON ONLY, WITH options, TABLESPACE, CONCURRENTLY, IF NOT
       # EXISTS, an unqualified table, or anything the constructor refuses.
-      # Raises ArgumentError if the SQL isn't exactly one CREATE INDEX. No
+      # Raises Error if the SQL isn't exactly one CREATE INDEX. No
       # error message includes the SQL.
       def self.from_ddl(sql, sources:) = IndexSql.read_index(sql, sources)
 
@@ -133,7 +133,7 @@ module Quaack
       # A copy of this candidate with the other's sources added. The other
       # must have the same definition.
       def merge_sources(other)
-        raise ArgumentError, "can't merge sources from a candidate with a different definition" unless self == other
+        raise IndexCandidateError, "can't merge sources from a different definition" unless self == other
 
         with(sources: sources | other.sources)
       end
@@ -164,7 +164,7 @@ module Quaack
 
       def key_columns(key)
         columns = key.map { |k| k.is_a?(IndexCandidate::KeyColumn) ? k : IndexCandidate::KeyColumn.new(name: k) }.freeze
-        raise ArgumentError, "key must have at least one column" if columns.empty?
+        raise IndexCandidateError, "key must have at least one column" if columns.empty?
 
         columns
       end
@@ -172,7 +172,7 @@ module Quaack
       def include_columns(include, key)
         columns = include.map { |c| IndexKeySql.column_name(c) }.freeze
         both = key.map(&:name) & columns
-        raise ArgumentError, "columns in both the key and INCLUDE: #{both.map(&:inspect).join(", ")}" if both.any?
+        raise IndexCandidateError, "columns in both the key and INCLUDE: #{both.map(&:inspect).join(", ")}" if both.any?
 
         columns
       end
@@ -182,16 +182,16 @@ module Quaack
         name = method.to_s.downcase
         return name.to_sym if /\A[a-z_][a-z0-9_]*\z/.match?(name)
 
-        raise ArgumentError, "index method must be a plain identifier, got #{method.inspect}"
+        raise IndexCandidateError, "index method must be a plain identifier, got #{method.inspect}"
       end
 
       def normalize_predicate(sql)
         return nil if sql.nil?
-        raise ArgumentError, "predicate must be SQL text or nil" unless sql.is_a?(String)
+        raise IndexCandidateError, "predicate must be SQL text or nil" unless sql.is_a?(String)
 
         # No separate blankness check: IndexSql.normalize_predicate parses "" and
         # whitespace-only text as an empty WHERE clause, which pg_query refuses
-        # as a syntax error, so it already raises ArgumentError on its own.
+        # as a syntax error, so it already raises Error on its own.
         IndexSql.normalize_predicate(sql)
       end
 
@@ -213,7 +213,7 @@ module Quaack
     # An expression is parsed at construction and stored as pg_query
     # deparses it, so "LOWER( email )" and "(lower(email))" are equal. One
     # that's only a column, such as "(email)", becomes that column's name.
-    # It's refused, with ArgumentError, unless it's one expression with no
+    # It's refused, with IndexCandidate::Error, unless it's one expression with no
     # parameter, subquery, or aggregate, window, or grouping call, as for a
     # predicate. Casts don't normalize away, and neither does anything else
     # Postgres would resolve with the catalog. Function volatility isn't
@@ -270,10 +270,11 @@ module Quaack
         choice = value.to_s.downcase.to_sym
         return choice if allowed.include?(choice)
 
-        raise ArgumentError, "#{what} must be one of #{allowed.inspect}, got #{value.inspect}"
+        raise IndexCandidateError, "#{what} must be one of #{allowed.inspect}, got #{value.inspect}"
       end
     end
 
     IndexCandidate::KeyColumn::DEFAULT_NULLS = { asc: :last, desc: :first }.freeze
+    IndexCandidate::Error = IndexCandidateError
   end
 end

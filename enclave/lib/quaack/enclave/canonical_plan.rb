@@ -217,10 +217,8 @@ module Quaack
         # The fingerprint of SQL that must be one SELECT with nothing but a
         # WHERE clause or a one-key ORDER BY. Anything else is unparsed.
         def fingerprint(sql, default)
-          result = PgQuery.parse(subplans_as_sql(sql))
-          stmts = result.tree.stmts
-          select = stmts.first.stmt.select_stmt if stmts.size == 1
-          return unparsed unless select && PlanExpression.bare?(select)
+          result, select = PlanExpression.parse_bare(subplans_as_sql(sql))
+          return unparsed unless result
 
           normalize(select, default)
           result.fingerprint

@@ -90,7 +90,7 @@ module Quaack
         unreplaceable = []
         builder.atoms.each_with_index do |atom, i|
           loosened[i] = PredicateAtoms.with_true(builder.parse, atom)
-        rescue ArgumentError, Deparse::Error
+        rescue PredicateAtoms::Error, Deparse::Error
           unreplaceable << i
         end
         [loosened, unreplaceable]

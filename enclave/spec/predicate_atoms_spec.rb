@@ -421,7 +421,8 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       parse = PgQuery.parse("SELECT 1 FROM public.orders o JOIN public.customers c USING (id)")
       atom = described_class.extract(parse, column_names:).first
       expect(atom.replaceable).to be(false)
-      expect { described_class.with_true(parse, atom) }.to raise_error(ArgumentError, /USING/)
+      expect { described_class.with_true(parse, atom) }
+        .to raise_error(described_class::Error, /USING/) { expect(it.rule).to eq("using_column_unreplaceable") }
     end
 
     it "marks every other atom replaceable" do
@@ -696,7 +697,7 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
   describe "input" do
     it "takes only a pg_query parse of one SELECT, and never quotes the SQL" do
       [
-        ["SELECT 'SECRET'", ArgumentError, "expected a pg_query parse result"],
+        ["SELECT 'SECRET'", described_class::Error, "expected a pg_query parse result"],
         [PgQuery.parse("SELECT 'SECRET'; SELECT 2"), Quaack::Enclave::SupportedSql::Error,
          "unsupported_construct: ParseResult with 2 statements, not one"],
         [PgQuery.parse("UPDATE public.orders SET note = 'SECRET'"), Quaack::Enclave::SupportedSql::Error,
@@ -705,6 +706,8 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
         expect { described_class.extract(input, column_names:) }
           .to raise_error(error, message) { |e| expect(e.message).not_to include("SECRET") }
       end
+      expect { described_class.extract("SELECT 1", column_names:) }
+        .to raise_error(described_class::Error) { expect(it.rule).to eq("not_a_query_parse") }
     end
 
     it "handles an atom deeper than protobuf's default nesting limit" do
