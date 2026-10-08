@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pg_query"
+
 module Quaack
   module Enclave
     module PiiClassification
@@ -27,8 +29,9 @@ module Quaack
       #   finite number, and correlation one in -1..1. Each may be nil, as
       #   for a column with no pg_stats row.
       # - A statistics object's: kinds some of d, f, m, and e; each MCV
-      #   frequency and base frequency a finite number in 0..1; each MCV
-      #   null flag a boolean, one list per MCV item; n_distinct and
+      #   frequency and base frequency a finite number in 0..1, one of each
+      #   per MCV item; each MCV null flag a boolean, one list per MCV item
+      #   and one flag per column of the object; n_distinct and
       #   dependencies Postgres's text for pg_ndistinct and pg_dependencies,
       #   whole numbers or numbers keyed by column numbers. Any may be nil
       #   but kinds.
@@ -70,6 +73,7 @@ module Quaack
           need(table, "kinds", object["kinds"].is_a?(Array) && object["kinds"].all? { KINDS.include?(it) })
           check_fields(table, object, OBJECT_FIELDS)
           need(table, "most_common_val_nulls", one_list_per_item?(object))
+          need(table, "most_common_freqs", one_frequency_per_item?(object))
         end
 
         def check_fields(table, data, fields)
@@ -92,10 +96,34 @@ module Quaack
 
         def dependencies?(value) = value.is_a?(String) && DEPENDENCIES.match?(value)
 
-        # Null flags come only with MCV items, one list for each.
+        # Null flags come only with MCV items, one list for each, and one
+        # flag in each list for each column (key or expression) the object's
+        # definition names.
         def one_list_per_item?(object)
           nulls, items = object.values_at("most_common_val_nulls", "most_common_vals")
-          nulls.nil? || (items.is_a?(Array) && nulls.size == items.size)
+          return true if nulls.nil?
+
+          width = column_count(object["definition"])
+          items.is_a?(Array) && nulls.size == items.size && !width.nil? && nulls.all? { it.size == width }
+        end
+
+        # Frequencies and base frequencies come together, one of each per
+        # MCV item. MCV items may be left out (see PiiClassification), but
+        # when they're in, the counts must match them.
+        def one_frequency_per_item?(object)
+          freqs, bases, items = object.values_at("most_common_freqs", "most_common_base_freqs", "most_common_vals")
+          return bases.nil? && items.nil? if freqs.nil?
+
+          !bases.nil? && bases.size == freqs.size && (items.nil? || (items.is_a?(Array) && items.size == freqs.size))
+        end
+
+        # How many columns a CREATE STATISTICS definition names, or nil
+        # when it won't parse as one.
+        def column_count(definition)
+          stmts = PgQuery.parse(definition).tree.stmts
+          stmts.first.stmt.create_stats_stmt&.exprs&.size if stmts.size == 1
+        rescue PgQuery::ParseError, TypeError
+          nil
         end
 
         def flag_lists?(value)

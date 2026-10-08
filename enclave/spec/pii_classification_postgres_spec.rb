@@ -621,6 +621,11 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       res = tags_result
 
       expect(ext(res, "tags_low_ext")["most_common_vals"]).to contain_exactly(%w[Blue blue], %w[Red red])
+      # One null flag per column, an expression counting as one, and one
+      # frequency of each kind per MCV item (see OutboundShape).
+      expect(ext(res, "tags_low_ext")).to include("most_common_val_nulls" => [[false, false]] * 2,
+                                                  "most_common_freqs" => [0.5, 0.5],
+                                                  "most_common_base_freqs" => [0.25, 0.25])
       expect(ext(res, "tags_kind_ext")["most_common_vals"]).to be_nil
       expect(ext(res, "tags_kind_ext")["most_common_freqs"].sum).to be_within(0.001).of(1.0)
       expect(ext(res, "tags_secret_ext").values_at("most_common_vals", "most_common_freqs",
