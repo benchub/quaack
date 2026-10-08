@@ -122,8 +122,7 @@ module Quaack
 
         # format_type names pg_catalog's type with its schema when the
         # search_path finds another of that name first.
-        name = type.delete_prefix("pg_catalog.")
-        BOUNDARIES.find { |pattern, _| pattern.match?(name) }&.last || []
+        BOUNDARIES.find { |pattern, _| pattern.match?(type.delete_prefix("pg_catalog.")) }&.last || []
       end
 
       def pool(conn, parse, atom, schema, probe = nil)

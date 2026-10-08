@@ -165,6 +165,40 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
     end
   end
 
+  # Task 20261007-41: each deferred UPDATE finds its row by tableoid and
+  # ctid, which public's = on oid would hide.
+  it "loads deferred rows and a deferred insert's updates as with nothing planted" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.accounts (id integer PRIMARY KEY, course_template_id integer);
+      CREATE TABLE fx.courses (id integer PRIMARY KEY, account_id integer NOT NULL REFERENCES fx.accounts);
+      ALTER TABLE fx.accounts ADD FOREIGN KEY (course_template_id) REFERENCES fx.courses;
+    SQL
+    row = Quaack::Enclave::ArenaRunner::FixtureRow
+    account = lambda do |template, deferred|
+      row.new(table: tn("accounts"), columns: %w[id course_template_id], values: ["1", template], deferred:)
+    end
+    course = row.new(table: tn("courses"), columns: %w[id account_id], values: %w[10 1])
+    insert = Quaack::Enclave::ArenaRunner::DeferredInsert.new(sql: "INSERT INTO fx.accounts (id) VALUES (2), (3)",
+                                                              updates: [{ "course_template_id" => "10" }, {}])
+    # The deferred rows, then the deferred insert's updates: each a load
+    # that fails, without the row its UPDATE looks for.
+    loads = lambda do
+      [[[account.call("10", ["course_template_id"]), course], []], [[account.call(nil, []), course], [insert]]]
+        .map do |rows, inserts|
+          runner.with_fixture(rows, inserts:) do |tx|
+            tx.query("SELECT a.id, a.course_template_id FROM fx.accounts a ORDER BY a.id").rows
+          end
+        rescue Quaack::Enclave::ArenaRunner::Error => e
+          e.rule
+        end
+    end
+    baseline = loads.call
+    expect(baseline).to eq([[%w[1 10]], [["1", nil], %w[2 10], ["3", nil]]])
+    plant
+
+    expect(loads.call).to eq(baseline)
+  end
+
   it "counts arena's tables and finds the ones with user triggers" do
     conn.exec("CREATE FUNCTION fx.noop() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$")
     conn.exec("CREATE TRIGGER t BEFORE INSERT ON fx.orders FOR EACH ROW EXECUTE FUNCTION fx.noop()")
