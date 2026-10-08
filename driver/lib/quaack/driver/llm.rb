@@ -60,11 +60,13 @@ module Quaack
       # bedrock's, each nil for the AWS SDK's own lookup. command_template and
       # timeout_seconds are copilot_cli's, nil for its defaults. max_retries
       # is how many times an SDK adapter's gem retries a 408, 409, 429, or
-      # 5xx, nil for the gem's own default. at is where the settings sit in
-      # the file, llm or an entry such as llms[2], for an adapter's messages
-      # that name a key.
+      # 5xx, nil for the gem's own default. token_limit_param is the name
+      # openai_compatible sends the token limit under, nil for
+      # max_completion_tokens. at is where the settings sit in the file, llm
+      # or an entry such as llms[2], for an adapter's messages that name a
+      # key.
       Settings = Data.define(:provider, :model, :base_url, :api_key_env, :aws_region, :aws_profile,
-                             :command_template, :timeout_seconds, :max_retries, :at)
+                             :command_template, :timeout_seconds, :max_retries, :token_limit_param, :at)
 
       NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/
       LINE = /\A[^\n\r]*\S[^\n\r]*\z/
@@ -80,6 +82,11 @@ module Quaack
       # eusc-de-east-1.
       REGION = /\A[a-z]{2,4}(-[a-z]+)+-\d+\z/
 
+      # The names openai_compatible can send its token limit under. OpenAI,
+      # Groq, Gemini, and OpenRouter take the first, the default. Ollama
+      # reads only the second.
+      TOKEN_LIMIT_PARAMS = %w[max_completion_tokens max_tokens].freeze
+
       # Each key of the block: whether a value is good, and what a bad one
       # is told.
       CHECKS = {
@@ -92,7 +99,8 @@ module Quaack
         "command_template" => [->(v) { command_template?(v) },
                                "must be an argv array with {prompt_file} and {model} placeholders"],
         "timeout_seconds" => [->(v) { v.is_a?(Numeric) && v.positive? && v.finite? }, "must be a positive number"],
-        "max_retries" => [->(v) { v.is_a?(Integer) && v.between?(0, 10) }, "must be a whole number from 0 to 10"]
+        "max_retries" => [->(v) { v.is_a?(Integer) && v.between?(0, 10) }, "must be a whole number from 0 to 10"],
+        "token_limit_param" => [->(v) { TOKEN_LIMIT_PARAMS.include?(v) }, "must be #{TOKEN_LIMIT_PARAMS.join(" or ")}"]
       }.freeze
       KEYS = CHECKS.keys.freeze
 
@@ -102,7 +110,8 @@ module Quaack
       ONLY = { "base_url" => %w[anthropic openai_compatible bedrock],
                "api_key_env" => %w[anthropic openai_compatible], "aws_region" => %w[bedrock],
                "aws_profile" => %w[bedrock], "command_template" => %w[copilot_cli],
-               "timeout_seconds" => %w[copilot_cli], "max_retries" => %w[anthropic openai_compatible bedrock] }.freeze
+               "timeout_seconds" => %w[copilot_cli], "max_retries" => %w[anthropic openai_compatible bedrock],
+               "token_limit_param" => %w[openai_compatible] }.freeze
 
       # The variable that overrides each key that has one.
       VARIABLES = { "provider" => PROVIDER_ENV, "model" => MODEL_ENV, "base_url" => BASE_URL_ENV }.freeze
@@ -186,10 +195,7 @@ module Quaack
         value.nil? || value.empty? ? block[name] : check(variable, name, value)
       end
 
-      def self.from_env?(env, name)
-        value = env[VARIABLES.fetch(name)]
-        !value.nil? && !value.empty?
-      end
+      def self.from_env?(env, name) = !env[VARIABLES.fetch(name)].to_s.empty?
 
       # value, if it's good for the key name, or raises, calling it label.
       def self.check(label, name, value)

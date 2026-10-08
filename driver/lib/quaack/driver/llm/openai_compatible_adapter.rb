@@ -51,6 +51,10 @@ module Quaack
       class OpenAICompatibleAdapter
         DEFAULT_KEY_ENV = "OPENAI_API_KEY"
 
+        # The name the token limit goes under, unless the settings'
+        # token_limit_param names another: Ollama reads only max_tokens.
+        DEFAULT_TOKEN_LIMIT_PARAM = "max_completion_tokens"
+
         # The one finish reason of a reply that finished. Any other, such as
         # length, content_filter, tool_calls, or one the gem doesn't know,
         # means it isn't whole.
@@ -76,6 +80,7 @@ module Quaack
         def initialize(settings:, transport: nil, api_key: nil, max_retries: nil)
           max_retries ||= settings.max_retries || ::OpenAI::Client::DEFAULT_MAX_RETRIES
           @model = settings.model
+          @token_limit_param = (settings.token_limit_param || DEFAULT_TOKEN_LIMIT_PARAM).to_sym
           @schema_mode = true
           @attempts = Attempts.new(transport)
           api_key ||= named_key(settings.api_key_env || DEFAULT_KEY_ENV)
@@ -89,7 +94,7 @@ module Quaack
 
         def reply(step:, system:, messages:, max_tokens:, schema:, count:) # rubocop:disable Metrics/ParameterLists
           system = [system, SCHEMA_LINE + JSON.generate(schema)].compact.join("\n\n") if schema
-          params = { model: @model, max_completion_tokens: max_tokens, messages: chat(system, messages) }
+          params = { model: @model, @token_limit_param => max_tokens, messages: chat(system, messages) }
           @attempts.during(count, step) { reply_text(complete(params, schema)) }
         rescue ::OpenAI::Errors::APIError => e
           # The gem's error holds the response's headers and whole body,

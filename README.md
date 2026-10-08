@@ -222,6 +222,7 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 | `aws_profile` | For `bedrock` only: the AWS profile, in `~/.aws`, whose credentials to use. | The AWS SDK's usual lookup |
 | `command_template` | For `copilot_cli` only: an argv array, run without a shell, with `{prompt_file}` and `{model}` placeholders. `{prompt_dir}` is also available. | A locked-down `copilot` prompt-mode command |
 | `timeout_seconds` | For `copilot_cli` only: a positive number of seconds for each command run. | `600` |
+| `token_limit_param` | For `openai_compatible` only: the name the token limit goes under, `max_completion_tokens` or `max_tokens`. Set `max_tokens` for Ollama. | `max_completion_tokens` |
 
 Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. When `QUAACK_LLM_PROVIDER` switches to a provider other than the file's, the driver ignores the whole `llm` block for that run, though it still checks each value, and still refuses a key that doesn't apply to the file's own provider. A `base_url` or `api_key_env` there is meant for the file's provider, and the new provider's key must never go to it. The model and base URL then come only from `QUAACK_MODEL` and `QUAACK_LLM_BASE_URL`, or the new provider's defaults. So `anthropic` gets `claude-opus-5-5` at the Anthropic API, `copilot_cli` gets `claude-opus-5.5`, and `openai_compatible` and `bedrock` need `QUAACK_MODEL`, or the run exits with 64. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
 
@@ -255,7 +256,7 @@ For example, for Groq:
 }
 ```
 
-then `export GROQ_API_KEY=...` before `quaack run`. Give the API root as `base_url`, not the full endpoint: the driver adds `/chat/completions` itself, so a `base_url` that ends in it is a usage error. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`. The driver sends its token limit as `max_completion_tokens`, which Ollama ignores, so a reply from Ollama has no token limit.
+then `export GROQ_API_KEY=...` before `quaack run`. Give the API root as `base_url`, not the full endpoint: the driver adds `/chat/completions` itself, so a `base_url` that ends in it is a usage error. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`. The driver sends its token limit as `max_completion_tokens`, which Ollama ignores, so for Ollama add `"token_limit_param": "max_tokens"` to the block. Without it, a reply from Ollama has no token limit.
 
 The models are examples. Use one your account can call, and **make it a strong model**: QUAACK asks for careful SQL work, and a small model is mostly a waste of time and tokens.
 

@@ -69,6 +69,23 @@ RSpec.describe "the OpenAI-compatible adapter" do
                                              messages: [{ role: "system", content: "You rewrite SQL." }, *messages] }])
     end
 
+    # Task 20261007-25: Ollama ignores max_completion_tokens.
+    it "sends the token limit as max_tokens instead when the settings' token_limit_param says so" do
+      fake.reply("llm-rewrites", "ok")
+      settings = FakeOpenAI.settings("token_limit_param" => "max_tokens")
+      fake.client(burndown:, settings:).ask(step: "llm-rewrites", messages:, max_tokens: 321)
+
+      expect(fake.asks.map(&:body)).to eq([{ model: "fake-model", max_tokens: 321, messages: }])
+    end
+
+    it "sends max_completion_tokens when the settings' token_limit_param names it" do
+      fake.reply("llm-rewrites", "ok")
+      settings = FakeOpenAI.settings("token_limit_param" => "max_completion_tokens")
+      fake.client(burndown:, settings:).ask(step: "llm-rewrites", messages:, max_tokens: 321)
+
+      expect(fake.asks.map(&:body)).to eq([{ model: "fake-model", max_completion_tokens: 321, messages: }])
+    end
+
     it "sends no system message when there's no system prompt" do
       fake.reply("llm-rewrites", "ok")
       ask("llm-rewrites")

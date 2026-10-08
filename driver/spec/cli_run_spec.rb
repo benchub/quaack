@@ -1086,7 +1086,8 @@ RSpec.describe "quaack run" do
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-from-config", base_url: nil,
                                         api_key_env: "MY_KEY", aws_region: nil, aws_profile: nil,
-                                        command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm" }])
+                                        command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                        token_limit_param: nil, at: "llm" }])
     end
 
     it "gives the defaults, with the environment's overrides, when there's no driver.json or no block" do
@@ -1097,10 +1098,12 @@ RSpec.describe "quaack run" do
       expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-opus-5-5",
                                         base_url: "https://env.example.com", api_key_env: nil, aws_region: nil,
                                         aws_profile: nil, command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                        token_limit_param: nil,
                                         at: "llm" },
                                       { provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                         api_key_env: nil, aws_region: nil, aws_profile: nil,
-                                        command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm" }])
+                                        command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                        token_limit_param: nil, at: "llm" }])
     end
 
     it "fails with a usage error naming the key, not the value, before touching the jump server" do
@@ -1189,14 +1192,16 @@ RSpec.describe "quaack run" do
 
     it "gives the client openai_compatible settings" do
       block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
-                "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY", "max_retries" => 6 }
+                "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY", "max_retries" => 6,
+                "token_limit_param" => "max_tokens" }
       write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
 
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "openai_compatible", model: "llama-3.3-70b-versatile",
                                         base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
                                         aws_region: nil, aws_profile: nil, command_template: nil,
-                                        timeout_seconds: nil, max_retries: 6, at: "llm" }])
+                                        timeout_seconds: nil, max_retries: 6, token_limit_param: "max_tokens",
+                                        at: "llm" }])
     end
 
     it "gives the client bedrock settings" do
@@ -1207,7 +1212,8 @@ RSpec.describe "quaack run" do
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "bedrock", model: "us.anthropic.claude-opus-5-5", base_url: nil,
                                         api_key_env: nil, aws_region: "us-west-2", aws_profile: "quaack-bedrock",
-                                        command_template: nil, timeout_seconds: nil, max_retries: nil, at: "llm" }])
+                                        command_template: nil, timeout_seconds: nil, max_retries: nil,
+                                        token_limit_param: nil, at: "llm" }])
     end
 
     it "gives the client copilot_cli settings" do
@@ -1219,6 +1225,7 @@ RSpec.describe "quaack run" do
       expect(seen.map(&:to_h)).to eq([{ provider: "copilot_cli", model: "claude-opus-5.5", base_url: nil,
                                         api_key_env: nil, aws_region: nil, aws_profile: nil,
                                         command_template: template, timeout_seconds: 123, max_retries: nil,
+                                        token_limit_param: nil,
                                         at: "llm" }])
     end
 
