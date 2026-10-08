@@ -112,6 +112,10 @@ module Quaack
         "unsupported_reg_literal" => "The query has a regproc, regprocedure, regoper, or regoperator constant, " \
                                      "or a regclass or regtype constant that isn't one name. QUAACK v1 can't " \
                                      "tune this query.",
+        "name_lookup_function" => "A rewrite calls a function that looks up a name given as text, such as " \
+                                  "to_regclass, and the query doesn't make the same call. QUAACK dropped it.",
+        "untyped_literal" => "A rewrite has a string constant whose type Postgres can't work out without its " \
+                             "value. QUAACK dropped it.",
         "clock_literal" => "The query has 'now', 'today', 'tomorrow', or 'yesterday' in a string Postgres " \
                            "could read as a time. QUAACK v1 can't tune this query.",
         "clock_anchor_in_query" => "The query already calls quaack.clock_anchor(), the function QUAACK puts in " \

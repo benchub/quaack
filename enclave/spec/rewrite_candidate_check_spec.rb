@@ -340,7 +340,176 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     end
   end
 
+  # Task 20261008-31: Postgres reads a reg literal's text through the
+  # catalog when it parses the query, so whether a candidate with one plans
+  # would say whether the name exists. The original's literals are
+  # redacted, so the LLM keeps one as its $n.
+  describe "reg literals" do
+    let(:message) { "unsupported_reg_literal: a reg type's value can come only from the original's $n in v1" }
+
+    %w[regclass regtype regproc regprocedure regoper regoperator regnamespace regrole regcollation regconfig
+       regdictionary].each do |type|
+      it "refuses a #{type} literal" do
+        expect { check("SELECT 'x'::#{type} FROM orders") }.to rejected("unsupported_reg_literal", message)
+      end
+    end
+
+    {
+      "with pg_catalog's schema" => "'public.orders'::pg_catalog.regclass",
+      "as an array" => "'{public.orders}'::regclass[]",
+      "written as CAST" => "CAST('public.orders' AS regclass)",
+      "written as a typed literal" => "regclass 'public.orders'",
+      "written with a quoted type name" => %('public.orders'::"regclass"),
+      "deep in the query" => "(SELECT 1 WHERE coalesce('english'::regconfig, NULL) IS NULL)"
+    }.each do |form, literal|
+      it "refuses one #{form}" do
+        expect { check("SELECT #{literal} FROM orders") }.to rejected("unsupported_reg_literal", message)
+      end
+    end
+
+    it "accepts the original's own, as its $n" do
+      expect(check("SELECT $1::regclass, id FROM orders").sql).to eq("SELECT $1::regclass, id FROM public.orders")
+    end
+
+    it "accepts a literal cast to a type that isn't a reg type" do
+      expect(check("SELECT 'public.orders'::text, 'x'::name FROM orders").sql)
+        .to eq("SELECT 'public.orders'::text, 'x'::name FROM public.orders")
+    end
+  end
+
+  # Task 20261008-31's fix round: a reg value that doesn't come from a
+  # direct cast of a literal. Each form names a relation that exists but
+  # the original doesn't use, and one that's missing, and gets the same
+  # refusal for both, before anything evaluates it.
+  describe "reg values from elsewhere" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA hidden_sentinel; CREATE TABLE hidden_sentinel.secret_sentinel (id int);
+        CREATE DOMAIN public.reg_dom AS regclass
+      SQL
+    end
+
+    let(:names) { %w[hidden_sentinel.secret_sentinel hidden_sentinel.nothere_sentinel] }
+
+    # The outcome of the form with each name in place of X, once it's
+    # checked to be the same for both, and to name neither.
+    def same_outcome(form, original: self.original)
+      outcomes = names.map { outcome(form.gsub("X", it), original) }
+      expect(outcomes.uniq.size).to eq(1), "#{form}: #{outcomes.inspect}"
+      expect(outcomes.first.to_s).not_to include("sentinel")
+      outcomes.first
+    end
+
+    def outcome(sql, original)
+      check(sql, original:)
+      "accepted"
+    rescue described_class::Error => e
+      [e.rule, e.message, e.cause]
+    end
+
+    reg_message = "a reg type's value can come only from the original's $n in v1"
+
+    {
+      "a function's regclass argument" => "SELECT pg_relation_filenode('X') FROM orders",
+      "COALESCE with a $n" => "SELECT COALESCE($1::regclass, 'X') FROM orders",
+      "CASE with a $n" => "SELECT CASE WHEN id > 0 THEN $1::regclass ELSE 'X' END FROM orders",
+      "GREATEST with a $n" => "SELECT GREATEST($1::regclass, 'X') FROM orders",
+      "VALUES with a $n" => "SELECT v FROM orders, (VALUES ($1::regclass), ('X')) AS w(v)",
+      "a UNION with a $n" => "SELECT $1::regclass FROM orders UNION SELECT 'X' FROM orders",
+      "a function's regconfig argument" => "SELECT to_tsvector('X', status) FROM orders",
+      "an array of regclass" => "SELECT array_cat(ARRAY[$1::regclass], '{X}') FROM orders",
+      "a cast to a domain over regclass" => "SELECT 'X'::public.reg_dom FROM orders",
+      "a cast through text" => "SELECT 'X'::text::regclass FROM orders",
+      "a cast through varchar and text" => "SELECT CAST('X' AS varchar)::text::regclass FROM orders",
+      "a column cast" => "SELECT status::regclass FROM orders WHERE status = 'X'",
+      "a cast function" => "SELECT regclass('X'::text) FROM orders",
+      "pg_catalog's cast function" => "SELECT pg_catalog.regtype('X'::text) FROM orders"
+    }.each do |form, sql|
+      it "refuses #{form} the same way whatever it names" do
+        expect(same_outcome(sql)).to eq(["unsupported_reg_literal", "unsupported_reg_literal: #{reg_message}", nil])
+      end
+    end
+
+    {
+      "has_table_privilege" => "SELECT has_table_privilege('X', 'SELECT') FROM orders",
+      "to_regclass" => "SELECT id FROM orders WHERE to_regclass('X') IS NULL",
+      "pg_get_serial_sequence" => "SELECT pg_catalog.pg_get_serial_sequence('X', 'id') FROM orders",
+      "pg_input_is_valid" => "SELECT pg_input_is_valid('X', 'regclass') FROM orders"
+    }.each do |function, sql|
+      it "refuses a call to #{function} the same way whatever it names" do
+        expect(same_outcome(sql)).to eq(
+          ["name_lookup_function",
+           "name_lookup_function: #{function} looks up a name, and the original doesn't make the same call", nil]
+        )
+      end
+    end
+
+    it "refuses a string literal whose type Postgres can't work out the same way whatever it holds" do
+      expect(same_outcome("SELECT id FROM orders WHERE 'X' IS NULL")).to eq(
+        ["untyped_literal", "untyped_literal: the candidate doesn't prepare with its string literals as parameters",
+         nil]
+      )
+    end
+
+    it "accepts a name lookup the original makes, as the original makes it" do
+      original = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT id FROM public.orders WHERE to_regclass($1) IS NULL"
+      )
+      expect(check("SELECT id FROM orders WHERE to_regclass($1) IS NULL", original:).sql)
+        .to eq("SELECT id FROM public.orders WHERE to_regclass($1) IS NULL")
+      expect(same_outcome("SELECT id FROM orders WHERE to_regclass('X') IS NULL", original:).first)
+        .to eq("name_lookup_function")
+    end
+
+    it "types the original's $n as the original does" do
+      original = described_class::Original.new(relations:, placeholders: 1, param_types: [25])
+      expect(check("SELECT $1 IS NULL, 'x' FROM orders", original:).sql)
+        .to eq("SELECT $1 IS NULL, 'x' FROM public.orders")
+      expect { check("SELECT $1 IS NULL, 'x' FROM orders") }.to rejected("untyped_literal")
+    end
+
+    # These read X as an oid, not a name, so they fail the same way for
+    # both names, and needn't be refused.
+    [
+      "SELECT id FROM orders WHERE 'X' = $1::regclass",
+      "SELECT id FROM orders WHERE $1::regclass = ANY('{X}')",
+      "SELECT id FROM orders WHERE $1::regclass IN ('X')",
+      "SELECT NULLIF($1::regclass, 'X') FROM orders",
+      "SELECT id FROM orders WHERE tableoid = 'X'"
+    ].each do |sql|
+      it "accepts #{sql}, which fails to plan the same way whatever X names" do
+        outcomes = names.map do |name|
+          accepted = check(sql.gsub("X", name))
+          conn.exec("EXPLAIN #{accepted.sql.gsub("$1", "'public.orders'::text")}")
+          "plans"
+        rescue PG::Error => e
+          e.result.error_field(PG::PG_DIAG_SQLSTATE)
+        end
+        expect(outcomes).to eq(%w[22P02 22P02])
+      end
+    end
+
+    it "accepts a candidate whose string literals are ordinary text" do
+      sql = "SELECT id, 'x' AS label, COALESCE(status, '') FROM orders WHERE status LIKE 'a%' " \
+            "AND created_at > now() - interval '1 day' AND created_at AT TIME ZONE 'UTC' < $2"
+      expect(check(sql).sql).to eq(
+        "SELECT id, 'x' AS label, COALESCE(status, '') FROM public.orders WHERE status LIKE 'a%' " \
+        "AND created_at > (now() - '1 day'::interval) AND created_at AT TIME ZONE 'UTC' < $2"
+      )
+    end
+
+    it "accepts EXTRACT, whose field is a string literal" do
+      expect(check("SELECT EXTRACT(year FROM created_at) FROM orders").sql)
+        .to eq("SELECT extract ('year' FROM created_at) FROM public.orders")
+    end
+  end
+
   describe "the order of the checks" do
+    it "checks reg literals after placeholders, and before relations" do
+      expect { check("SELECT 'x'::regclass, $7 FROM orders") }.to rejected("bad_placeholder")
+      expect { check("SELECT 'x'::regclass FROM public.nowhere") }.to rejected("unsupported_reg_literal")
+    end
+
     it "checks supported SQL before placeholders" do
       expect { check("SELECT $9 FROM orders FOR UPDATE") }
         .to rejected("unsupported_construct", "unsupported_construct: LockingClause")
@@ -436,6 +605,38 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
       it "treats a function only a role's schema has as it treats one that's missing" do
         expect(rule_for("SELECT secret_fn() FROM orders")).to eq(rule_for("SELECT nothere_fn() FROM orders"))
+      end
+
+      # Task 20261008-31: a reg literal names a relation or a type in text
+      # the relation check never sees. One that's hidden, missing, or in
+      # another schema, even one the original uses, is refused the same
+      # way, with the same message, and the sentinel never comes out.
+      it "refuses a reg literal the same way whatever it names" do
+        conn.exec(<<~SQL)
+          CREATE SCHEMA hidden_sentinel; CREATE TABLE hidden_sentinel.secret_sentinel (id int);
+          CREATE TYPE hidden_sentinel.secret_type AS (a int)
+        SQL
+        literals = [
+          "'hidden_sentinel.secret_sentinel'::regclass", "'hidden_sentinel.nothere_sentinel'::regclass",
+          "'secret_sentinel'::regclass", "'other_sentinel'::regclass", "'nothere_sentinel'::regclass",
+          "'public.orders'::regclass", "'hidden_sentinel.secret_type'::regtype",
+          "'hidden_sentinel.nothere_type'::regtype", "'hidden_sentinel'::regnamespace", "'nothere'::regnamespace"
+        ]
+        errors = literals.map do |literal|
+          check("SELECT #{literal} FROM orders", path)
+        rescue described_class::Error => e
+          [e.message, Quaack::Enclave::ErrorFilter.to_egress(e, step: "llm-rewrites")]
+        end
+
+        expect(errors.uniq.size).to eq(1)
+        message, line = errors.first
+        expect(message).to start_with("unsupported_reg_literal: ")
+        expect(line).to include('"rule":"unsupported_reg_literal"')
+        [message, line].each { expect(it).not_to include("sentinel") }
+      end
+
+      it "accepts the original's own regclass literal, as its $n" do
+        expect(check("SELECT $1::regclass FROM orders", path).sql).to eq("SELECT $1::regclass FROM public.orders")
       end
     end
 

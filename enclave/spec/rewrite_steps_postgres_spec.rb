@@ -191,6 +191,37 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(stored.entry?("rewrite_1")).to be(false)
     end
 
+    # Task 20261008-31: the inbound check prepares a rewrite with its
+    # string literals as parameters, and gives the original's own $n the
+    # original's types.
+    it "types the original's placeholders as the original does when it looks for reg values" do
+      ready
+
+      outcome = rewrite_check(rewrites(rewrite("SELECT o.note, o.status FROM public.orders o " \
+                                               "WHERE o.note = $1 AND ($2 IS NULL OR 'x' <> o.status)")))
+
+      expect(lines(outcome).first).to eq(outcome_line(1, "accepted", nil, "rewrite_1"))
+    end
+
+    context "with a name lookup in the original" do
+      let(:query) do
+        "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
+          "AND to_regclass('public.orders') IS NOT NULL"
+      end
+
+      it "accepts the original's own call, and refuses another" do
+        ready
+        base = "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1 AND "
+
+        outcome = rewrite_check(rewrites(rewrite("#{base}to_regclass($3) IS NOT NULL"),
+                                         rewrite("#{base}to_regclass('public.orders') IS NOT NULL")))
+
+        expect(lines(outcome).first(2)).to eq(
+          [outcome_line(1, "accepted", nil, "rewrite_1"), outcome_line(2, "rejected", "name_lookup_function")]
+        )
+      end
+    end
+
     it "rejects a rewrite with an unmet assumption (assumption-check), after planning it and before any timed run" do
       ready
 
