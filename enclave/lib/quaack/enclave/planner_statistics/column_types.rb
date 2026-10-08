@@ -23,6 +23,12 @@ module Quaack
         # is date, timestamp, or timestamptz: clock-anchor anchors a clock literal
         # compared with one (see ClockLiterals).
         #
+        # A column's type is its type's name, as int8 or timestamptz, when
+        # it's one of pg_catalog's base types (an array of one included, as
+        # _int8). A domain, an enum, or any other schema's type has none.
+        # literals takes a cast placeholder's value from the column's
+        # statistics only when the cast names the column's type.
+        #
         # Every comparison names pg_catalog's operator, so one planted ahead
         # of it on the search_path can't make a type look text-like,
         # sendable, or a clock type.
@@ -45,7 +51,9 @@ module Quaack
                      JOIN pg_catalog.pg_type b ON b.oid OPERATOR(pg_catalog.=) chain.oid
                      WHERE b.typbasetype OPERATOR(pg_catalog.<>) 0)
                    SELECT FROM chain JOIN pg_catalog.pg_type s ON s.oid OPERATOR(pg_catalog.=) chain.oid
-                   WHERE s.typtype OPERATOR(pg_catalog.=) 'e' OR s.oid OPERATOR(pg_catalog.=) ANY (#{SENDABLE_OIDS}))
+                   WHERE s.typtype OPERATOR(pg_catalog.=) 'e' OR s.oid OPERATOR(pg_catalog.=) ANY (#{SENDABLE_OIDS})),
+                 CASE WHEN t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace::pg_catalog.oid
+                      AND t.typtype OPERATOR(pg_catalog.=) 'b' THEN t.typname::pg_catalog.text END
           FROM pg_catalog.pg_attribute a
           JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) a.atttypid
           CROSS JOIN LATERAL (SELECT CASE WHEN t.typbasetype OPERATOR(pg_catalog.<>) 0 THEN t.typbasetype
@@ -56,14 +64,17 @@ module Quaack
 
         module_function
 
-        # column_names, text_columns, sendable_columns, and clock_columns
-        # for the relation whose oid is oid.
+        # column_names, text_columns, sendable_columns, clock_columns, and
+        # column_types for the relation whose oid is oid.
         def read(connection, oid)
           columns = connection.exec_params(COLUMNS_SQL, [oid]).values
           { "column_names" => columns.map(&:first),
             "text_columns" => flagged(columns, 1), "sendable_columns" => flagged(columns, 3),
-            "clock_columns" => columns.filter_map { |name, _, clock| [name, clock] if clock }.to_h }
+            "clock_columns" => named(columns, 2), "column_types" => named(columns, 4) }
         end
+
+        # Each column's name => its value at index, for those that have one.
+        def named(columns, index) = columns.filter_map { |row| [row.first, row[index]] if row[index] }.to_h
 
         # The names of the columns whose boolean at index is true.
         def flagged(columns, index) = columns.filter_map { |row| row.first if row[index] == "t" }

@@ -740,7 +740,7 @@ A picked value keeps the placeholder's declared type. A number placeholder widen
 When a set can't get a value, the placeholder keeps its slow literal there, and the store records why. That happens when the column has no statistics, or lacks the MCV list or histogram the pick needs, or when a value doesn't read as the placeholder's type. Unsupported in v1, these also keep the slow literal in all three sets:
 
 - A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
-- A cast placeholder, such as `DATE '2026-01-01'`, which redact keeps as `$1::date`.
+- A cast placeholder whose cast isn't the column's own type, or has a type modifier, such as `DATE '2026-01-01'` (which redact keeps as `$1::date`) compared with a timestamptz column, or `$1::numeric(3, 0)`. A cast to the column's own type, as psycopg2 writes Django's `'...'::timestamptz` and `'{..}'::bigint[]` in `= ANY`, picks like a plain placeholder, and keeps its cast.
 - A placeholder in a keyset row comparison, such as each of `(created_at, id) < ($1, $2)`.
 - A placeholder that redact shares between expressions, since it can feed more than one place.
 - A clock-reading literal, such as `'today'`, compared with a date or timestamp column, since clock-anchor anchors it.

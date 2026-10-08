@@ -43,7 +43,13 @@ module Quaack
     #   Typical, the elements take consecutive bounds around the middle.
     # - col = ANY($n), with $n an array literal: the same, written as one
     #   array of as many elements.
-    # The column may sit on either side, as in $n < col.
+    # The column may sit on either side, as in $n < col. A placeholder may
+    # be cast to the column's own type, as psycopg2 writes Django's dates
+    # and lists, $1::timestamptz against a timestamptz column, or
+    # col = ANY($1::bigint[]) on a bigint one: the type's name, bare or
+    # under pg_catalog, matches statistics' column_types for the column,
+    # with no modifier. The cast stays in the SQL, and reads the picked
+    # pg_stats text as the column does.
     #
     # A placeholder keeps its slow value in a set where it can't get one,
     # and fallbacks records why, by set and placeholder:
@@ -53,7 +59,9 @@ module Quaack
     # - unsupported_shape, the v1 limits: the placeholder isn't one side of
     #   a comparison with a plain column of a table in the statistics, such
     #   as an expression or function on the column (lower(c.email) = $1), a
-    #   cast placeholder ($1::date), a column of a subquery or CTE, a join
+    #   cast to another type than the column's or with a modifier
+    #   ($1::date against a timestamptz column, $1::numeric(3, 0)), a
+    #   column of a subquery or CTE, a join
     #   compared through a subquery, a LIMIT, or a literal in a keyset row
     #   comparison, (a, b) < ($1, $2). An array literal that
     #   isn't one-dimensional counts too.
@@ -120,7 +128,7 @@ module Quaack
 
       # "$n" => Feed, or a Symbol for why it feeds no column predicate,
       # for each placeholder in parse.
-      def feeds(parse, column_names) = Feeds.new(parse, column_names).feeds
+      def feeds(parse, column_names, column_types = {}) = Feeds.new(parse, column_names, column_types).feeds
 
       # "$n" => [Feed, ...], one for each place $n appears, for each
       # placeholder every one of whose places feeds a column predicate.
@@ -129,9 +137,18 @@ module Quaack
 
       # The feeds, with each clock literal clock-anchor anchors kept slow.
       def feeds_for(parse, tables, map, statistics)
-        found = Feeds.new(parse, tables.column_names)
+        found = Feeds.new(parse, tables.column_names, tables.column_types)
         clock = ClockLiterals.find(map, statistics) { found.columns }.types.keys
         found.feeds.merge(clock.to_h { ["$#{it}", :clock_literal] })
+      end
+
+      # Whether a cast's type_name names type, a pg_catalog type's name,
+      # written pg_catalog.int8 or int8 (or an array of it, if array), with
+      # no modifier, such as numeric(3, 0)'s, that could change the value.
+      def cast_to?(type_name, type, array: false)
+        names = type_name.names.map { it.string.sval }
+        names = names.drop(1) if names.size == 2 && names.first == "pg_catalog"
+        names == [type] && type_name.typmods.empty? && type_name.array_bounds.size == (array ? 1 : 0)
       end
 
       def load(store)
@@ -154,6 +171,10 @@ module Quaack
 
         def column_names = @tables.transform_values { it["column_names"] }
 
+        # Each table's column_types (see PlannerStatistics::ColumnTypes), or {}
+        # for an entry stored before it had them.
+        def column_types = @tables.transform_values { it["column_types"] || {} }
+
         # A column's pg_stats row, or nil for none.
         def column(table, name)
           row = @tables.fetch(table)["columns"][name]
@@ -165,10 +186,14 @@ module Quaack
 
         def table?(table)
           table.is_a?(Hash) && table["schema"].is_a?(String) && table["name"].is_a?(String) &&
-            table["column_names"].is_a?(Array) && table["columns"].is_a?(Hash)
+            table["column_names"].is_a?(Array) && table["columns"].is_a?(Hash) && types?(table["column_types"])
         end
 
         def list?(value) = value.nil? || (value.is_a?(Array) && value.all?(String))
+
+        def types?(value)
+          value.nil? || (value.is_a?(Hash) && value.all? { |name, type| name.is_a?(String) && type.is_a?(String) })
+        end
 
         def bad! = raise(Error, "bad_statistics")
       end
@@ -182,8 +207,9 @@ module Quaack
 
         attr_reader :feeds
 
-        def initialize(parse, column_names)
+        def initialize(parse, column_names, column_types = {})
           @parse = parse
+          @column_types = column_types
           @feeds = {}
           @fed = Hash.new { |hash, key| hash[key] = [] }
           @ranges = Hash.new { |hash, key| hash[key] = [] }
@@ -220,7 +246,7 @@ module Quaack
           return operator(expr) unless PICKED_OPERATORS.include?(atom.operator)
 
           column = atom.columns.first
-          feed(column, sides(expr, atom.operator), and_list(atom.path)) if column&.table
+          feed(column, column_sides(expr, atom.operator, column), and_list(atom.path)) if column&.table
         end
 
         def feed(column, sides, conjunction)
@@ -258,6 +284,12 @@ module Quaack
           end
         end
 
+        # sides, with the column's type for its cast placeholders.
+        def column_sides(expr, operator, column)
+          @type = @column_types.fetch(column.table, {})[column.name]
+          sides(expr, operator)
+        end
+
         # [["$n", role, index, count], ...] for the atom's placeholders, or
         # nil when a side isn't a plain column or a plain placeholder.
         def sides(expr, operator)
@@ -273,33 +305,45 @@ module Quaack
           left = expr.lexpr
           right = expr.rexpr
           left, right, operator = right, left, FLIPPED.fetch(operator, operator) if right.column_ref
-          return nil unless left.column_ref && right.param_ref
+          right = placeholder(right)
+          return nil unless left.column_ref && right
 
           # = is a list of one.
           [RANGE.key?(operator) ? [name(right), RANGE[operator]] : [name(right), :element, 0, 1]]
         end
 
         def between(expr)
-          low, high = expr.rexpr.list.items.to_a
-          return nil unless expr.lexpr.column_ref && low.param_ref && high.param_ref
+          low, high = expr.rexpr.list.items.map { placeholder(it) }
+          return nil unless expr.lexpr.column_ref && low && high
 
           [[name(low), :from], [name(high), :to]]
         end
 
         def any(expr)
           return nil unless expr.lexpr.column_ref
-          return [[name(expr.rexpr), :array]] if expr.rexpr.param_ref
+
+          array = placeholder(expr.rexpr, array: true)
+          return [[name(array), :array]] if array
 
           list(expr.lexpr, expr.rexpr.a_array_expr&.elements.to_a)
         end
 
         def list(column, items)
-          return nil unless column.column_ref && !items.empty? && items.all?(&:param_ref)
+          items = items.map { placeholder(it) }
+          return nil unless column.column_ref && !items.empty? && items.all?
 
           items.each_with_index.map { |item, i| [name(item), :element, i, items.size] }
         end
 
         def name(node) = "$#{node.param_ref.number}"
+
+        # The placeholder node, plain or cast to the column's own type (an
+        # array of it, for = ANY), or nil.
+        def placeholder(node, array: false)
+          return node if node.param_ref
+
+          node.type_cast&.then { it.arg if it.arg&.param_ref && LiteralSet.cast_to?(it.type_name, @type, array:) }
+        end
       end
 
       # Picks each set's values.
