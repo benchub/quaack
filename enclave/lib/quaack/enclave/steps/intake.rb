@@ -6,7 +6,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks intake --query <file> --plan <file> --server <name>
-      # [--port <n>] [--captured-at <time>]` (DESIGN.md's input). The operator runs it on the
+      # [--port <n>] [--database <name>] [--captured-at <time>]` (DESIGN.md's input). The operator runs it on the
       # jump server, where the query and its EXPLAIN (ANALYZE, BUFFERS,
       # SETTINGS, FORMAT JSON) output already sit in files. It checks the
       # three inputs (see Intake), starts the run that holds them, and
@@ -21,13 +21,16 @@ module Quaack
       # clock_anchor (see Intake.clock_anchor). With --port it gets a fifth,
       # production_port, an Integer, which every production connection
       # passes along with the server (Inventory::Production.params). Without
-      # it there's no such entry, and libpq's setup picks the port. The query and the plan hold
+      # it there's no such entry, and libpq's setup picks the port. With
+      # --database it gets production_database, a String, which every
+      # production connection passes as dbname, pg_dump's included; without
+      # it libpq's setup picks the database, as before. The query and the plan hold
       # production literals, so only the run ID goes out. The run ID is
       # shape-class data: the time the run started and eight random hex
       # characters (Store::RUN_ID). The paths, the server name, and the port
       # are the operator's own, and never go out either.
       module Intake
-        OPTIONS = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value,
+        OPTIONS = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value, "database" => :value,
                     "captured-at" => :value }.freeze
         REQUIRED = %w[query plan server].freeze
 
@@ -43,9 +46,11 @@ module Quaack
         # Store.sweep (Store::FINISHED_ENTRY), and every check runs before
         # call writes anything.
         def entries(options)
+          database = options["database"]
           {
             "server" => Enclave::Intake.server(options["server"]),
             **(options.key?("port") ? { "production_port" => Enclave::Intake.port(options["port"]) } : {}),
+            **(database ? { "production_database" => Enclave::Intake.production_database(database) } : {}),
             "clock_anchor" => Enclave::Intake.clock_anchor(options["captured-at"]),
             "query" => Enclave::Intake.query(options["query"]),
             "plan" => Enclave::Intake.plan(options["plan"])

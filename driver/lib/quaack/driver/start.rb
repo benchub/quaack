@@ -3,6 +3,7 @@
 require "json"
 require "pathname"
 require "shellwords"
+require "quaack/protocol/database_name"
 require "quaack/protocol/port"
 require_relative "driver_config"
 require_relative "enclave_version"
@@ -13,12 +14,15 @@ require_relative "transport/ssh"
 module Quaack
   module Driver
     # `quaack start --server <prod> --query <file> --plan <file> [--port <n>]
-    # [--captured-at <time>]` (DESIGN.md, "Where QUAACK runs" and input). The query and plan paths
+    # [--database <name>] [--captured-at <time>]` (DESIGN.md, "Where QUAACK runs" and input). The query and plan paths
     # are on the jump server, and their files never leave it. --port is
     # production's port, for a server that doesn't listen where the
     # operator's libpq setup on the jump server points. It's checked here,
     # as run-server's --port is (Protocol::Port), and passed to intake,
     # which checks it again. Without it, libpq's setup picks the port.
+    # --database is production's database, checked as run-server's
+    # databases are (Protocol::DatabaseName), passed to intake and recorded
+    # the same way. Without it, libpq's setup picks the database.
     # --captured-at, the time the production plan ran, goes to intake as
     # is, one quoted word on ssh's remote command line, and intake parses
     # and checks it (clock-anchor). Without it, intake anchors the clock at
@@ -51,14 +55,14 @@ module Quaack
         @jump_timeout = jump_timeout
       end
 
-      def call(server:, query:, plan:, port: nil, captured_at: nil)
-        args = intake_args(server:, query:, plan:, port:, captured_at:)
+      def call(server:, query:, plan:, port: nil, database: nil, captured_at: nil) # rubocop:disable Metrics/ParameterLists
+        args = intake_args(server:, query:, plan:, port:, database:, captured_at:)
         host, transport = jump(server)
         EnclaveVersion.check!(transport, host)
         run_id = transport.call("intake", args:).messages.find { it["type"] == "run" }&.fetch("run_id", nil)
         raise Error, "bad_run_id" unless run_id.is_a?(String) && Runs::RUN_ID.match?(run_id)
 
-        Runs.new(@home).record(run_id, host, server:, port:)
+        Runs.new(@home).record(run_id, host, server:, port:, database:)
         run_id
       end
 
@@ -75,17 +79,26 @@ module Quaack
 
       # intake's arguments, once each is checked: --port and --captured-at
       # only when given. intake parses and checks --captured-at itself.
-      def intake_args(server:, query:, plan:, port:, captured_at:)
+      def intake_args(server:, query:, plan:, port:, database:, captured_at:) # rubocop:disable Metrics/ParameterLists
         check_remote_path!("query", query)
         check_remote_path!("plan", plan)
         check_port!(port)
-        { query:, plan:, server:, **(port ? { port: } : {}), **(captured_at ? { "captured-at": captured_at } : {}) }
+        check_database!(database)
+        { query:, plan:, server:, **(port ? { port: } : {}), **(database ? { database: } : {}),
+          **(captured_at ? { "captured-at": captured_at } : {}) }
       end
 
       def check_port!(port)
         return if port.nil? || Protocol::Port.valid?(port)
 
         raise UsageError, "--port must be a whole number from 1 to 65535"
+      end
+
+      def check_database!(database)
+        return if database.nil? || Protocol::DatabaseName.valid?(database)
+
+        raise UsageError, "--database must be letters, digits, underscores, and hyphens, starting with a letter, " \
+                          "digit, or underscore, at most 63 characters"
       end
 
       def check_remote_path!(option, path)

@@ -153,6 +153,26 @@ RSpec.describe "quaack executable" do
         .to include("jump-1 quaacks intake --query /q --plan /p --server prod-1 --port 6543")
     end
 
+    # Task 20261008-51.
+    it "passes --database to intake, and records it for the connection note" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "prod-1", "--database",
+                                        "app_db", "--query", "/q", "--plan", "/p")
+
+      expect([out, status.exitstatus]).to eq(["20260926T010203Z-0123abcd\n", 0]), err
+      expect(File.read(File.join(dir, "ssh-args")))
+        .to include("jump-1 quaacks intake --query /q --plan /p --server prod-1 --database app_db")
+      expect(Quaack::Driver::Runs.new(dir).where("20260926T010203Z-0123abcd")).to include(database: "app_db")
+    end
+
+    it "refuses a bad --database as a usage error before ssh" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p", "--database", "a=b")
+
+      expect([out, status.exitstatus]).to eq(["", 64])
+      expect(err).to start_with("quaack start: --database must be")
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
+    end
+
     it "refuses a bad --port as a usage error before ssh" do
       out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
                                         "--plan", "/p", "--port", "5432x")
@@ -178,7 +198,7 @@ RSpec.describe "quaack executable" do
 
         expect([out, status.exitstatus]).to eq(["", 64]), extra.inspect
         expect(err).to include("quaack start --server <name> --query <file> --plan <file> [--port <n>] " \
-                               "[--captured-at <time>]\n")
+                               "[--database <name>] [--captured-at <time>]\n")
       end
       expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end
@@ -226,7 +246,7 @@ RSpec.describe "quaack executable" do
                                           "--plan", "/p", *extra)
 
         expect([out, status.exitstatus]).to eq(["", 64]), extra.inspect
-        expect(err).to include("--plan <file> [--port <n>] [--captured-at <time>]\n")
+        expect(err).to include("--plan <file> [--port <n>] [--database <name>] [--captured-at <time>]\n")
       end
       expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end

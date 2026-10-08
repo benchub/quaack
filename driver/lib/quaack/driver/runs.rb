@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "quaack/protocol/database_name"
 require "quaack/protocol/port"
 
 module Quaack
@@ -30,11 +31,13 @@ module Quaack
         @dir = File.join(home, ".quaack", "runs")
       end
 
-      def record(run_id, host, server: nil, port: nil)
+      def record(run_id, host, server: nil, port: nil, database: nil)
         raise ArgumentError, "not a run ID" unless RUN_ID.match?(run_id)
 
         FileUtils.mkdir_p(@dir, mode: 0o700)
-        File.write(path(run_id), JSON.generate({ "jump_host" => host, "server" => server, "port" => port }.compact))
+        File.write(path(run_id),
+                   JSON.generate({ "jump_host" => host, "server" => server, "port" => port,
+                                   "database" => database }.compact))
       end
 
       # The run's jump host, or nil if this laptop never started it. Each
@@ -52,18 +55,19 @@ module Quaack
       # note shows it.
       def port(run_id) = where(run_id)&.fetch(:port)
 
-      # The run's jump host, production server and port, as jump:, server:
-      # and port:, all from one read of the record, for a connection
-      # failure's note (EnclaveError#rule_with_note), or nil if this laptop
-      # never started it.
+      # The run's jump host, production server, port, and database, as
+      # jump:, server:, port:, and database: (each checked again on read),
+      # all from one read of the record, for a connection failure's note
+      # (EnclaveError#rule_with_note), or nil if this laptop never started
+      # it.
       def where(run_id)
         record = read(run_id) or return
         jump = record["jump_host"]
         raise Unreadable.new(run_id, " (jump host isn't a string)") unless jump.is_a?(String)
 
-        server, port = record.values_at("server", "port")
+        server, port, database = record.values_at("server", "port", "database")
         { jump:, server: (server if server.is_a?(String) && SERVER.match?(server)),
-          port: (port if Protocol::Port.valid?(port)) }
+          port: (port if Protocol::Port.valid?(port)), database: (database if Protocol::DatabaseName.valid?(database)) }
       end
 
       private

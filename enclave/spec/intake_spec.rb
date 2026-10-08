@@ -265,6 +265,39 @@ RSpec.describe "quaacks intake" do
     end
   end
 
+  # Task 20261008-51.
+  describe "--database" do
+    it "stores production's database in production_database" do
+      %w[app app_2 my-db _x].each do |database|
+        FileUtils.rm_rf(base)
+        expect(intake_with(extra: ["--database", database])).to eq(0), database
+        expect(out.string).to eq(%({"type":"run","run_id":"#{runs[0]}"}\n{"type":"done"}\n))
+        expect(only_run.read("production_database")).to eq(database)
+        out.truncate(0) && out.rewind
+      end
+    end
+
+    it "stores no production_database without --database, so libpq's setup picks the database" do
+      expect(intake_with).to eq(0)
+      expect(only_run.entry?("production_database")).to be(false)
+    end
+
+    it "refuses anything but a run-server-style database name as bad_database" do
+      ["", "-app", "a b", "app;x", "a=b", "postgres://h/db", "a" * 64, "äpp", "ap\xffp"].each do |db|
+        out.truncate(0) && out.rewind
+        expect_refused("bad_database", intake_with(extra: ["--database", db]), db.inspect)
+      end
+    end
+
+    it "refuses --database twice, or without a value, as usage" do
+      [["--database", "a", "--database", "b"], ["--database"]].each do |extra|
+        out.truncate(0) && out.rewind
+        expect(intake_with(extra:)).to eq(64), extra.inspect
+        expect(runs).to eq([])
+      end
+    end
+  end
+
   describe "--captured-at" do
     it "refuses anything but an ISO-8601 time with a zone as bad_captured_at" do
       ["2026-09-23T22:15:00", "2026-09-23 22:15:00Z", "2026-09-23", "2026-09-23T22:15Z", "1790000000",

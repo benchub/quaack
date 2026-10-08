@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/database_name"
 require "quaack/protocol/port"
 require_relative "intake/error"
 require_relative "intake/operator_file"
@@ -16,6 +17,8 @@ module Quaack
     # - server: bad_server.
     # - production_port, from --port: bad_port, unless it's a whole number
     #   from 1 to 65535 (Protocol::Port), as run-server's --port.
+    # - production_database, from --database: bad_database, unless it's a
+    #   plain name (Protocol::DatabaseName), as run-server's databases.
     # - clock_anchor, from --captured-at: bad_captured_at (see ClockAnchor).
     # - query, from its file: query_unreadable, query_too_large,
     #   query_not_text, query_unparsable, query_not_one_statement,
@@ -44,6 +47,12 @@ module Quaack
         raise Error, "bad_port" unless Protocol::Port.valid?(text)
 
         Integer(text, 10)
+      end
+
+      def production_database(text)
+        raise Error, "bad_database" unless Protocol::DatabaseName.valid?(text)
+
+        text
       end
 
       def clock_anchor(captured_at) = ClockAnchor.from(captured_at)

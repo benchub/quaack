@@ -15,14 +15,25 @@ module Quaack
     module ProductionFailedNote
       module_function
 
-      def call(jump, server, port, next_step)
-        return unknown_port(jump, next_step) unless server || port
+      def call(jump, server:, port:, next_step:, database: nil)
+        return unknown_port(jump, next_step) unless server || port || database
 
-        "couldn't connect to #{tried(server, port)}. QUAACK gives libpq only that host#{" and port" if port}. " \
-          "The #{"port, " unless port}user, database, and password come from #{EnclaveError::LIBPQ_SETUP} " \
-          "Test it with #{test_command(jump, server, port)}. If production listens on another " \
+        "couldn't connect to #{tried(server, port, database)}. QUAACK gives libpq only #{given(port, database)}. " \
+          "The #{from_libpq(port, database)} come from #{EnclaveError::LIBPQ_SETUP} " \
+          "Test it with #{test_command(jump, server, port, database)}. If production listens on another " \
           "port#{" than your libpq setup gives" unless port}, start a new run with `quaack start --port <n>`. " \
           "Otherwise fix your libpq setup, then #{next_step}"
+      end
+
+      # What QUAACK gives libpq, and what comes from the operator's setup.
+      def given(port, database)
+        parts = ["host", ("port" if port), ("database" if database)].compact
+        "that #{parts.size == 3 ? "host, port, and database" : parts.join(" and ")}"
+      end
+
+      def from_libpq(port, database)
+        parts = [("port" unless port), "user", ("database" unless database), "password"].compact
+        "#{parts[0..-2].join(", ")}#{"," if parts.size > 2} and #{parts.last}"
       end
 
       def unknown_port(jump, next_step)
@@ -34,13 +45,15 @@ module Quaack
           "setup, then #{next_step}"
       end
 
-      # The production server and port the note names.
-      def tried(server, port)
-        "#{server ? "production at #{server}" : EnclaveError::UNKNOWN_SERVER}#{", port #{port}" if port}"
+      # The production server, port, and database the note names.
+      def tried(server, port, database)
+        "#{server ? "production at #{server}" : EnclaveError::UNKNOWN_SERVER}#{", port #{port}" if port}" \
+          "#{", database #{database}" if database}"
       end
 
-      def test_command(jump, server, port)
-        "`ssh #{jump} 'psql -h #{server || "<server>"}#{" -p #{port}" if server && port} -c \"select 1\"'`"
+      def test_command(jump, server, port, database = nil)
+        flags = server ? "#{" -p #{port}" if port}#{" -d #{database}" if database}" : ""
+        "`ssh #{jump} 'psql -h #{server || "<server>"}#{flags} -c \"select 1\"'`"
       end
     end
   end

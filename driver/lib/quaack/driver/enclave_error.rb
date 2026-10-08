@@ -69,7 +69,7 @@ module Quaack
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
-      # rule_with_note, with next_step and where (jump:, server: and port:),
+      # rule_with_note, with next_step and where (jump:, server:, port:, and database:),
       # or any other error's message.
       def self.shown(error, next_step, **where)
         error.is_a?(self) ? error.rule_with_note(next_step:, **where) : error.message
@@ -116,8 +116,8 @@ module Quaack
       # production_connection_failed and run_server_connection_failed get
       # where the connection's settings come from, how to test it from jump,
       # the jump host, and what to do next. production's names server and
-      # port, the production server and port the operator gave quaack
-      # start, when the caller knows them. All come from the laptop's own
+      # port, and database, the ones the operator gave quaack start, when
+      # the caller knows them. All come from the laptop's own
       # record of the run, never
       # from the enclave, whose error line holds only the rule: libpq's
       # message can name the user or the database.
@@ -125,8 +125,11 @@ module Quaack
       # timeout's note says which setting raises the timeout, unless
       # timeout_hint is false, for a caller whose timeout no setting
       # changes, such as deploy.
-      def rule_with_note(next_step: "resume the run", jump: nil, server: nil, port: nil, timeout_hint: true)
-        return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server, port)}" if GO_ON.include?(rule)
+      def rule_with_note(next_step: "resume the run", jump: nil, server: nil, port: nil, database: nil, # rubocop:disable Metrics/ParameterLists
+                         timeout_hint: true)
+        if GO_ON.include?(rule)
+          return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", { server:, port:, database: })}"
+        end
         return FixedNotes.internal_line(rule, step) if FixedNotes.internal?(rule)
 
         return unparsable if rule == "query_unparsable"
@@ -152,11 +155,11 @@ module Quaack
           "Postgres #{major + 1}-only syntax isn't supported yet)"
       end
 
-      def to_go_on(next_step, jump, server, port)
+      def to_go_on(next_step, jump, production)
         case rule
         when "ssh_failed" then "#{SSH_FAILED}, then #{next_step}"
         when "incomplete" then "#{ended}. To go on, #{next_step}"
-        when "production_connection_failed" then ProductionFailedNote.call(jump, server, port, next_step)
+        when "production_connection_failed" then ProductionFailedNote.call(jump, **production, next_step:)
         else run_server_failed(jump, next_step)
         end
       end
