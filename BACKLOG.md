@@ -468,18 +468,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 ### 20260930-5. Clean up the operator-cancel test's canceler thread. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-6. `clients` shape checks: minor findings, round three.
-
-Minor findings from the review of 20260929-12:
-
-- The 24-hour-clock test runs `BACKEND_START_SQL` alone, not `OTHER_CLIENTS_SQL`. Inlining an HH12 format into the query in place of the constant stays green before noon UTC. Assert `OTHER_CLIENTS_SQL.include?(BACKEND_START_SQL)`, or run the query itself against a temp view `pg_temp.pg_stat_activity` with a pinned afternoon `backend_start`.
-- In enclave/spec/error_filter_spec.rb, the subclass cases' `to_json` override never runs, because egress's plain-data check rejects a subclass first. The comment saying it "writes itself out as a sentinel" is misleading. Fix the comment.
-- Watch for a flake in "names the oldest other client first" (run_server_check_postgres_spec.rb). It failed once in one review run and passed on every rerun. Look into it only if it recurs.
-
-- **Depends on:** 20260929-12.
-- **Came from:** Review of 20260929-12, round one.
-- **Design:** run-server.
-- **Status:** todo
+### 20260930-6. `clients` shape checks: minor findings, round three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-7. The OpenAI-compatible adapter says "isn't set" for an empty key variable. Done, see BACKLOG-COMPLETE.md.
 

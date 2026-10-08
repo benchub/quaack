@@ -8058,3 +8058,17 @@ In Counterexamples (`counterexamples.rb:89-91`) and ScenarioTests (`scenario_tes
 - **Design:** rewrite-test and counterexamples.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260929-29 (commit a54d37f7). Review had no blocking findings; its minors went to 20261008-55.
+
+### 20260930-6. `clients` shape checks: minor findings, round three.
+
+Minor findings from the review of 20260929-12:
+
+- The 24-hour-clock test runs `BACKEND_START_SQL` alone, not `OTHER_CLIENTS_SQL`. Inlining an HH12 format into the query in place of the constant stays green before noon UTC. Assert `OTHER_CLIENTS_SQL.include?(BACKEND_START_SQL)`, or run the query itself against a temp view `pg_temp.pg_stat_activity` with a pinned afternoon `backend_start`.
+- In enclave/spec/error_filter_spec.rb, the subclass cases' `to_json` override never runs, because egress's plain-data check rejects a subclass first. The comment saying it "writes itself out as a sentinel" is misleading. Fix the comment.
+- Watch for a flake in "names the oldest other client first" (run_server_check_postgres_spec.rb). It failed once in one review run and passed on every rerun. Look into it only if it recurs.
+
+- **Depends on:** 20260929-12.
+- **Came from:** Review of 20260929-12, round one.
+- **Design:** run-server.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260930-6 (commit 6cf4eebf). The diff is 5 lines of spec and comment, reviewed by the main session. The builder confirmed the new assertion goes red when HH12 is inlined. The flake didn't recur in 10 runs.
