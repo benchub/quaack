@@ -500,6 +500,22 @@ RSpec.describe Quaack::Driver::LLM::Client do
 
       expect(fake.asks.map(&:url)).to eq(["https://llm.example.com/anthropic/v1/messages"])
     end
+
+    # The block's host is meant for the block's provider, so the Anthropic
+    # credentials must never go there.
+    it "never send to the block's base_url when QUAACK_LLM_PROVIDER switches to anthropic" do
+      settings = Quaack::Driver::LLM.settings({ "provider" => "bedrock", "model" => "m",
+                                                "base_url" => "https://sentinel.example" },
+                                              env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+      fake.reply("llm-rewrites", "ok")
+      with_env("ANTHROPIC_BASE_URL" => nil) do
+        described_class.new(settings:, api_key: "k", burndown: burndown, transport: fake)
+                       .ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
+      end
+
+      expect(fake.asks.map(&:url)).to eq(["https://api.anthropic.com/v1/messages"])
+      expect(fake.asks.map(&:url).join).not_to include("sentinel")
+    end
   end
 end
 

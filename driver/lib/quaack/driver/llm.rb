@@ -102,12 +102,15 @@ module Quaack
       # as unset. With neither, it's Anthropic with DEFAULT_MODEL. Raises
       # ConfigError for a bad value, or a key that doesn't apply to the
       # provider. When QUAACK_LLM_PROVIDER switches to another provider than
-      # the block's, the block's keys that don't apply to it are ignored, so
-      # the switch works for one run.
+      # the block's, every key of the block is checked and then ignored, so
+      # the switch works for one run: the block's base_url and api_key_env
+      # are meant for its own provider, and that provider's credentials must
+      # never go to them. The model and base_url then come only from
+      # QUAACK_MODEL and QUAACK_LLM_BASE_URL, or the new provider's defaults.
       def self.settings(block = nil, env: ENV)
-        block, provider = for_provider(check_block(block), env)
+        block, provider, switched = for_provider(check_block(block), env)
         model = pick(env, block, "model") || DEFAULT_MODELS[provider]
-        model or raise ConfigError, "#{key("model")} is required unless the provider is anthropic"
+        model or raise ConfigError, no_model(provider, switched)
         base_url = pick(env, block, "base_url")
         check_applies({ "base_url" => base_url }, provider, "base_url" => BASE_URL_ENV) if from_env?(env, "base_url")
         Settings.new(provider:, model:, base_url:, api_key_env: block["api_key_env"],
@@ -132,17 +135,21 @@ module Quaack
         end
       end
 
-      # The provider in effect, and block for it: without the keys that
-      # don't apply to it when QUAACK_LLM_PROVIDER switched from the block's
-      # own, or else raising unless every key applies.
+      # The provider in effect, the block for it, and whether
+      # QUAACK_LLM_PROVIDER switched from the block's own provider. A switch
+      # gives an empty block. Otherwise it raises unless every key applies.
       def self.for_provider(block, env)
         provider = pick(env, block, "provider") || "anthropic"
-        if provider == block.fetch("provider", "anthropic")
-          check_applies(block, provider)
-          [block, provider]
-        else
-          [block.select { |name, _| applies?(name, provider) }, provider]
-        end
+        return [{}, provider, true] if provider != block.fetch("provider", "anthropic")
+
+        check_applies(block, provider)
+        [block, provider, false]
+      end
+
+      def self.no_model(provider, switched)
+        return "#{MODEL_ENV} is required when #{PROVIDER_ENV} switches to #{provider}" if switched
+
+        "#{key("model")} is required unless the provider is anthropic"
       end
 
       # Raises unless every key of block applies to provider.
@@ -186,8 +193,8 @@ module Quaack
         value.any? { it.include?("{prompt_file}") } && value.any? { it.include?("{model}") }
       end
 
-      private_class_method :check_block, :for_provider, :check_applies, :applies?, :pick, :from_env?, :check, :key,
-                           :command_template?
+      private_class_method :check_block, :for_provider, :no_model, :check_applies, :applies?, :pick, :from_env?,
+                           :check, :key, :command_template?
     end
   end
 end

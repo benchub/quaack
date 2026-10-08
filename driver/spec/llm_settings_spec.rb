@@ -68,6 +68,35 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(settings(block, env:).provider).to eq("anthropic")
     end
 
+    # Each host and key variable in the block is meant for the block's
+    # provider, so a switch for one run takes none of them.
+    it "takes nothing from the block when QUAACK_LLM_PROVIDER switches from openai_compatible to anthropic" do
+      block = { "provider" => "openai_compatible", "model" => "llama-3", "base_url" => "https://api.groq.com/openai/v1",
+                "api_key_env" => "GROQ_KEY" }
+
+      expect(fields(settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })))
+        .to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil, api_key_env: nil, aws_region: nil,
+               aws_profile: nil, command_template: nil, timeout_seconds: nil)
+    end
+
+    it "takes nothing from the block when QUAACK_LLM_PROVIDER switches from anthropic to openai_compatible" do
+      block = { "model" => "claude-x", "base_url" => "https://gateway.example.com", "api_key_env" => "GATEWAY_KEY" }
+      env = { "QUAACK_LLM_PROVIDER" => "openai_compatible", "QUAACK_MODEL" => "gpt-5" }
+
+      expect(fields(settings(block, env:)))
+        .to eq(provider: "openai_compatible", model: "gpt-5", base_url: nil, api_key_env: nil, aws_region: nil,
+               aws_profile: nil, command_template: nil, timeout_seconds: nil)
+      expect(config_error(block, env: env.except("QUAACK_MODEL")).message)
+        .to eq("QUAACK_MODEL is required when QUAACK_LLM_PROVIDER switches to openai_compatible")
+    end
+
+    it "takes QUAACK_LLM_BASE_URL when QUAACK_LLM_PROVIDER switches provider" do
+      block = { "provider" => "openai_compatible", "model" => "m", "base_url" => "https://api.groq.com/openai/v1" }
+      env = { "QUAACK_LLM_PROVIDER" => "anthropic", "QUAACK_LLM_BASE_URL" => "https://env.example.com" }
+
+      expect(settings(block, env:).base_url).to eq("https://env.example.com")
+    end
+
     it "counts an empty variable as unset" do
       env = { "QUAACK_MODEL" => "", "QUAACK_LLM_BASE_URL" => "", "QUAACK_LLM_PROVIDER" => "" }
 
@@ -288,18 +317,27 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       end
     end
 
-    it "ignores its own keys when QUAACK_LLM_PROVIDER switches to another provider for one run" do
-      result = settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic", "QUAACK_MODEL" => "claude-opus-5-5" })
+    # The block's base_url is a host meant for bedrock, so anthropic's
+    # credentials must never go there.
+    it "ignores the whole block when QUAACK_LLM_PROVIDER switches to another provider for one run" do
+      result = settings(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
 
-      expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5",
-                                   base_url: "https://bedrock.example.com", api_key_env: nil, aws_region: nil,
-                                   aws_profile: nil, command_template: nil, timeout_seconds: nil)
+      expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
+                                   api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                   command_template: nil, timeout_seconds: nil)
     end
 
-    it "takes block keys for bedrock when QUAACK_LLM_PROVIDER picks it" do
-      expect(settings({ "aws_region" => "us-west-2" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock",
-                                                              "QUAACK_MODEL" => "m" }).aws_region)
-        .to eq("us-west-2")
+    it "takes no block key, not even bedrock's own, when QUAACK_LLM_PROVIDER switches to bedrock" do
+      result = settings({ "aws_region" => "us-west-2", "model" => "claude-x" },
+                        env: { "QUAACK_LLM_PROVIDER" => "bedrock", "QUAACK_MODEL" => "m" })
+
+      expect([result.model, result.aws_region]).to eq(["m", nil])
+    end
+
+    it "needs QUAACK_MODEL when QUAACK_LLM_PROVIDER switches to bedrock" do
+      e = config_error({ "model" => "claude-x" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock" })
+
+      expect(e.message).to eq("QUAACK_MODEL is required when QUAACK_LLM_PROVIDER switches to bedrock")
     end
 
     it "still refuses a key that doesn't apply when QUAACK_LLM_PROVIDER names the block's own provider" do
@@ -332,7 +370,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(e.message).not_to include("sentinel")
     end
 
-    it "ignores a block base_url when QUAACK_LLM_PROVIDER switches to copilot_cli" do
+    it "ignores a block base_url and api_key_env when QUAACK_LLM_PROVIDER switches to copilot_cli" do
       result = settings({ "base_url" => "https://sentinel.example", "api_key_env" => "MY_KEY" },
                         env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
 
