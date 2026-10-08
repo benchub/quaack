@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "foreign_operator"
 
 module Quaack
   module Enclave
