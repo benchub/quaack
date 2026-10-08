@@ -67,8 +67,8 @@ module Quaack
     # always unique. Every column an expression unique index reads counts as
     # unique too, and RowSet evaluates the index's keys in Postgres to catch
     # rows whose expression values still collide (lower('A') = lower('a')).
-    # An expression unique index that calls a function outside pg_catalog
-    # raises Error(:expression_unique_index). An exclusion constraint
+    # An expression unique index that calls a function outside pg_catalog,
+    # or reads a generated column, raises Error(:expression_unique_index). An exclusion constraint
     # counts as a unique key over its = columns; one with none raises
     # Error(:exclusion_constraint). Another column with a DEFAULT (or
     # an identity) is left out, so the default
@@ -174,6 +174,16 @@ module Quaack
         found.uniq
       end
 
+      # An expression unique index on the table that calls user code, or
+      # reads a generated column, which a fixture row leaves out, so its
+      # keys would be worked out on a NULL.
+      def unworkable_index?(schema, table)
+        constraints = schema.constraints(table)
+        constraints.user_function || constraints.expressions.any? do |index|
+          index.columns.any? { |c| schema.column(table, c).default == "generated" }
+        end
+      end
+
       # Builds the scenarios for one query.
       class Builder
         # dropped counts the groups the last build left out of their
@@ -218,7 +228,7 @@ module Quaack
         end
 
         def refuse_user_functions
-          raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
+          raise Error, :expression_unique_index if @schema.tables.any? { Scenarios.unworkable_index?(@schema, it) }
           raise Error, :exclusion_constraint if @schema.tables.any? { |t| @schema.constraints(t).unequal_exclusion }
         end
 

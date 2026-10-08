@@ -220,6 +220,16 @@ RSpec.describe Quaack::Enclave::Scenarios do
       .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:expression_unique_index) }
   end
 
+  # The row leaves a generated column out, so its keys would be worked out
+  # on a NULL and miss collisions.
+  it "refuses an expression unique index that reads a generated column" do
+    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL,
+                 norm text GENERATED ALWAYS AS (lower(email)) STORED);
+               CREATE UNIQUE INDEX u_norm ON fx.u (upper(norm))")
+    expect { build("SELECT id FROM fx.u WHERE email = 'a'") }
+      .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:expression_unique_index) }
+  end
+
   # No value satisfies t.id IS NULL on the NOT NULL key, so the atom is
   # ignored, and t.id still takes a value per row. Repeating one would
   # leave S6's many group out.
