@@ -61,14 +61,16 @@ module Quaack
           # Whether Postgres takes = between two columns, each [schema,
           # table, column], as one pair of a row comparison: it does only
           # when that = is an operator of a btree family, which box's isn't.
-          # It asks Postgres, with the connection's search path, by
-          # preparing a comparison of the pair beside a pair of booleans,
-          # since a row of one column isn't held to that.
+          # It asks Postgres by preparing a comparison of the pair beside a
+          # pair of booleans, since a row of one column isn't held to that.
+          # It names pg_catalog's =, so nothing on the search path can change
+          # the answer, and a pair whose = is in another schema, as an
+          # extension type's can be, is refused.
           def row_equality?(left, right)
             (@row_equality ||= {}).fetch([left, right]) do
               @row_equality[[left, right]] =
                 self_contained?("SELECT FROM #{relation(left)} l, #{relation(right)} r " \
-                                "WHERE (l.#{@connection.quote_ident(left.last)}, true) = " \
+                                "WHERE (l.#{@connection.quote_ident(left.last)}, true) #{EQ} " \
                                 "(r.#{@connection.quote_ident(right.last)}, true)")
             end
           end
