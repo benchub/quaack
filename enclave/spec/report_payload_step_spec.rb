@@ -321,6 +321,17 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # Task 20261008-58: a count below zero isn't a count either.
+    context "with a negative dropped count in rewrite_tested_<n>" do
+      let(:outcome) do
+        payload_of { |store| store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("dropped" => -1)) }
+      end
+
+      it "sends no dropped count" do
+        expect(rewrite(1)["dropped"]).to be_nil
+      end
+    end
+
     context "with a rewrite that was stored and taken no further" do
       let(:outcome) { payload_of { it.write("rewrite_2", "sql" => "SELECT $1", "source" => "operator") } }
 

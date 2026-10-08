@@ -88,6 +88,15 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     SQL
   end
 
+  def arena_exec(sql)
+    server = production.server
+    conn = PG.connect(host: server.host, port: server.port, dbname: arena_name, user: TestPostgres::USER,
+                      password: TestPostgres::PASSWORD)
+    conn.exec(sql)
+  ensure
+    conn&.close
+  end
+
   def burndown = Quaack::Enclave::Burndown.read(stored)
   def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
 
@@ -157,6 +166,28 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
                                       "rule" => "statement_canceled", "sqlstate" => "57014" }])
       expect([stored.entry?("rewrite_tested_1"), stored.entry?("rewrite_survived_1")]).to eq([false, false])
+    end
+
+    # Task 20261008-55: rerunning the step after a foreign cancel finishes
+    # it, with one verdict. public.nap sleeps only while public.naps holds a
+    # row, and the canceller empties it, outside any arena transaction.
+    it "succeeds on a rerun after an operator's cancel, storing one verdict" do
+      ready("#{same} AND public.nap()", arena_sql: <<~SQL)
+        CREATE TABLE public.naps (n int);
+        INSERT INTO public.naps VALUES (1);
+        CREATE FUNCTION public.nap() RETURNS boolean LANGUAGE plpgsql
+          AS 'BEGIN IF EXISTS (SELECT FROM public.naps) THEN PERFORM pg_sleep(30); END IF; RETURN true; END';
+      SQL
+
+      first, canceled = cancel_arena_sleeper { step("rewrite-test", "--search", "rewrite_1") }
+      arena_exec("DELETE FROM public.naps")
+      second = step("rewrite-test", "--search", "rewrite_1")
+
+      expect([canceled, lines(first).map { it["rule"] }]).to eq([true, ["statement_canceled"]])
+      expect([second.stderr, second.status.exitstatus]).to eq(["", 0]), second.stdout
+      expect(lines(second).map { it["type"] }.uniq).not_to include("error")
+      expect(stored.read("rewrite_tested_1")).to include("passed" => true)
+      expect(Dir.glob(File.join(stored.path, "rewrite_tested_*.json")).size).to eq(1)
     end
 
     it "disproves a looser rewrite by scenario and rule, and records that it didn't survive" do
