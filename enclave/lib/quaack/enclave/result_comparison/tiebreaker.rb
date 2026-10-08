@@ -108,6 +108,50 @@ module Quaack
           end
         end
 
+        # Whether a query's LIMIT or OFFSET can keep either of two rows that
+        # differ only in columns left out of the tiebreaker. shapes are the
+        # original's and the candidate's, and original_cut is the
+        # original's tiebreaker run. Each query with a cut runs again with
+        # the tiebreaker and without its LIMIT and OFFSET. Rows that tie on
+        # the whole sort, the query's keys and then the tiebreaker, sit next
+        # to each other in that run and are equal on every tiebreaker
+        # column. So each stretch of neighbours equal on every tiebreaker
+        # column holds whole ties, and it's a hidden tie when a stretch that
+        # reaches the rows kept, at OFFSET up to OFFSET plus their count,
+        # has rows that differ in a left-out column. An OFFSET that isn't a
+        # constant can't be placed, so it counts as one.
+        def hidden_cut_tie?(transaction, shapes, original_cut, positions)
+          return false if positions.size == original_cut.types.size
+
+          shapes.zip([original_cut, nil]).any? do |shape, cut|
+            shape.cut? && (shape.offset.nil? || cut_reaches_hidden_tie?(transaction, shape, cut, positions))
+          end
+        end
+
+        def cut_reaches_hidden_tie?(transaction, shape, cut, positions)
+          cut ||= transaction.query(shape.with_tiebreaker(positions))
+          full = transaction.query(shape.with_tiebreaker(positions, limited: false))
+          window = shape.offset...(shape.offset + cut.rows.size)
+          hidden_stretches(full, positions).any? { |stretch| stretch.any? { window.cover?(it) } }
+        end
+
+        # The indexes of each stretch of neighbouring rows in result, equal
+        # on every tiebreaker column, whose rows differ in a left-out one.
+        def hidden_stretches(result, positions)
+          types = result.types
+          rows = result.rows
+          left_out = types.each_index.to_a - positions.map(&:pred)
+          stretches(result, positions).reject do |stretch|
+            stretch.all? { same?(types, rows[stretch.first], rows[it], left_out) }
+          end
+        end
+
+        def stretches(result, positions)
+          columns = positions.map(&:pred)
+          keys = result.rows.map { values_key(result.types, it, columns) }
+          keys.each_index.chunk_while { |i, j| keys[i] == keys[j] }
+        end
+
         def values_key(types, row, columns) = columns.map { |i| ResultComparator::Values.value_key(types[i], row[i]) }
 
         def same?(types, left, right, columns)
