@@ -2213,17 +2213,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 
 ### 20261007-32. Racetrack qualification: minors from 20261007-9. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-33. The `llms` list: minors from 20261007-13.
-
-From the review of 20261007-13.
-1. `QUAACK_LLM` with a lone `llm` block refuses a name that isn't the block's, but no spec covers it (dropping `picked` from `one_provider` stays green). Its message says "different names from llms in ~/.quaack/driver.json" when the file has no `llms`. Add the spec and fix the wording.
-2. The Bedrock adapter's build-time messages hardcode `llm.aws_region` and `llm.aws_profile` (`bedrock_adapter.rb` ~48–55), so an `llms` entry is told to set the wrong key. Name `llms[i].aws_region` for an entry, and update the cli spec that locks the old wording in.
-3. Write the builder's choices into DESIGN.md's "Several LLM providers": positions count from 0 (`llms[0]`); `QUAACK_LLM` applies to a lone `llm` block by its provider name, including after a `QUAACK_LLM_PROVIDER` switch; a pinned step's pool is its pinned names in pinned order, less the entries `QUAACK_LLM` drops, and an empty one is a usage error; pinned names are checked against every entry; `"fan_out": false` is refused on the other steps too; and `"llm": null` beside `llms` counts as both.
-
-- **Depends on:** 20261007-13.
-- **Came from:** The review of 20261007-13.
-- **Design:** Several LLM providers.
-- **Status:** todo
+### 20261007-33. The `llms` list: minors from 20261007-13. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-34. index-test: resolve `"$user"` with the production role. Done, see BACKLOG-COMPLETE.md.
 

@@ -6934,3 +6934,16 @@ From the review of 20261007-32. `AssumptionCheck::Equality` refuses two columns 
 - **Design:** trust boundary, assumption checks.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. When both columns have exactly the same array, range, multirange, or composite type, `AssumptionCheck::Equality` uses the polymorphic `=` of `array_ops`, `range_ops`, `multirange_ops`, or `record_ops`, which matches a bare `=` (citext elements and fields stay case-insensitive); different such types are still refused. Both denormalized_equal and the denormalized fixture take it, and DESIGN.md's v1-unsupported list names only different types. Enclave change, unreleased until the next batch bump.
+
+### 20261007-33. The `llms` list: minors from 20261007-13.
+
+From the review of 20261007-13.
+1. `QUAACK_LLM` with a lone `llm` block refuses a name that isn't the block's, but no spec covers it (dropping `picked` from `one_provider` stays green). Its message says "different names from llms in ~/.quaack/driver.json" when the file has no `llms`. Add the spec and fix the wording.
+2. The Bedrock adapter's build-time messages hardcode `llm.aws_region` and `llm.aws_profile` (`bedrock_adapter.rb` ~48–55), so an `llms` entry is told to set the wrong key. Name `llms[i].aws_region` for an entry, and update the cli spec that locks the old wording in.
+3. Write the builder's choices into DESIGN.md's "Several LLM providers": positions count from 0 (`llms[0]`); `QUAACK_LLM` applies to a lone `llm` block by its provider name, including after a `QUAACK_LLM_PROVIDER` switch; a pinned step's pool is its pinned names in pinned order, less the entries `QUAACK_LLM` drops, and an empty one is a usage error; pinned names are checked against every entry; `"fan_out": false` is refused on the other steps too; and `"llm": null` beside `llms` counts as both.
+
+- **Depends on:** 20261007-13.
+- **Came from:** The review of 20261007-13.
+- **Design:** Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `QUAACK_LLM` with a lone `llm` block or none refuses another name with a message that names the one provider and says the file has no `llms`, never the variable's value. `LLM::Settings` carries `at` (`llm` or `llms[i]`), so the Bedrock build messages name the entry's own key. DESIGN.md's "Several LLM providers" records the choices from 20261007-13: positions from 0, `QUAACK_LLM` with a lone block, pinned pools, `fan_out: false` refused elsewhere, `"llm": null` counting as present, and, pending the user's confirmation, that failover-mode units don't move the round_robin cursor.
