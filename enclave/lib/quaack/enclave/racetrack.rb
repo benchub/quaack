@@ -28,7 +28,7 @@ module Quaack
     # parse raises racetrack_bad_clock_anchor.
     #
     # hypopg goes in the quaack schema, unless the racetrack has it already,
-    # wherever that is. The session's search_path is the plan's
+    # wherever that is. The session's search_path is the run's stored one
     # (RunServer.connect), which can name only schemas the racetrack doesn't
     # have, and CREATE EXTENSION would then have nowhere to put it. quaack is
     # the one schema setup itself makes sure of, and it's on no

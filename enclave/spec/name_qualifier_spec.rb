@@ -117,16 +117,28 @@ RSpec.describe "qualifying names other than relations" do
   end
 
   # Task 20261007-30: Postgres skips a collation for another encoding, as
-  # if it weren't there. A database's collations are made for its own
-  # encoding, so the test gives sales' one another encoding by hand.
+  # if it weren't there. initdb imports the image's UTF-8 locales into
+  # pg_catalog, template0 included, so in a LATIN1 database pg_catalog's
+  # "de_DE.utf8" is one Postgres skips (task 20261007-34).
   it "skips a collation for an encoding other than the database's" do
-    conn.exec(<<~SQL)
-      CREATE COLLATION sales.plain FROM "C";
-      UPDATE pg_catalog.pg_collation SET collencoding = pg_catalog.pg_char_to_encoding('LATIN1')
-      WHERE collnamespace = 'sales'::regnamespace AND collname = 'plain';
+    name = "quaack_latin1_#{SecureRandom.hex(4)}"
+    admin = TestPostgres.server.admin
+    admin.exec("CREATE DATABASE #{name} TEMPLATE template0 ENCODING 'LATIN1' LOCALE 'C'")
+    latin1 = PG.connect(**test_database.connection_params, dbname: name)
+    latin1.exec(<<~SQL)
+      CREATE TABLE public.orders (id int, status text);
+      CREATE COLLATION public."de_DE.utf8" FROM "C";
     SQL
-    expect(qualified("SELECT id FROM orders ORDER BY status COLLATE plain", { "search_path" => "sales, public" }))
-      .to eq("SELECT id FROM public.orders ORDER BY status COLLATE public.plain")
+    expect(latin1.exec(<<~SQL).values).to eq([["UTF8"]])
+      SELECT pg_catalog.pg_encoding_to_char(collencoding) FROM pg_catalog.pg_collation
+      WHERE collnamespace = 'pg_catalog'::regnamespace AND collname = 'de_DE.utf8'
+    SQL
+    sql = 'SELECT id FROM orders ORDER BY status COLLATE "de_DE.utf8"'
+    expect(Quaack::Enclave::Relations.check(sql, nil, latin1).sql)
+      .to eq('SELECT id FROM public.orders ORDER BY status COLLATE public."de_DE.utf8"')
+  ensure
+    latin1&.close
+    admin&.exec("DROP DATABASE IF EXISTS #{name} WITH (FORCE)")
   end
 
   describe "a regclass literal" do

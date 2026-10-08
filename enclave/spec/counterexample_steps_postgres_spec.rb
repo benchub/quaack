@@ -438,6 +438,26 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
+    # Task 20261007-34: the arena connects as the run server's role, and
+    # its session's search_path is the run's stored one, so an insert's
+    # function resolves there through that path, not through a "$user"
+    # that names the run server's role.
+    it "checks an insert's functions through the run's stored search_path" do
+      role = PG::Connection.quote_ident(production.user)
+      ready(same, arena_sql: <<~SQL)
+        CREATE SCHEMA #{role};
+        CREATE FUNCTION #{role}.twice(int) RETURNS int VOLATILE LANGUAGE sql AS 'SELECT $1 * 2';
+        CREATE FUNCTION public.twice(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT $1 * 2';
+      SQL
+      store.write("search_path", %w[public])
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, "INSERT INTO public.orders (id, note, total) VALUES (1, $1, twice(2))")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => true, "load_failed" => false, "refused" => [])
+    end
+
     # public.slow sleeps, and claims IMMUTABLE so the inbound check lets
     # the cast through; the arena's statement_timeout cuts it short.
     it "reports a statement timeout while evaluating a value as the step's error, not as bad_value" do
