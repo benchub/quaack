@@ -575,11 +575,11 @@ The instance memory comes from a command the operator configures, since Postgres
 { "memory_command": "aws rds describe-db-instances ... {host} ..." }
 ```
 
-It's one line of shell. Each `{host}` becomes the production host, quoted as one shell word, and `/bin/sh -c` runs it with no stdin, throwing its stderr away. It must print the memory as a whole number of bytes, or as a whole number and a unit: `kB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`, or `TiB`, in any case, with an optional space. Every unit is binary, as in Postgres, so `64GB` is 64 × 1024³ bytes. The command gets 30 seconds, and a timeout stops everything it started.
+It's one line of shell. Each `{host}` becomes the production host, quoted as one shell word, and `/bin/sh -c` runs it with no stdin, throwing its stderr away. It must print the memory as a whole number of bytes, or as a whole number and a unit: `kB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`, or `TiB`, in any case, with an optional space. Every unit is binary, as in Postgres, so `64GB` is 64 × 1024³ bytes, and it can't be more than 1 PiB. The command gets 30 seconds, and a timeout stops everything it started. Its output is what it printed by the time its shell exits, so a child left in the background holding stdout doesn't keep the step waiting, and it's stopped with the rest of the command. Unsupported in v1: a child that leaves the command's process group, as with `setsid`, isn't stopped.
 
 - With no config file, or no `memory_command` in it, the step records the memory as unknown and carries on. Later steps that need it refuse clearly.
 - A command that fails aborts the step with `memory_command_failed`, one that runs too long with `memory_command_timed_out`, and one whose output isn't a size with `memory_command_bad_output`. The command's output never appears in any message.
-- A config file that's a symlink, isn't a readable regular file, isn't a JSON object, or has a `memory_command` that isn't one non-blank line is refused as `bad_config`, before the step connects.
+- A config file that's a symlink, isn't a readable regular file, isn't a JSON object, or has a `memory_command` that isn't one non-blank line, `null` included, is refused as `bad_config`, before the step connects.
 
 Failing to connect is `production_connection_failed`. A Postgres error while reading is `production_read_failed`, with its SQLSTATE. Neither error names the host, the user, or the server's message. The driver adds a note to `production_connection_failed` from its own record of the run (Where QUAACK runs). Nothing is recorded unless the whole step succeeds.
 

@@ -18,7 +18,8 @@ module Quaack
       # whole number and a unit: kB, MB, GB, or TB, or KiB, MiB, GiB, or TiB,
       # in any case, with or without a space. Every unit is binary, as in
       # Postgres, so 1GB and 1GiB are both 1024**3 bytes. Blank space around
-      # it, such as a trailing newline, is fine.
+      # it, such as a trailing newline, is fine. More than MAX_BYTES is
+      # memory_command_bad_output too.
       #
       # A command that exits with a failure is memory_command_failed, one
       # that runs past its timeout is memory_command_timed_out, and anything
@@ -33,6 +34,8 @@ module Quaack
         HOST = "{host}"
         SIZE = /\A\s*([1-9][0-9]*)(?: ?([kmgt])i?b)?\s*\z/i
         UNITS = { "k" => 1, "m" => 2, "g" => 3, "t" => 4 }.freeze
+        # One PiB, far more than any server has.
+        MAX_BYTES = 1024**5
 
         module_function
 
@@ -41,7 +44,10 @@ module Quaack
           match = SIZE.match(text)
           raise Error, "memory_command_bad_output" unless match
 
-          Integer(match[1], 10) * (1024**UNITS.fetch(match[2].to_s.downcase, 0))
+          bytes = Integer(match[1], 10) * (1024**UNITS.fetch(match[2].to_s.downcase, 0))
+          raise Error, "memory_command_bad_output" if bytes > MAX_BYTES
+
+          bytes
         end
 
         # Runs template with host filled in, and returns the memory it gives,
