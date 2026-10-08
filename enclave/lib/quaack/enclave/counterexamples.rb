@@ -102,14 +102,18 @@ module Quaack
       # order), then vacuity-guard's test for each untested atom (indexes into atoms, the original's PredicateAtoms),
       # each in its own arena transaction that rolls back. A fixture that fails to load disproves nothing: the round
       # reports the runner's rule, with match nil, load_failed true, and nothing covered. Any other runner failure,
-      # such as the candidate failing to run (query_failed), disproves it, with match false. Untested atoms with_true
-      # can't replace are skipped.
+      # such as the candidate failing to run (query_failed), disproves it, with match false, and so does QUAACK's own
+      # statement_timeout. A query that fails with statement_canceled, a cancel QUAACK didn't send (such as an
+      # operator's pg_cancel_backend), says nothing about the candidate, so it's raised and ends the step, as in
+      # RunDiscipline (ArenaRunner::Cancel.foreign?). Untested atoms with_true can't replace are skipped.
       def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
         verdict = ResultComparison.compare_in_load_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)
         Round.new(match: verdict.match?, rule: verdict.rule, load_order: verdict.load_order,
                   covered: covered(runner, prepared, original, atoms, untested), load_failed: false)
       rescue ArenaRunner::Error => e
+        raise if ArenaRunner::Cancel.foreign?(e)
+
         load_failed = LOAD_RULES.include?(e.rule) || LOAD_STEPS.include?(e.step)
         Round.new(match: load_failed ? nil : false, rule: e.rule, load_order: nil, covered: [], load_failed:)
       end

@@ -65,6 +65,29 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   def lines(outcome) = outcome.stdout.lines.map { JSON.parse(it) }
 
+  # A candidate whose query sleeps once, so a second session can cancel it.
+  let(:sleepy) { "#{same} AND (SELECT length(pg_sleep(30)::text)) >= 0" }
+
+  # Runs the block while a second session cancels the arena backend that
+  # sleeps in pg_sleep, as an operator's pg_cancel_backend would, and
+  # returns the block's value and whether a cancel was sent.
+  def cancel_arena_sleeper
+    canceller = Thread.new { 400.times.any? { canceled_sleeper? || (sleep(0.05) && false) } }
+    value = yield
+    [value, canceller.value]
+  ensure
+    canceller&.kill
+  end
+
+  # Cancels the arena's backend in pg_sleep, from the admin session, and
+  # says whether there was one.
+  def canceled_sleeper?
+    production.server.admin.exec_params(<<~SQL, [arena_name]).ntuples.positive?
+      SELECT pg_cancel_backend(pid) FROM pg_stat_activity
+      WHERE datname = $1 AND wait_event = 'PgSleep' AND pid <> pg_backend_pid()
+    SQL
+  end
+
   def burndown = Quaack::Enclave::Burndown.read(stored)
   def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
 
@@ -109,6 +132,19 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(rows.join).to include("/quaack/enclave/cli.rb:")
       expect_no_leaks(sentinels, stdout: File.read(profile), why: "the profile")
       expect(LeakCheck.findings(sentinels, stdout: "#{rows.first}#{sentinels.text}\n")).not_to eq([])
+    end
+
+    # Task 20260929-29: a cancel QUAACK didn't send says nothing about the
+    # candidate, so the step fails and stores no verdict.
+    it "fails with statement_canceled, storing no verdict, when an operator cancels the candidate" do
+      ready(sleepy)
+
+      outcome, canceled = cancel_arena_sleeper { step("rewrite-test", "--search", "rewrite_1") }
+
+      expect(canceled).to be(true)
+      expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
+                                      "rule" => "statement_canceled", "sqlstate" => "57014" }])
+      expect([stored.entry?("rewrite_tested_1"), stored.entry?("rewrite_survived_1")]).to eq([false, false])
     end
 
     it "disproves a looser rewrite by scenario and rule, and records that it didn't survive" do
@@ -474,6 +510,21 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(outcome)).to eq([{ "type" => "error", "step" => "counterexample-round",
                                       "rule" => "internal_error", "sqlstate" => "57014" }])
       expect_no_leaks(sentinels, outcome)
+    end
+
+    # Task 20260929-29: a cancel QUAACK didn't send isn't a disproof.
+    it "fails with statement_canceled, storing no round or verdict, when an operator cancels the candidate" do
+      ready(sleepy)
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome, canceled = cancel_arena_sleeper do
+        round(1, "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open')")
+      end
+
+      expect(canceled).to be(true)
+      expect(lines(outcome)).to eq([{ "type" => "error", "step" => "counterexample-round",
+                                      "rule" => "statement_canceled", "sqlstate" => "57014" }])
+      expect([stored.entry?("rewrite_round_1"), stored.entry?("rewrite_survived_1")]).to eq([false, false])
     end
 
     it "decides survival only after a matching third round" do

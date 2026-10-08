@@ -4,6 +4,7 @@ require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/predicate_atoms"
+require_relative "support/server_clock"
 
 # counterexample-compare and counterexample-rollback: load one round's counterexamples, compare with fixture-compare,
 # recheck vacuity-guard's untested atoms on them, and roll back.
@@ -64,6 +65,30 @@ RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
     prepared = described_class::Prepared.new(rows: [row], inserts: [], refused: [])
     result = described_class.compare(slow, prepared, original:, candidate: lowered, atoms:, untested: [0])
     expect([result.match, result.load_failed, result.rule]).to eq([nil, true, :statement_timeout])
+  end
+
+  # A cancel QUAACK didn't send says nothing about the candidate, so it
+  # ends the round, as RunDiscipline's does, instead of disproving it
+  # (task 20260929-29).
+  it "raises an operator's cancel of the candidate as statement_canceled instead of disproving it" do
+    sleepy = "#{lowered} AND (SELECT length(pg_sleep(5)::text)) >= 0"
+    error = cancel_when_sleeping(conn) do
+      round(sleepy, "SENTINEL_10b")
+    rescue Quaack::Enclave::ArenaRunner::Error => e
+      e
+    end
+    expect(error).to be_a(Quaack::Enclave::ArenaRunner::Error)
+    expect([error.rule, error.step]).to eq(%i[statement_canceled query])
+  end
+
+  it "still disproves a candidate that hits QUAACK's own statement timeout" do
+    slow = Quaack::Enclave::ArenaRunner.new(conn, statement_timeout_ms: 200)
+    prepared = described_class::Prepared.new(
+      rows: [], inserts: ["INSERT INTO fx.orders (id, status) VALUES (1, 'SENTINEL_10b')"], refused: []
+    )
+    sleepy = "#{lowered} AND (SELECT length(pg_sleep(1)::text)) >= 0"
+    result = described_class.compare(slow, prepared, original:, candidate: sleepy, atoms:, untested: [0])
+    expect([result.match, result.load_failed, result.rule]).to eq([false, false, :statement_timeout])
   end
 
   it "skips an untested atom that can't be replaced by TRUE" do
