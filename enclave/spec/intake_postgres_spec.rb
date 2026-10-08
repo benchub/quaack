@@ -98,6 +98,23 @@ RSpec.describe "quaacks intake, from a real EXPLAIN" do
     expect(runs).to eq([])
   end
 
+  it "refuses an UPDATE's plan for the SELECT query as plan_statement_mismatch, and leaves no run" do
+    conn = test_database.connection
+    conn.exec("BEGIN")
+    # ANALYZE runs the UPDATE, so it's rolled back.
+    plan_text = conn.exec("EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON) UPDATE public.orders SET " \
+                          "total_cents = 1 WHERE total_cents = #{sentinels.number}").column_values(0).join("\n")
+    conn.exec("ROLLBACK")
+    expect(plan_text).to include("ModifyTable")
+
+    outcome = quaacks_intake(plan_text)
+
+    expect(outcome.stdout).to eq(%({"type":"error","step":"intake","rule":"plan_statement_mismatch"}\n))
+    expect(outcome.status.exitstatus).to eq(70)
+    expect_no_leaks(sentinels, outcome)
+    expect(runs).to eq([])
+  end
+
   {
     "EXPLAIN (FORMAT JSON)" => "plan_not_analyzed",
     "EXPLAIN (BUFFERS, SETTINGS, FORMAT JSON)" => "plan_not_analyzed",

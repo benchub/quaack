@@ -38,7 +38,10 @@ module Quaack
           [{ type: :run, run_id: store.run_id }]
         end
 
-        # Each entry the run gets, checked, in the order the checks run.
+        # Each entry the run gets, checked, in the order the checks run. The
+        # plan comes last, since its entry marks a finished intake for
+        # Store.sweep (Store::FINISHED_ENTRY), and every check runs before
+        # call writes anything.
         def entries(options)
           {
             "server" => Enclave::Intake.server(options["server"]),

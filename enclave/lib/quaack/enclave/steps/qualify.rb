@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../inventory/production"
+require_relative "../plan_tables"
 require_relative "../relations"
 
 module Quaack
@@ -8,7 +9,8 @@ module Quaack
     module Steps
       # `quaacks qualify --run <run ID>` (DESIGN.md, input and qualify): fully
       # qualifies the run's query against its production server, and checks
-      # that every relation it uses is a plain table (see Relations).
+      # that every relation it uses is a plain table (see Relations), and that
+      # every table the plan scans is one the query reads (see PlanTables).
       #
       # It reads the run's query, plan, server, and production_port entries. It connects to
       # the server with the operator's libpq setup, as inventory does
@@ -39,18 +41,21 @@ module Quaack
 
         def call(store:, **)
           query = store.read("query")
-          settings = store.read("plan")[0]["Settings"]
-          result, path = check(Enclave::Inventory::Production.params(store), query, settings)
+          plan = store.read("plan")
+          result, path = check(Enclave::Inventory::Production.params(store), query, plan)
           store.write("relations", result.relations.map { { "schema" => it.schema, "name" => it.name } })
           store.write("search_path", path)
           store.write("qualified_query", result.sql)
           []
         end
 
-        def check(production, query, settings)
+        def check(production, query, plan)
+          settings = plan[0]["Settings"]
           connection = Enclave::Inventory::Production.connect(production)
           Enclave::Inventory::Production.read_only(connection) do
-            [Relations.check(query, settings, connection), written_path(settings, connection)]
+            result = Relations.check(query, settings, connection)
+            PlanTables.check!(plan, result.scanned)
+            [result, written_path(settings, connection)]
           end
         ensure
           connection&.close

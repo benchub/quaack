@@ -18,11 +18,12 @@ RSpec.describe "quaacks qualify, against a real server" do
   let!(:production) { ProductionServer.create(sentinels) }
   let(:query) { "SELECT o.id FROM orders o JOIN items USING (id) WHERE o.note = '#{sentinels.text}'" }
   let(:plan_settings) { { "search_path" => "sales, public" } }
+  let(:plan) { [{ "Plan" => { "Node Type" => "Result" }, "Settings" => plan_settings }] }
   let(:store) do
     Quaack::Enclave::Store.create(base: quaacks.store_base).tap do |store|
       store.write("server", production.host)
       store.write("query", query)
-      store.write("plan", [{ "Plan" => { "Node Type" => "Result" }, "Settings" => plan_settings }])
+      store.write("plan", plan)
     end
   end
 
@@ -168,6 +169,100 @@ RSpec.describe "quaacks qualify, against a real server" do
       pgpass
 
       expect_failed(qualify, "view_relation")
+    end
+  end
+
+  # Task 20260924-3: every table the plan scans must be one the query
+  # reads, or an inheritance descendant of one. A query table the plan
+  # doesn't scan is fine, since the planner can drop one.
+  context "when the plan is a real EXPLAIN" do
+    let(:explained) { query }
+    let(:explain_options) { "ANALYZE, BUFFERS, SETTINGS, FORMAT JSON" }
+    let(:plan) do
+      conn = production.connect
+      conn.exec("SET search_path = sales, public")
+      JSON.parse(conn.exec("EXPLAIN (#{explain_options}) #{explained}").getvalue(0, 0))
+    ensure
+      conn&.close
+    end
+
+    before do
+      conn = production.connect
+      conn.exec(<<~SQL)
+        CREATE TABLE public.customers (id int PRIMARY KEY, name text);
+        CREATE TABLE sales.child_orders () INHERITS (sales.orders);
+      SQL
+      conn.close
+      pgpass
+    end
+
+    it "takes the query's own plan" do
+      expect(plan.to_json).to include(%("Relation Name":"items"))
+      expect(qualify.stdout).to eq(done)
+    end
+
+    it "takes a plan that scans a query table's inheritance child" do
+      expect(plan.to_json).to include(%("Relation Name":"child_orders"))
+      expect(qualify.stdout).to eq(done)
+    end
+
+    context "with a join the planner removed" do
+      let(:query) do
+        "SELECT o.id FROM orders o LEFT JOIN customers c ON c.id = o.id WHERE o.note = '#{sentinels.text}'"
+      end
+
+      it "takes the plan, which doesn't scan the removed table" do
+        expect(plan.to_json).not_to include(%("Relation Name":"customers"))
+        expect(qualify.stdout).to eq(done)
+      end
+    end
+
+    context "with a filter the planner proved false" do
+      let(:query) { "SELECT o.id FROM orders o JOIN items USING (id) WHERE false AND o.note = '#{sentinels.text}'" }
+
+      it "takes the plan, which scans no table at all" do
+        expect(plan.to_json).not_to include("Relation Name")
+        expect(qualify.stdout).to eq(done)
+      end
+    end
+
+    context "with another query's plan" do
+      let(:explained) { "SELECT c.id FROM customers c JOIN orders o USING (id) WHERE c.name = '#{sentinels.text}'" }
+
+      it "refuses it as plan_table_mismatch, and stores nothing" do
+        expect(plan.to_json).to include(%("Relation Name":"customers"))
+        expect_failed(qualify, "plan_table_mismatch")
+      end
+    end
+
+    context "with ONLY, and a plan that scans the inheritance child" do
+      let(:query) { "SELECT o.id FROM ONLY orders o WHERE o.note = '#{sentinels.text}'" }
+      let(:explained) { "SELECT o.id FROM orders o WHERE o.note = '#{sentinels.text}'" }
+
+      it "refuses it as plan_table_mismatch" do
+        expect(plan.to_json).to include(%("Relation Name":"child_orders"))
+        expect_failed(qualify, "plan_table_mismatch")
+      end
+    end
+
+    context "with a VERBOSE plan of a table of the same name in another schema" do
+      let(:explain_options) { "ANALYZE, VERBOSE, BUFFERS, SETTINGS, FORMAT JSON" }
+      let(:query) { "SELECT o.id FROM orders o WHERE o.note = '#{sentinels.text}'" }
+      let(:explained) { "SELECT o.id FROM public.orders o WHERE o.note = '#{sentinels.text}'" }
+
+      it "refuses it as plan_table_mismatch, by the plan's Schema" do
+        expect(plan.to_json).to include(%("Schema":"public"))
+        expect_failed(qualify, "plan_table_mismatch")
+      end
+
+      context "when the plan is the query's own" do
+        let(:explained) { query }
+
+        it "takes it" do
+          expect(plan.to_json).to include(%("Schema":"sales"))
+          expect(qualify.stdout).to eq(done)
+        end
+      end
     end
   end
 

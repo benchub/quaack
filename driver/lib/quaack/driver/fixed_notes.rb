@@ -65,6 +65,13 @@ module Quaack
                                "query with EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON). #{GO_ON}",
         "plan_no_buffers" => "The plan has no buffer counts, so EXPLAIN ran without BUFFERS. Run the query " \
                              "with EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON). #{GO_ON}",
+        "plan_statement_mismatch" => "The plan file doesn't match the query file: the plan is of a statement " \
+                                     "that changes data, such as an UPDATE, and the query is a SELECT. Check " \
+                                     "that --plan names the plan of the query --query names. #{GO_ON}",
+        # qualify refuses it, after intake started the run, so the run can't go on.
+        "plan_table_mismatch" => "The plan file doesn't match the query file: the plan scans a table the query " \
+                                 "doesn't read. Check that --plan names the plan of the query --query names, " \
+                                 "then start a new run with `quaack start`.",
 
         # What the query uses that QUAACK v1 can't tune. Going on can't help,
         # since the run's query stays the same.
