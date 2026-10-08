@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-28 (literals: cast placeholders get statistics values; statistics records column_types).
 - 20260924-3 (intake: orphan sweep, plan_statement_mismatch; qualify: plan_table_mismatch).
 - 20260924-29 (run-server: tablespace and preload checks; StoreFormat 5).
+- 20261008-31 (rewrite candidates: reg literals, name-lookup functions, and reg-typed literals refused).
 
 ## How this file works.
 
@@ -2278,21 +2279,7 @@ The build and review of 20260924-24 found these:
 - **Design:** inventory.
 - **Status:** todo
 
-### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists.
-
-The second review of 20260923-57 found this. It's already true on main, and 20260923-57 neither causes it nor makes it worse. It's the same kind of leak that review treated as blocking, so take it up soon.
-
-The candidate check compares relations against the original's set, but it never sees a name inside a string literal:
-
-- **Qualified literal.** A candidate with `'anyschema.t'::regclass` is accepted. It plans when `t` exists and fails to plan when it doesn't. The LLM can use that to probe whether any relation exists in the racetrack, which holds production's schema.
-- **Unqualified literal.** With the role QUAACK connects as, an unqualified `'sent_t'::regclass` is accepted when that role's schema holds `sent_t`. When it doesn't, the inbound check refuses it as `unknown_relation`.
-
-The fix is to check the relations named in regclass literals against the original's set, or to refuse regclass literals (and regtype and the rest) in candidates unless the original has the same literal. Test it with sentinel relations that the original doesn't use, and assert that a hidden name and a missing one get the same outcome.
-
-- **Depends on:** 20260923-57.
-- **Came from:** The second review of 20260923-57, 2026-10-08.
-- **Design:** What goes into the enclave.
-- **Status:** todo
+### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible.
 
@@ -2387,4 +2374,16 @@ The review of 20260924-29 found these:
 - **Depends on:** 20260924-29.
 - **Came from:** The review of 20260924-29, 2026-10-08.
 - **Design:** inventory and run-server.
+- **Status:** todo
+
+### 20261008-39. Reg-literal check: "any" arguments and OID probes, from 20261008-31.
+
+The second review of 20261008-31 found these:
+
+1. **"any" arguments are over-refused.** `untyped_literal` refuses calls whose arguments have type "any", such as `concat('a', name)` and `json_build_object('a', id)`, because a literal turned into an untyped `$k` has no type Postgres can work out. `json_build_object` turns up in real rewrites. Bind such arguments as text.
+2. **OID probes.** `WHERE pg_get_indexdef(16384) IS NULL` is accepted, and the fixture-compare verdict can show whether an object with that OID exists. The same goes for `pg_get_viewdef(oid)`, `pg_get_constraintdef`, and similar functions. This reveals an OID's existence, not a guessed name. Consider adding the OID-taking catalog functions to the deny-list.
+
+- **Depends on:** 20261008-31.
+- **Came from:** The second review of 20261008-31, 2026-10-08.
+- **Design:** What goes into the enclave.
 - **Status:** todo

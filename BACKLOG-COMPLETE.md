@@ -7788,3 +7788,20 @@ Still open from the build and reviews of 20260922-25:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-29 (commits c69dbddd, 48beeaaa, d4691891, b4bce20e) after a fix round that bumped StoreFormat to 5. The second review was clean. Minors went to 20261008-38.
+
+### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists.
+
+The second review of 20260923-57 found this. It's already true on main, and 20260923-57 neither causes it nor makes it worse. It's the same kind of leak that review treated as blocking, so take it up soon.
+
+The candidate check compares relations against the original's set, but it never sees a name inside a string literal:
+
+- **Qualified literal.** A candidate with `'anyschema.t'::regclass` is accepted. It plans when `t` exists and fails to plan when it doesn't. The LLM can use that to probe whether any relation exists in the racetrack, which holds production's schema.
+- **Unqualified literal.** With the role QUAACK connects as, an unqualified `'sent_t'::regclass` is accepted when that role's schema holds `sent_t`. When it doesn't, the inbound check refuses it as `unknown_relation`.
+
+The fix is to check the relations named in regclass literals against the original's set, or to refuse regclass literals (and regtype and the rest) in candidates unless the original has the same literal. Test it with sentinel relations that the original doesn't use, and assert that a hidden name and a missing one get the same outcome.
+
+- **Depends on:** 20260923-57.
+- **Came from:** The second review of 20260923-57, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-31 (commits c6ba58b6, f4f8f78d, db0d6aeb, 456556a8) after a fix round. The second review was clean. Its minors went to 20261008-39; the first round's are in 20261008-35.
