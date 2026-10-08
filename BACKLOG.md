@@ -17,6 +17,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261002-1 (assumption-check: unique unmet with legacy INHERITS children).
 
+- 20261002-2 (report rule_bugs counts only mismatches; rewrite-check stores no rewrite twice).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -522,25 +524,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 ### 20261002-1. Rule generator: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-2. Running the rules: minor findings.
-
-Minor findings from the build and both reviews of 20261001-23:
-
-- **False rule bugs from rewrite-test and counterexamples.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. ScenarioTests also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as result-comparison's `MISMATCHES` does. counterexamples can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
-- **Postgres 18 removes the one-arm self-join itself,** so `key_in_self_join`'s rewrite of `t.id IN (SELECT t2.id FROM t t2 WHERE P)` plans like the original and plan-pruning prunes it. DESIGN.md's rewrite-rules' table says each rule is something the planner doesn't do. Say which cases still matter (the `UNION ALL` arms, and servers before 18).
-- `rewrite-check` has the double-store window that rewrite-rules closed: a call that dies after storing rewrites and before its marker stores them again on rerun.
-- A rule-made rewrite that fails the checks counts in rewrite-rules' `failed_checks` and in plan-pruning's drops, so rewrite-rules' out isn't plan-pruning's in. Settle it with 20261001-19.
-- A store where llm-rewrites ran before rewrite-rules existed gets its rule rewrites numbered after llm-rewrites'. DESIGN.md's rewrite-rules says "before llm-rewrites'" without the exception.
-- `CounterexampleStage` asks `status` again right after `RewriteStage` did.
-- Test gaps where a wrong change stays green: `rule_bugs` when nothing beat the original (`report_payload.rb:74`); "shows the rewrite-rules row first" only checks against rewrite-test (`report_spec.rb:188`); a rerun with two or more stored rule rewrites, or after a call that stored only some; the rewrite-rules and plan-pruning records going in one write; the rewrite-test disproof line's source label (`report.rb:171`).
-- The spec helper `compared` builds result-comparison's entry by hand. Call `ResultComparison.entry`.
-- An empty `rules` renders "made by QUAACK's rules " with nothing after it (`report.rb:113`).
-- In a negative result, a rule-made rewrite that plan-pruning pruned now reads "(made by QUAACK's rule ...): disproved in rewrite-test ... (rule discarded)". 20261001-17 fixes the root cause.
-
-- **Depends on:** 20261001-23.
-- **Came from:** The build and both reviews of 20261001-23.
-- **Design:** rewrite-rules, rewrite-test, counterexamples, report, burndown.
-- **Status:** todo
+### 20261002-2. Running the rules: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data. Done, see BACKLOG-COMPLETE.md.
 
@@ -2372,4 +2356,16 @@ The review of 20260929-29 found these minor issues:
 - **Depends on:** 20261002-1.
 - **Came from:** The build and review of 20261002-1, 2026-10-08.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-57. Running the rules: leftovers from 20261002-2.
+
+1. **`failed_checks` vs plan-pruning drops.** A rule-made rewrite that fails the checks is counted in rewrite-rules' `failed_checks` and also in plan-pruning's drops. Settle this with 20261001-19's counting.
+2. **A second `status` call.** `CounterexampleStage` asks `status` again right after `RewriteStage` did. Fixing it means passing the entries between the stages.
+3. **Which assumptions win on a deduped rewrite.** Dedupe now covers any later call of the same source, not just a rerun. A later rewrite with the same SQL but different stated assumptions keeps the earlier entry's assumptions. Say in DESIGN.md which wins, or merge them.
+4. **Duplicate constant.** `RuleBugs::MISMATCHES` duplicates `RewriteFate::MISMATCHES`. Share one.
+
+- **Depends on:** 20261002-2.
+- **Came from:** The build and review of 20261002-2, 2026-10-08.
+- **Design:** rewrite-rules, report.
 - **Status:** todo

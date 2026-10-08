@@ -8090,3 +8090,24 @@ Minor findings from both reviews of 20261001-22:
 - **Design:** assumption-check, rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261002-1 (commits d7c43ea4, ae073c20, 26ea7411, 31ff1b92). Review had no blocking findings. The shared cap, over_cap, and the Tree::Names comment were stale. Leftovers went to 20261008-56.
+
+### 20261002-2. Running the rules: minor findings.
+
+Minor findings from the build and both reviews of 20261001-23:
+
+- **False rule bugs from rewrite-test and counterexamples.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. ScenarioTests also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as result-comparison's `MISMATCHES` does. counterexamples can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
+- **Postgres 18 removes the one-arm self-join itself,** so `key_in_self_join`'s rewrite of `t.id IN (SELECT t2.id FROM t t2 WHERE P)` plans like the original and plan-pruning prunes it. DESIGN.md's rewrite-rules' table says each rule is something the planner doesn't do. Say which cases still matter (the `UNION ALL` arms, and servers before 18).
+- `rewrite-check` has the double-store window that rewrite-rules closed: a call that dies after storing rewrites and before its marker stores them again on rerun.
+- A rule-made rewrite that fails the checks counts in rewrite-rules' `failed_checks` and in plan-pruning's drops, so rewrite-rules' out isn't plan-pruning's in. Settle it with 20261001-19.
+- A store where llm-rewrites ran before rewrite-rules existed gets its rule rewrites numbered after llm-rewrites'. DESIGN.md's rewrite-rules says "before llm-rewrites'" without the exception.
+- `CounterexampleStage` asks `status` again right after `RewriteStage` did.
+- Test gaps where a wrong change stays green: `rule_bugs` when nothing beat the original (`report_payload.rb:74`); "shows the rewrite-rules row first" only checks against rewrite-test (`report_spec.rb:188`); a rerun with two or more stored rule rewrites, or after a call that stored only some; the rewrite-rules and plan-pruning records going in one write; the rewrite-test disproof line's source label (`report.rb:171`).
+- The spec helper `compared` builds result-comparison's entry by hand. Call `ResultComparison.entry`.
+- An empty `rules` renders "made by QUAACK's rules " with nothing after it (`report.rb:113`).
+- In a negative result, a rule-made rewrite that plan-pruning pruned now reads "(made by QUAACK's rule ...): disproved in rewrite-test ... (rule discarded)". 20261001-17 fixes the root cause.
+
+- **Depends on:** 20261001-23.
+- **Came from:** The build and both reviews of 20261001-23.
+- **Design:** rewrite-rules, rewrite-test, counterexamples, report, burndown.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261002-2 (commits d5a007c5, 41e442d1, 9b146ef8). Review had no blocking findings. Leftovers and minors went to 20261008-57.
