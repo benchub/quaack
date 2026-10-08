@@ -7173,3 +7173,13 @@ The URL prints too, so also scrub a key in a `base_url` query string (from the r
 - **Design:** LLM providers, trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-08, after a review with one blocking finding (untested scrub entries), a fix round, and a clean second review. Anthropic and Bedrock errors other than llm_auth read `the API answered <status>: <message>`, with the body's `error.message` (or Bedrock's top-level `message`), never the gem's `{url:, status:, body:}`; with no usable message, only the status. Every detail has the adapter's own credentials (Anthropic `api_key` and `auth_token`; Bedrock's bearer token and AWS access key, secret key, and session token) and each `base_url` query value of eight characters or more, raw and decoded, replaced with `[key]`. Each scrub entry has a sentinel test through a fake gateway that echoes it.
+
+### 20261007-51. Equality: refuse a half-exact `=` too.
+
+From the review of 20261007-45. `EXACT_SQL` looks only for an `=` taking exactly (left, right). Postgres's operator resolution prefers the candidate with the most exact argument matches, so a user `=` with one side exact (`=(pair, record)`, `=(varchar, text)` against varchar columns, `=(mood, anyenum)`) also wins over the polymorphic one, and `Equality.operator` still picks the family's. Refuse when an `=` exists whose argument types exactly match either column's while the family's inputs differ, or list it in DESIGN.md as unsupported in v1. Needs a user-planted, unusual operator.
+
+- **Depends on:** 20261007-45.
+- **Came from:** The review of 20261007-45.
+- **Design:** trust boundary, assumption checks.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `Equality` refuses when any `=`, in any schema, matches the column types exactly in more argument positions than the family's `=` does, since Postgres keeps the candidates with the most exact matches first; so `=(pair, record)`, `=(varchar, text)`, and `=(mood, anyenum)` now refuse. Probes of 60 and 33 realistic type pairs with common extensions show nothing newly refused. Enclave change, unreleased until the next batch bump.

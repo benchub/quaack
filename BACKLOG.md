@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- None. The last batch closed at 0.1.22 on 2026-10-08.
+- 20261007-51 (Equality refuses a half-exact `=`).
 
 ## How this file works.
 
@@ -2216,14 +2216,7 @@ From 20261002-5. New features, not fixes: composite keys, GROUP BY, outer joins,
 
 ### 20261007-50. Bedrock region lookup: match the SDK on empty variables. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-51. Equality: refuse a half-exact `=` too.
-
-From the review of 20261007-45. `EXACT_SQL` looks only for an `=` taking exactly (left, right). Postgres's operator resolution prefers the candidate with the most exact argument matches, so a user `=` with one side exact (`=(pair, record)`, `=(varchar, text)` against varchar columns, `=(mood, anyenum)`) also wins over the polymorphic one, and `Equality.operator` still picks the family's. Refuse when an `=` exists whose argument types exactly match either column's while the family's inputs differ, or list it in DESIGN.md as unsupported in v1. Needs a user-planted, unusual operator.
-
-- **Depends on:** 20261007-45.
-- **Came from:** The review of 20261007-45.
-- **Design:** trust boundary, assumption checks.
-- **Status:** todo
+### 20261007-51. Equality: refuse a half-exact `=` too. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-52. `or_to_union`: LIKE edge cases, and parameter patterns.
 
@@ -2270,4 +2263,16 @@ From the builder and reviews of 20261007-54.
 - **Depends on:** 20261007-54.
 - **Came from:** The builder and reviews of 20261007-54.
 - **Design:** LLM providers, trust boundary.
+- **Status:** todo
+
+### 20261007-58. Equality: planted operators on domains and same-signature shadows.
+
+From the review of 20261007-51. Neither is new in that task.
+1. A planted `=` on a domain type (`=(email, email)` for a domain over text) is matched exactly by Postgres before domains are reduced, so it wins, while `Equality` compares base types and returns `OPERATOR(pg_catalog.=)`. Run the exact check against the unreduced domain types too, or list it as unsupported in v1; DESIGN.md's "a domain counting as its base type" hides the case.
+2. A same-signature `=` in another schema (`public.=(text, text)` with `public` listed before `pg_catalog` on the path) wins over pg_catalog's, for any type whose family `=` is exact on both sides. Refuse it, or document it as unsupported.
+3. A one-side-exact `=` the columns can't be cast to (`=(mood, int4)`) isn't a Postgres candidate but still refuses. Only costs a refusal; tighten the wording or the rule.
+
+- **Depends on:** 20261007-51.
+- **Came from:** The review of 20261007-51.
+- **Design:** trust boundary, assumption checks.
 - **Status:** todo
