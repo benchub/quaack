@@ -2321,3 +2321,16 @@ The review of 20260923-36 found these minor issues:
 - **Came from:** The review of 20260923-36, 2026-10-08.
 - **Design:** index-dedupe.
 - **Status:** todo
+
+### 20261008-29. Rewrite candidate relation check: minors from 20260923-57.
+
+The first review of 20260923-57 found these minor issues:
+
+1. **A descendant's kind leaks when ONLY is dropped.** Say the original reads `ONLY public.parent_s` and a candidate drops the ONLY. The candidate is refused with the descendant's own rule, such as `foreign_relation` for a foreign-table inheritance child, so the LLM learns the kind of a child it never saw. Only the rule leaves the enclave, not the child's name. Use one rule for every descendant refusal.
+2. **The newly inherited rules have no candidate-level tests.** `rewrite_candidate_check_spec.rb` doesn't test the inheritance-descendant check (ONLY dropped) or `ambiguous_user_schema`. `relations_spec.rb` covers their logic.
+3. **`user_function_in_from` runs before the allowed check.** It reveals nothing about relations, since it only says whether a FROM function is pg_catalog's, but it should run after the allowed check, for consistency.
+
+- **Depends on:** 20260923-57.
+- **Came from:** The first review of 20260923-57, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** todo
