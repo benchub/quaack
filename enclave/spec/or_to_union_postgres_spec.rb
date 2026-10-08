@@ -430,15 +430,12 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "an ILIKE whose pattern is a column" => "o.vip OR i.val ILIKE i.pat",
       "a NOT LIKE whose pattern is a constant that ends in the escape character" =>
         "o.vip OR o.kind = 'm' OR i.val NOT LIKE 'ab\\'",
-      "a LIKE whose pattern is a parameter" => "o.vip OR o.kind = 'm' OR i.val LIKE $1",
       "an index into a value by a column" => "o.vip OR (ARRAY[1, 2])[i.big] = 1"
     }.each do |what, where|
       it "refuses an OR with #{what} an earlier arm guards, which the original runs" do
         sql = "SELECT o.id, i.id AS item #{from} WHERE #{where}"
 
-        params = sql.include?("$1") ? ["ab\\"] : []
-
-        expect(conn.exec_params(sql, params).values.sort).to eq([%w[1 10], %w[2 20]])
+        expect(conn.exec(sql).values.sort).to eq([%w[1 10], %w[2 20]])
         expect(rewritten(sql)).to eq([])
       end
     end
@@ -458,6 +455,89 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val LIKE '9%' OR i.val ILIKE 'Z\\\\'"
 
       expect(same_rows(sql, rewritten(sql))).to eq([%w[1 10], %w[2 20]])
+    end
+
+    # The user's decision for task 20261007-52: a parameter pattern is
+    # allowed, though the rule can't see its value.
+    it "splits an OR with a LIKE or ILIKE whose pattern is a parameter, and returns the same rows" do
+      %w[LIKE ILIKE].each do |like|
+        sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val #{like} $1"
+
+        expect(same_rows(sql, rewritten(sql), ["9%"])).to eq([%w[1 10], %w[2 20]])
+      end
+    end
+
+    # The risk docs/transforms/or_to_union.md and DESIGN.md state for a
+    # parameter pattern: one that ends in a lone backslash raises in the
+    # rewrite, where the original's other arms skip the LIKE.
+    it "raises in the rewrite, where the original returns rows, when a parameter pattern ends in a lone backslash" do
+      sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR o.kind = 'm' OR i.val LIKE $1"
+      rewrites = rewritten(sql)
+
+      expect(conn.exec_params(sql, ["ab\\"]).values.sort).to eq([%w[1 10], %w[2 20]])
+      expect(rewrites.size).to eq(1)
+      expect { conn.exec_params(rewrites.first, ["ab\\"]) }
+        .to raise_error(PG::InvalidEscapeSequence, /LIKE pattern must not end with escape character/)
+    end
+
+    # With standard_conforming_strings off, the server reads 'ab\\' as ab
+    # and one backslash, while pg_query reads two (task 20261007-52).
+    context "with standard_conforming_strings off" do
+      before { conn.exec("SET standard_conforming_strings = off; SET escape_string_warning = off") }
+
+      let(:pattern) { "'ab\\\\'" }
+
+      it "refuses an OR with a LIKE whose constant pattern has a backslash" do
+        sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR o.kind = 'm' OR i.val LIKE #{pattern}"
+
+        expect(conn.exec(sql).values.sort).to eq([%w[1 10], %w[2 20]])
+        expect(rewritten(sql)).to eq([])
+      end
+
+      it "would be wrong there: the arm, run on its own, raises" do
+        expect { conn.exec("SELECT o.id #{from} WHERE i.val LIKE #{pattern}") }
+          .to raise_error(PG::InvalidEscapeSequence, /LIKE pattern must not end with escape character/)
+      end
+
+      it "still splits an OR with a LIKE whose pattern is a constant with no backslash, or a parameter" do
+        sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val LIKE '9%' OR i.val ILIKE $1"
+
+        expect(same_rows(sql, rewritten(sql), ["z"])).to eq([%w[1 10], %w[2 20]])
+      end
+    end
+
+    # ILIKE raises on a nondeterministic collation, and so does Postgres
+    # 17's LIKE, only as it reads a row (task 20261007-52).
+    context "when a column uses a nondeterministic collation" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE COLLATION public.loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+          ALTER TABLE public.i ADD COLUMN v text COLLATE public.loose NOT NULL DEFAULT 'x';
+        SQL
+      end
+
+      it "refuses an OR with a LIKE or ILIKE" do
+        %w[LIKE ILIKE].each do |like|
+          sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR o.kind = 'm' OR i.v #{like} 'x'"
+
+          expect(rewritten(sql)).to eq([]), like
+        end
+      end
+
+      it "would be wrong on an ILIKE: the original returns rows, and the arm, run on its own, raises" do
+        expect(conn.exec("SELECT o.id #{from} WHERE o.vip OR o.kind = 'm' OR i.v ILIKE 'x'").ntuples).to eq(2)
+        expect { conn.exec("SELECT o.id #{from} WHERE i.v ILIKE 'x'") }
+          .to raise_error(PG::FeatureNotSupported, /nondeterministic collations are not supported for ILIKE/)
+      end
+    end
+
+    it "refuses an OR with a LIKE or ILIKE whose column is given a collation" do
+      %w[LIKE ILIKE].each do |like|
+        sql = "SELECT o.id, i.id AS item #{from} WHERE o.vip OR i.val COLLATE \"C\" #{like} 'x'"
+
+        expect(rewritten(sql.sub(' COLLATE "C"', ""))).not_to be_empty
+        expect(rewritten(sql)).to eq([]), like
+      end
     end
 
     it "keeps the arms that read the same table together in one branch" do

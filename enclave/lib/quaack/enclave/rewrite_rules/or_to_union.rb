@@ -87,7 +87,7 @@ module Quaack
           reads = Reads.of(select, catalog) if select && plain?(select) && movable?(select)
           return [] unless reads
 
-          Arms.splittable(select).map do |index|
+          Arms.splittable(select, catalog).map do |index|
             Rewrite.new(tree: Union.new(parse.tree, index, reads).tree, assumptions: reads.assumptions)
           end
         end
