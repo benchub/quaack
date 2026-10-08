@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260926-56 (the shared parse helper, the error rules, and NameQualifier with the stored search_path).
 - 20261007-3 (statistics hardening).
 - 20261001-4 (refused candidates never best in the index payload).
+- 20261007-9 (racetrack catalog names qualified; denormalized-equal uses each type's own `=`).
 
 ## How this file works.
 
@@ -2189,21 +2190,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-8. Progress-block rescue: minors from 20261001-13. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-9. Qualify catalog names in the enclave's arena reads (stage 2 of 20260930-14).
-
-20260930-14 qualifies the production and racetrack reads and adds a spec that allowlists the remaining files. This task qualifies every catalog relation, function, operator, and cast in the rest of the enclave's SQL: the arena, arena schema, scenarios, insert checks, rewrite-rules catalog, assumption checks, volatility checks, and so on. Shrink the spec's allowlist to empty. Forms that can't take an `OPERATOR(...)` prefix need restructuring: `IN (list)`, `IS [NOT] DISTINCT FROM`, `NULLIF`, `LIKE`, and simple `CASE`. Arena objects come from the production schema dump, so a planted operator can shadow there too.
-
-Also from the review of 20260930-14 stage 1:
-- Several files still on the list run on the racetrack, not just the arena. Each is a racetrack read, so qualify it first: `assumption_check*`, `rewrite_rules/catalog*`, `steps/rewrite_check.rb`, `server_clock.rb` (`NOW_SQL`, run on every measurement), `result_comparison/tiebreaker.rb`, `steps/index_search.rb` (~145), and `rewrite_candidate_check.rb`.
-- `single_candidate_test/hypopg.rb` (~508): no test covers `quote_ident` on HypoPG's schema. Add a schema that needs quoting, such as `"Hypo"`.
-- `user_schema.rb` `SHADOW_SQL`: no shadow test covers the `found.kind` and `found.name` comparisons. Only the static spec catches a bare `=` there.
-- In `enclave/spec/index_build_step_postgres_spec.rb` (~355) and `volatility_check_spec.rb` (~587), the new blocks went in under comments that belong to the next block. Move them.
-- The header comments in `insert_check.rb` (~29) and `rewrite_candidate_check.rb` (~31) say the connection is production. They actually get the arena and racetrack connections.
-
-- **Depends on:** 20260930-14.
-- **Came from:** The user's scoping of 20260930-14, 2026-10-07.
-- **Design:** trust boundary.
-- **Status:** todo
+### 20261007-9. Qualify catalog names in the enclave's arena reads (stage 2 of 20260930-14). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-10. Closed pipes: minors from 20261004-85. Done, see BACKLOG-COMPLETE.md.
 
@@ -2331,4 +2318,29 @@ Edge cases:
 - **Depends on:** 20260926-56.
 - **Came from:** The review of 20260926-56's qualification.
 - **Design:** qualify.
+- **Status:** todo
+
+### 20261007-31. Qualify catalog names in the enclave's arena reads (stage 3 of 20260930-14).
+
+20261007-9 qualified the racetrack reads. This task qualifies the 18 arena files still on `enclave/spec/catalog_names_spec.rb`'s allowlist, about 400 findings, and shrinks the list to empty: `arena.rb`, `arena_runner/deferred.rb`, `arena_runner/pipeline.rb` (its `ARM_SQL` `set_config`), `arena_runner/sequences.rb`, `arena_schema.rb`, `arena_schema/domain_checks.rb`, `arena_schema/unique_indexes.rb`, `clock_defaults.rb`, `counterexamples/evaluated.rb`, `denormalized_fixture.rb`, `insert_check.rb`, `insert_clock_words.rb`, `insert_values.rb`, `rewrite_rules/existence_in_flip.rb`, `scenarios/ties.rb`, `scenarios/types.rb`, `scenarios/values.rb`, and `value_pools.rb`. Where SQL compares user columns, use the column type's own `=` (`AssumptionCheck::Equality`), not `pg_catalog.=`, or citext and the like change meaning.
+
+Notes from the 20261007-9 builder: a `#{X}` interpolation is inlined by the scanner only when `X` is a plain-string constant in the same file, and `%<x>s` format placeholders show up as operators, so put them inside string literals. The builder's survey script is `build-20261007-9/findings.rb` in that session's scratchpad; rebuild it if it's gone.
+
+- **Depends on:** 20261007-9.
+- **Came from:** The split of 20261007-9.
+- **Design:** trust boundary.
+- **Status:** todo
+
+### 20261007-32. Racetrack qualification: minors from 20261007-9.
+
+From the reviews of 20261007-9.
+1. No test covers the both-NULL case of the IS DISTINCT FROM rewrite in `denormalized_equal.rb` (`COALESCE(..., a IS NULL AND b IS NULL)` to `COALESCE(..., false)` stays green).
+2. The arena runner's slow clock-read behavior specs ("doesn't keep a timed-out statement...", both "nonzero session default" examples) pass with a fast clock, on main before this change too. Make them need the slow clock.
+3. No shadow tests for the `pg_trigger.tgenabled` rewrite in `rewrite_rules/catalog/foreign_keys.rb` or the `pg_range.rngsubtype = ANY` rewrite in the tiebreaker. Only the static spec covers them.
+4. `AssumptionCheck::Equality` refuses copy and parent columns whose types share no btree `=` (char(n) with text, int4 with numeric, float8 with int4, arrays), where a bare `=` used to accept them. The direction is safe. List it in DESIGN.md as unsupported in v1, or add a cast fallback that keeps citext right.
+5. No test covers `Equality.base` following domains (domain columns would silently refuse), the `$1::type` cast, or the `rows.size == 1` guard.
+
+- **Depends on:** 20261007-9.
+- **Came from:** The reviews of 20261007-9, rounds one and two.
+- **Design:** trust boundary.
 - **Status:** todo
