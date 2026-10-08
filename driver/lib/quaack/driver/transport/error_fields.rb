@@ -37,6 +37,11 @@ module Quaack
         # last the first again.
         CYCLE_RULE = "fk_cycle"
         CYCLE_SIZES = (3..64)
+        # A dump_object_unreadable refusal's tables (DESIGN.md's schema-dump), as
+        # the enclave's ErrorFilter shapes them: 1 to 64 plain schema.name
+        # Strings, for the operator.
+        TABLES_RULE = "dump_object_unreadable"
+        TABLES_SIZES = (1..64)
 
         module_function
 
@@ -52,7 +57,8 @@ module Quaack
         def named(rule, error)
           { column: (column(error["column"]) if COLUMN_RULES.include?(rule)),
             clients: (clients(error["clients"]) if rule == CLIENTS_RULE),
-            cycle: (cycle(error["cycle"]) if rule == CYCLE_RULE) }
+            cycle: (cycle(error["cycle"]) if rule == CYCLE_RULE),
+            tables: (tables(error["tables"]) if rule == TABLES_RULE) }
         end
 
         def reason(rule, reason) = (reason if REASON_RULES.include?(rule) && REASONS.include?(reason))
@@ -61,6 +67,12 @@ module Quaack
           return unless cycle.instance_of?(Array) && CYCLE_SIZES.cover?(cycle.size) && cycle.first == cycle.last
 
           cycle if cycle.all? { shaped(it, FUNCTION) }
+        end
+
+        def tables(tables)
+          return unless tables.instance_of?(Array) && TABLES_SIZES.cover?(tables.size)
+
+          tables if tables.all? { shaped(it, FUNCTION) }
         end
 
         def column(column)

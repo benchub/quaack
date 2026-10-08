@@ -114,6 +114,47 @@ RSpec.describe "quaacks schema-dump, against a real server" do
     expect_no_leaks(sentinels, outcome)
   end
 
+  # 20261001-10: the operator's extra_dump_schemas, in ~/.quaack/config.json.
+  it "adds the config's extra dump schemas to the full dump" do
+    pgpass
+    production.connect.tap { it.exec("CREATE SCHEMA extra; CREATE TABLE extra.kept (id int)") }.close
+    FileUtils.mkdir_p(File.join(quaacks.home, ".quaack"))
+    File.write(File.join(quaacks.home, ".quaack", "config.json"), %({"extra_dump_schemas": ["extra"]}))
+
+    expect(schema_dump.stdout).to eq(done)
+    expect(stored.read("schema_dump")["namespaces"]).to eq(%w[audit extra public sales])
+    expect(created_tables(stored.read("schema_dump")["ddl"])).to include("extra.kept")
+  end
+
+  it "names the tables the role can't read in its error line, and nothing else" do
+    reader = "quaack_step_reader_#{Process.pid}"
+    admin = TestPostgres.server.admin
+    admin.exec(%(CREATE ROLE "#{reader}" LOGIN PASSWORD '#{production.password}'))
+    conn = production.connect
+    conn.exec(%(GRANT USAGE ON SCHEMA sales, audit TO "#{reader}"; GRANT SELECT ON public.orders, sales.items, ) +
+              %(audit.vendors TO "#{reader}"))
+    pgpass(user: reader)
+
+    outcome = schema_dump(env: operator_env(PGUSER: reader))
+
+    expect([outcome.stdout, outcome.status.exitstatus])
+      .to eq([%({"type":"error","step":"schema-dump","rule":"dump_object_unreadable",) +
+              %("tables":["sales.unrelated"]}\n), 70])
+    expect_no_leaks(sentinels, outcome)
+  ensure
+    conn&.exec(%(DROP OWNED BY "#{reader}"))
+    conn&.close
+    admin&.exec(%(DROP ROLE IF EXISTS "#{reader}"))
+  end
+
+  it "refuses a config whose extra dump schemas are null" do
+    pgpass
+    FileUtils.mkdir_p(File.join(quaacks.home, ".quaack"))
+    File.write(File.join(quaacks.home, ".quaack", "config.json"), %({"extra_dump_schemas": null}))
+
+    expect_failed(schema_dump, "bad_config")
+  end
+
   # While pg_dump runs, the step's own connection still holds the
   # transaction its catalog reads ran in: Production.read_only's. This
   # shows only that some transaction is open, not that it's read-only:

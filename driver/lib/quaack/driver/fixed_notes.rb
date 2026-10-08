@@ -173,6 +173,11 @@ module Quaack
                              "Install pg_dump there, on the ssh user's PATH. #{GO_ON}",
         "pg_dump_too_old" => "pg_dump on the jump server is an older major version than the production " \
                              "server. Install a pg_dump at least as new as production. #{GO_ON}",
+        # The error line's tables come first.
+        "dump_object_unreadable" => "Your role on the production server can't read these tables, which the " \
+                                    "schema dump needs, and pg_dump locks every table it dumps. Grant your " \
+                                    "role there SELECT on the tables named, or use a role that can read " \
+                                    "them. #{GO_ON}",
         "pg_dump_failed" => "pg_dump failed against the production server. It also fails when it waits more " \
                             "than 30 seconds for a table's lock. Check that your role can dump the schema. " \
                             "#{GO_ON}",

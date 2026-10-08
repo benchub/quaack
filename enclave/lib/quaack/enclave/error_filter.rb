@@ -8,7 +8,7 @@ module Quaack
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
     # SQLSTATE if there was one, plus, for some rules, the shape-class detail
-    # below (reason, function, clients, column, and cycle).
+    # below (reason, function, clients, column, cycle, and tables).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "fixture-load")
     #   # => '{"type":"error","step":"fixture-load","rule":"internal_error","sqlstate":"23505"}'
@@ -58,6 +58,12 @@ module Quaack
     #   Otherwise the whole field is left out. This file can't see the
     #   run's schema, so whoever raises the error checks that each is one
     #   of the run's relations (Steps::CycleTables).
+    # - The tables come from the error's tables method, and are sent only
+    #   when the rule is dump_object_unreadable (DESIGN.md's schema-dump): the
+    #   tables the dump needs that the operator's role can't read, which are
+    #   schema, never a row value, and go only to the operator, never to the
+    #   LLM. It must be an Array of 1 to 64 plain schema.name Strings, like
+    #   the function. Otherwise the whole field is left out.
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
@@ -110,7 +116,8 @@ module Quaack
           function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
           clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE),
           column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
-          cycle: (Cycle.check(ask(exception, :cycle)) if rule == Cycle::RULE) }.compact
+          cycle: (Cycle.check(ask(exception, :cycle)) if rule == Cycle::RULE),
+          tables: (Tables.check(ask(exception, :tables)) if rule == Tables::RULE) }.compact
       end
 
       # Runs the block and returns its value. If it raises anything, even a
@@ -224,6 +231,22 @@ module Quaack
           return unless cycle.instance_of?(Array) && SIZES.cover?(cycle.size) && cycle.first == cycle.last
 
           cycle if cycle.all? { ErrorFilter.shaped?(it, FUNCTION) }
+        end
+      end
+
+      # A dump_object_unreadable refusal's tables.
+      module Tables
+        RULE = "dump_object_unreadable"
+        SIZES = (1..64)
+
+        module_function
+
+        # tables if it's an Array of SIZES plain schema.name Strings, and nil
+        # otherwise.
+        def check(tables)
+          return unless tables.instance_of?(Array) && SIZES.cover?(tables.size)
+
+          tables if tables.all? { ErrorFilter.shaped?(it, FUNCTION) }
         end
       end
 
