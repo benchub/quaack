@@ -55,6 +55,21 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       .to eq([true, true, false, false])
   end
 
+  # Task 20261002-1: a legacy INHERITS child's rows show up in a scan of
+  # its parent, and the parent's unique index doesn't cover them.
+  it "doesn't meet a unique set on a table with legacy inheritance children, but does on a partitioned one" do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.base (id int PRIMARY KEY);
+      CREATE TABLE public.leaf (id int PRIMARY KEY);
+      CREATE TABLE public.heir (PRIMARY KEY (id)) INHERITS (public.base);
+      CREATE TABLE public.parted (id int PRIMARY KEY) PARTITION BY RANGE (id);
+      CREATE TABLE public.parted_1 PARTITION OF public.parted FOR VALUES FROM (0) TO (10);
+    SQL
+
+    expect(%w[base leaf heir parted parted_1].map { met?(unique("public.#{it}", "id")) })
+      .to eq([false, true, true, true, true])
+  end
+
   it "meets a foreign key only when a validated one matches its columns and referenced table" do
     expect([met?(fk("customer_id")), met?(fk("seller_id")), met?(fk("customer_id", ["public.orders", "id"]))])
       .to eq([true, false, false])

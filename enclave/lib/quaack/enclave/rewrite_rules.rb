@@ -11,6 +11,7 @@ require_relative "rewrite_rules/literals"
 require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
 require_relative "rewrite_rules/polymorphic_key_copy"
+require_relative "rewrite_rules/rewrite"
 require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
@@ -60,7 +61,6 @@ module Quaack
     # rules the rules applied, in order, and assumptions those of every rule
     # applied, each once.
     module RewriteRules
-      Rewrite = Data.define(:tree, :assumptions)
       Candidate = Data.define(:sql, :parse, :rules, :assumptions)
       Generated = Data.define(:rewrites, :duplicates, :over_cap, :made)
       # A result whose SQL was already produced, and the rule that made it.

@@ -173,6 +173,35 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       expect(rewritten(mirrored).size).to eq(1)
     end
 
+    # Task 20261002-1's test gaps.
+    it "fires on a table outside public, and names that table in its assumptions" do
+      sql = "SELECT t.id FROM other.t WHERE t.id IN (SELECT t2.id FROM other.t t2 WHERE t2.x = 1)"
+      rewrites = rule.rewrites(PgQuery.parse(sql), catalog)
+
+      expect(rewrites.map { Quaack::Enclave::Deparse.faithfully(it.tree) })
+        .to eq(["SELECT t.id FROM other.t WHERE t.x = 1"])
+      expect(rewrites.map(&:assumptions)).to eq(
+        [[{ "kind" => "unique", "table" => "other.t", "columns" => ["id"] },
+          { "kind" => "not_null", "table" => "other.t", "column" => "id" }]]
+      )
+    end
+
+    it "moves a condition with no columns, such as Rails's 1=0, to the outer query" do
+      sql = "SELECT t.id FROM public.t WHERE t.id IN " \
+            "(SELECT t2.id FROM public.t t2 JOIN public.u ON u.t_id = t2.id WHERE 1 = 0)"
+
+      expect(rewritten(sql)).to eq(
+        ["SELECT t.id FROM public.t WHERE 1 = 0 AND EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.t_id = t.id)"]
+      )
+    end
+
+    it "finds an IN inside a nested AND" do
+      sql = "SELECT t.id FROM public.t WHERE t.id > 0 AND " \
+            "(t.x > 0 AND t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1))"
+
+      expect(rewritten(sql)).to eq(["SELECT t.id FROM public.t WHERE t.id > 0 AND t.x > 0 AND t.x = 1"])
+    end
+
     it "gives one rewrite per matching IN, and the generator's second pass rewrites both" do
       sql = "SELECT t.id FROM public.t WHERE t.id IN (SELECT a.id FROM public.t a WHERE a.x = 1) " \
             "AND t.id IN (SELECT b.id FROM public.t b JOIN public.u ON u.t_id = b.id WHERE u.y = 1)"
@@ -219,6 +248,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
         "SELECT t.id FROM public.t WHERE id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "the subquery gives another column" =>
         "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.x FROM public.t t2 WHERE t2.x = 1)",
+      "the subquery gives two columns, the first the key" =>
+        "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id, t2.x FROM public.t t2 WHERE t2.x = 1)",
+      "the query is two statements" =>
+        "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1); SELECT 1",
       "the subquery gives an expression" =>
         "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id + 0 FROM public.t t2 WHERE t2.x = 1)",
       "the subquery gives an aggregate" =>
