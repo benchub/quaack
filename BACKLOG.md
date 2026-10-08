@@ -2272,3 +2272,12 @@ From the builder and review of 20261007-46.
 - **Status:** todo
 
 ### 20261007-53. Unused run-server flags: minors from 20261003-22. Done, see BACKLOG-COMPLETE.md.
+
+### 20261007-54. Anthropic and Bedrock error details print the whole response body.
+
+From the builder of 20261007-40. For rules other than llm_auth, the Anthropic adapter's detail (and so Bedrock's) is the gem's own message, which is `{url:, status:, body:}`, so the whole error body prints. Anthropic's own bodies hold only a type, a message, and a request ID, but a `base_url` can point at a gateway or proxy (LiteLLM, a corporate gateway) whose 4xx or 5xx body could echo a key or other secret. The OpenAI-compatible adapter shows only `error.message`, or the body when it has none. Show only the body's `error.message` for Anthropic and Bedrock too, and scrub the adapter's own key from any detail, with sentinel tests through a fake gateway that echoes the key in a 400 and a 500 body.
+
+- **Depends on:** 20261007-40.
+- **Came from:** The builder of 20261007-40, 2026-10-08.
+- **Design:** LLM providers, trust boundary.
+- **Status:** todo
