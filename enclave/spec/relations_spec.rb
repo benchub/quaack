@@ -357,6 +357,26 @@ RSpec.describe Quaack::Enclave::Relations do
       expect { check("SELECT id FROM orders") }.to user_schema_refusal(role, "a relation named orders")
     end
 
+    # Task 20261007-9: with public's = saying yes to everything, an
+    # unqualified one could take something else an earlier schema holds,
+    # of another kind or another name, for the name the role's schema has.
+    it "is refused when public's = says yes ahead of pg_catalog's, and an earlier schema holds something else" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.lower (note text);
+        CREATE TABLE "#{role}".lower (note text);
+        CREATE SCHEMA early;
+        CREATE TABLE early.others (id int);
+        CREATE TABLE "#{role}".orders (id int);
+        SET search_path = public, pg_catalog;
+      SQL
+      CatalogShadow.plant(conn, :yes_operators)
+      path = { "search_path" => "early, \"$user\", public" }
+
+      expect { check("SELECT lower(note) FROM lower") }.to user_schema_refusal(role, "a relation named lower")
+      expect { check("SELECT o.id FROM orders o, others x", path) }
+        .to user_schema_refusal(role, "a relation named orders")
+    end
+
     it "is refused with a path that lists \"$user\", quoted or not, before the schema the name resolved to" do
       conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
 
