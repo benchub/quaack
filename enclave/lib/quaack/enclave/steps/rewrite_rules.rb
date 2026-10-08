@@ -65,7 +65,7 @@ module Quaack
           generated = nil
           recorded = Burndown.read(store)["stages"].key?(STAGE)
           also = ->(outcomes) { [[STAGE, :rewrites, counts(generated, outcomes)]] unless recorded }
-          outcomes = RewriteCheck.check(store, source: "rule", stored: stored(store), also:) do |connection|
+          outcomes = RewriteCheck.check(store, source: "rule", also:) do |connection|
             generated = generate(store, connection, rules)
             generated.rewrites.map { rewrite(it) }
           end
@@ -78,16 +78,6 @@ module Quaack
         def fired(generated)
           applied = generated.rewrites.flat_map { it.rules.map(&:name) }
           Protocol::StepCounts::RULE_NAMES.select { applied.include?(it) }
-        end
-
-        # { accepted SQL => entry name } for the rule-made rewrites the store
-        # already holds, the earliest of each.
-        def stored(store)
-          names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
-          names.each_with_object({}) do |name, found|
-            entry = store.read(name)
-            found[entry["sql"]] ||= name if entry["source"] == "rule"
-          end
         end
 
         # The rewrite-rules burndown record's counts.
