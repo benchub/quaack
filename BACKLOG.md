@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-30 (HypoPG in the quaack schema; stored search_path without unusable schemas).
 - 20261002-3 (fresh aliases avoid every table and alias name).
 - 20261007-26 (outbound statistics per-column counts).
+- 20261007-34 (index-test and counterexample-round check volatility on the stored path).
 
 ## How this file works.
 
@@ -2261,14 +2262,7 @@ From the review of 20261007-13.
 - **Design:** Several LLM providers.
 - **Status:** todo
 
-### 20261007-34. index-test: resolve `"$user"` with the production role.
-
-From the review of 20261007-30. `IndexDdlCheck`'s volatility check gets the plan's settings from `steps/index_test.rb` but runs on the racetrack connection, so `"$user"` there means the run server's role, while the hypothetical index is built in a session that uses the stored path. They disagree only when the racetrack has a schema named for one of those roles holding a function of the same name. Pass `RunServer.plan_settings(store)` there, as rewrite-check now does, and check the other racetrack users of the plan's settings. Also: the item-5 test of 20261007-30 fakes a collation's encoding with a direct `pg_catalog.pg_collation` UPDATE, which is fragile; find a sturdier setup if there is one.
-
-- **Depends on:** 20261007-30.
-- **Came from:** The review of 20261007-30.
-- **Design:** qualify, index-test.
-- **Status:** todo
+### 20261007-34. index-test: resolve `"$user"` with the production role. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-35. Run records: read once, and type-check the jump host. Done, see BACKLOG-COMPLETE.md.
 

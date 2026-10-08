@@ -6851,3 +6851,13 @@ From the reviews of 20261007-23.
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. `Runs#where` reads the record once, and a record whose `jump_host` isn't a string (missing, null, a number, a list) is refused as unreadable, naming it by `~` and never its contents. Every record `quaack start` has written since 20260926-1 carries a string jump host, so no real record is newly refused.
+
+### 20261007-34. index-test: resolve `"$user"` with the production role.
+
+From the review of 20261007-30. `IndexDdlCheck`'s volatility check gets the plan's settings from `steps/index_test.rb` but runs on the racetrack connection, so `"$user"` there means the run server's role, while the hypothetical index is built in a session that uses the stored path. They disagree only when the racetrack has a schema named for one of those roles holding a function of the same name. Pass `RunServer.plan_settings(store)` there, as rewrite-check now does, and check the other racetrack users of the plan's settings. Also: the item-5 test of 20261007-30 fakes a collation's encoding with a direct `pg_catalog.pg_collation` UPDATE, which is fragile; find a sturdier setup if there is one.
+
+- **Depends on:** 20261007-30.
+- **Came from:** The review of 20261007-30.
+- **Design:** qualify, index-test.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. index-test's GeneratorThree filter and counterexample-round's `Counterexamples.prepare` take `RunServer.plan_settings(store)`, so their volatility checks resolve names on the run's stored path, as the racetrack and arena sessions do. 20261007-30's collation test now uses a LATIN1 database instead of a catalog UPDATE. Not filed, from the review: for a run stored before 20261007-30 (no stored path), counterexample-round now checks with the plan's path while its arena session keeps the run server role's; they differ only when that plan sets a non-default path and the arena has same-named functions of different volatility. Enclave change, unreleased until the next batch bump.
