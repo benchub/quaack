@@ -199,12 +199,16 @@ RSpec.describe "quaacks report-payload" do
                  .merge("Shared Hit Blocks" => 300, "Shared Read Blocks" => 100, "Index Cond" => "(id = '#{sentinel}')",
                         "Output" => [sentinel], "Shared Dirtied Blocks" => 3)
           combinations = store.read("index_baseline")
-          combinations["combinations"]["original:top:1"]["slow"]["plan"] = [{ "Plan" => scan }]
-          combinations["combinations"]["original:top:1"]["typical"]["plan"] = [{ "Plan" => node("Seq Scan", 1) }]
+          combinations["combinations"]["original:top:1"]["slow"]["plans"] = [[{ "Plan" => scan }]]
+          combinations["combinations"]["original:top:1"]["typical"]["plans"] = [[{ "Plan" => node("Seq Scan", 1) }]]
           store.write("index_baseline", combinations)
           runs = store.read("candidate_runs")
-          runs["candidates"]["rewrite_1"]["none"]["slow"]["plan"] =
-            [{ "Plan" => node("Seq Scan", 9).merge("Shared Hit Blocks" => sentinel, "Shared Read Blocks" => -1) }]
+          runs["candidates"]["rewrite_1"]["none"]["slow"]["plans"] =
+            [[{ "Plan" => node("Seq Scan", 9).merge("Shared Hit Blocks" => sentinel, "Shared Read Blocks" => -1) }]]
+          unstable = runs["candidates"]["rewrite_1"]["rewrite_1:top:1"]["slow"]
+          unstable["stable"] = false
+          unstable["runs"] = [1100, 1200, 1200].map { { "total_blocks" => it, "hit" => 7, "read" => it - 7 } }
+          unstable["plans"] = [3, 4, 5].map { [{ "Plan" => node("Seq Scan", it) }] }
           store.write("candidate_runs", runs)
         end
       end
@@ -223,8 +227,11 @@ RSpec.describe "quaacks report-payload" do
         expect_no_leaks(sentinels, outcome)
       end
 
+      it "sends an unstable set's plan from the first run with the most blocks" do
+        expect(label("rewrite_1:top:1")["plan"].map { it["est_rows"] }).to eq([4])
+      end
+
       it "sends nil for a label without a measured plan on the slow values" do
-        expect(label("rewrite_1:top:1")["plan"]).to be_nil
         expect(label("original:top:2")["plan"]).to be_nil
         expect(label("rewrite_1:top:2")["plan"]).to be_nil
       end
