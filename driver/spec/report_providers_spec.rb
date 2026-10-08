@@ -104,7 +104,8 @@ RSpec.describe Quaack::Driver::Report do
       [fated(1, "not_better", source: "llm", covered: []), fated(2, "not_better", source: "llm", covered: []),
        fated(3, "not_better", source: "llm", covered: []), fated(4, "not_better", source: "rule", covered: []),
        fated(5, "not_better", source: "operator", covered: []), fated(6, "not_better", source: "llm", covered: []),
-       fated(7, "not_better", source: "llm", covered: [])]
+       fated(7, "not_better", source: "llm", covered: []),
+       fated(8, "not_better", source: "llm", untested_atoms: ["a < $1"], covered: [])]
     end
     let(:record) do
       unit = ->(entry, pairing, **more) { { "entry" => entry, "rounds" => 1, "pairing" => pairing, **more } }
@@ -115,7 +116,7 @@ RSpec.describe Quaack::Driver::Report do
           "rewrite_2" => [unit.call("opus", "met"), unit.call("groq", "not_met", "after" => "llm_rate_limited")],
           "rewrite_3" => [unit.call("groq", "unchecked")], "rewrite_4" => [unit.call("groq", "unchecked")],
           "rewrite_5" => [unit.call("groq", "unchecked")], "rewrite_6" => [unit.call("groq", "not_applicable")],
-          "rewrite_7" => [{ "entry" => "groq", "rounds" => 1 }]
+          "rewrite_7" => [{ "entry" => "groq", "rounds" => 1 }], "rewrite_8" => [unit.call("groq", "not_met")]
         } }
     end
 
@@ -135,6 +136,12 @@ RSpec.describe Quaack::Driver::Report do
                                   "meant to break it.")
       expect(warn(2)).to eq("Read it with care: a model checked its own work, since the one that wrote it also " \
                             "wrote test data meant to break it.")
+    end
+
+    it "capitalizes the pairing's warning when it follows another warning in the summary" do
+      expect(warn(8)).to eq("Read it with care: the test data left some of its conditions untested. A model " \
+                            "checked its own work, since the one that wrote it also wrote test data meant to " \
+                            "break it.")
     end
 
     it "says the pairing couldn't be checked for an LLM rewrite whose author wasn't recorded, with a warning" do
