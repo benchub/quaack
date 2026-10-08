@@ -302,6 +302,29 @@ RSpec.shared_examples "an LLM client" do
       end
     end
 
+    # The gem's error holds the response's headers and whole body, and the
+    # API's base URL can be a gateway or proxy that echoes a key or cookie
+    # in either, so no API error keeps it as the cause.
+    it "keeps no cause on any API error, so a secret in the response's headers never shows" do
+      client = fake.client(burndown: burndown, max_retries: 0)
+      sentinel = { "x-echoed-key" => "SENTINEL-HEADER", "set-cookie" => "session=SENTINEL-COOKIE" }
+      statuses = [400, 404, 408, 409, 413, 422, 429, 500, 503, 529]
+      statuses.each { fake.error("llm-index-ideas", status: it, headers: sentinel) }
+      fake.drop("llm-index-ideas")
+
+      seen = Array.new(statuses.size + 1) do
+        client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        e
+      end
+
+      expect(seen.map(&:rule)).to eq(%w[llm_bad_request llm_bad_request llm_unavailable llm_unavailable
+                                        llm_bad_request llm_bad_request llm_rate_limited llm_unavailable
+                                        llm_unavailable llm_unavailable llm_unavailable])
+      expect(seen.map(&:cause)).to all(be_nil)
+      expect(seen.map { error_text(it) }.join).not_to include("SENTINEL")
+    end
+
     it "checks the whole cause chain, so a planted key in a cause would show" do
       planted = begin
         begin
