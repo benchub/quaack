@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "egress"
+require_relative "error_filter/named_tables"
 
 module Quaack
   module Enclave
@@ -8,7 +9,7 @@ module Quaack
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
     # SQLSTATE if there was one, plus, for some rules, the shape-class detail
-    # below (reason, function, clients, column, and cycle).
+    # below (reason, function, clients, column, cycle, and tables).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "fixture-load")
     #   # => '{"type":"error","step":"fixture-load","rule":"internal_error","sqlstate":"23505"}'
@@ -58,12 +59,18 @@ module Quaack
     #   Otherwise the whole field is left out. This file can't see the
     #   run's schema, so whoever raises the error checks that each is one
     #   of the run's relations (Steps::CycleTables).
+    # - The tables come from the error's tables method, and are sent only
+    #   when the rule is dump_object_unreadable (DESIGN.md's schema-dump): the
+    #   tables the dump needs that the operator's role can't read, which are
+    #   schema, never a row value, and go only to the operator, never to the
+    #   LLM. It must be an Array of 1 to 64 plain schema.name Strings, like
+    #   the function. Otherwise the whole field is left out.
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
     # with drop_notices. Stderr goes back over ssh to the laptop, so it's a
     # way around the egress function unless it's silenced.
-    module ErrorFilter
+    module ErrorFilter # rubocop:disable Metrics/ModuleLength
       RULE = /\A[a-z][a-z0-9_]{0,62}\z/
       STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
       SQLSTATE = /\A[0-9A-Z]{5}\z/
@@ -109,8 +116,14 @@ module Quaack
           reason: (reason(ask(exception, :reason)) if UNREADABLE_RULES.include?(rule)),
           function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
           clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE),
-          column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
-          cycle: (Cycle.check(ask(exception, :cycle)) if rule == Cycle::RULE) }.compact
+          **schema_names(exception, rule) }.compact
+      end
+
+      # The column, cycle, or tables only one rule's error line has.
+      def schema_names(exception, rule)
+        { column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
+          cycle: (Cycle.check(ask(exception, :cycle)) if rule == Cycle::RULE),
+          tables: (Tables.check(ask(exception, :tables)) if rule == Tables::RULE) }
       end
 
       # Runs the block and returns its value. If it raises anything, even a
@@ -207,24 +220,6 @@ module Quaack
       # Whether hash is a Hash whose keys are exactly keys, each a String.
       def exact_keys?(hash, keys)
         hash.instance_of?(Hash) && hash.keys == keys && hash.keys.map(&:class) == [String] * keys.size
-      end
-
-      # An fk_cycle refusal's tables.
-      module Cycle
-        RULE = "fk_cycle"
-        # A cycle names at least two tables and its first again, and at
-        # most 64 in all.
-        SIZES = (3..64)
-
-        module_function
-
-        # cycle if it's an Array of SIZES plain schema.name Strings whose
-        # last is its first, and nil otherwise.
-        def check(cycle)
-          return unless cycle.instance_of?(Array) && SIZES.cover?(cycle.size) && cycle.first == cycle.last
-
-          cycle if cycle.all? { ErrorFilter.shaped?(it, FUNCTION) }
-        end
       end
 
       def sqlstate(exception)

@@ -93,6 +93,14 @@ RSpec.describe Quaack::Enclave::Config do
     end
   end
 
+  # 20261001-10: schemas the operator adds to schema-dump's full dump.
+  it "reads the extra dump schemas, and has none by default" do
+    expect(config.load(path).extra_dump_schemas).to eq([])
+    write(%({"extra_dump_schemas": ["dba", "Util"]}))
+
+    expect(config.load(path).extra_dump_schemas).to eq(%w[dba Util])
+  end
+
   # Each of these is refused as bad_config.
   {
     "isn't JSON" => "memory_command = echo 1",
@@ -119,7 +127,12 @@ RSpec.describe Quaack::Enclave::Config do
     "has a threshold that isn't a number" => %({"cardinality_threshold": "50"}),
     "has a threshold that isn't whole" => %({"cardinality_threshold": 50.5}),
     "has a threshold of zero" => %({"cardinality_threshold": 0}),
-    "has a negative threshold" => %({"cardinality_threshold": -5})
+    "has a negative threshold" => %({"cardinality_threshold": -5}),
+    "has null extra dump schemas" => %({"extra_dump_schemas": null}),
+    "has extra dump schemas that aren't a list" => %({"extra_dump_schemas": "dba"}),
+    "has an extra dump schema that isn't a string" => %({"extra_dump_schemas": [1]}),
+    "has an empty extra dump schema" => %({"extra_dump_schemas": [""]}),
+    "has an extra dump schema on two lines" => %({"extra_dump_schemas": ["a\\nb"]})
   }.each do |what, text|
     it "refuses a file that #{what} as bad_config" do
       write(text)

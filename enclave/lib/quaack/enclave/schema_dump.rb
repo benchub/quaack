@@ -2,6 +2,7 @@
 
 require "json"
 require "open3"
+require_relative "schema_dump/depends"
 require_relative "table_name"
 
 module Quaack
@@ -20,12 +21,15 @@ module Quaack
     # The inputs:
     # - relations: the qualified TableNames from Relations.check, the
     #   query's tables. Their schemas and their FK ancestors' schemas, at
-    #   any depth, plus public and dba if the database has them, plus the schema of
+    #   any depth, plus public if the database has it, plus the schema of
     #   each extension but plpgsql, are the namespaces,
     #   less any system schema (pg_catalog, information_schema, or another
     #   pg_ one). The full dump also names each of those extensions, so it
     #   holds their CREATE EXTENSION IF NOT EXISTS, with no version, even
-    #   for one that lives in a system schema.
+    #   for one that lives in a system schema. The full dump also adds
+    #   what those namespaces depend on (Depends).
+    # - extra_schemas: the operator's extra_dump_schemas (Config), added
+    #   whole to the full dump.
     # - connection: a PG connection to the production database, for the
     #   catalog and the server's version. Only plain SELECTs are run on it,
     #   and its settings, including its client encoding, are left alone.
@@ -68,18 +72,24 @@ module Quaack
     # Refusals raise Error, with a rule and a message naming only the rule
     # and shape: secret_in_conninfo, unknown_relation (a relation the
     # catalog doesn't have), pg_dump_missing (it couldn't be run, or didn't
-    # print its version), pg_dump_too_old, and pg_dump_failed. pg_dump's
+    # print its version), pg_dump_too_old, dump_object_unreadable (a table
+    # the dump needs that the role can't read, checked before pg_dump runs,
+    # since pg_dump locks every table it dumps), and pg_dump_failed. pg_dump's
     # stderr carries server messages, which can quote values, and names
     # what it was asked for, so it's never read: pg_dump_failed says only
     # the exit status. So a lock wait that timed out is pg_dump_failed too,
     # since pg_dump exits 1 for that as for any other failure. A refusal
     # stores nothing.
-    module SchemaDump
+    module SchemaDump # rubocop:disable Metrics/ModuleLength
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :tables
 
-        def initialize(rule, detail)
+        # tables is for dump_object_unreadable: the tables the role can't
+        # read, as schema.name Strings, which ErrorFilter sends only to the
+        # operator, if each is of its shape.
+        def initialize(rule, detail, tables: nil)
           @rule = rule
+          @tables = tables
           super("#{rule}: #{detail}")
         end
       end
@@ -112,10 +122,8 @@ module Quaack
         ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C"
       SQL
 
-      # public and dba, whichever the database has. dba is there because
-      # functions can reference it (20261001-9; 20261001-10 replaces this).
-      ALWAYS_SQL = "SELECT nspname FROM pg_catalog.pg_namespace " \
-                   "WHERE nspname OPERATOR(pg_catalog.=) ANY ('{public,dba}'::pg_catalog.name[])"
+      # public, if the database has it.
+      ALWAYS_SQL = "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) 'public'"
 
       # Every extension but plpgsql, which every database already has, and
       # its schema. pg_dump emits CREATE EXTENSION only for those named with
@@ -137,12 +145,12 @@ module Quaack
       module_function
 
       def run(store:, relations:, connection:, conninfo:, pg_dump: ["pg_dump"], # rubocop:disable Metrics/ParameterLists
-              lock_wait_timeout: LOCK_WAIT_TIMEOUT)
+              lock_wait_timeout: LOCK_WAIT_TIMEOUT, extra_schemas: [])
         Checks.no_secrets!(conninfo)
         Checks.not_sql_ascii!(connection)
         tables = ancestors(relations, connection)
         new_enough!(pg_dump, connection)
-        namespaces, full = full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout)
+        namespaces, full = full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout, extra_schemas)
         subset = subset_ddl(pg_dump, conninfo, tables, lock_wait_timeout:)
         store.write("schema_dump", { "namespaces" => namespaces, "ddl" => full })
         store.write("schema_subset", { "tables" => tables.map { [it.schema, it.name] }, "ddl" => subset })
@@ -153,12 +161,25 @@ module Quaack
       # system schema, and its DDL, with each extension. tables are the
       # query's tables and their FK ancestors, so an FK into a schema the
       # query doesn't touch still has its parent table in arena.
-      def full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout)
+      #
+      # extra_schemas, the operator's extra_dump_schemas, are dumped whole
+      # like those. Then come the namespaces of whatever those depend on
+      # (Depends), less the relations nothing needs, which --exclude-table
+      # leaves out. Every table pg_dump will lock must be readable first.
+      def full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout, extra_schemas = []) # rubocop:disable Metrics/ParameterLists
         extensions = extensions(connection)
-        namespaces = (namespaces(tables, connection) + extensions.values).uniq.sort
-        namespaces = namespaces.reject { system_schema?(it) }
-        selections = namespaces.map { "--schema=#{pattern(it)}" } + extensions.keys.map { "--extension=#{pattern(it)}" }
-        [namespaces, dump(pg_dump, conninfo, selections, lock_wait_timeout:)]
+        whole = (namespaces(tables, connection) + extensions.values + extra_schemas).uniq
+        whole = whole.reject { system_schema?(it) }
+        added, excluded = Depends.added(connection, whole)
+        namespaces = (whole + added).sort
+        Depends.readable!(connection, namespaces, excluded)
+        [namespaces, dump(pg_dump, conninfo, selections(namespaces, excluded, extensions.keys), lock_wait_timeout:)]
+      end
+
+      # The full dump's --schema, --exclude-table, and --extension arguments.
+      def selections(namespaces, excluded, extensions)
+        namespaces.map { "--schema=#{pattern(it)}" } + excluded.map { "--exclude-table=#{pattern(*it)}" } +
+          extensions.map { "--extension=#{pattern(it)}" }
       end
 
       # pg_catalog, information_schema, or any other pg_ schema, such as
@@ -209,7 +230,7 @@ module Quaack
         end
       end
 
-      # The tables' schemas, plus public and dba if the database has them, since
+      # The tables' schemas, plus public if the database has it, since
       # --strict-names fails a dump on a schema that isn't there. Sorted by
       # byte, as the tables are.
       def namespaces(tables, connection)

@@ -72,6 +72,18 @@ module FilterFakes
   end
 
   # An fk_cycle refusal, which names the cycle's tables.
+  # A dump_object_unreadable refusal, which names the tables the role
+  # can't read.
+  class TablesError < StandardError
+    attr_reader :rule, :tables
+
+    def initialize(rule:, tables:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @tables = tables
+    end
+  end
+
   class CycleError < StandardError
     attr_reader :rule, :cycle
 
@@ -366,6 +378,50 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
           out = cycle_line(bad)
 
           expect(out).to eq(line(step: "counterexample-round", rule: "fk_cycle"))
+          expect(out).not_to include("SENTINEL")
+        end
+      end
+    end
+
+    # 20261001-10: they go to the operator, through the driver's words.
+    describe "a dump_object_unreadable refusal's tables" do
+      let(:tables) { %w[dba.secrets public.accounts] }
+
+      def tables_line(tables, rule: "dump_object_unreadable")
+        filter.to_egress(FilterFakes::TablesError.new(rule:, tables:), step: "schema-dump")
+      end
+
+      it "sends the tables, in order, for a dump_object_unreadable refusal" do
+        expect(tables_line(tables)).to eq(line(step: "schema-dump", rule: "dump_object_unreadable", tables:))
+      end
+
+      it "sends one table, and 64" do
+        many = Array.new(64) { "dba.t#{it}" }
+        expect([tables_line(%w[dba.a]), tables_line(many)])
+          .to eq([line(step: "schema-dump", rule: "dump_object_unreadable", tables: %w[dba.a]),
+                  line(step: "schema-dump", rule: "dump_object_unreadable", tables: many)])
+      end
+
+      it "sends no tables for any other rule" do
+        expect(tables_line(tables, rule: "pg_dump_failed")).to eq(line(step: "schema-dump", rule: "pg_dump_failed"))
+      end
+
+      sneaky = Class.new(Array) { def to_json(*) = ERROR_SENTINEL.to_json }
+      [
+        ["a sentinel table", ["public.accounts", ERROR_SENTINEL]],
+        ["an unqualified table", %w[accounts]],
+        ["a quoted table", ['"Sales"."Accounts"']],
+        ["a table that's a String subclass", [Class.new(String).new("public.a")]],
+        ["no tables", []],
+        ["more than 64 tables", Array.new(65) { "public.t#{it}" }],
+        ["an Array subclass", sneaky.new(%w[public.a])],
+        ["a String", ERROR_SENTINEL],
+        ["nil", nil]
+      ].each do |label, bad|
+        it "drops tables with #{label}, and still sends the rule" do
+          out = tables_line(bad)
+
+          expect(out).to eq(line(step: "schema-dump", rule: "dump_object_unreadable"))
           expect(out).not_to include("SENTINEL")
         end
       end

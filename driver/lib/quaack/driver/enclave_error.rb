@@ -11,8 +11,10 @@ module Quaack
     # error line (each checked for shape, and nil if it's missing or not
     # shaped), a volatile_function refusal's function, a rewrite-test refusal's
     # column (its table, name, and type), an fk_cycle refusal's cycle (its
-    # tables, in the order their foreign keys point), and a
+    # tables, in the order their foreign keys point), a
     # run_server_other_clients failure's clients (each pid and start time),
+    # and a dump_object_unreadable refusal's tables (the ones the operator's role
+    # can't read, for the operator only),
     # likewise checked, and how the process ended. It never carries the
     # process's output, and it's raised with no cause.
     #
@@ -63,7 +65,7 @@ module Quaack
                      "--enclave-timeout-seconds to quaack run"
 
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients cycle].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients cycle tables].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
@@ -76,11 +78,11 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, cycle: nil, exit_status: nil, signal: nil, timeout_seconds: nil)
+                     clients: nil, cycle: nil, tables: nil, exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
         @timeout_seconds = timeout_seconds
         @rule = rule
-        @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle: }.freeze
+        @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle:, tables: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -211,13 +213,17 @@ module Quaack
       # The schema and clients the error line named.
       def named_details
         [("column #{described_column}" if column), ("clients #{described_clients}" if clients),
-         ("cycle #{described_cycle}" if cycle)]
+         ("cycle #{described_cycle}" if cycle), ("tables #{described_tables}" if tables)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
-      # The column or cycle a rewrite-test refusal named, or nil.
-      def named_schema = (described_column if column) || (described_cycle if cycle)
+      # The column or cycle a rewrite-test refusal named, or the tables a
+      # dump_object_unreadable refusal did, or nil.
+      def named_schema = (described_column if column) || (described_cycle if cycle) || (described_tables if tables)
+
+      # The tables the operator's role can't read, for the operator only.
+      def described_tables = tables.join(", ")
 
       def described_column = "#{column["table"]}.#{column["column"]} (#{column["type"]})"
 

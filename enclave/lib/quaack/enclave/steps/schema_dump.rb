@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../config"
 require_relative "../inventory/production"
 require_relative "../schema_dump"
 require_relative "../table_name"
@@ -18,6 +19,9 @@ module Quaack
       # Production.read_only. pg_dump runs from PATH with the operator's own
       # libpq setup, given the same Production.params as the connection: the
       # run's host, and its port when intake had --port.
+      #
+      # It adds the schemas the operator lists in extra_dump_schemas, in
+      # ~/.quaack/config.json (Config), to the full dump.
       #
       # It writes two entries:
       #
@@ -48,17 +52,18 @@ module Quaack
         def call(store:, **)
           production = Enclave::Inventory::Production.params(store)
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
+          extra_schemas = Config.load.extra_dump_schemas
           connection = Enclave::Inventory::Production.connect(production)
-          dumped(connection, relations, production).entries.each { |name, data| store.write(name, data) }
+          dumped(connection, relations, production, extra_schemas).entries.each { |name, data| store.write(name, data) }
           []
         ensure
           connection&.close
         end
 
-        def dumped(connection, relations, production)
+        def dumped(connection, relations, production, extra_schemas)
           Pending.new.tap do |pending|
             Enclave::Inventory::Production.read_only(connection) do
-              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: production)
+              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: production, extra_schemas:)
             end
           end
         end

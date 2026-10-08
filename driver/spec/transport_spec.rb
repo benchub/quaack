@@ -1121,6 +1121,46 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.message).to eq("quaacks probe failed: complex_check (exit 0)")
     end
 
+    # 20261001-10: the tables the operator's role can't read, for the operator.
+    it "shows the tables of a dump_object_unreadable refusal, and says to grant SELECT on them" do
+      line = { type: "error", step: "schema-dump", rule: "dump_object_unreadable",
+               tables: %w[dba.secrets public.accounts] }
+      error = refusal(JSON.generate(line))
+
+      expect(error.tables).to eq(%w[dba.secrets public.accounts])
+      expect(error.rule_with_note(next_step: "resume it"))
+        .to eq("dump_object_unreadable: dba.secrets, public.accounts. " \
+               "#{Quaack::Driver::FixedNotes.for("dump_object_unreadable", "resume it")}")
+      expect(Quaack::Driver::FixedNotes.for("dump_object_unreadable", "resume it"))
+        .to include("Grant your role there SELECT on the tables named, or use a role that can read them")
+        .and end_with("To go on, resume it")
+      expect(error.message).to eq("quaacks probe failed: dump_object_unreadable (step schema-dump, " \
+                                  "tables dba.secrets, public.accounts, exit 0)")
+    end
+
+    [
+      ["a sentinel table", %w[public.a SENTINEL]],
+      ["no tables", []],
+      ["more than 64 tables", Array.new(65) { "public.t#{it}" }],
+      ["a table that isn't a String", [1]],
+      ["a String", "SENTINEL"]
+    ].each do |label, tables|
+      it "drops a dump_object_unreadable refusal's tables with #{label}" do
+        error = refusal(%({"type":"error","rule":"dump_object_unreadable","tables":#{JSON.generate(tables)}}))
+
+        expect(error.tables).to be_nil
+        expect(error.message).to eq("quaacks probe failed: dump_object_unreadable (exit 0)")
+        expect(error.full_message(highlight: false)).not_to include("SENTINEL")
+      end
+    end
+
+    it "drops tables on any rule but dump_object_unreadable" do
+      error = refusal(%({"type":"error","rule":"pg_dump_failed","tables":["public.a"]}))
+
+      expect(error.tables).to be_nil
+      expect(error.message).to eq("quaacks probe failed: pg_dump_failed (exit 0)")
+    end
+
     it "shows the pids and start times of the other clients a run_server_other_clients failure names" do
       clients = %([{"pid":1234,"backend_start":"2026-09-29T16:01:02Z"},) +
                 %({"pid":5678,"backend_start":"2026-09-29T17:00:00Z"}])

@@ -43,7 +43,11 @@ module Quaack
       # 3 to 64 schema.name Strings in the order their foreign keys point,
       # the last the first again. They're schema names, each one checked to
       # be a relation of the run's schema subset, and never a row value.
-      error: %i[step rule sqlstate reason function clients column cycle].freeze,
+      # tables is only on a dump_object_unreadable refusal: 1 to 64
+      # schema.name Strings, the tables schema-dump needs that the
+      # operator's role can't read. They're schema names, for the operator,
+      # and never reach the LLM.
+      error: %i[step rule sqlstate reason function clients column cycle tables].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

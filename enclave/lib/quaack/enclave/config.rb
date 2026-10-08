@@ -27,6 +27,10 @@ module Quaack
     #   is on the list.
     # - cardinality_threshold: DESIGN.md's classify's line between few and many
     #   distinct values, a positive Integer. Without it, it's 50.
+    # - extra_dump_schemas: schemas schema-dump adds whole to its full dump
+    #   (DESIGN.md's schema-dump), an Array of non-empty one-line names, for
+    #   objects Postgres records no dependency on, such as what a SQL
+    #   function with a string body reads. Without it, there are none.
     #
     # A missing file is an empty config. A file that's there but can't be
     # used is bad_config: a symlink, even to a good file, anything but a
@@ -86,7 +90,8 @@ module Quaack
 
       private_class_method :read, :parse
 
-      attr_reader :memory_command, :run_server_command, :destroy_command, :pii_columns, :cardinality_threshold
+      attr_reader :memory_command, :run_server_command, :destroy_command, :pii_columns, :cardinality_threshold,
+                  :extra_dump_schemas
 
       def initialize(object)
         @memory_command = command(object, "memory_command")
@@ -99,6 +104,8 @@ module Quaack
         @pii_globs = @pii_columns.map { glob(it) }
         @cardinality_threshold = object.fetch("cardinality_threshold", DEFAULT_CARDINALITY_THRESHOLD)
         raise Error, "bad_config" unless positive_integer?(@cardinality_threshold)
+
+        @extra_dump_schemas = schemas(object.fetch("extra_dump_schemas", []))
       end
 
       # Whether a glob in pii_columns matches the column. table is a TableName.
@@ -127,6 +134,16 @@ module Quaack
 
         parts.map { |part| /\A#{part.split("*", -1).map { Regexp.escape(it) }.join(".*")}\z/mi }
       end
+
+      # names, frozen, if it's an Array of schema names, each a non-empty
+      # String on one line.
+      def schemas(names)
+        raise Error, "bad_config" unless names.instance_of?(Array) && names.all? { schema?(it) }
+
+        names.freeze
+      end
+
+      def schema?(name) = name.instance_of?(String) && !name.empty? && !NOT_ONE_LINE.match?(name)
 
       def positive_integer?(value) = value.instance_of?(Integer) && value.positive?
 

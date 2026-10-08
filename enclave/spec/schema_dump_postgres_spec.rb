@@ -137,7 +137,8 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       result = run([table("sales", "Zeta"), table("Upper", "t")])
 
       expect(result.tables.map(&:to_s)).to eq(%w[Upper.t sales.Beta sales.Zeta sales.alpha])
-      expect(result.namespaces).to eq(%w[Upper public sales])
+      # audit comes from sales.skus's FK to audit.vendors (20261001-10).
+      expect(result.namespaces).to eq(%w[Upper audit public sales])
     end
 
     # pg_dump with no --table dumps every table, so it isn't run.
@@ -201,30 +202,6 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(store.read("schema_dump")["ddl"]).to match(/^CREATE SCHEMA public;$/)
     end
 
-    # 20261001-9: a dumped function can reference dba, so arena needs it.
-    it "includes dba when the database has it, though no table is there, and leaves it out of the subset" do
-      conn.exec("CREATE SCHEMA dba")
-      conn.exec("CREATE TABLE dba.settings (k text)")
-      conn.exec("CREATE FUNCTION other.setting_count() RETURNS bigint LANGUAGE sql " \
-                "BEGIN ATOMIC SELECT count(*) FROM dba.settings; END")
-      result = run([table("other", "lonely")])
-
-      expect(result.namespaces).to eq(%w[dba other public])
-      expect(store.read("schema_dump")["namespaces"]).to eq(%w[dba other public])
-      ddl = store.read("schema_dump")["ddl"]
-      expect(ddl).to match(/^CREATE SCHEMA dba;$/)
-      expect(created_tables(ddl)).to include("dba.settings")
-      # A whole word, since pg_dump's random \restrict token can hold "dba".
-      expect(store.read("schema_subset")["ddl"]).not_to match(/\bdba\b/)
-    end
-
-    it "leaves out dba when the database has none" do
-      result = run([table("other", "lonely")])
-
-      expect(result.namespaces).to eq(%w[other public])
-      expect(store.read("schema_dump")["ddl"]).not_to match(/\bdba\b/)
-    end
-
     # --strict-names would fail the dump on a --schema for a public that
     # isn't there.
     it "leaves out public when the database has none" do
@@ -234,6 +211,182 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(result.namespaces).to eq(%w[other])
       expect(store.read("schema_dump")["namespaces"]).to eq(%w[other])
       expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely])
+    end
+  end
+
+  # 20261001-10: objects in the dumped schemas can depend on objects in
+  # schemas nothing else dumps, such as a production's dba schema, and arena
+  # can't load them without those. pg_depend says which, so the full dump
+  # adds just those objects: their schema, less the tables and other
+  # relations nothing needs, since one unreadable table fails pg_dump.
+  describe "the full dump of objects the dumped schemas depend on" do
+    let(:target) { "quaack_dep_load_#{Process.pid}" }
+    let(:reader) { "quaack_dep_reader_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA dba;
+        CREATE TABLE dba.settings (k text);
+        CREATE TABLE dba.secrets (k text);
+        CREATE SEQUENCE dba.ids;
+        CREATE SEQUENCE dba.unused_ids;
+        CREATE VIEW dba.secret_view AS SELECT k FROM dba.secrets;
+        CREATE FUNCTION dba.pick() RETURNS int LANGUAGE sql RETURN 7;
+        CREATE FUNCTION other.setting_count() RETURNS bigint LANGUAGE sql
+          BEGIN ATOMIC SELECT count(*) FROM dba.settings; END;
+        CREATE TABLE other.picked (id bigint DEFAULT nextval('dba.ids'), n int DEFAULT dba.pick());
+      SQL
+    end
+
+    after do
+      admin.exec(%(DROP DATABASE IF EXISTS "#{target}" WITH (FORCE)))
+      next unless admin.exec_params("SELECT 1 FROM pg_roles WHERE rolname = $1", [reader]).ntuples.positive?
+
+      conn.exec(%(DROP OWNED BY "#{reader}"))
+      admin.exec(%(DROP ROLE "#{reader}"))
+    end
+
+    def ddl = store.read("schema_dump")["ddl"]
+    # Whole words, since pg_dump's random \restrict token can hold any.
+    def named?(text, name) = text.match?(/\b#{Regexp.escape(name)}\b/)
+
+    it "adds what a function's body and a column's defaults use, and their schema, and nothing else of it" do
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[dba other public])
+      expect(store.read("schema_dump")["namespaces"]).to eq(%w[dba other public])
+      expect(ddl).to match(/^CREATE SCHEMA dba;$/)
+      expect(created_tables(ddl)).to include("dba.settings").and include("other.picked")
+      expect(created_tables(ddl)).not_to include("dba.secrets")
+      expect(ddl).to match(/^CREATE SEQUENCE dba\.ids$/).and match(/^CREATE FUNCTION dba\.pick\(\)/)
+      expect(named?(ddl, "unused_ids") || named?(ddl, "secret_view")).to be(false)
+      expect(named?(store.read("schema_subset")["ddl"], "dba")).to be(false)
+    end
+
+    # sales.skus has an FK to audit.vendors. Dumping all of sales, though
+    # the query reads no table with an FK chain into audit, needs that
+    # parent, and only it.
+    it "adds the parent of an FK from a table that's dumped only because its schema is" do
+      result = run([table("sales", "zones")])
+
+      expect(result.namespaces).to eq(%w[audit public sales])
+      expect(created_tables(ddl)).to include("audit.vendors")
+      expect(created_tables(ddl)).not_to include("audit.items", "audit.a")
+    end
+
+    it "follows what an added object depends on, in turn" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA deep;
+        CREATE FUNCTION deep.k() RETURNS text LANGUAGE sql RETURN 'k';
+        ALTER TABLE dba.settings ALTER COLUMN k SET DEFAULT deep.k();
+      SQL
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[dba deep other public])
+      expect(ddl).to match(/^CREATE FUNCTION deep\.k\(\)/)
+    end
+
+    # pg_dump dumps an added schema's functions whole, so what any of them
+    # needs comes too, though nothing in the first schemas uses it.
+    it "adds what an added schema's other functions need" do
+      conn.exec("CREATE FUNCTION dba.secret_count() RETURNS bigint LANGUAGE sql " \
+                "BEGIN ATOMIC SELECT count(*) FROM dba.secrets; END")
+      run([table("other", "lonely")])
+
+      expect(created_tables(ddl)).to include("dba.secrets", "dba.settings")
+      expect(named?(ddl, "secret_view")).to be(false)
+    end
+
+    it "adds no schema that nothing dumped depends on" do
+      conn.exec("DROP FUNCTION other.setting_count(); DROP TABLE other.picked")
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[other public])
+      expect(named?(ddl, "dba")).to be(false)
+    end
+
+    # Postgres records nothing a SQL function with a string body reads, so
+    # the operator names its schema in extra_dump_schemas, and all of it is
+    # dumped.
+    it "adds each extra schema whole, and what it depends on" do
+      conn.exec(<<~SQL)
+        DROP FUNCTION other.setting_count(); DROP TABLE other.picked;
+        CREATE FUNCTION other.legacy() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM dba.secrets';
+        CREATE SCHEMA deep;
+        CREATE FUNCTION deep.k() RETURNS text LANGUAGE sql RETURN 'k';
+        ALTER TABLE dba.secrets ALTER COLUMN k SET DEFAULT deep.k();
+      SQL
+      result = run([table("other", "lonely")], extra_schemas: ["dba"])
+
+      expect(result.namespaces).to eq(%w[dba deep other public])
+      expect(created_tables(ddl)).to include("dba.secrets", "dba.settings")
+      expect(named?(ddl, "unused_ids") && named?(ddl, "secret_view")).to be(true)
+    end
+
+    describe "as a role that can't read every table" do
+      let(:reader_conn) { PG.connect(**db.connection_params, user: reader, password: TestPostgres::PASSWORD) }
+
+      before do
+        admin.exec(%(CREATE ROLE "#{reader}" LOGIN PASSWORD '#{TestPostgres::PASSWORD}'))
+        conn.exec(<<~SQL)
+          GRANT USAGE ON SCHEMA other, dba TO "#{reader}";
+          GRANT SELECT ON ALL TABLES IN SCHEMA public, other TO "#{reader}";
+          GRANT SELECT ON dba.settings TO "#{reader}";
+        SQL
+      end
+
+      after { reader_conn.close }
+
+      def dump_as_reader(relations, **)
+        described_class.run(store:, relations:, connection: reader_conn, conninfo: { dbname: db.name, user: reader },
+                            pg_dump:, **)
+      end
+
+      # The original failure: pg_dump of all of dba failed on its unreadable
+      # tables, which nothing dumped needs.
+      it "dumps the objects it needs, past the ones it can't read, and loads into arena" do
+        dump_as_reader([table("other", "lonely")])
+
+        admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+        arena = PG.connect(**db.connection_params, dbname: target)
+        Quaack::Enclave::Arena.load_dump(arena, ddl)
+        expect(arena.exec("SELECT other.setting_count(), (SELECT n FROM other.picked)").values).to eq([["0", nil]])
+        arena.exec("INSERT INTO other.picked DEFAULT VALUES")
+        expect(arena.exec("SELECT id, n FROM other.picked").values).to eq([%w[1 7]])
+      ensure
+        arena&.close
+      end
+
+      it "refuses a needed table it can't read, naming each, before pg_dump runs, and stores nothing" do
+        conn.exec(%(REVOKE SELECT ON dba.settings, other.lonely FROM "#{reader}"))
+        Dir.mktmpdir do |dir|
+          never = fake_pg_dump(dir, "pg_dump (PostgreSQL) 18.0", "echo ran >> '#{dir}/ran'; exit 1")
+
+          expect { dump_as_reader([table("other", "lonely")], pg_dump: never) }
+            .to refused("dump_object_unreadable", "the role can't read 2 tables the dump needs") { |error|
+              expect(error.tables).to eq(%w[dba.settings other.lonely])
+            }
+          expect(File.exist?(File.join(dir, "ran"))).to be(false)
+        end
+        nothing_stored
+      end
+
+      it "counts a table in a schema the role has no USAGE on as one it can't read" do
+        conn.exec(%(REVOKE USAGE ON SCHEMA dba FROM "#{reader}"))
+
+        expect { dump_as_reader([table("other", "lonely")]) }
+          .to refused("dump_object_unreadable", "the role can't read 1 table the dump needs") { |error|
+            expect(error.tables).to eq(%w[dba.settings])
+          }
+      end
+
+      it "refuses an unreadable table in an extra schema, which is dumped whole" do
+        expect { dump_as_reader([table("other", "lonely")], extra_schemas: ["dba"]) }
+          .to refused("dump_object_unreadable", "the role can't read 1 table the dump needs") { |error|
+            expect(error.tables).to eq(%w[dba.secrets])
+          }
+      end
     end
   end
 
