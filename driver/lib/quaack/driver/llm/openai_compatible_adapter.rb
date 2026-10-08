@@ -80,6 +80,7 @@ module Quaack
           @base_url = base_url = settings.base_url || OPENAI_BASE_URL
           @openai = ::OpenAI::Client.new(api_key:, max_retries:, http_client: @attempts, base_url:,
                                          **openai_only(base_url))
+          @custom_headers = custom_header_values
         end
 
         def enforces_schema? = false
@@ -255,9 +256,9 @@ module Quaack
         # and the provider's explanation from the body, never the gem's
         # message, which holds the URL. With no answer, such as a dropped
         # connection, it's the gem's message, a fixed sentence. Either way,
-        # the key, OpenAI's organization and project, and what base_url
-        # holds are scrubbed out (APIErrorDetail), since a gateway or proxy
-        # at base_url can echo any of them.
+        # the key, OpenAI's organization, project, and custom header values,
+        # and what base_url holds are scrubbed out (APIErrorDetail), since a
+        # gateway or proxy at base_url can echo any of them.
         def detail(error)
           return "the API refused the key (#{error.status})" if rule_for(error) == "llm_auth"
 
@@ -271,9 +272,16 @@ module Quaack
           explanation ? "the API answered #{error.status}: #{explanation}" : "the API answered #{error.status}"
         end
 
-        # The keys the detail scrubs: the key, and the organization and
-        # project the gem sends to OpenAI's own API.
-        def own_keys = [@openai.api_key, @openai.organization, @openai.project].compact
+        # The keys the detail scrubs: the key, and the organization, project,
+        # and OPENAI_CUSTOM_HEADERS values the gem sends to OpenAI's own API.
+        def own_keys = [@openai.api_key, @openai.organization, @openai.project, *@custom_headers].compact
+
+        # The values of OPENAI_CUSTOM_HEADERS, read as the gem reads them:
+        # one "Name: value" a line. Only OpenAI's own API hears them, but
+        # they're scrubbed for any host, which costs nothing.
+        def custom_header_values
+          ENV.fetch("OPENAI_CUSTOM_HEADERS", "").split("\n").filter_map { it.split(":", 2)[1]&.strip }
+        end
 
         # The error object's message from a JSON body, the whole body as
         # JSON without one, or a text body as it is.

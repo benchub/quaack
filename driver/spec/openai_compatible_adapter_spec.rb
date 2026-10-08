@@ -278,6 +278,23 @@ RSpec.describe "the OpenAI-compatible adapter" do
         raise "expected an LLM::Error, got #{error.inspect}"
       end
 
+      it "scrubs OPENAI_CUSTOM_HEADERS' values, which go only to OpenAI's API" do
+        header = "SENTINEL-HEADER-0123456789"
+        other = "SENTINEL-OTHER-HEADER-0123"
+        settings = Quaack::Driver::LLM.settings({ "provider" => "openai_compatible", "model" => "m" }, env: {})
+        client = with_env("OPENAI_CUSTOM_HEADERS" => "X-Gateway-Key: #{header}\nX-Other:#{other}") do
+          Quaack::Driver::LLM::Client.new(settings:, api_key: "k", burndown:, transport: fake, max_retries: 0)
+        end
+        fake.error_body("llm-index-ideas", status: 429, body: { error: { message: "saw #{header} and #{other}" } })
+
+        error = client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        expect(error_text(e)).not_to include(header, other)
+        expect(e.reason).to eq("the API answered 429: saw [key] and [key]")
+      else
+        raise "expected an LLM::Error, got #{error.inspect}"
+      end
+
       it "would show the secret if the body echoed one that isn't the adapter's" do
         fake.error_body("llm-index-ideas", status: 429, body: { error: { message: "other SENTINEL-OTHER-0123456789" } })
 
