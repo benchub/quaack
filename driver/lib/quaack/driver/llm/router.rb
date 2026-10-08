@@ -162,7 +162,7 @@ module Quaack
         def later(name, ask, failures = {})
           call(name, ask)
         rescue Error => e
-          failed(name, e.rule)
+          failed(name, e)
           failures[name] = e
           raise named(e, name) unless FAILS_OVER.include?(e.rule)
 
@@ -176,7 +176,7 @@ module Quaack
         def start(step, skip, fresh) = order(step, skip).tap { fresh&.call(it.first) if it.any? }
 
         # What step's unit, skipping skip, can't try: each pool provider
-        # already down, with its rule, then each in skip, with its Error.
+        # already down, then each in skip, each with its Error.
         def prior(step, skip) = @down.slice(*@routing.pool(step)).except(*skip.keys).to_a + skip.to_a
 
         def call(name, ask) = @clients.fetch(name).ask(**ask, provider: name, shown: (name if @named))
@@ -202,13 +202,13 @@ module Quaack
         def failover(error, name, next_name, step)
           raise named(error, name) unless FAILS_OVER.include?(error.rule)
 
-          failed(name, error.rule)
+          failed(name, error)
           note(name, error.rule, "trying #{next_name} (#{step})") if next_name
           error
         end
 
-        def failed(name, rule)
-          @down[name] = rule if MARKS_DOWN.include?(rule) && !@down.key?(name)
+        def failed(name, error)
+          @down[name] = error if MARKS_DOWN.include?(error.rule) && !@down.key?(name)
         end
 
         # The line saying why name was left, by rule, then what happens
@@ -225,16 +225,14 @@ module Quaack
 
         # The step's failure when its unit has no provider left: the last
         # rule of tried, with each provider and its rule, and the request's
-        # sizes. From an llm block, it's the unit's one failure as it is.
+        # sizes. From an llm block, it's the one provider's failure as it
+        # is, though an earlier unit's, with the API's own detail.
         def exhausted(ask, tried)
-          return tried.last.last if !@named && tried.last.last.is_a?(Error)
+          return tried.last.last unless @named
 
-          rules = tried.map { |name, why| [name, rule(why)] }
-          list = rules.map { |name, rule| "#{name} (#{rule})" }.join(", ")
-          Error.new(rules.last.last, "every LLM provider #{ask[:step]} may use failed: #{list}. #{sizes(ask)}")
+          list = tried.map { |name, error| "#{name} (#{error.rule})" }.join(", ")
+          Error.new(tried.last.last.rule, "every LLM provider #{ask[:step]} may use failed: #{list}. #{sizes(ask)}")
         end
-
-        def rule(why) = why.is_a?(Error) ? why.rule : why
 
         def sizes(ask)
           RequestSizes.new(step: ask[:step], system: Client.system(ask[:system], ask[:schema]),
