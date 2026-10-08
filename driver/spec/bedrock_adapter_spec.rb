@@ -239,7 +239,27 @@ RSpec.describe "the bedrock adapter" do
                           "is set: unset one")
       end
 
-      %w[AWS_REGION AWS_DEFAULT_REGION].each do |name|
+      # The AWS SDK's order, which the gem's bearer mode doesn't look up
+      # itself: AWS_REGION, then AMAZON_REGION, then AWS_DEFAULT_REGION.
+      {
+        "AWS_REGION over AWS_DEFAULT_REGION" => [{ "AWS_REGION" => "eu-west-3",
+                                                   "AWS_DEFAULT_REGION" => "ap-southeast-2" }, "eu-west-3"],
+        "AWS_REGION over AMAZON_REGION" => [{ "AWS_REGION" => "eu-west-3", "AMAZON_REGION" => "ap-southeast-2" },
+                                            "eu-west-3"],
+        "AMAZON_REGION over AWS_DEFAULT_REGION" => [{ "AMAZON_REGION" => "eu-west-3",
+                                                      "AWS_DEFAULT_REGION" => "ap-southeast-2" }, "eu-west-3"]
+      }.each do |order, (variables, region)|
+        it "takes #{order} when the settings name none" do
+          ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
+          ENV.update(variables)
+          fake.reply("llm-rewrites", "ok")
+          ask_with(build(FakeBedrock.settings.with(aws_region: nil)))
+
+          expect(fake.asks.map(&:url)).to eq([invoke_url(region)])
+        end
+      end
+
+      %w[AWS_REGION AMAZON_REGION AWS_DEFAULT_REGION].each do |name|
         it "refuses a #{name} that isn't a region, naming the variable and not the value" do
           ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
           ENV[name] = "SENTINEL us east 1"
@@ -288,7 +308,7 @@ RSpec.describe "the bedrock adapter" do
       expect(fake.auths.map { scope(it)[1] }).to eq(["eu-west-3"])
     end
 
-    %w[AWS_REGION AWS_DEFAULT_REGION].each do |name|
+    %w[AWS_REGION AMAZON_REGION AWS_DEFAULT_REGION].each do |name|
       it "refuses a #{name} that isn't a region, naming the variable and not the value" do
         ENV[name] = "SENTINEL us east 1"
 
@@ -300,6 +320,15 @@ RSpec.describe "the bedrock adapter" do
 
     it "is AWS_DEFAULT_REGION when the settings and AWS_REGION name none" do
       ENV["AWS_DEFAULT_REGION"] = "eu-west-3"
+      fake.reply("llm-rewrites", "ok")
+      ask_with(build(regionless))
+
+      expect(fake.asks.map(&:url)).to eq([invoke_url("eu-west-3")])
+    end
+
+    it "is AMAZON_REGION when the settings and AWS_REGION name none" do
+      ENV["AMAZON_REGION"] = "eu-west-3"
+      ENV["AWS_DEFAULT_REGION"] = "ap-southeast-2"
       fake.reply("llm-rewrites", "ok")
       ask_with(build(regionless))
 

@@ -284,6 +284,12 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       end
     end
 
+    it "refuses a region whose prefix is longer than four letters, naming the key and not the value" do
+      e = config_error(block.merge("aws_region" => "sentl-east-1"))
+
+      expect(e.message).to eq("llm.aws_region in ~/.quaack/driver.json must be an AWS region, such as us-east-1")
+    end
+
     it "requires a model, since Bedrock's model IDs vary by region and inference profile" do
       e = config_error({ "provider" => "bedrock", "aws_region" => "us-west-2" })
 
@@ -327,11 +333,20 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                    command_template: nil, timeout_seconds: nil, at: "llm")
     end
 
-    it "takes no block key, not even bedrock's own, when QUAACK_LLM_PROVIDER switches to bedrock" do
-      result = settings({ "aws_region" => "us-west-2", "model" => "claude-x" },
+    it "takes no block key when QUAACK_LLM_PROVIDER switches to bedrock" do
+      result = settings({ "model" => "claude-x", "base_url" => "https://gateway.example.com" },
                         env: { "QUAACK_LLM_PROVIDER" => "bedrock", "QUAACK_MODEL" => "m" })
 
-      expect([result.model, result.aws_region]).to eq(["m", nil])
+      expect([result.model, result.base_url]).to eq(["m", nil])
+    end
+
+    # Such a key would fail the next run, without the switch, so it fails
+    # now.
+    it "still refuses a key that doesn't apply to the block's own provider when QUAACK_LLM_PROVIDER switches" do
+      e = config_error({ "aws_region" => "us-west-2", "model" => "claude-x" },
+                       env: { "QUAACK_LLM_PROVIDER" => "bedrock", "QUAACK_MODEL" => "m" })
+
+      expect(e.message).to eq("llm.aws_region in ~/.quaack/driver.json doesn't apply to provider anthropic")
     end
 
     it "needs QUAACK_MODEL when QUAACK_LLM_PROVIDER switches to bedrock" do
@@ -385,6 +400,13 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(fields(result)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
                                    api_key_env: nil, aws_region: nil, aws_profile: nil,
                                    command_template: nil, timeout_seconds: nil, at: "llm")
+    end
+
+    it "refuses api_key_env on a copilot_cli block even when QUAACK_LLM_PROVIDER switches away" do
+      e = config_error({ "provider" => "copilot_cli", "api_key_env" => "SENTINEL_VALUE" },
+                       env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+
+      expect(e.message).to eq("llm.api_key_env in ~/.quaack/driver.json doesn't apply to provider copilot_cli")
     end
 
     it "still checks the ignored keys' values" do
