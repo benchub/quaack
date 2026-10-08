@@ -7657,3 +7657,18 @@ Still open from the reviews of 20260922-43:
 - **Decided by the user (2026-10-05):** Emit a marker the report counts, and list NATURAL JOIN as unsupported in v1.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260923-30 (commits 6d0e80c0, 4f688e98). Review had no blocking findings; its minors went to 20261008-26.
+
+### 20260924-8. Burndown loose ends.
+
+**Needs a decision,** from the second review of 20260922-61:
+- Refuse misuse, such as calling `record_dedupe` twice on the same Dedupe. (The `since` part is settled: 20261001-20 has index-test derive its starting count from the stored dedupe state.)
+- Tie `record_single_candidate_test`'s report to the Dedupe's proposals.
+- index-test's `unrenderable` refusal is counted as `hypopg_refused`.
+
+- **Depends on:** 20260922-61.
+- **Came from:** Both reviews of 20260922-61.
+- **Design:** burndown.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Build all three.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-8 (commit d5f08f76). Review had no blocking findings; its minors went to 20261008-27.

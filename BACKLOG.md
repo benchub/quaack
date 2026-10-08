@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260923-24 (index-from-plan: MCV coverage rule, boolean partials).
 - 20260923-21 (index-from-query: join reduction, pattern keys, alias lists).
 - 20260923-30 (vacuity-guard: NATURAL JOIN marker atom, protocol rule natural_join_unreplaceable).
+- 20260924-8 (burndown: once-per-search refusals, proposals check, unrenderable counted on its own).
 
 ## How this file works.
 
@@ -304,19 +305,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 ### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-8. Burndown loose ends.
-
-**Needs a decision,** from the second review of 20260922-61:
-- Refuse misuse, such as calling `record_dedupe` twice on the same Dedupe. (The `since` part is settled: 20261001-20 has index-test derive its starting count from the stored dedupe state.)
-- Tie `record_single_candidate_test`'s report to the Dedupe's proposals.
-- index-test's `unrenderable` refusal is counted as `hypopg_refused`.
-
-- **Depends on:** 20260922-61.
-- **Came from:** Both reviews of 20260922-61.
-- **Design:** burndown.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Build all three.
-- **Status:** todo
+### 20260924-8. Burndown loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-9. Load-order loose ends.
 
@@ -2316,4 +2305,16 @@ The review of 20260923-30 found these minor issues:
 - **Depends on:** 20260923-30.
 - **Came from:** The review of 20260923-30, 2026-10-08.
 - **Design:** vacuity-guard.
+- **Status:** todo
+
+### 20261008-27. Burndown refusals: minors from 20260924-8.
+
+The review of 20260924-8 found these minor issues:
+
+1. **DESIGN.md overstates the once-per-search refusal.** Production never calls `record_dedupe` or `record_single_candidate_test`. It records through `record_once`, which quietly skips a second record rather than refusing it, so the refusal guards only the adapter API. DESIGN.md's new sentence reads as if the step itself refuses. Reword it.
+2. **No test pins the `dedupe:` pass-through.** Nothing in `index_burndown_spec.rb` checks that `IndexBurndown.record_search` passes its `dedupe:` through. Replacing the call with a bare `tested_counts` record keeps that spec green.
+
+- **Depends on:** 20260924-8.
+- **Came from:** The review of 20260924-8, 2026-10-08.
+- **Design:** burndown.
 - **Status:** todo
