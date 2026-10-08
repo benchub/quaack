@@ -2394,3 +2394,15 @@ The review of 20260924-6 found these test gaps. In each case the code behaves co
 - **Came from:** The review of 20260924-6, 2026-10-08.
 - **Design:** fixture-compare.
 - **Status:** todo
+
+### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name.
+
+The review of 20261008-32 found these minor issues:
+
+1. **Keyword operators can resolve to a user overload.** `LIKE`, `IN`, `IS DISTINCT FROM`, and `NULLIF` stay unpinned and resolve through the search path. A user overload in a role-named schema could be picked, or its existence shown. Pin them, for example by rewriting `x LIKE y` to `x OPERATOR(pg_catalog.~~) y`, or list them as unsupported in v1 in DESIGN.md.
+2. **A pinned name that doesn't exist gives a vague failure.** It fails later as `failed_to_plan`, not with a clean refusal. That doesn't leak, but the failure is less clear than it could be.
+
+- **Depends on:** 20261008-32.
+- **Came from:** The review of 20261008-32, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** todo
