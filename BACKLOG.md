@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-29 (protocol: Protocol::ErrorRules, the published list of enclave rules).
 - 20261008-3 (not_in_to_not_exists: UNION subqueries, btree check on row pairs).
 - 20261008-15 (distinct_join_to_exists: a function written as a column, and subquery minors).
+- 20260923-24 (index-from-plan: MCV coverage rule, boolean partials).
 
 ## How this file works.
 
@@ -223,23 +224,7 @@ Still open from the reviews of 20260922-30 and 20260923-20:
 
 ### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-24. index-from-plan loose ends.
-
-Still open from the reviews of 20260922-31:
-- **Needs a decision:** common values spelled differently get a wasted partial. For example, `n = 1.5` on a numeric that pg_stats prints as `1.50` looks rare. Either skip the partial when the column side is cast, or treat a non-MCV literal as unknown when MCVs plus nulls cover about 1.
-- **Booleans never reach the partial path.** Postgres prints `b = false` as `(NOT b)`, so a partial like `WHERE NOT deleted` is never proposed.
-- `(InitPlan 1).col1` conditions are dropped whole, since pg_query can't parse them.
-- `COLLATE` filters propose nothing.
-- A 3,000-deep plan raises SystemStackError. Whoever parses stored plans should pass `max_nesting: false`.
-- **Test gaps:** a blanket `rescue ArgumentError` stays green; sort equality columns from deeper scans; column refs inside function arguments; "skips a relation with no statistics" is weak.
-- Fix the grammar slip "a Actual Rows".
-
-- **Depends on:** 20260922-31.
-- **Came from:** Both reviews of 20260922-31.
-- **Design:** index-from-plan.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Treat a non-MCV literal as unknown when MCVs plus nulls cover about all rows.
-- **Status:** todo
+### 20260923-24. index-from-plan loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2282,4 +2267,38 @@ The review of 20261008-3 found these minor issues:
 - **Depends on:** 20261008-3.
 - **Came from:** The review of 20261008-3, 2026-10-08.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261008-21. index-from-plan: `(InitPlan 1).col1` conditions and COLLATE filters.
+
+Split from 20260923-24, whose builder found both larger than a loose end:
+
+1. **`(InitPlan 1).col1` conditions are dropped whole, because pg_query can't parse them.** A fix would rewrite those tokens as a parameter before parsing. It should use pg_query's scanner, so a match inside a string literal is left alone.
+2. **COLLATE filters propose nothing.** A plain key would be a wasted candidate, since Postgres uses a btree for the comparison only when the index's collation matches the query's. A real fix needs two things: collation-aware key columns from the plan, and a decision on how a `COLLATE` predicate passes through index-dedupe.
+
+- **Depends on:** 20260923-24.
+- **Came from:** The builder of 20260923-24, 2026-10-08.
+- **Design:** index-from-plan.
+- **Status:** todo
+
+### 20261008-22. Live EXPLAIN JSON parses with JSON's default nesting limit.
+
+From the builder of 20260923-24. `enclave/lib/quaack/enclave/index_build.rb:144` and `measurement.rb:68` parse live EXPLAIN JSON with JSON's default `max_nesting` of 100. A plan more than about 49 nodes deep raises `JSON::NestingError` there. `SingleCandidateTest#parse_plan` handles the same case with `max_nesting: false`. Pick a limit that matches the store's (`PlainData::MAX_DEPTH`), and test it with a deep plan from real Postgres.
+
+- **Depends on:** none.
+- **Came from:** The builder of 20260923-24, 2026-10-08.
+- **Design:** index-test and the baseline.
+- **Status:** todo
+
+### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24.
+
+The review of 20260923-24 found these minor issues:
+
+1. **The rarest boolean flags lose their partial.** If ANALYZE never samples the rare value, pg_stats shows `deleted` as `{f}` at 1.0, and `WHERE deleted` gets no partial, though that's the best case for one. The coverage rule is there for values written another way, and booleans can't be, since `boolean_text` maps them. Consider exempting booleans from the rule.
+2. **No test covers the case the rule exists for.** Nothing checks that `n = 1.5` on a numeric that pg_stats prints as `1.50` gets no partial.
+3. **An existing index may not count as covering a candidate.** pg_indexes keeps an existing `WHERE (deleted = true)` as written. Unless index-dedupe normalizes `b = true` to `b`, a matching `WHERE deleted` candidate is tested as new. Check this, and fix it in index-dedupe if needed (see 20260923-36).
+
+- **Depends on:** 20260923-24.
+- **Came from:** The review of 20260923-24, 2026-10-08.
+- **Design:** index-from-plan.
 - **Status:** todo

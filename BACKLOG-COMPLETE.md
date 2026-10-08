@@ -7610,3 +7610,22 @@ The review of 20261007-44 found these minor issues:
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-15 (commit 09f8bf96). Review clean. Item 3 (ROW(...) in a subquery) stays refused by SupportedSql, which 20260923-48 covers; the implicit row-comparison form fires and is tested.
+
+### 20260923-24. index-from-plan loose ends.
+
+Still open from the reviews of 20260922-31:
+- **Needs a decision:** common values spelled differently get a wasted partial. For example, `n = 1.5` on a numeric that pg_stats prints as `1.50` looks rare. Either skip the partial when the column side is cast, or treat a non-MCV literal as unknown when MCVs plus nulls cover about 1.
+- **Booleans never reach the partial path.** Postgres prints `b = false` as `(NOT b)`, so a partial like `WHERE NOT deleted` is never proposed.
+- `(InitPlan 1).col1` conditions are dropped whole, since pg_query can't parse them.
+- `COLLATE` filters propose nothing.
+- A 3,000-deep plan raises SystemStackError. Whoever parses stored plans should pass `max_nesting: false`.
+- **Test gaps:** a blanket `rescue ArgumentError` stays green; sort equality columns from deeper scans; column refs inside function arguments; "skips a relation with no statistics" is weak.
+- Fix the grammar slip "a Actual Rows".
+
+- **Depends on:** 20260922-31.
+- **Came from:** Both reviews of 20260922-31.
+- **Design:** index-from-plan.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Treat a non-MCV literal as unknown when MCVs plus nulls cover about all rows.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260923-24 (commit edd75d97). Review had no blocking findings. The grammar slip, the blanket rescue, and max_nesting were already fixed. InitPlan and COLLATE moved to 20261008-21, and the review's minors to 20261008-23.
