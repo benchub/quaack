@@ -16,7 +16,7 @@ module Quaack
       # A KeyColumn's name and expression, from what it was given: exactly
       # one of them.
       def column_or_expression(name, expression)
-        raise ArgumentError, "a key column needs a name or an expression, not both" if name.nil? == expression.nil?
+        raise IndexCandidateError, "a key column needs a name or an expression, not both" if name.nil? == expression.nil?
         return [column_name(name), nil] if expression.nil?
 
         normalize_expression(expression)
@@ -25,7 +25,7 @@ module Quaack
       # See KeyColumn. Returns [name, nil] for an expression that's only a
       # column, and [nil, expression] otherwise.
       def normalize_expression(sql)
-        raise ArgumentError, "key expression must be SQL text" unless sql.is_a?(String)
+        raise IndexCandidateError, "key expression must be SQL text" unless sql.is_a?(String)
 
         node = IndexSql.parse_predicate(sql, what: "key expression")
         column = bare_column(node)
@@ -36,7 +36,7 @@ module Quaack
       def column_name(name)
         return name.dup.freeze if name.is_a?(String) && !name.empty?
 
-        raise ArgumentError, "column name must be a non-empty String, got #{name.inspect}"
+        raise IndexCandidateError, "column name must be a non-empty String, got #{name.inspect}"
       end
 
       # See KeyColumn: a name, or its parts, with any pg_catalog in front
@@ -46,7 +46,7 @@ module Quaack
 
         parts = value.is_a?(String) ? [value] : value
         unless name_parts?(parts)
-          raise ArgumentError, "#{what} must be a name or an Array of name parts, got #{value.inspect}"
+          raise IndexCandidateError, "#{what} must be a name or an Array of name parts, got #{value.inspect}"
         end
 
         parts = parts.drop(1) if parts.size > 1 && parts.first == "pg_catalog"

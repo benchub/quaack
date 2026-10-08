@@ -20,7 +20,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
   def message_of
     yield
     raise "expected an error"
-  rescue ArgumentError => e
+  rescue Quaack::Enclave::IndexCandidate::Error => e
     e.full_message(highlight: false)
   end
 
@@ -39,15 +39,15 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
     end
 
     it "needs exactly one of a name and an expression" do
-      expect { key_column.new }.to raise_error(ArgumentError, /name or an expression/)
+      expect { key_column.new }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /name or an expression/)
       expect do
         key_column.new(name: "a", expression: "lower(a)")
-      end.to raise_error(ArgumentError, /name or an expression/)
+      end.to raise_error(Quaack::Enclave::IndexCandidate::Error, /name or an expression/)
     end
 
     it "refuses an expression that isn't one expression, or that Postgres never allows in an index" do
       ["a, b", "lower(a) FROM t", "a + $1", "(SELECT 1)", "count(*)", "", 5, :lower].each do |bad|
-        expect { key_column.new(expression: bad) }.to raise_error(ArgumentError, /expression/), bad.inspect
+        expect { key_column.new(expression: bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /expression/), bad.inspect
       end
     end
 
@@ -64,7 +64,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
 
     it "refuses an opclass or collation that isn't a name" do
       [[:opclass, ""], [:opclass, 5], [:collation, []], [:collation, ["a", ""]]].each do |what, bad|
-        expect { key_column.new(name: "a", what => bad) }.to raise_error(ArgumentError, /#{what}/), bad.inspect
+        expect { key_column.new(name: "a", what => bad) }.to raise_error(Quaack::Enclave::IndexCandidate::Error, /#{what}/), bad.inspect
       end
     end
 

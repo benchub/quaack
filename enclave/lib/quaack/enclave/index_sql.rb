@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "index_candidate_error"
 
 module Quaack
   module Enclave
@@ -26,12 +27,12 @@ module Quaack
         select = stmts.first.stmt.select_stmt if stmts.size == 1
         where = select&.where_clause
         bare = PgQuery::SelectStmt.new(where_clause: where, limit_option: :LIMIT_OPTION_DEFAULT, op: :SETOP_NONE)
-        raise ArgumentError, "#{what} must be a single SQL expression" unless where && select == bare
+        raise IndexCandidateError, "#{what} must be a single SQL expression" unless where && select == bare
 
         result.walk! { |node| check_predicate_node(node, what) }
         where
       rescue PgQuery::ParseError
-        raise ArgumentError, "#{what} doesn't parse as SQL", cause: nil
+        raise IndexCandidateError, "#{what} doesn't parse as SQL", cause: nil
       end
 
       # Every aggregate and window function in pg_catalog on Postgres 18. The
@@ -55,7 +56,7 @@ module Quaack
       # checked here (see DESIGN.md's volatility).
       def check_predicate_node(node, what = "predicate")
         problem = forbidden(node)
-        raise ArgumentError, "#{what} can't use #{problem}" if problem
+        raise IndexCandidateError, "#{what} can't use #{problem}" if problem
       end
 
       # What's wrong with node, as check_predicate_node describes it, or nil.
@@ -101,7 +102,7 @@ module Quaack
       def deparse_predicate(node, what: "predicate")
         Deparse.expression(node)
       rescue Deparse::Error
-        raise ArgumentError, "#{what} changes meaning when pg_query deparses it", cause: nil
+        raise IndexCandidateError, "#{what} changes meaning when pg_query deparses it", cause: nil
       end
 
       # See IndexCandidate.from_ddl.
@@ -115,9 +116,9 @@ module Quaack
         stmts = PgQuery.parse(sql).tree.stmts
         return stmts.first.stmt.index_stmt if stmts.size == 1 && stmts.first.stmt.node == :index_stmt
 
-        raise ArgumentError, "from_ddl takes exactly one CREATE INDEX statement"
+        raise IndexCandidateError, "from_ddl takes exactly one CREATE INDEX statement"
       rescue PgQuery::ParseError
-        raise ArgumentError, "from_ddl takes exactly one CREATE INDEX statement, and this doesn't parse", cause: nil
+        raise IndexCandidateError, "from_ddl takes exactly one CREATE INDEX statement, and this doesn't parse", cause: nil
       end
 
       # Takes only the parts IndexCandidate holds. read_index then checks
@@ -132,11 +133,14 @@ module Quaack
           access_method: stmt.access_method, predicate: where && deparse_predicate(where),
           unique: stmt.unique, sources:
         )
-      rescue ArgumentError
+      rescue IndexCandidateError
         nil
       end
 
-      def table_name(range_var) = TableName.new(schema: range_var.schemaname, name: range_var.relname)
+      # nil for an unqualified table, which the constructor refuses.
+      def table_name(range_var)
+        TableName.new(schema: range_var.schemaname, name: range_var.relname) unless range_var.schemaname.empty?
+      end
 
       # Changes the parsed statement in place to what to_ddl would render: no
       # name, and each key column as IndexKeySql.comparable leaves it.

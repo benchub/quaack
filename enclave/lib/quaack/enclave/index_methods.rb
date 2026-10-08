@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "index_candidate_error"
+
 module Quaack
   module Enclave
     # What each built-in index method supports, so IndexCandidate can refuse
@@ -19,11 +21,11 @@ module Quaack
       ONE_KEY_COLUMN = %i[hash spgist].freeze
 
       def check(method, key:, include:, unique:)
-        raise ArgumentError, "unique must be true or false, got #{unique.inspect}" unless [true, false].include?(unique)
+        raise IndexCandidateError, "unique must be true or false, got #{unique.inspect}" unless [true, false].include?(unique)
 
         problem = (btree_only_problem(method, key, unique) unless method == :btree) ||
                   missing_feature_problem(method, key, include)
-        raise ArgumentError, problem if problem
+        raise IndexCandidateError, problem if problem
       end
 
       def btree_only_problem(method, key, unique)
