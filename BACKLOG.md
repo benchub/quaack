@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261006-19 (one stored plan per measurement).
 - 20260926-56, partly (the shared parse helper and the error rules).
 - 20261007-3 (statistics hardening).
+- 20261001-4 (refused candidates never best in the index payload).
 
 ## How this file works.
 
@@ -1398,19 +1399,7 @@ Add `fan_out` for llm-rewrites, llm-index-ideas, and rewrite-llm-index-ideas. Ru
 ### 20261001-3. Trim the LLM payloads to fit a 131k-token window. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20261001-4. Payload trimming: minor findings.
-
-The review of 20261001-3 found three minor items:
-
-1. The spec in `enclave/spec/index_payload_step_postgres_spec.rb` (around lines 104–107) works out its expected best candidate by copying the code it tests. Write the expected value out directly instead. The spec near line 130 already pins the behavior on its own terms.
-2. `IndexPayload#best` doesn't explicitly exclude refused candidates the way `Refinement.used?` does. That's harmless while a refused result never carries a used plan, but adding `!r["refusal"]` would make it explicit.
-3. When a query uses a partitioned parent, the payload drops the partitions' CREATE TABLE and index statements, even though the plans name the partitions. Decide whether to keep the DDL for partitions of the query's tables.
-
-- **Depends on:** 20261001-3.
-- **Came from:** The second review of 20261001-3, 2026-10-01.
-- **Design:** llm-index-ideas.
-- **Decided by the user (2026-10-07):** Item 3: keep the partitions' CREATE TABLE and index DDL in the payload for partitions of the query's tables.
-- **Status:** todo
+### 20261001-4. Payload trimming: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-5. An LLM error reads the reason out of a JSON array body.
 

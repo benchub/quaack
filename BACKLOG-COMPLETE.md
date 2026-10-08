@@ -6631,3 +6631,18 @@ From the second review of 20261006-7.
 - **Design:** statistics, classify, trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. `COLLATE pg_catalog."C"` in the planner-statistics catalog reads, with a planted-collation test; length caps on the outbound statistics shape's numbers (column numbers four digits, counts and degree parts 10); and the MCV null-flag list count must match the item count. Enclave change, unreleased until the next batch bump.
+
+### 20261001-4. Payload trimming: minor findings.
+
+The review of 20261001-3 found three minor items:
+
+1. The spec in `enclave/spec/index_payload_step_postgres_spec.rb` (around lines 104–107) works out its expected best candidate by copying the code it tests. Write the expected value out directly instead. The spec near line 130 already pins the behavior on its own terms.
+2. `IndexPayload#best` doesn't explicitly exclude refused candidates the way `Refinement.used?` does. That's harmless while a refused result never carries a used plan, but adding `!r["refusal"]` would make it explicit.
+3. When a query uses a partitioned parent, the payload drops the partitions' CREATE TABLE and index statements, even though the plans name the partitions. Decide whether to keep the DDL for partitions of the query's tables.
+
+- **Depends on:** 20261001-3.
+- **Came from:** The second review of 20261001-3, 2026-10-01.
+- **Design:** llm-index-ideas.
+- **Decided by the user (2026-10-07):** Item 3: keep the partitions' CREATE TABLE and index DDL in the payload for partitions of the query's tables.
+- **Status:** done
+- **Landed:** 2026-10-07, items 1 and 2, after one review with no blocking findings. The spec's best candidate is written out (`(note, status)`, which costs about half the others on the seeded data), and `IndexPayload#best` skips refused candidates, so a refused candidate's plans never go out. Item 3 dropped by the user (2026-10-07): qualify refuses queries on partitioned parents (`partitioned_relation`), so the only partition a query can reach is a leaf it names, whose DDL already goes out. Enclave change, unreleased until the next batch bump.
