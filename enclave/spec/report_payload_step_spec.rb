@@ -642,10 +642,12 @@ RSpec.describe "quaacks report-payload" do
         { "passed" => passed, "scenario" => scenario, "rule" => rule, "untested" => 0, "untested_atoms" => [] }
       end
 
-      def rule_made(store, number, tested, survived, rules: %w[key_in_self_join key_in_self_join], assumptions: nil) # rubocop:disable Metrics/ParameterLists
+      def rule_made(store, number, tested, survived, rules: %w[key_in_self_join key_in_self_join], # rubocop:disable Metrics/ParameterLists
+                    assumptions: nil, round: nil)
         store.write("rewrite_#{number}", { "sql" => "SELECT #{number}", "source" => "rule", "rules" => rules,
                                            "assumptions" => assumptions }.compact)
         store.write("rewrite_tested_#{number}", tested)
+        store.write("rewrite_round_#{number}", round) if round
         store.write("rewrite_survived_#{number}", "survived" => survived)
       end
 
@@ -750,6 +752,43 @@ RSpec.describe "quaacks report-payload" do
         it "calls only the result-comparison disproof a bug" do
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_4", "rules" => ["polymorphic_key_copy"],
                                                "step" => "result-comparison" }])
+        end
+      end
+
+      # A rewrite-test scenario or counterexample-compare round that ended without comparing
+      # results says nothing about the rewrite.
+      %w[unsupported_order query_failed statement_timeout statement_canceled begin_failed].each do |rule|
+        context "with a rule-made rewrite whose rewrite-test scenario ended as #{rule}" do
+          let(:outcome) { with_rewrite { rule_made(it, 2, tested(false, rule, "s3"), false) } }
+
+          it "isn't a bug: rewrite-test never compared its results" do
+            expect(report["rule_bugs"]).to eq([])
+          end
+        end
+
+        context "with a rule-made rewrite whose counterexample-compare round ended as #{rule}" do
+          let(:outcome) do
+            with_rewrite do |store|
+              rule_made(store, 2, tested(true), false, round: { "round" => 2, "evidence" => true, "rule" => rule })
+            end
+          end
+
+          it "isn't a bug: the round never compared its results" do
+            expect(report["rule_bugs"]).to eq([])
+          end
+        end
+      end
+
+      context "with a rule-made rewrite whose counterexample-compare round got different results" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(true), false, round: { "round" => 2, "evidence" => true, "rule" => "value" })
+          end
+        end
+
+        it "is a bug in counterexamples" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "counterexamples",
+                                               "rules" => %w[key_in_self_join key_in_self_join] }])
         end
       end
 

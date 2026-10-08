@@ -95,19 +95,6 @@ module Quaack
             [candidate, search, { "covered_by" => sizes.named(candidate.table, drop["covered_by"]["existing"]) }]
           end
         end
-
-        # For RuleBugs only, as it was before RewriteFate (20261002-5 covers
-        # RuleBugs' own logic): rewrite-test's or counterexamples' disproof of a rewrite.
-        # A rewrite that rewrite-test refused to test (20261003-18) wasn't disproved.
-        def disproved(store, search)
-          number = search.delete_prefix("rewrite_")
-          tested = optional(store, "rewrite_tested_#{number}") or return
-          return if tested["refused"] == true
-          return { "step" => "rewrite-test", "rule" => tested["rule"] } unless tested["passed"]
-
-          survived = optional(store, "rewrite_survived_#{number}")
-          { "step" => "counterexamples", "rule" => nil } if survived && survived["survived"] == false
-        end
       end
     end
   end

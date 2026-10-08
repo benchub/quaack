@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "negative_result"
+require_relative "rewrite_fate"
 require_relative "rewrite_source"
 
 module Quaack
@@ -13,7 +14,9 @@ module Quaack
       #   RuleBugs.call(store)
       #   # => [{ "rewrite" => "rewrite_1", "rules" => ["key_in_self_join"], "step" => "rewrite-test" }]
       #
-      # step is what disproved it: rewrite-test, counterexamples, or result-comparison. A rewrite plan-pruning
+      # step is what disproved it: rewrite-test, counterexamples, or result-comparison. rewrite-test and
+      # counterexamples disprove it only with a result mismatch, as RewriteFate reads
+      # rewrite_tested_<n> and rewrite_round_<n>. A rewrite plan-pruning
       # pruned for planning as the original does was never tested: its
       # rewrite_tested_<n> says rule discarded, and it isn't a bug.
       #
@@ -39,6 +42,14 @@ module Quaack
       module RuleBugs
         MISMATCHES = %w[column_count column_types row_count value multiset subset candidate_unordered].freeze
 
+        # RewriteFate's fates that say rewrite-test or counterexamples got different results. A
+        # scenario or round that ended without comparing (unsupported_order,
+        # query_failed, statement_timeout, and the rest of RewriteFate's
+        # FAILURES) is rewrite_test_failed or counterexamples_failed, and
+        # says nothing about the rewrite.
+        TEST_DISPROOFS = { "rewrite_test_disproved" => "rewrite-test",
+                           "counterexamples_disproved" => "counterexamples" }.freeze
+
         module_function
 
         def call(store)
@@ -54,8 +65,9 @@ module Quaack
         # The step that disproved rewrite, or nil. rewrite-test and counterexamples don't count
         # for a rewrite resting on what the data holds.
         def disproved_by(store, rewrite, verdicts, empirical)
-          disproof = NegativeResult.disproved(store, rewrite)
-          return disproof["step"] if disproof && disproof["rule"] != "discarded" && !empirical
+          steps = RewriteFate.steps(store, rewrite.delete_prefix("rewrite_"))
+          step = TEST_DISPROOFS[RewriteFate.early(steps, nil)&.fetch("fate")]
+          return step if step && !empirical
 
           "result-comparison" if verdicts.fetch(rewrite, {}).each_value.any? { mismatch?(it) }
         end
