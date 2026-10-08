@@ -206,4 +206,5 @@ end
 require_relative "llm/error"
 require_relative "llm/client"
 require_relative "llm/providers"
+require_relative "llm/router"
 require_relative "llm/copilot_cli_adapter"

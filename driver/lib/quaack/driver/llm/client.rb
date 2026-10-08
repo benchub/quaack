@@ -101,13 +101,24 @@ module Quaack
         # purpose is what progress hears the ask is for, in plain English,
         # such as "Asking the LLM again for replacements". It never goes to
         # the LLM.
-        def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false, purpose: ASKING) # rubocop:disable Metrics/ParameterLists
-          system = [system, JSON_ONLY].compact.join("\n\n") if schema
-          ask_once(step:, system:, messages:, max_tokens:, schema:, json:, count: counter(step, purpose))
+        #
+        # provider, the name of the llms entry this client is, counts every
+        # attempt under it too, and shown, a name, follows the step in each
+        # progress line, such as "Asking the LLM (llm-rewrites, groq)". The
+        # router passes them (Router). Neither goes to the LLM.
+        def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false, purpose: ASKING, # rubocop:disable Metrics/ParameterLists
+                provider: nil, shown: nil)
+          system = self.class.system(system, schema)
+          ask_once(step:, system:, messages:, max_tokens:, schema:, json:,
+                   count: counter(step, purpose, provider, shown))
         rescue Error => e
           sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
           raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}"), cause: e.cause
         end
+
+        # The system prompt an ask sends: system, ending with JSON_ONLY when
+        # there's a schema.
+        def self.system(system, schema) = schema ? [system, JSON_ONLY].compact.join("\n\n") : system
 
         private
 
@@ -125,12 +136,13 @@ module Quaack
 
         # The count an adapter calls before each attempt of one ask: it counts
         # the attempt in the burndown, then tells progress.
-        def counter(step, purpose)
+        def counter(step, purpose, provider, shown)
           attempt = 0
+          id = [step, shown].compact.join(", ")
           lambda do
-            @burndown.llm_call(step)
+            @burndown.llm_call(step, provider)
             attempt += 1
-            @progress&.note(attempt == 1 ? "#{purpose} (#{step})" : "#{purpose}, attempt #{attempt} (#{step})")
+            @progress&.note(attempt == 1 ? "#{purpose} (#{id})" : "#{purpose}, attempt #{attempt} (#{id})")
           end
         end
 
