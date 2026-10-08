@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260924-29 (run-server: tablespace and preload checks; StoreFormat 5).
 - 20261008-31 (rewrite candidates: reg literals, name-lookup functions, and reg-typed literals refused).
 - 20260924-6 (fixture-compare: top-N with left-out columns reruns without LIMIT).
+- 20261008-34 (statistics: hidden_statistics in the report, row_security_statistics_hidden).
 
 ## How this file works.
 
@@ -2305,23 +2306,7 @@ The review of 20260924-9 found these:
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security.
-
-The build and review of 20260924-26 found these on real Postgres 18. Nothing refuses or records them today.
-
-1. **Expression-index statistics are hidden from non-owners.** A role with table-level SELECT that doesn't own the table gets no pg_stats rows for an expression index. The index's `columns` comes back `{}`.
-2. **Extended statistics are hidden from non-owners.** That role's `pg_stats_ext` rows are hidden too, so every `extended_statistics` data field is nil. That looks the same as "not analyzed yet".
-3. **Row security hides every row.** On a table with row-level security enabled, a non-owner role with SELECT gets no pg_stats rows at all. The run passes with `columns=[]`, and the `has_column_privilege` fallback doesn't catch it. A `row_security_active(oid)` check would.
-
-A read-only production role is usually a non-owner, so items 1 and 2 hit the most common setup. **Needs a decision:** refuse (as with `column_statistics_hidden`, which would refuse most read-only roles whenever the query's tables have extended statistics or expression indexes), or record what's missing in the report and go on. Item 3 hides all column statistics, so refusing seems right there.
-
-Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `ORDER BY ..., s.inherited` next to `AND NOT s.inherited`, change nothing in normal runs. Drop them, or leave them as guards.
-
-- **Depends on:** 20260924-26.
-- **Came from:** The builder and review of 20260924-26, 2026-10-08.
-- **Design:** statistics.
-- **Decided by the user (2026-10-08):** Go on without hidden extended and expression-index statistics, and say in the report which were missing. Refuse with a clear rule when row security hides every column's statistics.
-- **Status:** todo
+### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-35. Reg literals in candidates: minors from 20261008-31.
 
@@ -2406,4 +2391,16 @@ The review of 20261008-32 found these minor issues:
 - **Depends on:** 20261008-32.
 - **Came from:** The review of 20261008-32, 2026-10-08.
 - **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261008-42. Hidden statistics: minors from 20261008-34.
+
+The review of 20261008-34 found these minor issues:
+
+1. **The empty-columns guard in `Hidden.check_row_security!` is untested.** Turning `return unless entry["columns"].empty?` into a no-op leaves every test green. Test it or remove it.
+2. **Egress checks only the shape of the hidden indexes.** It never checks that each name in `hidden_statistics.indexes` is a stored index. Only `Steps::HiddenStatistics` enforces that. Add the membership check at egress too, the way it should be done for `ExistingIndexes`.
+
+- **Depends on:** 20261008-34.
+- **Came from:** The review of 20261008-34, 2026-10-08.
+- **Design:** statistics, report.
 - **Status:** todo

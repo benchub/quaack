@@ -7816,3 +7816,22 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Decided by the user (2026-10-08):** Rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260924-6 (commit 8c118441). Review had no blocking findings; its minors went to 20261008-40.
+
+### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security.
+
+The build and review of 20260924-26 found these on real Postgres 18. Nothing refuses or records them today.
+
+1. **Expression-index statistics are hidden from non-owners.** A role with table-level SELECT that doesn't own the table gets no pg_stats rows for an expression index. The index's `columns` comes back `{}`.
+2. **Extended statistics are hidden from non-owners.** That role's `pg_stats_ext` rows are hidden too, so every `extended_statistics` data field is nil. That looks the same as "not analyzed yet".
+3. **Row security hides every row.** On a table with row-level security enabled, a non-owner role with SELECT gets no pg_stats rows at all. The run passes with `columns=[]`, and the `has_column_privilege` fallback doesn't catch it. A `row_security_active(oid)` check would.
+
+A read-only production role is usually a non-owner, so items 1 and 2 hit the most common setup. **Needs a decision:** refuse (as with `column_statistics_hidden`, which would refuse most read-only roles whenever the query's tables have extended statistics or expression indexes), or record what's missing in the report and go on. Item 3 hides all column statistics, so refusing seems right there.
+
+Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `ORDER BY ..., s.inherited` next to `AND NOT s.inherited`, change nothing in normal runs. Drop them, or leave them as guards.
+
+- **Depends on:** 20260924-26.
+- **Came from:** The builder and review of 20260924-26, 2026-10-08.
+- **Design:** statistics.
+- **Decided by the user (2026-10-08):** Go on without hidden extended and expression-index statistics, and say in the report which were missing. Refuse with a clear rule when row security hides every column's statistics.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-34 (commits e00f064b, 97a04632, 54d94a5f). Review had no blocking findings; its minors went to 20261008-42.
