@@ -21,6 +21,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-31 (rewrite candidates: reg literals, name-lookup functions, and reg-typed literals refused).
 - 20260924-6 (fixture-compare: top-N with left-out columns reruns without LIMIT).
 - 20261008-34 (statistics: hidden_statistics in the report, row_security_statistics_hidden).
+- 20261008-32 (rewrite candidates: only the original's names and pg_catalog's; unknown_name).
 
 ## How this file works.
 
@@ -2276,22 +2277,7 @@ The build and review of 20260924-24 found these:
 
 ### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible.
-
-The second review of 20260923-57 found these. Both are already true on main.
-
-1. **Existence shows in the outcome.** A candidate can name any function, type, collation, or operator, even ones the original doesn't use, and its outcome shows whether that name exists:
-   - A qualified `hidden.vfn()` gets `volatile_function` when the function exists and is volatile, and the error line names it. When it doesn't exist, the candidate fails later as `failed_to_plan`.
-   - In the schema of the role QUAACK connects as, an unqualified name that exists plans, and one that doesn't fails to plan.
-
-   It needs a decision: how much of the catalog's contents outside the query is secret from the LLM? One option is to limit candidates to the original's non-relation names plus pg_catalog's. Another is to accept this and document it.
-2. **New bare names skip the `"$user"` check.** When more than one schema on the path has a function or operator, `NameQualifier` leaves the name bare, and it resolves at run time through the plan's search path. `UserSchema` at intake covers only the original's names. So a rewrite that adds a new overloaded name could be tested against a different object than the application's role would get. That happens only when a schema named for a role holds an overload of that name.
-
-- **Depends on:** 20260923-57.
-- **Came from:** The second review of 20260923-57, 2026-10-08.
-- **Design:** What goes into the enclave.
-- **Decided by the user (2026-10-08):** Lock it down and document it. Candidates may use only the original's functions, types, collations, and operators, plus pg_catalog's. If a rewrite needs a new user-defined function to be faster, that function isn't coming from the mechanical rewrite rules, and an LLM can't be trusted blindly to provide one.
-- **Status:** todo
+### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run.
 
@@ -2387,6 +2373,9 @@ The review of 20261008-32 found these minor issues:
 
 1. **Keyword operators can resolve to a user overload.** `LIKE`, `IN`, `IS DISTINCT FROM`, and `NULLIF` stay unpinned and resolve through the search path. A user overload in a role-named schema could be picked, or its existence shown. Pin them, for example by rewriting `x LIKE y` to `x OPERATOR(pg_catalog.~~) y`, or list them as unsupported in v1 in DESIGN.md.
 2. **A pinned name that doesn't exist gives a vague failure.** It fails later as `failed_to_plan`, not with a clean refusal. That doesn't leak, but the failure is less clear than it could be.
+
+3. **Kind separation isn't tested, from the second review.** The `k == kind` match in `Names` has no test. Removing it keeps every test green. Add a test where the original uses the type `public.hstore` and the candidate calls a bare `hstore(...)`.
+4. **The fix test uses stand-ins.** It could use real pg_trgm `similarity()` and `%`, since the test image has the extension.
 
 - **Depends on:** 20261008-32.
 - **Came from:** The review of 20261008-32, 2026-10-08.

@@ -7835,3 +7835,21 @@ Also from the review: the `NOT s.stainherit` clause in `ANALYZED_SQL`, and the `
 - **Decided by the user (2026-10-08):** Go on without hidden extended and expression-index statistics, and say in the report which were missing. Refuse with a clear rule when row security hides every column's statistics.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-34 (commits e00f064b, 97a04632, 54d94a5f). Review had no blocking findings; its minors went to 20261008-42.
+
+### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible.
+
+The second review of 20260923-57 found these. Both are already true on main.
+
+1. **Existence shows in the outcome.** A candidate can name any function, type, collation, or operator, even ones the original doesn't use, and its outcome shows whether that name exists:
+   - A qualified `hidden.vfn()` gets `volatile_function` when the function exists and is volatile, and the error line names it. When it doesn't exist, the candidate fails later as `failed_to_plan`.
+   - In the schema of the role QUAACK connects as, an unqualified name that exists plans, and one that doesn't fails to plan.
+
+   It needs a decision: how much of the catalog's contents outside the query is secret from the LLM? One option is to limit candidates to the original's non-relation names plus pg_catalog's. Another is to accept this and document it.
+2. **New bare names skip the `"$user"` check.** When more than one schema on the path has a function or operator, `NameQualifier` leaves the name bare, and it resolves at run time through the plan's search path. `UserSchema` at intake covers only the original's names. So a rewrite that adds a new overloaded name could be tested against a different object than the application's role would get. That happens only when a schema named for a role holds an overload of that name.
+
+- **Depends on:** 20260923-57.
+- **Came from:** The second review of 20260923-57, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Decided by the user (2026-10-08):** Lock it down and document it. Candidates may use only the original's functions, types, collations, and operators, plus pg_catalog's. If a rewrite needs a new user-defined function to be faster, that function isn't coming from the mechanical rewrite rules, and an LLM can't be trusted blindly to provide one.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-32 (commits 7a43f6f0, 53e6c5c7, ea55fa63) after a fix round. The second review was clean. Minors from both rounds are in 20261008-41.
