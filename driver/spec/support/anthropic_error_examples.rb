@@ -142,6 +142,34 @@ RSpec.shared_examples "an Anthropic API's error detail" do
     expect(error_text(e)).not_to include("SENTINEL")
   end
 
+  # Task 20261007-61: a percent sequence that decodes to invalid UTF-8
+  # doesn't break the scrub, and what decodes cleanly still goes.
+  it "scrubs a base_url value whose percent sequence isn't valid UTF-8, as written and decoded" do
+    gateway = "https://gateway.example.test/SENTINELPATHKEY0123%E2/anthropic?key=SENTINEL-QUERY%E2"
+    echo("path SENTINELPATHKEY0123%E2 or SENTINELPATHKEY0123\uFFFD, query SENTINEL-QUERY%E2 or " \
+         "SENTINEL-QUERY\uFFFD, bare SENTINELPATHKEY0123 and SENTINEL-QUERY")
+
+    e = error_from(settings: fake.class.settings("base_url" => gateway))
+
+    expect(e.cause).to be_nil
+    expect(without_sizes(e.message))
+      .to eq("llm_bad_request: the API answered 400: path [key] or [key], query [key] or [key], " \
+             "bare [key] and [key]")
+    expect(error_text(e)).not_to include("SENTINEL")
+  end
+
+  # Task 20261007-61: a key's URL-encoded echo goes too, in either case of
+  # hex, and with only some of its characters encoded.
+  it "scrubs an own key's URL-encoded form" do
+    key = "SENTINEL+KEY/0123456789=="
+    echo("saw SENTINEL%2BKEY%2F0123456789%3D%3D, SENTINEL%2bKEY%2f0123456789%3d%3d, and SENTINEL+KEY%2F0123456789==")
+
+    e = error_from(api_key: key)
+
+    expect(without_sizes(e.message)).to eq("llm_bad_request: the API answered 400: saw [key], [key], and [key]")
+    expect(error_text(e)).not_to include("SENTINEL")
+  end
+
   it "shows a top-level message, the way Bedrock sends one, scrubbed" do
     fake.error_body("llm-index-ideas", status: 400, body: { message: "bad input for SENTINEL-OWN-KEY", other: "x" })
 

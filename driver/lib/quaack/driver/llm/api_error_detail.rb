@@ -21,6 +21,8 @@ module Quaack
         ANYWHERE_MIN = 16
         # What keys are made of: a whole token is a run of these.
         KEY_CHAR = "[A-Za-z0-9_-]"
+        # The encodings whose text is read as UTF-8 bytes, not converted.
+        BYTES = [Encoding::UTF_8, Encoding::BINARY].freeze
 
         module_function
 
@@ -40,15 +42,43 @@ module Quaack
           [inner.is_a?(Hash) ? inner[:message] : nil, body[:message]].find { it.is_a?(String) && !it.empty? }
         end
 
-        def scrub(text, secrets) = secrets.reduce(text) { |scrubbed, secret| scrubbed.gsub(pattern(secret), SCRUBBED) }
+        # The text and each secret are made valid UTF-8 first, so no gsub
+        # raises an error whose message could quote a secret.
+        def scrub(text, secrets)
+          secrets.map { utf8(it) }.reject(&:empty?).reduce(utf8(text)) do |scrubbed, secret|
+            scrubbed.gsub(pattern(secret), SCRUBBED)
+          end
+        end
+
+        # A value as valid UTF-8: text in another encoding converted, and
+        # bytes read as UTF-8, with each invalid sequence replaced.
+        def utf8(value)
+          text = value.to_s
+          return text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace) unless BYTES.include?(text.encoding)
+
+          text.b.force_encoding(Encoding::UTF_8).scrub
+        rescue EncodingError
+          text.b.force_encoding(Encoding::UTF_8).scrub
+        end
 
         # A secret as long as a real key goes wherever it shows, even inside a
         # longer token, so no key slips past. A shorter one goes only as a whole
-        # token, so it can't cut a word apart.
+        # token, so it can't cut a word apart. Either way, it goes URL-encoded
+        # too, whole or in part, in either case of hex.
         def pattern(secret)
-          return secret if secret.length >= ANYWHERE_MIN
+          body = secret.each_char.map { char_pattern(it) }.join
+          return /#{body}/ if secret.length >= ANYWHERE_MIN
 
-          /(?<!#{KEY_CHAR})#{Regexp.escape(secret)}(?!#{KEY_CHAR})/
+          /(?<!#{KEY_CHAR})#{body}(?!#{KEY_CHAR})/
+        end
+
+        # A character as written, or, if a URL can encode it, its encoding:
+        # a %XX for each byte.
+        def char_pattern(char)
+          return Regexp.escape(char) if char.match?(/[A-Za-z0-9_.~-]/)
+
+          encoded = char.bytes.map { |byte| "%#{format("%02X", byte).gsub(/[A-F]/) { "[#{it}#{it.downcase}]" }}" }.join
+          "(?:#{Regexp.escape(char)}|#{encoded})"
         end
 
         # The secrets to scrub from a detail, longest first, so one that
@@ -74,10 +104,13 @@ module Quaack
 
         def path_segments(path) = decoded(path.to_s.split("/")).select { it.length >= ANYWHERE_MIN }
 
-        # Each value as written, and decoded when it decodes.
+        # Each value as written, and decoded when it decodes. A value that
+        # decodes to invalid UTF-8 goes with each invalid sequence dropped
+        # and replaced, the ways an echo of it would show.
         def decoded(values)
           values.flat_map do |value|
-            [value, URI.decode_www_form_component(value)]
+            plain = URI.decode_www_form_component(value)
+            [value, *(plain.valid_encoding? ? [plain] : [plain.scrub(""), plain.scrub("\uFFFD")])]
           rescue ArgumentError
             [value]
           end
