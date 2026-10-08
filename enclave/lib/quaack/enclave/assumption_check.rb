@@ -3,6 +3,7 @@
 require "json"
 require "pg_query"
 require_relative "assumption_check/denormalized_equal"
+require_relative "assumption_check/index_equality"
 
 module Quaack
   module Enclave
@@ -17,7 +18,10 @@ module Quaack
     # - not_null: a validated NOT NULL or primary key constraint on the column.
     # - unique: a valid unique index on the table, with no predicate and no
     #   expression, not deferrable, whose key columns are all among the
-    #   stated ones and are all validated NOT NULL (or NULLS NOT DISTINCT).
+    #   stated ones and are all validated NOT NULL (or NULLS NOT DISTINCT),
+    #   and that compares each key column as the column's own = does: with
+    #   the default operator class, and in the column's collation unless
+    #   both are deterministic (byte equality).
     # - foreign_key: a validated foreign key from the table to
     #   references_table, pairing the same columns.
     # - check: a validated CHECK on the table whose expression, deparsed
@@ -54,7 +58,7 @@ module Quaack
       UNIQUE = <<~SQL.freeze
         SELECT 1 FROM pg_catalog.pg_index i
         WHERE i.indrelid #{EQ} #{RELATION} AND i.indisunique AND i.indisvalid
-          AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indimmediate
+          AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indimmediate AND #{IndexEquality::SQL}
           AND (i.indnullsnotdistinct OR NOT EXISTS (
             SELECT 1 FROM pg_catalog.unnest(i.indkey::pg_catalog.int2[]) WITH ORDINALITY AS u(k, n)
             WHERE u.n OPERATOR(pg_catalog.<=) i.indnkeyatts AND NOT EXISTS (
