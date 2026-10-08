@@ -7314,3 +7314,13 @@ From the builder and review of 20261007-18.
 - **Design:** Several LLM providers, report.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. The router lists each dropped fan-out branch, and the provenance record keeps it as `failed_branches` (step, entry, and rule only, checked strictly on read-back); the report says, escaped, which branch of which step was dropped and why. DESIGN.md says only the first copy of a repeated proposal gets credit, and that a provider counts as asked when this run called it, whatever came back. A provider never asked keeps its earlier "marked down", with a test, and a blanked rewrites table leaves out the all-"not recorded" row.
+
+### 20261007-63. OpenAI-compatible details: accept a string `error` as the message.
+
+From the review of 20261007-62. Servers such as Hugging Face TGI send `{"error": "<text>"}`. Before 20261007-62 the whole body showed; now only the status does ("the API answered 404"). Accept a non-empty string `error` as the message, still through the scrub, with a sentinel test.
+
+- **Depends on:** 20261007-62.
+- **Came from:** The review of 20261007-62.
+- **Design:** LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. For the OpenAI-compatible adapter, a body whose `error` is a non-empty string (Hugging Face TGI) gives that string as the message, scrubbed; every other shape, and Anthropic and Bedrock, are unchanged.

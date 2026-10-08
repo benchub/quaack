@@ -2227,11 +2227,4 @@ From the review of 20261007-51. Neither is new in that task.
 
 ### 20261007-62. Router and OpenAI-compatible details: minors from 20261007-42. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-63. OpenAI-compatible details: accept a string `error` as the message.
-
-From the review of 20261007-62. Servers such as Hugging Face TGI send `{"error": "<text>"}`. Before 20261007-62 the whole body showed; now only the status does ("the API answered 404"). Accept a non-empty string `error` as the message, still through the scrub, with a sentinel test.
-
-- **Depends on:** 20261007-62.
-- **Came from:** The review of 20261007-62.
-- **Design:** LLM providers.
-- **Status:** todo
+### 20261007-63. OpenAI-compatible details: accept a string `error` as the message. Done, see BACKLOG-COMPLETE.md.
