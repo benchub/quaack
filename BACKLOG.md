@@ -6,25 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20260923-24 (index-from-plan: MCV coverage rule, boolean partials).
-- 20260923-21 (index-from-query: join reduction, pattern keys, alias lists).
-- 20260923-30 (vacuity-guard: NATURAL JOIN marker atom, protocol rule natural_join_unreplaceable).
-- 20260924-8 (burndown: once-per-search refusals, proposals check, unrenderable counted on its own).
-- 20260923-36 (index-dedupe: WITH and NULLS NOT DISTINCT existing indexes cover, boolean folding).
-- 20260924-24 (inventory: production read timeout, null config commands refused, memory cap, ShellCommand drain).
-- 20260923-57 (rewrite candidates: Relations.check with per-kind rules, relations checked before any catalog read).
-- 20260924-9 (fixture-compare: rotated load order, self-referencing tables level by level, protocol rule rotated_load_failed).
-- 20260924-26 (statistics: column_statistics_hidden, UTF-8, non-comma array delimiters skipped).
-- 20260924-28 (literals: cast placeholders get statistics values; statistics records column_types).
-- 20260924-3 (intake: orphan sweep, plan_statement_mismatch; qualify: plan_table_mismatch).
-- 20260924-29 (run-server: tablespace and preload checks; StoreFormat 5).
-- 20261008-31 (rewrite candidates: reg literals, name-lookup functions, and reg-typed literals refused).
-- 20260924-6 (fixture-compare: top-N with left-out columns reruns without LIMIT).
-- 20261008-34 (statistics: hidden_statistics in the report, row_security_statistics_hidden).
-- 20261008-32 (rewrite candidates: only the original's names and pg_catalog's; unknown_name).
-- 20260927-18 (rewrite-test: scenarios load with generated columns and = exclusions; exclusion_constraint refused).
-- 20261001-10 (schema-dump: pg_depend walk, extra_dump_schemas, dump_object_unreadable with a tables field).
-- 20261007-21 (qualify: overloaded functions and operators resolved by probing EXPLAIN).
 
 ## How this file works.
 
