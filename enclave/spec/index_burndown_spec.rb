@@ -96,4 +96,25 @@ RSpec.describe Quaack::Enclave::IndexBurndown, ".record_rank" do
       expect(refined["extra"]).to eq("fell_short" => 0)
     end
   end
+
+  # Task 20261008-27, item 2: record_search passes its dedupe: through to
+  # the index-test record, which refuses a report that didn't test exactly
+  # the Dedupe's proposals.
+  describe ".record_search" do
+    let(:dedupe) do
+      orders = Quaack::Enclave::TableName.new(schema: "public", name: "orders")
+      table = Quaack::Enclave::TableStatistics.new(name: orders, reltuples: 1, columns: {}, column_names: ["id"],
+                                                   indexes: {})
+      Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::Statistics.new(tables: [table]), low_cardinality: [])
+    end
+
+    it "refuses a report that didn't test exactly the Dedupe's proposals, and records nothing" do
+      report = sct::Report.new(baseline: nil, results: [result(used: true)])
+      generated = { generator_one: 0, generator_two: 0 }
+
+      expect { described_class.record_search(store, :original, generated, dedupe:, test: [report, []]) }
+        .to raise_error(Quaack::Enclave::Burndown::Error, /must test exactly the Dedupe's proposals/)
+      expect(Quaack::Enclave::Burndown.read(store)["stages"]).to eq({})
+    end
+  end
 end
