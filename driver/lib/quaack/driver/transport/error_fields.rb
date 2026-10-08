@@ -11,6 +11,9 @@ module Quaack
         RULE = /\A[a-z][a-z0-9_]{0,62}\z/
         STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
+        # A volatile_function refusal's function (DESIGN.md's volatility), as
+        # the enclave's ErrorFilter shapes it: one unquoted qualified name. A
+        # column's table and a cycle's tables have the same shape.
         FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
         # An intake refusal's reason (DESIGN.md's input), one fixed cause.
         REASON_RULES = %w[query_unreadable plan_unreadable].freeze

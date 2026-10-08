@@ -8,7 +8,7 @@ module Quaack
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
     # SQLSTATE if there was one, plus, for some rules, the shape-class detail
-    #   below (reason, function, clients, and column).
+    # below (reason, function, clients, column, and cycle).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "fixture-load")
     #   # => '{"type":"error","step":"fixture-load","rule":"internal_error","sqlstate":"23505"}'
@@ -174,6 +174,9 @@ module Quaack
 
       def shaped_or_nil(value, pattern) = (value if shaped?(value, pattern))
 
+      # Exactly String, like shaped?, so a subclass can't write itself out
+      # as something else. No spec tells it from is_a?, since include?
+      # already needs a String equal to a fixed reason; it's kept on purpose.
       def reason(value) = (value if value.instance_of?(String) && UNREADABLE_REASONS.include?(value))
 
       # clients if it's an Array of 1 to MAX_CLIENTS clients, each a Hash

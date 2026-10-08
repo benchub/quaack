@@ -146,6 +146,42 @@ RSpec.describe Quaack::Driver::Start do
     expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
+  # Task 20261003-7: home itself, and a path that cleans to one under home
+  # (or a home given with a trailing slash), are refused too.
+  it "refuses home itself, and paths that only clean to under home" do
+    configure("echo jump-1")
+    remote_intake
+
+    [home, File.join(home, "q", "..", "query.sql"), "#{home}/./q.sql"].each do |query|
+      expect { start(query:) }.to raise_error(Quaack::Driver::Start::UsageError, /\Aquery looks like/), query
+    end
+    expect { start(query: File.join(home, "q.sql"), home: "#{home}/") }
+      .to raise_error(Quaack::Driver::Start::UsageError, /\Aquery looks like/)
+    expect(File.exist?(File.join(dir, "got"))).to be(false)
+  end
+
+  # Task 20261003-7: a sibling whose name starts with home's, and a path
+  # under home that cleans to outside it, aren't laptop home paths.
+  it "passes a path beside home, or one that cleans to outside it, to intake unchanged" do
+    configure("echo jump-1")
+    remote_intake
+
+    ["#{home}X/q.sql", File.join(home, "..", "x.sql")].each do |query|
+      expect(start(query:)).to eq(run_id)
+      expect(JSON.parse(File.read(File.join(dir, "got")))).to include("query" => query)
+    end
+  end
+
+  # Task 20261003-7: ~ means the jump server's home, so the remote quaacks
+  # gets it as a literal ~, never expanded on the laptop.
+  it "passes a ~/ path to intake as a literal ~" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(query: "~/q.sql", plan: "~/p.json")).to eq(run_id)
+    expect(JSON.parse(File.read(File.join(dir, "got")))).to include("query" => "~/q.sql", "plan" => "~/p.json")
+  end
+
   it "refuses output that isn't one ssh host, a failing command, and a missing config" do
     { "echo '-oProxyCommand=x'" => "jump_command_bad_output", "echo 'a b'" => "jump_command_bad_output",
       "printf 'a\\nb\\n'" => "jump_command_bad_output", "true" => "jump_command_bad_output",
