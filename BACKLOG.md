@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261002-3 (fresh aliases avoid every table and alias name).
 - 20261007-26 (outbound statistics per-column counts).
 - 20261007-34 (index-test and counterexample-round check volatility on the stored path).
+- 20261007-31 (arena catalog names qualified; the allowlist is empty).
 
 ## How this file works.
 
@@ -2227,16 +2228,7 @@ The last item left from 20260926-56: a driver-side table that maps enclave rules
 
 ### 20261007-30. NameQualifier: test gaps and two edge cases. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-31. Qualify catalog names in the enclave's arena reads (stage 3 of 20260930-14).
-
-20261007-9 qualified the racetrack reads. This task qualifies the 18 arena files still on `enclave/spec/catalog_names_spec.rb`'s allowlist, about 400 findings, and shrinks the list to empty: `arena.rb`, `arena_runner/deferred.rb`, `arena_runner/pipeline.rb` (its `ARM_SQL` `set_config`), `arena_runner/sequences.rb`, `arena_schema.rb`, `arena_schema/domain_checks.rb`, `arena_schema/unique_indexes.rb`, `clock_defaults.rb`, `counterexamples/evaluated.rb`, `denormalized_fixture.rb`, `insert_check.rb`, `insert_clock_words.rb`, `insert_values.rb`, `rewrite_rules/existence_in_flip.rb`, `scenarios/ties.rb`, `scenarios/types.rb`, `scenarios/values.rb`, and `value_pools.rb`. Where SQL compares user columns, use the column type's own `=` (`AssumptionCheck::Equality`), not `pg_catalog.=`, or citext and the like change meaning.
-
-Notes from the 20261007-9 builder: a `#{X}` interpolation is inlined by the scanner only when `X` is a plain-string constant in the same file, and `%<x>s` format placeholders show up as operators, so put them inside string literals. The builder's survey script is `build-20261007-9/findings.rb` in that session's scratchpad; rebuild it if it's gone.
-
-- **Depends on:** 20261007-9.
-- **Came from:** The split of 20261007-9.
-- **Design:** trust boundary.
-- **Status:** todo
+### 20261007-31. Qualify catalog names in the enclave's arena reads (stage 3 of 20260930-14). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-32. Racetrack qualification: minors from 20261007-9. Done, see BACKLOG-COMPLETE.md.
 
@@ -2308,4 +2300,17 @@ From the reviews of 20261007-24.
 - **Depends on:** 20261007-24.
 - **Came from:** The reviews of 20261007-24.
 - **Design:** LLM providers.
+- **Status:** todo
+
+### 20261007-41. Arena qualification: minors from 20261007-31.
+
+From the builder and review of 20261007-31.
+1. The `tableoid`/`ctid` qualification in `arena_runner/deferred.rb` has no test that goes red. With `public.=(oid,oid)` planted, the old code fails loudly with `insert_failed` rather than giving a wrong answer, so add a deferred-rows shadow example.
+2. `ValuePools::BOUNDARIES` matches format_type names with `\A(text|...)`. Under a shadowed `text`, the name becomes `pg_catalog.text`, so text boundaries are skipped. Values are less thorough, never wrong.
+3. The catalog-names scanner can't see SQL built from pieces that don't start with a keyword, such as `row_set.rb`'s `$i::#{type}` (the same format_type case as `FORMAT_TYPE_HOLES`).
+4. Older than 20261007-31: `scenarios/checks.rb` takes a bare operator from `pg_get_constraintdef` as pg_catalog's, so a CHECK bound to a `public.>` that sits first on the path prints bare and is accepted as simple. The likely effect is a scenario load failure, not a wrong result.
+
+- **Depends on:** 20261007-31.
+- **Came from:** The builder and review of 20261007-31.
+- **Design:** trust boundary.
 - **Status:** todo
