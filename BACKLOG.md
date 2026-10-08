@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-26 (outbound statistics per-column counts).
 - 20261007-34 (index-test and counterexample-round check volatility on the stored path).
 - 20261007-31 (arena catalog names qualified; the allowlist is empty).
+- 20261002-4 (composite keys; unique checks compare opclass and collation).
 
 ## How this file works.
 
@@ -826,22 +827,7 @@ Minor findings from the build and both reviews of 20261001-23:
 
 ### 20261002-3. `not_in_to_not_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-4. `distinct_join_to_exists`: minor findings.
-
-Minor findings from the build and both reviews of 20261001-26:
-
-- No committed spec runs this rule through `quaacks rewrite-rules`; only `key_in_self_join` is covered that way. A review probe showed the path works. Add one.
-- One guard in `Tree.tables?` (a FROM item with no table) is killed only by a pg_query segfault, not an assertion. Have the rule refuse a nil table explicitly.
-- Composite keys are refused. Supporting them needs not-null stated per key column.
-- A unique index in a different collation or operator class from its column could make DISTINCT's equality differ from the index's. An `AssumptionCheck` matter, shared with the other rules.
-- Select-list expressions beside the key, and subqueries in conditions on the kept table alone, are refused though some are sound.
-- `Catalog#columns` on a star with no single-column key costs a catalog query per column. One query for the table's keys would be cheaper.
-- `spec/support/test_postgres.rb:245` raises when two spec processes remove the same stale container at once, which gives spurious red runs while agents run in parallel. Treat "already in progress" as success.
-
-- **Depends on:** 20261001-26.
-- **Came from:** The build and both reviews of 20261001-26.
-- **Design:** assumption-check, rewrite-rules.
-- **Status:** todo
+### 20261002-4. `distinct_join_to_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-5. `or_to_union`: minor findings.
 
@@ -1614,6 +1600,7 @@ These are minor findings from building and reviewing 20261002-16:
 - **Depends on:** 20261002-16.
 - **Came from:** The build and review of 20261002-16, 2026-10-03.
 - **Design:** rewrite-rules, `distinct_join_to_exists`.
+- **Note (2026-10-07):** the nondeterministic-collation key with a `COLLATE "C"` index is covered by 20261002-4's shared unique check (`assumption_check/index_equality.rb`).
 - **Status:** todo
 
 ### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test. Done, see BACKLOG-COMPLETE.md.
@@ -2313,4 +2300,25 @@ From the review of 20261007-14.
 - **Depends on:** 20261007-14.
 - **Came from:** The review of 20261007-14.
 - **Design:** Several LLM providers.
+- **Status:** todo
+
+### 20261007-43. Unique keys: minors from 20261002-4.
+
+From the review of 20261002-4.
+1. `catalog/keys.rb`'s `u.n <= i.indnkeyatts` filter is untested; dropping it lets INCLUDE columns join candidate keys, which would refuse `SELECT DISTINCT t.a` for `UNIQUE (a) INCLUDE (b)` and demand `b` not null. Add a test with an INCLUDE index.
+2. The per-catalog `@keys` memo in `keys.rb` is untested (performance only).
+3. The shared check refuses a unique index with a non-default operator class even when its `=` matches the default's (`text_pattern_ops`, `varchar_pattern_ops`). Allow a class whose equality operator is the default class's, with a test.
+
+- **Depends on:** 20261002-4.
+- **Came from:** The review of 20261002-4.
+- **Design:** rewrite-rules, assumption checks.
+- **Status:** todo
+
+### 20261007-44. `distinct_join_to_exists`: subqueries in conditions on the kept table.
+
+From 20261002-4's item 5. The rule refuses a subquery in a condition on the kept table. Allowing it needs the column resolver to understand subquery scopes, so inner columns aren't resolved against outer tables. Must stay sound; refuse anything unclear.
+
+- **Depends on:** 20261002-4.
+- **Came from:** The builder of 20261002-4.
+- **Design:** rewrite-rules.
 - **Status:** todo

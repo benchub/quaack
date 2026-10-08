@@ -6906,3 +6906,21 @@ From the review of 20261004-79. The new went-on cell renders `<td class="num">no
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. The burndown table's went-on cell uses `count_cell`, so a missing count renders `<td class="missing">not recorded</td>` like every other one, and numbers render as before.
+
+### 20261002-4. `distinct_join_to_exists`: minor findings.
+
+Minor findings from the build and both reviews of 20261001-26:
+
+- No committed spec runs this rule through `quaacks rewrite-rules`; only `key_in_self_join` is covered that way. A review probe showed the path works. Add one.
+- One guard in `Tree.tables?` (a FROM item with no table) is killed only by a pg_query segfault, not an assertion. Have the rule refuse a nil table explicitly.
+- Composite keys are refused. Supporting them needs not-null stated per key column.
+- A unique index in a different collation or operator class from its column could make DISTINCT's equality differ from the index's. An `AssumptionCheck` matter, shared with the other rules.
+- Select-list expressions beside the key, and subqueries in conditions on the kept table alone, are refused though some are sound.
+- `Catalog#columns` on a star with no single-column key costs a catalog query per column. One query for the table's keys would be cheaper.
+- `spec/support/test_postgres.rb:245` raises when two spec processes remove the same stale container at once, which gives spurious red runs while agents run in parallel. Treat "already in progress" as success.
+
+- **Depends on:** 20261001-26.
+- **Came from:** The build and both reviews of 20261001-26.
+- **Design:** assumption-check, rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. A `quaacks rewrite-rules` spec runs the rule end to end with a sentinel. The rule takes a key of several columns: a unique index whose columns are all selected (and all in the ORDER BY under a LIMIT), with `unique` over them and `not_null` for each; `Catalog#keys` reads a table's unique indexes once. The shared `unique` assumption check (`assumption_check/index_equality.rb`) now needs each key column's default operator class and the column's own collation unless both are deterministic, so a `COLLATE "C"` index on a case-blind column no longer counts (this also covers 20261003-35's nondeterministic-key item); ordinary unique indexes, including on ICU databases, still count. Test Postgres treats "removal already in progress" as removed. Item 2 was stale (the guard was already there); item 5's subqueries moved to 20261007-44. Enclave change, unreleased until the next batch bump.
