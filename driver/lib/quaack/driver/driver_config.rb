@@ -60,11 +60,13 @@ module Quaack
 
       # Whether something is at path. Unlike File.exist?, it raises Bad
       # when it can't tell, when what's there isn't a file (a FIFO would
-      # block the read), or when it's a symlink whose target is missing.
+      # block the read), or when it, or ~/.quaack, is a symlink whose
+      # target is missing.
       def self.there?(path)
         File.stat(path).file? or raise Bad.new(path, "can't read it")
       rescue Errno::ENOENT, Errno::ENOTDIR
         raise Bad.new(path, "it's a symlink to a missing file") if dangling_symlink?(path)
+        raise Bad.new(path, "~/.quaack is a symlink to a missing directory") if dangling_symlink?(File.dirname(path))
 
         false
       rescue Errno::EACCES

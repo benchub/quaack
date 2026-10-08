@@ -778,6 +778,18 @@ RSpec.describe "quaack run" do
     expect(transport.calls).to eq([])
   end
 
+  # Task 20261007-23: the record's JSON is checked, never quoted.
+  { "isn't valid JSON" => ["{\"jump_host\": \"sentinel-7f3a", "not valid JSON"],
+    "isn't a JSON object" => ['"sentinel-7f3a"', "not a JSON object"] }.each do |what, (text, problem)|
+    it "refuses a run record that #{what} as a usage error, naming it by ~" do
+      File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"), text)
+
+      expect([cli.run(["run", "--run", run_id, "--out", out]), stdout.string, errors])
+        .to eq([64, "", "quaack run: can't read ~/.quaack/runs/#{run_id}.json (#{problem})\n"])
+      expect(transport.calls).to eq([])
+    end
+  end
+
   it "calls the run unknown when ~/.quaack/runs is a file, so no record can be there" do
     runs = File.join(home, ".quaack", "runs")
     FileUtils.rm_rf(runs)

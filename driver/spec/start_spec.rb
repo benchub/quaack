@@ -285,6 +285,16 @@ RSpec.describe Quaack::Driver::Start do
                                     "bad_driver_config: #{path}: it's a symlink to a missing file")
   end
 
+  # Task 20261007-23: the same for a ~/.quaack symlink whose target is
+  # missing, rather than running with the defaults.
+  it "refuses a ~/.quaack symlink whose target is missing" do
+    File.symlink(File.join(home, "moved-away"), File.join(home, ".quaack"))
+    path = File.join(home, ".quaack", "driver.json")
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{path}: ~/.quaack is a symlink to a missing directory")
+  end
+
   it "counts a ~/.quaack without a driver.json, or that isn't a directory, as no config" do
     quaack = File.join(home, ".quaack")
     FileUtils.mkdir_p(quaack)
