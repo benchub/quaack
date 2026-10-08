@@ -253,7 +253,8 @@ module Quaack
 
         # Some APIs quote part of a refused key back, so an llm_auth message
         # is only the status. Any other answer from the API gives its status
-        # and the body's error message, if it has one (APIErrorDetail), never
+        # and the body's error message, if it has one (APIErrorDetail, or a
+        # string error, as Hugging Face TGI sends), never
         # the rest of the body or the gem's message, which holds the URL. As
         # in the Anthropic adapter, a body with no message, or one that's
         # text, gives only the status. With no answer, such as a dropped
@@ -268,7 +269,16 @@ module Quaack
         end
 
         def answered(error)
-          error.status ? APIErrorDetail.answered(error.status, error.body) : error.message
+          return error.message unless error.status
+
+          APIErrorDetail.answered(error.status, error.body, reason: body_message(error.body))
+        end
+
+        # The body's message as APIErrorDetail reads it, or, as servers such
+        # as Hugging Face TGI send it, a non-empty string error.
+        def body_message(body)
+          inner = body[:error] if body.is_a?(Hash)
+          inner.is_a?(String) && !inner.empty? ? inner : APIErrorDetail.body_message(body)
         end
 
         # The keys the detail scrubs: the key, and the organization, project,

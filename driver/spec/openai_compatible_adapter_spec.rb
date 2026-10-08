@@ -202,9 +202,10 @@ RSpec.describe "the OpenAI-compatible adapter" do
           .error_body("llm-index-ideas", status: 502, body: { error: { message: ["SENTINEL-NOT-TEXT"] } })
           .error_body("llm-index-ideas", status: 422, body: { error: { message: "" } })
           .error_body("llm-index-ideas", status: 404, body: { detail: "SENTINEL-DETAIL" })
+          .error_body("llm-index-ideas", status: 503, body: { error: "" })
       client = fake.client(burndown:, max_retries: 0)
 
-      seen = Array.new(5) do
+      seen = Array.new(6) do
         client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
       rescue Quaack::Driver::LLM::Error => e
         e
@@ -213,7 +214,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(seen.map { sans_sizes(it.message) })
         .to eq(["llm_bad_request: the API answered 400", "llm_unavailable: the API answered 500",
                 "llm_unavailable: the API answered 502", "llm_bad_request: the API answered 422",
-                "llm_bad_request: the API answered 404"])
+                "llm_bad_request: the API answered 404", "llm_unavailable: the API answered 503"])
       expect(seen.map { error_text(it) }.join).not_to include("SENTINEL", "llm.example.com")
     end
 
@@ -267,6 +268,19 @@ RSpec.describe "the OpenAI-compatible adapter" do
           expect(error_text(error)).not_to include(key, query, "url=", "llm.example.com")
           expect(error.reason).to eq("the API answered #{status}: bad, key [key] [key]")
         end
+      end
+
+      # Servers such as Hugging Face TGI send the message as the error itself.
+      it "shows a string error as the message, with the key and base_url's query value scrubbed" do
+        fake.error_body("llm-index-ideas", status: 404, body: { error: "no model, key #{key} #{query}" })
+
+        client = fake.client(burndown:, max_retries: 0, api_key: key, settings:)
+        error = client.ask(step: "llm-index-ideas", messages:, max_tokens: 10)
+      rescue Quaack::Driver::LLM::Error => e
+        expect(error_text(e)).not_to include(key, query, "llm.example.com")
+        expect(e.reason).to eq("the API answered 404: no model, key [key] [key]")
+      else
+        raise "expected an LLM::Error, got #{error.inspect}"
       end
 
       it "scrubs a key from the variable api_key_env names" do
