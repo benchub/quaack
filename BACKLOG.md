@@ -1302,14 +1302,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261007-13. The `llms` list and its config. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-14. The router: sessions, failover, round-robin, and pinning.
-
-Add the router and its sessions, and move every LLM caller onto them, so each multi-turn unit stays on one provider. Add pools from pinning, `round_robin` (the default) and `failover`, with the one cursor for the run. Fail over at a unit's first ask on `llm_rate_limited` and `llm_unavailable` (mark the provider down), `llm_auth` (drop it for the run, with the loud line), and `llm_bad_response` (move on without marking it down). Keep `llm_bad_request` failing the step. Fail the step with the last rule and the list of what was tried when a unit runs out of providers. A later ask that fails keeps today's behavior, failing the step, though it marks or drops the provider; 20261007-15 softens that. Count calls per provider in the burndown's in-memory counts, and add the progress and failure lines. Reword llm-index-refine's prompt from "You already proposed candidates" to say an LLM already proposed them. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
-
-- **Depends on:** 20261007-13.
-- **Came from:** The split of 20260929-2.
-- **Design:** Several LLM providers (Asks, units, and sessions; Routing; Accounting; Progress and failure messages), llm-index-refine.
-- **Status:** todo
+### 20261007-14. The router: sessions, failover, round-robin, and pinning. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-15. A later turn that fails.
 
@@ -2313,4 +2306,18 @@ From the builder and review of 20261007-31.
 - **Depends on:** 20261007-31.
 - **Came from:** The builder and review of 20261007-31.
 - **Design:** trust boundary.
+- **Status:** todo
+
+### 20261007-42. The router: minors from 20261007-14.
+
+From the review of 20261007-14.
+1. A unit whose last provider fails with `llm_auth` prints no loud drop line, since the line only prints when there's a next provider. The step's failure message still names `<name> (llm_auth)`. Print the drop line anyway.
+2. When providers are named, running out lists each provider's rule but drops its detail (the API's reason from 20261001-1), and failover lines don't carry it either. Keep a short reason per provider, as long as it names no value.
+3. The router builds its `Error` without `cause:`, so Ruby's implicit cause is the client's error, not the SDK's. Nothing reads it today; set it on purpose, or to nil, consistently with 20261007-24.
+4. Untested guards: `&& !@down.key?(name)` in `Router#failed` (equivalent today) and `.uniq(&:object_id)` in `Router#burndown` (every client has its own burndown). Test them or drop them.
+5. The corpus's saved refine replies answer the old refine wording, as other hand-edited corpus prompts do since 20261001-28 and 20261004-95. Record which prompt wording each corpus directory's replies answered (a note or marker), or rerun the prompt pack for them.
+
+- **Depends on:** 20261007-14.
+- **Came from:** The review of 20261007-14.
+- **Design:** Several LLM providers.
 - **Status:** todo
