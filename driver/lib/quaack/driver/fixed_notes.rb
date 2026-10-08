@@ -22,7 +22,7 @@ module Quaack
 
       BY_RULE = {
         # The run's store and the jump server's setup.
-        "run_from_older_version" => "an older version of QUAACK started this run, and this version can't " \
+        "run_from_older_version" => "An older version of QUAACK started this run, and this version can't " \
                                     "resume it. Start a new run with quaack start.",
         "bad_run" => "The jump server has no usable directory for this run under ~/.quaack/runs: it's missing, " \
                      "or it isn't a directory QUAACK made, such as a symlink, so QUAACK left it alone. Check " \
@@ -193,7 +193,7 @@ module Quaack
 
         # run-server: the run server's flags, command, and checks.
         # run-server got neither all four flags nor a run_server_command.
-        "run_server_unspecified" => "name the run server with --host, --port, --racetrack-db, and --arena-db, " \
+        "run_server_unspecified" => "Name the run server with --host, --port, --racetrack-db, and --arena-db, " \
                                     "or set run_server_command in ~/.quaack/config.json on the jump server",
         "bad_run_server_host" => "The run server's host must be a host name or an IPv4 address. A Unix socket " \
                                  "path or an IPv6 address isn't supported yet. Fix --host or " \
@@ -262,12 +262,20 @@ module Quaack
                                                         "match production's plan. The likely cause is that the " \
                                                         "racetrack's statistics don't match production's, such " \
                                                         "as a backup older than the statistics QUAACK read " \
-                                                        "from production. Restore a fresh backup on the run " \
-                                                        "server, or run ANALYZE in the racetrack database. " \
-                                                        "#{GO_ON}",
+                                                        "from production. The run server is already torn down, " \
+                                                        "so make sure the backup the next run server restores " \
+                                                        "from is fresh and analyzed. #{GO_ON}",
         "plan_gate_not_comparable" => "A plan has a condition QUAACK can't compare, so it can't tell whether " \
                                       "the racetrack plans the query as production did. QUAACK v1 can't tune " \
                                       "this query.",
+        # index-build's guards against an orphaned build (BuildConnection).
+        "index_build_orphan_running" => "A CREATE INDEX from an earlier, timed-out index-build call is still " \
+                                        "running on the run server, and it didn't stop when QUAACK canceled " \
+                                        "it. Wait for it to finish or stop it yourself. #{GO_ON}",
+        "index_build_orphan_cancel_denied" => "A CREATE INDEX from an earlier, timed-out index-build call is " \
+                                              "still running on the run server, and QUAACK's role may not " \
+                                              "cancel it. Cancel that backend yourself, with pg_cancel_backend " \
+                                              "as a role that may. #{GO_ON}",
         "statement_canceled" => "Something other than QUAACK's own time limit canceled one of QUAACK's queries " \
                                 "on the run server: another session, or a statement_timeout set on the server, " \
                                 "database, or role. Make sure nothing else uses the run server and that " \
@@ -301,7 +309,7 @@ module Quaack
 
       # The shared line for every rule in INTERNAL.
       INTERNAL_NOTE = "QUAACK hit an internal check it can't recover from. This is a QUAACK bug: report " \
-                      "the rule name and the step."
+                      "the rule name and the step"
 
       # The rules an operator can't act on: checks of QUAACK's own work,
       # of what the driver sends, of the order the driver runs steps in,
@@ -318,8 +326,8 @@ module Quaack
         counterexample_payload_unknown_search counterexample_payload_untested counterexample_round_bad_inserts
         counterexample_round_bad_round counterexample_round_decided counterexample_round_no_arena_setup
         counterexample_round_out_of_order counterexample_round_unknown_search counterexample_round_untested
-        index_build_bad_index index_build_hidden_index_used index_build_orphan_cancel_denied
-        index_build_orphan_running index_build_unique index_build_unqualified index_build_wrong_set_hidden
+        index_build_bad_index index_build_hidden_index_used
+        index_build_unique index_build_unqualified index_build_wrong_set_hidden
         invalid_index_candidate indexes_hidden in_transaction session_closed hypopg_failed explain_failed
         cleanup_failed prepare_failed execute_failed bad_type not_one_select unknown_placeholder bad_placeholder
         bad_placeholder_map bad_literal bad_literal_sets bad_statistics statistics_bad_shape bad_value

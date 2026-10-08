@@ -29,29 +29,29 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "unmet_assumption" => "rewrite-check's Rejected, rescued into the rewrite's outcome"
   }.freeze
 
-  # Every file with a raise site the scan can't read a rule from, and
-  # where its rules come from. A new one fails until it's listed here.
+  # Every file with a raise site the scan can't read a rule from, how many
+  # such sites it holds, and where their rules come from. A new site fails until it's counted here.
   dynamic = {
-    "arena_runner.rb" => "a caller's rule: keyword, or ArenaRunner::Cancel.rule's",
-    "arena_runner/transaction_status.rb" => "its rule and refusal locals, and its callers' rule: keywords",
-    "index_ddl_check.rb" => "REFUSED_OPTIONS, read below",
-    "index_methods.rb" => "IndexCandidateError, whose rule is fixed",
-    "insert_check.rb" => "REFUSED_FORMS, read below",
-    "insert_values.rb" => "an InsertCheck::Error's rule, raised again",
-    "intake/operator_file.rb" => "<kind>_too_large and <kind>_unreadable, read below",
-    "redaction/binding.rb" => "guarded's callers",
-    "relation_qualifier.rb" => "a message for an Error whose rule is fixed",
-    "relations.rb" => "its rule locals, and KINDS and OTHER, read below",
-    "result_comparison/load_orders.rb" => "LOAD_FAILED, read below",
-    "run_server_check.rb" => "fail!'s callers",
-    "scenarios/values.rb" => "its rule local",
-    "single_candidate_test.rb" => "guarded's and hypopg's callers",
-    "single_candidate_test/hypopg.rb" => "hypopg's callers",
-    "steps/counterexamples.rb" => "<prefix>_unknown_search and <prefix>_no_arena_setup, read below",
-    "steps/rewrite_check.rb" => "StructuralDiscard's reasons, rescued into the rewrite's outcome",
-    "store.rb" => "a message for Store::BadBase, whose rule is fixed",
-    "supported_sql.rb" => "a node type for an Error whose rule is fixed",
-    "user_schema.rb" => "a message for an Error whose rule is fixed"
+    "arena_runner.rb" => [3, "a caller's rule: keyword, or ArenaRunner::Cancel.rule's"],
+    "arena_runner/transaction_status.rb" => [3, "its rule and refusal locals, and its callers' rule: keywords"],
+    "index_ddl_check.rb" => [1, "REFUSED_OPTIONS, read below"],
+    "index_methods.rb" => [1, "IndexCandidateError, whose rule is fixed"],
+    "insert_check.rb" => [1, "REFUSED_FORMS, read below"],
+    "insert_values.rb" => [1, "an InsertCheck::Error's rule, raised again"],
+    "intake/operator_file.rb" => [2, "<kind>_too_large and <kind>_unreadable, read below"],
+    "redaction/binding.rb" => [1, "guarded's callers"],
+    "relation_qualifier.rb" => [1, "a message for an Error whose rule is fixed"],
+    "relations.rb" => [2, "its rule locals, and KINDS and OTHER, read below"],
+    "result_comparison/load_orders.rb" => [1, "LOAD_FAILED, read below"],
+    "run_server_check.rb" => [1, "fail!'s callers"],
+    "scenarios/values.rb" => [1, "its rule local"],
+    "single_candidate_test.rb" => [1, "guarded's and hypopg's callers"],
+    "single_candidate_test/hypopg.rb" => [1, "hypopg's callers"],
+    "steps/counterexamples.rb" => [2, "<prefix>_unknown_search and <prefix>_no_arena_setup, read below"],
+    "steps/rewrite_check.rb" => [1, "StructuralDiscard's reasons, rescued into the rewrite's outcome"],
+    "store.rb" => [1, "a message for Store::BadBase, whose rule is fixed"],
+    "supported_sql.rb" => [1, "a node type for an Error whose rule is fixed"],
+    "user_schema.rb" => [1, "a message for an Error whose rule is fixed"]
   }.freeze
 
   let(:scan) { ErrorRuleScan.scan(root) }
@@ -72,10 +72,10 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     expect(found - names).to eq([])
   end
 
-  it "lists every file whose raise sites the scan can't read" do
-    files = scan.dynamic.map { it.delete_prefix("quaack/enclave/").sub(/:\d+\z/, "") }.uniq.sort
+  it "counts every raise site the scan can't read, per file" do
+    files = scan.dynamic.map { it.delete_prefix("quaack/enclave/").sub(/:\d+\z/, "") }.tally
 
-    expect(files).to eq(dynamic.keys.sort)
+    expect(files.sort.to_h).to eq(dynamic.transform_values(&:first).sort.to_h)
   end
 
   it "holds ErrorFilter's own rule for an error with none" do
