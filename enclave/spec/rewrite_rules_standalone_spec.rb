@@ -7,8 +7,9 @@ require "rbconfig"
 # rewrites are made of, in a Ruby that has loaded nothing else of QUAACK.
 RSpec.describe "A rewrite rule file required alone" do
   lib = File.expand_path("../lib", __dir__)
+  shared = %w[rewrite_rules/literals rewrite_rules/rewrite]
   rules = File.read(File.join(lib, "quaack/enclave/rewrite_rules.rb"))
-              .scan(%r{require_relative "(rewrite_rules/[a-z_]+)"}).flatten - %w[rewrite_rules/literals rewrite_rules/rewrite]
+              .scan(%r{require_relative "(rewrite_rules/[a-z_]+)"}).flatten - shared
 
   it "covers every rule the generator requires" do
     expect(rules.size).to eq(12)

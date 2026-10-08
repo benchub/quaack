@@ -4,6 +4,7 @@ require "json"
 require "pg_query"
 require_relative "assumption_check/denormalized_equal"
 require_relative "assumption_check/index_equality"
+require_relative "assumption_check/no_legacy_children"
 
 module Quaack
   module Enclave
@@ -61,10 +62,7 @@ module Quaack
         SELECT 1 FROM pg_catalog.pg_index i
         WHERE i.indrelid #{EQ} #{RELATION} AND i.indisunique AND i.indisvalid
           AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indimmediate AND #{IndexEquality::SQL}
-          AND NOT EXISTS (
-            SELECT 1 FROM pg_catalog.pg_inherits h JOIN pg_catalog.pg_class p ON p.oid #{EQ} h.inhparent
-            WHERE h.inhparent #{EQ} i.indrelid AND p.relkind OPERATOR(pg_catalog.<>) 'p')
-          AND (i.indnullsnotdistinct OR NOT EXISTS (
+          AND #{NoLegacyChildren::SQL} AND (i.indnullsnotdistinct OR NOT EXISTS (
             SELECT 1 FROM pg_catalog.unnest(i.indkey::pg_catalog.int2[]) WITH ORDINALITY AS u(k, n)
             WHERE u.n OPERATOR(pg_catalog.<=) i.indnkeyatts AND NOT EXISTS (
               SELECT 1 FROM pg_catalog.pg_constraint c
