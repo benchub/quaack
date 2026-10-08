@@ -6769,3 +6769,17 @@ Edge cases:
 - **Design:** qualify.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. Items 1 to 5 have tests that go red under their mutations; item 6's filter stays as a commented defense. Item 7: racetrack setup creates the `quaack` schema first and installs HypoPG `WITH SCHEMA quaack` (an existing install stays where it is), and the quaack-schema check allows only the hypopg extension and its members besides `clock_anchor()`. Item 8: qualify's stored search_path drops schemas the operator's role can't use, and rewrite-check qualifies candidates with `RunServer.plan_settings`, so they resolve with production's `"$user"` and USAGE. Enclave change, unreleased until the next batch bump.
+
+### 20261007-23. Driver run records and config: minors from 20261001-14 and 20261001-15.
+
+From the reviews of 20261001-14 and 20261001-15.
+1. `setup_command.rb` (~69) reads the run record again in its EnclaveError rescue. If the record turns unreadable mid-setup, `Runs::Unreadable` escapes as a backtrace. Reuse the host and `where` it already read.
+2. `quaack setup` has only a root-skipped unreadable-record spec. Add one that runs under root too, such as a directory where the record should be.
+3. A run record that isn't valid JSON raises `JSON::ParserError` out of `Runs#read`, so `quaack run` and `quaack setup` crash with a backtrace. Refuse it as a usage error that names the record by `~`.
+4. A dangling `~/.quaack` symlink makes driver.json read as missing, so the user silently gets the defaults. Refuse it the way a dangling driver.json is refused.
+
+- **Depends on:** 20261001-14, 20261001-15.
+- **Came from:** The reviews of 20261001-14 and 20261001-15.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-07, after a review with one blocking finding, a fix round, and a clean second review. Setup reuses the record it read first, so a record that turns unreadable mid-setup no longer crashes it; setup has an unreadable-record spec that runs under root; a record that isn't valid JSON or isn't an object is a usage error naming it by `~` and never its contents; and a dangling `~/.quaack` symlink is refused, while a working symlinked `~/.quaack` (or one to a file) still reads as no config.

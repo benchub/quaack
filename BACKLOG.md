@@ -2208,18 +2208,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-22. `CastlessIndex`: the IndexCandidate::Error rescue is untested. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-23. Driver run records and config: minors from 20261001-14 and 20261001-15.
-
-From the reviews of 20261001-14 and 20261001-15.
-1. `setup_command.rb` (~69) reads the run record again in its EnclaveError rescue. If the record turns unreadable mid-setup, `Runs::Unreadable` escapes as a backtrace. Reuse the host and `where` it already read.
-2. `quaack setup` has only a root-skipped unreadable-record spec. Add one that runs under root too, such as a directory where the record should be.
-3. A run record that isn't valid JSON raises `JSON::ParserError` out of `Runs#read`, so `quaack run` and `quaack setup` crash with a backtrace. Refuse it as a usage error that names the record by `~`.
-4. A dangling `~/.quaack` symlink makes driver.json read as missing, so the user silently gets the defaults. Refuse it the way a dangling driver.json is refused.
-
-- **Depends on:** 20261001-14, 20261001-15.
-- **Came from:** The reviews of 20261001-14 and 20261001-15.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261007-23. Driver run records and config: minors from 20261001-14 and 20261001-15. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-24. LLM adapter errors: keep keys and driver bugs out of them.
 
@@ -2321,4 +2310,15 @@ From the review of 20261007-30. `IndexDdlCheck`'s volatility check gets the plan
 - **Depends on:** 20261007-30.
 - **Came from:** The review of 20261007-30.
 - **Design:** qualify, index-test.
+- **Status:** todo
+
+### 20261007-35. Run records: read once, and type-check the jump host.
+
+From the reviews of 20261007-23.
+1. `Runs#where` reads the record three times per call (host, server, port). A record that changes between reads gives a clean usage error today, but one read is simpler and can't mix two versions.
+2. `Runs#host` and `where` pass a non-string `jump_host` (`{"jump_host": 5}`) straight through, unlike `server` and `port`, which are checked on read. Refuse it as an unreadable record.
+
+- **Depends on:** 20261007-23.
+- **Came from:** The reviews of 20261007-23, rounds one and two.
+- **Design:** Where QUAACK runs.
 - **Status:** todo
