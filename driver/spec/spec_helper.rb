@@ -30,6 +30,21 @@ end
 # a trailing report that's there, so a message without one is unchanged.
 def sans_sizes(message) = message.sub(/ \[step [^\]]*\]\z/, "")
 
+# Everything an error could show in a crash report or a debugger: the
+# message, class, and inspect of it and each error in its cause chain, with
+# the body an API error carries, and its full message with a backtrace,
+# which prints the causes too.
+def error_text(error)
+  chain = []
+  seen = error
+  while seen
+    chain << "#{seen.class}: #{seen.message} #{seen.inspect}"
+    chain << seen.body.inspect if seen.respond_to?(:body)
+    seen = seen.cause
+  end
+  [*chain, error.full_message(highlight: false)].join("\n")
+end
+
 # Sets each environment variable in changes, a nil value unsetting it, for
 # the block, then puts every one back.
 def with_env(changes)

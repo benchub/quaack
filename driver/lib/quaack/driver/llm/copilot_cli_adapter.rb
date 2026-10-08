@@ -19,6 +19,11 @@ module Quaack
         CUSTOM_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
         TASK_WAIT_ENV = "COPILOT_TASK_WAIT_TIMEOUT_SECONDS"
         STDERR_TAIL_LINES = 20
+        # A token the command's stderr could quote: a GitHub token, by its
+        # prefix, or whatever follows "Bearer". A failure's stderr tail
+        # shows each as [token]. A login failure's message quotes none of
+        # its stderr.
+        TOKEN = /\b(?:gh[opsur]_[A-Za-z0-9]+|github_pat_\w+)|(?<=Bearer )\S+/i
         READ_CHUNK_BYTES = 16_384
         READ_POLL_SECONDS = 0.01
 
@@ -202,8 +207,12 @@ module Quaack
           return Error.new("llm_unavailable", "the copilot_cli command timed out") if status.respond_to?(:timed_out?)
           return if status.success?
 
-          rule = login_failure?(stderr) ? "llm_auth" : "llm_unavailable"
-          Error.new(rule, "copilot_cli exited with status #{status.exitstatus}#{stderr_tail(stderr)}")
+          if login_failure?(stderr)
+            return Error.new("llm_auth", "the copilot_cli command exited with status #{status.exitstatus} " \
+                                         "and says it isn't logged in")
+          end
+
+          Error.new("llm_unavailable", "copilot_cli exited with status #{status.exitstatus}#{stderr_tail(stderr)}")
         end
 
         def login_failure?(stderr)
@@ -213,7 +222,7 @@ module Quaack
         def stderr_tail(stderr)
           return "" if stderr.empty?
 
-          tail = stderr.lines.last(STDERR_TAIL_LINES).join.strip
+          tail = stderr.lines.last(STDERR_TAIL_LINES).join.strip.gsub(TOKEN, "[token]")
           tail.empty? ? "" : ": #{tail}"
         end
 

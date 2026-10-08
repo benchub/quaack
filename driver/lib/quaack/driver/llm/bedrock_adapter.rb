@@ -65,16 +65,6 @@ module Quaack
           @anthropic = EdgeClient.new(edge:, base_url: settings.base_url, max_retries:, **options)
         end
 
-        # An llm_auth for a refused request carries only the status: AWS's
-        # message about a signature can describe the request that was signed.
-        def reply(**)
-          super
-        rescue Error => e
-          raise unless e.rule == "llm_auth" && e.cause.is_a?(::Anthropic::Errors::APIStatusError)
-
-          raise Error.new("llm_auth", "AWS refused the credentials (#{e.cause.status})"), cause: nil
-        end
-
         # The gem's BedrockClient, with an edge standing in for HTTP past
         # its Bedrock step, which rewrites and signs each attempt. nil edge
         # means HTTP.
@@ -93,6 +83,11 @@ module Quaack
         end
 
         private
+
+        # An llm_auth for a refused request carries only the status, as the
+        # Anthropic adapter's does: AWS's message about a signature can
+        # describe the request that was signed.
+        def refused(status) = "AWS refused the credentials (#{status})"
 
         # The client's options for a Bedrock API key, which the gem reads
         # from BEARER_ENV itself.
