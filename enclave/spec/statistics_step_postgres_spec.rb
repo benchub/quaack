@@ -20,8 +20,10 @@ RSpec.describe "quaacks statistics, against a real server" do
     Quaack::Enclave::Store.create(base: quaacks.store_base).tap do |store|
       store.write("server", production.host)
       store.write("relations", relations)
+      store.write("qualified_query", qualified_query)
     end
   end
+  let(:qualified_query) { "SELECT o.status FROM public.orders o JOIN sales.items i ON i.order_id = o.id" }
   let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
 
   before do
@@ -153,6 +155,49 @@ RSpec.describe "quaacks statistics, against a real server" do
       pgpass(user: reader)
 
       expect_failed(statistics(env: operator_env(PGUSER: reader)), "production_read_failed", "42501")
+    end
+  end
+
+  # pg_stats leaves out a column the role can't SELECT. Only the columns
+  # the run's qualified query references count.
+  context "with a role that can't SELECT every column" do
+    let(:reader) { "reader_#{SecureRandom.hex(6)}" }
+
+    before do
+      conn = production.connect
+      conn.exec(<<~SQL)
+        CREATE ROLE #{reader} LOGIN PASSWORD '#{production.password}';
+        GRANT USAGE ON SCHEMA sales TO #{reader};
+        GRANT SELECT ON sales.items TO #{reader};
+        GRANT SELECT (id) ON public.orders TO #{reader};
+      SQL
+      conn.close
+    end
+
+    after do
+      conn = production.connect
+      conn.exec("DROP OWNED BY #{reader}")
+      conn.close
+      production.server.admin.exec("DROP ROLE IF EXISTS #{reader}")
+    end
+
+    it "refuses as column_statistics_hidden when the query references one it can't, storing nothing" do
+      pgpass(user: reader)
+
+      expect_failed(statistics(env: operator_env(PGUSER: reader)), "column_statistics_hidden")
+    end
+
+    context "when the query references only columns it can SELECT" do
+      let(:qualified_query) { "SELECT o.id FROM public.orders o JOIN sales.items i ON i.order_id = o.id" }
+
+      it "stores the statistics it can read" do
+        pgpass(user: reader)
+
+        outcome = statistics(env: operator_env(PGUSER: reader))
+
+        expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([done, "", 0])
+        expect(stored.read("statistics")["tables"].last["columns"].keys).to eq(%w[id])
+      end
     end
   end
 end

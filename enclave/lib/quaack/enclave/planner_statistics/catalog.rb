@@ -3,6 +3,7 @@
 require "json"
 require_relative "../pg_array"
 require_relative "column_types"
+require_relative "visibility"
 
 module Quaack
   module Enclave
@@ -24,12 +25,24 @@ module Quaack
         SQL
 
         # One relation's own pg_stats rows. An index's are its expressions'.
+        # With each, its type's array delimiter (typdelim), which array_out
+        # prints the value arrays with. A domain has its base type's.
+        # inherited is in the ORDER BY so that, were NOT inherited dropped,
+        # an inherited row would always come last and win, never by chance.
         PG_STATS_SQL = <<~SQL
-          SELECT attname, null_frac, avg_width, n_distinct, most_common_vals::pg_catalog.text,
-                 most_common_freqs::pg_catalog.text, histogram_bounds::pg_catalog.text, correlation
-          FROM pg_catalog.pg_stats WHERE schemaname OPERATOR(pg_catalog.=) $1
-           AND tablename OPERATOR(pg_catalog.=) $2 AND NOT inherited
-          ORDER BY attname COLLATE pg_catalog."C"
+          SELECT s.attname, s.null_frac, s.avg_width, s.n_distinct, s.most_common_vals::pg_catalog.text,
+                 s.most_common_freqs::pg_catalog.text, s.histogram_bounds::pg_catalog.text, s.correlation,
+                 t.typdelim::pg_catalog.text
+          FROM pg_catalog.pg_stats s
+          JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) s.schemaname
+          JOIN pg_catalog.pg_class c ON c.relnamespace OPERATOR(pg_catalog.=) n.oid
+           AND c.relname OPERATOR(pg_catalog.=) s.tablename
+          JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) c.oid
+           AND a.attname OPERATOR(pg_catalog.=) s.attname
+          JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) a.atttypid
+          WHERE s.schemaname OPERATOR(pg_catalog.=) $1 AND s.tablename OPERATOR(pg_catalog.=) $2
+           AND NOT s.inherited
+          ORDER BY s.attname COLLATE pg_catalog."C", s.inherited
         SQL
 
         INDEXES_SQL = <<~SQL
@@ -63,51 +76,78 @@ module Quaack
 
         module_function
 
-        def table(table, connection)
+        # query is the qualified query, whose columns' statistics must all
+        # be ones pg_stats shows (see Visibility). nil checks every column.
+        def table(table, connection, query = nil)
           oid, reltuples, relpages, children = connection.exec_params(TABLE_SQL,
                                                                       [table.schema, table.name]).values.first
           raise Error.new("unknown_relation", "#{table} doesn't exist") unless oid
           raise Error.new("inheritance_parent", "#{table} has inheritance children") if children == "t"
 
-          { "schema" => table.schema, "name" => table.name, "reltuples" => Float(reltuples),
-            "relpages" => Integer(relpages, 10), **contents(table, oid, connection) }
+          entry = { "schema" => table.schema, "name" => table.name, "reltuples" => Float(reltuples),
+                    "relpages" => Integer(relpages, 10), **contents(table, oid, connection) }
+          Visibility.check!(table, oid, entry, query, connection)
+          entry
         end
 
         def contents(table, oid, connection)
-          { **ColumnTypes.read(connection, oid),
-            "columns" => pg_stats(connection, table.schema, table.name),
-            "indexes" => indexes(connection, table.schema, oid),
-            "extended_statistics" => extended(connection, oid) }
+          columns, skipped = pg_stats(connection, table.schema, table.name)
+          utf8({ **ColumnTypes.read(connection, oid), "columns" => columns, "array_statistics_skipped" => skipped,
+                                                      "indexes" => indexes(connection, table.schema, oid),
+                                                      "extended_statistics" => extended(connection, oid) })
         end
 
+        # The rows, and the names of the columns whose array statistics were
+        # skipped, since their type's array delimiter isn't a comma, which
+        # is all PgArray reads. Such a column keeps its scalars, and its
+        # most_common_vals, most_common_freqs, and histogram_bounds are nil.
         def pg_stats(connection, schema, relation)
-          connection.exec_params(PG_STATS_SQL, [schema, relation]).values.to_h do |name, *row|
-            [name, COLUMN_KEYS.zip(column(row)).to_h]
+          skipped = []
+          rows = connection.exec_params(PG_STATS_SQL, [schema, relation]).values.to_h do |name, *row, delimiter|
+            skipped << name unless delimiter == ","
+            [name, COLUMN_KEYS.zip(column(row, arrays: delimiter == ",")).to_h]
           end
+          [rows, skipped]
         end
 
-        def column(row)
+        def column(row, arrays:)
           null_frac, avg_width, n_distinct, vals, freqs, bounds, correlation = row
+          vals = freqs = bounds = nil unless arrays
           [Float(null_frac), Integer(avg_width, 10), Float(n_distinct), array(vals), array(freqs)&.map { Float(it) },
            array(bounds), correlation && Float(correlation)]
         end
 
         def indexes(connection, schema, oid)
           connection.exec_params(INDEXES_SQL, [oid]).values.map do |name, definition, size|
+            columns, skipped = pg_stats(connection, schema, name)
             { "name" => name, "definition" => definition, "size_bytes" => Integer(size, 10),
-              "columns" => pg_stats(connection, schema, name) }
+              "columns" => columns, "array_statistics_skipped" => skipped }
           end
         end
 
         def extended(connection, oid)
-          connection.exec_params(EXTENDED_SQL, [oid]).values.map do |schema, name, definition, kinds, *data|
-            n_distinct, dependencies, *arrays = data
+          connection.exec_params(EXTENDED_SQL, [oid]).values.map do |row|
+            schema, name, definition, kinds, n_distinct, dependencies, *arrays = utf8(row)
             EXTENDED_KEYS.zip([schema, name, definition, PgArray.parse(kinds), n_distinct, dependencies,
                                *arrays.map { it && JSON.parse(it) }]).to_h
           end
         end
 
         def array(text) = text && PgArray.parse(text)
+
+        # A string from the catalog comes back in the connection's client
+        # encoding, the database's own unless the caller set another, such
+        # as ISO-8859-1 for a LATIN1 database. The store's JSON is UTF-8, and
+        # so are the query's names, so each is transcoded, as SchemaDump
+        # does. The connection itself is left alone.
+        def utf8(value)
+          case value
+          when String then value.encode(Encoding::UTF_8)
+          when Array then value.map { utf8(it) }
+          when Hash then value.to_h { |key, item| [utf8(key), utf8(item)] }
+          else value
+          end
+        end
       end
     end
   end

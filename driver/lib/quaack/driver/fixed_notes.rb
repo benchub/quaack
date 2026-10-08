@@ -144,6 +144,10 @@ module Quaack
         "production_read_failed" => "QUAACK connected to the production server, but reading its catalog failed. " \
                                     "Check that your role there can read the system catalogs and pg_stats. " \
                                     "#{GO_ON}",
+        "column_statistics_hidden" => "Your role on the production server can't read the statistics of some " \
+                                      "of the query's columns, since pg_stats shows a column's statistics " \
+                                      "only to a role that can SELECT it. Grant your role there SELECT on " \
+                                      "the columns of the query's tables. #{GO_ON}",
         "memory_command_failed" => "memory_command in ~/.quaack/config.json on the jump server exited with a " \
                                    "failure. Fix it, or remove it and QUAACK records the memory as unknown. " \
                                    "#{GO_ON}",

@@ -33,7 +33,7 @@ module Quaack
         def call(store:, **)
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
           connection = Enclave::Inventory::Production.connect(Enclave::Inventory::Production.params(store))
-          PlannerStatistics.run(store:, relations:, connection:)
+          PlannerStatistics.run(store:, relations:, connection:, query: store.read("qualified_query"))
           []
         ensure
           connection&.close
