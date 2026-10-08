@@ -18,7 +18,9 @@ require "quaack/driver/llm"
 #   fake.reply("llm-index-ideas", "CREATE INDEX ...")            # a text answer
 #   fake.reply("llm-rewrites", { "rewrites" => [] })            # a Hash or Array goes out as JSON text
 #   fake.error("llm-counterexamples", status: 503)                    # one failed attempt, which the gem may retry
-#   fake.raw("llm-rewrites", "[1]")                             # a 200 whose body isn't a completion
+#   fake.drop("llm-rewrites")                                   # one attempt whose connection failed
+#   fake.timeout("llm-rewrites")                                # one attempt that timed out
+#   fake.raw("llm-rewrites", "[1]")                           # a 200 whose body isn't a completion
 #   fake.raw("llm-rewrites", "<p>", content_type: "text/html") # ... with another content-type, or nil for none
 #   client = fake.client(burndown: burndown)
 #
@@ -94,9 +96,16 @@ class FakeOpenAI
   end
 
   # Queues one attempt for step that fails to connect, the way a dropped
-  # network does before the request goes out.
-  def drop(step)
-    @scripts[step] << :drop
+  # network does before the request goes out. `message` is the error's.
+  def drop(step, message: "fake dropped connection")
+    @scripts[step] << [:drop, message]
+    self
+  end
+
+  # Queues one attempt for step that times out, the way the gem's HTTP
+  # client raises it, with the gem's own message.
+  def timeout(step)
+    @scripts[step] << :timeout
     self
   end
 
@@ -128,8 +137,9 @@ class FakeOpenAI
     @asks << Ask.new(step: step, body: JSON.parse(request.body, symbolize_names: true), url: request.url.to_s)
     scripted = @scripts[step].shift
     raise Unscripted, "FakeOpenAI has no answer scripted for step #{step}" unless scripted
-    if scripted == :drop
-      raise OpenAI::Errors::APIConnectionError.new(url: request.url, message: "fake dropped connection",
+    raise OpenAI::Errors::APITimeoutError.new(url: request.url) if scripted == :timeout
+    if scripted.first == :drop
+      raise OpenAI::Errors::APIConnectionError.new(url: request.url, message: scripted.last,
                                                    request_may_have_been_sent: false)
     end
 

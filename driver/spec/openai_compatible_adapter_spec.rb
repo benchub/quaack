@@ -304,6 +304,44 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
   end
 
+  # With no answer from the API, there's no status or body, so the detail is
+  # the gem's own sentence, scrubbed like any other.
+  describe "a failure with no answer" do
+    let(:key) { "SENTINELKEY0123456789" }
+    let(:client) { fake.client(burndown:, max_retries: 0, api_key: key) }
+
+    it "gives a dropped connection's message as the detail" do
+      fake.drop("llm-index-ideas")
+
+      error = ask_error
+      expect(error.rule).to eq("llm_unavailable")
+      expect(error.reason).to eq("fake dropped connection")
+      expect(sans_sizes(error.message)).to eq("llm_unavailable: fake dropped connection")
+    end
+
+    it "gives the gem's sentence for a timeout as the detail" do
+      fake.timeout("llm-index-ideas")
+
+      error = ask_error
+      expect(error.rule).to eq("llm_unavailable")
+      expect(sans_sizes(error.message)).to eq("llm_unavailable: Request timed out.")
+    end
+
+    it "scrubs the key from a connection error's message" do
+      fake.drop("llm-index-ideas", message: "refused, key #{key}")
+
+      error = ask_error
+      expect(error_text(error)).not_to include(key)
+      expect(error.reason).to eq("refused, key [key]")
+    end
+
+    it "would show a secret that isn't the adapter's" do
+      fake.drop("llm-index-ideas", message: "refused, key SENTINEL-OTHER-0123456789")
+
+      expect(ask_error.reason).to eq("refused, key SENTINEL-OTHER-0123456789")
+    end
+  end
+
   # The provider may take response_format and still not hold the reply to
   # the schema, so a reply that doesn't match is asked for once more, with
   # what was wrong, and each attempt counts.
