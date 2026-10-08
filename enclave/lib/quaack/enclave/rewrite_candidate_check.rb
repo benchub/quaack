@@ -42,7 +42,18 @@ module Quaack
     #    COALESCE(x, 0), are allowed. The LLM only saw the redacted query,
     #    and a literal in a candidate flows into the enclave, not out of it,
     #    so it can't leak anything.
-    # 4. Relations, through Relations.check, the check intake uses, with
+    # 4. unsupported_reg_literal: a string literal is cast to a reg type,
+    #    such as 'orders'::regclass or 'english'::regconfig, with or
+    #    without pg_catalog's schema, or as an array. Postgres reads such a
+    #    literal's text through the catalog as it parses the query, so
+    #    whether the candidate plans would say whether the name exists
+    #    (20261008-31). It's refused whatever the literal names, before
+    #    anything reads the catalog. The original's literals are redacted,
+    #    so a candidate keeps the original's as its $n, such as
+    #    $1::regclass. Not caught in v1: a literal cast to a domain over a
+    #    reg type, and an uncast literal that Postgres reads as a reg type
+    #    from where it is, such as a function's regclass argument.
+    # 5. Relations, through Relations.check, the check intake uses, with
     #    the same Settings, so the candidate is qualified the way the
     #    original was. bad_search_path if the Settings' search_path doesn't
     #    read, and unknown_relation if a relation doesn't resolve, isn't one
@@ -59,9 +70,9 @@ module Quaack
     #    rules, and deparse_mismatch if the qualified candidate, as pg_query
     #    deparses it, doesn't parse back to the tree it came from (see
     #    Deparse). So Accepted's parse is the candidate's own parse with
-    #    schemas added, and checks 2 and 3 hold for it without being run
+    #    schemas added, and checks 2 to 4 hold for it without being run
     #    again.
-    # 5. volatile_function (or bad_search_path): volatility's VolatilityCheck
+    # 6. volatile_function (or bad_search_path): volatility's VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
     #    arena's transaction or change the session.
@@ -99,12 +110,17 @@ module Quaack
 
       Accepted = Data.define(:sql, :parse)
 
+      # The types whose input reads the catalog (check 4).
+      REG_TYPES = %w[regclass regtype regproc regprocedure regoper regoperator regnamespace regrole regcollation
+                     regconfig regdictionary].freeze
+
       module_function
 
       def check(sql, original, settings, connection)
         parse = parse(sql)
         supported!(parse)
         placeholders!(parse, original.placeholders)
+        reg_literals!(parse)
         accepted = relations!(sql, original.relations, settings, connection)
         volatility!(accepted.sql, settings, connection)
         accepted
@@ -130,6 +146,23 @@ module Quaack
               else "isn't one of the original's $1 to $#{count}"
               end
         raise Error.new("bad_placeholder", "$#{bad.number} #{why}")
+      end
+
+      # Refuses a string literal cast to a reg type, before anything reads
+      # the catalog. A domain over one isn't caught (see check 4).
+      def reg_literals!(parse)
+        literal = nodes(parse.tree, PgQuery::TypeCast).find do |cast|
+          cast.arg&.a_const&.val == :sval && REG_TYPES.include?(reg_type(cast.type_name))
+        end
+        return unless literal
+
+        raise Error.new("unsupported_reg_literal", "a reg literal isn't allowed in a rewrite candidate in v1")
+      end
+
+      # The type's name, if it's bare or pg_catalog's.
+      def reg_type(type_name)
+        names = type_name.names.map { it.string.sval }
+        names.last if names.size == 1 || names == ["pg_catalog", names.last]
       end
 
       # The candidate qualified, and its parse, once Relations accepts its
