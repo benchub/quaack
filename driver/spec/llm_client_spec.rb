@@ -602,7 +602,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
 
       expect { client.ask(step: "llm-rewrites", messages: messages, max_tokens: 10) }
         .to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_unavailable") }
-      expect(fake.asks.size).to eq(2)
+      expect([fake.asks.size, burndown.llm_calls]).to eq([2, { "llm-rewrites" => 2 }])
     end
 
     it "retry more than the gem's default with a larger max_retries" do
@@ -612,7 +612,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
       reply = described_class.new(settings:, api_key: "k", burndown: burndown, transport: fake)
                              .ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
 
-      expect([reply, fake.asks.size]).to eq(["ok", 4])
+      expect([reply, fake.asks.size, burndown.llm_calls]).to eq(["ok", 4, { "llm-rewrites" => 4 }])
     end
   end
 end
