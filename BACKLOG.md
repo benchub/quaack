@@ -9,6 +9,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261008-51 (quaack start --database; bad_database; Protocol::DatabaseName).
 
+- 20260924-25 (redact: plan_too_deep, cast type preference, boolean masks, 42P18 by SQLSTATE).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -299,22 +301,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260924-24. Production inventory loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-25. redact loose ends.
-
-Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
-- **Decided, not built:** a plan more than about 48 levels deep can't go out through egress. Refuse it with a clear rule, and list it as unsupported in v1.
-- Placeholders of different types can collide on one plan literal. With `$1 = 101` and `$2 = B'101'`, `X'05'` matches 101. No value leaks, but `$n` and the row annotation can be wrong. Prefer the candidate whose type matches the literal's cast.
-- Expressions Postgres treats as equal but that are written differently get separate placeholders. They fail closed as `prepare_failed`.
-- Date and timestamp normalization for row annotations, through the racetrack.
-- Masks on planner-made TRUE and FALSE inflate the masked count.
-- The 42P18 retry depends on English `lc_messages`, and preparing in a failed transaction gives 3B001, not 25P02.
-- PredicateAtoms should use redact's numbering. SingleCandidateTest and ArenaRunner should adopt Binding, so types get declared through PREPARE.
-
-- **Depends on:** 20260924-16.
-- **Came from:** The reviews of 20260922-23, 20260924-11, and 20260924-16.
-- **Design:** redact.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-25. redact loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-26. statistics loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2396,4 +2383,20 @@ Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/q
 - **Depends on:** 20261008-51, 20260929-22.
 - **Came from:** The review of 20261008-51 and the builder of 20260929-22, 2026-10-08.
 - **Design:** input, schema-dump.
+- **Status:** todo
+
+### 20261008-53. redact: the rest of 20260924-25.
+
+Split from 20260924-25, with that task's review findings:
+
+1. **Equal but differently written expressions.** Postgres treats some as the same, but each gets its own placeholder, so they fail closed as `prepare_failed`.
+2. **Dates in row annotations.** Normalize dates and timestamps for row annotations through the racetrack.
+3. **Numbering.** PredicateAtoms should use redact's numbering.
+4. **Binding.** SingleCandidateTest and ArenaRunner should adopt Binding, so their types are declared through PREPARE.
+5. **Racetrack plan depth.** Racetrack plans, such as a rewrite's slow plan in index-search, aren't depth-checked. A plan deeper than 48 levels fails at egress with a generic error. Check depth there, or map egress's nesting error to `plan_too_deep`.
+6. **`Cast#type`.** It returns `""` rather than `nil` when a `::` is followed by no word parts. Match the comment.
+
+- **Depends on:** 20260924-25.
+- **Came from:** The build and review of 20260924-25, 2026-10-08.
+- **Design:** redact.
 - **Status:** todo

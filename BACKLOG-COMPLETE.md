@@ -7979,3 +7979,21 @@ Without the flag, nothing changes, and libpq's setup picks the database, as toda
 - **Design:** input, inventory.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-51 (commit aa62fb90). Review had no blocking findings; its minors went to 20261008-52.
+
+### 20260924-25. redact loose ends.
+
+Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
+- **Decided, not built:** a plan more than about 48 levels deep can't go out through egress. Refuse it with a clear rule, and list it as unsupported in v1.
+- Placeholders of different types can collide on one plan literal. With `$1 = 101` and `$2 = B'101'`, `X'05'` matches 101. No value leaks, but `$n` and the row annotation can be wrong. Prefer the candidate whose type matches the literal's cast.
+- Expressions Postgres treats as equal but that are written differently get separate placeholders. They fail closed as `prepare_failed`.
+- Date and timestamp normalization for row annotations, through the racetrack.
+- Masks on planner-made TRUE and FALSE inflate the masked count.
+- The 42P18 retry depends on English `lc_messages`, and preparing in a failed transaction gives 3B001, not 25P02.
+- PredicateAtoms should use redact's numbering. SingleCandidateTest and ArenaRunner should adopt Binding, so types get declared through PREPARE.
+
+- **Depends on:** 20260924-16.
+- **Came from:** The reviews of 20260922-23, 20260924-11, and 20260924-16.
+- **Design:** redact.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260924-25 (commit c5c275ef). Review had no blocking findings. The items left out, and the review's minors, went to 20261008-53.
