@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "rewrite"
 require_relative "../deparse"
 require_relative "polymorphic_key_copy/query"
 require_relative "tree"

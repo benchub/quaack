@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "rewrite"
 require_relative "tree"
 require_relative "or_to_union/arms"
 require_relative "or_to_union/reads"
