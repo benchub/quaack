@@ -65,7 +65,9 @@ RSpec.describe TestPgDump do
     it "skips a directory with no pg_dump in it" do
       FileUtils.mkdir_p(given)
       fake_pg_dump(keg, "pg_dump (PostgreSQL) 18.6")
-      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given))).to eq(keg)
+      warnings = StringIO.new
+      expect(described_class.find(18, candidates("QUAACK_TEST_PG_BIN" => given), warn_to: warnings)).to eq(keg)
+      expect(warnings.string).to be_empty
     end
 
     it "skips a program that doesn't say its version the way pg_dump does" do
