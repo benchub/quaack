@@ -730,22 +730,7 @@ Minor findings from the review of 20260930-9:
 
 ### 20261001-15. DriverConfig: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-16. Bedrock provider: minor findings.
-
-Minor findings from the review of 20260930-11:
-
-- Keys for another provider break a one-run override. `check_applies` (llm.rb:267) checks keys against the provider after `QUAACK_LLM_PROVIDER` overrides it, so `QUAACK_LLM_PROVIDER=anthropic` against a bedrock block fails naming `aws_region`. The user's answer, 2026-10-01: loosen it. Ignore keys that belong to a provider other than the one in effect, so the override works for one run.
-- A bad `AWS_REGION` or `AWS_DEFAULT_REGION` isn't checked (bedrock_adapter.rb:398). In bearer mode `"us east 1"` raises `URI::InvalidURIError` out of the client build, and `quaack run` crashes with a backtrace. In SigV4 mode the same typo reads as `llm_auth: the AWS credentials couldn't be loaded`. Apply the `aws_region` check to the variables, and make a bad value a usage error naming the variable, not the value.
-- The region pattern (llm.rb:219) rejects `eusc-de-east-1`, the AWS European Sovereign Cloud region, since it requires a two-letter prefix. Allow `[a-z]{2,4}`.
-- The "spec-time network guard, for Bedrock" describe (bedrock_adapter_spec.rb:317-340) builds `Anthropic::BedrockClient` outside `without_aws_credentials`, so it reads the developer's real `~/.aws/config` and `~/.aws/credentials`. It's harmless today. Wrap it.
-- Mutation `credentials&.set?` to `credentials` (bedrock_adapter.rb:408) survives: no spec covers the chain returning credentials that aren't set, such as an empty key in a profile. Add one, or drop `.set?`.
-- DESIGN.md's llm block paragraph still says the provider is "`anthropic` or `openai_compatible`", which contradicts the bedrock paragraph after it. Add bedrock to the list.
-- README nit: the gem also reads `ANTHROPIC_BEDROCK_BASE_URL` when no `base_url` is set. Mention it, or say QUAACK ignores it.
-
-- **Depends on:** 20260930-11.
-- **Came from:** Review of 20260930-11, round one.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261001-16. Bedrock provider: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-17. Report payload: send what a legible report needs. Done, see BACKLOG-COMPLETE.md.
 
@@ -2327,4 +2312,17 @@ From the review of 20261002-14. The AWS SDK's default credential chain, used by 
 - **Depends on:** 20261002-14.
 - **Came from:** The review of 20261002-14.
 - **Design:** Development.
+- **Status:** todo
+
+### 20261007-28. Bedrock region and override checks: minors from 20261001-16.
+
+From the reviews of 20261001-16.
+1. Changing `REGION_VARIABLES.find` to `.reverse.find` in `env_region` (`bedrock_adapter.rb`) survives: no bearer-mode spec sets both `AWS_REGION` and `AWS_DEFAULT_REGION` to valid, different values. Add one that asserts `AWS_REGION` wins.
+2. `AMAZON_REGION` isn't checked. The AWS SDK reads `AWS_REGION`, then `AMAZON_REGION`, then `AWS_DEFAULT_REGION`. Add it to `REGION_VARIABLES` in that order, or say it's unsupported.
+3. Widening the region prefix from `[a-z]{2,4}` to `[a-z]{2,9}` survives. Add a spec that refuses a five-letter prefix.
+4. On a provider switch, a block key that doesn't apply even to the block's own provider (such as `api_key_env` on a `copilot_cli` block) isn't refused, so the mistake shows up only on the next run without the override. Refuse it on a switch too.
+
+- **Depends on:** 20261001-16.
+- **Came from:** The reviews of 20261001-16, rounds one and two.
+- **Design:** LLM client.
 - **Status:** todo

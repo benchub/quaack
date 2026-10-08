@@ -6646,3 +6646,21 @@ The review of 20261001-3 found three minor items:
 - **Decided by the user (2026-10-07):** Item 3: keep the partitions' CREATE TABLE and index DDL in the payload for partitions of the query's tables.
 - **Status:** done
 - **Landed:** 2026-10-07, items 1 and 2, after one review with no blocking findings. The spec's best candidate is written out (`(note, status)`, which costs about half the others on the seeded data), and `IndexPayload#best` skips refused candidates, so a refused candidate's plans never go out. Item 3 dropped by the user (2026-10-07): qualify refuses queries on partitioned parents (`partitioned_relation`), so the only partition a query can reach is a leaf it names, whose DDL already goes out. Enclave change, unreleased until the next batch bump.
+
+### 20261001-16. Bedrock provider: minor findings.
+
+Minor findings from the review of 20260930-11:
+
+- Keys for another provider break a one-run override. `check_applies` (llm.rb:267) checks keys against the provider after `QUAACK_LLM_PROVIDER` overrides it, so `QUAACK_LLM_PROVIDER=anthropic` against a bedrock block fails naming `aws_region`. The user's answer, 2026-10-01: loosen it. Ignore keys that belong to a provider other than the one in effect, so the override works for one run.
+- A bad `AWS_REGION` or `AWS_DEFAULT_REGION` isn't checked (bedrock_adapter.rb:398). In bearer mode `"us east 1"` raises `URI::InvalidURIError` out of the client build, and `quaack run` crashes with a backtrace. In SigV4 mode the same typo reads as `llm_auth: the AWS credentials couldn't be loaded`. Apply the `aws_region` check to the variables, and make a bad value a usage error naming the variable, not the value.
+- The region pattern (llm.rb:219) rejects `eusc-de-east-1`, the AWS European Sovereign Cloud region, since it requires a two-letter prefix. Allow `[a-z]{2,4}`.
+- The "spec-time network guard, for Bedrock" describe (bedrock_adapter_spec.rb:317-340) builds `Anthropic::BedrockClient` outside `without_aws_credentials`, so it reads the developer's real `~/.aws/config` and `~/.aws/credentials`. It's harmless today. Wrap it.
+- Mutation `credentials&.set?` to `credentials` (bedrock_adapter.rb:408) survives: no spec covers the chain returning credentials that aren't set, such as an empty key in a profile. Add one, or drop `.set?`.
+- DESIGN.md's llm block paragraph still says the provider is "`anthropic` or `openai_compatible`", which contradicts the bedrock paragraph after it. Add bedrock to the list.
+- README nit: the gem also reads `ANTHROPIC_BEDROCK_BASE_URL` when no `base_url` is set. Mention it, or say QUAACK ignores it.
+
+- **Depends on:** 20260930-11.
+- **Came from:** Review of 20260930-11, round one.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-10-07, after a review with one blocking finding, a fix round, and a clean second review. With `QUAACK_LLM_PROVIDER` naming another provider, the block is checked and then ignored whole, so its `base_url`, `api_key_env`, and `model` can't carry a credential to a host meant for another provider; `openai_compatible` and `bedrock` then need `QUAACK_MODEL`. A bad `AWS_REGION` or `AWS_DEFAULT_REGION` is a usage error naming the variable, the region pattern takes a two-to-four-letter prefix (`eusc-de-east-1`), the Bedrock network-guard spec no longer reads the real `~/.aws`, `.set?` has a spec, and DESIGN.md and the README cover the override and `ANTHROPIC_BEDROCK_BASE_URL`.
