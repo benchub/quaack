@@ -4,6 +4,7 @@ require "fileutils"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require_relative "no_real_credentials"
 
 # Installs one of the repo's gems, plus only its dependency closure, into a
 # throwaway GEM_HOME, then runs its executable there, outside Bundler. Inside
@@ -70,11 +71,12 @@ class IsolatedInstall
   # inherit. It unsets every BUNDLE* variable there, since that call keeps
   # BUNDLER_* ones, such as BUNDLER_VERSION, which `bundle exec` sets before
   # it records the original environment, or a leftover BUNDLER_ORIG_* in a
-  # developer's shell.
+  # developer's shell. It also keeps the child off the developer's real
+  # anthropic config dir, which with_unbundled_env would restore.
   def isolated_env
     bundler_keys = ENV.keys.grep(/\ABUNDLE/).to_h { |key| [key, nil] }
     bundler_keys.merge("GEM_HOME" => @home, "GEM_PATH" => @home, "RUBYOPT" => nil, "RUBYLIB" => nil,
-                       "RUBYGEMS_GEMDEPS" => nil)
+                       "RUBYGEMS_GEMDEPS" => nil, **NoRealCredentials.env)
   end
 
   def repo_gemspec(name) = @sources[name] || RepoGems.gemspec_path_of(name)
