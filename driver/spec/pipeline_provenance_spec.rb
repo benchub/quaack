@@ -175,6 +175,14 @@ RSpec.describe "The pipeline's provenance record" do
       expect(fa.asks.map(&:step)).not_to include("llm-counterexamples")
     end
 
+    it "puts no provider's name or model, the author's included, in a prompt or anything sent to the enclave" do
+      script
+      run
+
+      expect(found(to_enclave + prompts, names + models)).to eq([])
+      expect(fb.asks.map(&:step)).to include("llm-counterexamples")
+    end
+
     it "says in the report that the pairing was met" do
       script
       out = File.join(@home, "report.html")
