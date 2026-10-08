@@ -211,7 +211,7 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     executable(File.join(other_ruby, "gem"), "echo gem")
 
     expect(diagnose(path: [stubs, tools, other_ruby, ruby_dir, other])).to eq(<<~MSG.chomp)
-      quaacks isn't installed for the ruby on PATH for non-interactive ssh on jump-1: it isn't in #{bin}, that Ruby's user gem bin directory. The gem on PATH there, #{other_ruby}/gem, isn't beside that ruby, #{ruby_dir}/ruby, so gem install put quaacks in the user gem directory of the Ruby that gem belongs to, and this Ruby doesn't load gems from there. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. The quaacks on PATH there, #{other}/quaacks, is another one, which may belong to another Ruby or gem directory.
+      quaacks isn't installed for the ruby on PATH for non-interactive ssh on jump-1: it isn't in #{bin}, that Ruby's user gem bin directory. The gem on PATH there, #{other_ruby}/gem, isn't beside that ruby, #{ruby_dir}/ruby, so gem install put quaacks in the user gem directory of the Ruby that gem belongs to, and this Ruby doesn't load gems from there. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. Then run `quaack deploy` again. The quaacks on PATH there, #{other}/quaacks, is another one, which may belong to another Ruby or gem directory.
       #{check}
     MSG
   end
@@ -245,7 +245,7 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     executable(File.join(ruby_dir, "gem"), "echo gem")
 
     expect(diagnose(path: [stubs, tools, ruby_dir])).to eq(<<~MSG.chomp)
-      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
+      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. Then run `quaack deploy` again.
       #{check}
     MSG
   end
@@ -256,7 +256,7 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     executable(File.join(other_ruby, "gem"), "echo gem")
 
     expect(diagnose(path: [stubs, tools, other_ruby, ruby_dir])).to eq(<<~MSG.chomp)
-      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem on PATH there, #{other_ruby}/gem, isn't beside that ruby, #{ruby_dir}/ruby, so gem install may have used another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
+      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem on PATH there, #{other_ruby}/gem, isn't beside that ruby, #{ruby_dir}/ruby, so gem install may have used another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. Then run `quaack deploy` again.
       #{check}
     MSG
   end
@@ -268,7 +268,7 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
       executable(File.join(other_ruby, "gem"), "echo gem")
 
       expect(diagnose(path: [stubs, tools, other_ruby, ruby_dir])).to eq(<<~MSG.chomp)
-        The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
+        The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. Then run `quaack deploy` again.
         #{check}
       MSG
     end
@@ -281,7 +281,7 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     executable(File.join(other_ruby, "gem"), "echo gem")
 
     expect(diagnose(path: [stubs, tools, other_ruby, escaped_ruby])).to eq(<<~MSG.chomp)
-      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
+      The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. Then run `quaack deploy` again.
       #{check}
     MSG
   end
