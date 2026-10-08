@@ -57,6 +57,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
         AS 'SELECT unnest(ARRAY[$1.title, $1.title])';
       CREATE SCHEMA elsewhere;
       CREATE FUNCTION public.shout(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT upper($1)';
+      CREATE FUNCTION public.said(public.comments) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT $1.body';
+      CREATE FUNCTION public.stamp(public.comments) RETURNS float VOLATILE LANGUAGE sql AS 'SELECT random()';
       CREATE FUNCTION elsewhere.shout(text) RETURNS SETOF text IMMUTABLE LANGUAGE sql AS 'SELECT upper($1)';
     SQL
   end
@@ -283,7 +285,25 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
       "a bare column only the kept table has, inside the subquery" =>
         ["#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE c.s_id = 101 AND title = 'one')",
          "EXISTS (SELECT 1 FROM public.comments c WHERE c.s_id = 101 AND title = 'one')",
-         [%w[1 one]]]
+         [%w[1 one]]],
+      "a function of its own table's row, written as a column" =>
+        ["#{fires} AND EXISTS (SELECT 1 FROM public.comments c, public.submissions x " \
+         "WHERE c.s_id = x.id AND x.a_id = a.id AND c.said = 'hi')",
+         "EXISTS (SELECT 1 FROM public.comments c, public.submissions x " \
+         "WHERE c.s_id = x.id AND x.a_id = a.id AND c.said = 'hi')",
+         [%w[1 one], %w[2 two], %w[5 twin]]],
+      "a bare column of the nearest subquery, which its parent has twice" =>
+        ["#{fires} AND EXISTS (SELECT 1 FROM public.comments c, public.submissions x " \
+         "WHERE c.s_id = x.id AND x.a_id = a.id AND " \
+         "EXISTS (SELECT 1 FROM public.comments d WHERE d.s_id = x.id AND id > 1))",
+         "EXISTS (SELECT 1 FROM public.comments c, public.submissions x " \
+         "WHERE c.s_id = x.id AND x.a_id = a.id AND " \
+         "EXISTS (SELECT 1 FROM public.comments d WHERE d.s_id = x.id AND id > 1))",
+         [%w[1 one], %w[2 two], %w[5 twin]]],
+      "a row comparison of its own column and the kept table's" =>
+        ["#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE (c.s_id, a.id) = (501, 5))",
+         "EXISTS (SELECT 1 FROM public.comments c WHERE (c.s_id, a.id) = (501, 5))",
+         [%w[5 twin]]]
     }.each do |what, (sql, kept, expected)|
       it "keeps #{what} in the WHERE, and gives the same rows" do
         rewrites = rewritten(sql)
@@ -634,12 +654,19 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     "a condition's subquery is a UNION" => "#{fires} AND a.id IN (SELECT 1 UNION SELECT 2)",
     "a condition's subquery reads, by no column, a table that isn't schema-qualified" =>
       "#{fires} AND EXISTS (SELECT 1 FROM comments c)",
+    "a condition's subquery calls a volatile function of its own table's row, written as a column" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c WHERE c.stamp < 2)",
+    "a condition's subquery reads a table with ONLY" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM ONLY public.comments c WHERE c.id = a.id)",
+    "a condition's subquery's alias renames its table's columns" =>
+      "#{fires} AND EXISTS (SELECT 1 FROM public.comments c (cid) WHERE c.cid = a.id)",
     "a condition's subquery calls a volatile function" =>
       "#{fires} AND a.id IN (SELECT x.a_id FROM public.submissions x WHERE random() < 2)",
     "a subquery's test reads a removed table" =>
       "#{fires} AND s.id IN (SELECT x.id FROM public.submissions x WHERE x.a_id = a.id)",
     "the ORDER BY has a subquery" => "#{fires} ORDER BY a.title, (SELECT 1)",
     "the LIMIT has a subquery" => "#{fires} ORDER BY a.id LIMIT (SELECT 1)",
+    "the OFFSET has a subquery" => "#{fires} ORDER BY a.id LIMIT 5 OFFSET (SELECT 0)",
     "a join condition has a subquery" =>
       "SELECT DISTINCT a.id, a.title FROM public.assignments a JOIN public.submissions s " \
       "ON s.a_id = a.id AND s.id IN (SELECT 101)",
