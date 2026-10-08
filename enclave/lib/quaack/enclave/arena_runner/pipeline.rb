@@ -28,7 +28,7 @@ module Quaack
 
         module_function
 
-        ARM_SQL = "#{ServerClock::NOW_SQL}, set_config('statement_timeout', $1, true)".freeze
+        ARM_SQL = "#{ServerClock::NOW_SQL}, pg_catalog.set_config('statement_timeout', $1, true)".freeze
         DISARM_SQL = "SET LOCAL statement_timeout = 0"
 
         # The server's clock, in ms, read just before sql, in sql's round

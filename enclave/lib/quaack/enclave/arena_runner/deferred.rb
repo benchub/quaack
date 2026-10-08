@@ -110,7 +110,8 @@ module Quaack
         def update_sql(table, set, oid, ctid, quote)
           columns = set.keys.each_with_index.map { |c, i| "#{quote.call(c)} = $#{i + 1}" }.join(", ")
           n = set.size
-          ["UPDATE #{table} SET #{columns} WHERE tableoid = $#{n + 1} AND ctid = $#{n + 2} RETURNING 1",
+          ["UPDATE #{table} SET #{columns} WHERE tableoid OPERATOR(pg_catalog.=) $#{n + 1} " \
+           "AND ctid OPERATOR(pg_catalog.=) $#{n + 2} RETURNING 1",
            set.values + [oid, ctid]]
         end
       end

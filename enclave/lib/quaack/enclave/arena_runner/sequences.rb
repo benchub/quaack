@@ -15,8 +15,9 @@ module Quaack
         # value is kept within the sequence's bounds, since a fixture may
         # hold a boundary value below its minimum.
         SETVAL_SQL = <<~SQL
-          SELECT setval(s.seqrelid, LEAST(GREATEST($3::bigint, s.seqmin), s.seqmax))
-          FROM pg_sequence s WHERE s.seqrelid = pg_get_serial_sequence($1, $2)::regclass
+          SELECT pg_catalog.setval(s.seqrelid, LEAST(GREATEST($3::bigint, s.seqmin), s.seqmax))
+          FROM pg_catalog.pg_sequence s
+          WHERE s.seqrelid OPERATOR(pg_catalog.=) pg_catalog.pg_get_serial_sequence($1, $2)::pg_catalog.regclass
         SQL
 
         module_function

@@ -17,9 +17,6 @@ RSpec.describe "catalog names in the enclave's SQL" do
   # a file that CatalogNames::NOT_YET_QUALIFIED_AT_START, its first form,
   # doesn't have.
   not_yet_qualified = %w[
-    quaack/enclave/arena_runner/deferred.rb
-    quaack/enclave/arena_runner/pipeline.rb
-    quaack/enclave/arena_runner/sequences.rb
     quaack/enclave/clock_defaults.rb
     quaack/enclave/rewrite_rules/existence_in_flip.rb
   ].freeze
@@ -101,6 +98,10 @@ RSpec.describe "catalog names in the enclave's SQL" do
         B = "SELECT 1 FROM \#{WHERE_SQL}"
       RUBY
       expect(scan(source)).to eq(["line 5: operator ="])
+    end
+
+    it "reads adjacent literals as one string, even when the first is interpolated" do
+      expect(scan(%(A = "UPDATE \#{t} SET a = 1 " \\\n  "WHERE b = 2"\n))).to eq(["line 1: operator ="])
     end
 
     it "reads a FORMAT_TYPE_HOLES interpolation as a qualified type, only in its file, and flags any other" do

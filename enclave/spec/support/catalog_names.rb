@@ -195,12 +195,17 @@ module CatalogNames
     def texts(node, constants, file)
       return [node.unescaped] if node.is_a?(Prism::StringNode)
 
-      choices = node.parts.grep_v(Prism::StringNode).map do |hole|
+      parts = parts(node)
+      choices = parts.grep_v(Prism::StringNode).map do |hole|
         (value = constant(hole, constants)) ? [value] : stand_ins(file, hole)
       end
       combinations = choices.empty? ? [[]] : choices.first.product(*choices.drop(1))
-      combinations.map { |picks| fill(node.parts, picks.dup) }
+      combinations.map { |picks| fill(parts, picks.dup) }
     end
+
+    # Adjacent literals ("a #{b} " "c") are one string, its parts each
+    # literal's.
+    def parts(node) = node.parts.flat_map { it.is_a?(Prism::InterpolatedStringNode) ? parts(it) : [it] }
 
     def stand_ins(file, hole)
       source = hole.is_a?(Prism::EmbeddedStatementsNode) && hole.statements&.slice

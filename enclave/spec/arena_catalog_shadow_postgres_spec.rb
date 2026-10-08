@@ -138,8 +138,12 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
     it "accepts, refuses, adds parents, and loads as with nothing planted" do
       inserts = ["INSERT INTO fx.orders (customer_id, qty, placed, span) VALUES (7, $1, 'today', '[1,5)')",
                  "INSERT INTO fx.orders (customer_id, qty, placed) VALUES (8, fx.bump(1), '2026-03-01')",
-                 "INSERT INTO fx.orders (customer_id, qty, placed) VALUES (9, pg_catalog.abs(-2), '2026-03-02')"]
+                 "INSERT INTO fx.orders (customer_id, qty, placed) VALUES (1, pg_catalog.abs(-2), '2026-03-02')",
+                 "INSERT INTO fx.customers (email) VALUES ('z@example.com')"]
       baseline = outcome(prepare(*inserts))
+      # setval isn't rolled back, so the load must advance them again, past
+      # the parent customer 1, before the customer the last insert adds.
+      conn.exec("ALTER SEQUENCE fx.customers_id_seq RESTART; ALTER SEQUENCE fx.orders_id_seq RESTART")
       plant
 
       expect(bare(outcome(prepare(*inserts)))).to eq(bare(baseline))
@@ -165,5 +169,15 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
 
     expect(conn.exec_params(Quaack::Enclave::DenormalizedFixture::FOREIGN_KEYS, ["fx.orders", "customer_id"]).values)
       .to eq([["orders_customer_id_fkey"]])
+  end
+
+  it "arms each statement's timeout when public's set_config does nothing" do
+    plant
+    conn.exec("CREATE FUNCTION public.set_config(pg_catalog.text, pg_catalog.text, pg_catalog.bool) " \
+              "RETURNS pg_catalog.text LANGUAGE sql AS $$ SELECT $2 $$")
+    runner = Quaack::Enclave::ArenaRunner.new(conn, statement_timeout_ms: 50)
+
+    expect { runner.with_fixture([]) { it.query("SELECT pg_catalog.pg_sleep(1)") } }
+      .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect(it.rule).to eq(:statement_timeout) }
   end
 end
