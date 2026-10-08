@@ -2395,3 +2395,34 @@ The review of 20261001-5 found this gap. It was already on main. `APIErrorDetail
 - **Came from:** The review of 20261001-5, 2026-10-08.
 - **Design:** LLM client.
 - **Status:** todo
+
+### 20261008-44. Qualifying overloaded names: keyword forms (part 2 of 20261007-21).
+
+Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, and USING and NATURAL joins have no qualified spelling. When several schemas on the path define the operator they use, rewrite each one into an equivalent explicit form that can be qualified, or refuse it cleanly, and list it as unsupported in v1. See also 20261008-41 item 1.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The split of 20261007-21, 2026-10-08.
+- **Design:** qualify.
+- **Status:** todo
+
+### 20261008-45. Qualifying overloaded names: reg literals (part 3 of 20261007-21).
+
+Split from 20261007-21. `regproc`, `regprocedure`, `regoper`, and `regoperator` literals in the original are still refused as `unsupported_reg_literal`. Resolve and qualify them, or keep refusing them, and document the choice.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The split of 20261007-21, 2026-10-08.
+- **Design:** qualify.
+- **Status:** todo
+
+### 20261008-46. Probing to qualify overloaded names: minors from 20261007-21 part 1.
+
+The review of 20261007-21 part 1 found these minor issues:
+
+1. **Constant folding can name the wrong winning schema.** With GENERIC_PLAN, two overloads that fold to the same constant give the same plan. The outcome is harmless, since the plan is the same, but the chosen schema can be the wrong one in name.
+2. **Planning runs user code on production.** It evaluates immutable functions on constants, and the probes can evaluate overloads the real query never calls. A read-only transaction stops writes, but not side effects outside the database, such as dblink. Document this in DESIGN.md as a known risk.
+3. **No test covers a probe that errors.** Nothing tests a probe that errors while the baseline plans, or the error-swallowing in general.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The review of 20261007-21 part 1, 2026-10-08.
+- **Design:** qualify.
+- **Status:** todo
