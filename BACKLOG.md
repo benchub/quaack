@@ -15,6 +15,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260929-29 (counterexample-round and rewrite-test: a foreign cancel ends the step).
 
+- 20261002-1 (assumption-check: unique unmet with legacy INHERITS children).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -518,22 +520,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 ### 20261001-29. Renumber step 6 in running order, and give the rules table examples. Dropped, see BACKLOG-COMPLETE.md.
 
-### 20261002-1. Rule generator: minor findings.
-
-Minor findings from both reviews of 20261001-22:
-
-- **Legacy inheritance.** `AssumptionCheck`'s `unique` ignores `INHERITS` children, whose rows a parent's key doesn't cover, so `key_in_self_join` can drop rows on such a parent. Make `unique` unmet when the table has non-partition children, and list it in DESIGN.md as unsupported. Partitioned tables are fine.
-- **Test gaps where a wrong change stays green:** no firing example on a non-public schema (`key_in_self_join.rb:51`, hardcoding `public` survives); no column-free arm predicate such as Rails's `1=0` (`arm.rb:99`); no IN inside a nested AND (`tree.rb:52`); the single-column guard (`arm.rb:79`) and single-statement guard (`tree.rb:37`); the marker's `over_cap` (`steps/rewrite_rules.rb:48`).
-- The rules' exemption from `too_many` can't be observed, since the generator's cap and `RewriteCheck::MAX` are both 5. Share one constant.
-- A rule file can't be required alone: it uses `RewriteRules::Rewrite`, defined in the file that requires it. Move `Rewrite` to its own file.
-- `Tree::Names`'s comment says it avoids every name in the tree. It collects only names in column references.
-- A query with three or more matching INs never gets its fully rewritten form, given depth two and the cap of five.
-- Wider coverage for later: nested SELECTs and derived tables, unqualified columns, an IN in a join's ON, `= ANY (subquery)`.
-
-- **Depends on:** 20261001-22.
-- **Came from:** The build and both reviews of 20261001-22.
-- **Design:** assumption-check, rewrite-rules.
-- **Status:** todo
+### 20261002-1. Rule generator: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-2. Running the rules: minor findings.
 
@@ -2373,4 +2360,16 @@ The review of 20260929-29 found these minor issues:
 - **Depends on:** 20260929-29.
 - **Came from:** The review of 20260929-29, 2026-10-08.
 - **Design:** rewrite-test and counterexamples.
+- **Status:** todo
+
+### 20261008-56. Rule generator: leftovers from 20261002-1.
+
+1. **Three or more INs.** A query with three or more matching INs never gets its fully rewritten form, given depth two and the cap.
+2. **Wider coverage.** Nested SELECTs and derived tables, unqualified columns, an IN in a join's ON, and `= ANY (subquery)`.
+3. **The standalone spec's rule count.** `rewrite_rules_standalone_spec.rb` hard-codes 12 rules. Derive the count, or check that it's more than zero.
+4. **A grandchild chain.** No test covers a legacy-inheritance chain where the table's only child has its own child.
+
+- **Depends on:** 20261002-1.
+- **Came from:** The build and review of 20261002-1, 2026-10-08.
+- **Design:** rewrite-rules.
 - **Status:** todo

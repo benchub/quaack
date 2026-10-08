@@ -8072,3 +8072,21 @@ Minor findings from the review of 20260929-12:
 - **Design:** run-server.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20260930-6 (commit 6cf4eebf). The diff is 5 lines of spec and comment, reviewed by the main session. The builder confirmed the new assertion goes red when HH12 is inlined. The flake didn't recur in 10 runs.
+
+### 20261002-1. Rule generator: minor findings.
+
+Minor findings from both reviews of 20261001-22:
+
+- **Legacy inheritance.** `AssumptionCheck`'s `unique` ignores `INHERITS` children, whose rows a parent's key doesn't cover, so `key_in_self_join` can drop rows on such a parent. Make `unique` unmet when the table has non-partition children, and list it in DESIGN.md as unsupported. Partitioned tables are fine.
+- **Test gaps where a wrong change stays green:** no firing example on a non-public schema (`key_in_self_join.rb:51`, hardcoding `public` survives); no column-free arm predicate such as Rails's `1=0` (`arm.rb:99`); no IN inside a nested AND (`tree.rb:52`); the single-column guard (`arm.rb:79`) and single-statement guard (`tree.rb:37`); the marker's `over_cap` (`steps/rewrite_rules.rb:48`).
+- The rules' exemption from `too_many` can't be observed, since the generator's cap and `RewriteCheck::MAX` are both 5. Share one constant.
+- A rule file can't be required alone: it uses `RewriteRules::Rewrite`, defined in the file that requires it. Move `Rewrite` to its own file.
+- `Tree::Names`'s comment says it avoids every name in the tree. It collects only names in column references.
+- A query with three or more matching INs never gets its fully rewritten form, given depth two and the cap of five.
+- Wider coverage for later: nested SELECTs and derived tables, unqualified columns, an IN in a join's ON, `= ANY (subquery)`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** The build and both reviews of 20261001-22.
+- **Design:** assumption-check, rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261002-1 (commits d7c43ea4, ae073c20, 26ea7411, 31ff1b92). Review had no blocking findings. The shared cap, over_cap, and the Tree::Names comment were stale. Leftovers went to 20261008-56.
