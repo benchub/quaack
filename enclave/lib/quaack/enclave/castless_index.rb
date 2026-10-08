@@ -40,7 +40,7 @@ module Quaack
         holder = PgQuery::SelectStmt.new(where_clause: IndexSql.parse_predicate(sql))
         NodeRewrite.each(holder) { uncast(it) }
         Deparse.expression(holder.where_clause)
-      rescue Deparse::Error, IndexCandidate::Error
+      rescue Deparse::Error
         sql
       end
 
