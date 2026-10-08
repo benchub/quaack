@@ -343,6 +343,106 @@ RSpec.describe Quaack::Driver::LLM::Router do
     end
   end
 
+  # DESIGN.md, "Several LLM providers" (Routing): a fan-out step runs its
+  # unit once on every healthy provider in its pool, one after another.
+  describe "fan-out" do
+    let(:routing) { { "steps" => { "llm-rewrites" => { "fan_out" => true } } } }
+
+    def branches(step = "llm-rewrites") = router.branches(step:, messages:, max_tokens: 100)
+
+    it "asks every healthy provider in the pool, in order, and gives each branch's session and reply" do
+      names.each { fakes[it].reply("llm-rewrites", it).reply("llm-rewrites", "#{it} again") }
+
+      answered = branches
+      expect(answered.map { |session, reply| [session.provider, reply] }).to eq([%w[a a], %w[b b], %w[c c]])
+      expect(answered[1].first.ask(step: "llm-rewrites", messages:, max_tokens: 100)).to eq("b again")
+      expect(fakes.transform_values { it.asks.size }).to eq("a" => 1, "b" => 2, "c" => 1)
+    end
+
+    it "is only for a step that opts in: any other step's branches are one unit, as the mode picks" do
+      fakes["a"].reply("llm-index-ideas", "a")
+
+      expect([router.fan_out?("llm-rewrites"), router.fan_out?("llm-index-ideas")]).to eq([true, false])
+      expect(branches("llm-index-ideas").map { |session, reply| [session.provider, reply] }).to eq([%w[a a]])
+      expect(asked.map(&:first)).to eq(%w[a])
+    end
+
+    it "leaves the round_robin cursor where it was" do
+      names.each { fakes[it].reply("llm-rewrites", it) }
+      fakes["a"].reply("llm-index-ideas", "a")
+      branches
+
+      expect(ask(router, "llm-index-ideas")).to eq("a")
+    end
+
+    context "with a pinned pool and a provider already down" do
+      let(:routing) { { "steps" => { "llm-rewrites" => { "fan_out" => true, "providers" => %w[c a] } } } }
+
+      it "runs a branch on each healthy provider of the pool only, in its order" do
+        fakes["a"].error("llm-index-ideas", status: 429)
+        fakes["b"].reply("llm-index-ideas", "b")
+        ask(router, "llm-index-ideas")
+        fakes["c"].reply("llm-rewrites", "c")
+
+        expect(branches.map(&:last)).to eq(%w[c])
+        expect(asked.map(&:first)).to eq(%w[a b c])
+      end
+    end
+
+    it "drops a branch that fails, marks its provider by the rule, says so, and goes on with the others" do
+      fakes["a"].error("llm-rewrites", status: 529)
+      fakes["b"].cut_short("llm-rewrites", "par")
+      fakes["c"].reply("llm-rewrites", "c")
+
+      expect(branches.map { |session, reply| [session.provider, reply] }).to eq([%w[c c]])
+      expect(router.down).to eq("a" => "llm_unavailable")
+      expect(notes).to include("a failed with llm_unavailable; going on with the others (llm-rewrites)",
+                               "b failed with llm_bad_response; going on with the others (llm-rewrites)")
+    end
+
+    it "says loudly when a branch's credentials were refused" do
+      fakes["a"].error("llm-rewrites", status: 401)
+      fakes["b"].reply("llm-rewrites", "b")
+      fakes["c"].reply("llm-rewrites", "c")
+
+      expect(branches.map(&:last)).to eq(%w[b c])
+      expect(router.down).to eq("a" => "llm_auth")
+      expect(notes).to include("llm_auth: a: the API refused the credentials, so the rest of this run skips a. " \
+                               "Fix its credentials before the next run. Going on with the others (llm-rewrites)")
+    end
+
+    it "fails the step on llm_bad_request, naming the provider, and asks no later branch" do
+      fakes["a"].reply("llm-rewrites", "a")
+      fakes["b"].error("llm-rewrites", status: 400, message: "unknown model")
+
+      error = llm_error { branches }
+      expect(error.message).to start_with("llm_bad_request: b: ").and include("unknown model")
+      expect(asked.map(&:first)).to eq(%w[a b])
+    end
+
+    it "fails the step with the last rule and every branch's failure when every branch failed" do
+      fakes["a"].error("llm-rewrites", status: 429)
+      fakes["b"].cut_short("llm-rewrites", "par")
+      fakes["c"].error("llm-rewrites", status: 529)
+
+      error = llm_error { branches }
+      expect(error.message).to eq("llm_unavailable: every LLM provider llm-rewrites may use failed: " \
+                                  "a (llm_rate_limited), b (llm_bad_response), c (llm_unavailable). " \
+                                  "[step llm-rewrites, max_tokens 100, system 0 chars, messages: user 32]")
+      expect(notes.grep(/going on with the others/).size).to eq(2)
+    end
+
+    it "fails at once, listing why, when every provider in the pool is already down" do
+      names.each { fakes[it].error("llm-index-ideas", status: 429) }
+      llm_error { ask(router, "llm-index-ideas") }
+
+      expect(sans_sizes(llm_error { branches }.message))
+        .to eq("llm_rate_limited: every LLM provider llm-rewrites may use failed: " \
+               "a (llm_rate_limited), b (llm_rate_limited), c (llm_rate_limited).")
+      expect(asked.size).to eq(3)
+    end
+  end
+
   describe "accounting and progress" do
     it "counts every attempt under its step and its provider, a failed-over unit's on each provider it tried" do
       fakes["a"].error("llm-rewrites", status: 429)

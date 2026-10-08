@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 
 require_relative "runs"
+require_relative "provenance/branches"
 require_relative "provenance/saving"
 require_relative "provenance/shape"
 
@@ -17,7 +18,7 @@ module Quaack
     #
     #   provenance = Provenance.open(home, run_id)
     #   provenance.providers!([{ "name" => "groq", "provider" => "openai_compatible", "model" => "..." }])
-    #   provenance.rewrites!("groq", rewrite_outcomes, proposed: 3)
+    #   provenance.rewrites!(rewrite_outcomes, entries: %w[groq opus groq])
     #   provenance.save
     #   provenance.author("rewrite_3")  # => { "name" => "groq", "provider" => ..., "model" => ... }
     #
@@ -131,14 +132,17 @@ module Quaack
         self
       end
 
-      # entry wrote the llm-rewrites rewrites, proposed of them, whose
-      # rewrite_outcomes are outcomes: each accepted one's store name.
-      def rewrites!(entry, outcomes, proposed:)
-        return self unless named?(entry)
-
-        stored = outcomes.map { it["rewrite"] }.grep(REWRITE)
-        (@record["rewrites"] ||= {}).merge!(stored.to_h { [it, entry] })
-        (@record["rewrites_proposed"] ||= {})[entry] = proposed if count?(proposed)
+      # The llm-rewrites rewrites whose rewrite_outcomes are outcomes, each
+      # written by the entry at its position (its outcome's 1-based index)
+      # in entries: each stored one's store name, and how many each entry
+      # proposed, each of branches, the entries that answered, too, even
+      # when it proposed none. A fan-out step's union maps back to its
+      # branches this way (DESIGN.md, "Several LLM providers": Provenance).
+      def rewrites!(outcomes, entries:, branches: entries.uniq)
+        written = branches.to_h { [it, 0] }.merge(entries.tally)
+        (@record["rewrites_proposed"] ||= {}).merge!(written.select { |entry, _| named?(entry) })
+        stored = Branches.stored(outcomes, entries).select { |name, entry| REWRITE.match?(name) && named?(entry) }
+        (@record["rewrites"] ||= {}).merge!(stored)
         self
       end
 
@@ -151,13 +155,17 @@ module Quaack
       end
 
       # GeneratorThree's result for search, in the record: each round's
-      # statements and outcomes, the first round's even when it wrote
-      # none, and a skipped replacement round.
+      # statements and outcomes by the entry at each one's position (its
+      # outcome's 1-based index), the first round's for each entry that
+      # answered even when it wrote none, and each skipped replacement
+      # round.
       def index_ideas!(search, result)
-        rounds = result.rounds.to_h { [it.round, [it.ddls.size, it.outcomes]] }
-        rounds["first"] ||= [0, []]
-        rounds.each { |round, (written, outcomes)| index_round!(search, round, result.provider, written, outcomes) }
-        result.skipped ? skipped!(search, result.provider, result.skipped) : self
+        result.providers.each { index_round!(search, "first", it, 0, []) }
+        result.rounds.each do |round|
+          Branches.split(round.entries, round.outcomes).each { index_round!(search, round.round, *it) }
+        end
+        result.skipped.each { |entry, rule| skipped!(search, entry, rule) }
+        self
       end
 
       # RefinementRound's result for search, in the record.
