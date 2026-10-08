@@ -62,6 +62,12 @@ module Quaack
       #
       # A volatile function would run once per arm, but volatility refuses a
       # query that calls one, so none gets here.
+      #
+      # Every arm runs, so an arm that raises on some rows, as
+      # i.total / i.qty > 10 does where i.qty = 0, can fail the rewrite
+      # where the original returns rows. It never gives wrong rows, and
+      # Postgres doesn't promise to stop an OR at its first true arm, so
+      # the original can fail the same way.
       class OrToUnion
         # A select-list entry of one of these is named for itself, not for
         # a column inside it.
