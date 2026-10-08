@@ -308,6 +308,41 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261008-34: hidden_statistics is expression index names and a
+    # count of extended statistics objects, never their names
+    # (Protocol::HiddenStatistics.valid?). An older payload has none.
+    describe "hidden_statistics" do
+      let(:hidden) { { "indexes" => ["customers_lower_email_idx"], "extended_statistics" => 2 } }
+
+      def report_with(hidden_statistics)
+        { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, hidden_statistics: }.compact
+      end
+
+      it "sends index names and a count as they are, and a report without it" do
+        expect(JSON.parse(egress.serialize(report_with(hidden)))["hidden_statistics"]).to eq(hidden)
+        expect(JSON.parse(egress.serialize(report_with(nil)))).not_to have_key("hidden_statistics")
+      end
+
+      [
+        ["a name in place of the extended statistics count", ->(f) { f.merge("extended_statistics" => [EGRESS_SENTINEL]) }],
+        ["a String in place of the count", ->(f) { f.merge("extended_statistics" => EGRESS_SENTINEL) }],
+        ["a negative count", ->(f) { f.merge("extended_statistics" => -1) }],
+        ["a planted key", ->(f) { f.merge(EGRESS_SENTINEL => 1) }],
+        ["a value in place of an index name", ->(f) { f.merge("indexes" => [{ "v" => EGRESS_SENTINEL }]) }],
+        ["a value in place of the indexes", ->(f) { f.merge("indexes" => EGRESS_SENTINEL) }],
+        ["no indexes", ->(f) { f.except("indexes") }],
+        ["a value in place of hidden_statistics", ->(_) { EGRESS_SENTINEL }]
+      ].each do |what, changed|
+        it "refuses one with #{what}, without quoting it" do
+          refusal = "a value in this report message has hidden statistics that aren't index names and a count"
+          expect { egress.serialize(report_with(changed.call(hidden))) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
+      end
+    end
+
     it "refuses index_sources whose source is a Symbol, as JSON would write it, without quoting it" do
       planted = index_sources.except("llm").merge(EGRESS_SENTINEL.to_sym => index_sources["llm"])
       expect { egress.serialize(type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources: planted) }

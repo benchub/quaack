@@ -84,6 +84,12 @@ module Quaack
       #                    how many built indexes each of QUAACK's index
       #                    sources proposed (IndexSources). One several
       #                    sources proposed counts under each.
+      #   hidden_statistics { "indexes", "extended_statistics" }: the
+      #                    expression indexes, by name, whose statistics
+      #                    the production role couldn't see, and how many
+      #                    extended statistics objects' data it couldn't
+      #                    (a count, never names), which egress checks
+      #                    (Protocol::HiddenStatistics)
       #
       # A rewrite the enclave refused on arrival isn't stored, so nothing is
       # sent for it. The burndown counts those.
@@ -118,7 +124,21 @@ module Quaack
         # negative-result, rewrite-rules, and burndown: what the report says beyond the candidates.
         def findings(store, top)
           { negative: top.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
-            burndown: Burndown.read(store) }
+            burndown: Burndown.read(store), hidden_statistics: hidden_statistics(store) }
+        end
+
+        # The statistics the production role couldn't see (PlannerStatistics'
+        # statistics_hidden): each hidden index's name, only if it's one of
+        # the table's stored indexes, and only a count of the extended
+        # statistics objects, whose names the report doesn't carry. An
+        # entry stored before statistics_hidden existed hides nothing.
+        def hidden_statistics(store)
+          tables = store.read("statistics")["tables"]
+          { "indexes" => tables.flat_map do |table|
+            known = table["indexes"].map { it["name"] }
+            Array(table.dig("statistics_hidden", "indexes")).select { known.include?(it) }
+          end.uniq,
+            "extended_statistics" => tables.sum { Array(it.dig("statistics_hidden", "extended_statistics")).size } }
         end
 
         def original(store, stats)
