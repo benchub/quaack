@@ -118,7 +118,12 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     "more MCV base frequencies than MCV items" => -> { { "most_common_base_freqs" => [0.25, 0.1] } },
     "fewer MCV base frequencies than MCV items" => -> { { "most_common_base_freqs" => [] } },
     "MCV frequencies without base frequencies" => -> { { "most_common_base_freqs" => nil } },
-    "MCV base frequencies without frequencies" => -> { { "most_common_freqs" => nil } },
+    "MCV base frequencies without frequencies or MCV items" => lambda {
+      { "most_common_vals" => nil, "most_common_val_nulls" => nil, "most_common_freqs" => nil }
+    },
+    "MCV items without frequencies" => lambda {
+      { "most_common_vals" => [[sentinel, "b"]], "most_common_freqs" => nil, "most_common_base_freqs" => nil }
+    },
     "more MCV frequencies than base frequencies, without MCV items" => lambda {
       { "most_common_vals" => nil, "most_common_val_nulls" => nil, "most_common_freqs" => [0.5, 0.1] }
     },
