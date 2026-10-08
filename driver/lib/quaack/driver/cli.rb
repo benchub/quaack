@@ -136,7 +136,7 @@ module Quaack
       # report, and exits with its own status.
       def run_command(run:, rewrites:, timeout:, **options)
         require_run
-        where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
+        where = SetupCommand.where(@home, run, @stderr, "run") or return EX_USAGE
         sqls, client, timeout = prepare(rewrites, timeout) || (return usage_error(@problem))
 
         teardown = Teardown.new(checked(where[:jump], timeout), run, @stderr)

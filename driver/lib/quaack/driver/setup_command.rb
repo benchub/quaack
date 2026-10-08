@@ -24,6 +24,18 @@ module Quaack
         pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { allowed.include?(it.first) }
       end
 
+      # The run's Runs#where, for setup and run (command), or nil once it
+      # prints why as a usage error: a run this laptop never started, or a
+      # record it can't read (Runs::Unreadable).
+      def self.where(home, run_id, stderr, command)
+        found = Runs.new(home).where(run_id) and return found
+        stderr.print("quaack #{command}: unknown run ID\n")
+        nil
+      rescue Runs::Unreadable => e
+        stderr.print("quaack #{command}: #{e.message}\n")
+        nil
+      end
+
       # transport builds the transport to a jump host, as for CLI. Its
       # output on stdout and stderr is only for show, as run's is: once a
       # write to either fails, such as to a closed pipe, the rest there are
@@ -47,7 +59,7 @@ module Quaack
       private
 
       def setup(run_id, server)
-        host = Runs.new(@home).host(run_id) or return usage_error("unknown run ID")
+        host = self.class.where(@home, run_id, @stderr, "setup")&.fetch(:jump) or return CLI::EX_USAGE
         transport = checked(host) or return CLI::EX_USAGE
         Setup.run(transport:, run_id:, entries: Pipeline.status(transport, run_id), server:,
                   progress: Progress.new(io: @stderr, total: Setup::STEPS.size))
