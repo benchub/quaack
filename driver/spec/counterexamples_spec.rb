@@ -111,7 +111,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
       result = run
       expect(result.rounds.size).to eq(2)
       expect(result.disproved).to be(true)
-      expect(result.units).to eq([{ "entry" => "anthropic", "rounds" => 2 }])
+      expect(result.units).to eq([{ "entry" => "anthropic", "rounds" => 2, "pairing" => "not_applicable" }])
     end
     it "keeps going after a round whose inserts failed to load, without calling it disproved" do
       3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
@@ -179,9 +179,11 @@ RSpec.describe Quaack::Driver::Counterexamples do
 
         result = run
         expect(result.rounds.size).to eq(3)
-        expect(result.units).to eq([{ "entry" => "a", "rounds" => 1 },
-                                    { "entry" => "b", "rounds" => 1, "after" => "llm_bad_response" },
-                                    { "entry" => "c", "rounds" => 1, "after" => "llm_bad_response" }])
+        expect(result.units).to eq([{ "entry" => "a", "rounds" => 1, "pairing" => "not_applicable" },
+                                    { "entry" => "b", "rounds" => 1, "after" => "llm_bad_response",
+                                      "pairing" => "not_applicable" },
+                                    { "entry" => "c", "rounds" => 1, "after" => "llm_bad_response",
+                                      "pairing" => "not_applicable" }])
         expect(fakes["c"].asks.first.body[:messages])
           .to eq([{ role: :user, content: fresh_text([["INSERT 0"], same],
                                                      [["INSERT 1"], "#{same}\nThey exercised: o.status = $1."]) }])
@@ -196,8 +198,9 @@ RSpec.describe Quaack::Driver::Counterexamples do
 
         result = run
         expect(result.rounds.size).to eq(3)
-        expect(result.units).to eq([{ "entry" => "a", "rounds" => 2 },
-                                    { "entry" => "b", "rounds" => 1, "after" => "llm_unavailable" }])
+        expect(result.units).to eq([{ "entry" => "a", "rounds" => 2, "pairing" => "not_applicable" },
+                                    { "entry" => "b", "rounds" => 1, "after" => "llm_unavailable",
+                                      "pairing" => "not_applicable" }])
         expect(fakes["b"].asks.size).to eq(1)
       end
 
@@ -231,6 +234,60 @@ RSpec.describe Quaack::Driver::Counterexamples do
 
           expect { run }.to raise_error(Quaack::Driver::LLM::Error, /\Allm_rate_limited: .*slow down/)
           expect(fake.asks.size).to eq(2)
+        end
+      end
+
+      # DESIGN.md, "Several LLM providers" (Adversarial pairing): a wrote
+      # the rewrite, and c shares its model.
+      describe "with counterexample_pairing" do
+        let(:pairing) { "prefer_different" }
+        let(:client) do
+          router_over(fakes, routing: { "mode" => "failover", "counterexample_pairing" => pairing },
+                             models: { "a" => "model-one", "b" => "model-two", "c" => "model-one" }, max_retries: 0)
+        end
+        let(:author) { { "name" => "a", "provider" => "anthropic", "model" => "model-one" } }
+
+        def run(author = self.author)
+          described_class.new(client:, label: "Rewrite Silver Fox", author:).run(payload, compare:)
+        end
+
+        it "runs the rounds off the rewrite's author, and says the pairing was met" do
+          3.times { |i| fakes["b"].reply("llm-counterexamples", inserts("INSERT #{i}")) }
+          outcomes.push(clean, clean, clean)
+
+          expect(run.units).to eq([{ "entry" => "b", "rounds" => 3, "pairing" => "met" }])
+          expect(fake.asks).to eq([])
+        end
+
+        it "keeps a fresh start off the author too, falling back to it only when nothing else is left" do
+          fakes["b"].reply("llm-counterexamples", inserts("INSERT 0")).error("llm-counterexamples", status: 429)
+          2.times { |i| fake.reply("llm-counterexamples", inserts("INSERT #{i + 1}")) }
+          outcomes.push(clean, clean, clean)
+
+          expect(run.units).to eq([{ "entry" => "b", "rounds" => 1, "pairing" => "met" },
+                                   { "entry" => "a", "rounds" => 2, "after" => "llm_rate_limited",
+                                     "pairing" => "not_met" }])
+          expect(fakes["c"].asks).to eq([])
+        end
+
+        it "picks as with any when the author wasn't recorded, and says the pairing couldn't be checked" do
+          3.times { |i| fake.reply("llm-counterexamples", inserts("INSERT #{i}")) }
+          outcomes.push(clean, clean, clean)
+
+          expect(run(nil).units).to eq([{ "entry" => "a", "rounds" => 3, "pairing" => "unchecked" }])
+        end
+
+        context "with require_different" do
+          let(:pairing) { "require_different" }
+
+          it "fails a fresh start as llm_unavailable, naming the rewrite and its author, when only it is left" do
+            fakes["b"].reply("llm-counterexamples", inserts("INSERT 0")).error("llm-counterexamples", status: 429)
+            outcomes.push(clean)
+
+            expect { run }.to raise_error(Quaack::Driver::LLM::Error,
+                                          /\Allm_unavailable: llm-counterexamples: Rewrite Silver Fox was written by a/)
+            expect([fake.asks, fakes["c"].asks]).to eq([[], []])
+          end
         end
       end
 

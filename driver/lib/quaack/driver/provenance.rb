@@ -28,8 +28,11 @@ module Quaack
     # - rewrites: each stored llm-rewrites rewrite, by store name, to the
     #   entry that wrote it; rewrites_proposed: how many each entry wrote.
     # - counterexamples: each rewrite's units, in order: the entry, how many
-    #   rounds it asked, and, for a fresh start, after, the rule that ended
-    #   the entry before it.
+    #   rounds it asked, for a fresh start, after, the rule that ended the
+    #   entry before it, and pairing, counterexample_pairing's outcome: met,
+    #   not_met, not_applicable (the pairing is any), or unchecked (no
+    #   author was recorded, which for a rule-made or operator rewrite the
+    #   report reads as not applicable, since those have no author).
     # - index_ideas: by search, then round (first, replacement, refinement),
     #   then entry, how many statements it wrote and its index_outcomes'
     #   counts by outcome and by rule; and skipped, each replacement round
@@ -142,7 +145,7 @@ module Quaack
         self
       end
 
-      # A rewrite's units, each { "entry", "rounds", "after" }, replacing
+      # A rewrite's units, each { "entry", "rounds", "after", "pairing" }, replacing
       # any recorded before, since a rerun's rounds are the ones that count.
       def counterexamples!(rewrite, units)
         clean = units.map { Shape.unit(it.compact) }
