@@ -27,12 +27,14 @@ module Quaack
     #   "stable"       whether total_blocks was the same in all three runs
     #   "total_blocks" the max of the three (for an unstable literal, blocks-metric and
     #                  minimax use the max)
-    #   "plan"         the redacted plan of the run with the most blocks (the
-    #                  first, if several tie), the run MeasuredLabels takes
-    #                  hit and read from, so its top node's counts are the
-    #                  ones the report shows
-    #   "plans"        only when unstable: each run's plan, redacted through
-    #                  redact against that set's literals
+    #   "plans"        the runs' plans, each redacted through redact against
+    #                  that set's literals: when unstable, each run's plan in
+    #                  run order; when stable, only the first run's
+    # Measurement.plan(measurement) gives the measured plan, the plan of the
+    # run with the most blocks (the first, if several tie). That's the run
+    # MeasuredLabels takes hit and read from, so its top node's counts are
+    # the ones the report shows. Each plan is stored once, so every reader
+    # gets the measured plan through Measurement.plan.
     # total_blocks is shared hit + read, local hit + read, and temp read +
     # written, from the top plan node (its counts include its children).
     # hit is shared + local hit; read is the rest.
@@ -103,14 +105,20 @@ module Quaack
       def summarize(runs, map)
         counts = runs.map { counts(it) }
         totals = counts.map { it["total_blocks"] }
-        out = { "timed_out" => false, "runs" => counts, "stable" => totals.uniq.size == 1,
-                "total_blocks" => totals.max, "plan" => most_blocks(runs, totals, map) }
-        out["plans"] = runs.map { Redaction.plan(it, map).explain } unless out["stable"]
-        out
+        stable = totals.uniq.size == 1
+        { "timed_out" => false, "runs" => counts, "stable" => stable, "total_blocks" => totals.max,
+          "plans" => (stable ? runs.take(1) : runs).map { Redaction.plan(it, map).explain } }
       end
 
-      # The redacted plan of the first run with the most blocks.
-      def most_blocks(runs, totals, map) = Redaction.plan(runs[totals.index(totals.max)], map).explain
+      # A measurement's measured plan: the redacted plan of the first run
+      # with the most blocks, or nil if it timed out or has no plans. A
+      # stable set keeps only its first run's plan, and that run has the
+      # most blocks, since every run has the same count.
+      def plan(measurement)
+        plans = measurement["plans"] or return
+        totals = measurement["runs"].map { it["total_blocks"] }
+        plans[totals.index(totals.max)]
+      end
 
       def counts(explain)
         top = explain[0]["Plan"]

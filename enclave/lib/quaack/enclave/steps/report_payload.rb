@@ -5,6 +5,7 @@ require_relative "../candidate_ddl_redaction"
 require_relative "../clock_anchoring"
 require_relative "../dedupe"
 require_relative "../index_candidate"
+require_relative "../measurement"
 require_relative "../planner_statistics"
 require_relative "../table_name"
 require_relative "existing_indexes"
@@ -131,7 +132,8 @@ module Quaack
         def measured_plans(store, labels, stats)
           sets = MeasuredLabels.measured(store).to_h
           labels.map do |label|
-            plan = sets[label["label"]]&.dig("slow", "plan")
+            slow = sets[label["label"]]&.[]("slow")
+            plan = slow && Measurement.plan(slow)
             label.merge("plan" => plan && nodes(plan, stats))
           end
         end

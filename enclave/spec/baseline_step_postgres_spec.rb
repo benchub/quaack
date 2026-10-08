@@ -69,7 +69,7 @@ RSpec.describe "quaacks baseline, against a real server" do
                                                     combination: "original:top:1", timeout_ms: 5_000)
 
     expect(measured["slow"]["total_blocks"]).to be < stored.read("baseline")["sets"]["slow"]["total_blocks"]
-    top = measured["slow"]["plan"][0]["Plan"]
+    top = Quaack::Enclave::Measurement.plan(measured["slow"])[0]["Plan"]
     expect(top["Shared Hit Blocks"] + top["Shared Read Blocks"]).to eq(measured["slow"]["total_blocks"])
   ensure
     conn&.close
@@ -117,7 +117,8 @@ RSpec.describe "quaacks baseline, against a real server" do
     expect(summary["stable"]).to be(false)
     expect(summary["total_blocks"]).to eq(25)
     expect(summary["plans"].size).to eq(3)
-    expect(Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)).not_to have_key("plans")
+    expect(summary["plans"].map { it[0]["Plan"]["Temp Written Blocks"] }).to eq([0, 4, 0])
+    expect(Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)["plans"].size).to eq(1)
     expect(Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)["stable"]).to be(true)
   end
 
@@ -128,11 +129,24 @@ RSpec.describe "quaacks baseline, against a real server" do
     runs[2][0]["Execution Time"] = 2.5
 
     summary = Quaack::Enclave::Measurement.summarize(runs, map)
+    kept = Quaack::Enclave::Measurement.plan(summary)
 
-    expect(summary["plan"][0]["Plan"]["Shared Read Blocks"]).to eq(9)
-    expect(summary["plan"][0]["Execution Time"]).to eq(1.5)
-    expect(summary["plan"].to_json).not_to include("secret-7")
+    expect(kept[0]["Plan"]["Shared Read Blocks"]).to eq(9)
+    expect(kept[0]["Execution Time"]).to eq(1.5)
+    expect(kept.to_json).not_to include("secret-7")
     stable = Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)
-    expect(stable["plan"]).to eq(plan(1, 1))
+    expect(Quaack::Enclave::Measurement.plan(stable)).to eq(plan(1, 1))
+  end
+
+  it "stores each run's plan once, with no second copy of the kept plan" do
+    map = { "$1" => { "value" => "secret-7", "type" => "unknown" } }
+
+    expect(Quaack::Enclave::Measurement.summarize([plan(10, 5), plan(10, 9), plan(10, 5)], map)).not_to have_key("plan")
+    expect(Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)).not_to have_key("plan")
+  end
+
+  it "has no measured plan for a set that timed out or was stored without plans" do
+    expect(Quaack::Enclave::Measurement.plan("timed_out" => true, "ran" => 1)).to be_nil
+    expect(Quaack::Enclave::Measurement.plan("timed_out" => false, "runs" => [{ "total_blocks" => 1 }])).to be_nil
   end
 end
