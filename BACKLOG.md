@@ -2270,14 +2270,7 @@ From the review of 20261007-3. `one_list_per_item?` checks how many MCV null-fla
 - **Design:** statistics, classify, trust boundary.
 - **Status:** todo
 
-### 20261007-27. Specs: keep the AWS SDK off the real `~/.aws`.
-
-From the review of 20261002-14. The AWS SDK's default credential chain, used by `BedrockClient`, can read the developer's real `~/.aws/config` and `~/.aws/credentials` when no keys are passed. The specs seen pass explicit keys or set `AWS_*`, so no live leak was found, but nothing guards it the way `ANTHROPIC_CONFIG_DIR` now guards `~/.config/anthropic`. Point `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` at empty files for every spec process, and prove it with a trapped HOME.
-
-- **Depends on:** 20261002-14.
-- **Came from:** The review of 20261002-14.
-- **Design:** Development.
-- **Status:** todo
+### 20261007-27. Specs: keep the AWS SDK off the real `~/.aws`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-28. Bedrock region and override checks: minors from 20261001-16.
 

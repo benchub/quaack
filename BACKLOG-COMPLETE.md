@@ -6709,3 +6709,13 @@ Also from the review of 20260930-14 stage 1:
 - **Design:** trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-07, the racetrack half, after a review with one blocking finding, a fix round, and a clean second review. Every racetrack file on the entry's list is qualified, each with a shadow test: `server_clock.rb`'s `NOW_SQL`, `rewrite_candidate_check.rb`, the type-name reads in `steps/index_search.rb` and `steps/rewrite_check.rb` (now in `StructuralDiscard`), `assumption_check*`, `result_comparison/tiebreaker.rb`, and `rewrite_rules/catalog*`. A planted `=` could make a contradicted denormalized-equal assumption read as met; it's fixed, and user columns are compared with their own type's `=` from its default btree family (`assumption_check/equality.rb`), so citext stays case-insensitive. The other stage-1 review notes are done, and the allowlist holds only the 18 arena files, which moved to 20261007-31. Enclave change, unreleased until the next batch bump.
+
+### 20261007-27. Specs: keep the AWS SDK off the real `~/.aws`.
+
+From the review of 20261002-14. The AWS SDK's default credential chain, used by `BedrockClient`, can read the developer's real `~/.aws/config` and `~/.aws/credentials` when no keys are passed. The specs seen pass explicit keys or set `AWS_*`, so no live leak was found, but nothing guards it the way `ANTHROPIC_CONFIG_DIR` now guards `~/.config/anthropic`. Point `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` at empty files for every spec process, and prove it with a trapped HOME.
+
+- **Depends on:** 20261002-14.
+- **Came from:** The review of 20261002-14.
+- **Design:** Development.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `NoRealCredentials` also points `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` at empty files and sets `AWS_EC2_METADATA_DISABLED=true` for every spec process and its children, and a trapped-HOME test proves the SDK reads neither default file nor the metadata endpoint. The review's two minors weren't filed: the root suite builds no Bedrock client in-process, and the SSO and login caches are reached only through the now-empty config files.
