@@ -983,15 +983,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-31. Minimax and operator rewrite loose ends. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260926-32. Measurement test gaps.
-
-- No real-Postgres test produces an unstable literal. Making block counts move between runs deterministically, inside a read-only transaction, was hard, so only the `summarize` unit test covers that path.
-
-- **Depends on:** 20260926-27, 20260926-31.
-- **Came from:** Their build.
-- **Design:** baseline.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260926-32. Measurement test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
 

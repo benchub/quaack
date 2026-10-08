@@ -7473,3 +7473,14 @@ From the review of 20261007-52.
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-11 (commit 5ac3c90a). Review clean.
+
+### 20260926-32. Measurement test gaps.
+
+- No real-Postgres test produces an unstable literal. Making block counts move between runs deterministically, inside a read-only transaction, was hard, so only the `summarize` unit test covers that path.
+
+- **Depends on:** 20260926-27, 20260926-31.
+- **Came from:** Their build.
+- **Design:** baseline.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20260926-32 (commit 2e4e08ba). Review clean.
