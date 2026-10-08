@@ -223,12 +223,15 @@ RSpec.describe "quaacks run-server, against a real server" do
       end
     end
 
-    it "refuses a call missing an option as usage" do
-      outcome = quaacks.run("run-server", "--run", store.run_id, "--host", production.host, "--port", "5432",
+    # Task 20261003-22: the operator gave neither every flag nor a
+    # run_server_command, so the rule says so, and names none of the flags'
+    # values.
+    it "refuses a call missing an option, with no run_server_command, as run_server_unspecified" do
+      record_inventory
+      outcome = quaacks.run("run-server", "--run", store.run_id, "--host", sentinels.word, "--port", "5432",
                             "--racetrack-db", production.name, env: libpq_env)
 
-      expect(outcome.stdout).to eq(error_line("usage"))
-      expect(outcome.status.exitstatus).to eq(64)
+      expect_failed(outcome, "run_server_unspecified")
     end
   end
 
