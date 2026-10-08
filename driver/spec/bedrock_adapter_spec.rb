@@ -65,8 +65,8 @@ RSpec.describe "the bedrock adapter" do
   end
 
   def no_region
-    "no AWS region for Bedrock: set llm.aws_region in ~/.quaack/driver.json, AWS_REGION, or a region in the " \
-      "AWS profile"
+    "no AWS region for Bedrock: set llm.aws_region in ~/.quaack/driver.json, one of AWS_REGION, AMAZON_REGION, " \
+      "and AWS_DEFAULT_REGION, or a region in the AWS profile"
   end
 
   describe "the request" do
@@ -269,6 +269,16 @@ RSpec.describe "the bedrock adapter" do
         end
       end
 
+      # As the SDK does, the first variable that's set is the only one
+      # read, so an empty one hides the rest.
+      it "takes no region from the variables behind an empty one, as the SDK doesn't" do
+        ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
+        ENV.update("AWS_REGION" => "", "AWS_DEFAULT_REGION" => "eu-west-3")
+
+        expect { build(FakeBedrock.settings.with(aws_region: nil)) }
+          .to raise_error(Quaack::Driver::LLM::ConfigError, no_region)
+      end
+
       it "needs a region, unless there's a base URL" do
         ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
         regionless = FakeBedrock.settings.with(aws_region: nil)
@@ -352,6 +362,18 @@ RSpec.describe "the bedrock adapter" do
       expect(fake.asks.map(&:url)).to eq([invoke_url("ap-southeast-2")])
     end
 
+    # As the SDK does, the first variable that's set is the only one read:
+    # an empty one hides the rest, so the region is the profile's.
+    it "is the profile's region behind an empty variable, without checking the ones after it" do
+      ENV.update("AWS_REGION" => "", "AMAZON_REGION" => "SENTINEL bad", "AWS_DEFAULT_REGION" => "eu-west-3")
+      write_aws_config(@aws_dir, "profile quaack-regional", "region = ap-southeast-2")
+      write_aws_profile(@aws_dir, "quaack-regional", "AKIAQUAACKSPECREGN01", "s")
+      fake.reply("llm-rewrites", "ok")
+      ask_with(build(regionless.with(aws_profile: "quaack-regional")))
+
+      expect(fake.asks.map(&:url)).to eq([invoke_url("ap-southeast-2")])
+    end
+
     it "is required: with none anywhere, it's a usage error before any attempt" do
       expect { build(regionless) }.to raise_error(Quaack::Driver::LLM::ConfigError, no_region)
       expect(burndown.llm_calls).to eq({})
@@ -378,8 +400,8 @@ RSpec.describe "the bedrock adapter" do
 
       expect { build(entry) }
         .to raise_error(Quaack::Driver::LLM::ConfigError,
-                        "no AWS region for Bedrock: set llms[2].aws_region in ~/.quaack/driver.json, AWS_REGION, " \
-                        "or a region in the AWS profile")
+                        "no AWS region for Bedrock: set llms[2].aws_region in ~/.quaack/driver.json, one of " \
+                        "AWS_REGION, AMAZON_REGION, and AWS_DEFAULT_REGION, or a region in the AWS profile")
     end
 
     it "name the entry's aws_region when a Bedrock API key has no region" do
@@ -387,8 +409,8 @@ RSpec.describe "the bedrock adapter" do
 
       expect { build(entry) }
         .to raise_error(Quaack::Driver::LLM::ConfigError,
-                        "no AWS region for Bedrock: set llms[2].aws_region in ~/.quaack/driver.json, AWS_REGION, " \
-                        "or a region in the AWS profile")
+                        "no AWS region for Bedrock: set llms[2].aws_region in ~/.quaack/driver.json, one of " \
+                        "AWS_REGION, AMAZON_REGION, and AWS_DEFAULT_REGION, or a region in the AWS profile")
     end
 
     it "name the entry's aws_profile when it's set beside a Bedrock API key" do

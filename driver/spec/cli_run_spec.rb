@@ -1336,7 +1336,8 @@ RSpec.describe "quaack run" do
 
           expect([status, stdout.string, stderr.string])
             .to eq([64, "", "quaack run: no AWS region for Bedrock: set llm.aws_region in ~/.quaack/driver.json, " \
-                            "AWS_REGION, or a region in the AWS profile\n"])
+                            "one of AWS_REGION, AMAZON_REGION, and AWS_DEFAULT_REGION, or a region in the AWS " \
+                            "profile\n"])
           expect([hosts, transport.calls]).to eq([[], []])
         end
 
@@ -1347,7 +1348,8 @@ RSpec.describe "quaack run" do
 
           expect([status, stdout.string, stderr.string])
             .to eq([64, "", "quaack run: bed: no AWS region for Bedrock: set llms[0].aws_region in " \
-                            "~/.quaack/driver.json, AWS_REGION, or a region in the AWS profile\n"])
+                            "~/.quaack/driver.json, one of AWS_REGION, AMAZON_REGION, and AWS_DEFAULT_REGION, or a " \
+                            "region in the AWS profile\n"])
           expect([hosts, transport.calls]).to eq([[], []])
         end
       end

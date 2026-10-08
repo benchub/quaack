@@ -32,11 +32,12 @@ module Quaack
       # The region is llm.aws_region, else the SDK's lookup: AWS_REGION,
       # AMAZON_REGION, AWS_DEFAULT_REGION, then the profile's. With a Bedrock
       # API key the gem looks up nothing, so it's llm.aws_region or the first
-      # of those three variables. No region is a usage error, before any
-      # attempt, unless there's a base URL, which a key needs no region for.
-      # So is a bad value in the first of the variables that's set, when
-      # there's no llm.aws_region, checked as llm.aws_region is, and named,
-      # not quoted.
+      # of those three variables. Only the first of them that's set is read,
+      # as in the SDK, so an empty one hides the rest. No region is a usage
+      # error, before any attempt, unless there's a base URL, which a key
+      # needs no region for. So is a bad value in the first of the
+      # variables that's set, when there's no llm.aws_region, checked as
+      # llm.aws_region is, and named, not quoted.
       #
       # `transport` gets each attempt as it would go out, rewritten and
       # signed, as the gem's Anthropic::APIRequest, plus the step, and
@@ -58,7 +59,8 @@ module Quaack
         end
 
         def self.no_region(at = BLOCK)
-          "no AWS region for Bedrock: set #{at}.aws_region in #{FILE}, AWS_REGION, or a region in the AWS profile"
+          "no AWS region for Bedrock: set #{at}.aws_region in #{FILE}, one of #{REGION_VARIABLES[..-2].join(", ")}, " \
+            "and #{REGION_VARIABLES.last}, or a region in the AWS profile"
         end
 
         def self.both(at = BLOCK) = "#{at}.aws_profile in #{FILE} can't be used while #{BEARER_ENV} is set: unset one"
@@ -124,11 +126,14 @@ module Quaack
             aws_secret_key: credentials.secret_access_key, aws_session_token: credentials.session_token }
         end
 
-        # The first of REGION_VARIABLES that's set and not empty, or nil.
-        # Raises if it isn't a region.
+        # The first of REGION_VARIABLES that's set, or nil if none is or
+        # it's empty. As in the SDK, an empty one hides the rest. Raises if
+        # it isn't a region.
         def env_region
-          name = REGION_VARIABLES.find { !ENV[it].to_s.empty? } or return
+          name = REGION_VARIABLES.find { ENV.key?(it) } or return
           region = ENV.fetch(name)
+          return if region.empty?
+
           ok, problem = CHECKS.fetch("aws_region")
           raise ConfigError, "#{name} #{problem}" unless ok.call(region)
 
