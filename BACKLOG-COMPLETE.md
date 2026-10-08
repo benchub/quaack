@@ -6829,3 +6829,13 @@ From the reviews of 20261007-9.
 - **Design:** trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-07, after one review with no blocking findings. Specs pin the both-NULL IS DISTINCT FROM rewrite, make the slow-clock arena runner examples need the slow clock (`SlowClockRead`), shadow-test the `tgenabled` and `rngsubtype = ANY` rewrites, and cover `Equality`'s domains, its cast's schema, and both one-operator guards. No cast fallback: DESIGN.md's denormalized_equal paragraph now lists the type pairs refused in v1 (mixed numeric kinds, char(n) or citext with text, and any arrays, ranges, multiranges, or composites, even of one type). Specs and docs only.
+
+### 20261007-26. Outbound statistics shape: per-column counts.
+
+From the review of 20261007-3. `one_list_per_item?` checks how many MCV null-flag lists there are, but not that each list has one flag per column, and `most_common_freqs` and `most_common_base_freqs` aren't counted against the MCV items. Defense in depth only.
+
+- **Depends on:** 20261007-3.
+- **Came from:** The review of 20261007-3.
+- **Design:** statistics, classify, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-07, after a review with one blocking finding (a vacuous test), a fix round, and a clean second review. The outbound statistics shape now needs one MCV null flag per column of the statistics object (counted from its definition with pg_query, an expression counting as one), `most_common_freqs` and `most_common_base_freqs` together and of one length, and that length equal to the MCV item count when the items go out. Mismatches are `statistics_bad_shape`, naming no value. Real Postgres 18 extended statistics with expressions still pass. Two untested defensive guards (`column_count`'s one-statement check, `!width.nil?`) weren't filed. Enclave change, unreleased until the next batch bump.

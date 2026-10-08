@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-22 (an unreachable rescue removed).
 - 20261007-30 (HypoPG in the quaack schema; stored search_path without unusable schemas).
 - 20261002-3 (fresh aliases avoid every table and alias name).
+- 20261007-26 (outbound statistics per-column counts).
 
 ## How this file works.
 
@@ -2207,14 +2208,7 @@ From the builder of 20261007-12. Ollama's OpenAI-compatible API ignores `max_com
 - **Design:** LLM providers.
 - **Status:** todo
 
-### 20261007-26. Outbound statistics shape: per-column counts.
-
-From the review of 20261007-3. `one_list_per_item?` checks how many MCV null-flag lists there are, but not that each list has one flag per column, and `most_common_freqs` and `most_common_base_freqs` aren't counted against the MCV items. Defense in depth only.
-
-- **Depends on:** 20261007-3.
-- **Came from:** The review of 20261007-3.
-- **Design:** statistics, classify, trust boundary.
-- **Status:** todo
+### 20261007-26. Outbound statistics shape: per-column counts. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-27. Specs: keep the AWS SDK off the real `~/.aws`. Done, see BACKLOG-COMPLETE.md.
 
