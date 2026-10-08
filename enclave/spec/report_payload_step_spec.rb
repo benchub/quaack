@@ -1023,6 +1023,30 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # Task 20261004-89: an index index-build built that no label ran with,
+    # as in some recorded runs, is built but neither not better nor ranked.
+    context "when no label ran with a built index" do
+      let(:outcome) do
+        payload_of do |store|
+          sourced(store)
+          ddl = "CREATE INDEX ON public.orders USING btree (note, id)"
+          built = store.read("index_build")
+          store.write("index_build", built.merge("indexes" => built["indexes"].merge(
+            "quaack_d" => { "ddl" => ddl, "size" => 8192 }
+          )))
+          original = store.read("index_search_original")
+          store.write("index_search_original",
+                      original.merge("dedupe" => dedupe(original["dedupe"]["proposals"] + [plain(ddl, :llm)])))
+        end
+      end
+
+      it "counts it as built under its source, and not as not better" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(1, 0, 1), "generator_two" => counts(1, 0, 0), "llm" => counts(4, 1, 1)
+        )
+      end
+    end
+
     context "when a built index came up in only one search" do
       let(:outcome) do
         payload_of do |store|
