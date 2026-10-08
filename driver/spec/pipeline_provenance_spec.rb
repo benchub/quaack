@@ -59,6 +59,8 @@ RSpec.describe "The pipeline's provenance record" do
                   "index_ranking_rewrite_1" => true, "rewrite_pruned_1" => true)
   end
 
+  let(:feedback) { { "type" => "index_feedback", "revise" => false, "refined" => false } }
+
   def outcome(index, outcome, rule = nil)
     { "type" => "index_outcome", "index" => index, "outcome" => outcome, "rule" => rule, "covered_by" => nil,
       "partial_constant_only" => false }
@@ -70,7 +72,7 @@ RSpec.describe "The pipeline's provenance record" do
     replies = {
       "index-payload" => [{ "type" => "index_payload", "query" => "SELECT SENTINEL_PAYLOAD" }],
       "index-test" => [outcome(1, "accepted"), outcome(2, "dropped", "duplicate")],
-      "index-feedback" => [{ "type" => "index_feedback", "revise" => false, "refined" => false }],
+      "index-feedback" => [feedback],
       "rewrite-payload" => [{ "type" => "rewrite_payload", "query" => "SELECT SENTINEL_PAYLOAD" }],
       "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 1, "outcome" => "accepted", "rule" => nil,
                             "rewrite" => "rewrite_1", "warnings" => [] },
@@ -262,6 +264,54 @@ RSpec.describe "The pipeline's provenance record" do
       expect(found(to_enclave + prompts, names + models)).to eq([])
       expect(found(File.read(path), secret + ["SELECT 3"])).to eq([])
     end
+  end
+
+  # DESIGN.md, "Several LLM providers" (Provenance): the refinement rounds
+  # and a rewrite's own index search are recorded too.
+  context "with a refinement round, and a rewrite's index search" do
+    let(:feedback) do
+      { "type" => "index_feedback", "revise" => true, "refined" => false, "baseline" => [1.0],
+        "candidates" => [{ "shortfall" => "unused" }] }
+    end
+    let(:later) { super().merge("rewrite_index_ideas_1" => true) }
+
+    def script
+      super
+      fa.reply("llm-index-refine", { "indexes" => ["CREATE INDEX ON public.t (c)", "CREATE INDEX ON public.t (f)"] })
+      fb.reply("rewrite-llm-index-ideas",
+               { "indexes" => ["CREATE INDEX ON public.t (d)", "CREATE INDEX ON public.t (g)"] })
+      fb.cut_short("rewrite-llm-index-ideas", "par")
+      fb.reply("rewrite-llm-index-refine",
+               { "indexes" => ["CREATE INDEX ON public.t (e)", "CREATE INDEX ON public.t (h)"] })
+    end
+
+    # The first entry is marked down by the rewrite's index search, so the
+    # second writes its rounds.
+    it "records each refinement round and the rewrite's rounds under the entry that wrote them" do
+      script
+      run
+
+      tally = { "written" => 2, "outcomes" => { "accepted" => 1, "dropped" => 1 }, "rules" => { "duplicate" => 1 } }
+      ideas = JSON.parse(File.read(path))["index_ideas"]
+      expect(ideas["original"]["refinement"]).to eq(names[0] => tally)
+      expect(ideas["rewrite_1"]).to eq("first" => { names[1] => tally }, "refinement" => { names[1] => tally },
+                                       "skipped" => [{ "entry" => names[1], "rule" => "llm_bad_response" }])
+    end
+  end
+
+  # DESIGN.md, "Several LLM providers" (Provenance), pending the user's
+  # confirmation.
+  it "clears an earlier run's down for a provider this run asked without marking it down" do
+    Quaack::Driver::Provenance.open(@home, run_id)
+                              .providers!([{ "name" => "old", "provider" => "anthropic", "model" => "m" },
+                                           { "name" => names[1], "provider" => "anthropic", "model" => models[1] }])
+                              .down!("old" => "llm_unavailable", names[1] => "llm_auth")
+                              .save
+    script
+    run
+
+    expect(JSON.parse(File.read(path))["providers"].to_h { [it["name"], it["down"]] })
+      .to eq("old" => "llm_unavailable", names[1] => nil, names[0] => "llm_rate_limited")
   end
 
   it "keeps the record from before a resume, and adds to it" do

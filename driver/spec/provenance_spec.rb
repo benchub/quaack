@@ -3,6 +3,7 @@
 require "json"
 require "tmpdir"
 require "quaack/driver/provenance"
+require "quaack/driver/refinement_round"
 
 RSpec.describe Quaack::Driver::Provenance do
   around do |example|
@@ -239,5 +240,121 @@ RSpec.describe Quaack::Driver::Provenance do
 
   it "refuses a run ID that isn't one, since it becomes a file name" do
     expect { described_class.open(@home, "../x") }.to raise_error(ArgumentError)
+  end
+
+  describe "the writers" do
+    let(:g3) do
+      require "quaack/driver/generator_three"
+      Quaack::Driver::GeneratorThree
+    end
+
+    it "records the refinement round's statements and outcomes under its entry" do
+      result = Quaack::Driver::RefinementRound::Result.new(
+        ddls: %w[d1 d2], outcomes: [outcome(1, "accepted"), outcome(2, "dropped", "covered_by_existing")],
+        provider: "opus"
+      )
+      provenance.refinement!("rewrite_3", result).save
+
+      expect(saved["index_ideas"]).to eq(
+        "rewrite_3" => { "refinement" => { "opus" => { "written" => 2,
+                                                       "outcomes" => { "accepted" => 1, "dropped" => 1 },
+                                                       "rules" => { "covered_by_existing" => 1 } } } }
+      )
+    end
+
+    it "records the first round of an entry that answered, even when no entry wrote any statement" do
+      provenance.index_ideas!("original", g3::Result.new(rounds: [], providers: %w[groq])).save
+
+      expect(saved["index_ideas"]).to eq(
+        "original" => { "first" => { "groq" => { "written" => 0, "outcomes" => {}, "rules" => {} } } }
+      )
+    end
+
+    it "takes a search's first and replacement rounds and skips from its latest llm-index-ideas, so a rerun " \
+       "repeats no skip" do
+      skipped = g3::Result.new(rounds: [g3::Round.new(ddls: %w[d1], entries: %w[groq], outcomes: [])],
+                               providers: %w[groq opus], skipped: { "groq" => "llm_unavailable" })
+      provenance.index_ideas!("original", skipped)
+      provenance.refinement!("original", Quaack::Driver::RefinementRound::Result.new(ddls: [], outcomes: [],
+                                                                                     provider: "opus"))
+      provenance.index_ideas!("original", skipped)
+      provenance.index_ideas!("rewrite_1", g3::Result.new(rounds: [], providers: %w[opus]))
+      provenance.index_ideas!("rewrite_1", g3::Result.new(rounds: [], providers: %w[groq]))
+      provenance.save
+
+      expect(saved["index_ideas"]["original"]["skipped"]).to eq([{ "entry" => "groq", "rule" => "llm_unavailable" }])
+      expect(saved["index_ideas"]["original"]["refinement"].keys).to eq(%w[opus])
+      expect(saved["index_ideas"]["rewrite_1"]["first"].keys).to eq(%w[groq])
+    end
+
+    it "keeps from rewrite_outcomes only store names, and from an entries list only names" do
+      outcomes = [{ "index" => 1, "outcome" => "accepted", "rewrite" => "SELECT 1" },
+                  { "index" => 2, "outcome" => "accepted", "rewrite" => "rewrite_2" },
+                  { "index" => 3, "outcome" => "accepted", "rewrite" => "rewrite_3" }]
+      provenance.rewrites!(outcomes, entries: ["groq", "groq", "Bad Name"], branches: %w[groq]).save
+
+      expect(saved["rewrites"]).to eq("rewrite_2" => "groq")
+      expect(saved["rewrites_proposed"]).to eq("groq" => 2)
+    end
+
+    it "keeps a down only when it's a rule" do
+      provenance.providers!([{ "name" => "groq", "provider" => "openai_compatible", "model" => "llama" }])
+      provenance.down!("groq" => "SELECT 1").save
+
+      expect(saved["providers"]).to eq([{ "name" => "groq", "provider" => "openai_compatible", "model" => "llama" }])
+    end
+
+    it "counts only index_outcome's own outcomes" do
+      provenance.index_round!("original", "first", "groq", 2, [outcome(1, "accepted"), outcome(2, "SELECT 1")]).save
+
+      expect(saved.dig("index_ideas", "original", "first", "groq", "outcomes")).to eq("accepted" => 1)
+    end
+  end
+
+  describe "across a resume" do
+    let(:groq) { { "name" => "groq", "provider" => "openai_compatible", "model" => "llama" } }
+
+    it "keeps an entry as first recorded when the config changes its provider or model" do
+      provenance.providers!([groq]).save
+      described_class.open(@home, run_id)
+                     .providers!([{ "name" => "groq", "provider" => "anthropic", "model" => "claude-opus-5-5" }]).save
+
+      expect(saved["providers"]).to eq([groq])
+    end
+
+    # DESIGN.md, "Several LLM providers" (Provenance), pending the user's
+    # confirmation.
+    it "clears an earlier run's down for a provider this run asked without marking it down" do
+      opus = { "name" => "opus", "provider" => "anthropic", "model" => "claude-opus-5-5" }
+      provenance.providers!([groq, opus]).down!("groq" => "llm_rate_limited", "opus" => "llm_auth").save
+      described_class.open(@home, run_id).down!({}).up!(%w[groq gpt]).save
+
+      expect(saved["providers"]).to eq([groq, opus.merge("down" => "llm_auth")])
+    end
+  end
+
+  describe "saving" do
+    it "tightens a looser runs directory that's already there to 0700" do
+      FileUtils.mkdir_p(File.dirname(path))
+      File.chmod(0o755, File.dirname(path))
+      provenance.save
+
+      expect(File.stat(File.dirname(path)).mode & 0o777).to eq(0o700)
+    end
+
+    # The temporary file's name is random. One planted at that name, here
+    # a symlink, makes the save fail rather than write through it.
+    it "never writes through a file already at its temporary name" do
+      FileUtils.mkdir_p(File.dirname(path))
+      target = File.join(@home, "target")
+      File.write(target, "untouched")
+      allow(SecureRandom).to receive(:hex).with(8).and_return("0123456789abcdef")
+      File.symlink(target, File.join(File.dirname(path), ".#{File.basename(path)}.0123456789abcdef.tmp"))
+      provenance.operator_inference!("groq")
+
+      expect { provenance.save }.to raise_error(Errno::EEXIST)
+      expect(File.read(target)).to eq("untouched")
+      expect(File.exist?(path)).to be(false)
+    end
   end
 end

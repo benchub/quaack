@@ -5,6 +5,7 @@ require "json"
 
 require_relative "runs"
 require_relative "provenance/branches"
+require_relative "provenance/entries"
 require_relative "provenance/saving"
 require_relative "provenance/shape"
 
@@ -25,7 +26,8 @@ module Quaack
     # The record holds:
     # - providers: each entry's name, provider type, and model, and down, the
     #   rule the run marked it down or dropped it for, if it did. A resumed
-    #   run adds new entries and keeps the old ones, as first recorded.
+    #   run adds new entries and keeps the old ones, as first recorded, but
+    #   clears the down of each one it asked and didn't mark down or drop.
     # - rewrites: each stored llm-rewrites rewrite, by store name, to the
     #   entry that wrote it; rewrites_proposed: how many each entry wrote.
     # - counterexamples: each rewrite's units, in order: the entry, how many
@@ -56,6 +58,7 @@ module Quaack
       ROUNDS = %w[first replacement refinement].freeze
       OUTCOMES = %w[accepted set_aside dropped].freeze
 
+      include Entries
       include Saving
 
       # A record callable for a run with no provenance record: it does
@@ -63,8 +66,9 @@ module Quaack
       NONE = ->(*) {}
 
       # A callable, given a block, that has the block record what an LLM
-      # step did in provenance, with the router's (client's) entries and
-      # the providers it marked down or dropped, then saves the record
+      # step did in provenance, with the router's (client's) entries, the
+      # providers it marked down or dropped, and those it asked and didn't,
+      # whose earlier downs it clears (up!), then saves the record
       # whole. Each LLM step calls it once it's done. NONE without
       # provenance.
       def self.recorder(provenance, client)
@@ -73,7 +77,7 @@ module Quaack
         lambda do |&block|
           provenance.providers!(client.entries)
           block&.call(provenance)
-          provenance.down!(client.down).save
+          provenance.down!(client.down).up!(client.burndown.llm_calls_by_provider.keys - client.down.keys).save
         end
       end
 
@@ -115,26 +119,6 @@ module Quaack
       # The record, as it would be saved.
       def record = JSON.parse(JSON.generate(@record))
 
-      # entries are each provider's name, provider type, and model. An
-      # entry already recorded keeps its first record.
-      def providers!(entries)
-        list = (@record["providers"] ||= [])
-        entries.each do |entry|
-          clean = Shape.provider(entry.slice("name", "provider", "model"))
-          list << clean if clean && list.none? { it["name"] == clean["name"] }
-        end
-        self
-      end
-
-      # downs maps each provider the run marked down or dropped to its rule.
-      def down!(downs)
-        downs.each do |name, rule|
-          entry = Array(@record["providers"]).find { it["name"] == name }
-          entry["down"] = rule if entry && RULE.match?(rule.to_s)
-        end
-        self
-      end
-
       # The llm-rewrites rewrites whose rewrite_outcomes are outcomes, each
       # written by the entry at its position (its outcome's 1-based index)
       # in entries: each stored one's store name, and how many each entry
@@ -161,8 +145,11 @@ module Quaack
       # statements and outcomes by the entry at each one's position (its
       # outcome's 1-based index), the first round's for each entry that
       # answered even when it wrote none, and each skipped replacement
-      # round.
+      # round. They replace the search's first and replacement rounds and
+      # skips recorded before, since a rerun's rounds are the ones that
+      # count.
       def index_ideas!(search, result)
+        rerun!(search)
         result.providers.each { index_round!(search, "first", it, 0, []) }
         result.rounds.each do |round|
           Branches.split(round.entries, round.outcomes).each { index_round!(search, round.round, *it) }
@@ -208,6 +195,10 @@ module Quaack
 
       def named?(entry) = entry.is_a?(String) && NAME.match?(entry)
       def count?(value) = value.is_a?(Integer) && !value.negative?
+
+      # Drops what search's llm-index-ideas recorded before: all but its
+      # refinement round.
+      def rerun!(search) = search(search)&.select! { |round, _| round == "refinement" }
 
       # search's part of index_ideas, or nil for a search that isn't one.
       def search(search) = ((@record["index_ideas"] ||= {})[search] ||= {} if SEARCH.match?(search))
