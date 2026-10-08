@@ -3,6 +3,7 @@
 require_relative "../burndown"
 require_relative "error"
 require_relative "request_sizes"
+require_relative "router_lines"
 
 module Quaack
   module Driver
@@ -29,7 +30,10 @@ module Quaack
       # llm_bad_response marks nothing. llm_bad_request fails the step. A
       # unit with no provider left fails the step with the last failure's
       # rule and what was tried. A later ask that fails marks or drops its
-      # provider the same way, and fails the step.
+      # provider the same way. For a rule that fails over, it raises a
+      # LaterError, which the step may catch to go on without the provider
+      # (going_on) or to start its remaining asks fresh on another (fresh).
+      # Otherwise it fails the step.
       #
       # Each Client keeps everything it owns: JSON, the re-ask, the error
       # rules, its adapter's retries, and the burndown count, which the
@@ -43,12 +47,18 @@ module Quaack
         FAILS_OVER = %w[llm_rate_limited llm_unavailable llm_auth llm_bad_response].freeze
         MARKS_DOWN = %w[llm_rate_limited llm_unavailable llm_auth].freeze
 
-        # Why the router moved on from a provider, for the failover line.
-        WHY = { "llm_rate_limited" => "is rate limited", "llm_unavailable" => "is unavailable" }.freeze
-        REFUSED = "the API refused the credentials"
-        NOT_LOGGED_IN = "the copilot command said it isn't logged in"
-        FIX = "Fix its credentials before the next run."
-        STILL = "though later asks may still use it"
+        # A later ask in a unit that failed with a rule that fails over,
+        # once its provider is marked down or dropped: provider is the
+        # entry's name and step the ask's.
+        class LaterError < Error
+          attr_reader :provider, :step
+
+          def initialize(rule, detail, provider:, step:)
+            @provider = provider
+            @step = step
+            super(rule, detail)
+          end
+        end
 
         # One unit: every ask goes to the provider its first ask went to.
         class Session
@@ -56,15 +66,24 @@ module Quaack
           # before one has.
           attr_reader :provider
 
-          def initialize(router)
+          # Each provider this unit failed on, by name, with its Error.
+          attr_reader :failures
+
+          # skip holds providers the unit mustn't use, by name, with the
+          # Error each failed with; fresh is the note for a unit started
+          # fresh, given the provider it starts on.
+          def initialize(router, skip: {}, fresh: nil)
             @router = router
+            @skip = skip
+            @fresh = fresh
+            @failures = {}
           end
 
           # Asks as Client#ask does.
           def ask(**ask)
-            return @router.later(@provider, ask) if @provider
+            return @router.later(@provider, ask, @failures) if @provider
 
-            @provider, reply = @router.first(ask)
+            @provider, reply = @router.first(ask, skip: @skip, fresh: @fresh, failures: @failures)
             reply
           end
         end
@@ -102,47 +121,79 @@ module Quaack
 
         def session = Session.new(self)
 
+        # A new unit for the asks left after error, a LaterError, started
+        # fresh: it skips skip, each provider this work already failed on,
+        # by name with its Error, and its first ask says it's starting fresh,
+        # for label, such as "Rewrite Silver Fox". With no provider left,
+        # its first ask fails the step with the last failure's rule.
+        def fresh(error, skip:, label:)
+          Session.new(self, skip:, fresh: lambda { |name|
+            note(error.provider, error.rule, "asking #{name} for the remaining rounds, starting fresh " \
+                                             "(#{[error.step, label].compact.join(", ")})")
+          })
+        end
+
+        # Says the step goes on without error's provider, error a
+        # LaterError, doing what: "going on without replacement ideas".
+        def going_on(error, what) = note(error.provider, error.rule, "#{what} (#{error.step})")
+
         # Asks as a unit of one.
         def ask(**) = session.ask(**)
 
         # A unit's first ask: the name of the provider that answered, and its
-        # reply. Session calls it. tried holds each pool provider that was
-        # already down, with its rule, then each that failed, with its Error,
-        # for the failure when none is left.
-        def first(ask)
+        # reply. Session calls it, with the providers to skip, the note for
+        # a fresh start, and failures to add each provider that fails to,
+        # with its Error. With none left, the failure lists what it couldn't
+        # try (prior), then failures.
+        def first(ask, skip: {}, fresh: nil, failures: {})
           step = ask.fetch(:step)
-          order = order(step)
-          tried = @down.slice(*@routing.pool(step)).to_a
+          prior = prior(step, skip)
+          order = start(step, skip, fresh)
           order.each_with_index do |name, i|
             return [name, call(name, ask)]
           rescue Error => e
-            tried << [name, failover(e, name, order[i + 1], step)]
+            failures[name] = failover(e, name, order[i + 1], step)
           end
-          raise exhausted(ask, tried)
+          raise exhausted(ask, prior + failures.to_a)
         end
 
-        # A later ask in name's unit. Session calls it.
-        def later(name, ask)
+        # A later ask in name's unit, adding a failure to failures. Session
+        # calls it.
+        def later(name, ask, failures = {})
           call(name, ask)
         rescue Error => e
           failed(name, e.rule)
-          raise named(e, name)
+          failures[name] = e
+          raise named(e, name) unless FAILS_OVER.include?(e.rule)
+
+          raise LaterError.new(e.rule, named(e, name).message.delete_prefix("#{e.rule}: "),
+                               provider: name, step: ask.fetch(:step))
         end
 
         private
+
+        # The order, saying a fresh unit is starting fresh on the first.
+        def start(step, skip, fresh) = order(step, skip).tap { fresh&.call(it.first) if it.any? }
+
+        # What step's unit, skipping skip, can't try: each pool provider
+        # already down, with its rule, then each in skip, with its Error.
+        def prior(step, skip) = @down.slice(*@routing.pool(step)).except(*skip.keys).to_a + skip.to_a
 
         def call(name, ask) = @clients.fetch(name).ask(**ask, provider: name, shown: (name if @named))
 
         # The healthy providers of step's pool, in the order its unit tries
         # them. A round_robin unit turns the cursor to where it starts.
-        def order(step)
-          healthy = @routing.pool(step).reject { @down.key?(it) }
+        def order(step, skip = {})
+          healthy = healthy(step, skip)
           return healthy if (@routing.steps.dig(step, "mode") || @routing.mode) == "failover"
 
           names = @routing.names
           start = @cursor ? names.index(@cursor) + 1 : 0
           names.rotate(start).select { healthy.include?(it) }.tap { @cursor = it.first if it.any? }
         end
+
+        # step's pool, less what's down and what's in skip.
+        def healthy(step, skip) = @routing.pool(step).reject { @down.key?(it) || skip.key?(it) }
 
         # error, once its provider, name, is marked down or dropped as its
         # rule says, and the line says why the unit tries next_name, if
@@ -152,7 +203,7 @@ module Quaack
           raise named(error, name) unless FAILS_OVER.include?(error.rule)
 
           failed(name, error.rule)
-          say(name, error.rule, next_name, step) if next_name
+          note(name, error.rule, "trying #{next_name} (#{step})") if next_name
           error
         end
 
@@ -160,22 +211,10 @@ module Quaack
           @down[name] = rule if MARKS_DOWN.include?(rule) && !@down.key?(name)
         end
 
-        # The failover line, saying why name was left and that the unit tries
-        # next_name.
-        def say(name, rule, next_name, step)
-          trying = "trying #{next_name} (#{step})"
-          @progress&.note(
-            case rule
-            when "llm_auth" then "#{dropped(name)} #{trying.capitalize}"
-            when "llm_bad_response" then "#{name}'s reply couldn't be used, #{STILL}; #{trying}"
-            else "#{name} #{WHY.fetch(rule)}, so the rest of this run skips it; #{trying}"
-            end
-          )
-        end
-
-        def dropped(name)
-          refused = @kinds[name] == "copilot_cli" ? NOT_LOGGED_IN : REFUSED
-          "llm_auth: #{name}: #{refused}, so the rest of this run skips #{name}. #{FIX}"
+        # The line saying why name was left, by rule, then what happens
+        # next, rest: "trying groq (llm-rewrites)" (RouterLines).
+        def note(name, rule, rest)
+          @progress&.note(RouterLines.line(name, rule, rest, named: @named, copilot: @kinds[name] == "copilot_cli"))
         end
 
         # error, naming the provider after its rule, when the providers are

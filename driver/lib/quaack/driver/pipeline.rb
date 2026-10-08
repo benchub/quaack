@@ -256,7 +256,8 @@ module Quaack
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
           rounds = Pipeline.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
                                    compare(transport, args))
-          !Counterexamples.new(client:).run(payload, compare: rounds).disproved
+          label = RewriteNames.label(args[:run], args[:search])
+          !Counterexamples.new(client:, label:).run(payload, compare: rounds).disproved
         end
 
         def compare(transport, args)
