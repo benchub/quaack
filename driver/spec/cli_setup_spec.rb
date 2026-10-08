@@ -240,6 +240,19 @@ RSpec.describe "quaack setup" do
     expect([hosts, errors]).to eq([[], "quaack setup: unknown run ID\n"])
   end
 
+  # chmod 000 can't stop root reading, so it's skipped where the record
+  # stays readable.
+  it "refuses, rather than calling it unknown, a run record in a ~/.quaack/runs it can't read" do
+    locked = File.join(home, ".quaack", "runs")
+    File.chmod(0o000, locked)
+    skip "this user can read under mode 000" if File.readable?(File.join(locked, "#{run_id}.json"))
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(64)
+    expect([hosts, errors]).to eq([[], "quaack setup: can't read ~/.quaack/runs/#{run_id}.json (permission denied)\n"])
+  ensure
+    File.chmod(0o700, locked) if locked
+  end
+
   it "rejects a missing --run, an unknown option, a repeated one, or one without a value" do
     [["setup"], ["setup", "--run", run_id, "--rewrites", "f"], ["setup", "--run", run_id, "--host", "a", "--host", "b"],
      ["setup", "--run", run_id, "--host"], ["setup", "--host", "a", "--run", run_id]].each do |argv|

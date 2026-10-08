@@ -749,6 +749,55 @@ RSpec.describe "quaack run" do
     expect(transport.calls).to eq([])
   end
 
+  # chmod 000 can't stop root reading, so each example is skipped where
+  # the record stays readable. The message names the record by ~, not by
+  # its absolute path.
+  [[".quaack"], [".quaack", "runs"], [".quaack", "runs", "20260926T010203Z-0123abcd.json"]].each do |parts|
+    it "refuses, rather than calling it unknown, a run record it can't read under a mode 000 ~/#{parts.join("/")}" do
+      locked = File.join(home, *parts)
+      File.chmod(0o000, locked)
+      skip "this user can read under mode 000" if File.readable?(File.join(home, ".quaack", "runs", "#{run_id}.json"))
+
+      status = cli.run(["run", "--run", run_id, "--out", out])
+
+      expect([status, stdout.string, errors])
+        .to eq([64, "", "quaack run: can't read ~/.quaack/runs/#{run_id}.json (permission denied)\n"])
+      expect(transport.calls).to eq([])
+    ensure
+      File.chmod(0o700, locked) if locked
+    end
+  end
+
+  it "refuses a run record that isn't a file, rather than calling the run unknown" do
+    record = File.join(home, ".quaack", "runs", "#{run_id}.json")
+    File.delete(record)
+    Dir.mkdir(record)
+
+    expect([cli.run(["run", "--run", run_id, "--out", out]), stdout.string, errors])
+      .to eq([64, "", "quaack run: can't read ~/.quaack/runs/#{run_id}.json\n"])
+    expect(transport.calls).to eq([])
+  end
+
+  it "calls the run unknown when ~/.quaack/runs is a file, so no record can be there" do
+    runs = File.join(home, ".quaack", "runs")
+    FileUtils.rm_rf(runs)
+    File.write(runs, "")
+
+    expect([cli.run(["run", "--run", run_id, "--out", out]), stdout.string, errors])
+      .to eq([64, "", "quaack run: unknown run ID\n"])
+    expect(transport.calls).to eq([])
+  end
+
+  it "refuses a run record it can't stat for another reason, such as a symlink loop" do
+    record = File.join(home, ".quaack", "runs", "#{run_id}.json")
+    File.delete(record)
+    File.symlink(record, record)
+
+    expect([cli.run(["run", "--run", run_id, "--out", out]), stdout.string, errors])
+      .to eq([64, "", "quaack run: can't read ~/.quaack/runs/#{run_id}.json\n"])
+    expect(transport.calls).to eq([])
+  end
+
   it "fails with a usage-style error, before touching the jump server, for an unreadable rewrites file" do
     status = cli.run(["run", "--run", run_id, "--rewrites", File.join(home, "missing.sql")])
 
