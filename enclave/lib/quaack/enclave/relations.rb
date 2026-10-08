@@ -74,7 +74,7 @@ module Quaack
     # the rule and shape-class names: relations, schemas, node types, and
     # the search path. It never quotes the query, and it has no cause.
     # ErrorFilter sends only the rule out of the enclave.
-    module Relations
+    module Relations # rubocop:disable Metrics/ModuleLength
       class Error < StandardError
         attr_reader :rule
 
@@ -88,7 +88,10 @@ module Quaack
         def self.from(error) = new(error.rule, error.message.delete_prefix("#{error.rule}: "))
       end
 
-      Result = Data.define(:sql, :parse, :relations)
+      # scanned is relations and every inheritance descendant a reference
+      # without ONLY takes in, as TableNames: each table a plan of the query
+      # may scan (see PlanTables).
+      Result = Data.define(:sql, :parse, :relations, :scanned)
 
       # Each relkind but r: its rule, and how a message names it.
       KINDS = {
@@ -136,8 +139,8 @@ module Quaack
         qualified = qualify(parse.tree, settings, connection, listed)
         functions!(parse.tree, settings, connection)
         relations = tables(parse.tree)
-        relations.each { |table, inherits| plain_table!(table, inherits, connection) }
-        Result.new(sql: qualified.query, parse: qualified, relations: relations.keys)
+        scanned = relations.flat_map { |table, inherits| plain_table!(table, inherits, connection) }
+        Result.new(sql: qualified.query, parse: qualified, relations: relations.keys, scanned: scanned.uniq)
       end
 
       def parse(sql)
@@ -194,17 +197,18 @@ module Quaack
         raise Error.new("user_function_in_from", "a function in FROM isn't in pg_catalog"), cause: nil
       end
 
+      # Returns the table, and its descendants when inherits, as TableNames.
       def plain_table!(table, inherits, connection)
         rows = connection.exec_params(RELKIND_SQL, [table.schema, table.name, inherits.to_s]).values
         (_, _, relkind), *descendants = rows
         raise Error.new("unknown_relation", "#{table} doesn't exist") unless relkind
 
         refuse!(relkind, "#{table} is") unless relkind == "r"
-        descendants.each do |schema, name, kind|
-          next if kind == "r"
-
-          refuse!(kind, "#{table} has an inheritance descendant, #{TableName.new(schema:, name:)}, that is")
-        end
+        [table, *descendants.map do |schema, name, kind|
+          descendant = TableName.new(schema:, name:)
+          refuse!(kind, "#{table} has an inheritance descendant, #{descendant}, that is") unless kind == "r"
+          descendant
+        end]
       end
 
       # Refuses a relation of relkind, which isn't r. Every refusal for a

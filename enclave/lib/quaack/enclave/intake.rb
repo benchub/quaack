@@ -22,7 +22,7 @@ module Quaack
     #   unsupported_construct, or query_has_parameters (see Query).
     # - plan, from its file: plan_unreadable, plan_too_large,
     #   plan_not_json, plan_bad_shape, plan_not_analyzed, or
-    #   plan_no_buffers (see Plan).
+    #   plan_no_buffers, or plan_statement_mismatch (see Plan).
     #
     # The files hold production literals, and a path or a server name can
     # hold anything, so an Error names only its rule, and has no cause.

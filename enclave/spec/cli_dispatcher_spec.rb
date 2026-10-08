@@ -400,6 +400,30 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(out.string).to eq(error_line("start", "step_rule"))
     end
 
+    # Store.sweep has the details (store_sweep_spec.rb).
+    it "sweeps orphans, runs over a day old that never finished intake, but keeps finished ones" do
+      orphan = "20200101T000000Z-0000000a"
+      finished = "20200101T000000Z-0000000b"
+      [orphan, finished].each { Dir.mkdir(File.join(base, it), 0o700) }
+      File.write(File.join(base, finished, "plan.json"), "[]")
+      steps = { "start" => step_class.new(handler: recorder, new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(0)
+      expect(runs).to contain_exactly(finished, calls[0][:store].run_id)
+    end
+
+    it "starts the run even when an orphan can't be swept" do
+      target = Dir.mktmpdir("quaack-cli-target")
+      File.symlink(target, File.join(base, "20200101T000000Z-0000000a"))
+      Dir.mkdir(File.join(base, "20200101T000000Z-0000000b"), 0o755)
+      steps = { "start" => step_class.new(handler: recorder, new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(0)
+      expect(out.string).to eq(%({"type":"version","version":"ok"}\n{"type":"done"}\n))
+      expect(runs).to contain_exactly("20200101T000000Z-0000000a", "20200101T000000Z-0000000b",
+                                      calls[0][:store].run_id)
+    end
+
     it "checks the arguments, required options, and stdin before it makes the run" do
       blocked = File.join(base, "file").tap { File.write(it, "") }
       steps = { "start" => step_class.new(handler: recorder, new_run: true, input: true,
