@@ -25,9 +25,11 @@ module Quaack
       # - relations: each relation the query uses, once, in the order its
       #   text first names it, as an Array of {"schema", "name"} Hashes.
       # - search_path: the plan's search path, or the default, as an Array of
-      #   schema names in order, with "$user" as the role it connects as.
-      #   It lists pg_catalog only where the path does, so a session that
-      #   sets it searches what qualify did. RunServer.connect sets it.
+      #   schema names in order, with "$user" as the role it connects as,
+      #   and without any schema that role may not use. It lists pg_catalog
+      #   only where the path does, so a session that sets it searches what
+      #   qualify did. RunServer.connect sets it, and rewrite-check
+      #   qualifies a candidate through it.
       #
       # Anything that fails writes nothing. Its only line is DONE: the
       # query and its literals stay in the store, and the driver sees the
@@ -54,11 +56,25 @@ module Quaack
           connection&.close
         end
 
+        # The schemas of path $1, in order, but those that exist and the
+        # role may not use, which Postgres skips.
+        USABLE_SQL = <<~SQL
+          SELECT path.nspname
+          FROM pg_catalog.unnest($1::pg_catalog.text[]) WITH ORDINALITY AS path(nspname, position)
+          WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_namespace n
+                            WHERE n.nspname OPERATOR(pg_catalog.=) path.nspname
+                              AND NOT pg_catalog.has_schema_privilege(n.oid, 'USAGE'))
+          ORDER BY path.position
+        SQL
+
         # The path as the plan wrote it, with "$user" as the role qualify
-        # connects as. Relations.check has read it already.
+        # connects as, and without the schemas that role may not use, so a
+        # later step, which connects to the run server as another role,
+        # searches what qualify did. Relations.check has read it already.
         def written_path(settings, connection)
           user = connection.exec("SELECT current_user").getvalue(0, 0)
-          RelationQualifier.path_entries(settings).map { it == "$user" ? user : it }
+          path = RelationQualifier.path_entries(settings).map { it == "$user" ? user : it }
+          connection.exec_params(USABLE_SQL, [RelationQualifier.text_array(path)]).column_values(0)
         end
       end
     end

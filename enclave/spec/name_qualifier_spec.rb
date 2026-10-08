@@ -61,6 +61,23 @@ RSpec.describe "qualifying names other than relations" do
         .to eq("SELECT twice(total_cents) FROM public.orders")
     end
 
+    # Task 20261007-30: Postgres skips a schema the role can't use, so
+    # only public's shout counts for a role without USAGE on locked.
+    it "counts only the schemas on the path the role has USAGE on" do
+      role = "reader_#{SecureRandom.hex(4)}"
+      conn.exec(<<~SQL)
+        CREATE SCHEMA locked;
+        CREATE FUNCTION locked.shout(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT $1';
+        CREATE ROLE #{role};
+        SET ROLE #{role};
+      SQL
+      expect(qualified("SELECT shout(status) FROM orders", { "search_path" => "locked, public" }))
+        .to eq("SELECT public.shout(status) FROM public.orders")
+    ensure
+      conn.exec("RESET ROLE; SET client_min_messages = warning")
+      conn.exec("DROP SCHEMA locked CASCADE; DROP ROLE IF EXISTS #{role}")
+    end
+
     it "keeps a schema the query names" do
       expect(qualified("SELECT sales.twice(total_cents) FROM orders"))
         .to eq("SELECT sales.twice(total_cents) FROM public.orders")
@@ -99,12 +116,31 @@ RSpec.describe "qualifying names other than relations" do
     end
   end
 
+  # Task 20261007-30: Postgres skips a collation for another encoding, as
+  # if it weren't there. A database's collations are made for its own
+  # encoding, so the test gives sales' one another encoding by hand.
+  it "skips a collation for an encoding other than the database's" do
+    conn.exec(<<~SQL)
+      CREATE COLLATION sales.plain FROM "C";
+      UPDATE pg_catalog.pg_collation SET collencoding = pg_catalog.pg_char_to_encoding('LATIN1')
+      WHERE collnamespace = 'sales'::regnamespace AND collname = 'plain';
+    SQL
+    expect(qualified("SELECT id FROM orders ORDER BY status COLLATE plain", { "search_path" => "sales, public" }))
+      .to eq("SELECT id FROM public.orders ORDER BY status COLLATE public.plain")
+  end
+
   describe "a regclass literal" do
     it "names the schema of the relation, as relations are named" do
       expect(qualified("SELECT 'orders'::regclass, 'sales.items'::regclass FROM orders"))
         .to eq("SELECT 'public.orders'::regclass, 'sales.items'::regclass FROM public.orders")
       expect(qualified("SELECT regclass 'items' FROM orders", { "search_path" => "sales, public" }))
         .to eq("SELECT 'sales.items'::regclass FROM public.orders")
+    end
+
+    # Task 20261007-30: as Postgres reads it, an unquoted name is folded.
+    it "folds an unquoted name to lower case" do
+      expect(qualified("SELECT 'ORDERS'::regclass, 'Sales.Items'::regclass FROM orders"))
+        .to eq("SELECT 'public.orders'::regclass, 'Sales.Items'::regclass FROM public.orders")
     end
 
     it "quotes a name that needs it" do
@@ -130,6 +166,16 @@ RSpec.describe "qualifying names other than relations" do
     it "names the type's schema, unless it's pg_catalog" do
       expect(qualified("SELECT 'mood'::regtype, 'mood[]'::regtype, 'int4'::regtype FROM orders"))
         .to eq("SELECT 'public.mood'::regtype, 'public.mood[]'::regtype, 'int4'::regtype FROM public.orders")
+    end
+
+    # Task 20261007-30: the check that the text, with the schema in front,
+    # still reads as that type and no other.
+    it "is rewritten only when the schema in front leaves the same type" do
+      literal = Quaack::Enclave::NameQualifier::RegLiteral
+      mood = literal.type_name("mood")
+
+      expect([literal.same?("public.mood", mood, "public"), literal.same?("public.mood[]", mood, "public"),
+              literal.same?("sales.mood", mood, "public")]).to eq([true, false, false])
     end
 
     it "is refused when it isn't one type name" do

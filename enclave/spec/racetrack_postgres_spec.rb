@@ -77,6 +77,26 @@ RSpec.describe Quaack::Enclave::Racetrack do
     expect(value("SELECT count(*) FROM pg_extension WHERE extname = 'hypopg'")).to eq("1")
   end
 
+  # Task 20261007-30: the session's search_path is the plan's
+  # (RunServer.connect), which can name only schemas the racetrack doesn't
+  # have, and CREATE EXTENSION would then have nowhere to put hypopg.
+  it "installs hypopg in the quaack schema, whatever the search_path, and can run twice with it there" do
+    conn.exec("SET search_path = reporting")
+    setup_racetrack
+    setup_racetrack
+
+    expect(value("SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname = 'hypopg'"))
+      .to eq("quaack")
+  end
+
+  it "keeps hypopg where it is when the racetrack has it already" do
+    conn.exec("CREATE EXTENSION hypopg WITH SCHEMA public; SET client_min_messages = warning")
+    setup_racetrack
+
+    expect(value("SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname = 'hypopg'"))
+      .to eq("public")
+  end
+
   it "runs a query clock-anchor anchored, which then sees the anchor's time" do
     setup_racetrack
     conn.exec("SET TimeZone = 'UTC'")

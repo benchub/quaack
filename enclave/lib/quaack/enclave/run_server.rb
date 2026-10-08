@@ -107,9 +107,24 @@ module Quaack
       def search_path!(conn, store)
         return unless store.entry?("search_path")
 
-        path = store.read("search_path").map { it.match?(PLAIN_SCHEMA) ? it : %("#{it.gsub('"', '""')}") }
-        conn.exec_params(SEARCH_PATH_SQL, [path.join(", ")])
+        conn.exec_params(SEARCH_PATH_SQL, [path_text(store.read("search_path"))])
       end
+
+      # The plan's Settings, with the run's stored search_path in place of
+      # the plan's, if the run has one, for a check that resolves names on
+      # the run server, such as rewrite-check's. It's the path qualify
+      # resolved the original through, as the operator's role: the run
+      # server connects as another role, so the plan's own path would mean
+      # another "$user" there, and other schemas that role may use.
+      def plan_settings(store)
+        settings = store.read("plan")[0]["Settings"]
+        return settings unless store.entry?("search_path")
+
+        (settings || {}).merge("search_path" => path_text(store.read("search_path")))
+      end
+
+      # A stored search_path entry as a search_path setting's text.
+      def path_text(schemas) = schemas.map { it.match?(PLAIN_SCHEMA) ? it : %("#{it.gsub('"', '""')}") }.join(", ")
 
       def plain?(value, pattern) = value.is_a?(String) && value.ascii_only? && pattern.match?(value)
     end
