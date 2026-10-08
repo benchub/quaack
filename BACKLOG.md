@@ -1117,14 +1117,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261001-4. Payload trimming: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-5. An LLM error reads the reason out of a JSON array body.
-
-Gemini's OpenAI-compatible endpoint answered a 503 and QUAACK printed no reason. Its error body seems to be a JSON array, such as `[{"error": {"message": "..."}}]`, which isn't confirmed. The detail code from 20261001-1 only reads a Hash or a String. When the body is an array, take the error message from its first element the same way. If no message is there, give the whole body as JSON. `llm_auth` stays status-only.
-
-- **Depends on:** 20261001-1.
-- **Came from:** The user, 2026-10-01, a Gemini 503 with no reason shown.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261001-5. An LLM error reads the reason out of a JSON array body. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-6. The `llm` block in driver.json takes an optional `max_retries`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2392,4 +2385,13 @@ The review of 20261008-34 found these minor issues:
 - **Depends on:** 20261008-34.
 - **Came from:** The review of 20261008-34, 2026-10-08.
 - **Design:** statistics, report.
+- **Status:** todo
+
+### 20261008-43. Error-detail scrub misses keys that encode unreserved characters.
+
+The review of 20261001-5 found this gap. It was already on main. `APIErrorDetail`'s `char_pattern` never treats `A-Za-z0-9_.~-` as encodable, so a key echoed with one of those characters percent-encoded, such as `sk%2D...`, passes through unscrubbed. Now that the JSON fallback lets more of the raw body into the detail, the gap has a little more exposure. Match `%XX` for every character of a secret, and add a sentinel test.
+
+- **Depends on:** 20261001-5.
+- **Came from:** The review of 20261001-5, 2026-10-08.
+- **Design:** LLM client.
 - **Status:** todo
