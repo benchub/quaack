@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261006-19 (one stored plan per measurement).
 - 20260926-56, partly (the shared parse helper and the error rules).
+- 20261007-3 (statistics hardening).
 
 ## How this file works.
 
@@ -724,27 +725,9 @@ Minor findings from the review of 20260930-9:
 
 ### 20260930-14. Unqualified catalog names elsewhere in the enclave. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID.
+### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID. Done, see BACKLOG-COMPLETE.md.
 
-Found by the build of 20260929-27. With `~/.quaack` or `~/.quaack/runs` unreadable (mode 000), `Runs#host` treats the run record as missing, so `quaack run` says "unknown run ID" instead of saying it can't read the record. Refuse an existing but unreadable path the way `DriverConfig.read` now does, with a message that names no absolute path.
-
-- **Depends on:** 20260929-27.
-- **Came from:** The build of 20260929-27.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
-
-### 20261001-15. DriverConfig: minor findings.
-
-Minor findings from the review of 20260929-27:
-
-- The not-a-regular-file check in `DriverConfig#there?` (driver_config.rb:35) is untested. A directory driver.json is already refused through EISDIR, so replacing the check with `true` stays green. It matters for a FIFO, where `File.read` would block. Add a FIFO example, or drop the check.
-- In cli_run_spec.rb's unreadable-directory example, if the `mkdir_p` line raised, `locked` would be nil and the `ensure`'s `File.chmod(0o700, nil)` would hide the real error with a TypeError. Guard the chmod.
-- A dangling driver.json symlink counts as no config, since `File.stat` follows it and gets ENOENT. A user whose symlink points at a moved file silently gets the defaults. Consider refusing a symlink whose target is missing.
-
-- **Depends on:** 20260929-27.
-- **Came from:** Review of 20260929-27, round one.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261001-15. DriverConfig: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-16. Bedrock provider: minor findings.
 
@@ -846,14 +829,7 @@ Minor findings from the build and both reviews of 20261001-23:
 
 ### 20261002-13. Two bedrock driver specs fail on `main`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-14. The network guard specs read the real `~/.config/anthropic`.
-
-`spec/network_guard_spec.rb` and `driver/spec/network_guard_spec.rb` build a real `Anthropic::Client`. Its constructor (`warn_env_shadow`, then `Anthropic::Credentials.auto_discoverable_credentials?`) reads `~/.config/anthropic/active_config` from the developer's home. Under a sandbox that blocks that path, the specs fail with `Errno::EPERM` instead of testing the guard. Specs shouldn't touch the developer's real credential files at all. Point the SDK's config discovery at an empty temp directory for these specs (whatever env var or home override the SDK honors), and check that the suite never opens anything under the real `~/.config/anthropic`. Check the other specs that build SDK clients for the same leak.
-
-- **Depends on:** none.
-- **Came from:** The 20261002-13 build, 2026-10-02.
-- **Design:** Development (CLAUDE.md, the full check).
-- **Status:** todo
+### 20261002-14. The network guard specs read the real `~/.config/anthropic`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-3. `not_in_to_not_exists`: minor findings.
 
@@ -1565,18 +1541,7 @@ Findings from the build and review of 20261002-7:
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261003-12. `rake full`: fail fast on an unreadable version, and fix a comment.
-
-Minor findings from the review of 20261003-8:
-
-- **The nil-version check runs last.** It sits in `write_full_replay_stamp` (Rakefile ~33), so an unreadable version file is caught only after the whole 38-minute run. Call `gem_versions` at the start of `full` to fail fast.
-- **`spec/full_replay_selection_spec.rb` overstates its coverage.** Its comment says it covers the run "as `rake full` runs it", but it swaps in its own spec task. Only the new `spec/rakefile_spec.rb` test checks that the variable reaches the child suites. Fix the comment.
-- **Suite time still left:** `candidate_runs_step_postgres_spec` and the baseline, schema-dump and step specs spend their time in real Postgres. Trimming them wasn't cheap or clearly safe in 20261003-8. Look again only if the per-commit check gets slow.
-
-- **Depends on:** 20261003-8.
-- **Came from:** The review of 20261003-8, 2026-10-03.
-- **Design:** none (development tooling).
-- **Status:** todo
+### 20261003-12. `rake full`: fail fast on an unreadable version, and fix a comment. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-13. `quaack deploy` diagnosis: minor findings, round three. Done, see BACKLOG-COMPLETE.md.
 
@@ -2253,17 +2218,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-2. Deploy cleanup warnings: test gaps from 20261006-22. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-3. Statistics hardening: minors from 20261006-7.
-
-From the second review of 20261006-7.
-1. `COLLATE "C"` in `enclave/lib/quaack/enclave/planner_statistics/catalog.rb` (~31, 39, 54) is still unqualified. A planted collation changes only row order, not values. Use `COLLATE pg_catalog."C"`.
-2. The `\d+` runs in `OutboundShape`'s NDISTINCT and DEPENDENCIES regexes (`pii_classification/outbound_shape.rb` ~22-26) have no length cap. With qualification in place, this is defense in depth only.
-3. `flag_lists?` (~90-92) says "one list per MCV item" but doesn't check that the counts match.
-
-- **Depends on:** 20261006-7.
-- **Came from:** The second review of 20261006-7.
-- **Design:** statistics, classify, trust boundary.
-- **Status:** todo
+### 20261007-3. Statistics hardening: minors from 20261006-7. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-4. The orphan deadline test hangs, not fails, when the deadline breaks. Done, see BACKLOG-COMPLETE.md.
 
@@ -2293,29 +2248,9 @@ Also from the review of 20260930-14 stage 1:
 
 ### 20261007-10. Closed pipes: minors from 20261004-85. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-11. Report: two choices to confirm with the user, plus a wording nit.
+### 20261007-11. Report: two choices to confirm with the user, plus a wording nit. Done, see BACKLOG-COMPLETE.md.
 
-From 20261003-4 (readable report minors), which left these open for the user:
-1. Should the rewrites table keep its seventh column?
-2. Should the report show rewrite-rules rule names? Rule names now link to their `docs/transforms` pages from "Where it came from".
-3. Nit from its review: the note at `driver/lib/quaack/driver/report/template.html.erb` (~221) still says "planner ignored". The column now reads "Planner ignored or couldn't try".
-
-- **Depends on:** 20261003-4.
-- **Came from:** The builder and review of 20261003-4.
-- **Design:** report.
-- **Status:** todo
-
-### 20261007-12. LLM adapters: findings from 20260929-1.
-
-From the builder of 20260929-1.
-1. The Anthropic adapter's `llm_auth` message is the gem's full error, body included. If a 401 body echoed the key, the key would show in QUAACK's output. The OpenAI-compatible adapter keeps that message to the status. Plant the key in the shared key-echo example for Anthropic and Bedrock, then trim their messages the same way.
-2. A 200 response whose `choices` is a string, or holds a number, raises `NoMethodError` out of the OpenAI-compatible adapter uncaught. Refuse it as `llm_bad_response`.
-3. These provider facts haven't been checked against docs or live providers: base URLs, example models, which providers enforce schemas, and `max_completion_tokens` support on Gemini, Ollama, and OpenRouter.
-
-- **Depends on:** 20260929-1.
-- **Came from:** The builder of 20260929-1.
-- **Design:** Where QUAACK runs, LLM providers.
-- **Status:** todo
+### 20261007-12. LLM adapters: findings from 20260929-1. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-19. Deploy diagnosis: sentence order in the not-installed message.
 
@@ -2351,4 +2286,56 @@ From the review of 20260926-56. In `enclave/lib/quaack/enclave/castless_index.rb
 - **Depends on:** 20260926-56.
 - **Came from:** The review of 20260926-56.
 - **Design:** input.
+- **Status:** todo
+
+### 20261007-23. Driver run records and config: minors from 20261001-14 and 20261001-15.
+
+From the reviews of 20261001-14 and 20261001-15.
+1. `setup_command.rb` (~69) reads the run record again in its EnclaveError rescue. If the record turns unreadable mid-setup, `Runs::Unreadable` escapes as a backtrace. Reuse the host and `where` it already read.
+2. `quaack setup` has only a root-skipped unreadable-record spec. Add one that runs under root too, such as a directory where the record should be.
+3. A run record that isn't valid JSON raises `JSON::ParserError` out of `Runs#read`, so `quaack run` and `quaack setup` crash with a backtrace. Refuse it as a usage error that names the record by `~`.
+4. A dangling `~/.quaack` symlink makes driver.json read as missing, so the user silently gets the defaults. Refuse it the way a dangling driver.json is refused.
+
+- **Depends on:** 20261001-14, 20261001-15.
+- **Came from:** The reviews of 20261001-14 and 20261001-15.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261007-24. LLM adapter errors: keep keys and driver bugs out of them.
+
+From the review of 20261007-12.
+1. The Anthropic adapter's llm_auth error keeps the gem's APIError, whose message can quote the key, as its `cause`, and the OpenAI-compatible adapter does the same. A crash backtrace that prints the cause chain would show it. Drop the cause, or replace it with one that holds only the status. Check Bedrock, which depends on the cause today.
+2. The OpenAI-compatible adapter turns any NoMethodError from inside `@openai.chat.completions.create` into llm_bad_response, which also covers the driver's own `Attempts`, the burndown count, and the transport. A planted driver bug came back as "the reply couldn't be read as a message", with no backtrace. Check the parsed `choices` shape at the edge instead, or rescue only errors from the gem's coercion.
+3. The Copilot CLI adapter's llm_auth message quotes the tail of the command's stderr. Check that it can't hold a token, or keep only a fixed sentence.
+
+- **Depends on:** 20261007-12.
+- **Came from:** The review of 20261007-12.
+- **Design:** LLM providers.
+- **Status:** todo
+
+### 20261007-25. Ollama replies have no token cap.
+
+From the builder of 20261007-12. Ollama's OpenAI-compatible API ignores `max_completion_tokens` and reads only `max_tokens`, so a reply from Ollama has no limit. Sending `max_tokens` as well to hosts other than OpenAI's would cap it, but OpenAI's reasoning models reject `max_tokens`, and how other providers handle both isn't checked. Find a safe way, such as a per-provider setting, and test it.
+
+- **Depends on:** 20261007-12.
+- **Came from:** The builder of 20261007-12.
+- **Design:** LLM providers.
+- **Status:** todo
+
+### 20261007-26. Outbound statistics shape: per-column counts.
+
+From the review of 20261007-3. `one_list_per_item?` checks how many MCV null-flag lists there are, but not that each list has one flag per column, and `most_common_freqs` and `most_common_base_freqs` aren't counted against the MCV items. Defense in depth only.
+
+- **Depends on:** 20261007-3.
+- **Came from:** The review of 20261007-3.
+- **Design:** statistics, classify, trust boundary.
+- **Status:** todo
+
+### 20261007-27. Specs: keep the AWS SDK off the real `~/.aws`.
+
+From the review of 20261002-14. The AWS SDK's default credential chain, used by `BedrockClient`, can read the developer's real `~/.aws/config` and `~/.aws/credentials` when no keys are passed. The specs seen pass explicit keys or set `AWS_*`, so no live leak was found, but nothing guards it the way `ANTHROPIC_CONFIG_DIR` now guards `~/.config/anthropic`. Point `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` at empty files for every spec process, and prove it with a trapped HOME.
+
+- **Depends on:** 20261002-14.
+- **Came from:** The review of 20261002-14.
+- **Design:** Development.
 - **Status:** todo

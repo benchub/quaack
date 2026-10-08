@@ -6544,3 +6544,90 @@ From the review of 20261004-86.
 - **Landed (2026-10-07), item 1:** `View::NO_MEASURED_PLAN` now names no cause: "QUAACK has no measured plan for the winner, so the blocks it read at each step aren't recorded." Item 2 is still open (enclave storage, which needs a version bump).
 - **Status:** done
 - **Landed:** 2026-10-07, item 2, after one review with no blocking findings. Each measurement stores its plans once, under "plans" (every run's for an unstable set, the first run's for a stable one), and every reader goes through `Measurement.plan`, which returns the most-blocks run's plan. A store written by an older enclave keeps a stable set's plan under "plan", which the new reader doesn't read, so a run resumed across a redeploy reports no measured plan for such a set: no crash and no leak, and the report's existing fallback says so. Enclave change, unreleased until the next batch bump.
+
+### 20261007-11. Report: two choices to confirm with the user, plus a wording nit.
+
+From 20261003-4 (readable report minors), which left these open for the user:
+1. Should the rewrites table keep its seventh column?
+2. Should the report show rewrite-rules rule names? Rule names now link to their `docs/transforms` pages from "Where it came from".
+3. Nit from its review: the note at `driver/lib/quaack/driver/report/template.html.erb` (~221) still says "planner ignored". The column now reads "Planner ignored or couldn't try".
+
+- **Depends on:** 20261003-4.
+- **Came from:** The builder and review of 20261003-4.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. Decided by the user (2026-10-07): keep the seventh rewrites column, "Stopped for another reason", and show rule names linked to their docs/transforms pages; both already held, so only the note under the index-ideas table changed, to name the column "planner ignored or couldn't try" in full.
+
+### 20261002-14. The network guard specs read the real `~/.config/anthropic`.
+
+`spec/network_guard_spec.rb` and `driver/spec/network_guard_spec.rb` build a real `Anthropic::Client`. Its constructor (`warn_env_shadow`, then `Anthropic::Credentials.auto_discoverable_credentials?`) reads `~/.config/anthropic/active_config` from the developer's home. Under a sandbox that blocks that path, the specs fail with `Errno::EPERM` instead of testing the guard. Specs shouldn't touch the developer's real credential files at all. Point the SDK's config discovery at an empty temp directory for these specs (whatever env var or home override the SDK honors), and check that the suite never opens anything under the real `~/.config/anthropic`. Check the other specs that build SDK clients for the same leak.
+
+- **Depends on:** none.
+- **Came from:** The 20261002-13 build, 2026-10-02.
+- **Design:** Development (CLAUDE.md, the full check).
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `spec/support/no_real_credentials.rb` points `ANTHROPIC_CONFIG_DIR` at an empty temp dir for every spec process and its children, `IsolatedInstall` sets it again in its unbundled child env, and the network guard specs prove the gem never reads the default path under a trapped HOME.
+
+### 20261003-12. `rake full`: fail fast on an unreadable version, and fix a comment.
+
+Minor findings from the review of 20261003-8:
+
+- **The nil-version check runs last.** It sits in `write_full_replay_stamp` (Rakefile ~33), so an unreadable version file is caught only after the whole 38-minute run. Call `gem_versions` at the start of `full` to fail fast.
+- **`spec/full_replay_selection_spec.rb` overstates its coverage.** Its comment says it covers the run "as `rake full` runs it", but it swaps in its own spec task. Only the new `spec/rakefile_spec.rb` test checks that the variable reaches the child suites. Fix the comment.
+- **Suite time still left:** `candidate_runs_step_postgres_spec` and the baseline, schema-dump and step specs spend their time in real Postgres. Trimming them wasn't cheap or clearly safe in 20261003-8. Look again only if the per-commit check gets slow.
+
+- **Depends on:** 20261003-8.
+- **Came from:** The review of 20261003-8, 2026-10-03.
+- **Design:** none (development tooling).
+- **Status:** done
+- **Landed:** 2026-10-07, items 1 and 2, after one review with no blocking findings. `rake full` reads the versions before RuboCop and the specs and stamps the versions it read; the selection spec's comment is fixed. Item 3 needed no work.
+
+### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID.
+
+Found by the build of 20260929-27. With `~/.quaack` or `~/.quaack/runs` unreadable (mode 000), `Runs#host` treats the run record as missing, so `quaack run` says "unknown run ID" instead of saying it can't read the record. Refuse an existing but unreadable path the way `DriverConfig.read` now does, with a message that names no absolute path.
+
+- **Depends on:** 20260929-27.
+- **Came from:** The build of 20260929-27.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `Runs` refuses an existing but unreadable record as `Runs::Unreadable` ("can't read ~/.quaack/runs/<id>.json (permission denied)"), naming no absolute path, and `quaack setup` and `quaack run` share `SetupCommand.where`. A missing record, or a `~/.quaack/runs` that's a file, still reads as an unknown run ID.
+
+### 20261001-15. DriverConfig: minor findings.
+
+Minor findings from the review of 20260929-27:
+
+- The not-a-regular-file check in `DriverConfig#there?` (driver_config.rb:35) is untested. A directory driver.json is already refused through EISDIR, so replacing the check with `true` stays green. It matters for a FIFO, where `File.read` would block. Add a FIFO example, or drop the check.
+- In cli_run_spec.rb's unreadable-directory example, if the `mkdir_p` line raised, `locked` would be nil and the `ensure`'s `File.chmod(0o700, nil)` would hide the real error with a TypeError. Guard the chmod.
+- A dangling driver.json symlink counts as no config, since `File.stat` follows it and gets ENOENT. A user whose symlink points at a moved file silently gets the defaults. Consider refusing a symlink whose target is missing.
+
+- **Depends on:** 20260929-27.
+- **Came from:** Review of 20260929-27, round one.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. A FIFO driver.json is refused without being read (with a bounded spec), a dangling driver.json symlink is refused as bad_driver_config naming only the config path, and the spec's chmod is guarded.
+
+### 20261007-12. LLM adapters: findings from 20260929-1.
+
+From the builder of 20260929-1.
+1. The Anthropic adapter's `llm_auth` message is the gem's full error, body included. If a 401 body echoed the key, the key would show in QUAACK's output. The OpenAI-compatible adapter keeps that message to the status. Plant the key in the shared key-echo example for Anthropic and Bedrock, then trim their messages the same way.
+2. A 200 response whose `choices` is a string, or holds a number, raises `NoMethodError` out of the OpenAI-compatible adapter uncaught. Refuse it as `llm_bad_response`.
+3. These provider facts haven't been checked against docs or live providers: base URLs, example models, which providers enforce schemas, and `max_completion_tokens` support on Gemini, Ollama, and OpenRouter.
+
+- **Depends on:** 20260929-1.
+- **Came from:** The builder of 20260929-1.
+- **Design:** Where QUAACK runs, LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. Every adapter's shared key-echo example plants the key in the 401 body, and the Anthropic adapter's llm_auth message keeps only the status. A `choices` that isn't an array of objects is llm_bad_response. Provider facts were checked against the providers' docs on October 7, 2026: the Gemini example model is now `gemini-3.8-flash`, and the docs say Ollama ignores `max_completion_tokens`.
+
+### 20261007-3. Statistics hardening: minors from 20261006-7.
+
+From the second review of 20261006-7.
+1. `COLLATE "C"` in `enclave/lib/quaack/enclave/planner_statistics/catalog.rb` (~31, 39, 54) is still unqualified. A planted collation changes only row order, not values. Use `COLLATE pg_catalog."C"`.
+2. The `\d+` runs in `OutboundShape`'s NDISTINCT and DEPENDENCIES regexes (`pii_classification/outbound_shape.rb` ~22-26) have no length cap. With qualification in place, this is defense in depth only.
+3. `flag_lists?` (~90-92) says "one list per MCV item" but doesn't check that the counts match.
+
+- **Depends on:** 20261006-7.
+- **Came from:** The second review of 20261006-7.
+- **Design:** statistics, classify, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-07, after one review with no blocking findings. `COLLATE pg_catalog."C"` in the planner-statistics catalog reads, with a planted-collation test; length caps on the outbound statistics shape's numbers (column numbers four digits, counts and degree parts 10); and the MCV null-flag list count must match the item count. Enclave change, unreleased until the next batch bump.
