@@ -647,6 +647,17 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect([error&.rule, error&.clients&.map { it["pid"] }]).to eq(["run_server_other_clients", [other.backend_pid]])
     end
 
+    # Task 20260930-13: a public pg_settings_get_flags that flags nothing,
+    # read by an unqualified call in PLANNER_SQL's WHERE, would drop every
+    # EXPLAIN-flagged setting outside Query Tuning from the check.
+    it "still checks an EXPLAIN-flagged setting outside Query Tuning that public's flags would drop" do
+      record_inventory
+      shadow(:pg_settings_get_flags)
+      run_server.exec("SET effective_io_concurrency = 7")
+
+      expect_failure("run_server_guc_mismatch", "effective_io_concurrency")
+    end
+
     it "passes a run server that matches production's inventory, whatever public shadows" do
       record_inventory
       shadow
