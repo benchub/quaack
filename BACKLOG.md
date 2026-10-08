@@ -1252,14 +1252,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261007-16. Provenance and the report. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-17. Adversarial pairing.
-
-Add `counterexample_pairing` with `any`, `prefer_different`, and `require_different`. The author is the entry that wrote the rewrite, or any entry with the same `model` string, read from the provenance record. Apply it to a fresh start of the remaining rounds too. Add the run-time failure for `require_different`, the outcome in the provenance record, and the report's pairing line and its warning when the pairing wasn't met or couldn't be checked. The startup check is 20261007-13's. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
-
-- **Depends on:** 20261007-16, since pairing reads a rewrite's author from the provenance record.
-- **Came from:** The split of 20260929-2.
-- **Design:** Several LLM providers (Adversarial pairing), llm-counterexamples, report.
-- **Status:** todo
+### 20261007-17. Adversarial pairing. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-18. Fan-out.
 
@@ -2268,4 +2261,16 @@ From the review of 20261007-51. Neither is new in that task.
 - **Depends on:** 20261007-51.
 - **Came from:** The review of 20261007-51.
 - **Design:** trust boundary, assumption checks.
+- **Status:** todo
+
+### 20261007-59. Pairing: minors from 20261007-17.
+
+From the review of 20261007-17.
+1. No test covers `require_different` with no recorded author: dropping the author nil check from `Pairing#active?` stays green, and would crash with a NoMethodError once every provider fails. Add a test that it falls back to the usual "every LLM provider ... failed" error.
+2. The capitalization of the pairing warning after another warning in `Cautions#warning` has no test.
+3. Rule-made and operator rewrites are recorded as `unchecked`, where DESIGN.md's outcomes imply "not applicable". Update DESIGN.md's provenance section, or tell those rewrites apart in the pipeline (for example, by a missing `rewrites` entry in a record that otherwise has llm-rewrites data).
+
+- **Depends on:** 20261007-17.
+- **Came from:** The review of 20261007-17.
+- **Design:** Several LLM providers.
 - **Status:** todo

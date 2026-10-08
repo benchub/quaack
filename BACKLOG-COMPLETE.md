@@ -7193,3 +7193,13 @@ Set aside from 20261006-13. No realistic index-rank run in the specs gives a non
 - **Design:** index-rank, progress lines for `quaack run`.
 - **Status:** done
 - **Landed:** 2026-10-08, after one review with no blocking findings. A real index-search run on a self-join of orders produces a three-index combination that beats the best single index, and the spec checks `combined: 3` in step_counts, the combination's DDLs, and no leaks. Test only; ten runs gave the same order, since index-rank breaks every tie on the DDL.
+
+### 20261007-17. Adversarial pairing.
+
+Add `counterexample_pairing` with `any`, `prefer_different`, and `require_different`. The author is the entry that wrote the rewrite, or any entry with the same `model` string, read from the provenance record. Apply it to a fresh start of the remaining rounds too. Add the run-time failure for `require_different`, the outcome in the provenance record, and the report's pairing line and its warning when the pairing wasn't met or couldn't be checked. The startup check is 20261007-13's. It changes only the driver and bumps no `VERSION`, since the main session bumps per batch.
+
+- **Depends on:** 20261007-16, since pairing reads a rewrite's author from the provenance record.
+- **Came from:** The split of 20260929-2.
+- **Design:** Several LLM providers (Adversarial pairing), llm-counterexamples, report.
+- **Status:** done
+- **Landed:** 2026-10-08, after one review with no blocking findings. `llm_routing.counterexample_pairing` works for llm-counterexamples. Under `prefer_different`, the rewrite's author (the entry that wrote it, or one with the same model string, read from the provenance record) goes last; under `require_different` it's left out, and with nothing else left the step fails as `llm_unavailable`, naming the rewrite and its author. Fresh starts keep the pairing. Each counterexample unit records met, not_met, not_applicable, or unchecked, and the report says whether each rewrite's pairing was met, with a warning when it wasn't or couldn't be checked. No provider name or model reaches a prompt or the enclave.
