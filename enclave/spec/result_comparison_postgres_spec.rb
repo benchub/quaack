@@ -2,6 +2,9 @@
 
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/result_comparison"
+require "quaack/enclave/rewrite_rules"
+require "quaack/enclave/rewrite_rules/catalog"
+require "quaack/enclave/rewrite_rules/or_to_union"
 require "quaack/enclave/table_name"
 
 # fixture-compare against a real arena: load a fixture with ArenaRunner, run the
@@ -836,6 +839,25 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       verdict = compare("SELECT id FROM items LIMIT 10", "SELECT id FROM #{reversed}")
 
       expect(verdict.to_h).to include(match: true, expected_rows: 5, actual_rows: 5)
+    end
+
+    # or_to_union keeps the LIMIT outside its UNION, so the rewrite can
+    # keep other rows than the original does. That's a valid answer, so
+    # rewrite-test and counterexamples, which compare this way, don't call
+    # it a rule bug (task 20261002-5).
+    it "matches an or_to_union rewrite that keeps other rows under the LIMIT" do
+      original = "SELECT items.id, items.grp FROM public.items WHERE items.id IN (SELECT 5) OR items.grp = 1 LIMIT 2"
+      rewrite = Quaack::Enclave::RewriteRules::OrToUnion.new
+                                                        .rewrites(PgQuery.parse(original),
+                                                                  Quaack::Enclave::RewriteRules::Catalog.new(conn))
+      candidate = Quaack::Enclave::Deparse.faithfully(rewrite.first.tree)
+      # Loaded backwards, so the original's scan reaches row 5 first.
+      backwards = fixture.reverse
+      first, second = raw(original, candidate, rows: backwards)
+      expect(first.sort).not_to eq(second.sort)
+
+      verdict = described_class.compare_in_both_orders(runner, backwards, original:, candidate:)
+      expect(fields(verdict)).to include(match: true, mode: :subset)
     end
 
     it "treats OFFSET the same way" do
