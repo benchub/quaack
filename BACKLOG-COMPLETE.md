@@ -7890,3 +7890,13 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 - **Decided by the user (2026-10-08):** Find the extra objects by walking pg_depend from the dumped objects. The operator names extra schemas in an `extra_dump_schemas` list in ~/.quaack/config.json. When a needed table can't be read, refuse with `dump_object_unreadable` before running pg_dump, and name the unreadable tables. They go to the operator only, through the error line's checked fields, the way `fk_cycle` names its tables, and never to the LLM.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261001-10 (commits d67a882a, 9c094ed7). Review had no blocking findings; its minors went to 20261008-48.
+
+### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification).
+
+20260926-56 qualifies only what's exact without knowing the query's types (the user's choice, 2026-10-07). This task does the rest: resolve each function and operator call's argument types the way Postgres does, so QUAACK can tell which schema's overload wins when several schemas on the path define the name (citext, hstore, postgis, and ltree in `public` all define `=`), and qualify it with that schema. It also covers the keyword forms with no qualified syntax (IN, BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, USING and NATURAL joins) and `regproc`, `regprocedure`, `regoper`, and `regoperator` literals, which v1 refuses. It's large: split it further when it's picked up, for example type resolution first, then each keyword form.
+
+- **Depends on:** 20260926-56.
+- **Came from:** The 20260926-56 builder's report and the user's decision, 2026-10-07.
+- **Design:** qualify.
+- **Status:** done
+- **Landed:** 2026-10-08, part 1 merged from task/20261007-21 (commits ef101e0a, b1d359ef, 6cc61bc2) after a fix round. The second review was clean. Parts 2 and 3 were split into 20261008-44 and -45, and the minors went to 20261008-46.

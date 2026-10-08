@@ -24,6 +24,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-32 (rewrite candidates: only the original's names and pg_catalog's; unknown_name).
 - 20260927-18 (rewrite-test: scenarios load with generated columns and = exclusions; exclusion_constraint refused).
 - 20261001-10 (schema-dump: pg_depend walk, extra_dump_schemas, dump_object_unreadable with a tables field).
+- 20261007-21 (qualify: overloaded functions and operators resolved by probing EXPLAIN).
 
 ## How this file works.
 
@@ -1870,14 +1871,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-20. Measurement: pin which run a stable set keeps. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification).
-
-20260926-56 qualifies only what's exact without knowing the query's types (the user's choice, 2026-10-07). This task does the rest: resolve each function and operator call's argument types the way Postgres does, so QUAACK can tell which schema's overload wins when several schemas on the path define the name (citext, hstore, postgis, and ltree in `public` all define `=`), and qualify it with that schema. It also covers the keyword forms with no qualified syntax (IN, BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, USING and NATURAL joins) and `regproc`, `regprocedure`, `regoper`, and `regoperator` literals, which v1 refuses. It's large: split it further when it's picked up, for example type resolution first, then each keyword form.
-
-- **Depends on:** 20260926-56.
-- **Came from:** The 20260926-56 builder's report and the user's decision, 2026-10-07.
-- **Design:** qualify.
-- **Status:** todo
+### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-22. `CastlessIndex`: the IndexCandidate::Error rescue is untested. Done, see BACKLOG-COMPLETE.md.
 
