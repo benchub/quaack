@@ -92,6 +92,9 @@ module Quaack
         "composite_type_relation" => "The query reads a composite type as a table. QUAACK v1 tunes queries on " \
                                      "plain tables only.",
         "toast_relation" => "The query reads a TOAST table. QUAACK v1 tunes queries on plain tables only.",
+        "system_relation" => "The query reads a table in a system schema, such as pg_catalog, " \
+                             "information_schema, pg_toast, or a pg_temp schema. QUAACK v1 can't tune " \
+                             "queries on system catalogs.",
         "index_relation" => "The query reads an index as a table. QUAACK v1 tunes queries on plain tables only.",
         "not_a_table" => "The query reads a relation that isn't a plain table. QUAACK v1 tunes queries on " \
                          "plain tables only.",

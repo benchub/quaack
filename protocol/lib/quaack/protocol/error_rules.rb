@@ -54,7 +54,8 @@ module Quaack
                  run_server_preload_mismatch run_server_same_database run_server_tablespace_mismatch
                  run_server_unspecified secret_in_conninfo sequence_relation session_closed
                  sql_ascii_database statement_canceled statement_not_allowed statement_timeout statement_unparsable
-                 statistics_bad_shape storage_options store_error tablespace teardown_failed toast_relation
+                 statistics_bad_shape storage_options store_error system_relation tablespace teardown_failed
+                 toast_relation
                  transaction_closed transaction_ended unique unknown_column unknown_name
                  unknown_placeholder unknown_relation
                  unparsable unqualified_table unresolved_relation unsatisfiable_check unsupported_construct
