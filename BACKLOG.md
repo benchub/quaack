@@ -2268,16 +2268,7 @@ The review of 20261001-10 found these minor issues:
 
 ### 20261008-49. Teardown message fallback when no jump host is known. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-50. Orphan index-build notes: advice that's moot after teardown.
-
-From the review of 20261008-16. `index_build_orphan_running` and `index_build_orphan_cancel_denied` fire in index-build during `quaack run`, and that run is torn down, often along with the run server. The note's "wait for it or cancel it yourself, then resume" advice only applies with `--keep`, or when teardown fails. Word these notes like the stale-statistics note, or make the advice depend on the run being kept.
-
-
-Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/quaack/driver/teardown.rb:12` doesn't show the now-required `jump:`. And DESIGN.md's "the burndown's own calls that record one stage at a time" should name `record_dedupe` and `record_single_candidate_test`.
-- **Depends on:** 20261008-16.
-- **Came from:** The review of 20261008-16, 2026-10-08.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261008-50. Orphan index-build notes: advice that's moot after teardown. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-51. `quaack start --database`: name production's database. Done, see BACKLOG-COMPLETE.md.
 
@@ -2371,6 +2362,7 @@ The review of 20261008-55 found two gaps:
 - **Depends on:** 20261008-55.
 - **Came from:** The review of 20261008-55, 2026-10-08.
 - **Design:** rewrite-test.
+- **Landed so far:** item 1, 2026-10-08 (task/20261008-50, commit e5cf49f8). Item 2 is still open.
 - **Status:** todo
 
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties.

@@ -8159,3 +8159,15 @@ From the review of 20260926-42. The `!dropped.negative?` half of the egress guar
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-55 (commit ecb82cbc). Review clean.
+
+### 20261008-50. Orphan index-build notes: advice that's moot after teardown.
+
+From the review of 20261008-16. `index_build_orphan_running` and `index_build_orphan_cancel_denied` fire in index-build during `quaack run`, and that run is torn down, often along with the run server. The note's "wait for it or cancel it yourself, then resume" advice only applies with `--keep`, or when teardown fails. Word these notes like the stale-statistics note, or make the advice depend on the run being kept.
+
+
+Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/quaack/driver/teardown.rb:12` doesn't show the now-required `jump:`. And DESIGN.md's "the burndown's own calls that record one stage at a time" should name `record_dedupe` and `record_single_candidate_test`.
+- **Depends on:** 20261008-16.
+- **Came from:** The review of 20261008-16, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-50 (commit b8657898). It's a small driver-words and docs diff, reviewed by the main session.
