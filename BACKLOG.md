@@ -428,6 +428,7 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Decided by the user (2026-10-06):** the user will provide a profile later. Do items 4-7 now, and leave items 1-3 open in a follow-up task.
 - **Decided by the user (2026-10-08):** hold until the user sends a CPU profile.
+- **Decided by the user (2026-10-09):** still holding; the user will send the profile later.
 - **Status:** todo (item 1 needs the user)
 
 ### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably. Done, see BACKLOG-COMPLETE.md.
@@ -473,6 +474,7 @@ From the builder and review of 20261004-80.
 - **Came from:** The builder and review of 20261004-80.
 - **Design:** report, burndown.
 - **Landed so far:** item 1, 2026-10-08 (task/20261004-89, commit 835eb325; review clean). Items 2 and 3 wait on a user decision, since DESIGN.md keeps both cells "not recorded" on purpose. Item 2 would add a `sources` list to each `indexes` entry in the payload, checked on the way out, and the user would also choose what the cell says for a rewrite with new indexes. Item 3 would record index-dedupe's and index-test's drops by generator in the burndown, which changes its shape.
+- **Decided by the user (2026-10-09):** do items 2 and 3. Item 2: add `sources` to each `indexes` entry and show them in the "Who proposed it" cell. The user didn't say how the cell reads for a rewrite with new indexes; propose a wording when the task starts and ask. Item 3: record already existed and planner ignored by generator. Both change the enclave payload, so they go on the unreleased-changes list.
 - **Status:** todo
 
 ### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
