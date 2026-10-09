@@ -39,7 +39,8 @@ DESIGN.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 
   `### 20260922-1. Project skeleton. Done, see BACKLOG-COMPLETE.md.`
 
-  The stub keeps the ID visible, so dependency lines still make sense and nobody opens the task again by mistake. Keeping full entries out of BACKLOG.md also keeps it small, so it costs fewer tokens to read.
+  The stub keeps the ID visible, so dependency lines still make sense and nobody opens the task again by mistake. Keeping full entries out of BACKLOG.md also keeps it small, so it costs fewer tokens to read. Keep a stub only while an open task in BACKLOG.md names its ID, and prune stubs nothing names any more (decided by the user, 2026-10-09). BACKLOG-COMPLETE.md and git history (`git log --grep=<ID>`) still hold every finished task.
+- BACKLOG-COMPLETE.md is large. Search it with grep for a task ID or keyword, and read only the matching entry. Never read the whole file.
 - Never work on a task that's in BACKLOG-COMPLETE.md. If a finished task needs more work, add a new task to BACKLOG.md and point to the old ID.
 - New tasks get an ID made of the date they're added and the next unused number for that date, such as `20260923-1`. Never reuse an ID.
 
