@@ -2318,24 +2318,7 @@ The review of 20261008-55 found two gaps:
 
 ### 20261008-62. Progress lines name the LLM, not just "the LLM". Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-63. Report: calls, wait time, and tokens for each LLM model.
-
-The user asked for this on 2026-10-08. The report should show a table with one row per LLM model the run used, in the form provider and model, or the `llms` entry's name. Each row gives:
-
-- the number of calls
-- the total time spent waiting for replies
-- the tokens used: input, output, and total, or cached and reasoning tokens where the provider reports them
-
-Count failed and retried calls and show them, so a failover shows up. Add a total row.
-
-On a resumed run, include the earlier processes' numbers, saved in the provenance record `~/.quaack/runs/<id>.llm.json` the same way 20260926-42 saves `llm_calls`.
-
-Token counts come from each adapter's usage data. A provider that gives none shows "not reported", not 0. This is the operator's own data, kept on the laptop, so nothing crosses the trust boundary. Update the DESIGN.md report section and pin the table in specs.
-
-- **Depends on:** 20260926-42, 20261007-18.
-- **Came from:** The user, 2026-10-08.
-- **Design:** report, LLM providers.
-- **Status:** todo
+### 20261008-63. Report: calls, wait time, and tokens for each LLM model. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-64. `or_to_union`: the expression-index test misses its guard.
 
@@ -2346,14 +2329,7 @@ From the review of 20261008-18 and -20. The "the only key's index has an express
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261008-65. Index-refine notes still say "the LLM's".
-
-From the second review of 20261008-62. The refine step's notes in `pipeline.rb`, around lines 120-122, still say "the LLM's": "Reading how the LLM's index ideas did" and "Testing the LLM's revised index ideas". Name the entry with `Router#possessive`, the same way the other notes do.
-
-- **Depends on:** 20261008-62.
-- **Came from:** The second review of 20261008-62, 2026-10-08.
-- **Design:** quaack run.
-- **Status:** todo
+### 20261008-65. Index-refine notes still say "the LLM's". Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-66. Exclusion keys: two untested checks from 20261008-47.
 
@@ -2375,4 +2351,16 @@ From the review of 20261008-47:
 - **Depends on:** 20261008-61.
 - **Came from:** The build and second review of 20261008-61, 2026-10-08.
 - **Design:** fixture-compare.
+- **Status:** todo
+
+### 20261008-68. LLM usage parsing: minors from 20261008-63.
+
+From the second review of 20261008-63:
+
+1. **A malformed `*_tokens_details` still raises.** If `prompt_tokens_details` or `completion_tokens_details` isn't an object (for example `"x"`), `Usage.openai` raises a TypeError. Treat it as not reported.
+2. **`count?`'s type check is untested.** Add a test with a string, float, or negative count in usage.
+
+- **Depends on:** 20261008-63.
+- **Came from:** The second review of 20261008-63, 2026-10-08.
+- **Design:** report, LLM providers.
 - **Status:** todo
