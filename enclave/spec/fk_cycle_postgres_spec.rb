@@ -245,6 +245,28 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
   end
 
+  describe "with a nullable edge from a cycle's table to a table outside it" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA fx;
+        CREATE TABLE fx.regions (id integer PRIMARY KEY);
+        CREATE TABLE fx.accounts (id integer PRIMARY KEY, course_template_id integer);
+        CREATE TABLE fx.courses (id integer PRIMARY KEY, account_id integer NOT NULL REFERENCES fx.accounts,
+          region_id integer REFERENCES fx.regions);
+        ALTER TABLE fx.accounts ADD FOREIGN KEY (course_template_id) REFERENCES fx.courses;
+      SQL
+    end
+
+    it "cuts only the edge that closes the cycle, not the edge to the outside table" do
+      schema = Quaack::Enclave::ArenaSchema.load_closure(conn, [tn("accounts")])
+      sql = "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id"
+      atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql), column_names: schema.column_names)
+      topology = Quaack::Enclave::Scenarios::Topology.new(schema, atoms)
+      expect([tn("accounts"), tn("courses"), tn("regions")].map { topology.cut_columns(it) })
+        .to eq([["course_template_id"], [], []])
+    end
+  end
+
   describe "with a third table under accounts, and self-references" do
     before do
       conn.exec(<<~SQL)
