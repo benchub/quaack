@@ -38,7 +38,7 @@ module Quaack
           spans, unclosed = balanced_spans(text)
           parsed = false
           spans.each do |start, stop|
-            object = JSON.parse(text[start..stop])
+            object = JSON.parse(text.byteslice(start..stop))
             parsed = true
             return object if matches?(object, schema)
           rescue JSON::ParserError
@@ -49,19 +49,37 @@ module Quaack
 
         def self.invalid = Error.new("llm_bad_response", "the reply wasn't valid JSON")
 
-        # [[start, stop], ...] for each { with a balanced }, in order of start,
-        # and whether any { was left open. Quotes count only inside braces,
-        # since prose outside them isn't JSON. A quote that never closes
-        # runs to the end of the text, like a reply cut off mid-string.
+        # [[start, stop], ...] for each { with a balanced }, as byte offsets in
+        # order of start, and whether any { was left open. Quotes count only
+        # inside braces, since prose outside them isn't JSON. A stray { before
+        # an odd quote would hide every later {, so when a scan ends with a {
+        # still open, it starts again just past that {, keeping what it found.
+        # Each restart rescans the rest of the text, so they stop after
+        # MAX_RESTARTS, far above the few stray braces prose holds.
         OUTSIDE = /[^{]+/
         INSIDE = /(?:[^{}"]|"(?:\\.|[^"\\])*")+/m
+        MAX_RESTARTS = 100
 
         def self.balanced_spans(text)
+          spans = {}
           scanner = StringScanner.new(text)
+          unclosed = false
+          (MAX_RESTARTS + 1).times do
+            open = scan(scanner, spans)
+            unclosed ||= !open.nil?
+            break unless open
+
+            scanner.pos = open + 1
+          end
+          [spans.sort, unclosed]
+        end
+
+        # Scans to the end, or to a quote that never closes, and returns the
+        # first { still open, if any. Each { keeps the first } it balances with.
+        def self.scan(scanner, spans)
           starts = []
-          spans = []
           while advanced?(scanner, starts, spans); end
-          [spans.sort_by(&:first), !starts.empty?]
+          starts.first
         end
 
         # Moves past the next brace, and says whether the scan goes on.
@@ -69,7 +87,7 @@ module Quaack
           scanner.skip(starts.empty? ? OUTSIDE : INSIDE)
           case scanner.getch
           when "{" then starts.push(scanner.pos - 1)
-          when "}" then spans << [starts.pop, scanner.pos - 1]
+          when "}" then spans[starts.pop] ||= scanner.pos - 1
           else return false
           end
           true

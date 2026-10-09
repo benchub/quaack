@@ -14,12 +14,36 @@ RSpec.describe Quaack::Driver::LLM::ReplyJSON do
     e.message
   end
 
-  it "parses each { at most once on brace-heavy junk, so the scan stays linear" do
-    junk = ("Some {prose} with {braces {nested} } and } strays { " * 400)[0, 16_384]
-    allow(JSON).to receive(:parse).and_call_original
+  [
+    ["braces", "Some {prose} with {braces {nested} } and } strays { "],
+    ["braces and quotes", %(Say { "a {b} c" then { "odd } and {x "y" z} " ")],
+    ["opened braces before an odd quote", "#{"{" * 8000} \"#{"x" * 1000}"]
+  ].each do |name, unit|
+    it "parses each { at most once on 16 KB of #{name} junk, and finishes quickly" do
+      junk = (unit * 1000)[0, 16_384]
+      allow(JSON).to receive(:parse).and_call_original
 
-    expect(error_for(junk)).to end_with("the reply wasn't valid JSON")
-    expect(JSON).to have_received(:parse).at_most(junk.count("{") + 1).times
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      expect(error_for(junk)).to end_with("the reply wasn't valid JSON")
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 2
+      expect(JSON).to have_received(:parse).at_most(junk.count("{") + 1).times
+    end
+  end
+
+  it "finds the object after non-ASCII prose" do
+    expect(described_class.parse(%(Café ☃: {"ddl": []}), schema)).to eq("ddl" => [])
+  end
+
+  it "finds an object that holds non-ASCII text" do
+    expect(described_class.parse(%({"ddl": ["héllo ☃ 日本"]} tail), schema)).to eq("ddl" => ["héllo ☃ 日本"])
+  end
+
+  it "finds the object after a stray { and an odd quote in prose" do
+    expect(described_class.parse(%(I'll use { as a "quote. Then {"ddl": []}), schema)).to eq("ddl" => [])
+  end
+
+  it "finds the object after a stray { whose odd quote hides a }" do
+    expect(described_class.parse(%({ note: it's "odd } {"ddl": []}), schema)).to eq("ddl" => [])
   end
 
   it "finds the fenced object after more prose braces than any fixed count of starts" do
