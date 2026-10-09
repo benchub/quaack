@@ -156,9 +156,11 @@ module Quaack
     module GeneratorOne
       module_function
 
-      def candidates(parse, statistics, max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000)
+      def candidates(parse, statistics, max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000,
+                     low_cardinality: [])
         limits = { max_key_columns:, brin_min_correlation:, brin_min_reltuples: }
         Input.check_limits(limits)
+        limits[:low_cardinality] = low_cardinality
         Input.branches(parse).flat_map do |select|
           scope = Scope.new(select, statistics)
           Uses.variants(select, scope).flat_map do |uses|
@@ -1086,9 +1088,6 @@ module Quaack
 
       # The candidates for one table.
       class TableCandidates
-        # classify's default low-cardinality threshold (PiiClassification).
-        LOW_CARDINALITY = 50
-
         def initialize(table, uses, limits)
           @table = table
           @stats = table.stats
@@ -1211,7 +1210,8 @@ module Quaack
         end
 
         # The INCLUDE columns appended to the key, when the leading key
-        # column is low-cardinality (classify: fewer than 50 distinct values).
+        # column is one classify classes as low-cardinality (the
+        # low_cardinality pairs, PiiClassification#low_cardinality).
         # B-tree deduplication makes that index small, and HypoPG can't see
         # it, so index-build may build it for real (20260927-11).
         def moved(key, include)
@@ -1221,8 +1221,7 @@ module Quaack
         end
 
         def low_cardinality?(column)
-          count = @stats.distinct_count(column.name) if column.expression.nil? && @stats.column?(column.name)
-          !count.nil? && count < LOW_CARDINALITY
+          column.expression.nil? && @limits[:low_cardinality].include?([@table.name, column.name])
         end
 
         def brins

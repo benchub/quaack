@@ -21,7 +21,18 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
   def statistics(*tables) = Quaack::Enclave::Statistics.new(tables:)
 
-  def generate(sql, stats, **limits) = described_class.candidates(PgQuery.parse(sql), stats, **limits)
+  # low_cardinality defaults to what classify would class these columns
+  # (none are text or PII here): a known distinct count under 50. A test
+  # that's about the low_cardinality input passes its own.
+  def generate(sql, stats, **limits)
+    described_class.candidates(PgQuery.parse(sql), stats, low_cardinality: classified(stats), **limits)
+  end
+
+  def classified(stats)
+    stats.tables.values.flat_map do |table|
+      table.columns.keys.select { (table.distinct_count(it) || 50) < 50 }.map { [table.name, it] }
+    end
+  end
 
   def unsupported(detail) = raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
 
@@ -1361,15 +1372,20 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       stats = statistics(table(orders, { "status" => column(4), "total_cents" => column(5000) }, extra: %w[id]))
       sql = "SELECT sum(total_cents) FROM public.orders WHERE status = 'shipped'"
 
-      expect(generate(sql, stats)).to eq([btree(orders, %w[status], %w[total_cents]),
-                                          btree(orders, %w[status total_cents]), btree(orders, %w[status])])
+      expect(generate(sql, stats, low_cardinality: [[orders, "status"]]))
+        .to eq([btree(orders, %w[status], %w[total_cents]),
+                btree(orders, %w[status total_cents]), btree(orders, %w[status])])
     end
 
-    it "doesn't move INCLUDE columns into the key when the leading column isn't low-cardinality" do
-      stats = statistics(table(orders, { "status" => column(50), "total_cents" => column(5000) }, extra: %w[id]))
+    # 20260927-19: classify's low_cardinality is the one source, so a
+    # column with few distinct values that classify didn't class (PII, a
+    # custom threshold, a negative n_distinct) isn't moved.
+    it "doesn't move INCLUDE columns into the key when classify didn't class the leading column low-cardinality" do
+      stats = statistics(table(orders, { "status" => column(4), "total_cents" => column(5000) }, extra: %w[id]))
       sql = "SELECT sum(total_cents) FROM public.orders WHERE status = 'shipped'"
 
-      expect(generate(sql, stats)).to eq([btree(orders, %w[status], %w[total_cents]), btree(orders, %w[status])])
+      expect(generate(sql, stats, low_cardinality: [[orders, "total_cents"]]))
+        .to eq([btree(orders, %w[status], %w[total_cents]), btree(orders, %w[status])])
     end
 
     it "adds no INCLUDE when a filter column outside key and INCLUDE leaves the index not covering" do
