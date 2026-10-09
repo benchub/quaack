@@ -21,6 +21,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261008-47 (scenarios: && exclusions load; generated-column boundaries narrowed).
 
+- 20261008-61 (fixture-compare: inner LIMIT and OFFSET cuts refused unless on a key; soundness fix).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -2312,16 +2314,7 @@ The review of 20261008-55 found two gaps:
 - **Landed so far:** item 1, 2026-10-08 (task/20261008-50, commit e5cf49f8). Item 2 is still open.
 - **Status:** todo
 
-### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties.
-
-The builder of 20261008-40 found this on real Postgres. `Tiebreaker.hidden_cut_tie?` (`result_comparison/tiebreaker.rb`) only looks at the outer query's cut. A subquery such as `(SELECT ... ORDER BY grp LIMIT 1) s` keeps an arbitrary row from a tie. Two equivalent queries can then keep different tied rows that differ only in a left-out column such as jsonb. The comparison returns `{match: false, rule: :value}`, so a correct rewrite is called wrong. That fails safe, but a correct rewrite is lost. The CTE form (`WITH s AS (... LIMIT 1)`) is probably affected the same way, but that isn't confirmed.
-
-Either apply the hidden-tie check to each LIMIT or OFFSET at any depth, or refuse a query with an inner LIMIT or OFFSET as `unsupported_order`, and list it in DESIGN.md as unsupported in v1. The failing test is in `scratchpad/build-20261008-40/tests.diff`. Also check whether an inner cut could ever give a false match, not just a false mismatch.
-
-- **Depends on:** 20260924-6.
-- **Came from:** The builder of 20261008-40, 2026-10-08.
-- **Design:** fixture-compare.
-- **Status:** todo
+### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-62. Progress lines name the LLM, not just "the LLM". Done, see BACKLOG-COMPLETE.md.
 
@@ -2372,4 +2365,14 @@ From the review of 20261008-47:
 - **Depends on:** 20261008-47.
 - **Came from:** The review of 20261008-47, 2026-10-08.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
+
+1. **A dead guard (second review of 20261008-61).** The `|| select[:larg]` guard in `InnerCuts.sole_table` never fires, since a set-operation node has no `from_clause`. Remove it.
+2. **Inner DISTINCT, GROUP BY, and UNION picks (builder of 20261008-61).** A bad candidate can still match through these. DESIGN.md lists this as a known gap. Decide whether they get the same treatment as inner cuts.
+
+- **Depends on:** 20261008-61.
+- **Came from:** The build and second review of 20261008-61, 2026-10-08.
+- **Design:** fixture-compare.
 - **Status:** todo

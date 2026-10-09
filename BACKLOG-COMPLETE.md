@@ -8248,3 +8248,15 @@ The review of 20260927-18 found these minor issues:
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-47 (commits cdc5b792, 8bc0805a). Review had no blocking findings; its minors went to 20261008-66.
+
+### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties.
+
+The builder of 20261008-40 found this on real Postgres. `Tiebreaker.hidden_cut_tie?` (`result_comparison/tiebreaker.rb`) only looks at the outer query's cut. A subquery such as `(SELECT ... ORDER BY grp LIMIT 1) s` keeps an arbitrary row from a tie. Two equivalent queries can then keep different tied rows that differ only in a left-out column such as jsonb. The comparison returns `{match: false, rule: :value}`, so a correct rewrite is called wrong. That fails safe, but a correct rewrite is lost. The CTE form (`WITH s AS (... LIMIT 1)`) is probably affected the same way, but that isn't confirmed.
+
+Either apply the hidden-tie check to each LIMIT or OFFSET at any depth, or refuse a query with an inner LIMIT or OFFSET as `unsupported_order`, and list it in DESIGN.md as unsupported in v1. The failing test is in `scratchpad/build-20261008-40/tests.diff`. Also check whether an inner cut could ever give a false match, not just a false mismatch.
+
+- **Depends on:** 20260924-6.
+- **Came from:** The builder of 20261008-40, 2026-10-08.
+- **Design:** fixture-compare.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-61 (commits 95b141cd, f1269ea4, 171e5460) after a fix round. The second review was clean. This fixes a soundness bug in which an inner cut could give a false match. The minor went to 20261008-67.
