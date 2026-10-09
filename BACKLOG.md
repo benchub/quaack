@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20260927-29 (QUAACKS_DEV_CHECKOUT honored only from a git checkout).
 - 20260927-19 (index search: one low-cardinality source; at most two set-asides per search).
 - 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
 - 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
@@ -886,15 +887,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-29. Deploy loose ends.
-
-- `QUAACKS_DEV_CHECKOUT=1` turns off the driver-present guard, and it's a plain environment variable. No production path sets it, but an operator could export it on a jump server by mistake.
-
-- **Depends on:** 20260923-2.
-- **Came from:** Reviews of 20260923-2.
-- **Design:** Where QUAACK runs.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260927-29. Deploy loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-2. Several LLM providers in one run. Done, see BACKLOG-COMPLETE.md.
 

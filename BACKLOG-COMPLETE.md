@@ -8464,3 +8464,14 @@ These are minor findings from the review of 20260927-24:
 - **Design:** none.
 - **Status:** done
 - **Landed:** 80c97ddb (spec only, no bump). Review clean; each new assertion goes red under its mutation.
+
+### 20260927-29. Deploy loose ends.
+
+- `QUAACKS_DEV_CHECKOUT=1` turns off the driver-present guard, and it's a plain environment variable. No production path sets it, but an operator could export it on a jump server by mistake.
+
+- **Depends on:** 20260923-2.
+- **Came from:** Reviews of 20260923-2.
+- **Design:** Where QUAACK runs.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 853717a8, 99ec757f (enclave exe; on the unreleased list). Review clean. Noted, not filed: a Bundler git-sourced install would put the repo root two levels up, but deploy is gem install only.
