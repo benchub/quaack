@@ -37,6 +37,18 @@
   /* ::details-content needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section. */
   details.query:target::details-content { content-visibility: visible; }
   details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }
+  details.query { background: #f4effb; border-left: 5px solid #7b4bb3; padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
+  details.query > summary { position: sticky; top: 0; z-index: 1; background: #f4effb; padding: 0.5rem 7rem 0.5rem 0; }
+  details.query > summary::after { content: "\25BC  Expand"; position: absolute; top: 0.5rem; right: 0; color: #5b3a8a; font-weight: 600; }
+  details.query[open] > summary::after { content: "\25B2  Collapse"; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e9ee; background: #15181d; }
+    details.query, details.query > summary { background: #2a2038; }
+    details.query { border-left-color: #a77fe0; }
+    details.query > summary::after { color: #cdb4f0; }
+    details.query pre.sql, details.query code.sql { background: #1d1829; border-color: #4a3b66; }
+    svg.funnel text { fill: #e6e9ee; }
+  }
   details.query > pre.sql, details.not-ranked > table { margin-top: 0.5rem; }
   svg.funnel { display: block; width: 100%; height: auto; margin: 0.75rem 0; }
   svg.funnel text { font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1c2430; }
