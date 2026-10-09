@@ -22,28 +22,34 @@ module Quaack
               SELECT a.atttypid AS type FROM pg_catalog.pg_attribute a
               WHERE a.attrelid #{EQ} #{AssumptionCheck::RELATION} AND a.attname #{EQ} $3 AND a.attnum OPERATOR(pg_catalog.>) 0
             ), opclasses AS (
-              SELECT c.opcfamily, c.opcintype, c.opcintype #{EQ} col.type AS exact, t.typispreferred AS preferred
+              SELECT c.opcfamily, c.opcintype,
+                     (c.opcintype #{EQ} col.type
+                      OR (c.opcintype #{EQ} 'pg_catalog.anyenum'::pg_catalog.regtype
+                          AND EXISTS (SELECT 1 FROM pg_catalog.pg_type e WHERE e.oid #{EQ} col.type AND e.typtype #{EQ} 'e'))
+                     ) AS exact, t.typispreferred AS preferred
               FROM col
               JOIN pg_catalog.pg_opclass c ON c.opcdefault
               JOIN pg_catalog.pg_am am ON am.oid #{EQ} c.opcmethod AND am.amname #{EQ} 'btree'
               JOIN pg_catalog.pg_type t ON t.oid #{EQ} c.opcintype
               WHERE c.opcintype #{EQ} col.type
+                 OR c.opcintype #{EQ} 'pg_catalog.anyenum'::pg_catalog.regtype
                  OR EXISTS (SELECT 1 FROM pg_catalog.pg_cast k
                             WHERE k.castsource #{EQ} col.type AND k.casttarget #{EQ} c.opcintype
                               AND k.castmethod #{EQ} 'b')
             )
-            SELECT o.opcfamily, col.type FROM opclasses o, col
+            SELECT o.opcfamily, col.type, o.opcintype FROM opclasses o, col
             WHERE o.exact OR (o.preferred AND NOT EXISTS (SELECT 1 FROM opclasses e WHERE e.exact))
           SQL
 
           # How many operators named =, <, <=, >, or >= between two of the
-          # column's type ($2) aren't in the family ($1) under that name.
+          # column's type ($2) or its opclass's ($3) aren't in the family ($1) under that name.
           # Postgres picks an operator taking exactly the column's type over
           # any other.
           BTREE_OPERATORS = <<~SQL.freeze
             WITH strategies (strategy, name) AS (VALUES (1, '<'), (2, '<='), (3, '='), (4, '>='), (5, '>'))
             SELECT pg_catalog.count(*) FROM strategies s
-            JOIN pg_catalog.pg_operator op ON op.oprname #{EQ} s.name AND op.oprleft #{EQ} $2 AND op.oprright #{EQ} $2
+            JOIN pg_catalog.pg_operator op ON op.oprname #{EQ} s.name AND op.oprleft #{EQ} ANY (ARRAY[$2, $3]::pg_catalog.oid[])
+              AND op.oprright #{EQ} ANY (ARRAY[$2, $3]::pg_catalog.oid[])
             WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_amop o
                               WHERE o.amopfamily #{EQ} $1 AND o.amopopr #{EQ} op.oid
                                 AND o.amopstrategy #{EQ} s.strategy)

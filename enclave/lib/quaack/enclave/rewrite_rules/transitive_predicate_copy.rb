@@ -142,7 +142,7 @@ module Quaack
         end
 
         # a.x = b.y, where both are columns of plain tables in this SELECT's
-        # FROM, not on an outer join's nullable side, of one type and one
+        # FROM, not on an outer join's nullable side, of one base type (modifiers aside) and one
         # deterministic collation, whose comparisons are its default btree's.
         def equality(condition, select, catalog)
           expr = condition.a_expr if condition.node == :a_expr
@@ -165,7 +165,7 @@ module Quaack
           return unless table
 
           info = catalog.column_info(table.schemaname, table.relname, name)
-          [info, catalog.default_btree?(table.schemaname, table.relname, name)] if info
+          [info.with(type: info.base_type), catalog.default_btree?(table.schemaname, table.relname, name)] if info
         end
       end
     end
