@@ -115,7 +115,7 @@ module Quaack
           # known, so the scan stays inside. Returns the new spans.
           def rescan(start, stop)
             interior = @text.byteslice((start + 1)...stop)
-            return [] unless @restarts.positive? && interior.include?('"')
+            return [] unless interior.include?('"')
 
             found = {}
             collect(StringScanner.new(interior), 0, found)

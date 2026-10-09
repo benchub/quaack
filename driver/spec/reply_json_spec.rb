@@ -52,6 +52,19 @@ RSpec.describe Quaack::Driver::LLM::ReplyJSON do
     end
   end
 
+  # Each failed outer span's rescan finds its inner span again, and the
+  # first scan already knows it, so it must not parse twice.
+  it "parses each { of nested failed spans exactly once" do
+    junk = '{"x" {"y" }}' * 100
+    calls = 0
+    allow(JSON).to receive(:parse).and_wrap_original do |original, source, *rest|
+      calls += 1 if junk.include?(source)
+      original.call(source, *rest)
+    end
+    expect(error_for(junk)).to end_with("the reply wasn't valid JSON")
+    expect(calls).to eq(junk.count("{") + 1)
+  end
+
   it "finds the object after non-ASCII prose" do
     expect(described_class.parse(%(Café ☃: {"ddl": []}), schema)).to eq("ddl" => [])
   end
