@@ -16,6 +16,9 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 
 
+- 20261008-18 (or_to_union: key columns deduped).
+- 20261008-20 (not_in_to_not_exists: UNION branch types compared without typmod).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -1918,36 +1921,11 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 
 ### 20261008-17. DESIGN.md: one stale teardown sentence. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-18. `or_to_union` composite keys: minors from 20261008-6.
-
-The review of 20261008-6 found these minor issues:
-
-1. **Missing rule-level tests.** The rule refuses these key cases, but `or_to_union_postgres_spec.rb` has no test for them. The fact-level `assumption_check_postgres_spec.rb` covers some of them.
-   - a deferrable composite key
-   - an expression index
-   - a domain key column
-   - a citext key column
-2. **Incomplete refusal bullet.** The bullet in `docs/transforms/or_to_union.md` leaves out two conditions: the key must not be deferrable, and each column must compare as the column's own `=` does.
-3. **Repeated column in the assumption.** An index like `(a, b, a)` states a `unique` assumption that lists a column twice. It's sound, since the carried columns are de-duplicated, but it's untidy.
-
-- **Depends on:** 20261008-6.
-- **Came from:** The review of 20261008-6, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-18. `or_to_union` composite keys: minors from 20261008-6. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-19. `token_limit_param` in an `llms` entry: add the missing test. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3.
-
-The review of 20261008-3 found these minor issues:
-
-1. **No test covers the recursion in `Columns.deduped?`.** That's the check for a UNION without ALL nested under a UNION ALL. Cutting it to `!sub.all` stays green. Test `(SELECT t.b ... UNION SELECT r.b ...) UNION ALL SELECT q.b ...` on `box` columns. Postgres errors on the original, and the mutated rule would rewrite it.
-2. **The branch type check refuses more than it needs to.** It compares branch types with their typmod (through `format_type`), so `varchar(10) UNION varchar(20)` is refused even though the rewrite would be sound. Consider comparing types without the typmod. Either way, say in the docs page and DESIGN.md how typmods are treated.
-
-- **Depends on:** 20261008-3.
-- **Came from:** The review of 20261008-3, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-21. index-from-plan: `(InitPlan 1).col1` conditions and COLLATE filters.
 
@@ -2387,4 +2365,13 @@ Token counts come from each adapter's usage data. A provider that gives none sho
 - **Depends on:** 20260926-42, 20261007-18.
 - **Came from:** The user, 2026-10-08.
 - **Design:** report, LLM providers.
+- **Status:** todo
+
+### 20261008-64. `or_to_union`: the expression-index test misses its guard.
+
+From the review of 20261008-18 and -20. The "the only key's index has an expression" test stays green when `i.indexprs IS NULL` is removed from `assumption_check.rb`, because `Catalog::Keys` already drops the expression column first. Add a test on an index like `(a_id, n, lower(t))`, which reaches the `indexprs` guard.
+
+- **Depends on:** 20261008-18.
+- **Came from:** The review of 20261008-18, 2026-10-08.
+- **Design:** rewrite-rules.
 - **Status:** todo

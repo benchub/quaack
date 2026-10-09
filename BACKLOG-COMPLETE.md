@@ -8186,3 +8186,34 @@ The review of 20260924-6 found these test gaps. In each case the code behaves co
 - **Design:** fixture-compare.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-40 (commit d8701871). The main session ran four mutations on tiebreaker.rb, and each one turned the new tests red. The inner-LIMIT and CTE case (item 3) is now a bug, 20261008-61.
+
+### 20261008-18. `or_to_union` composite keys: minors from 20261008-6.
+
+The review of 20261008-6 found these minor issues:
+
+1. **Missing rule-level tests.** The rule refuses these key cases, but `or_to_union_postgres_spec.rb` has no test for them. The fact-level `assumption_check_postgres_spec.rb` covers some of them.
+   - a deferrable composite key
+   - an expression index
+   - a domain key column
+   - a citext key column
+2. **Incomplete refusal bullet.** The bullet in `docs/transforms/or_to_union.md` leaves out two conditions: the key must not be deferrable, and each column must compare as the column's own `=` does.
+3. **Repeated column in the assumption.** An index like `(a, b, a)` states a `unique` assumption that lists a column twice. It's sound, since the carried columns are de-duplicated, but it's untidy.
+
+- **Depends on:** 20261008-6.
+- **Came from:** The review of 20261008-6, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-18 (commit f29eaa07). Review had no blocking findings. The expression-index test minor went to 20261008-64.
+
+### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3.
+
+The review of 20261008-3 found these minor issues:
+
+1. **No test covers the recursion in `Columns.deduped?`.** That's the check for a UNION without ALL nested under a UNION ALL. Cutting it to `!sub.all` stays green. Test `(SELECT t.b ... UNION SELECT r.b ...) UNION ALL SELECT q.b ...` on `box` columns. Postgres errors on the original, and the mutated rule would rewrite it.
+2. **The branch type check refuses more than it needs to.** It compares branch types with their typmod (through `format_type`), so `varchar(10) UNION varchar(20)` is refused even though the rewrite would be sound. Consider comparing types without the typmod. Either way, say in the docs page and DESIGN.md how typmods are treated.
+
+- **Depends on:** 20261008-3.
+- **Came from:** The review of 20261008-3, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-18 (commit e4306d7c). Review clean. Typmods are now ignored, which the review checked as sound on real Postgres.
