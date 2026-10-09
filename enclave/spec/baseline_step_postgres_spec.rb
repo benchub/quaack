@@ -39,7 +39,7 @@ RSpec.describe "quaacks baseline, against a real server" do
     expect_no_leaks(sentinels, outcome)
     baseline = stored.read("baseline")
     expect(baseline["sets"].keys).to match_array(%w[slow worst_case typical])
-    expect(baseline["timed_out"]).to eq([])
+    expect(baseline).not_to have_key("timed_out")
     expect(baseline["measurement_runs"]).to eq(9)
     baseline["sets"].each_value do |m|
       expect(m["timed_out"]).to be(false)

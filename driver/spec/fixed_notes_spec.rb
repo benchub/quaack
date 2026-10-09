@@ -32,6 +32,14 @@ RSpec.describe Quaack::Driver::FixedNotes do
              "and analyzed. To go on, resume with `quaack setup --run R1`")
   end
 
+  # 20261009-5: the cap refusal says what the cap is and where to raise it.
+  it "says the original ran past the baseline cap, and where to raise it" do
+    expect(error("baseline_original_exceeded_cap", step: "baseline").rule_with_note(next_step:))
+      .to eq("baseline_original_exceeded_cap: The original query ran past QUAACK's cap on a baseline run, one " \
+             "hour unless baseline_cap_seconds in ~/.quaack/config.json on the jump server says otherwise, so " \
+             "QUAACK can't measure it. Raise the cap there if you can wait longer. To go on, #{next_step}")
+  end
+
   # 20261008-16: an orphaned build is the operator's to clear.
   it "says an orphaned build still running after the wait can be waited out" do
     expect(error("index_build_orphan_running", step: "index-build").rule_with_note(next_step:))
