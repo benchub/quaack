@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-20: implicit text casts dropped from existing predicates.
 - 20261009-19: existing reordered predicates read, nested AND/OR flattened.
 - 20261009-17: partial index predicates sorted.
 - 20261009-5: baseline dead code removed.
@@ -2370,11 +2371,14 @@ From 20261009-13's review. The body's `p.warn` now repeats the whole summary war
 
 ### 20261009-19. Predicate sort: leftovers from 20261009-17. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-20. index-dedupe: match predicates that differ only in implicit casts.
+### 20261009-20. index-dedupe: match predicates that differ only in implicit casts. Done, see BACKLOG-COMPLETE.md.
 
-Found in the build of 20261009-19. `pg_get_indexdef` writes an existing index's predicate with Postgres's implicit casts, such as `context_type::text = 'Course'::text`. A candidate written without them (`context_type = 'Course'`) has different predicate text, so index-dedupe never sees that the existing index covers it. Realistic schemas use `varchar` and `text` columns, as in the user's report on 2026-10-09, so this hits real runs. One option is to let Postgres normalize the candidate's predicate. On the racetrack, create the candidate as a hypothetical index (or wrap it in an `EXPLAIN`), read the predicate back as Postgres deparses it, and then compare. Another is to strip casts to the column's own type on both sides through pg_query. Pick the safer of the two. Never drop a cast that changes meaning, such as one to a different type or collation. Test against real Postgres with `varchar` and `text` columns.
+### 20261009-21. ImplicitCast: leftovers from 20261009-20.
 
-- **Depends on:** 20261009-19.
-- **Came from:** The build of 20261009-19, 2026-10-09.
+- **Untested:** loosening `bare_text_const` keeps every spec green. Add a spec in which the constant's cast isn't plain text, such as `col::text = 'abc'::varchar(3)`, and the cast must stay.
+- **Empty array:** `array_consts` accepts an empty `ARRAY[]` and would produce `IN ()`. Postgres prints `'{}'::text[]` instead, so this shouldn't happen in practice, but refuse it rather than emit invalid SQL.
+
+- **Depends on:** 20261009-20.
+- **Came from:** The review of 20261009-20, 2026-10-09.
 - **Design:** index-dedupe.
 - **Status:** todo

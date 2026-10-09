@@ -8701,3 +8701,13 @@ Left over from 20261009-4. The user asked for more detail on hover. The hover al
 - **Design:** report, burndown.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** df48e307 and 6d44e820, driver only. `StageSentences` gives each of the 16 burndown stages one sentence, checked against DESIGN.md and pinned word for word. It shows in each funnel band's hover and in each burndown row's `title`, and says "the rewrite" in the rewrites' index table.
+
+### 20261009-20. index-dedupe: match predicates that differ only in implicit casts.
+
+Found in the build of 20261009-19. `pg_get_indexdef` writes an existing index's predicate with Postgres's implicit casts, such as `context_type::text = 'Course'::text`. A candidate written without them (`context_type = 'Course'`) has different predicate text, so index-dedupe never sees that the existing index covers it. Realistic schemas use `varchar` and `text` columns, as in the user's report on 2026-10-09, so this hits real runs. One option is to let Postgres normalize the candidate's predicate. On the racetrack, create the candidate as a hypothetical index (or wrap it in an `EXPLAIN`), read the predicate back as Postgres deparses it, and then compare. Another is to strip casts to the column's own type on both sides through pg_query. Pick the safer of the two. Never drop a cast that changes meaning, such as one to a different type or collation. Test against real Postgres with `varchar` and `text` columns.
+
+- **Depends on:** 20261009-19.
+- **Came from:** The build of 20261009-19, 2026-10-09.
+- **Design:** index-dedupe.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** f324e399 and 311bcdc7. `ImplicitCast` strips `::text` casts from an existing index's predicate, only for bare varchar or text columns of known type, compared with a text constant. It also rewrites `= ANY` to `IN` and `<> ALL` to `NOT IN`. Leftovers are in 20261009-21.
