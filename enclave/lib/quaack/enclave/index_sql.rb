@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "deparse"
 require_relative "index_candidate_error"
 require_relative "boolean_fold"
+require_relative "predicate_sort"
 
 module Quaack
   module Enclave
@@ -95,8 +96,11 @@ module Quaack
 
       # The predicate as pg_query deparses it, with each column compared
       # with true or false folded to the bare test (see BooleanFold), so
-      # WHERE (deleted = true) and WHERE deleted make equal candidates.
-      def normalize_predicate(sql) = deparse_predicate(BooleanFold.fold(parse_predicate(sql))).freeze
+      # WHERE (deleted = true) and WHERE deleted make equal candidates. Each AND and OR is sorted too (see
+      # PredicateSort), so conditions in another order do the same.
+      def normalize_predicate(sql)
+        deparse_predicate(PredicateSort.sort(BooleanFold.fold(parse_predicate(sql)))).freeze
+      end
 
       # The predicate node as SQL. pg_query's deparser can write an
       # expression that means something else, such as (a = 1) IS NOT
