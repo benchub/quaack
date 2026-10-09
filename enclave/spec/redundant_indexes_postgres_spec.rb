@@ -26,7 +26,7 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
     conn.exec(<<~SQL)
       DROP TABLE IF EXISTS rt;
       CREATE TABLE rt (id int PRIMARY KEY, a int, b int, c int, d int, e int, f int, g int, h int, k int, m int,
-                       n int, p int, q int, r int, s int, t int, note text, flag boolean, status text, x int, u int);
+                       n int, p int, q int, r int, s int, t int, note text, flag boolean, status text, x int, u int, ws varchar);
       INSERT INTO rt SELECT i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, 'n' || i, i % 2 = 0, 'open', i, i
         FROM generate_series(1, 200) i;
       CREATE INDEX rt_a_idx ON rt (a);
@@ -42,6 +42,8 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
       CREATE UNIQUE INDEX rt_u_uniq_idx ON rt (u);
       ALTER TABLE rt ADD CONSTRAINT rt_k_key UNIQUE (k);
       ALTER TABLE rt ADD CONSTRAINT rt_x_excl EXCLUDE USING btree (x WITH =);
+      CREATE INDEX rt_ws_part_idx ON rt (n) WHERE ws <> 'deleted';
+      CREATE INDEX rt_ws_left_idx ON rt (p) WHERE 'deleted' <> ws;
       CREATE INDEX rt_m_hash ON rt USING hash (m);
       ANALYZE rt;
     SQL
@@ -81,6 +83,19 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
   it "suggests one with the same partial predicate, and one with an exactly matching expression" do
     expect(suggested("CREATE INDEX ON public.rt USING btree (e, b) WHERE flag")).to eq(["rt_e_part_idx"])
     expect(suggested("CREATE INDEX ON public.rt USING btree (lower(note), b)")).to eq(["rt_lower_idx"])
+  end
+
+  it "suggests a varchar partial index when the new index has the same predicate" do
+    expect(suggested("CREATE INDEX ON public.rt USING btree (n, b) WHERE ws <> 'deleted'")).to eq(["rt_ws_part_idx"])
+  end
+
+  it "doesn't suggest a varchar partial index when the new index's literal differs" do
+    expect(suggested("CREATE INDEX ON public.rt USING btree (n, b) WHERE ws <> 'archived'")).to eq([])
+  end
+
+  it "suggests a varchar partial index whose predicate has the constant on the left" do
+    expect(suggested("CREATE INDEX ON public.rt USING btree (p, b) WHERE 'deleted' <> ws")).to eq(["rt_ws_left_idx"])
+    expect(suggested("CREATE INDEX ON public.rt USING btree (p, b) WHERE 'archived' <> ws")).to eq([])
   end
 
   it "lists a drop once when two of a label's new indexes cover it" do

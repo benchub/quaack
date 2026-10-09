@@ -51,12 +51,17 @@ module Quaack
       def strip_comparison(node, expr, column_types)
         return unless COMPARISONS.include?(operator_name(expr))
 
-        column = plain_column(expr.lexpr, column_types)
-        return unless column && (value = bare_text_const(expr.rexpr))
+        # Postgres prints the predicate as written, so the constant may lead.
+        strip_side(expr, :lexpr, :rexpr, column_types) || strip_side(expr, :rexpr, :lexpr, column_types) ? node : nil
+      end
 
-        expr.lexpr = column
-        expr.rexpr = value
-        node
+      # Strips the column on the given side and the constant on the other.
+      def strip_side(expr, column_side, value_side, column_types)
+        column = plain_column(expr.public_send(column_side), column_types)
+        return unless column && (value = bare_text_const(expr.public_send(value_side)))
+
+        expr.public_send(:"#{column_side}=", column)
+        expr.public_send(:"#{value_side}=", value)
       end
 
       # col = ANY (ARRAY[...]) is IN, and col <> ALL (ARRAY[...]) is NOT IN.

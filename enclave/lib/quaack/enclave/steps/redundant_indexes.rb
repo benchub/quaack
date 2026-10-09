@@ -37,7 +37,7 @@ module Quaack
       class RedundantIndexes
         def initialize(store)
           @tables = store.read("statistics")["tables"].to_h do |table|
-            [[table["schema"], table["name"]], table["indexes"]]
+            [[table["schema"], table["name"]], { indexes: table["indexes"], types: table["column_types"] || {} }]
           end
           @built = store.read("index_build")["indexes"]
         end
@@ -63,8 +63,9 @@ module Quaack
         def candidate(ddl) = IndexCandidate.from_ddl(ddl, sources: [:llm])
 
         def redundant(proposed)
-          @tables.fetch([proposed.table.schema, proposed.table.name], []).filter_map do |entry|
-            existing = existing(entry)
+          found = @tables.fetch([proposed.table.schema, proposed.table.name], { indexes: [], types: {} })
+          found[:indexes].filter_map do |entry|
+            existing = existing(entry, found[:types])
             next unless existing && strict?(existing, proposed)
 
             { :table => proposed.table, "name" => entry["name"], "size_bytes" => count(entry["size_bytes"]),
@@ -74,8 +75,12 @@ module Quaack
 
         # The entry's index, unless it's unique or backs a constraint, or QUAACK
         # can't read it; an entry with no "constrained" fact never qualifies.
-        def existing(entry)
-          IndexCandidate.from_indexdef(entry["definition"]) if entry["constrained"] == false && entry["definition"]
+        # The table's column_types let a varchar column's ::text casts come off
+        # its predicate, so it can equal a new candidate's.
+        def existing(entry, types)
+          return unless entry["constrained"] == false && entry["definition"]
+
+          IndexCandidate.from_indexdef(entry["definition"], types:)
         end
 
         def strict?(existing, proposed)
