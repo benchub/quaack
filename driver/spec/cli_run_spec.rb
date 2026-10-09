@@ -232,7 +232,8 @@ RSpec.describe "quaack run" do
       [1, 2].each do |n|
         entries.merge!("rewrite_#{n}" => true, "index_search_rewrite_#{n}" => true,
                        "index_ranking_rewrite_#{n}" => true, "rewrite_pruned_#{n}" => true,
-                       "rewrite_survived_#{n}" => true, "rewrite_tested_#{n}" => true, "rewrite_index_ideas_#{n}" => true,
+                       "rewrite_survived_#{n}" => true,
+                       "rewrite_tested_#{n}" => true, "rewrite_index_ideas_#{n}" => true,
                        "index_generated_rewrite_#{n}" => true, "index_llm_ranked_rewrite_#{n}" => true)
       end
 
@@ -259,7 +260,8 @@ RSpec.describe "quaack run" do
 
     it "prints a step's sub-steps for each rewrite, under the step, by the rewrite's name" do
       entries.merge!("rewrite_1" => true, "index_search_rewrite_1" => true, "index_ranking_rewrite_1" => false,
-                     "rewrite_pruned_1" => true, "rewrite_survived_1" => true, "rewrite_tested_1" => true, "rewrite_index_ideas_1" => true,
+                     "rewrite_pruned_1" => true, "rewrite_survived_1" => true,
+                     "rewrite_tested_1" => true, "rewrite_index_ideas_1" => true,
                      "index_generated_rewrite_1" => true, "index_llm_ranked_rewrite_1" => true)
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
