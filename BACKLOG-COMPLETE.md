@@ -8529,3 +8529,18 @@ Reported by the user, 2026-10-09, against 20261004-55's funnels. Each band is dr
 - **Design:** report, burndown.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 2eb2a14b. The funnel now draws a running width, gives each stage its own color, and shows a fuller hover. The index search for rewrites is its own funnel. The enclave now counts rule rewrites in assumption-check and plan-pruning. No stage-description note went in, since no source text exists (see 20261009-9).
+
+### 20261009-6. Selection: keep the top three in each kind of change.
+
+Asked for by the user on 2026-10-09, for the new verdict (20261009-7). selection keeps the top three candidates by total blocks across every label. Instead, keep the top three in each of three kinds:
+- the same query with new indexes (`original:top:<n>` and the original's combinations),
+- a rewrite with new indexes,
+- a rewrite with no new indexes (`rewrite_<n>:none`).
+
+Each ranked label carries its kind in the report payload, from a fixed list in the protocol gem. The ranked-candidates section of the report groups by kind and ranks within each one. A label that falls outside its kind's top three keeps the `below_top_three` fate. Update DESIGN.md's selection and report sections.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** selection, report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 2d66ff7f and 4c441ca3. Selection keeps the top three per kind (`Protocol::CandidateKinds`), and each `top` entry carries its kind, which egress and the driver check. The report groups the ranking by kind. Left over: the `below_top_three` wording ("three other candidates did better") now means three others of its kind. Fold that into 20261009-10's wording pass.

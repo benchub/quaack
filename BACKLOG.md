@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-6: top three per kind.
 - 20261009-4: rule rewrites counted in assumption-check and plan-pruning.
 - 20261008-76: baseline cap.
 
@@ -2325,19 +2326,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Design:** baseline.
 - **Status:** todo
 
-### 20261009-6. Selection: keep the top three in each kind of change.
-
-Asked for by the user on 2026-10-09, for the new verdict (20261009-7). selection keeps the top three candidates by total blocks across every label. Instead, keep the top three in each of three kinds:
-- the same query with new indexes (`original:top:<n>` and the original's combinations),
-- a rewrite with new indexes,
-- a rewrite with no new indexes (`rewrite_<n>:none`).
-
-Each ranked label carries its kind in the report payload, from a fixed list in the protocol gem. The ranked-candidates section of the report groups by kind and ranks within each one. A label that falls outside its kind's top three keeps the `below_top_three` fate. Update DESIGN.md's selection and report sections.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-09.
-- **Design:** selection, report.
-- **Status:** todo
+### 20261009-6. Selection: keep the top three in each kind of change. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-7. Report: the verdict as a headline and one table.
 
@@ -2396,6 +2385,7 @@ Left over from 20261009-4. The user asked for more detail on hover. The hover al
 ### 20261009-10. Report: say "the original query", not "your query".
 
 Reported by the user, 2026-10-09. The report and its notes often say "your query", for example "planned the same as your query" and "against 3,454 for your query as it is". That's ambiguous. It could mean the original query, a rewrite the operator supplied (operator-rewrites), or the question the operator is really asking the database. Everywhere it means the original query, say "the original query", or "the original query's". Change "your query as it is" too. Any phrase that means something else should name that thing plainly, such as "your own rewrite". As of 2026-10-09 it appears about 25 times across five files under driver/lib, enclave/lib, and protocol/lib. Grep for "your query" in DESIGN.md and the specs too. Report text built from enclave words, such as reasons, may live in the enclave or protocol. That makes it an enclave change, so add it to the unreleased list.
+- **Also:** the `below_top_three` wording in report/candidates.rb and rewrites.rb ("three other candidates did better") should say three others of its kind (from 20261009-6).
 
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-09.
