@@ -298,6 +298,71 @@ RSpec.describe Quaack::Enclave::RewriteRules::TransitivePredicateCopy do
     end
   end
 
+  it "takes equalities from the WHERE and inner-join ONs, not from an outer join's ON" do
+    sql = "SELECT enrollments.id FROM public.enrollments JOIN public.courses ON courses.id = enrollments.id " \
+          "LEFT JOIN public.assessor_asset ON enrollments.course_id = courses.account_id " \
+          "WHERE courses.account_id IN (1, 2)"
+
+    expect(rewritten(sql)).to eq([])
+  end
+
+  it "copies across columns whose types differ only in their modifiers", :aggregate_failures do
+    conn.exec(<<~SQL)
+      ALTER TABLE public.assessor_asset ADD COLUMN amount numeric(12,2);
+      ALTER TABLE public.enrollments ADD COLUMN amount numeric(10,2);
+      UPDATE public.enrollments SET amount = id;
+      UPDATE public.assessor_asset SET amount = id;
+      ALTER TABLE public.assessor_asset ALTER COLUMN code TYPE varchar(255);
+    SQL
+    expect_rewrite(
+      "SELECT enrollments.id FROM public.enrollments, public.assessor_asset WHERE " \
+      "enrollments.amount = assessor_asset.amount AND assessor_asset.amount IN (2, 3)",
+      "SELECT enrollments.id FROM public.enrollments, public.assessor_asset WHERE " \
+      "enrollments.amount = assessor_asset.amount AND assessor_asset.amount IN ($1, $2) " \
+      "AND enrollments.amount IN ($1, $2)"
+    )
+    expect_rewrite(
+      "SELECT enrollments.id FROM public.enrollments, public.assessor_asset WHERE " \
+      "enrollments.code = assessor_asset.code AND enrollments.code >= 'b'",
+      "SELECT enrollments.id FROM public.enrollments, public.assessor_asset WHERE " \
+      "enrollments.code = assessor_asset.code AND enrollments.code >= $1 AND assessor_asset.code >= $1"
+    )
+  end
+
+  describe "with enum columns" do
+    let(:sql) do
+      "SELECT l_moods.id FROM public.l_moods, public.r_moods WHERE l_moods.m = r_moods.m AND l_moods.m >= 'ok'"
+    end
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE TYPE public.mood AS ENUM ('sad', 'ok', 'happy');
+        CREATE TABLE public.l_moods (id int, m public.mood);
+        CREATE TABLE public.r_moods (id int, m public.mood);
+        INSERT INTO public.l_moods VALUES (1, 'sad'), (2, 'ok'), (3, 'happy');
+        INSERT INTO public.r_moods VALUES (1, 'sad'), (2, 'ok'), (3, 'happy');
+      SQL
+    end
+
+    it "copies across them" do
+      expect_rewrite(
+        sql,
+        "SELECT l_moods.id FROM public.l_moods, public.r_moods WHERE l_moods.m = r_moods.m AND l_moods.m >= $1 " \
+        "AND r_moods.m >= $1"
+      )
+    end
+
+    it "refuses an enum with its own =" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.mood_eq(public.mood, public.mood) RETURNS boolean
+          LANGUAGE sql IMMUTABLE AS 'SELECT true';
+        CREATE OPERATOR public.= (LEFTARG = public.mood, RIGHTARG = public.mood, FUNCTION = public.mood_eq);
+      SQL
+
+      expect(rewritten(sql)).to eq([])
+    end
+  end
+
   it "copies between tables that aren't on an outer join's nullable side when the query has one" do
     expect_rewrite(
       "SELECT enrollments.id, courses.id FROM public.enrollments JOIN public.assessor_asset " \
