@@ -774,6 +774,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - The subset DDL doesn't restore into an empty arena on its own (schemas, types, extensions), and a partitioned query table needs its parent in the dump.
 - Table sort order for EUC_JP and WIN1252 databases.
 
+- **Proposed drop (2026-10-09, awaiting the user):** Item 1 is stale, because the only caller always sets host. Item 2 is the large redesign: drop it, or reopen it as its own task if candidate SQL ever shows in the report. Item 3 is stale, because fixtures use the full dump and partitioned parents are refused. That leaves only a rare query on a leaf partition. Item 4 is real but rare (non-ASCII table names in EUC_JP or WIN1252 databases). Add an "unsupported in v1" note to DESIGN.md instead of building it.
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
 - **Design:** schema-dump, clock-anchor, input.
