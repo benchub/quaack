@@ -33,7 +33,6 @@ module Quaack
       # (ExistingIndexes), and DDL through CandidateDdlRedaction. Never a
       # plan or a literal.
       module NegativeResult
-        REWRITE = /\Arewrite_[1-9]\d*\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
 
         # Why index-test declined a candidate: the planner never used it, or the
@@ -50,8 +49,10 @@ module Quaack
             "existing" => once(searches.flat_map { existing(store, it, sizes) }, redaction) }
         end
 
-        # Every stored rewrite_<n>, in number order, gaps and all.
-        def rewrites(store) = store.entry_names.grep(REWRITE).sort_by { it.delete_prefix("rewrite_").to_i }
+        # Every stored rewrite_<n>, in number order, up to the first gap, as
+        # candidate-runs and index-build read them. rewrite-check stores each
+        # under the first free number and nothing deletes one, so a run has no gap.
+        def rewrites(store) = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }.to_a
 
         # The entry's data, or nil if the run doesn't hold it.
         def optional(store, name) = (store.read(name) if store.entry?(name))

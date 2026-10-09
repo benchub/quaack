@@ -19,6 +19,11 @@ module Quaack
                                     "disk space.",
                  "below_top_three" => "beat #{ORIGINAL}, but three other candidates did better." }.freeze
 
+        # How result-comparison dropped a label's rewrite, by selection's reason.
+        COMPARED = { "result_mismatch" => "was dropped when QUAACK compared",
+                     "result_timed_out" => "timed out when QUAACK compared",
+                     "result_not_compared" => "was dropped because QUAACK couldn't compare" }.freeze
+
         # The label's entry in the payload's labels, or nil.
         def measured(label) = labels.find { it["label"] == label }
 
@@ -75,9 +80,10 @@ module Quaack
         def lost(label, reason)
           return LOST[reason] if LOST.key?(reason)
           return not_better(label) if reason == "not_better"
-          return "wasn't ranked." unless reason == "result_mismatch"
 
-          "was dropped when QUAACK compared the rewrite's results with your query's on the real data. " \
+          compared = COMPARED[reason] or return "wasn't ranked."
+
+          "#{compared} the rewrite's results with your query's on the real data. " \
             "See #{Words.search(label.to_s.split(":").first, run_id)} under the queries."
         end
 

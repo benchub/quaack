@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../arena_fixture"
 require_relative "../result_comparator"
 require_relative "../scenarios"
 require_relative "cycle_tables"
@@ -43,9 +44,7 @@ module Quaack
       #   production_timed_out     result-comparison dropped it for a timeout, and no
       #                            literal set's results differed
       #   production_not_compared  result-comparison dropped it without comparing (rule
-      #                            unsupported_order), or selection excluded it as
-      #                            result_mismatch and result-comparison's entry doesn't
-      #                            say why
+      #                            unsupported_order)
       #   below_top_three          a label beat the original and fell
       #                            outside selection's top three
       #   footprint_tie            a label beat the original and lost
@@ -81,13 +80,9 @@ module Quaack
         MISMATCHES = ResultComparator::MISMATCHES.map(&:to_s).freeze
 
         # The rules that end a rewrite-test scenario or a counterexample-compare round with nothing
-        # compared: the comparison's refusal, and ArenaRunner's and
-        # ArenaFixture's failures.
-        FAILURES = %w[unsupported_order statement_unparsable statement_not_allowed begin_failed
-                      already_in_transaction connection_unusable fixture_load_failed reverse_load_failed
-                      rotated_load_failed
-                      insert_failed query_failed transaction_ended rollback_failed statement_timeout
-                      statement_canceled].freeze
+        # compared: the comparison's refusal, unsupported_order, and every one of
+        # ArenaRunner::RULES, ArenaRunner's and ArenaFixture's failures.
+        FAILURES = ["unsupported_order", *ArenaRunner::RULES.keys.map(&:to_s)].freeze
 
         # Scenarios::Error's rules: why rewrite-test couldn't build scenarios.
         REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
@@ -192,7 +187,7 @@ module Quaack
           mismatch = MISMATCHES.find { failing.include?(it) }
           return fate("production_mismatch", rule: mismatch) if mismatch
           return fate("production_timed_out") if failing.include?("timed_out")
-          return if failing.empty? && !reasons(rewrite, context).include?("result_mismatch")
+          return if failing.empty?
 
           fate("production_not_compared", rule: PRODUCTION_FAILURES.find { failing.include?(it) })
         end

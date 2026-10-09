@@ -17,7 +17,9 @@ RSpec.describe "quaacks selection" do
     store.write("minimax", "survivors" => [survivor("rewrite_1:none", 5), survivor("original:top:1", 9)],
                            "verdicts" => { "rewrite_1:none" => {}, "original:top:1" => {} },
                            "discarded_ties" => [], "infinite_sets" => [])
-    store.write("result_comparison", "verdicts" => {}, "discarded" => ["rewrite_1"], "partial_count" => 0)
+    differed = { "rewrite_1" => { "slow" => { "result" => "fail", "rule" => "value" } } }
+    store.write("result_comparison", "verdicts" => differed,
+                                     "discarded" => ["rewrite_1"], "partial_count" => 0)
 
     outcome = quaacks.run("selection", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
 

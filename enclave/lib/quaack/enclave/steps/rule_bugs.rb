@@ -26,13 +26,13 @@ module Quaack
       # is, since result-comparison runs on the racetrack's data, which assumption-check checked.
       #
       # result-comparison disproves a rewrite only when one of its failing verdicts in
-      # result_comparison is a result mismatch, a rule in MISMATCHES. result-comparison
+      # result_comparison is a result mismatch, a rule in RewriteFate::MISMATCHES. result-comparison
       # drops a candidate for any failing verdict, but two of its rules
       # compare nothing: timed_out (the rewrite, run with no index shown,
       # ran past the timeout) and unsupported_order (the original's order
       # can't be checked, so every candidate fails). Neither says the
-      # rewrite is wrong. MISMATCHES lists the rules that do, so a rule result-comparison
-      # gains later isn't called a bug until it's added here:
+      # rewrite is wrong. RewriteFate::MISMATCHES (ResultComparator's) lists the rules that do,
+      # so a rule result-comparison gains later isn't called a bug until it's added there:
       #   column_count, column_types  the output columns differ
       #   row_count, value, multiset, subset  the rows differ
       #   candidate_unordered  the rewrite lost the original's ORDER BY
@@ -40,8 +40,6 @@ module Quaack
       # Trust boundary. Entry names, step names, and rule names through
       # RewriteSource, which sends only QUAACK's own.
       module RuleBugs
-        MISMATCHES = %w[column_count column_types row_count value multiset subset candidate_unordered].freeze
-
         # RewriteFate's fates that say rewrite-test or counterexamples got different results. A
         # scenario or round that ended without comparing (unsupported_order,
         # query_failed, statement_timeout, and the rest of RewriteFate's
@@ -73,9 +71,9 @@ module Quaack
         end
 
         # Whether a result-comparison verdict says the results differed. Only a failing
-        # verdict carries one of MISMATCHES: a pass has no rule, and a
+        # verdict carries one of RewriteFate::MISMATCHES: a pass has no rule, and a
         # partial one has subset_timed_out.
-        def mismatch?(verdict) = MISMATCHES.include?(verdict["rule"])
+        def mismatch?(verdict) = RewriteFate::MISMATCHES.include?(verdict["rule"])
       end
     end
   end
