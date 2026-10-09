@@ -179,10 +179,10 @@ RSpec.describe "quaack run" do
       expect(progress).to include("quaack: [5/19] Already done, skipping: " \
                                   "Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
                                   "quaack: [6/19] Asking the LLM for rewrites of the query (llm-rewrites)\n",
-                                  "quaack: [6/19] Asking the LLM (llm-rewrites)\n",
+                                  "quaack: [6/19] Waiting for anthropic claude-opus-5-5 (llm-rewrites)\n",
                                   "quaack: [7/19] Checking your own rewrites (operator-rewrites)\n",
-                                  "quaack: [7/19] Asking the LLM (operator-rewrites)\n",
-                                  "quaack: [7/19] Asking the LLM, attempt 2 (operator-rewrites)\n",
+                                  "quaack: [7/19] Waiting for anthropic claude-opus-5-5 (operator-rewrites)\n",
+                                  "quaack: [7/19] Waiting for anthropic claude-opus-5-5, attempt 2 (operator-rewrites)\n",
                                   "quaack: [7/19] Checked your 1 rewrite, 0 kept in Ns (operator-rewrites)\n",
                                   "quaack: [19/19] Writing the report (report)\n")
     end
@@ -1275,7 +1275,7 @@ RSpec.describe "quaack run" do
         expect([fake.asks.map(&:step), other.asks.map(&:step)]).to eq([["operator-rewrites"], ["operator-rewrites"]])
         expect(stderr.string).to include("first is rate limited (the API answered 429: fake rate_limit_error), so " \
                                          "the rest of this run skips it; trying second (operator-rewrites)")
-        expect(stderr.string).to include("Asking the LLM (operator-rewrites, second)")
+        expect(stderr.string).to include("Waiting for second (operator-rewrites)")
       end
 
       it "builds only the entries QUAACK_LLM keeps, in its order" do

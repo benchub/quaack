@@ -533,11 +533,19 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(burndown.llm_calls_by_provider).to eq("groq" => { "llm-rewrites" => 3 })
     end
 
-    it "names the provider after the step in each progress line, when told to show it" do
+    it "names the provider in place of the LLM in each progress line, when told to show it" do
       fake.error("llm-rewrites", status: 529).reply("llm-rewrites", "ok")
       ask("llm-rewrites", provider: "groq", shown: "groq")
 
-      expect(notes).to eq(["Asking the LLM (llm-rewrites, groq)", "Asking the LLM, attempt 2 (llm-rewrites, groq)"])
+      expect(notes).to eq(["Waiting for groq (llm-rewrites)", "Waiting for groq, attempt 2 (llm-rewrites)"])
+    end
+
+    it "names the provider in an ask's own purpose, and adds the router's context after the step" do
+      fake.reply("llm-index-ideas", "ok")
+      client.ask(step: "llm-index-ideas", messages:, max_tokens: 100, provider: "groq", shown: "groq",
+                 purpose: "Asking the LLM again for replacements", context: "then opus")
+
+      expect(notes).to eq(["Asking groq again for replacements (llm-index-ideas; then opus)"])
     end
 
     it "shows no provider when not told to, though it counts under it" do

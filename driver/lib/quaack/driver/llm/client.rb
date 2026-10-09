@@ -103,14 +103,17 @@ module Quaack
         # the LLM.
         #
         # provider, the name of the llms entry this client is, counts every
-        # attempt under it too, and shown, a name, follows the step in each
-        # progress line, such as "Asking the LLM (llm-rewrites, groq)". The
-        # router passes them (Router). Neither goes to the LLM.
+        # attempt under it too. shown, the entry as progress names it, takes
+        # the LLM's place in each progress line: "Waiting for groq
+        # (llm-rewrites)" for a plain ask, "Asking groq again for
+        # replacements (llm-index-ideas)" for one with a purpose. context
+        # follows the step, such as "then opus" for a fan-out's next
+        # branches. The router passes them (Router). None goes to the LLM.
         def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false, purpose: ASKING, # rubocop:disable Metrics/ParameterLists
-                provider: nil, shown: nil)
+                provider: nil, shown: nil, context: nil)
           system = self.class.system(system, schema)
           ask_once(step:, system:, messages:, max_tokens:, schema:, json:,
-                   count: counter(step, purpose, provider, shown))
+                   count: counter(step, said(purpose, shown), provider, context))
         rescue Error => e
           sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
           raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}", reason: e.reason),
@@ -137,14 +140,23 @@ module Quaack
 
         # The count an adapter calls before each attempt of one ask: it counts
         # the attempt in the burndown, then tells progress.
-        def counter(step, purpose, provider, shown)
+        def counter(step, purpose, provider, context)
           attempt = 0
-          id = [step, shown].compact.join(", ")
+          id = [step, context].compact.join("; ")
           lambda do
             @burndown.llm_call(step, provider)
             attempt += 1
             @progress&.note(attempt == 1 ? "#{purpose} (#{id})" : "#{purpose}, attempt #{attempt} (#{id})")
           end
+        end
+
+        # purpose with shown, if any, in place of the LLM: a plain ask waits
+        # for it.
+        def said(purpose, shown)
+          return purpose unless shown
+          return "Waiting for #{shown}" if purpose == ASKING
+
+          purpose.sub("the LLM", shown)
         end
 
         # Whether a failed ask calls for a re-ask: there's a schema the

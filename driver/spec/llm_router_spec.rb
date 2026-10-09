@@ -132,6 +132,16 @@ RSpec.describe Quaack::Driver::LLM::Router do
         expect([ask, ask]).to eq(%w[b b])
       end
     end
+
+    it "names the entry it's trying, and says when it switches to the next" do
+      fakes["a"].error("llm-rewrites", status: 503)
+      fakes["b"].reply("llm-rewrites", "b")
+      ask
+
+      expect(notes).to eq(["Waiting for a (llm-rewrites)",
+                           "a is unavailable (#{api_error}), so the rest of this run skips it; trying b (llm-rewrites)",
+                           "Waiting for b (llm-rewrites)"])
+    end
   end
 
   describe "a unit's first ask that fails" do
@@ -388,7 +398,7 @@ RSpec.describe Quaack::Driver::LLM::Router do
         router.going_on(llm_error { ask(session, "llm-index-ideas") }, "going on without replacement ideas")
       end
 
-      expect(notes.grep_v(/\AAsking/))
+      expect(notes.grep_v(/\AWaiting for/))
         .to eq(["a is rate limited (#{rate_limited}), so the rest of this run skips it; going on without " \
                 "replacement ideas (llm-index-ideas)",
                 "b's reply couldn't be used (#{cut_short}), though later asks may still use it; going on without " \
@@ -420,7 +430,7 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(notes.last(2))
         .to eq(["a's reply couldn't be used (#{cut_short}), though later asks may still use it; asking b for the " \
                 "remaining rounds, starting fresh (llm-counterexamples, Rewrite Silver Fox)",
-                "Asking the LLM (llm-counterexamples, b)"])
+                "Waiting for b (llm-counterexamples)"])
     end
 
     it "fails over at its first ask as any unit does, and its failures name every provider it failed on" do
@@ -430,7 +440,7 @@ RSpec.describe Quaack::Driver::LLM::Router do
       fresh = router.fresh(error, skip: session.failures, label: "Rewrite Silver Fox")
 
       expect(ask(fresh, "llm-counterexamples")).to eq("fresh")
-      expect(notes.grep_v(/\AAsking/))
+      expect(notes.grep_v(/\AWaiting for/))
         .to eq(["llm_auth: a: the API refused the credentials, so the rest of this run skips a. Fix its credentials " \
                 "before the next run. Asking b for the remaining rounds, starting fresh (llm-counterexamples, " \
                 "Rewrite Silver Fox)",
@@ -474,6 +484,26 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(answered.map { |session, reply| [session.provider, reply] }).to eq([%w[a a], %w[b b], %w[c c]])
       expect(answered[1].first.ask(step: "llm-rewrites", messages:, max_tokens: 100)).to eq("b again")
       expect(fakes.transform_values { it.asks.size }).to eq("a" => 1, "b" => 2, "c" => 1)
+    end
+
+    it "names each branch's entry, then the ones still to ask, in one line each" do
+      names.each { fakes[it].reply("llm-rewrites", it) }
+      branches
+
+      expect(notes).to eq(["Waiting for a (llm-rewrites; then b and c)", "Waiting for b (llm-rewrites; then c)",
+                           "Waiting for c (llm-rewrites)"])
+    end
+
+    context "with many entries" do
+      let(:names) { %w[a b c d e] }
+
+      it "shortens the ones still to ask" do
+        names.each { fakes[it].reply("llm-rewrites", it) }
+        branches
+
+        expect(notes.first(2)).to eq(["Waiting for a (llm-rewrites; then b, c, and 2 more)",
+                                      "Waiting for b (llm-rewrites; then c, d, and e)"])
+      end
     end
 
     it "is only for a step that opts in: any other step's branches are one unit, as the mode picks" do
@@ -613,6 +643,15 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(fakes["a"].asks).to eq([])
     end
 
+    it "names the reviewer and the rewrite's author in each ask's line" do
+      fakes["b"].reply("llm-counterexamples", "one").reply("llm-counterexamples", "two")
+      session = paired
+      counter(session)
+      counter(session)
+
+      expect(notes).to eq(["Waiting for b (llm-counterexamples; reviewing a's rewrite)"] * 2)
+    end
+
     it "counts the entry that wrote the rewrite as its author, though its model has changed since" do
       fakes["b"].reply("llm-counterexamples", "paired")
       session = paired({ "name" => "a", "provider" => "anthropic", "model" => "an-older-model" })
@@ -739,7 +778,7 @@ RSpec.describe Quaack::Driver::LLM::Router do
       ask
       ask
 
-      expect(notes).to eq(["Asking the LLM (llm-rewrites, a)", "Asking the LLM (llm-rewrites, b)"])
+      expect(notes).to eq(["Waiting for a (llm-rewrites)", "Waiting for b (llm-rewrites)"])
     end
   end
 
@@ -897,11 +936,11 @@ RSpec.describe Quaack::Driver::LLM::Router do
       end
     end
 
-    it "names no provider in its lines, though it counts under it" do
+    it "names the provider and model in its lines, and counts under the provider" do
       fake.reply("llm-rewrites", "ok")
 
       expect(ask).to eq("ok")
-      expect(notes).to eq(["Asking the LLM (llm-rewrites)"])
+      expect(notes).to eq(["Waiting for anthropic claude-opus-5-5 (llm-rewrites)"])
       expect(router.burndown.llm_calls_by_provider).to eq("anthropic" => { "llm-rewrites" => 1 })
     end
 
@@ -915,11 +954,30 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(error.message).not_to include("every LLM provider")
     end
 
+    context "with a sentinel model" do
+      let(:router) do
+        providers = Quaack::Driver::LLM.providers({ "llm" => { "model" => "sentinel-model-x" } }, env: {})
+        client = fake.client(burndown: Quaack::Driver::Burndown.new, max_retries: 0, model: "sentinel-model-x")
+        described_class.for(providers, [client]).tap do |r|
+          seen = notes
+          r.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
+        end
+      end
+
+      it "names the model in progress, never in a prompt" do
+        fake.reply("llm-rewrites", "ok")
+        ask
+
+        expect(notes).to eq(["Waiting for anthropic sentinel-model-x (llm-rewrites)"])
+        expect(JSON.generate(fake.asks.map { [it.body[:system], it.body[:messages]] })).not_to include("sentinel")
+      end
+    end
+
     it "prints no drop line when its credentials are refused, since the step's failure says so" do
       fake.error("llm-rewrites", status: 401)
 
       expect(llm_error { ask }.message).to start_with("llm_auth: the API refused the key (401) [step llm-rewrites")
-      expect(notes).to eq(["Asking the LLM (llm-rewrites)"])
+      expect(notes).to eq(["Waiting for anthropic claude-opus-5-5 (llm-rewrites)"])
     end
 
     it "fails a fresh start with the later failure itself, since no provider is left" do
@@ -957,10 +1015,10 @@ RSpec.describe Quaack::Driver::LLM::Router do
     end
 
     {
-      429 => "The LLM is rate limited, so the rest of this run skips it; going on without replacement ideas " \
+      429 => "anthropic claude-opus-5-5 is rate limited, so the rest of this run skips it; going on without replacement ideas " \
              "(llm-index-ideas)",
-      401 => "llm_auth: the API refused the credentials, so the rest of this run skips the LLM. Fix its " \
-             "credentials before the next run. Going on without replacement ideas (llm-index-ideas)"
+      401 => "llm_auth: the API refused the credentials, so the rest of this run skips anthropic claude-opus-5-5. " \
+             "Fix its credentials before the next run. Going on without replacement ideas (llm-index-ideas)"
     }.each do |status, line|
       it "names no provider when the step goes on without it after a #{status}" do
         fake.reply("llm-index-ideas", "1").error("llm-index-ideas", status:)

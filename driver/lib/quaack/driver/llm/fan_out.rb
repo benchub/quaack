@@ -51,10 +51,11 @@ module Quaack
 
         private
 
-        # Asks each of names in turn, adding each failure to tried.
+        # Asks each of names in turn, adding each failure to tried. Each
+        # ask's line names the entries still to ask after it (pending).
         def branch_asks(ask, names, tried)
           names.each_with_index.with_object([]) do |(name, i), answered|
-            answered << [Router::Session.new(self, provider: name), call(name, ask)]
+            answered << [Router::Session.new(self, provider: name), call(name, ask, pending(names.drop(i + 1)))]
           rescue Error => e
             tried << [name, branch_failed(e, name, ask.fetch(:step), last: answered.empty? && i == names.size - 1)]
           end
@@ -83,6 +84,17 @@ module Quaack
         # llm block, the step's failure says it.
         def none_left(name, error, step)
           note(name, error, "no other provider is left (#{step})") if @named && error.rule == "llm_auth"
+        end
+
+        # "then b, c, and 2 more": the entries left to ask after a branch,
+        # by label, the first two of them when there are more than three, or
+        # nil when none is left.
+        def pending(rest)
+          return if rest.empty?
+
+          labels = rest.map { label(it) }
+          labels = [*labels.first(2), "#{labels.size - 2} more"] if labels.size > 3
+          "then #{RouterLines.listed(labels)}"
         end
 
         # Whether name is a copilot command, whose llm_auth means it isn't
