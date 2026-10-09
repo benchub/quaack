@@ -1124,3 +1124,23 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 - **Came from:** The build of 20261004-3, 2026-10-09.
 - **Design:** none (test infrastructure).
 - **Status:** todo
+
+### 20261009-26. Verdict section: background color follows the verdict.
+
+The report's verdict section (`<section id="summary">`, headline and table) has one background, the blue verdict. Make it follow the headline: a green background when the headline reads "substantial improvements possible", a cream background for "minor improvements possible", and the current blue for "QUAACK found nothing that could help" (the original query is best). The color comes from the same `substantial?` check that picks the headline, so the two can't disagree. Keep the text readable on each background, in the report's light and dark themes if it has both. Update DESIGN.md's verdict bullet, which now doesn't say what color the section is, and the report spec, with a test for each of the three headlines.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Open questions:** The exact green and cream (pick ones that sit with the report's violet query sections, and show the user), and whether the verdict table's baseline and warning rows need new shades.
+- **Status:** todo
+
+### 20261009-27. Verdict section: drop the index definitions.
+
+The verdict table's Plan cell shows `describe(label)` under the plan name (`detail` in `Report::Verdict#candidate_row`), which spells out the label's new indexes. The verdict section doesn't need index definitions. Remove them there. The reader already gets each index's definition in the ranked candidates' tables further down, so check that every definition the verdict showed is still shown somewhere else before dropping it, and keep anything that isn't a definition (the plan's kind, the Index change size). Update DESIGN.md's verdict bullet and the report spec, with a test that plants a sentinel index definition and asserts it's absent from the verdict section but present in the candidates' tables.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Open questions:** Whether `describe` shows anything besides index definitions (such as a rewrite's name) that the user wants kept.
+- **Status:** todo
