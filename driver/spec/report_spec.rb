@@ -305,6 +305,21 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).to include("details.query:target::details-content { content-visibility: visible; }")
     end
 
+    it "styles each query section with a violet stripe and background, unlike the blue verdict" do
+      expect(html).to include("details.query { background: #f4effb; border-left: 5px solid #7b4bb3;")
+      expect(html).to include("scroll-margin-top: 0.5rem; }")
+    end
+
+    it "pins an open query's summary bar to the top of the window, in the section's background" do
+      expect(html).to include("details.query > summary { position: sticky; top: 0; z-index: 1; background: #f4effb;")
+    end
+
+    it "labels the bar Collapse while open and Expand while closed, with no script" do
+      expect(html).to include('details.query > summary::after { content: "\\25BC  Expand";')
+      expect(html).to include('details.query[open] > summary::after { content: "\\25B2  Collapse"; }')
+      expect(html).not_to include("<script")
+    end
+
     it "outlines the section a link lands on, so it stands out from the others" do
       expect(html).to include("details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }")
     end
