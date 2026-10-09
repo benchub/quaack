@@ -2443,3 +2443,22 @@ Came from 20261009-11's review. The report has no dark theme. A partial one, wit
 - **Came from:** The review of 20261009-11, 2026-10-09.
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-17. Sort a partial index's top-level AND conditions, so equal predicates read the same.
+
+Reported by the user, 2026-10-09. The same run proposed both of these:
+- `(context_id, id) WHERE context_type = 'Course' AND workflow_state <> 'deleted' AND type = 'Assignment' AND (muted IS NULL OR NOT muted)`
+- `(context_id) INCLUDE (id) WHERE context_type = 'Course' AND type = 'Assignment' AND workflow_state <> 'deleted' AND (muted IS NULL OR NOT muted)`
+
+Their predicates are the same, but in a different order, so the two are hard to compare. When QUAACK writes or normalizes a partial index's predicate, sort the operands of each AND by their deparsed text. Do the same for each OR's operands, and apply it at every level of nesting. Never move a condition across an AND/OR boundary. `c AND b AND a` becomes `a AND b AND c`, and `c OR (b AND a)` becomes `(a AND b) OR c`, but never `a OR b AND c`. Work on pg_query's parse tree (BoolExpr args), never on strings, so precedence is preserved.
+
+Apply it in two places:
+- index DDL that QUAACK emits: the generators, the LLM's ideas after they pass the checks, and the report
+- index-dedupe's normalization, so ideas that differ only in order merge (check whether it already does)
+
+The sort must be deterministic and must not change meaning. Test that sorted and unsorted predicates give the same EXPLAIN on Postgres.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** index-dedupe, index-from-query, report.
+- **Status:** todo
