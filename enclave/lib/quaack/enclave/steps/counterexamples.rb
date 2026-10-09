@@ -90,8 +90,10 @@ module Quaack
             search = options.fetch("search")
             number = Counterexamples.search!(store, search, "rewrite_test")
             result = discarded?(store, number) ? discarded : test(store, search)
-            store.write("rewrite_tested_#{number}", result)
+            # Survival first: a crash between the two writes leaves the
+            # rewrite untested, so a resumed run tests it again.
             Counterexamples.survived(store, number, false) unless result["passed"]
+            store.write("rewrite_tested_#{number}", result)
             [{ type: :rewrite_test, rewrite: search,
                **result.slice("passed", "scenario", "rule").transform_keys(&:to_sym) }]
           end
@@ -105,8 +107,23 @@ module Quaack
           end
 
           # The result, once its burndown is recorded (RewriteBurndown.record_test).
+          # A refusal comes from the query, not the rewrite, so the first one
+          # is kept as rewrite_test_refusal and every later rewrite gets it.
           def test(store, search)
             Counterexamples.arena!(store, "rewrite_test")
+            return refusal(store, search) if store.entry?("rewrite_test_refusal")
+
+            run(store, search).tap { store.write("rewrite_test_refusal", it) if it["refused"] }
+          end
+
+          def refusal(store, search)
+            result = store.read("rewrite_test_refusal")
+            report = ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
+                                               refused: result["rule"], cycle: nil, loads: 0)
+            result.tap { RewriteBurndown.record_test(store, search, it, report) }
+          end
+
+          def run(store, search)
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
             report = ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search))

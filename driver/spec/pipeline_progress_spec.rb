@@ -87,6 +87,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     { "rewrite_#{number}" => true, "index_search_rewrite_#{number}" => true,
       "index_ranking_rewrite_#{number}" => true, "rewrite_pruned_#{number}" => true,
       "rewrite_survived_#{number}" => true }.merge(more.transform_keys { "#{it}_#{number}" })
+      .then { it.merge("rewrite_tested_#{number}" => it["rewrite_survived_#{number}"]) }
   end
 
   it "says how many index ideas the LLM gave in llm-index-ideas, and how many were new" do
