@@ -4,6 +4,7 @@ require "json"
 require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require "quaack/protocol/index_sources"
+require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/step_counts"
@@ -137,17 +138,27 @@ module Quaack
       # under either is checked.
       # index_sources must be exactly counts under QUAACK's own source
       # names (see Protocol::IndexSources.valid?), and is needed too. The
-      # report's other fields still go out unchecked.
+      # top, when sent, must carry only kinds from Protocol::CandidateKinds::KINDS.
+      # The report's other fields still go out unchecked.
       def check_report(fields)
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
           raise Error, "a value in this report message has a plan that isn't plan nodes"
         end
-        unless Protocol::IndexSources.valid?(fields["index_sources"])
-          raise Error, "a value in this report message has index sources that aren't counts by source"
-        end
+
+        check_ranking(fields)
         return if !fields.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(fields["hidden_statistics"])
 
         raise Error, "a value in this report message has hidden statistics that aren't index names and a count"
+      end
+
+      # index_sources and top, which a report may carry only as the fixed lists allow.
+      def check_ranking(fields)
+        unless Protocol::IndexSources.valid?(fields["index_sources"])
+          raise Error, "a value in this report message has index sources that aren't counts by source"
+        end
+        return if Protocol::CandidateKinds.valid?(fields.fetch("top", []))
+
+        raise Error, "a value in this report message has a top that doesn't carry a kind from the fixed list"
       end
 
       # Whether entries (the rewrites or the labels) is an Array of Hashes,

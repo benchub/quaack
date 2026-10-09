@@ -5,6 +5,7 @@ require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/index_sources"
+require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
 require_relative "../enclave_error"
 require_relative "error_fields"
@@ -188,10 +189,14 @@ module Quaack
 
           case line["type"]
           when "burndown" then Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
-          when "report" then report_plans?(line) && Protocol::IndexSources.valid?(line["index_sources"]) &&
-            hidden_statistics?(line)
+          when "report" then report_plans?(line) && report_counts?(line) && hidden_statistics?(line)
           else true
           end
+        end
+
+        # A report's index_sources and top, as egress checks.
+        def report_counts?(line)
+          Protocol::IndexSources.valid?(line["index_sources"]) && Protocol::CandidateKinds.valid?(line.fetch("top", []))
         end
 
         # A report's hidden_statistics, if it has one, must pass

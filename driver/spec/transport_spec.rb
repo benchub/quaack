@@ -895,6 +895,25 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261009-6. Egress sends a report's top only if each entry carries a
+    # kind from Protocol::CandidateKinds::KINDS, so the driver checks the same.
+    it "reads a report whose top carries listed kinds, and refuses one that doesn't" do
+      report = lambda do |top|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
+                        "index_sources" => index_sources, "top" => top })
+      end
+      good = [{ "label" => "rewrite_1:none", "kind" => "rewrite_same_indexes" }]
+      result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.map { it["top"] }).to eq([good])
+      [[{ "label" => "a:none", "kind" => sentinel }], [{ "label" => "a:none" }], [sentinel], sentinel].each do |top|
+        error = refusal(report.call(top))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{top}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     it "refuses a message that repeats a key" do
       expect(refusal(%({"type":"version","version":"1","version":"2"})).rule).to eq("unexpected_output")
       expect(refusal(%({"type":"burndown","stages":{"a":1,"a":2},"totals":{}})).rule).to eq("unexpected_output")

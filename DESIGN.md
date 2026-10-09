@@ -1389,7 +1389,7 @@ A real difference here means a bug slipped past rewrite-test and counterexamples
 
 ### selection. Selection.
 
-Keep the top three candidates by total blocks.
+Rank the candidates that survived minimax and result-comparison by blocks on the slow values, then by the sum across literals. Keep the top three in each of three kinds of change, from a fixed list in the protocol gem (`Protocol::CandidateKinds`): `rewrite_new_indexes` (a rewrite with new indexes), `rewrite_same_indexes` (a rewrite with no new indexes, `rewrite_<n>:none`), and `original_new_indexes` (the same query with new indexes: `original:top:<n>` and the original's combinations). A label's kind comes from its name. The original with no new indexes is the baseline, never a candidate. Each kept entry carries its kind, and the kept entries are ordered best first overall. A label that beat the original and falls outside its own kind's top three keeps the `below_top_three` fate, even if its blocks would have made another kind's top three. The egress function sends a report only if every entry of `top` carries a kind from that list, and the driver refuses one that doesn't.
 
 ## report. Report.
 
@@ -1415,7 +1415,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `production_mismatch` | result-comparison got different results on production data. | Rule. |
 | `production_timed_out` | result-comparison dropped it for a timeout, and no literal's results differed. | |
 | `production_not_compared` | result-comparison dropped it without comparing its results. | Rule. |
-| `below_top_three` | It beat the original and fell outside selection's top three. | |
+| `below_top_three` | It beat the original and fell outside the top three of its kind of change. | |
 | `footprint_tie` | It beat the original and lost the footprint tiebreak. | |
 | `not_better` | It was measured, and minimax found it no better than the original. | |
 | `measurement_timed_out` | Every one of its runs in candidate-runs timed out. | |
@@ -1443,6 +1443,7 @@ Write the report for a reader who hasn't read this document:
 
 - Open with the verdict: what won and by how much, or that nothing did. Give how much as a percentage by the same rule as the ranked candidates' tables, so it says "over 99% fewer" rather than rounding to 100%.
 - Show the original query, then every stored rewrite, each pretty-printed by pg_query. SQL it can't parse is shown as sent. Each query's SQL starts collapsed in a `<details>`, whose summary gives the rewrite's name, where it came from, and what became of it, so the reader can scan the rewrites without scrolling past every query. When the section holds a warning, that the rewrite relies on what the data holds today or that the test data left some of its conditions untested, the summary says so in a short line, so a closed section doesn't hide it. A link to a rewrite's SQL points at its `<details>`, and a `:target` rule in the report's CSS shows the target's content, since the report runs no script.
+- Group the ranked candidates by kind, in the order rewrite with new indexes, rewrite with no new indexes, then the original with new indexes, each group under a heading row of its own and ranked from 1 within it. A kind with no ranked candidate has no group. A ranked entry's kind is the payload's, and for a payload without one the driver reads it from the label.
 - Start the ranking table with a row for the original as it is, with no rank, marked as the baseline: its blocks on the slow literal, its blocks summed over the literals the ranked candidates were summed over, and no new indexes. A number the payload doesn't carry is "not recorded", and a literal it timed out on makes the cell "timed out".
 - In each ranked candidate's table, compare the candidate's blocks on each literal with the original's on the same literal as a number: "52% fewer blocks", "4% more blocks", "same", "under 1% fewer blocks" when the difference rounds to zero, or "over 99% fewer blocks" when it rounds to all of them. When the original read no blocks, give the count of extra blocks instead of a percentage. Only when either number is missing or timed out, give the minimax verdict in words, or "not recorded" without one.
 - Put the labels measured and not ranked in a `<details>` that starts collapsed, as a table with a row per label: what it was, who proposed its rewrite (not recorded for the original, since the payload doesn't say who proposed an index, and for a rewrite whose source is unknown or that's missing from the payload, and the note under the table says so), and why it wasn't ranked.
