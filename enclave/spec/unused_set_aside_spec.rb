@@ -11,14 +11,20 @@ RSpec.describe Quaack::Enclave::UnusedSetAside do
   let(:low) { [[orders, "status"]] }
   let(:sct) { Quaack::Enclave::SingleCandidateTest }
 
-  def candidate(key, **rest) = Quaack::Enclave::IndexCandidate.new(table: orders, key:, sources: [:parse], **rest)
+  let(:users) { Quaack::Enclave::TableName.new(schema: "public", name: "users") }
+
+  def candidate(key, table: orders, **)
+    Quaack::Enclave::IndexCandidate.new(table:, key:, sources: [:parse], **)
+  end
 
   def result(candidate, used: false, refusal: nil)
     plans = refusal ? {} : { "slow" => sct::Plan.new(used:, total_cost: 1.0, canonical_plan: nil, raw_plan: nil) }
     sct::Result.new(candidate:, size: refusal ? nil : 8192, plans:, refusal:, literal_sets: {})
   end
 
-  def select(*results) = described_class.select(sct::Report.new(baseline: nil, results:), low)
+  def select(*results, low_cardinality: low)
+    described_class.select(sct::Report.new(baseline: nil, results:), low_cardinality)
+  end
 
   it "sets aside an unused key-only B-tree led by a low-cardinality column" do
     status = candidate(%w[status total])
@@ -49,5 +55,14 @@ RSpec.describe Quaack::Enclave::UnusedSetAside do
     candidates = keys.map { candidate(it) }
     expect(described_class::MAX_PER_SEARCH).to eq(2)
     expect(select(*candidates.map { result(it) })).to eq(candidates.first(2))
+  end
+
+  # 20261008-77: one per table first, in report order, so the first table
+  # can't starve the second; then the leftover slots, in report order.
+  it "spreads MAX_PER_SEARCH across tables before taking a second from one" do
+    first, second = [%w[status total], %w[status region]].map { candidate(it) }
+    other = candidate(%w[kind id], table: users)
+    picked = select(*[first, second, other].map { result(it) }, low_cardinality: low + [[users, "kind"]])
+    expect(picked).to eq([first, other])
   end
 end
