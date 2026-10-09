@@ -34,9 +34,9 @@ module Quaack
       # as "groq's" (LLM::Router#possessive): text holds %s where that
       # goes, "the LLM's" without them.
       def whose(progress, name, text, call, client)
-        lambda do |arg, by: []|
+        lambda do |*args, by: [], **options|
           progress.step_note(name, format(text, client.possessive(by)))
-          call.call(arg)
+          call.call(*args, **options)
         end
       end
 

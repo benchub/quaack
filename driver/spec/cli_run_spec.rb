@@ -152,7 +152,7 @@ RSpec.describe "quaack run" do
          "quaack: [2/18] Already done, skipping: " \
          "Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)\n",
          "quaack: [3/18] Getting the LLM to improve its index ideas (llm-index-refine)\n",
-         "quaack: [3/18] Reading how the LLM's index ideas did (llm-index-refine)\n",
+         "quaack: [3/18] Reading how the index ideas did (llm-index-refine)\n",
          "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",
          "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
@@ -177,6 +177,21 @@ RSpec.describe "quaack run" do
       expect(lines).to include("quaack: [2/18] Asking anthropic claude-opus-5-5 for index ideas (llm-index-ideas)\n",
                                "quaack: [2/18] Testing anthropic claude-opus-5-5's index ideas (llm-index-ideas)\n")
       expect(lines.grep(/Waiting for the LLM|Testing the LLM/)).to eq([])
+    end
+
+    it "names the LLM's provider and model in llm-index-refine's notes" do
+      replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => false,
+                                     "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
+      replies["index-test"] = []
+      fake.reply("llm-index-refine", { "indexes" => ["CREATE INDEX ON public.t (b)"] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      lines = progress.grep(/\(llm-index-refine\)/)
+      expect(lines).to include("quaack: [3/18] Reading how the index ideas did (llm-index-refine)\n",
+                               "quaack: [3/18] Testing anthropic claude-opus-5-5's revised index ideas " \
+                               "(llm-index-refine)\n")
+      expect(lines.grep(/the LLM's/)).to eq([])
     end
 
     it "counts operator-rewrites, and prints each LLM ask and retry, when there's a rewrites file" do

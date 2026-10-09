@@ -22,8 +22,8 @@ RSpec.describe Quaack::Driver::RefinementRound do
   end
   let(:tested) { [] }
   let(:index_test) do
-    lambda do |ddls, round:|
-      tested << [ddls, round]
+    lambda do |ddls, round:, by:|
+      tested << [ddls, round, by]
       [{ "type" => "index_outcome", "index" => 1, "outcome" => "accepted" }]
     end
   end
@@ -42,7 +42,8 @@ RSpec.describe Quaack::Driver::RefinementRound do
     expect(text).to include(JSON.generate(payload)).and include(JSON.generate(feedback["candidates"]))
     expect(text).to include("Propose up to 1 revised")
     expect(ask.body[:system]).to include("revise")
-    expect(tested).to eq([[["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"], "refinement"]])
+    expect(tested).to eq([[["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"], "refinement",
+                           ["anthropic"]]])
     expect(result.outcomes.map { it["outcome"] }).to eq(["accepted"])
     expect(result.provider).to eq("anthropic")
   end
@@ -72,7 +73,7 @@ RSpec.describe Quaack::Driver::RefinementRound do
     fake.reply("llm-index-refine", { "indexes" => [] })
 
     expect(run.ddls).to eq([])
-    expect(tested).to eq([[[], "refinement"]])
+    expect(tested).to eq([[[], "refinement", ["anthropic"]]])
   end
 
   it "builds its enclave calls over the transport" do
