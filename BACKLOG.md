@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-44: existence_in_flip COLLATE placeholder refusal.
 - 20261003-35: distinct_join_to_exists bare ORDER BY key.
 - 20261003-32: nullable FK IS NULL loads.
 - 20261009-23: suggested drops see varchar partial indexes.
@@ -391,6 +392,7 @@ These are findings from building and reviewing 20261003-29:
 - **Originals that already error** still get rewrites: `ORDER BY 2` with one output column, and `y COLLATE "C"` against a nondeterministic collation. Refuse them, or leave them be.
 - **Test gaps:** the `ival` guard on constant ORDER BY keys (`ordering.rb:31`), and the `sole_table` path when S is a single CTE or a table that isn't plain (`selection.rb:46`).
 
+- **Partly landed (2026-10-09):** 131f8b0a. A placeholder under COLLATE as y is now refused. A spec shows that a sole CTE as S flips soundly. The Opus review found the cast-over-placeholder case sound (both forms resolve through the same `=`); the docs could say so. Still open: reproducers for sibling capture in cte_hoist_dedupe, shared_scan_cte, and union_outer_filter_removal (judged rare, not urgent), the two widenings, non-plain ORDER BY keys, unaliased function names in the scope check, a y that can raise, originals that already error, and the `ival` test.
 - **Depends on:** 20261003-29.
 - **Came from:** The build and review of 20261003-29, 2026-10-03.
 - **Design:** rewrite-rules, `existence_in_flip`.
