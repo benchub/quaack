@@ -389,6 +389,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     conn.exec("CREATE TABLE public.codes (code char(3)); INSERT INTO public.codes VALUES ('a')")
     expect_no_flip(
       "SELECT 1 AS one FROM public.codes WHERE codes.code IN (SELECT 'a ' FROM public.courses) LIMIT 1",
+      "SELECT 1 AS one FROM public.codes WHERE codes.code IN (SELECT 'a ' COLLATE \"C\" FROM public.courses) LIMIT 1",
       "SELECT 1 AS one FROM public.codes WHERE codes.code IN (SELECT * FROM public.codes) LIMIT 1",
       "SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT count(*) " \
       "FROM public.tool_lookups) LIMIT 1",
@@ -406,6 +407,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
       "SELECT 1 AS one FROM public.submissions WHERE submissions.assignment_id IN (SELECT " \
       "tool_lookups.assignment_id + user_id - user_id FROM public.tool_lookups, public.courses) LIMIT 1"
     )
+  end
+
+  it "qualifies a bare column of a sole CTE as S, and the flip returns the original's rows" do
+    expect_flips(*[1, 99].map do |id|
+      "WITH t AS (SELECT assignment_id FROM public.tool_lookups) SELECT 1 AS one FROM public.assignments " \
+        "WHERE assignments.id = #{id} AND assignments.id IN (SELECT assignment_id FROM t) LIMIT 1"
+    end)
   end
 
   it "renames a table its subqueries read, when none of them has a FROM item of that name" do
