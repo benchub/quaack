@@ -8,7 +8,7 @@ require_relative "existing_indexes"
 module Quaack
   module Enclave
     module Steps
-      # DESIGN.md's negative-result, for ReportPayload's negative field when the selection is
+      # DESIGN.md's negative-result, for ReportPayload's negative field, whether or not the selection is
       # empty: which index candidates index-test found the planner never used or
       # HypoPG refused, and which index-dedupe's Dedupe dropped as covered by an
       # existing index. What became of each rewrite is in ReportPayload's

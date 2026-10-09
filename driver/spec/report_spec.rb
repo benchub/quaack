@@ -1293,6 +1293,35 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
+  # Task 20261003-5: a winning report's payload carries the declined and
+  # existing lists too.
+  describe "when a candidate won and the payload lists declined and existing indexes" do
+    let(:winning) { render(payload.merge("negative" => negative)) }
+    let(:ideas) { section(winning, "index-ideas") }
+
+    it "lists them in their own section, after the explanation, with no rewrites' fates" do
+      expect(winning.scan(/<section id="([a-z-]+)">/).flatten)
+        .to eq(%w[summary queries ranking explanation index-ideas indexes accountability burndown])
+      expect(ideas).to include("<h2>Index ideas that went nowhere</h2>")
+      expect(winning).not_to include("negative-result")
+      expect(winning).not_to include("negative-rewrites")
+    end
+
+    it "says which indexes the planner wouldn't use and which already existed, as a negative result does" do
+      negative_html = render(negative_payload)
+      %w[declined-indexes existing-indexes].each do |id|
+        table = ideas[%r{<table id="#{id}">.*?</table>}m]
+        expect(table).not_to be_nil
+        expect(table).to eq(section(negative_html, "negative-result")[%r{<table id="#{id}">.*?</table>}m])
+      end
+      expect(ideas).to include("<td>your query, rewrite Smooth Kayak</td><td>#{sq("t_c_d_idx")}</td>")
+    end
+
+    it "leaves the section out when the payload has no lists" do
+      expect(html).not_to include("index-ideas")
+    end
+  end
+
   describe "who proposed what" do
     def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
       { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,
@@ -1419,9 +1448,9 @@ RSpec.describe Quaack::Driver::Report do
       # proposed counts under each.
       describe "built, not better, and ranked by source" do
         let(:index_sources) do
-          { "generator_one" => { "built" => 1, "not_better" => 0, "ranked" => 1 },
-            "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
-            "llm" => { "built" => 2, "not_better" => 1, "ranked" => 1 } }
+          { "generator_one" => { "built" => 1, "not_better" => 0, "ranked" => 1, "existed" => 3, "ignored" => 4 },
+            "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0, "existed" => 0, "ignored" => 5 },
+            "llm" => { "built" => 2, "not_better" => 1, "ranked" => 1, "existed" => 0, "ignored" => 0 } }
         end
         let(:sourced) { render(payload.merge("index_sources" => index_sources)) }
 
@@ -1430,6 +1459,17 @@ RSpec.describe Quaack::Driver::Report do
           expect(counted["Generator one, from the query&#39;s text"].last(3)).to eq(%w[1 0 1])
           expect(counted["Generator two, from the query&#39;s plan"].last(3)).to eq(%w[0 0 0])
           expect(counted["The LLM"].last(3)).to eq(%w[2 1 1])
+        end
+
+        # Task 20261003-5: and each generator's already existing and planner
+        # ignored candidates. The LLM's come from its rounds' burndown.
+        it "fills in each generator's already existed and planner ignored from the payload's index sources" do
+          counted = rows(sourced, "indexes")
+          expect(counted["Generator one, from the query&#39;s text"][1, 2]).to eq(%w[3 4])
+          expect(counted["Generator two, from the query&#39;s plan"][1, 2]).to eq(%w[0 5])
+          expect(counted["The LLM"][1, 2]).to eq(rows(html, "indexes")["The LLM"][1, 2])
+          expect(rows(html, "indexes")["Generator one, from the query&#39;s text"][1, 2])
+            .to eq(["not recorded", "not recorded"])
         end
 
         it "keeps all sources together's counts of each built index once" do

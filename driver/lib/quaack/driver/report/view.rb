@@ -64,7 +64,7 @@ module Quaack
         %w[top excluded infinite_sets labels rewrites indexes original_sql original_plan original_measurements
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
 
-        # DESIGN.md's negative-result, sent only when the selection is empty.
+        # DESIGN.md's negative-result, whether or not top is empty.
         def negative = @payload["negative"]
 
         def h(value) = Format.h(value)

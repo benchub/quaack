@@ -9,17 +9,18 @@ require "quaack/protocol/index_sources"
 # the driver both. Only counts, under QUAACK's own source names.
 RSpec.describe Quaack::Protocol::IndexSources do
   let(:sentinel) { "SENTINEL_INDEX_SOURCE_5c1e" }
-  let(:counts) { { "built" => 3, "not_better" => 1, "ranked" => 2 } }
+  let(:counts) { { "built" => 3, "not_better" => 1, "ranked" => 2, "existed" => 4, "ignored" => 5 } }
   let(:field) do
-    { "generator_one" => counts, "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
-      "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1 } }
+    { "generator_one" => counts,
+      "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0, "existed" => 0, "ignored" => 0 },
+      "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1, "existed" => 2, "ignored" => 0 } }
   end
 
   def valid?(value) = described_class.valid?(value)
 
   it "lists QUAACK's own index sources and the outcomes it counts for each, as frozen Strings" do
     expect(described_class::SOURCES).to eq(%w[generator_one generator_two llm])
-    expect(described_class::COLUMNS).to eq(%w[built not_better ranked])
+    expect(described_class::COLUMNS).to eq(%w[built not_better ranked existed ignored])
     [described_class::SOURCES, described_class::COLUMNS].each { expect(it).to be_frozen.and(all(be_frozen)) }
   end
 
@@ -67,7 +68,7 @@ RSpec.describe Quaack::Protocol::IndexSources do
   it "refuses more not better or ranked indexes than were built" do
     expect(valid?(field.merge("llm" => counts.merge("not_better" => 4)))).to be(false)
     expect(valid?(field.merge("llm" => counts.merge("ranked" => 4)))).to be(false)
-    expect(valid?(field.merge("llm" => { "built" => 3, "not_better" => 3, "ranked" => 3 }))).to be(true)
+    expect(valid?(field.merge("llm" => counts.merge("not_better" => 3, "ranked" => 3, "existed" => 9)))).to be(true)
   end
 
   it "is loaded by quaack/protocol" do
