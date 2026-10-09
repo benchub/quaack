@@ -26,8 +26,8 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
                                              "AND 'open' <> status::text AND status IN ('7', 'x') AND note = 'held'"))
 
     expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
-                      "WHERE status = 'held' AND note = ? AND total = ? AND 'open' <> status::text " \
-                      "AND status IN ('7', ?) AND note = ?")
+                      "WHERE 'open' <> status::text AND note = ? AND note = ? AND status = 'held' " \
+                      "AND status IN ('7', ?) AND total = ?")
   end
 
   it "keeps allowed values in col = ANY (...), the way Postgres prints an IN list, and masks the rest" do
@@ -37,8 +37,8 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
                                              "AND note = ANY (ARRAY['held'])"))
 
     expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
-                      "WHERE status = ANY(ARRAY['held', ?]) AND status = ANY('{held,open}'::text[]) " \
-                      "AND status = ANY(?::text[]) AND note = ANY(ARRAY[?])")
+                      "WHERE note = ANY(ARRAY[?]) AND status = ANY('{held,open}'::text[]) " \
+                      "AND status = ANY(?::text[]) AND status = ANY(ARRAY['held', ?])")
   end
 
   it "masks a low-cardinality value inside a key expression or function argument" do
@@ -66,6 +66,6 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
     ddl = redaction.ddl(candidate(predicate: "note IS NULL AND deleted_at IS NOT NULL AND NOT archived"))
 
     expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
-                      "WHERE note IS NULL AND deleted_at IS NOT NULL AND NOT archived")
+                      "WHERE NOT archived AND deleted_at IS NOT NULL AND note IS NULL")
   end
 end

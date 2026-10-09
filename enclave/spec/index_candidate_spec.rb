@@ -225,7 +225,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
          ["id", :SORTBY_DEFAULT, :SORTBY_NULLS_FIRST]]
       )
       expect(stmt.index_including_params.map { |n| n.index_elem.name }).to eq(%w[total note])
-      expect(PgQuery.deparse_expr(stmt.where_clause)).to eq("status = 'shipped' AND deleted_at IS NULL")
+      expect(PgQuery.deparse_expr(stmt.where_clause)).to eq("deleted_at IS NULL AND status = 'shipped'")
     end
 
     it "renders a unique index" do
@@ -369,7 +369,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       {
         "(deleted = true)" => "deleted", "true = deleted" => "deleted", "deleted <> false" => "deleted",
         "(active = false)" => "NOT active", "false = active" => "NOT active", "active <> true" => "NOT active",
-        "(a > 1) AND (deleted = true) AND (active = false)" => "a > 1 AND deleted AND NOT active"
+        "(a > 1) AND (deleted = true) AND (active = false)" => "NOT active AND a > 1 AND deleted"
       }.each do |written, folded|
         expect(candidate(predicate: written).predicate).to eq(folded), written
         expect(candidate(predicate: written)).to eq(candidate(predicate: folded)), written
