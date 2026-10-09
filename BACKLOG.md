@@ -2334,14 +2334,7 @@ Asked for by the user on 2026-10-09. QUAACK only ever adds indexes. When a winni
 - **Design:** index-dedupe, report.
 - **Status:** todo
 
-### 20261009-9. Funnel hover: say what each stage does.
-
-Left over from 20261009-4. The user asked for more detail on hover. The hover already shows full counts, but no text says what each stage does, so none was added. Write one short, plain sentence per stage, in a Words table, drawn from DESIGN.md's stage descriptions. Show it in each band's hover and in the table row's tooltip.
-
-- **Depends on:** 20261009-4.
-- **Came from:** The build and review of 20261009-4, 2026-10-09.
-- **Design:** report, burndown.
-- **Status:** todo
+### 20261009-9. Funnel hover: say what each stage does. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-10. Report: say "the original query", not "your query". Done, see BACKLOG-COMPLETE.md.
 

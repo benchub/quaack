@@ -8691,3 +8691,13 @@ Split from 20261009-5. Case 034's original is pathological on purpose, since tha
 - **Design:** baseline, e2e.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** d8468ebb, harness only. case.json gains optional `config` and `expect_stop` keys. Case 034 runs under a 5 s cap and passes, in about 57 s, when baseline refuses with `baseline_original_exceeded_cap`. The "rewrite beats a pathological NOT IN" claim is still made only by the case's verify.rb proof.
+
+### 20261009-9. Funnel hover: say what each stage does.
+
+Left over from 20261009-4. The user asked for more detail on hover. The hover already shows full counts, but no text says what each stage does, so none was added. Write one short, plain sentence per stage, in a Words table, drawn from DESIGN.md's stage descriptions. Show it in each band's hover and in the table row's tooltip.
+
+- **Depends on:** 20261009-4.
+- **Came from:** The build and review of 20261009-4, 2026-10-09.
+- **Design:** report, burndown.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** df48e307 and 6d44e820, driver only. `StageSentences` gives each of the 16 burndown stages one sentence, checked against DESIGN.md and pinned word for word. It shows in each funnel band's hover and in each burndown row's `title`, and says "the rewrite" in the rewrites' index table.
