@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261004-3: Evaluated SQLSTATE filtering (trust boundary).
 - 20261003-37: rewrite-test shared FK columns, column-list aliases.
 - 20261003-44: existence_in_flip COLLATE placeholder refusal.
 - 20261003-35: distinct_join_to_exists bare ORDER BY key.
@@ -299,8 +300,6 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 
 ### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-38. `bad_value`: loose ends from 20261003-24. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261003-39. rewrite-test: more variety in self-references and repeated parents.
 
 These are false passes found in the reviews of 20261003-31. They also happen on main. All are realistic:
@@ -383,18 +382,7 @@ These are findings from building and reviewing 20261003-29:
 
 ### 20261004-2. Step 9 re-probes CHECK constraints thousands of times. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-3. Tighten 20261003-38's SQLSTATE filtering.
-
-The review of 20261003-38 found four minor issues:
-- Class 42 includes 42501, a permission error. It isn't caused by the value, so it probably shouldn't count as `bad_value`.
-- A value can cause a P0001 (raised by a trigger or function) or 54000 (program limit) error. These now fail the whole step as `internal_error`, when they should count as `bad_value`.
-- The re-raised PG::Error still carries the value in its message. Only ErrorFilter keeps it from leaving the enclave. Wrap it with `cause: nil` and a message that carries only the sqlstate.
-- The timeout and termination tests check weakly that the value is absent. Make them use a sentinel value and assert that it never appears in the output.
-
-- **Depends on:** 20261003-38.
-- **Came from:** The review of 20261003-38.
-- **Design:** rewrite-test, ErrorFilter.
-- **Status:** todo
+### 20261004-3. Tighten 20261003-38's SQLSTATE filtering. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-6. Pin the type part of rewrite-test's probe cache key.
 
@@ -1145,3 +1133,12 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Status:** todo
 
 ### 20261009-23. Suggested drops miss partial indexes on varchar columns. Done, see BACKLOG-COMPLETE.md.
+
+### 20261009-25. `counterexample_steps_postgres_spec.rb` fails when run alone.
+
+Found in the build of 20261004-3. Run by itself, the spec file fails with a LeakCheck load error, but it passes under `rake`, so it depends on load order. Add the missing `require` so it runs alone.
+
+- **Depends on:** none.
+- **Came from:** The build of 20261004-3, 2026-10-09.
+- **Design:** none (test infrastructure).
+- **Status:** todo

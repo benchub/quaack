@@ -8938,3 +8938,17 @@ These are minor findings from building and reviewing 20261003-34:
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 91985ce2 and 1ef53296. ParentRows' new `share` lets a second NOT NULL FK on a column reuse the first one's value, with a parent row that holds it. That also fixes the self-FK-order load failure. `Reads` treats a column-list alias as reading every column. Three-part refs are left alone (no realistic wrong fixture). Minor and not filed: a partly overlapping composite FK can still fail loudly.
+
+### 20261004-3. Tighten 20261003-38's SQLSTATE filtering.
+
+The review of 20261003-38 found four minor issues:
+- Class 42 includes 42501, a permission error. It isn't caused by the value, so it probably shouldn't count as `bad_value`.
+- A value can cause a P0001 (raised by a trigger or function) or 54000 (program limit) error. These now fail the whole step as `internal_error`, when they should count as `bad_value`.
+- The re-raised PG::Error still carries the value in its message. Only ErrorFilter keeps it from leaving the enclave. Wrap it with `cause: nil` and a message that carries only the sqlstate.
+- The timeout and termination tests check weakly that the value is absent. Make them use a sentinel value and assert that it never appears in the output.
+
+- **Depends on:** 20261003-38.
+- **Came from:** The review of 20261003-38.
+- **Design:** rewrite-test, ErrorFilter.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 15a828af. P0001 and 54000 are bad_value, and 42501 isn't. Other PG errors are re-raised as `Redaction::Error(:internal_error, sqlstate)` with `cause: nil`. The timeout and termination sentinel tests check the whole error chain. Leftover in 20261009-25.
