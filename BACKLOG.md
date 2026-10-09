@@ -1206,3 +1206,21 @@ The user, 2026-10-09. A rewrite that wasn't ranked as `not_better` reads: "What 
 - **Design:** report, counterexamples.
 - **Open questions:** Whether the suggested sentence is true for every not-better rewrite (step 1).
 - **Status:** todo
+
+### 20261009-33. Ranked rewrites carry the "unproven" caution: find out why, and fix the cause.
+
+The user, 2026-10-09, from their own report (`quaack-20261009T212424Z-7f4c43c1.html` in the repo root, untracked; it's a real report with production schema and table names, so never commit it, quote it in a fixture, or send it anywhere; reproduce with synthetic data). Every rewrite in it, including the ranked ones (Steady Lute, Tidy Trout, Plucky Spoon), says "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." The user reads that as "QUAACK didn't logically test it", which is a problem when it sits on the query QUAACK recommends. The run's burndown says why it shows: rewrite-test's vacuity-guard counted 132 conditions the test data never exercised (after 396 retries), and the LLM's data exercised 85 of them. The conditions left (about 47, if those counts are what the caution counts) mark every rewrite, because `Report::Cautions#warning` adds the caution whenever `unchecked_atoms(entry)` is non-empty. The query is a large one: an OR of ANDs with `IN` lists of 10 to 21 placeholders over `assignments` and `submissions`.
+
+Work out which of these is true, and fix it:
+1. **Which atoms are left, and why.** From the run's store (ask the user for the run ID and for the shapes of the untested atoms; the report doesn't list them), say which atoms stay untested, and why vacuity-guard can't exercise them: an `IN` list's later members, an OR branch that can't be reached with a loadable row, a condition that the unique keys or the foreign-key cut rule out, or a bug.
+2. **Whether an untested atom makes the rewrite unproven at all.** If the atom sits in a part of the query the rewrite left exactly as the original had it, no test could tell the two apart there, so the caution says nothing about the rewrite. Consider warning only when an untested atom lies in a part the rewrite changed. This needs a check against DESIGN.md's counterexamples and result-comparison design: is the caution meant to be about the whole query, or only the rewrite's difference?
+3. **Whether to raise coverage** (more fixture variety for the atoms found in 1), which overlaps 20261003-39 and 20261003-42.
+4. **Wording**, if the caution stays: it must not read as "no logical testing" (see 20261009-32, which rewords the not-better case; do these two together, or keep the wording the same in both).
+
+Take the decision between 2 and 3 to the user before building, with the finding from step 1.
+
+- **Depends on:** None. Related: 20261009-32, 20261009-18, 20261003-39, 20261003-42.
+- **Came from:** The user, 2026-10-09.
+- **Design:** rewrite-test (vacuity-guard), counterexamples, report.
+- **Open questions:** The run ID and untested-atom shapes (from the user's run store); whether the caution is about the whole query or only the rewrite's difference.
+- **Status:** todo
