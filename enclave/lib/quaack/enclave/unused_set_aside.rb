@@ -14,15 +14,21 @@ module Quaack
     # PiiClassification#low_cardinality's [TableName, column] pairs.
     #
     # Each one is a real build, so a search sets aside at most
-    # MAX_PER_SEARCH, the first in the report's order (20260927-19).
+    # MAX_PER_SEARCH (20260927-19). It takes the first of each table first,
+    # in the report's order, so one table can't use up every slot, then
+    # fills what's left in the report's order (20261008-77). The result
+    # keeps the report's order.
     module UnusedSetAside
       MAX_PER_SEARCH = 2
 
       module_function
 
       def select(report, low_cardinality)
-        report.results.reject { it.used? || it.refusal }.map(&:candidate)
-              .select { eligible?(it, low_cardinality) }.first(MAX_PER_SEARCH)
+        eligible = report.results.reject { it.used? || it.refusal }.map(&:candidate)
+                         .select { eligible?(it, low_cardinality) }
+        firsts = eligible.uniq(&:table).first(MAX_PER_SEARCH)
+        picked = firsts + (eligible - firsts).first(MAX_PER_SEARCH - firsts.size)
+        eligible.select { picked.include?(it) }
       end
 
       def eligible?(candidate, low_cardinality)
