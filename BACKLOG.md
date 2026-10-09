@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-21: ImplicitCast edge cases.
 - 20261009-8: suggested index drops (protocol payload change).
 - 20261009-20: implicit text casts dropped from existing predicates.
 - 20261009-19: existing reordered predicates read, nested AND/OR flattened.
@@ -2352,12 +2353,4 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 
 ### 20261009-20. index-dedupe: match predicates that differ only in implicit casts. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-21. ImplicitCast: leftovers from 20261009-20.
-
-- **Untested:** loosening `bare_text_const` keeps every spec green. Add a spec in which the constant's cast isn't plain text, such as `col::text = 'abc'::varchar(3)`, and the cast must stay.
-- **Empty array:** `array_consts` accepts an empty `ARRAY[]` and would produce `IN ()`. Postgres prints `'{}'::text[]` instead, so this shouldn't happen in practice, but refuse it rather than emit invalid SQL.
-
-- **Depends on:** 20261009-20.
-- **Came from:** The review of 20261009-20, 2026-10-09.
-- **Design:** index-dedupe.
-- **Status:** todo
+### 20261009-21. ImplicitCast: leftovers from 20261009-20. Done, see BACKLOG-COMPLETE.md.

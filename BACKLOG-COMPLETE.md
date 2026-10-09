@@ -8742,3 +8742,14 @@ From 20261009-13's review. The body's `p.warn` now repeats the whole summary war
 - **Design:** report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 9066b08c, driver only. `Cautions#warning(body: true)` leaves out the data clause that `p.empirical` already states, and the summary warning stays whole. Minor, not filed: no spec covers every combination of cautions.
+
+### 20261009-21. ImplicitCast: leftovers from 20261009-20.
+
+- **Untested:** loosening `bare_text_const` keeps every spec green. Add a spec in which the constant's cast isn't plain text, such as `col::text = 'abc'::varchar(3)`, and the cast must stay.
+- **Empty array:** `array_consts` accepts an empty `ARRAY[]` and would produce `IN ()`. Postgres prints `'{}'::text[]` instead, so this shouldn't happen in practice, but refuse it rather than emit invalid SQL.
+
+- **Depends on:** 20261009-20.
+- **Came from:** The review of 20261009-20, 2026-10-09.
+- **Design:** index-dedupe.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** `array_consts` refuses an empty array, which used to crash pg_query's deparser. A `::name` constant spec pins `bare_text_const`. Minor, not filed: the empty-array spec's red was a segfault, not an assertion failure.
