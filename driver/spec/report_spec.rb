@@ -2025,6 +2025,56 @@ RSpec.describe Quaack::Driver::Report do
       expect(Quaack::Driver::Report::StageSentences::TABLE.keys).to match_array(shown)
     end
 
+    it "pins each stage's exact sentence" do
+      expect(Quaack::Driver::Report::StageSentences::TABLE).to eq(
+        "index-from-query" => "QUAACK reads the original query and suggests indexes for the tables, columns, " \
+                              "and conditions it uses.",
+        "index-from-plan" => "QUAACK suggests indexes from the plan the database made for the original query.",
+        "index-dedupe" => "QUAACK drops ideas that repeat another idea or that an index you already have covers.",
+        "index-test" => "QUAACK asks the planner whether it would use each idea, and drops the ones it wouldn't.",
+        "llm-index-ideas" => "The LLM suggests indexes that QUAACK's own search missed.",
+        "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
+        "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
+                        "dropping, up to three.",
+        "rewrite-rules" => "QUAACK's own rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
+        "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
+                          "its checks or go over the limit of five.",
+        "operator-rewrites" => "QUAACK asks the LLM what each rewrite you wrote assumes, checks those assumptions " \
+                               "against the database, and warns about any it can't confirm.",
+        "assumption-check" => "QUAACK checks each assumption a rewrite makes against the database's " \
+                              "constraints and indexes.",
+        "plan-pruning" => "QUAACK plans each rewrite, and drops any that can't plan, return a different number or " \
+                          "type of columns, or get the same plan as the original query, with or without indexes.",
+        "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
+                          "the original query.",
+        "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",
+        "rewrite-index-ideas" => "Each rewrite that's left gets its own index search, since it can need " \
+                                 "different indexes than the original query.",
+        "measurement" => "QUAACK builds the indexes, measures how many blocks each candidate reads on the real " \
+                         "data, and chooses the best."
+      )
+    end
+
+    it "says 'the rewrite' in the rewrites' index table and funnel, and 'the original query' in the original's" do
+      tips = Quaack::Driver::Report::StageSentences::TABLE
+      html = render(payload.merge("burndown" => { "stages" => stages.merge(
+        "index-from-query" => { "original" => rec(0, 4), "rewrite_1" => rec(0, 2) }
+      ), "totals" => {} }))
+      original = tips.fetch("index-from-query")
+      rewrote = original.sub("the original query", "the rewrite")
+      expect(rewrote).not_to eq(original)
+      burndown = section(html, "burndown")
+      index_table = burndown[%r{<table id="burndown-index">.*?</table>}m]
+      rewrite_table = burndown[%r{<table id="burndown-rewrite-index">.*?</table>}m]
+      expect(index_table).to include(%(<tr title="#{esc(original)}">))
+      expect(rewrite_table).to include(%(<tr title="#{esc(rewrote)}">))
+      expect(rewrite_table).not_to include(esc(original))
+      expect(bands(funnel("index", html)).join).to include(esc(original))
+      rewrite_bands = bands(funnel("rewrite-index", html)).join
+      expect(rewrite_bands).to include(esc(rewrote))
+      expect(rewrite_bands).not_to include(esc(original))
+    end
+
     it "says what the stage does in each band's hover and in each table row's tooltip" do
       words = Quaack::Driver::Report::Words
       names = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].reduce(:merge)

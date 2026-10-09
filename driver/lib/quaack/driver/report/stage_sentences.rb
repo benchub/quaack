@@ -14,19 +14,18 @@ module Quaack
           "index-dedupe" => "QUAACK drops ideas that repeat another idea or that an index you already have covers.",
           "index-test" => "QUAACK asks the planner whether it would use each idea, and drops the ones it wouldn't.",
           "llm-index-ideas" => "The LLM suggests indexes that QUAACK's own search missed.",
-          "llm-index-refine" => "The LLM gets a second round to improve its index ideas.",
+          "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
           "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
                           "dropping, up to three.",
-          "rewrite-rules" => "QUAACK's own rules rewrite the query, and QUAACK drops repeats and rewrites " \
-                             "that fail its checks.",
+          "rewrite-rules" => "QUAACK's own rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
           "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
                             "its checks or go over the limit of five.",
-          "operator-rewrites" => "QUAACK checks the rewrites you wrote against its rules and against what " \
-                                 "the LLM says they assume.",
+          "operator-rewrites" => "QUAACK asks the LLM what each rewrite you wrote assumes, checks those assumptions " \
+                                 "against the database, and warns about any it can't confirm.",
           "assumption-check" => "QUAACK checks each assumption a rewrite makes against the database's " \
                                 "constraints and indexes.",
-          "plan-pruning" => "QUAACK plans each rewrite, and drops any that can't plan, return different " \
-                            "columns, or plan the same as the original query.",
+          "plan-pruning" => "QUAACK plans each rewrite, and drops any that can't plan, return a different number or " \
+                            "type of columns, or get the same plan as the original query, with or without indexes.",
           "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
                             "the original query.",
           "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",
