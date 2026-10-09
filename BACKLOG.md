@@ -2291,6 +2291,7 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Depends on:** 20261008-74.
 - **Came from:** The build and reviews of 20261008-74, 2026-10-08.
 - **Design:** LLM client.
+- **Partly landed (2026-10-09):** Item 1 (53d4b537, 2bb83215; driver only). Item 2, the wording, is still open and needs a design call.
 - **Status:** todo
 
 ### 20261008-76. Baseline has no cap on the original query's runtime.
