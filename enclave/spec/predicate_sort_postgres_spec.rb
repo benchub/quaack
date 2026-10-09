@@ -27,4 +27,20 @@ RSpec.describe "predicate operand order, against a real server" do
     expect(plan(reordered)).to eq(plan(written))
     expect(plan(written).join).to include("Index")
   end
+
+  # Task 20261009-19: the real index-dedupe path.
+  it "covers a candidate whose predicate is an existing index's, reordered" do
+    require "quaack/enclave/dedupe"
+    conn.exec("CREATE TABLE sort_t (a int, b int, c int, d boolean)")
+    conn.exec("CREATE INDEX sort_idx ON sort_t (a) WHERE b = 2 AND c <> 3 AND (d IS NULL OR NOT d)")
+    ddl = conn.exec("SELECT pg_get_indexdef('sort_idx'::regclass)").getvalue(0, 0)
+    existing = Quaack::Enclave::IndexCandidate.from_indexdef(ddl)
+    candidate = lambda do |predicate|
+      Quaack::Enclave::IndexCandidate.new(table: t, key: ["a"], sources: [:parse], predicate:)
+    end
+    reordered = candidate.call("(NOT d OR d IS NULL) AND c <> 3 AND b = 2")
+    expect(Quaack::Enclave::Dedupe.covers?(existing, reordered)).to be(true)
+    other = candidate.call("c <> 3 AND b = 2")
+    expect(Quaack::Enclave::Dedupe.covers?(existing, other)).to be(false)
+  end
 end

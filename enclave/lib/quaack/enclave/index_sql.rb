@@ -164,12 +164,12 @@ module Quaack
 
       # Changes the parsed statement in place to what to_ddl would render: no
       # name, each key column as IndexKeySql.comparable leaves it, and the
-      # predicate's booleans folded, as the constructor stores them.
+      # predicate's booleans folded and operands sorted, as the constructor stores them.
       # CONCURRENTLY and IF NOT EXISTS stay, so from_ddl returns nil for
       # them. pg_get_indexdef never prints either.
       def comparable(stmt)
         stmt.idxname = ""
-        stmt.where_clause = BooleanFold.fold(stmt.where_clause) if stmt.where_clause
+        stmt.where_clause = PredicateSort.sort(BooleanFold.fold(stmt.where_clause)) if stmt.where_clause
         stmt.index_params.each { |n| IndexKeySql.comparable(n.index_elem) }
         stmt
       end

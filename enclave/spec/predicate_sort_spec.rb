@@ -32,4 +32,12 @@ RSpec.describe "predicate operand order" do
   it "keeps a different grouping different" do
     expect(predicate("a = 1 AND (b = 2 OR c = 3)")).not_to eq(predicate("(a = 1 AND b = 2) OR c = 3"))
   end
+
+  # Task 20261009-19: pg_query keeps c AND (b AND a) nested.
+  it "flattens a nested AND inside an AND, and a nested OR inside an OR, before sorting" do
+    expect(predicate("c = 3 AND (b = 2 AND a = 1)")).to eq("a = 1 AND b = 2 AND c = 3")
+    expect(predicate("c = 3 OR (b = 2 OR a = 1)")).to eq("a = 1 OR b = 2 OR c = 3")
+    expect(predicate("(c = 3 AND b = 2) AND a = 1")).to eq("a = 1 AND b = 2 AND c = 3")
+    expect(predicate("x = 1 AND (c = 3 OR (b = 2 OR a = 1))")).to eq("(a = 1 OR b = 2 OR c = 3) AND x = 1")
+  end
 end
