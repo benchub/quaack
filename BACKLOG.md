@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-23: suggested drops see varchar partial indexes.
+
 
 
 
@@ -2301,11 +2303,13 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261009-23. Suggested drops miss partial indexes on varchar columns.
+### 20261009-23. Suggested drops miss partial indexes on varchar columns. Done, see BACKLOG-COMPLETE.md.
 
-Found by the Opus review of the 0.1.29 batch, 2026-10-09. `RedundantIndexes#existing` calls `IndexCandidate.from_indexdef(entry["definition"])` without `types:`. That leaves the `::text` casts on an existing index's predicate, which then never equals a new candidate's. So on Canvas-style tables, where `workflow_state` and similar columns are varchar, no drop is ever suggested for a partial index. That's a missed drop, never a wrong one. Pass the table's `column_types` through, the way `planner_statistics.rb` does. Also, `ImplicitCast.strip_comparison` only strips when the column is on the left, so `'x'::text = (col)::text` keeps its casts. Handle the constant-on-the-left form too, if Postgres ever prints it that way for an index predicate. Check that first. Test against real Postgres with a varchar partial index.
+### 20261009-24. Pin that operand order matters in predicate matching.
 
-- **Depends on:** 20261009-8, 20261009-20.
-- **Came from:** The Opus review of 0.1.29, 2026-10-09.
-- **Design:** index-dedupe, report.
+From the Opus review of 20261009-23. Nothing commutes the sides of a comparison, so `'a' < ws` never equals `ws < 'a'`, but no test pins it. Add specs: an existing `'deleted' <> ws` against a candidate `ws <> 'deleted'`, and `'a' < ws` against `ws < 'a'`. Each pair must not match in dedupe or in RedundantIndexes. (A later normalization that commutes `=` and `<>` would be safe, but it must flip `<` and `>` correctly.)
+
+- **Depends on:** 20261009-23.
+- **Came from:** The Opus review of 20261009-23, 2026-10-09.
+- **Design:** index-dedupe.
 - **Status:** todo

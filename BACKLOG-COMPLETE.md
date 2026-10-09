@@ -8826,3 +8826,13 @@ Minor findings from the build and review of 20261003-17:
 - **Design:** rewrite-test, llm-counterexamples.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 5bcdcf90, spec and DESIGN.md only. Item 1: a spec pins that a nullable FK from a cycle table to an outside table stays uncut. Item 2: an "Unsupported in v1" note covers a DEFAULT in a cut column on the counterexample path (fails safe as insert_failed). Items 3 and 4 were stale: `read?` only orders cuts, and partitioned parents are refused at qualify.
+
+### 20261009-23. Suggested drops miss partial indexes on varchar columns.
+
+Found by the Opus review of the 0.1.29 batch, 2026-10-09. `RedundantIndexes#existing` calls `IndexCandidate.from_indexdef(entry["definition"])` without `types:`. That leaves the `::text` casts on an existing index's predicate, which then never equals a new candidate's. So on Canvas-style tables, where `workflow_state` and similar columns are varchar, no drop is ever suggested for a partial index. That's a missed drop, never a wrong one. Pass the table's `column_types` through, the way `planner_statistics.rb` does. Also, `ImplicitCast.strip_comparison` only strips when the column is on the left, so `'x'::text = (col)::text` keeps its casts. Handle the constant-on-the-left form too, if Postgres ever prints it that way for an index predicate. Check that first. Test against real Postgres with a varchar partial index.
+
+- **Depends on:** 20261009-8, 20261009-20.
+- **Came from:** The Opus review of 0.1.29, 2026-10-09.
+- **Design:** index-dedupe, report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** ba6088fd. `RedundantIndexes` passes each table's `column_types` to `from_indexdef`, so varchar partial indexes match. `ImplicitCast` strips the constant-on-left form too, keeping operand order. Leftovers are in 20261009-24.
