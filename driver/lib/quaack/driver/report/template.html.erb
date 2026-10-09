@@ -48,7 +48,7 @@
 <h1>QUAACK report <%= h run_id %></h1>
 <% unless rule_bugs.empty? %>
 <section id="quaack-bugs"><h2>QUAACK bug: a rule made a wrong rewrite</h2>
-<p>QUAACK's own rewrite rules are meant to be sound: a rewrite one makes should return the same rows as your query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>
+<p>QUAACK's own rewrite rules are meant to be sound: a rewrite one makes should return the same rows as the original query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>
 <ul><% rule_bugs.each do |b| %><li><%= h bug(b) %></li><% end %></ul>
 </section>
 <% end %>
@@ -58,9 +58,9 @@
 <% end %>
 </section>
 <section id="queries"><h2>The queries</h2>
-<p class="note">Each <code class="sql">$1</code>, <code class="sql">$2</code>, and so on stands for a value from your query. The values themselves never leave your jump server.</p>
+<p class="note">Each <code class="sql">$1</code>, <code class="sql">$2</code>, and so on stands for a value from the original query. The values themselves never leave your jump server.</p>
 <details class="query">
-<summary><h3>Your query</h3></summary>
+<summary><h3>The original query</h3></summary>
 <%= sql(original_sql) %>
 </details>
 <% rewrites.each do |r| %>
@@ -85,10 +85,10 @@
 </section>
 <section id="ranking"><h2>Ranking</h2>
 <% if winner %>
-<p>A candidate is your query, or a rewrite of it, run with a set of new indexes or none. QUAACK ranks the three best of each kind of change: your query with new indexes, a rewrite with new indexes, and a rewrite with none. To be ranked, it must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins within each kind.</p>
+<p>A candidate is the original query, or a rewrite of it, run with a set of new indexes or none. QUAACK ranks the three best of each kind of change: the original query with new indexes, a rewrite with new indexes, and a rewrite with none. To be ranked, it must read more than 5% fewer blocks than the original query on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins within each kind.</p>
 <table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indexes</th></tr></thead>
 <tbody>
-<tr class="baseline"><td class="num"></td><td>Your query as it is (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
+<tr class="baseline"><td class="num"></td><td>The original query (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
 <% ranked_by_kind.each do |kind, entries| %>
 <tr class="kind"><th scope="rowgroup" colspan="5"><%= h KIND_NAMES.fetch(kind) %></th></tr>
 <% entries.each_with_index do |t, i| %>
@@ -97,7 +97,7 @@
 <% end %>
 </tbody></table>
 <% else %>
-<p>Nothing beat your query as it is, so there is no ranking. To be ranked, a candidate must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values.</p>
+<p>Nothing beat the original query, so there is no ranking. To be ranked, a candidate must read more than 5% fewer blocks than the original query on the slow values (the values from your slow plan), and no more than 5% more on any other set of values.</p>
 <% end %>
 <% unless unranked.empty? %>
 <h3>Measured, and not ranked</h3>
@@ -109,7 +109,7 @@
 <tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
 <% end %>
 </tbody></table>
-<p class="note">Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index, so for your query with new indexes it says <%= h Words::MISSING %>. It also says that for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
+<p class="note">Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index, so for the original query with new indexes it says <%= h Words::MISSING %>. It also says that for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
 </details>
 <% end %>
 <% ranked_by_kind.each do |kind, entries| %>
@@ -123,7 +123,7 @@
 <p>Its new indexes:</p>
 <ul><% measured(t["label"])["indexes"].each do |name| %><li><%= sql_code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
 <% end %>
-<table><thead><tr><th scope="col">Values</th><th scope="col" class="num">Blocks read</th><th scope="col" class="num">Your query as it is</th><th scope="col" class="num">Already in memory</th><th scope="col" class="num">Read from disk</th><th scope="col">Against your query</th><th scope="col">Note</th></tr></thead>
+<table><thead><tr><th scope="col">Values</th><th scope="col" class="num">Blocks read</th><th scope="col" class="num">The original query</th><th scope="col" class="num">Already in memory</th><th scope="col" class="num">Read from disk</th><th scope="col">Against the original query</th><th scope="col">Note</th></tr></thead>
 <tbody>
 <% measurement_rows(t["label"]).each do |set, *counts, verdict, note| %>
 <tr><td><%= h set %></td><%= counts.map { num(it) }.join %><td><%= h verdict %></td><td><%= h note %></td></tr>
@@ -141,7 +141,7 @@
 <% if winner_plan && plans_differ?(original_plan, winner_plan) %>
 <p class="note"><%= h Plans::MARKED %></p>
 <% end %>
-<p>How Postgres runs your query now:</p>
+<p>How Postgres runs the original query now:</p>
 <%= plan_table(original_plan, winner_plan) %>
 <p class="note"><%= h Plans::BLOCKS_NOTE %></p>
 <% if measured_plan %>
@@ -162,7 +162,7 @@
 <% if negative && winner %>
 <section id="index-ideas"><h2>Index ideas that went nowhere</h2>
 <% elsif negative %>
-<section id="negative-result"><h2>Why nothing beat your query</h2>
+<section id="negative-result"><h2>Why nothing beat the original query</h2>
 <h3>The rewrites</h3>
 <% if rewrites.empty? %>
 <p>QUAACK kept no rewrite to test.</p>
@@ -233,12 +233,12 @@
 <tr><th scope="row"><%= h name %></th><%= counts.map { count_cell(it) }.join %></tr>
 <% end %>
 </tbody></table>
-<p class="note">Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for your query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once.</p>
+<p class="note">Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for the original query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once.</p>
 <p class="note">Planner ignored or couldn't try also counts the ideas QUAACK couldn't try, because HypoPG, which it uses to try an index without building it, couldn't create them, or because it couldn't write their definition. The planner was never asked about those.</p>
 <% if overlap? %>
 <p class="note">An index more than one source proposed counts in each of their rows, so the rows by source can add up to more than all sources together.</p>
 <% end %>
-<p class="note">An index counts as not better only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked (it tied with a smaller one, or three others did better), or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.</p>
+<p class="note">An index counts as not better only if no candidate that ran with it beat the original query. A built index whose candidate beat the original query and still wasn't ranked (it tied with a smaller one, or three others did better), or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.</p>
 <% if index_account.any? { it.first.start_with?("The LLM: ") } %>
 <p class="note"><%= h Providers::PER_PROVIDER %></p>
 <% end %>
@@ -273,7 +273,7 @@
 <% end %>
 </section>
 <section id="burndown"><h2>Burndown: how much QUAACK did, and where ideas dropped out</h2>
-<% [["index", "Index ideas for your query", index_rows], ["rewrite", "Rewrites", rewrite_rows],
+<% [["index", "Index ideas for the original query", index_rows], ["rewrite", "Rewrites", rewrite_rows],
    ["rewrite-index", "Index ideas for the rewrites", rewrite_index_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
 <%= funnel(id, title, rows) %>

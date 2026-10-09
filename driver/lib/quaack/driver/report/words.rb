@@ -22,7 +22,7 @@ module Quaack
 
         # Why a test ended without comparing results. Any other rule is a
         # statement that failed on the test database.
-        FAILURES = { "unsupported_order" => "the order of your query's rows can't be checked",
+        FAILURES = { "unsupported_order" => "the order of the original query's rows can't be checked",
                      "statement_timeout" => "a statement timed out",
                      "statement_canceled" => "a statement was canceled" }.freeze
         FAILED = "a statement failed on the test database"
@@ -57,7 +57,7 @@ module Quaack
                            "llm-rewrites" => "Rewrites from the LLM",
                            "operator-rewrites" => "Your own rewrites",
                            "assumption-check" => "Checking what each rewrite assumes",
-                           "plan-pruning" => "Checking each rewrite can run differently from your query",
+                           "plan-pruning" => "Checking each rewrite can run differently from the original query",
                            "rewrite-test" => "Testing on made-up edge-case data",
                            "counterexamples" => "Testing on data the LLM wrote to break them" }.freeze
         LATE_STAGES = { "rewrite-index-ideas" => "Choosing indexes for each rewrite",
@@ -74,7 +74,7 @@ module Quaack
                    "over_cap" => "over the limit of ten", "failed_checks" => "failed QUAACK's checks",
                    "inbound_check" => "failed the checks on what goes in",
                    "failed_to_plan" => "didn't plan", "output_mismatch" => "returned different columns",
-                   "same_plans" => "planned the same as your query",
+                   "same_plans" => "planned the same as the original query",
                    "untested_atoms" => "conditions the test data never exercised",
                    "too_many" => "over the limit of five", "bad_assumption" => "assumed something QUAACK can't check",
                    "unmet_assumption" => "assumed something your data doesn't hold",
@@ -84,7 +84,7 @@ module Quaack
                    "production_mismatch" => "wrong on the real data",
                    "production_timed_out" => "timed out on the real data",
                    "production_not_compared" => "couldn't be compared on the real data",
-                   "not_better" => "no better than your query", "footprint_tie" => "lost a tie on index size",
+                   "not_better" => "no better than the original query", "footprint_tie" => "lost a tie on index size",
                    "below_top_three" => "outside the top three",
                    "measurement_timed_out" => "timed out in every measurement run",
                    "partial_comparisons" => "compared on only part of the real data",
@@ -139,8 +139,8 @@ module Quaack
         # else as it is.
         def numbered(name) = name.to_s.sub(/\Arewrite_(\d+)\z/, 'Rewrite \\1')
 
-        # A search, mid-sentence: "your query" or "rewrite Silver Fox".
-        def search(name, run_id) = name == "original" ? "your query" : lower(rewrite(name, run_id))
+        # A search, mid-sentence: "the original query" or "rewrite Silver Fox".
+        def search(name, run_id) = name == "original" ? "the original query" : lower(rewrite(name, run_id))
 
         def lower(text) = text.sub(/\A[A-Z]/, &:downcase)
 

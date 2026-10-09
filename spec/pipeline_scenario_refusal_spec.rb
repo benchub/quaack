@@ -100,7 +100,7 @@ RSpec.describe ScenarioRefusalRun do
     end
 
     it "says in the report file that the rewrite was never tested, and why" do
-      expect(runs.html).to include("QUAACK couldn&#39;t make up test data for your query, because a CHECK " \
+      expect(runs.html).to include("QUAACK couldn&#39;t make up test data for the original query, because a CHECK " \
                                    "constraint on its tables is too complex for QUAACK to satisfy, so it never " \
                                    "tested this rewrite and won&#39;t recommend it.")
     end
