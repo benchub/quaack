@@ -2346,14 +2346,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 
 ### 20261009-17. Sort a partial index's top-level AND conditions, so equal predicates read the same. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-18. Report: a rewrite's "relies on your data" caution reads twice when open.
-
-From 20261009-13's review. The body's `p.warn` now repeats the whole summary warning, including "it relies on what your data holds today" and the pairing warning. The `p.empirical` paragraph right below it says the first of those again. In an open section, say each caution once.
-
-- **Depends on:** 20261009-13.
-- **Came from:** The review of 20261009-13, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
+### 20261009-18. Report: a rewrite's "relies on your data" caution reads twice when open. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-19. Predicate sort: leftovers from 20261009-17. Done, see BACKLOG-COMPLETE.md.
 

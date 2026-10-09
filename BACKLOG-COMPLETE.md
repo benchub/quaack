@@ -8732,3 +8732,13 @@ Came from 20261009-11's review. The report has no dark theme. A partial one, wit
 - **Design:** report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** driver only. Moves every report color into 26 CSS variables on `:root`, each redefined under `prefers-color-scheme: dark`, including the funnel palette. Contrast is AA in both themes (computed from the hex values). Specs reject color literals and dark gaps. Not yet looked at in a browser.
+
+### 20261009-18. Report: a rewrite's "relies on your data" caution reads twice when open.
+
+From 20261009-13's review. The body's `p.warn` now repeats the whole summary warning, including "it relies on what your data holds today" and the pairing warning. The `p.empirical` paragraph right below it says the first of those again. In an open section, say each caution once.
+
+- **Depends on:** 20261009-13.
+- **Came from:** The review of 20261009-13, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 9066b08c, driver only. `Cautions#warning(body: true)` leaves out the data clause that `p.empirical` already states, and the summary warning stays whole. Minor, not filed: no spec covers every combination of cautions.
