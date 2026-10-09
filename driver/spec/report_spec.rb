@@ -187,9 +187,9 @@ RSpec.describe Quaack::Driver::Report do
 
     it "gives a kind with no candidate a ⚠ and a hover that says more, from what QUAACK measured" do
       out = verdict(render(negative_payload))
-      expect(out).to include(%(<td colspan="3" title="QUAACK measured 1 candidate of this kind, and none made the ) \
-                             %(ranking. The ranking section says why."><span class="warn">&#9888; No rewrite ) \
-                             "beat the original without an index</span>")
+      expect(out).to include("<td colspan=\"3\" title=\"QUAACK measured 1 candidate of this kind, and none made " \
+                             "the ranking. The ranking section says why.\"><span class=\"warn\">&#9888; No " \
+                             "rewrite beat the original without an index</span>")
       expect(out).to include("&#9888; No new index beat the original query")
     end
 
