@@ -14,7 +14,9 @@ module Quaack
       # column of that name in every table. A join's alias names no table,
       # since its columns need no reference inside it. A subquery's or
       # CTE's column comes from a reference or star inside it, which counts
-      # on its own. A star, or a reference whose last name is no column of
+      # on its own. A table aliased with a column list (c(a, b)) renames its
+      # columns, so any reference to it counts as reading every column of
+      # it. A star, or a reference whose last name is no column of
       # a fixture table (a whole row, such as t in SELECT t FROM x t, or an
       # output name), counts as reading every column. A JOIN ... USING
       # reads the columns it names, and a NATURAL join reads every column.
@@ -24,14 +26,18 @@ module Quaack
           @names = []
           @qualified = []
           @all = false
+          @whole = []
           known = column_names.values.flatten
           (parse.is_a?(Array) ? parse : [parse]).each do |p|
             tables = Tables.new(p.tree)
+            @whole.concat(tables.renamed)
             walk(p.tree) { |fields| note(fields, known, tables) }
           end
         end
 
-        def read?(table, name) = @all || @names.include?(name) || @qualified.include?([table, name])
+        def read?(table, name)
+          @all || @whole.include?(table) || @names.include?(name) || @qualified.include?([table, name])
+        end
 
         private
 
@@ -64,8 +70,12 @@ module Quaack
         class Tables
           def initialize(tree)
             @named = Hash.new { |h, k| h[k] = [] }
+            @renamed = []
             collect(tree)
           end
+
+          # The tables aliased with a column list.
+          attr_reader :renamed
 
           # The one table name names, or nil.
           def only(name)
@@ -82,10 +92,15 @@ module Quaack
 
           def add(node)
             if node.is_a?(PgQuery::RangeVar)
-              @named[node.alias&.aliasname || node.relname] << table(node)
+              range(node)
             elsif node.is_a?(PgQuery::JoinExpr) && node.alias
               @named[node.alias.aliasname] << nil
             end
+          end
+
+          def range(node)
+            @named[node.alias&.aliasname || node.relname] << table(node)
+            @renamed << table(node) if node.alias && !node.alias.colnames.empty?
           end
 
           # nil for a name with no schema, such as a CTE's.

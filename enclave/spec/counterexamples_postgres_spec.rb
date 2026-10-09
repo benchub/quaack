@@ -78,6 +78,47 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     load(prepared, "SELECT c.id, c.root_customer_id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id")
   end
 
+  it "gives a unique column that a foreign key to its own table and another foreign key both cover the other " \
+     "key's value, when the self-referencing one comes first" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.regions (code integer PRIMARY KEY);
+      ALTER TABLE fx.customers ADD COLUMN code integer NOT NULL UNIQUE,
+        ADD COLUMN root_code integer NOT NULL;
+      ALTER TABLE fx.customers ADD CONSTRAINT a_self FOREIGN KEY (root_code) REFERENCES fx.customers (code),
+        ADD CONSTRAINT b_region FOREIGN KEY (code) REFERENCES fx.regions;
+    SQL
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    sql = "SELECT id, code = root_code FROM fx.customers JOIN fx.regions USING (code)"
+    expect(load(prepared, sql)).to eq([%w[7 t]])
+  end
+
+  it "gives a unique column that a foreign key to its own table and another foreign key both cover the other " \
+     "key's value, when the self-referencing one comes second" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.regions (code integer PRIMARY KEY);
+      ALTER TABLE fx.customers ADD COLUMN code integer NOT NULL UNIQUE,
+        ADD COLUMN root_code integer NOT NULL;
+      ALTER TABLE fx.customers ADD CONSTRAINT a_region FOREIGN KEY (code) REFERENCES fx.regions,
+        ADD CONSTRAINT b_self FOREIGN KEY (root_code) REFERENCES fx.customers (code);
+    SQL
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    sql = "SELECT id, code = root_code FROM fx.customers JOIN fx.regions USING (code)"
+    expect(load(prepared, sql)).to eq([%w[7 t]])
+  end
+
+  it "gives a NOT NULL column two foreign keys cover one value that both parents hold" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.regions (code integer PRIMARY KEY);
+      CREATE TABLE fx.zones (code integer PRIMARY KEY);
+      ALTER TABLE fx.customers ADD COLUMN code integer NOT NULL;
+      ALTER TABLE fx.customers ADD CONSTRAINT a_zone FOREIGN KEY (code) REFERENCES fx.zones,
+        ADD CONSTRAINT b_region FOREIGN KEY (code) REFERENCES fx.regions;
+    SQL
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(load(prepared, "SELECT (SELECT count(*) FROM fx.zones z JOIN fx.regions r USING (code) " \
+                          "JOIN fx.customers c USING (code))::text")).to eq([["1"]])
+  end
+
   it "leaves a parent's nullable self-referencing foreign key NULL" do
     conn.exec("ALTER TABLE fx.customers ADD COLUMN root_customer_id integer REFERENCES fx.customers")
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")

@@ -254,6 +254,12 @@ RSpec.describe Quaack::Enclave::Scenarios do
       end
     end
 
+    it "still refuses a nullable one in a table aliased with a column list, which renames what the query reads" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn)")
+      error = refusal("SELECT c.v FROM fx.t c(id, a, v) WHERE c.id = 1")
+      expect(error.column).to eq(detail("fx.t", "lsn", "pg_lsn"))
+    end
+
     it "leaves NULL a nullable one when the query reads only another table's column of that name" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
