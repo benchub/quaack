@@ -2415,3 +2415,12 @@ Check that `:target` links to a rewrite's SQL still open and scroll to the right
 - **Came from:** The user, 2026-10-09.
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-12. Report: open rule documentation links in a new tab.
+
+Asked for by the user on 2026-10-09. Links to a rule's documentation page, such as "Where it came from: made by QUAACK's own rewrite rule key_in_self_join", should open in a new tab. Give them `target="_blank" rel="noopener"` (`RuleLinks#rule_link`). In-page `#` links are unchanged.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
