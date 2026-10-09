@@ -8921,3 +8921,20 @@ These are minor findings from building and reviewing 20261002-16:
 - **Note (2026-10-07):** the nondeterministic-collation key with a `COLLATE "C"` index is covered by 20261002-4's shared unique check (`assumption_check/index_equality.rb`).
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** f46ba899 and 357afdd6. A bare `ORDER BY <key>` is now accepted, with or without LIMIT, when every output of that name is the kept table's column (`order_by.rb`). The description is fixed. New tests cover the cache key, `x.*`, and collation. The function-schema and nondeterministic-collation items were already handled. Opus review: sound.
+
+### 20261003-37. rewrite-test values: loose ends from 20261003-34.
+
+These are minor findings from building and reviewing 20261003-34:
+
+- **A base table aliased with a column list** (`reads.rb` `Tables#add` and `qualifier`). In `FROM fx.customers c(id, name, status)`, `c.status` reads `customers.lsn`, but `Reads` treats `lsn` as unread and fills it with NULL. Fix: treat an alias with a column list as reading every column of its table.
+- **ParentRows' self-FK fix depends on foreign-key order** (`parent_rows.rb` `foreign_keys`). The `next if` skip looks only at `fixed`, not at `pairs`.
+  - Example: `code NOT NULL UNIQUE`, a self-FK `root_code → code`, and an FK `code → regions`. When the self-FK comes first, the second FK overwrites `code`, and the load fails.
+  - No test covers the other order, so the mutation `fixed.merge(pairs)` → `fixed` survives.
+  - The same skip lets a later FK overwrite a NULL that an earlier nullable FK set.
+- **Three-part column references resolve by their table part only** in `Reads`, ignoring the schema.
+
+- **Depends on:** 20261003-34.
+- **Came from:** The build and review of 20261003-34, 2026-10-03.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 91985ce2 and 1ef53296. ParentRows' new `share` lets a second NOT NULL FK on a column reuse the first one's value, with a parent row that holds it. That also fixes the self-FK-order load failure. `Reads` treats a column-list alias as reading every column. Three-part refs are left alone (no realistic wrong fixture). Minor and not filed: a partly overlapping composite FK can still fail loudly.

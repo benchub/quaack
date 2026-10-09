@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-37: rewrite-test shared FK columns, column-list aliases.
 - 20261003-44: existence_in_flip COLLATE placeholder refusal.
 - 20261003-35: distinct_join_to_exists bare ORDER BY key.
 - 20261003-32: nullable FK IS NULL loads.
@@ -297,24 +298,6 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 ### 20261003-31. Step 9: two false passes on ordinary joins. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-34. Step 9 values: loose ends from 20261003-33. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-37. rewrite-test values: loose ends from 20261003-34.
-
-These are minor findings from building and reviewing 20261003-34:
-
-- **A base table aliased with a column list** (`reads.rb` `Tables#add` and `qualifier`). In `FROM fx.customers c(id, name, status)`, `c.status` reads `customers.lsn`, but `Reads` treats `lsn` as unread and fills it with NULL. Fix: treat an alias with a column list as reading every column of its table.
-- **ParentRows' self-FK fix depends on foreign-key order** (`parent_rows.rb` `foreign_keys`). The `next if` skip looks only at `fixed`, not at `pairs`.
-  - Example: `code NOT NULL UNIQUE`, a self-FK `root_code → code`, and an FK `code → regions`. When the self-FK comes first, the second FK overwrites `code`, and the load fails.
-  - No test covers the other order, so the mutation `fixed.merge(pairs)` → `fixed` survives.
-  - The same skip lets a later FK overwrite a NULL that an earlier nullable FK set.
-- **Three-part column references resolve by their table part only** in `Reads`, ignoring the schema.
-
-- **Depends on:** 20261003-34.
-- **Came from:** The build and review of 20261003-34, 2026-10-03.
-- **Design:** rewrite-test.
-- **Status:** todo
 
 ### 20261003-38. `bad_value`: loose ends from 20261003-24. Done, see BACKLOG-COMPLETE.md.
 
