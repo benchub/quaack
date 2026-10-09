@@ -160,9 +160,14 @@ module RuntimeBoundary
     # Maps each run's label to the run and the exit status it must end with.
     # QUAACKS_DEV_CHECKOUT turns off quaacks's own driver_present guard, so
     # this check sees what the enclave's code loads even when a planted
-    # driver gem sits beside it. The guard has its own specs.
+    # driver gem sits beside it. The guard has its own specs. It counts only
+    # in a git checkout, with a .git and a Gemfile two levels above exe/, so
+    # the install's gems directory gets stand-ins for both.
+    def mark_as_checkout = %w[.git Gemfile].each { FileUtils.touch(File.join(@install.home, "gems", it)) }
+
     def runs
       env = { "QUAACKS_DEV_CHECKOUT" => "1" }
+      mark_as_checkout
       runs = COMMANDS.to_h do |args, status|
         [[@side.exe, *args].join(" "), [@install.run(@side.exe, *args, env:), status]]
       end
