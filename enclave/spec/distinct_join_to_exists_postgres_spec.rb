@@ -386,7 +386,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
 
         expect(rewrites.size).to eq(1)
         expect(rewrites.first).to include("FROM public.assignments a WHERE EXISTS")
-        expect(same_ordered_rows(sql, rewrites).size).to be > 0
+        expect(same_ordered_rows(sql, rewrites)).not_to be_empty
       end
     end
 
