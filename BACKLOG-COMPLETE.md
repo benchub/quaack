@@ -8475,3 +8475,20 @@ These are minor findings from the review of 20260927-24:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 853717a8, 99ec757f (enclave exe; on the unreleased list). Review clean. Noted, not filed: a Bundler git-sourced install would put the repo root two levels up, but deploy is gem install only.
+
+### 20261003-5. Report payload: what the index accountability table still lacks.
+
+20261001-18 stayed in the driver (the user, 2026-10-03), so these cells of the report say "not recorded", and 20261001-19 and -20 won't fill them:
+
+- **Built and measured, not better, and ranked, per source.** `indexes` in the report message carries no source. The store has it (`IndexCandidate` sources). Send it through a closed list of QUAACK's constants.
+- **Already existed and planner ignored, for the two generators.** The index-dedupe and index-test drops aren't recorded by source.
+- **Already existed and planner ignored, in a winning report.** `negative` goes out only when nothing is ranked. Send the declined and existing lists every time.
+- **The plan with the new indexes.** The payload has a plan only for rewrites, and that plan is the rewrite with no new indexes, even when the winning label ran with some. Send the winning label's plan, for an index-only winner too.
+
+Then have the report render them. Trust boundary: sources are constants, DDL goes through CandidateDdlRedaction, and a plan node sends only its type, relation, index name, and row counts.
+
+- **Depends on:** 20261001-18, -20.
+- **Came from:** The build of 20261001-18, 2026-10-03.
+- **Design:** report, negative-result.
+- **Status:** done
+- **Landed:** 37f43e4b, 342db1f6 (protocol, enclave, and driver; on the unreleased list). Bullets 1 and 4 were stale (done by 20261004-80 and -86). Review clean; a planted raw-DDL leak on the new path went red. Minors filed as 20261009-3.

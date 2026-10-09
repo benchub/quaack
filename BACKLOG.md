@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260927-29 (QUAACKS_DEV_CHECKOUT honored only from a git checkout).
 - 20260927-19 (index search: one low-cardinality source; at most two set-asides per search).
 - 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
+- 20261003-5 (index sources: per-generator existed and ignored; declined and existing lists sent in winning reports too).
 - 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
 - 20261008-70 (CastlessIndex merges array-literal = ANY with IN).
 - 20261008-77 (set-aside cap spread across tables, one per table first).
@@ -953,21 +954,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-4. Readable report: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-5. Report payload: what the index accountability table still lacks.
-
-20261001-18 stayed in the driver (the user, 2026-10-03), so these cells of the report say "not recorded", and 20261001-19 and -20 won't fill them:
-
-- **Built and measured, not better, and ranked, per source.** `indexes` in the report message carries no source. The store has it (`IndexCandidate` sources). Send it through a closed list of QUAACK's constants.
-- **Already existed and planner ignored, for the two generators.** The index-dedupe and index-test drops aren't recorded by source.
-- **Already existed and planner ignored, in a winning report.** `negative` goes out only when nothing is ranked. Send the declined and existing lists every time.
-- **The plan with the new indexes.** The payload has a plan only for rewrites, and that plan is the rewrite with no new indexes, even when the winning label ran with some. Send the winning label's plan, for an index-only winner too.
-
-Then have the report render them. Trust boundary: sources are constants, DDL goes through CandidateDdlRedaction, and a plan node sends only its type, relation, index name, and row counts.
-
-- **Depends on:** 20261001-18, -20.
-- **Came from:** The build of 20261001-18, 2026-10-03.
-- **Design:** report, negative-result.
-- **Status:** todo
+### 20261003-5. Report payload: what the index accountability table still lacks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns.
 
@@ -2335,4 +2322,14 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Depends on:** 20260927-28.
 - **Came from:** The build of 20260927-28, 2026-10-08.
 - **Design:** none.
+- **Status:** todo
+
+### 20261009-3. Index sources: leftovers from 20261003-5.
+
+- **`IndexSources#ignored`'s `result["refusal"] ||` clause is untested.** The fixture's refused result also has unused plans. Drop the clause or test a refused result with a used plan.
+- **`existed` and `ignored` are tested only on hand-built store entries.** Add one Postgres spec that runs a real index-dedupe and index-test pass with an existing index on a 2-table query and checks the counts.
+
+- **Depends on:** 20261003-5.
+- **Came from:** The review of 20261003-5, 2026-10-09.
+- **Design:** report.
 - **Status:** todo
