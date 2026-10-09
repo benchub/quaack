@@ -12,12 +12,13 @@ RSpec.describe "quaacks result-comparison, against a real server" do
 
   it "stores a verdict per candidate and literal set, discards a mismatch, and sends only done" do
     prepare
+    candidate = ->(name, sql) { stored.write(name, "sql" => sql, "anchored_sql" => sql) }
     stored.write("baseline", "timeout_ms" => 5_000)
-    stored.write("rewrite_1", "sql" => "SELECT o.note, o.status FROM public.orders o " \
-                                       "WHERE o.status = $2 AND o.note = $1")
-    stored.write("rewrite_2", "sql" => "SELECT o.note, o.status FROM public.orders o " \
-                                       "WHERE o.note = $1 AND o.status <> $2")
-    stored.write("rewrite_3", "sql" => "SELECT 1")
+    candidate.call("rewrite_1", "SELECT o.note, o.status FROM public.orders o " \
+                                "WHERE o.status = $2 AND o.note = $1")
+    candidate.call("rewrite_2", "SELECT o.note, o.status FROM public.orders o " \
+                                "WHERE o.note = $1 AND o.status <> $2")
+    candidate.call("rewrite_3", "SELECT 1")
     stored.write("candidate_runs", "candidates" => { "rewrite_1" => {}, "rewrite_2" => {} })
 
     outcome = run("result-comparison")

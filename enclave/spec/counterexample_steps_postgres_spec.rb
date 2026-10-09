@@ -23,7 +23,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     make_arena(status_check, arena_sql) if arena
     store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],
-                             "inferred" => false, "warnings" => [], "result_types" => %w[text text])
+                             "anchored_sql" => sql, "inferred" => false, "warnings" => [],
+                             "result_types" => %w[text text])
   end
 
   # The run server's arena, and production's TimeZone, which it runs in.
@@ -332,7 +333,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       production.server.admin.exec(%(DROP DATABASE "#{arena_name}" WITH (FORCE)))
       make_arena("status = 'open' OR status = 'closed'")
-      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => same))
+      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => same, "anchored_sql" => same))
       step("rewrite-test", "--search", "rewrite_2")
       expect(burndown["stages"]["rewrite-test"]["rewrite_2"]).to eq(counted(dropped: { "complex_check" => 1 },
                                                                             extra: none))
@@ -367,7 +368,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       test
       loads = burndown["totals"]
       %w[rewrite_tested_1 rewrite_survived_1].each { remove(it) }
-      store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same))
+      store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same, "anchored_sql" => same))
 
       test
 
@@ -436,7 +437,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       round(1, note_row)
       expect(burndown["stages"]["counterexamples"]["rewrite_1"]["dropped"]).to eq("round_1" => 1)
       remove("rewrite_survived_1")
-      store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same))
+      store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same, "anchored_sql" => same))
 
       [note_row, dup_rows, dup_rows].each.with_index(1) { |insert, number| round(number, insert) }
 
