@@ -40,9 +40,7 @@ module Quaack
                                "did better.",
           "footprint_tie" => "It passed every test and beat the original query, but tied with a candidate " \
                              "whose new indexes take less disk space.",
-          "not_better" => "It passed every test, but didn't read enough fewer blocks than the original query. " \
-                          "To count, a candidate must read more than 5%% fewer blocks on the slow values, " \
-                          "and no more than 5%% more on any others.",
+          "not_better" => nil, # worded by NotBetterFate
           "measurement_timed_out" => "It passed every test, but every measurement run of it timed out."
         }.freeze
 
@@ -86,10 +84,12 @@ module Quaack
         def fate(entry)
           return UNFINISHED.fetch(entry["after"], UNFINISHED[nil]) if entry["fate"] == "unfinished"
 
-          text = FATES[entry["fate"]] or return "#{Words::MISSING}."
-          format(text, scenario: bracket(Words::SCENARIOS[entry["scenario"]]),
+          text = fate_text(entry) or return "#{Words::MISSING}."
+          format(text, percent: NotBetterFate::PERCENT, scenario: bracket(Words::SCENARIOS[entry["scenario"]]),
                        round: bracket(entry["round"] && "round #{entry["round"]}"), **because(entry))
         end
+
+        def fate_text(entry) = entry["fate"] == "not_better" ? not_better_text(entry) : FATES[entry["fate"]]
 
         # An fk_cycle refusal's tables, in the order their foreign keys
         # point, or nil.
