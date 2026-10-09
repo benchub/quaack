@@ -16,6 +16,7 @@ RSpec.describe "PromptPack.chat" do
     expect(chat).to include("# System\n\nSYS-TEXT\n")
     body = chat[/# Message\n\n(.*)\n# Reply format/m, 1]
     expect(body).to match(/Earlier in this conversation you were asked the following.*Treat that reply as your own/m)
+    expect(body).to include("You were asked:\n\nFIRST-ASK\n", "Your reply:\n\nPLANTED-REPLY\n")
     expect(body.index("FIRST-ASK")).to be < body.index("PLANTED-REPLY")
     expect(body.index("PLANTED-REPLY")).to be < body.index("FOLLOW-UP")
     expect(chat).to end_with(PromptPack.prompt(ask([{ role: "user", content: "x" }]))[/# Reply format.*/m])

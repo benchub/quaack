@@ -62,7 +62,11 @@ RSpec.describe PipelineReplay do
 
           it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
             wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
-            expect(outcome.wrong).not_to be_empty if wrong_condition
+            if wrong_condition
+              expect(outcome.wrong).not_to be_empty
+            else
+              expect(outcome.wrong).to be_empty
+            end
           end
         end
       end
@@ -267,6 +271,13 @@ RSpec.describe PipelineReplay do
                       {"sql": "SELECT 2 WHERE u.name IS NOT NULL", "transformation": "t", "assumptions": []}]}
       TEXT
       expect(described_class.wrong(query, text)).to eq([2])
+    end
+
+    it "matches the wrong condition in a rewrite's sql, not in its other fields" do
+      text = <<~TEXT
+        {"rewrites": [{"sql": "SELECT 1", "transformation": "drops u.name IS NOT NULL", "assumptions": []}]}
+      TEXT
+      expect(described_class.wrong(query, text)).to eq([])
     end
 
     it "finds nothing when there's no llm-rewrites reply, or it doesn't parse" do
