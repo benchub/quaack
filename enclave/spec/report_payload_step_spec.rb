@@ -1141,10 +1141,28 @@ RSpec.describe "quaacks report-payload" do
       expect(report["negative"]).not_to be_nil
       expect_no_leaks(sentinels, outcome)
     end
-  end
 
-  it "sends no negative result when a candidate beat the original" do
-    expect(report["negative"]).to be_nil
+    # Task 20261003-5: the declined and existing lists go out in a winning
+    # report too, for the report's index accountability.
+    context "when a candidate beat the original" do
+      let(:winning) do
+        store = Quaack::Enclave::Store.create(base: quaacks.store_base)
+        populate(store)
+        selection = store.read("selection")
+        populate_negative(store)
+        store.write("selection", selection)
+        quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
+      end
+
+      it "sends the same declined and existing lists" do
+        sent = winning.stdout.lines.map { JSON.parse(it) }.find { it["type"] == "report" }
+        expect(sent["top"]).not_to be_empty
+        expect(sent["negative"]).to eq(report["negative"])
+        expect(sent["negative"]["declined"]).not_to be_empty
+        expect(sent["negative"]["existing"]).not_to be_empty
+        expect_no_leaks(sentinels, winning)
+      end
+    end
   end
 
   # Task 20261004-80: which source proposed each built index, as counts by

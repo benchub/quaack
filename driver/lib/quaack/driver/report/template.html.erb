@@ -153,7 +153,9 @@
 <% end %>
 </section>
 <% end %>
-<% if negative %>
+<% if negative && winner %>
+<section id="index-ideas"><h2>Index ideas that went nowhere</h2>
+<% elsif negative %>
 <section id="negative-result"><h2>Why nothing beat your query</h2>
 <h3>The rewrites</h3>
 <% if rewrites.empty? %>
@@ -161,6 +163,8 @@
 <% else %>
 <ul id="negative-rewrites"><% rewrites.each do |r| %><li><%= h fate_line(r) %></li><% end %></ul>
 <% end %>
+<% end %>
+<% if negative %>
 <h3>Indexes the planner wouldn't use</h3>
 <% if negative["declined"].empty? %>
 <p>The planner would have used every index QUAACK thought of.</p>

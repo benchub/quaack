@@ -1293,6 +1293,35 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
+  # Task 20261003-5: a winning report's payload carries the declined and
+  # existing lists too.
+  describe "when a candidate won and the payload lists declined and existing indexes" do
+    let(:winning) { render(payload.merge("negative" => negative)) }
+    let(:ideas) { section(winning, "index-ideas") }
+
+    it "lists them in their own section, after the explanation, with no rewrites' fates" do
+      expect(winning.scan(/<section id="([a-z-]+)">/).flatten)
+        .to eq(%w[summary queries ranking explanation index-ideas indexes accountability burndown])
+      expect(ideas).to include("<h2>Index ideas that went nowhere</h2>")
+      expect(winning).not_to include("negative-result")
+      expect(winning).not_to include("negative-rewrites")
+    end
+
+    it "says which indexes the planner wouldn't use and which already existed, as a negative result does" do
+      negative_html = render(negative_payload)
+      %w[declined-indexes existing-indexes].each do |id|
+        table = ideas[%r{<table id="#{id}">.*?</table>}m]
+        expect(table).not_to be_nil
+        expect(table).to eq(section(negative_html, "negative-result")[%r{<table id="#{id}">.*?</table>}m])
+      end
+      expect(ideas).to include("<td>your query, rewrite Smooth Kayak</td><td>#{sq("t_c_d_idx")}</td>")
+    end
+
+    it "leaves the section out when the payload has no lists" do
+      expect(html).not_to include("index-ideas")
+    end
+  end
+
   describe "who proposed what" do
     def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
       { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,

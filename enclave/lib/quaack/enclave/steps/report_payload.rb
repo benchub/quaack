@@ -71,9 +71,10 @@ module Quaack
       #                    existing index as { "name", "size_bytes" }
       #                    (ExistingIndexes)
       #   timed_out_count  candidate runs dropped for timing out
-      #   negative         nil unless top is empty (DESIGN.md's negative-result); then
-      #                    NegativeResult's { "declined", "existing" }, each
-      #                    index once, with the searches it came up in
+      #   negative         NegativeResult's { "declined", "existing" }
+      #                    (DESIGN.md's negative-result), each index once,
+      #                    with the searches it came up in, whether or not
+      #                    top is empty
       #   rule_bugs        [{ "rewrite", "rules", "step" (rewrite-test, counterexamples, or
       #                    result-comparison) }]: each rule-made rewrite a test disproved
       #                    (never a result-comparison timeout, which compares nothing,
@@ -127,7 +128,7 @@ module Quaack
         # selection's excluded labels, negative-result, rewrite-rules, and burndown.
         def findings(store, selection)
           { excluded: MeasuredLabels.excluded(selection["excluded"]),
-            negative: selection["top"].empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
+            negative: NegativeResult.call(store), rule_bugs: RuleBugs.call(store),
             burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store) }
         end
 

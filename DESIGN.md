@@ -1463,6 +1463,8 @@ If nothing beats the original, explain why. Include which rewrites were disprove
 
 List each declined or already existing index once, with the searches it came up in: the original's, or a rewrite's. A rewrite's search repeats most of the original's candidates, and a plan prints a partial index's predicate with casts the query's text doesn't have, such as `'deleted'::text` for `'deleted'`. Two candidates are the same index here when they differ only by a cast on a constant or on a bare column.
 
+The report payload carries these two lists whether or not anything beat the original. When something did, the report shows them in a section of their own, "Index ideas that went nowhere," without the rewrites' fates.
+
 ### burndown. Burndown.
 
 Every report ends with a burndown: how much work QUAACK did, and where candidates dropped out. It appears whether or not anything beat the original.
