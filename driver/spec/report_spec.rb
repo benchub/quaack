@@ -1464,7 +1464,7 @@ RSpec.describe Quaack::Driver::Report do
 
     def rows(html, id)
       table = html[%r{<table id="accountability-#{id}">.*?</table>}m]
-      table.scan(%r{<tr><th scope="row">(.*?)</th>(.*?)</tr>})
+      table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>(.*?)</tr>})
            .to_h { |name, cells| [name, cells.scan(%r{<td[^>]*>(.*?)</td>}).flatten] }
     end
 
@@ -1766,9 +1766,20 @@ RSpec.describe Quaack::Driver::Report do
         "extra" => extra }
     end
 
+    # A stage's row opening, with the tooltip its stage's sentence gives it.
+    def tr(name, of_rewrite: false)
+      words = Quaack::Driver::Report::Words
+      names = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].reduce(:merge)
+      prefix = "Index ideas for the rewrites: "
+      of_rewrite ||= name.start_with?(prefix)
+      stage = names.key(name) || names.key(name.delete_prefix(prefix).sub(/\A[a-z]/, &:upcase))
+      tip = esc(Quaack::Driver::Report::StageSentences.for(stage, of_rewrite:))
+      %(<tr title="#{tip}"><th scope="row">#{esc(name)}</th>)
+    end
+
     def row(name, *cells)
       added, dropped, extra = cells.values_at(1, 2, 5)
-      %(<tr><th scope="row">#{esc(name)}</th><td class="num">#{cells[0]}</td><td>#{added}</td><td>#{dropped}</td>) +
+      %(#{tr(name)}<td class="num">#{cells[0]}</td><td>#{added}</td><td>#{dropped}</td>) +
         %(<td class="num">#{cells[3]}</td><td class="num">#{cells[4]}</td><td>#{extra}</td></tr>)
     end
 
@@ -1810,19 +1821,19 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "lists every stage, and says not recorded for one the run didn't count" do
-      expect(index_table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+      expect(index_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
         .to eq(["Ideas from the query&#39;s text", "Ideas from the query&#39;s plan",
                 "Removing duplicates and indexes you already have",
                 "Asking the planner whether it would use each one", "Ideas from the LLM",
                 "The LLM&#39;s second round of ideas", "Trying indexes together"])
-      expect(index_table).to include('<tr><th scope="row">Ideas from the LLM</th>' \
-                                     '<td colspan="6" class="missing">not recorded</td></tr>')
+      expect(index_table).to include(tr("Ideas from the LLM") << '<td colspan="6" class="missing">' \
+                                                                 "not recorded</td></tr>")
       expect(index_table.scan("not recorded").size).to eq(5)
     end
 
     it "says not recorded in the went-on cell of a stage that counted what came in but not what went on" do
       burndown["stages"]["index-test"] = { "original" => rec(3, nil, dropped: { "never_used" => 1 }).except("out") }
-      expect(index_table).to include('<tr><th scope="row">Asking the planner whether it would use each one</th>' \
+      expect(index_table).to include("#{tr("Asking the planner whether it would use each one")}" \
                                      '<td class="num">3</td><td>none</td><td>never used by the planner: 1</td>' \
                                      '<td class="num">0</td><td class="missing">not recorded</td><td>none</td></tr>')
     end
@@ -1836,18 +1847,18 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "shows the rewrite stages in words, in order, with their other counts" do
-      expect(rewrite_table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+      expect(rewrite_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
         .to eq(["Rewrites from QUAACK&#39;s own rules", "Rewrites from the LLM", "Your own rewrites",
                 "Checking what each rewrite assumes",
                 "Checking each rewrite can run differently from the original query",
                 "Testing on made-up edge-case data", "Testing on data the LLM wrote to break them",
                 "Choosing indexes for each rewrite", "Measuring on the real data and choosing"])
-      expect(rewrite_index_table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+      expect(rewrite_index_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
         .to eq(["Index ideas for the rewrites: removing duplicates and indexes you already have"])
       expect(rewrite_table).to include(row("Testing on made-up edge-case data", 2, "none",
                                            "wrong on duplicate join keys: 1", 0, 1,
                                            "conditions the test data never exercised: 2"))
-      expect(rewrite_table).to include('<tr><th scope="row">Rewrites from the LLM</th>' \
+      expect(rewrite_table).to include("#{tr("Rewrites from the LLM")}" \
                                        '<td colspan="6" class="missing">not recorded</td></tr>')
     end
 
@@ -1964,7 +1975,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says each LLM call in English, by what it was for" do
       calls = burndown_section[%r{<table id="llm-calls">.*?</table>}m]
-      expect(calls.scan(%r{<tr><th scope="row">(.*?)</th><td class="num">(.*?)</td></tr>}))
+      expect(calls.scan(%r{<tr[^>]*><th scope="row">(.*?)</th><td class="num">(.*?)</td></tr>}))
         .to eq([["Index suggestions for the original query", "2"],
                 ["Revised index suggestions for the original query", "1"], ["Rewrite suggestions", "1"],
                 ["Reading your own rewrites", "1"], ["Test data written to break the rewrites", "3"],
@@ -2073,10 +2084,83 @@ RSpec.describe Quaack::Driver::Report do
       expect(funnel("rewrite")).to include(%(<title id="funnel-rewrite-title">Rewrites, stage by stage))
     end
 
+    it "has one plain sentence for every stage the burndown can show" do
+      words = Quaack::Driver::Report::Words
+      shown = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].flat_map(&:keys)
+      shown.each do |stage|
+        sentence = Quaack::Driver::Report::StageSentences::TABLE[stage]
+        expect(sentence).to be_a(String).and(end_with(".")), "no sentence for the stage #{stage}"
+        expect(sentence).not_to match(/your query|\n/i)
+      end
+      expect(Quaack::Driver::Report::StageSentences::TABLE.keys).to match_array(shown)
+    end
+
+    it "pins each stage's exact sentence" do
+      expect(Quaack::Driver::Report::StageSentences::TABLE).to eq(
+        "index-from-query" => "QUAACK reads the original query and suggests indexes for the tables, columns, " \
+                              "and conditions it uses.",
+        "index-from-plan" => "QUAACK suggests indexes from the plan the database made for the original query.",
+        "index-dedupe" => "QUAACK drops ideas that repeat another idea or that an index you already have covers.",
+        "index-test" => "QUAACK asks the planner whether it would use each idea, and drops the ones it wouldn't.",
+        "llm-index-ideas" => "The LLM suggests indexes that QUAACK's own search missed.",
+        "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
+        "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
+                        "dropping, up to three.",
+        "rewrite-rules" => "QUAACK's own rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
+        "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
+                          "its checks or go over the limit of five.",
+        "operator-rewrites" => "QUAACK asks the LLM what each rewrite you wrote assumes, checks those assumptions " \
+                               "against the database, and warns about any it can't confirm.",
+        "assumption-check" => "QUAACK checks each assumption a rewrite makes against the database's " \
+                              "constraints and indexes.",
+        "plan-pruning" => "QUAACK plans each rewrite, and drops any that can't plan, return a different number or " \
+                          "type of columns, or get the same plan as the original query, with or without indexes.",
+        "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
+                          "the original query.",
+        "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",
+        "rewrite-index-ideas" => "Each rewrite that's left gets its own index search, since it can need " \
+                                 "different indexes than the original query.",
+        "measurement" => "QUAACK builds the indexes, measures how many blocks each candidate reads on the real " \
+                         "data, and chooses the best."
+      )
+    end
+
+    it "says 'the rewrite' in the rewrites' index table and funnel, and 'the original query' in the original's" do
+      tips = Quaack::Driver::Report::StageSentences::TABLE
+      html = render(payload.merge("burndown" => { "stages" => stages.merge(
+        "index-from-query" => { "original" => rec(0, 4), "rewrite_1" => rec(0, 2) }
+      ), "totals" => {} }))
+      original = tips.fetch("index-from-query")
+      rewrote = original.sub("the original query", "the rewrite")
+      expect(rewrote).not_to eq(original)
+      burndown = section(html, "burndown")
+      index_table = burndown[%r{<table id="burndown-index">.*?</table>}m]
+      rewrite_table = burndown[%r{<table id="burndown-rewrite-index">.*?</table>}m]
+      expect(index_table).to include(%(<tr title="#{esc(original)}">))
+      expect(rewrite_table).to include(%(<tr title="#{esc(rewrote)}">))
+      expect(rewrite_table).not_to include(esc(original))
+      expect(bands(funnel("index", html)).join).to include(esc(original))
+      rewrite_bands = bands(funnel("rewrite-index", html)).join
+      expect(rewrite_bands).to include(esc(rewrote))
+      expect(rewrite_bands).not_to include(esc(original))
+    end
+
+    it "says what the stage does in each band's hover and in each table row's tooltip" do
+      words = Quaack::Driver::Report::Words
+      names = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].reduce(:merge)
+      names.each do |stage, name|
+        sentence = ERB::Util.html_escape(Quaack::Driver::Report::StageSentences::TABLE.fetch(stage))
+        band = %w[index rewrite].flat_map { bands(funnel(it)) }.find { stage(it) == ERB::Util.html_escape(name) }
+        expect(band).to match(%r{<title>[^<]*#{Regexp.escape(sentence)}[^<]*</title>}), "no hover for #{stage}"
+        expect(section(out, "burndown"))
+          .to include(%(<tr title="#{sentence}"><th scope="row">#{ERB::Util.html_escape(name)}</th>))
+      end
+    end
+
     it "draws one band per stage, in the table's order" do
       %w[index rewrite rewrite-index].each do |id|
         table = section(out, "burndown")[%r{<table id="burndown-#{id}">.*?</table>}m]
-        expect(bands(funnel(id)).map { stage(it) }).to eq(table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+        expect(bands(funnel(id)).map { stage(it) }).to eq(table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
       end
       expect(bands(funnel("rewrite")).size).to eq(9)
     end
@@ -2096,7 +2180,7 @@ RSpec.describe Quaack::Driver::Report do
                                  "already covered by an index you have: 1")
       expect(band).to include("<title>Removing duplicates and indexes you already have: 6 came in. " \
                               "Added: none. Dropped: the same as another idea: 2; already covered by an index " \
-                              "you have: 1. Set aside: 0. 3 went on.</title>")
+                              "you have: 1. Set aside: 0. 3 went on. What it does:")
     end
 
     it "shows a stage the run didn't count as not recorded, never as zero, outside the scale" do
@@ -2166,7 +2250,7 @@ RSpec.describe Quaack::Driver::Report do
       stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1200)
       band = bands(funnel("index"))[2]
       expect(counts(band)).to eq("6 in, 3 out, 1,200 set aside · dropped: the same as another idea: 2")
-      expect(band).to include(" Set aside: 1,200. 3 went on.</title>")
+      expect(band).to include(" Set aside: 1,200. 3 went on. What it does:")
     end
 
     it "takes the scale's largest count from what went on, too" do
@@ -2204,7 +2288,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(counts(band)).to eq("3 in, out not recorded · dropped: never used by the planner: 1")
       expect(band).to include("<title>Asking the planner whether it would use each one: 3 came in. Added: none. " \
                               "Dropped: never used by the planner: 1. Set aside: 0. How many went on: not recorded. " \
-                              "This run didn&#39;t count it, which doesn&#39;t mean none.</title>")
+                              "This run didn&#39;t count it, which doesn&#39;t mean none. What it does:")
       expect(band).not_to match(/\b\d+ (out|went on)\b/)
       expect(index.values_at(4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
     end
@@ -2265,7 +2349,7 @@ RSpec.describe Quaack::Driver::Report do
                                                          extra: { "untested_atoms" => 4 }) }
       band = bands(funnel("rewrite"))[5]
       expect(band).to include("Set aside: 1. 3 went on. " \
-                              "Also counted: conditions the test data never exercised: 4.</title>")
+                              "Also counted: conditions the test data never exercised: 4. What it does:")
     end
 
     it "centres a partly counted stage's solid top, and hatches the whole band, when it came in under the minimum" do
@@ -2358,7 +2442,7 @@ RSpec.describe Quaack::Driver::Report do
     it "says in an unknown band's tooltip that the run didn't count it, not that it counted none" do
       band = bands(funnel("index"))[3]
       expect(band).to include("<title>#{stage(band)}: not recorded. " \
-                              "This run didn&#39;t count it, which doesn&#39;t mean none.</title>")
+                              "This run didn&#39;t count it, which doesn&#39;t mean none. What it does:")
     end
 
     it "escapes what it shows, and sets no SQL apart in it" do
@@ -2380,7 +2464,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "keeps each table, with its exact numbers, under its funnel" do
       table = section(out, "burndown")[%r{<table id="burndown-rewrite">.*?</table>}m]
-      expect(table).to include(%(<tr><th scope="row">Your own rewrites</th><td class="num">6</td>))
+      tip = esc(Quaack::Driver::Report::StageSentences::TABLE.fetch("operator-rewrites"))
+      expect(table).to include(%(<tr title="#{tip}"><th scope="row">Your own rewrites</th><td class="num">6</td>))
     end
   end
 

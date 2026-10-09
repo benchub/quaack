@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "stage_sentences"
+
 module Quaack
   module Driver
     module Report
@@ -44,6 +46,13 @@ module Quaack
           records.reduce do |a, b|
             a.merge(b) { |_, x, y| x.is_a?(Hash) ? x.merge(y) { |_, m, n| m + n } : x + y }
           end
+        end
+
+        # The row's tooltip, an attribute for its <tr>: what its stage does.
+        # A row with no stage, or one with no sentence, gets none.
+        def stage_tip(stage, of_rewrite: false)
+          sentence = StageSentences.for(stage, of_rewrite:)
+          sentence ? %( title="#{h(sentence)}") : ""
         end
 
         # A record's added, dropped, or extra counts in words, leaving out
