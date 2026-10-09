@@ -2434,3 +2434,12 @@ Split from 20261009-5. Case 034's original is pathological on purpose, since tha
 - **Came from:** The build of 20261009-5, 2026-10-09.
 - **Design:** baseline, e2e.
 - **Status:** todo
+
+### 20261009-16. Report: a full dark theme.
+
+Came from 20261009-11's review. The report has no dark theme. A partial one, with dark body text over sections left light, made the verdict, the tables, and the SQL blocks unreadable, so it was taken out. Move every hardcoded color in the template into CSS custom properties on `:root`, and redefine all of them under `@media (prefers-color-scheme: dark)`. That covers the verdict, the bug box, table heads, the baseline and differs rows, SQL blocks, notes, missing cells, borders, the query sections, and the funnel's text and palette. Check contrast for each, and look at the result in a browser.
+
+- **Depends on:** 20261009-11.
+- **Came from:** The review of 20261009-11, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
