@@ -21,7 +21,8 @@ module Quaack
         def headline
           return HEADLINES[:nothing] unless winner
 
-          HEADLINES[substantial?(winner["slow_blocks"], original_measurements.dig("slow", "total_blocks")) ? :substantial : :minor]
+          theirs = original_measurements.dig("slow", "total_blocks")
+          HEADLINES[substantial?(winner["slow_blocks"], theirs) ? :substantial : :minor]
         end
 
         # Whether ours is at least SUBSTANTIAL_PERCENT fewer blocks than theirs. Any finish
