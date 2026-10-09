@@ -39,8 +39,8 @@ module Quaack
       def record_check(store, source, tagged, also)
         return Burndown.record_once(store, check(source, tagged)) unless source == "rule"
 
-        more = also.call(tagged.map(&:first))
-        Burndown.record_all(store, more) if more
+        more = also.call(tagged.map(&:first), arrived(tagged))
+        Burndown.record_all(store, more + later(source, tagged)) if more
       end
 
       # The stage a RewriteCheck rejection, error, is counted in: RewriteCandidateCheck's rules on arrival,
@@ -53,12 +53,21 @@ module Quaack
 
       def check(source, tagged)
         arrival = by_rule(tagged, :arrival, :inbound_check)
-        assumption = tagged.count { it[1] == :assumption }
-        arrived = tagged.size - arrival.values.sum
         [[ARRIVAL.fetch(source), :rewrites, { in: 0, added: { source.to_sym => tagged.size }, dropped: arrival,
-                                              out: arrived }],
-         ["assumption-check", :rewrites, { in: arrived, dropped: { unmet_assumption: assumption },
-                                           out: arrived - assumption, extra: warnings(source, tagged) }],
+                                              out: arrived(tagged) }],
+         *later(source, tagged)]
+      end
+
+      # How many rewrites got past arrival.
+      def arrived(tagged) = tagged.count { it[1] != :arrival }
+
+      # The records of the stages after arrival, which every source's
+      # rewrites go through, so one that follows starts where the one before
+      # ended.
+      def later(source, tagged)
+        assumption = tagged.count { it[1] == :assumption }
+        [["assumption-check", :rewrites, { in: arrived(tagged), dropped: { unmet_assumption: assumption },
+                                           out: arrived(tagged) - assumption, extra: warnings(source, tagged) }],
          pruned(tagged)].compact
       end
 

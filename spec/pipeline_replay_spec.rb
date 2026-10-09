@@ -16,6 +16,28 @@ RSpec.describe PipelineReplay do
     TestPgDump.examples(self, "replays the prompt pack, with a pg_dump of the test server's major version", &)
   end
 
+  # The stages whose "in" isn't what the recorded stages before them left
+  # in the pipe, as "name: in N, in the pipe M". Rows are as Report's Stages
+  # gives them. A stage that adds records in 0 and starts from what's there.
+  def burndown_gaps(rows)
+    running = 0
+    rows.filter_map do |name, record, _|
+      next unless record&.values_at("in", "out")&.all?
+
+      gap = "#{name}: in #{record["in"]}, in the pipe #{running}" unless burndown_joins?(record, running)
+      running += record["out"] - record["in"]
+      gap
+    end
+  end
+
+  # Whether the record's in is the width in the pipe. A stage that adds, or
+  # that ran on nothing and sent nothing (a skipped round), has in 0.
+  def burndown_joins?(record, running)
+    return true if record["in"] == running
+
+    record["in"].zero? && (!record["added"].to_h.empty? || record["out"].zero?)
+  end
+
   replays do
     PromptPack::QUERIES.each do |query|
       described_class.selected_variants(query.name, full: FullReplay.on?).each do |variant|
@@ -40,6 +62,17 @@ RSpec.describe PipelineReplay do
             stages = outcome.report ? outcome.report["burndown"]["stages"] : {}
             missing = Quaack::Driver::Report::Words::INDEX_STAGES.keys.reject { stages.dig(it, "original") }
             expect(missing).to eq([]) if outcome.report
+          end
+
+          # Task 20261009-4: the burndown funnels draw what's in the pipe, so a
+          # stage's count of what came in is what the stages before it left.
+          # A stage that adds (in 0) starts from the width before it.
+          it "counts what each burndown stage came in with as what the stages before it left" do
+            next unless outcome.report
+
+            view = Quaack::Driver::Report::View.new(outcome.report, "run")
+            gaps = %i[index_rows rewrite_rows rewrite_index_rows].flat_map { burndown_gaps(view.public_send(it)) }
+            expect(gaps).to eq([])
           end
 
           it "sends each replayed ask the prompt its reply answered" do
@@ -78,6 +111,14 @@ RSpec.describe PipelineReplay do
       let(:outcome) { described_class.cached(TestPostgres.server, described_class::RULE_QUERY, described_class::EMPTY) }
       let(:rewrite) { outcome.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
       let(:ranked) { outcome.report["top"].map { it["label"] }.grep(/\Arewrite_1:/) }
+
+      # Task 20261009-4: the rule's rewrite goes through assumption-check and
+      # plan-pruning counted, so each stage starts as wide as the last ended.
+      it "counts the rule's rewrite in every stage after rewrite-rules, so the stages join up" do
+        view = Quaack::Driver::Report::View.new(outcome.report, "run")
+        expect(burndown_gaps(view.rewrite_rows)).to eq([])
+        expect(view.rewrite_rows.assoc("Checking what each rewrite assumes")[1].values_at("in", "out")).to eq([1, 1])
+      end
 
       it "applies the rules before llm-rewrites, storing the rule's rewrite, and ends in a report" do
         expect(outcome.error).to be_nil

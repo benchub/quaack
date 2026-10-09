@@ -21,10 +21,13 @@ module Quaack
           Words::INDEX_STAGES.map { |stage, name| [name, burndown["stages"].dig(stage, "original"), stage] }
         end
 
-        # The rewrite stages, each summed over its searches, with the
-        # rewrites' own index searches (plan-pruning and rewrite-index-ideas) totaled per stage
-        # between counterexamples and rewrite-index-ideas.
-        def rewrite_rows = summed(Words::REWRITE_STAGES) + search_rows + summed(Words::LATE_STAGES)
+        # The rewrite stages, each summed over its searches. The rewrites'
+        # own index searches count index ideas, not rewrites, so they're
+        # their own table (rewrite_index_rows).
+        def rewrite_rows = summed(Words::REWRITE_STAGES) + summed(Words::LATE_STAGES)
+
+        # The rewrites' own index searches, totaled per stage.
+        def rewrite_index_rows = search_rows
 
         def summed(stages) = stages.map { |stage, name| [name, sum(burndown["stages"].fetch(stage, {}).values), stage] }
 

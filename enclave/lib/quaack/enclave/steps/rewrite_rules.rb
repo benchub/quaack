@@ -26,14 +26,16 @@ module Quaack
       # with "source" => "rule" and "rules" => the names of the rules
       # applied, in order. Its "transformation" is those rules' descriptions,
       # in order, and its "assumptions" are the ones the rules stated. A
-      # rewrite the checks reject is counted in rewrite-rules' failed_checks
-      # only, not in plan-pruning; a survivor enters plan-pruning in
-      # rewrite-prune.
+      # rewrite inbound-check rejects is counted in rewrite-rules' failed_checks;
+      # the ones assumption-check and structural-discard reject are counted in
+      # assumption-check and plan-pruning, as for the other sources, so each
+      # stage starts as wide as the one before it ended. A survivor enters
+      # plan-pruning in rewrite-prune.
       #
       # It records the rewrite-rules burndown stage (DESIGN.md's burndown), search rewrites:
       # added is every result the generator counted, by the name of the last
       # rule applied; dropped is duplicate, over_cap, and failed_checks, the
-      # ones any of the checks above rejected; out is the survivors. A rule's
+      # ones inbound-check rejected; out is the rewrites that got past it. A rule's
       # name is QUAACK's own constant, never anything read from the query.
       #
       # It writes the rewrite_rules_applied marker, which `quaacks status`
@@ -64,7 +66,7 @@ module Quaack
         def call(store:, rules: Enclave::RewriteRules::RULES, **)
           generated = nil
           recorded = Burndown.read(store)["stages"].key?(STAGE)
-          also = ->(outcomes) { [[STAGE, :rewrites, counts(generated, outcomes)]] unless recorded }
+          also = ->(outcomes, arrived) { [[STAGE, :rewrites, counts(generated, outcomes, arrived)]] unless recorded }
           outcomes = RewriteCheck.check(store, source: "rule", also:) do |connection|
             generated = generate(store, connection, rules)
             generated.rewrites.map { rewrite(it) }
@@ -81,11 +83,11 @@ module Quaack
         end
 
         # The rewrite-rules burndown record's counts.
-        def counts(generated, outcomes)
-          accepted = outcomes.count { it[:outcome] == :accepted }
-          { in: 0, added: generated.made.transform_keys(&:to_sym), out: accepted,
+        # out is the rewrites that got past arrival, as the next stage's in.
+        def counts(generated, outcomes, arrived)
+          { in: 0, added: generated.made.transform_keys(&:to_sym), out: arrived,
             dropped: { duplicate: generated.duplicates, over_cap: generated.over_cap,
-                       failed_checks: outcomes.size - accepted } }
+                       failed_checks: outcomes.size - arrived } }
         end
 
         def generate(store, connection, rules)
