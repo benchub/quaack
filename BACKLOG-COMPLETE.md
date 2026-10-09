@@ -8390,3 +8390,13 @@ These are minor findings from the review of 20260927-21:
 - **Set aside (2026-10-08):** Nothing landed. Branch `task/20260927-22` (b9267735, 2d02b503) bounded the scan with a shared 1000-parse budget, but the second review found it still hides fenced JSON after about 20 lines of prose with braces (each junk start tries every `}` end, so it spends the budget). Next try: a string-aware brace-depth scan, so each `{` parses only at its balanced `}` (linear per start, no budget needed), and the error words cut-off as "wasn't valid JSON". Reuse the branch's specs, including the 33-brace prose repro and the ReplyShape no-type key test (item 4). Delete the branch once this lands.
 - **Status:** done
 - **Landed:** 709edcf2, 494873db (driver only, no bump), from a second attempt after the first was set aside. Second review clean; on 26 realistic replies the output matched main, and 75-89 KB replies went from 26-75 s to under 5 ms. One rare regression filed as 20261008-74.
+
+### 20261008-74. Reply parsing: a stray `{` and stray quotes that balance can hide the JSON.
+
+Found by the second review of 20260927-22. `Use {the "plan:\n```json\n{"a": ["x"]}\n```\nsee "notes} ok` parses on the old scan but now says "wasn't valid JSON": the stray `{` pairs with the prose `}`, the two prose quotes swallow the real object's braces into a string, and no restart happens. Rare (it needs all four). Fix: when an outer span fails to parse, rescan just past its `{`, within the existing restart cap. Also, a reply with an unclosed stray `{` plus a complete non-matching object says "wasn't valid JSON", not "didn't match the schema".
+
+- **Depends on:** 20260927-22.
+- **Came from:** The second review of 20260927-22, 2026-10-08.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 6884ce14, ea335850 (driver only, no bump). First review blocked on junk speed; fixed by rescanning only a failed span's interior. Second review clean: realistic replies match main, junk 6-28 ms. The wording item wasn't built; it and the review's minors went to 20261008-75.

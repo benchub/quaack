@@ -2340,11 +2340,14 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Design:** none (test harness).
 - **Status:** todo
 
-### 20261008-74. Reply parsing: a stray `{` and stray quotes that balance can hide the JSON.
+### 20261008-74. Reply parsing: a stray `{` and stray quotes that balance can hide the JSON. Done, see BACKLOG-COMPLETE.md.
 
-Found by the second review of 20260927-22. `Use {the "plan:\n```json\n{"a": ["x"]}\n```\nsee "notes} ok` parses on the old scan but now says "wasn't valid JSON": the stray `{` pairs with the prose `}`, the two prose quotes swallow the real object's braces into a string, and no restart happens. Rare (it needs all four). Fix: when an outer span fails to parse, rescan just past its `{`, within the existing restart cap. Also, a reply with an unclosed stray `{` plus a complete non-matching object says "wasn't valid JSON", not "didn't match the schema".
+### 20261008-75. Reply parsing: leftovers from 20261008-74.
 
-- **Depends on:** 20260927-22.
-- **Came from:** The second review of 20260927-22, 2026-10-08.
+- **Dedupe is untested.** Dropping `.reject { |s, _| @spans.key?(s) }` in `Spans#added` stays green, but `{"x" {"y" }}` x100 then re-parses (235 parses for 200 braces). Add a nested-span shape that pins the exact parse count. The `@restarts.positive?` guard in `rescan` and the `interior.include?('"')` check are redundant or speed-only, so drop the guard or leave both.
+- **Wording.** `oops { then {"a": 1}`, an unclosed stray `{` plus a complete object that fails the schema, says "wasn't valid JSON". The scan alone can't tell it from a reply cut off mid-object that holds a parsable inner object. That case must keep "wasn't valid JSON". Needs a design call, for example whether the unclosed `{` comes before or after every parsed object.
+
+- **Depends on:** 20261008-74.
+- **Came from:** The build and reviews of 20261008-74, 2026-10-08.
 - **Design:** LLM client.
 - **Status:** todo
