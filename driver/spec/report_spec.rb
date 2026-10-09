@@ -9,6 +9,11 @@ RSpec.describe Quaack::Driver::Report do
   end
 
   # What ERB's escaping makes of text with an apostrophe in it.
+  let(:unproven) do
+    "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its " \
+      "conditions, so those parts are unproven."
+  end
+
   def esc(text) = text.gsub("'", "&#39;")
 
   def render(payload, **) = described_class.render(payload, run_id: "RUN-1", **)
@@ -252,8 +257,8 @@ RSpec.describe Quaack::Driver::Report do
         ["<h3>The original query</h3>",
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: made by QUAACK&#39;s own rewrite " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat the original " \
-         "query and is ranked below.</span> <span class=\"warn\">Read it with care: the test data left some of its " \
-         "conditions untested.</span>",
+         "query and is ranked below.</span> <span class=\"warn\">Read it with care: every test QUAACK ran " \
+         "passed, but the test data never exercised some of its conditions, so those parts are unproven.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM (its " \
          "model wasn&#39;t recorded).</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
@@ -277,17 +282,16 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "flags it in the summary line, so a closed section still shows it" do
-        expect(warning(atoms: ["a < $1"])).to eq("Read it with care: the test data left some of its conditions " \
-                                                 "untested.")
+        expect(warning(atoms: ["a < $1"])).to eq(unproven)
         expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
         expect(warning(atoms: ["a < $1"], empirical: assumed))
-          .to eq("Read it with care: it relies on what your data holds today. The test data also left some of " \
-                 "its conditions untested.")
+          .to eq("Read it with care: it relies on what your data holds today. The test data also never " \
+                 "exercised some of its conditions, so those parts are unproven.")
       end
 
       it "flags untested conditions only while a later test left some of them unchecked" do
         expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["a < $1"]))
-          .to eq("Read it with care: the test data left some of its conditions untested.")
+          .to eq(unproven)
         expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["t.b IS NULL", "a < $1"])).to be_nil
         expect(warning(atoms: ["a < $1"], empirical: assumed, covered: ["a < $1"]))
           .to eq("Read it with care: it relies on what your data holds today.")
@@ -347,12 +351,10 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
-    describe "the conditions QUAACK's made-up rows never checked (vacuity-guard)" do
-      let(:explained) do
-        esc("QUAACK tests a rewrite on rows it makes up, to check that it returns what the original query returns. " \
-            "Those rows never made the conditions below, from the original query&#39;s WHERE and JOIN clauses, both " \
-            "true " \
-            "and false, so a rewrite that changed one of them could still have passed.")
+    describe "the conditions no test ever exercised (vacuity-guard)" do
+      let(:lead) do
+        esc("QUAACK's tests never made these conditions from the original query both true and false, so they can't " \
+            "show the rewrite handles them the same way:")
       end
 
       def conditions(atoms, covered)
@@ -360,34 +362,23 @@ RSpec.describe Quaack::Driver::Report do
         section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
       end
 
-      it "says what they are and why they matter, and lists each as SQL" do
+      it "leads with one plain sentence and lists each as SQL" do
         out = conditions(["a < $1", "t.b IS NULL"], nil)
-        expect(out).to start_with(%(<div class="untested"><p>#{explained} No later test checked them.</p>))
+        expect(out).to start_with(%(<div class="untested"><p>#{lead}</p>))
         expect(out).to include(%(<ul><li><code class="sql">a &lt; $1</code></li>) +
                                %(<li><code class="sql">t.b IS NULL</code></li></ul>))
       end
 
-      it "says the LLM's test data didn't check them either, when counterexamples ran and covered none" do
-        expect(conditions(["a < $1"], [])).to include(
-          esc("The test data the LLM wrote afterwards to break the rewrite didn't check them either.</p>")
-        )
-      end
-
-      it "marks those the LLM's test data checked afterwards, when it checked some" do
+      it "leaves out those the LLM's test data checked afterwards" do
         out = conditions(["a < $1", "t.b IS NULL"], ["t.b IS NULL"])
-        expect(out).to include(esc("The test data the LLM wrote afterwards to break the rewrite checked the ones " \
-                                   "marked “checked later”, but not the others.</p>"))
-        expect(out).to include(%(<li><code class="sql">a &lt; $1</code></li>) +
-                               %(<li><code class="sql">t.b IS NULL</code> (checked later)</li>))
-        expect(out).not_to include("<details")
+        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
+        expect(out).not_to include("checked later")
       end
 
-      it "collapses the list when the LLM's test data checked them all afterwards" do
-        out = conditions(["a < $1", "t.b IS NULL"], ["t.b IS NULL", "a < $1"])
-        expect(out).to include(esc("The test data the LLM wrote afterwards to break the rewrite checked all of " \
-                                   "them, so none is left unchecked.</p>"))
-        expect(out).to include(%(<details class="untested"><summary>The 2 conditions</summary><ul>) +
-                               %(<li><code class="sql">a &lt; $1</code> (checked later)</li>))
+      it "shows nothing when the LLM's test data checked them all afterwards" do
+        conditions(["a < $1"], ["a < $1"])
+        expect(queries).not_to include('class="untested"')
+        expect(queries).not_to include("never made these conditions")
       end
 
       it "never lists a value that isn't a condition's SQL, such as an atom's index" do
@@ -396,10 +387,14 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
-    it "lists no untested conditions for a rewrite that has none, or wasn't tested" do
-      payload["rewrites"].first["untested_atoms"] = []
-      payload["rewrites"] << fated(2, "same_plans")
-      expect(queries).not_to include("never exercised")
+    describe "the warning, shown once while a section is open" do
+      it "sits in the summary and again in the body, and the CSS hides the summary's copy when open" do
+        payload["rewrites"].first["untested_atoms"] = ["a < $1"]
+        out = render(payload)
+        body = section(out, "queries")[%r{</summary>\s*<p class="warn body-warn">(.*?)</p>}m, 1]
+        expect(body).to eq(section(out, "queries")[%r{<span class="warn">(.*?)</span>}m, 1])
+        expect(out).to include("details[open] > summary .warn { display: none; }")
+      end
     end
 
     describe "where a rewrite came from (rewrite-rules)" do
