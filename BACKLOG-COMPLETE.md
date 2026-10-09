@@ -8577,3 +8577,18 @@ Reported by the user, 2026-10-09. The report and its notes often say "your query
 - **Design:** report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 20ffa4da, driver and README only. Every "your query" that meant the original now says "the original query", and below_top_three says "three others of its kind".
+
+### 20261009-11. Report: style the query sections, and keep their collapse control on screen.
+
+Asked for by the user on 2026-10-09. The `<details>` sections in "The queries" are hard to close once a long query is open, because their summary is far above. Do two things:
+- **Style them like the verdict.** Give each section a light background with a strong accent stripe on the left, styled the way the verdict section is, but in a different color. Show it in both light and dark themes.
+- **Keep the summary on screen.** Make each open section's `<summary>` bar `position: sticky` at the top of the window, in the same light background, with a "▲ Collapse" label on its right. While the section is open and any of it is on screen, the bar stays pinned, and a click closes the section. When the section is closed, the label reads "▼ Expand", or says nothing. Pick what reads best.
+- **No script.** Decided by the user on 2026-10-09: pure CSS only. The report runs no script (DESIGN.md report), so don't build a separate floating button.
+
+Check that `:target` links to a rewrite's SQL still open and scroll to the right place, and that the sticky bar doesn't cover the target. Update DESIGN.md's report section.
+
+- **Depends on:** none. Land it after 20261009-7 if both edit the template at the same time.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Item 1: a new cli_run spec pins the operator-rewrites skip line on a resumed run with `--rewrites` (step 7 of 19), and the rewrite-correctness skip note for each rewrite. Breaking either one turns it red. Item 2 was already done: `clocked` sets the start before the first `say` (b74ba62), and existing specs pin it. Driver only. Landed with 20261006-1.
