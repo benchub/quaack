@@ -7,15 +7,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261003-11: transitive_predicate_copy typmods and enums.
-- 20261009-21: ImplicitCast edge cases.
-- 20261009-8: suggested index drops (protocol payload change).
-- 20261009-20: implicit text casts dropped from existing predicates.
-- 20261009-19: existing reordered predicates read, nested AND/OR flattened.
-- 20261009-17: partial index predicates sorted.
-- 20261009-5: baseline dead code removed.
-- 20261009-6: top three per kind.
-- 20261009-4: rule rewrites counted in assumption-check and plan-pruning.
-- 20261008-76: baseline cap.
 
 
 
