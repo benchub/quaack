@@ -894,18 +894,7 @@ These are minor findings from the review of 20260927-24:
 - **Design:** none.
 - **Status:** todo
 
-### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade.
-
-- When pg_query ships a Postgres 18 parser, upgrade it and drop the parser note (20260923-1).
-- The driver builds the `query_unparsable` note from its own pg_query, not the enclave's. The two usually match because both install from the same lockfile. If they don't, the note names the wrong grammar. The enclave could send its parser major version as a plain integer.
-- `clock_anchoring.rb` "the query doesn't parse" has no note. Intake refuses such a query first, so that message can't be reached today.
-- `parser_version_spec.rb` restates the formula, so it stays green when `MAJOR` is wrong. Assert the literal 17.
-- The sentinel test in `relation_qualifier_spec.rb` checks only the exception message, not the egress output.
-
-- **Depends on:** 20260923-1.
-- **Came from:** Reviews of 20260923-1.
-- **Design:** none.
-- **Status:** todo
+### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-29. Deploy loose ends.
 
@@ -2346,3 +2335,21 @@ Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` with
 - **Status:** todo
 
 ### 20261008-77. Set-asides: leftovers from 20260927-19. Done, see BACKLOG-COMPLETE.md.
+
+### 20261009-1. Upgrade pg_query to a Postgres 18 parser, and drop the parser note.
+
+Carried from 20260927-28. As of 2026-10-08 the lockfile has pg_query 6.2.3 and the newest release is 6.2.5, both on the Postgres 17 grammar. When a release ships a Postgres 18 parser, upgrade it, drop the parser note (20260923-1), and update `parser_version_spec.rb`'s literal 17.
+
+- **Depends on:** a pg_query release with a Postgres 18 parser.
+- **Came from:** 20260927-28.
+- **Design:** none.
+- **Status:** blocked
+
+### 20261009-2. Have the enclave send its parser major for `query_unparsable`.
+
+Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the driver's own pg_query, so if the two sides' pg_query differ, the note names the wrong grammar. The fix touches all three gems: a new field in the protocol whitelist's error-line fields; `ErrorFilter` emitting it only for `query_unparsable`, as a small integer (raised in `intake/query.rb` and the qualifier's `Unparsable`); and the driver reading it. It adds a value to enclave output, so test it with sentinels. Both sides install from one lockfile, so this only matters if they drift.
+
+- **Depends on:** 20260927-28.
+- **Came from:** The build of 20260927-28, 2026-10-08.
+- **Design:** none.
+- **Status:** todo

@@ -8437,3 +8437,17 @@ These are minor findings from the review of 20260927-11:
 - **Design:** index-from-query, index-test.
 - **Status:** done
 - **Landed:** c46bf95b, fb888ac9, 85d1056e (enclave; on the unreleased list). Review clean. Noted, not filed: the report-order re-sort is untested, but with a cap of 2 the picks are already in report order, so it only matters if the cap grows.
+
+### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade.
+
+- When pg_query ships a Postgres 18 parser, upgrade it and drop the parser note (20260923-1).
+- The driver builds the `query_unparsable` note from its own pg_query, not the enclave's. The two usually match because both install from the same lockfile. If they don't, the note names the wrong grammar. The enclave could send its parser major version as a plain integer.
+- `clock_anchoring.rb` "the query doesn't parse" has no note. Intake refuses such a query first, so that message can't be reached today.
+- `parser_version_spec.rb` restates the formula, so it stays green when `MAJOR` is wrong. Assert the literal 17.
+- The sentinel test in `relation_qualifier_spec.rb` checks only the exception message, not the egress output.
+
+- **Depends on:** 20260923-1.
+- **Came from:** Reviews of 20260923-1.
+- **Design:** none.
+- **Status:** done
+- **Landed:** c4fb2e97, items 4 and 5 (spec only, no bump). Review clean; the builder's planted leak through an allowed field went red. Item 3 dropped (note-only, unreachable). Item 1 moved to 20261009-1, item 2 to 20261009-2.
