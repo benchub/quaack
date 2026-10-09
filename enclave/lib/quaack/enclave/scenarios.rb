@@ -291,7 +291,18 @@ module Quaack
           atoms = slots.atoms(slot)
           return nil if nulled?(group, col, keyed || atoms.any?)
 
-          bound_value(slot, @picker.satisfiable(atoms), group, table, col)
+          value = bound_value(slot, @picker.satisfiable(atoms), group, table, col)
+          # An IS NULL atom on a nullable foreign key picks NULL for its whole
+          # key class, parent key included. A NOT NULL member takes the
+          # class's own key instead, so only the child column holds NULL.
+          value.nil? && !col.nullable ? rest_value(slot, group, table, col) : value
+        end
+
+        # The value of a NOT NULL column when its slot's atoms picked NULL.
+        def rest_value(slot, group, table, col)
+          return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
+
+          free_values.value(table, col, group.mode)
         end
 
         # The value of a column no rule above settles: an atom's, a key's,
