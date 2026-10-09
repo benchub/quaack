@@ -7,23 +7,14 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 
-- 20261008-51 (quaack start --database; bad_database; Protocol::DatabaseName).
 
-- 20260924-25 (redact: plan_too_deep, cast type preference, boolean masks, 42P18 by SQLSTATE).
 
-- 20260929-22 (qualify: system_relation).
 
-- 20260929-29 (counterexample-round and rewrite-test: a foreign cancel ends the step).
 
-- 20261002-1 (assumption-check: unique unmet with legacy INHERITS children).
 
-- 20261002-2 (report rule_bugs counts only mismatches; rewrite-check stores no rewrite twice).
 
-- 20260926-42 (rewrite-test stores dropped; report-payload sends it).
 
-- 20260927-17 and 20260926-55 (index-from-query correlated reads; generated-column expression keys refused).
 
-- 20261008-55 (a foreign cancel on BEGIN or ROLLBACK ends the step).
 
 ## How this file works.
 
