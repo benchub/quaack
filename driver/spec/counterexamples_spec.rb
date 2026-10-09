@@ -58,7 +58,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
     let(:outcomes) { [] }
     let(:compared) { [] }
     let(:compare) do
-      lambda do |inserts|
+      lambda do |inserts, **|
         compared << inserts
         outcomes.shift or raise "compare called more often than scripted"
       end
@@ -89,9 +89,9 @@ RSpec.describe Quaack::Driver::Counterexamples do
       outcomes.push(clean, clean, clean)
       run
 
-      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite (llm-counterexamples)",
-                           "Asking the LLM again, for different rows (llm-counterexamples)",
-                           "Asking the LLM again, for different rows (llm-counterexamples)"])
+      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite, round 1 (llm-counterexamples)",
+                           "Asking the LLM again, for different rows, round 2 (llm-counterexamples)",
+                           "Asking the LLM again, for different rows, round 3 (llm-counterexamples)"])
     end
 
     it "keeps a rewrite's rounds on one provider, as one unit, and starts the next rewrite's on the next" do
@@ -103,6 +103,19 @@ RSpec.describe Quaack::Driver::Counterexamples do
       2.times { described_class.new(client: router).run(payload, compare:) }
 
       expect([fake.asks.size, other.asks.size]).to eq([3, 1])
+    end
+
+    it "tells compare whose rows each round loads, by the entry that wrote them" do
+      fake.reply("llm-counterexamples", { "inserts" => ["INSERT 1"] })
+      outcomes.push({ "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
+      whose = []
+      recorded = lambda do |inserts, by:|
+        whose << by
+        compare.call(inserts)
+      end
+      described_class.new(client: router_over({ "groq" => fake })).run(payload, compare: recorded)
+
+      expect(whose).to eq([["groq"]])
     end
 
     it "stops once a round disproves the candidate" do

@@ -32,6 +32,20 @@ module Quaack
         # rule it failed with, never its reason.
         def failed_branches = @failed_branches.to_a.map(&:dup)
 
+        # What a paired unit's line adds after the step: whose rewrite it's
+        # reviewing, by the author's entry name, or nil without pairing.
+        def reviewing(pairing) = ("reviewing #{pairing.author["name"]}'s rewrite" if pairing&.author)
+
+        # Whose work a note is about, by the entries' names, possessive:
+        # "groq's", "anthropic claude-opus-5-5's", "2 LLMs'", or "the
+        # LLM's" when no entry is known by a label.
+        def possessive(names)
+          names = names.compact.uniq
+          return "#{names.size} LLMs'" if names.size > 1
+
+          "#{(label(names.first) if names.any?) || "the LLM"}'s"
+        end
+
         # Whether step fans out.
         def fan_out?(step) = @routing.steps.dig(step, "fan_out") == true
 
@@ -51,10 +65,11 @@ module Quaack
 
         private
 
-        # Asks each of names in turn, adding each failure to tried.
+        # Asks each of names in turn, adding each failure to tried. Each
+        # ask's line names the entries still to ask after it (pending).
         def branch_asks(ask, names, tried)
           names.each_with_index.with_object([]) do |(name, i), answered|
-            answered << [Router::Session.new(self, provider: name), call(name, ask)]
+            answered << [Router::Session.new(self, provider: name), call(name, ask, pending(names.drop(i + 1)))]
           rescue Error => e
             tried << [name, branch_failed(e, name, ask.fetch(:step), last: answered.empty? && i == names.size - 1)]
           end
@@ -83,6 +98,32 @@ module Quaack
         # llm block, the step's failure says it.
         def none_left(name, error, step)
           note(name, error, "no other provider is left (#{step})") if @named && error.rule == "llm_auth"
+        end
+
+        # "then b, c, and 2 more": the entries left to ask after a branch,
+        # by label, the first two of them when there are more than three, or
+        # nil when none is left.
+        def pending(rest)
+          return if rest.empty?
+
+          labels = rest.map { label(it) }
+          labels = [*labels.first(2), "#{labels.size - 2} more"] if labels.size > 3
+          "then #{RouterLines.listed(labels)}"
+        end
+
+        # The line saying why name was left, as RouterLines words it.
+        def line(name, error, rest)
+          RouterLines.line(name, error, rest, named: @named, copilot: copilot?(name), label: label(name))
+        end
+
+        # The entry as progress lines name it: its name, from an llms list,
+        # or else its provider and model, such as "anthropic
+        # claude-opus-5-5". Router.one's has neither, so it's nil, and lines
+        # say the LLM. All of it is the operator's own config.
+        def label(name)
+          return name if @named
+
+          "#{@kinds[name]} #{@models[name]}" if @kinds[name] && @models[name]
         end
 
         # Whether name is a copilot command, whose llm_auth means it isn't

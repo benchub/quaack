@@ -150,8 +150,8 @@ RSpec.describe "quaack run" do
       expect(progress).to eq(
         ["quaack: [1/18] Already done, skipping: Checking the query plan and searching for indexes (index-search)\n",
          "quaack: [2/18] Already done, skipping: " \
-         "Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)\n",
-         "quaack: [3/18] Asking the LLM to improve its index ideas (llm-index-refine)\n",
+         "Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)\n",
+         "quaack: [3/18] Getting the LLM to improve its index ideas (llm-index-refine)\n",
          "quaack: [3/18] Reading how the LLM's index ideas did (llm-index-refine)\n",
          "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",
@@ -167,6 +167,18 @@ RSpec.describe "quaack run" do
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
     end
 
+    it "names the LLM's provider and model while llm-index-ideas waits for it, and in its notes" do
+      entries.merge!("index_generated_original" => false)
+      fake.reply("llm-index-ideas", { "indexes" => [{ "ddl" => "CREATE INDEX ON public.t (a)" }] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      lines = progress.grep(/\(llm-index-ideas\)/)
+      expect(lines).to include("quaack: [2/18] Asking anthropic claude-opus-5-5 for index ideas (llm-index-ideas)\n",
+                               "quaack: [2/18] Testing anthropic claude-opus-5-5's index ideas (llm-index-ideas)\n")
+      expect(lines.grep(/Waiting for the LLM|Testing the LLM/)).to eq([])
+    end
+
     it "counts operator-rewrites, and prints each LLM ask and retry, when there's a rewrites file" do
       reply = { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] }
       fake.error("operator-rewrites", status: 529).reply("operator-rewrites", reply)
@@ -179,10 +191,11 @@ RSpec.describe "quaack run" do
       expect(progress).to include("quaack: [5/19] Already done, skipping: " \
                                   "Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
                                   "quaack: [6/19] Asking the LLM for rewrites of the query (llm-rewrites)\n",
-                                  "quaack: [6/19] Asking the LLM (llm-rewrites)\n",
+                                  "quaack: [6/19] Waiting for anthropic claude-opus-5-5 (llm-rewrites)\n",
                                   "quaack: [7/19] Checking your own rewrites (operator-rewrites)\n",
-                                  "quaack: [7/19] Asking the LLM (operator-rewrites)\n",
-                                  "quaack: [7/19] Asking the LLM, attempt 2 (operator-rewrites)\n",
+                                  "quaack: [7/19] Waiting for anthropic claude-opus-5-5 (operator-rewrites)\n",
+                                  "quaack: [7/19] Waiting for anthropic claude-opus-5-5, attempt 2 " \
+                                  "(operator-rewrites)\n",
                                   "quaack: [7/19] Checked your 1 rewrite, 0 kept in Ns (operator-rewrites)\n",
                                   "quaack: [19/19] Writing the report (report)\n")
     end
@@ -1275,7 +1288,7 @@ RSpec.describe "quaack run" do
         expect([fake.asks.map(&:step), other.asks.map(&:step)]).to eq([["operator-rewrites"], ["operator-rewrites"]])
         expect(stderr.string).to include("first is rate limited (the API answered 429: fake rate_limit_error), so " \
                                          "the rest of this run skips it; trying second (operator-rewrites)")
-        expect(stderr.string).to include("Asking the LLM (operator-rewrites, second)")
+        expect(stderr.string).to include("Waiting for second (operator-rewrites)")
       end
 
       it "builds only the entries QUAACK_LLM keeps, in its order" do

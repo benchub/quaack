@@ -32,11 +32,13 @@ module Quaack
         # error is the LLM::Error the provider failed with, and copilot says
         # the provider is a copilot command, whose llm_auth means it isn't
         # logged in. llm_auth's line says why itself, so it shows no reason.
-        def line(name, error, rest, named:, copilot: false)
-          who = named ? name : "The LLM"
+        # label, when not named, is the provider and model the line calls
+        # it by, such as "anthropic claude-opus-5-5", in place of the LLM.
+        def line(name, error, rest, named:, copilot: false, label: nil) # rubocop:disable Metrics/ParameterLists
+          who = named ? name : label || "The LLM"
           because = named ? because(error.reason) : ""
           case error.rule
-          when "llm_auth" then "#{dropped(name, named, copilot)} #{rest[0].upcase}#{rest[1..]}"
+          when "llm_auth" then "#{dropped(name, named, copilot, label)} #{rest[0].upcase}#{rest[1..]}"
           when "llm_bad_response" then "#{who}'s reply couldn't be used#{because}, #{STILL}; #{rest}"
           else "#{who} #{WHY.fetch(error.rule)}#{because}, so the rest of this run skips it; #{rest}"
           end
@@ -56,9 +58,12 @@ module Quaack
 
         def because(reason) = short(reason)&.then { " (#{it})" } || ""
 
-        def dropped(name, named, copilot)
+        # words joined for a line: "a", "a and b", or "a, b, and c".
+        def listed(words) = words.size < 3 ? words.join(" and ") : "#{words[..-2].join(", ")}, and #{words.last}"
+
+        def dropped(name, named, copilot, label = nil)
           why = copilot ? NOT_LOGGED_IN : REFUSED
-          return "llm_auth: #{why}, so the rest of this run skips the LLM. #{FIX}" unless named
+          return "llm_auth: #{why}, so the rest of this run skips #{label || "the LLM"}. #{FIX}" unless named
 
           "llm_auth: #{name}: #{why}, so the rest of this run skips #{name}. #{FIX}"
         end
