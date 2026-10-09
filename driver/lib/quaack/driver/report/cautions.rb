@@ -28,12 +28,15 @@ module Quaack
         def warning(entry)
           said = []
           said << "it relies on what your data holds today." if empirical(entry)
-          test_data = said.empty? ? "the test data" : "The test data also"
-          said << "#{test_data} left some of its conditions untested." if unchecked_atoms(entry).any?
+          said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
           paired = pairing_warning(entry)
           said << (said.empty? ? paired : paired.sub(/\A./, &:upcase)) if paired
           "Read it with care: #{said.join(" ")}" unless said.empty?
         end
+
+        UNPROVEN_FIRST = "every test QUAACK ran passed, but the test data never exercised some of its " \
+                         "conditions, so those parts are unproven."
+        UNPROVEN_AFTER = "The test data also never exercised some of its conditions, so those parts are unproven."
 
         # The summary's warning about a rewrite's pairing, when it wasn't
         # met or couldn't be checked, or nil.

@@ -121,12 +121,8 @@ module Quaack
           "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
-        UNTESTED = "QUAACK tests a rewrite on rows it makes up, to check that it returns what the original query " \
-                   "returns. Those rows never made the conditions below, from the original query's " \
-                   "WHERE and JOIN clauses, both true and false, " \
-                   "so a rewrite that changed one of them could still have passed."
-        LATER = "The test data the LLM wrote afterwards to break the rewrite"
-        CHECKED_LATER = "checked later"
+        UNTESTED = "QUAACK's tests never made these conditions from the original query both true and false, so " \
+                   "they can't show the rewrite handles them the same way:"
 
         # The conditions of the original query that rewrite-test's made-up rows never
         # exercised (vacuity-guard), by their redacted shapes. Anything else
@@ -146,16 +142,6 @@ module Quaack
           return unless count.is_a?(Integer) && count.positive?
 
           "QUAACK left out #{Words.count(count, "test case")}, since their made-up rows would have broken a unique key."
-        end
-
-        # Whether a counterexample round exercised them. covered is nil
-        # when no round ran.
-        def atoms_note(entry)
-          return "No later test checked them." unless entry["covered"].is_a?(Array)
-          return "#{LATER} didn't check them either." if checked_later(entry).empty?
-          return "#{LATER} checked all of them, so none is left unchecked." if unchecked_atoms(entry).empty?
-
-          "#{LATER} checked the ones marked “#{CHECKED_LATER}”, but not the others."
         end
 
         # DESIGN.md's rewrite-rules: the rule-made rewrites a test disproved.
