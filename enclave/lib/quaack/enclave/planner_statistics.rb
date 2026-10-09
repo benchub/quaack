@@ -136,7 +136,8 @@ module Quaack
           name:, reltuples: table["reltuples"], column_names: table["column_names"],
           columns: table["columns"].transform_values { column_statistics(it) },
           indexes: table["indexes"].to_h do |index|
-            [index["name"], IndexCandidate.from_indexdef(index["definition"])]
+            [index["name"],
+             IndexCandidate.from_indexdef(index["definition"], types: table["column_types"] || {})]
           end
         )
       end

@@ -118,7 +118,12 @@ module Quaack
       # from_ddl keeps refusing these, since it also reads the LLM's DDL,
       # where dropping an option would test something other than what was
       # proposed.
-      def self.from_indexdef(sql) = IndexSql.read_index(sql, [:existing], existing: true)
+      #
+      # types maps a column to its type's name (PlannerStatistics's
+      # column_types). With it, the implicit text casts Postgres prints for a
+      # varchar column's predicate are dropped (see ImplicitCast), so a
+      # candidate written without them matches. With none, they stay.
+      def self.from_indexdef(sql, types: {}) = IndexSql.read_index(sql, [:existing], existing: true, types:)
 
       # Pattern matching sees every member but the predicate, so a failed
       # match can't quote it. There's no positional (array) pattern.

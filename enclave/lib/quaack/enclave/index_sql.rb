@@ -5,6 +5,7 @@ require_relative "deparse"
 require_relative "index_candidate_error"
 require_relative "boolean_fold"
 require_relative "predicate_sort"
+require_relative "implicit_cast"
 
 module Quaack
   module Enclave
@@ -114,9 +115,10 @@ module Quaack
 
       # See IndexCandidate.from_ddl and from_indexdef. With existing, WITH
       # storage parameters and NULLS NOT DISTINCT are dropped first.
-      def read_index(sql, sources, existing: false)
+      def read_index(sql, sources, existing: false, types: {})
         stmt = parse_index_stmt(sql)
         drop_existing_options(stmt) if existing
+        stmt.where_clause = ImplicitCast.strip(stmt.where_clause, types) if existing && stmt.where_clause
         candidate = candidate_from(stmt, sources)
         candidate if candidate&.to_ddl == PgQuery.deparse_stmt(comparable(stmt))
       end
