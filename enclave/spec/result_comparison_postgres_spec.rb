@@ -688,6 +688,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           expect(fields(compare(sql, sql, rows: docs))).to include(match: false, rule: :unsupported_order)
         end
 
+        it "refuses a hidden tie that straddles a LIMIT inside a subquery or a CTE" do
+          inner = "SELECT grp, jb FROM items ORDER BY grp LIMIT 1"
+          subquery = "SELECT grp, jb FROM (#{inner}) s ORDER BY grp"
+          cte = "WITH s AS (#{inner}) SELECT grp, jb FROM s ORDER BY grp"
+
+          expect(fields(compare(subquery, subquery, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(cte, cte, rows: docs))).to include(match: false, rule: :unsupported_order)
+        end
+
         # Sorted by grp, the rows are 1, 1, 2, 3, and the two grp 1 rows
         # hide different jsonb values.
         it "places a constant OFFSET's window where the OFFSET starts" do
@@ -1038,6 +1047,64 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
     it "the check catches a sentinel when one is planted" do
       expect(raw("SELECT label FROM items", rows: planted).inspect).to include(sentinel)
+    end
+  end
+
+  describe "a LIMIT or OFFSET below the top level" do
+    def both_forms(inner, outer_order: "ORDER BY grp, label")
+      ["SELECT grp, label FROM (#{inner}) s #{outer_order}",
+       "WITH s AS (#{inner}) SELECT grp, label FROM s #{outer_order}"]
+    end
+
+    # Forward, the inner sort by grp alone keeps id 1, the same row the
+    # original keeps. Only refusing the inner cut stops the false match.
+    it "refuses a candidate whose inner LIMIT drops the unique key, in a subquery and in a CTE" do
+      originals = both_forms("SELECT * FROM items ORDER BY grp, id LIMIT 1")
+      candidates = both_forms("SELECT * FROM items ORDER BY grp LIMIT 1")
+
+      originals.zip(candidates).each do |original, candidate|
+        expect(raw(original, candidate)).to eq([[%w[1 a]], [%w[1 a]]])
+        expect(fields(compare(original, candidate))).to include(match: false, rule: :unsupported_order)
+        expect(fields(compare(candidate, original))).to include(match: false, rule: :unsupported_order)
+      end
+    end
+
+    it "compares an inner cut whose ORDER BY covers the primary key, in a subquery and in a CTE" do
+      originals = both_forms("SELECT * FROM items ORDER BY grp, id LIMIT 2")
+      goods = both_forms("SELECT * FROM public.items i ORDER BY i.grp, i.id LIMIT 2 OFFSET 0")
+      bads = both_forms("SELECT * FROM items ORDER BY grp, id DESC LIMIT 2")
+
+      originals.zip(goods, bads).each do |original, good, bad|
+        expect(compare(original, good).match?).to be(true)
+        expect(fields(compare(original, bad))).to include(match: false, rule: :value)
+      end
+    end
+
+    it "refuses an inner ORDER BY whose key name is an output alias for another column" do
+      sql = both_forms("SELECT grp, label, grp AS id FROM items ORDER BY id LIMIT 1").first
+
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+    end
+
+    it "refuses an inner cut over a CTE that shares a keyed table's name" do
+      inner = "SELECT * FROM items ORDER BY id LIMIT 1"
+      sql = "WITH items AS (SELECT grp AS id, grp, label FROM public.items) " \
+            "SELECT grp, label FROM (#{inner}) s ORDER BY grp, label"
+
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+    end
+
+    it "refuses an inner cut in a query with no ORDER BY at its top level" do
+      sql = both_forms("SELECT * FROM items ORDER BY grp LIMIT 1", outer_order: "").last
+
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+    end
+
+    it "refuses an inner cut over a join, even when it sorts by one table's key" do
+      inner = "SELECT a.grp, b.label FROM items a JOIN items b ON b.grp = a.grp ORDER BY a.id LIMIT 1"
+      sql = both_forms(inner).first
+
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
     end
   end
 end

@@ -90,8 +90,10 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     # Three ties, and the pick in the middle: forward and reverse both hand
     # the sort 2 in the middle, so only the rotated load catches it.
     it "catches a tie pick in the middle of an odd-sized group, which forward and reverse agree on" do
-      original = "SELECT id FROM (SELECT * FROM items WHERE grp = 1 ORDER BY grp, id OFFSET 1 LIMIT 1) s"
-      candidate = "SELECT id FROM (SELECT * FROM items WHERE grp = 1 ORDER BY grp OFFSET 1 LIMIT 1) s"
+      original = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp, id) n FROM items WHERE grp = 1) s " \
+                 "WHERE n = 2"
+      candidate = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp) n FROM items WHERE grp = 1) s " \
+                  "WHERE n = 2"
       picks = [items, described_class.reverse_load(items)].map do |rows|
         runner.with_fixture(rows, index_scans: false) { |tx| tx.query(candidate).rows }
       end
@@ -104,8 +106,10 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
 
   describe "rewrites that match the forward load only by luck" do
     it "catches a subquery that drops its secondary sort key before a LIMIT" do
-      original = "SELECT id, grp FROM (SELECT * FROM items ORDER BY grp, id LIMIT 2) s ORDER BY id"
-      candidate = "SELECT id, grp FROM (SELECT * FROM items ORDER BY grp LIMIT 2) s ORDER BY id"
+      original = "SELECT id, grp FROM (SELECT *, row_number() OVER (ORDER BY grp, id) n FROM items) s " \
+                 "WHERE n <= 2 ORDER BY id"
+      candidate = "SELECT id, grp FROM (SELECT *, row_number() OVER (ORDER BY grp) n FROM items) s " \
+                  "WHERE n <= 2 ORDER BY id"
       expect(forward_only(original, candidate).match?).to be(true)
 
       expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
@@ -114,7 +118,8 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     it "catches a LATERAL top-1 that drops its secondary sort key" do
       lateral = lambda do |keys|
         "SELECT g.grp, x.id FROM (SELECT DISTINCT grp FROM items) g CROSS JOIN LATERAL " \
-          "(SELECT i.id FROM items i WHERE i.grp = g.grp ORDER BY #{keys} LIMIT 1) x ORDER BY g.grp"
+          "(SELECT i.id, row_number() OVER (ORDER BY #{keys}) n FROM items i WHERE i.grp = g.grp) x " \
+          "WHERE x.n = 1 ORDER BY g.grp"
       end
       original = lateral.call("i.label, i.id")
       candidate = lateral.call("i.label")
@@ -159,20 +164,22 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
   end
 
   describe "an index that orders the ties" do
-    let(:original) { "SELECT id FROM (SELECT * FROM items ORDER BY grp, id LIMIT 2) s ORDER BY id" }
-    let(:candidate) { "SELECT id FROM (SELECT * FROM items ORDER BY grp LIMIT 2) s ORDER BY id" }
+    let(:original) { "SELECT id FROM (#{numbered("grp, id")}) s WHERE n <= 2 ORDER BY id" }
+    let(:candidate) { "SELECT id FROM (#{numbered("grp")}) s WHERE n <= 2 ORDER BY id" }
 
-    # Each load order in its own transaction, with the planner free to use
-    # indexes.
+    def numbered(keys) = "SELECT id, row_number() OVER (ORDER BY #{keys}) n FROM items"
+
+    # The candidate's pick, sorted by grp alone and cut, in each load order
+    # in its own transaction, with the planner free to use indexes.
     def with_indexes
       [items, described_class.reverse_load(items)].map do |rows|
-        runner.with_fixture(rows) { |tx| described_class.compare(tx, original:, candidate:).match? }
+        runner.with_fixture(rows) { |tx| tx.query("SELECT id FROM items ORDER BY grp LIMIT 2").rows }
       end
     end
 
     it "catches the dropped key even when an index would hand back the ties in id order" do
       conn.exec("CREATE INDEX ON items (grp, id)")
-      expect(with_indexes).to eq([true, true])
+      expect(with_indexes).to eq([[%w[1], %w[2]], [%w[1], %w[2]]])
 
       expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
     end
@@ -237,8 +244,9 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
       end
 
       it "loads in every order, and catches a dropped sort key in the reverse load" do
-        original = "SELECT id FROM (SELECT * FROM node WHERE up = 1 ORDER BY up, id LIMIT 1) s"
-        candidate = "SELECT id FROM (SELECT * FROM node WHERE up = 1 ORDER BY up LIMIT 1) s"
+        original = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY up, id) n FROM node WHERE up = 1) s " \
+                   "WHERE n = 1"
+        candidate = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY up) n FROM node WHERE up = 1) s WHERE n = 1"
 
         expect(fields(both(original, original, rows: tree))).to include(match: true, load_order: nil)
         expect(fields(both(original, candidate, rows: tree))).to include(match: false, load_order: :reverse)
@@ -282,7 +290,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
 
     it "keeps a query that fails only in the reverse run a query_failed" do
-      sql = "SELECT 1 / (SELECT id - 5 FROM items LIMIT 1) AS q"
+      sql = "SELECT 1 / ((SELECT array_agg(id) FROM items)[1] - 5) AS q"
 
       expect { both(sql, sql) }.to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
         expect([e.rule, e.step, e.sqlstate]).to eq([:query_failed, :query, "22012"])

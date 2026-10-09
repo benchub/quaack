@@ -7,6 +7,7 @@ require_relative "supported_sql"
 require_relative "result_comparison/tiebreaker"
 require_relative "result_comparison/load_orders"
 require_relative "result_comparison/cut_ties"
+require_relative "result_comparison/inner_cuts"
 
 module Quaack
   module Enclave
@@ -129,7 +130,11 @@ module Quaack
     #
     # Gaps that remain in one compare, where a bad candidate can still
     # match:
-    # - Nondeterminism below the top level. A LIMIT, DISTINCT, GROUP BY, or
+    # A LIMIT or OFFSET below the top level, in either query, is
+    # unsupported_order unless its cut is deterministic (InnerCuts), with
+    # nothing else run.
+    #
+    # - Nondeterminism below the top level. A DISTINCT, GROUP BY, or
     #   UNION inside a subquery or CTE, in either query, can keep any of
     #   several rows, or any representative of values btree calls equal,
     #   such as {"a": 1.0} for {"a": 1.00} in jsonb. So can a top-level DISTINCT or
@@ -146,8 +151,7 @@ module Quaack
     #
     # Known ways to discard a good candidate, all toward mismatch:
     #
-    # - A LIMIT inside a subquery, or DISTINCT ON with no ORDER BY, picks
-    #   rows Postgres is free to vary.
+    # - DISTINCT ON with no ORDER BY picks rows Postgres is free to vary.
     # - Every unsupported_order refusal above.
     # - A candidate whose ORDER BY adds its own keys, such as ORDER BY a, id
     #   for ORDER BY a, orders ties its own way before the tiebreaker.
@@ -259,6 +263,8 @@ module Quaack
         # the group cut off on both sides.
         def cut_both_ends? = kept(:cut_both_ends?) { !select_stmt(parse).limit_count.nil? && offset != 0 }
 
+        # The parse tree as a hash.
+        def tree = kept(:tree) { parse.tree.to_h.freeze }
         # The collation each COLLATE clause names, anywhere in the query,
         # without its schema.
         def collation_names = kept(:collation_names) { collations(parse.tree.to_h).freeze }
@@ -373,15 +379,15 @@ module Quaack
       # Runs the original and the candidate in transaction, an
       # ArenaRunner::Transaction, and returns a ResultComparator::Verdict.
       def compare(transaction, original:, candidate:)
-        original_shape = Shape.parse(original, :original)
-        candidate_shape = Shape.parse(candidate, :candidate)
-        mode = original_shape.mode
+        shapes = [Shape.parse(original, :original), Shape.parse(candidate, :candidate)]
+        mode = shapes.first.mode
+        return ResultComparator::Verdict.for(mode, :unsupported_order) if InnerCuts.refused?(transaction, shapes)
         return run(transaction, original, candidate, mode) if mode == :multiset
-        return subset(transaction, original_shape, original, candidate) if mode == :subset
+        return subset(transaction, shapes.first, original, candidate) if mode == :subset
         return ResultComparator::Verdict.for(mode, :unsupported_order) if mode == :with_ties
-        return ResultComparator::Verdict.for(mode, :candidate_unordered) unless candidate_shape.ordered?
+        return ResultComparator::Verdict.for(mode, :candidate_unordered) unless shapes.last.ordered?
 
-        ordered(transaction, original_shape, candidate_shape)
+        ordered(transaction, *shapes)
       end
 
       def run(transaction, original, candidate, mode)
