@@ -218,7 +218,11 @@ module E2ERun
     # The pipeline asks through a router, as the CLI's is (Router.for), here
     # around the one fake client.
     client = Quaack::Driver::LLM::Router.one(llm.client(burndown: Quaack::Driver::Burndown.new))
-    Quaack::Driver::Pipeline.new(transport:, client:, run_id:, out: File.join(home, "report.html")).run
+    # home, as the CLI passes its own, so each LLM step writes the run's
+    # provenance record. rewrites stays out: a case's fast.sql is its own
+    # answer, and an operator's --rewrites would hand it over. stderr is
+    # only progress, and setup already ran above, as Pipeline's would.
+    Quaack::Driver::Pipeline.new(transport:, client:, run_id:, out: File.join(home, "report.html"), home:).run
     report = transport.call("report-payload", args: { run: run_id }).messages.find { it["type"] == "report" }
     { stage: :done, report:, asks: llm.asks.map(&:step) }
   rescue Quaack::Driver::EnclaveError => e
@@ -311,4 +315,8 @@ module E2ERun
   end
 end
 
-E2ERun.main(ARGV) if $PROGRAM_NAME == __FILE__
+if $PROGRAM_NAME == __FILE__
+  # A killed run keeps what it printed when stdout is redirected.
+  $stdout.sync = true
+  E2ERun.main(ARGV)
+end
