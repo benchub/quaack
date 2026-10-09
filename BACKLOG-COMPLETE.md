@@ -8375,3 +8375,18 @@ Found while building 20261008-70. Every case tried (`036`, `054`, `034`) crashes
 - **Design:** none (test harness).
 - **Status:** done
 - **Landed:** 62231633 (harness and root spec only, no bump). Review clean. Case 036's why_none prints: no fix selected (declined: unused 4; existing: covered 5; rewrites: not_better 1); needs the LLM. Leftovers filed as 20261008-73.
+
+### 20260927-22. Reply parsing loose ends.
+
+These are minor findings from the review of 20260927-21:
+- `embedded_objects` builds every `{` start, then retries `JSON.parse` at each later `}`. That scan is worse than quadratic: 16 KB of brace-heavy prose takes 13s, and a 28 KB fenced reply takes 1.1s. Scan the starts lazily, stop at the first match, and cap the number of starts.
+- A reply cut off at max_tokens now reports "didn't match the schema" instead of "wasn't valid JSON".
+- In `longest_object`, the `is_a?(Hash)` check is dead code.
+- No test covers a required key that has no type (the `ReplyShape` `key?` mutation survives).
+
+- **Depends on:** 20260927-21.
+- **Came from:** Review of 20260927-21.
+- **Design:** LLM client.
+- **Set aside (2026-10-08):** Nothing landed. Branch `task/20260927-22` (b9267735, 2d02b503) bounded the scan with a shared 1000-parse budget, but the second review found it still hides fenced JSON after about 20 lines of prose with braces (each junk start tries every `}` end, so it spends the budget). Next try: a string-aware brace-depth scan, so each `{` parses only at its balanced `}` (linear per start, no budget needed), and the error words cut-off as "wasn't valid JSON". Reuse the branch's specs, including the 33-brace prose repro and the ReplyShape no-type key test (item 4). Delete the branch once this lands.
+- **Status:** done
+- **Landed:** 709edcf2, 494873db (driver only, no bump), from a second attempt after the first was set aside. Second review clean; on 26 realistic replies the output matched main, and 75-89 KB replies went from 26-75 s to under 5 ms. One rare regression filed as 20261008-74.

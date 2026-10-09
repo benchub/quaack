@@ -879,19 +879,7 @@ These are minor findings from the review of 20260927-11:
 
 ### 20260927-21. LLM reply parsing: pick the right object, and check the schema. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-22. Reply parsing loose ends.
-
-These are minor findings from the review of 20260927-21:
-- `embedded_objects` builds every `{` start, then retries `JSON.parse` at each later `}`. That scan is worse than quadratic: 16 KB of brace-heavy prose takes 13s, and a 28 KB fenced reply takes 1.1s. Scan the starts lazily, stop at the first match, and cap the number of starts.
-- A reply cut off at max_tokens now reports "didn't match the schema" instead of "wasn't valid JSON".
-- In `longest_object`, the `is_a?(Hash)` check is dead code.
-- No test covers a required key that has no type (the `ReplyShape` `key?` mutation survives).
-
-- **Depends on:** 20260927-21.
-- **Came from:** Review of 20260927-21.
-- **Design:** LLM client.
-- **Set aside (2026-10-08):** Nothing landed. Branch `task/20260927-22` (b9267735, 2d02b503) bounded the scan with a shared 1000-parse budget, but the second review found it still hides fenced JSON after about 20 lines of prose with braces (each junk start tries every `}` end, so it spends the budget). Next try: a string-aware brace-depth scan, so each `{` parses only at its balanced `}` (linear per start, no budget needed), and the error words cut-off as "wasn't valid JSON". Reuse the branch's specs, including the 33-brace prose repro and the ReplyShape no-type key test (item 4). Delete the branch once this lands.
-- **Status:** todo
+### 20260927-22. Reply parsing loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-23. Driver calls run teardown (20260922-65, part four). Done, see BACKLOG-COMPLETE.md.
 
@@ -2350,4 +2338,13 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Depends on:** 20261008-71.
 - **Came from:** The build and review of 20261008-71, 2026-10-08.
 - **Design:** none (test harness).
+- **Status:** todo
+
+### 20261008-74. Reply parsing: a stray `{` and stray quotes that balance can hide the JSON.
+
+Found by the second review of 20260927-22. `Use {the "plan:\n```json\n{"a": ["x"]}\n```\nsee "notes} ok` parses on the old scan but now says "wasn't valid JSON": the stray `{` pairs with the prose `}`, the two prose quotes swallow the real object's braces into a string, and no restart happens. Rare (it needs all four). Fix: when an outer span fails to parse, rescan just past its `{`, within the existing restart cap. Also, a reply with an unclosed stray `{` plus a complete non-matching object says "wasn't valid JSON", not "didn't match the schema".
+
+- **Depends on:** 20260927-22.
+- **Came from:** The second review of 20260927-22, 2026-10-08.
+- **Design:** LLM client.
 - **Status:** todo
