@@ -2383,3 +2383,18 @@ Either apply the hidden-tie check to each LIMIT or OFFSET at any depth, or refus
 - **Came from:** The builder of 20261008-40, 2026-10-08.
 - **Design:** fixture-compare.
 - **Status:** todo
+
+### 20261008-62. Progress lines name the LLM, not just "the LLM".
+
+The user asked for this on 2026-10-08. Many `quaack` output lines say "the LLM", such as `quaack: [2/18] Waiting for the LLM (llm-index-ideas) 27s`. The driver knows which `llms` entry each call goes to, so name it: the entry's provider and model, for example `Waiting for Anthropic claude-opus-5-5 (llm-index-ideas) 27s`. Use the entry's `name` if it has one.
+
+- **Fan-out:** when a step calls several entries at once, the line should still make sense. For example: `Waiting for 3 LLMs: anthropic claude-opus-5-5, openai gpt-5, ollama llama4 (llm-index-ideas) 27s`, or the ones still pending as each finishes. Keep it to one line, and shorten it sensibly when there are many entries.
+- **Failover:** name the entry currently being tried, and say when QUAACK switches to the next one.
+- **Pairing:** say which entry is the author and which is the reviewer.
+
+Every user-visible line that says "the LLM" gets the same treatment where the driver knows the entry. Lines that come before any entry is chosen keep the generic wording. Model and provider names are the operator's own config, so nothing here crosses the trust boundary. Update DESIGN.md and README examples to match, and pin the new lines in specs.
+
+- **Depends on:** 20261007-18 (multi-provider routing).
+- **Came from:** The user, 2026-10-08.
+- **Design:** LLM providers, quaack run.
+- **Status:** todo
