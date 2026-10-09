@@ -72,13 +72,21 @@ module Quaack
         end
 
         # Values for the row's foreign keys that fixed doesn't set, and for
-        # the columns of its own table a self-reference points at.
+        # the columns of its own table a self-reference points at. A foreign key that
+        # shares its columns with one already set points at the value that
+        # one set, with a parent row to hold it.
         def foreign_keys(table, fixed)
           @schema.constraints(table).foreign_keys.each_with_object({}) do |fk, pairs|
             next if fk.columns.any? { |c| fixed.key?(c) }
+            next share(table, fk, pairs) if fk.columns.any? { |c| pairs.key?(c) }
 
             pairs.merge!(foreign_key(table, fk, fixed.merge(pairs)))
           end
+        end
+
+        def share(table, foreign, pairs)
+          key = foreign.columns.map { pairs[it] }
+          need(foreign.parent, foreign.parent_columns.zip(key).to_h) unless key.any?(&:nil?) || foreign.parent == table
         end
 
         # NULLs when a column is nullable, the row's own key for a NOT NULL
