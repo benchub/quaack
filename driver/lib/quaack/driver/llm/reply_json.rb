@@ -51,8 +51,8 @@ module Quaack
         # an odd quote would hide every later {, so when a scan ends with a {
         # still open, it starts again just past that {, keeping what it found.
         # Stray quotes that pair up can instead swallow the real object into a
-        # stray {'s span, so when a span doesn't parse, it rescans just past
-        # that span's { too. Each restart rescans the rest of the text, so
+        # stray {'s span, so when a span doesn't parse, it rescans that span's
+        # interior too. Each restart rescans the rest of the text, so
         # they stop after MAX_RESTARTS, far above the few stray braces prose holds.
         OUTSIDE = /[^{]+/
         INSIDE = /(?:[^{}"]|"(?:\\.|[^"\\])*")+/m
@@ -84,10 +84,9 @@ module Quaack
 
           def initialize(text)
             @text = text
-            @scanner = StringScanner.new(text)
             @spans = {}
             @restarts = MAX_RESTARTS + 1
-            @unclosed = collect(0)
+            @unclosed = collect(StringScanner.new(text), 0, @spans)
           end
 
           def each
@@ -96,9 +95,8 @@ module Quaack
               start, stop = queue.shift
               if (result = parsed(start, stop))
                 yield result.first
-              elsif @restarts.positive?
-                collect(start + 1)
-                queue = @spans.select { |s, _| s > start }.sort
+              elsif (found = rescan(start, stop)).any?
+                queue = (queue + found).sort
               end
             end
           end
@@ -112,15 +110,35 @@ module Quaack
             nil
           end
 
+          # Only quotes can hide braces, so a failed span's interior gets a
+          # fresh scan only when it holds one. Spans past its } are already
+          # known, so the scan stays inside. Returns the new spans.
+          def rescan(start, stop)
+            interior = @text.byteslice((start + 1)...stop)
+            return [] unless @restarts.positive? && interior.include?('"')
+
+            found = {}
+            collect(StringScanner.new(interior), 0, found)
+            added(found, start + 1)
+          end
+
+          # Records the spans an interior scan found at offset, and returns
+          # those that are new.
+          def added(found, offset)
+            found.map { |s, e| [s + offset, e + offset] }
+                 .reject { |s, _| @spans.key?(s) }
+                 .each { |s, e| @spans[s] = e }
+          end
+
           # Scans from pos, then restarts past each { left open, while
           # restarts last. Each scan spends one. Says whether a { was left
           # open.
-          def collect(pos)
+          def collect(scanner, pos, spans)
             unclosed = false
             while @restarts.positive?
               @restarts -= 1
-              @scanner.pos = pos
-              pos = ReplyJSON.scan(@scanner, @spans)
+              scanner.pos = pos
+              pos = ReplyJSON.scan(scanner, spans)
               unclosed ||= !pos.nil?
               break unless pos
 

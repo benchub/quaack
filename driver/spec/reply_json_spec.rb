@@ -30,6 +30,28 @@ RSpec.describe Quaack::Driver::LLM::ReplyJSON do
     end
   end
 
+  # Spans that hold a quote and won't parse, which each start a rescan.
+  [
+    ["spaced brace-quote-brace", '{ "}' * 4096, "wasn't valid JSON"],
+    ["brace-quote-brace", '{"}' * 5462, "wasn't valid JSON"],
+    ["spaced brace-quote-brace then empty objects", ('{ "}' * 2048) + ("{}" * 4096), "didn't match the schema"]
+  ].each do |name, junk, message|
+    it "rescans 16 KB of #{name} junk quickly, parsing each { at most once" do
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      expect(error_for(junk)).to end_with("the reply #{message}")
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 0.15
+
+      # Matching parses the schema too, so count only parses of the reply.
+      calls = 0
+      allow(JSON).to receive(:parse).and_wrap_original do |original, source, *rest|
+        calls += 1 if junk.include?(source)
+        original.call(source, *rest)
+      end
+      error_for(junk)
+      expect(calls).to be <= junk.count("{") + 1
+    end
+  end
+
   it "finds the object after non-ASCII prose" do
     expect(described_class.parse(%(Café ☃: {"ddl": []}), schema)).to eq("ddl" => [])
   end
