@@ -1,57 +1,82 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>QUAACK report <%= h run_id %></title>
 <style>
-  body { font: 16px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c2430; background: #fff;
+  :root {
+    color-scheme: light dark;
+    --text: #1c2430; --bg: #fff; --panel: #fff; --rule: #d5dbe3; --accent: #2f6fb3;
+    --summary-bg: #eef4fb; --warn: #8a5a00; --bug-bg: #fdecec; --bug-edge: #c0392b;
+    --head-bg: #f3f5f8; --code-bg: #f3f5f8; --muted: #5c6674; --note: #515b69;
+    --baseline-bg: #f7f8fa; --differs-bg: #fff4d6;
+    --query-bg: #f4effb; --query-edge: #7b4bb3; --query-accent: #5b3a8a;
+    --funnel-text: #1c2430; --funnel-count: #515b69;
+    --uncounted-fill: #eef0f3; --uncounted-stroke: #8a929d; --known-line: #5b6470; --hatch: #b5bcc6;
+    --st-default: #2f6fb3; --st-blue: #1f5fa8; --st-teal: #0f766e; --st-violet: #7b3fb0; --st-brown: #a1561c;
+    --st-rose: #b02a5b; --st-green: #4d7c0f; --st-gold: #8a6d00; --st-indigo: #3b5bdb; --st-slate: #334e68;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text: #e6eaf0; --bg: #14181f; --panel: #1e242d; --rule: #3a4452; --accent: #6aa8e8;
+      --summary-bg: #1a2738; --warn: #e5b04a; --bug-bg: #3a1c1c; --bug-edge: #e0675a;
+      --head-bg: #252c37; --code-bg: #252c37; --muted: #9aa5b4; --note: #a9b3c1;
+      --baseline-bg: #1c222b; --differs-bg: #3d3216;
+      --query-bg: #251d33; --query-edge: #a37ad6; --query-accent: #c4a3ee;
+      --funnel-text: #e6eaf0; --funnel-count: #a9b3c1;
+      --uncounted-fill: #232932; --uncounted-stroke: #7d8794; --known-line: #9aa5b4; --hatch: #4a5463;
+      --st-default: #5b9bea; --st-blue: #5b9bea; --st-teal: #2fb5a8; --st-violet: #b07ae0; --st-brown: #d98a4a;
+      --st-rose: #e0699a; --st-green: #8cc63f; --st-gold: #d4b030; --st-indigo: #7c93f5; --st-slate: #7fa0c4;
+    }
+  }
+  body { font: 16px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--text); background: var(--bg);
          max-width: 62rem; margin: 2rem auto; padding: 0 1.5rem; }
   h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
-  h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 2px solid #d5dbe3; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 2px solid var(--rule); }
   h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
   p, ul { margin: 0.5rem 0; }
-  #summary { background: #eef4fb; border-left: 5px solid #2f6fb3; padding: 0.75rem 1.25rem; }
+  #summary { background: var(--summary-bg); border-left: 5px solid var(--accent); padding: 0.75rem 1.25rem; }
   #summary h2 { border: 0; margin-top: 0; }
   #summary h2 { font-size: 1.4rem; }
-  #summary table { background: #fff; }
-  #summary .warn, #summary li.warn { color: #8a5a00; }
+  #summary table { background: var(--panel); }
+  #summary .warn, #summary li.warn { color: var(--warn); }
   #summary ul { list-style: none; padding: 0; }
   #summary td[title] { cursor: help; }
-  #quaack-bugs { background: #fdecec; border-left: 5px solid #c0392b; padding: 0.75rem 1.25rem; margin-bottom: 2rem; }
+  #quaack-bugs { background: var(--bug-bg); border-left: 5px solid var(--bug-edge); padding: 0.75rem 1.25rem; margin-bottom: 2rem; }
   #quaack-bugs h2 { border: 0; margin-top: 0; }
   table { border-collapse: collapse; margin: 0.75rem 0; }
-  th, td { border: 1px solid #d5dbe3; padding: 0.3rem 0.65rem; text-align: left; vertical-align: top; }
-  thead th { background: #f3f5f8; }
+  th, td { border: 1px solid var(--rule); padding: 0.3rem 0.65rem; text-align: left; vertical-align: top; }
+  thead th { background: var(--head-bg); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  td.missing { color: #6d7785; font-style: italic; }
-  tr.baseline td { background: #f7f8fa; font-style: italic; }
+  td.missing { color: var(--muted); font-style: italic; }
+  tr.baseline td { background: var(--baseline-bg); font-style: italic; }
   table.plan td.step { white-space: nowrap; }
-  table.plan .arrow { color: #6d7785; }
-  table.plan tr.differs td { background: #fff4d6; }
-  table.plan .mark { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: #8a5a00; }
+  table.plan .arrow { color: var(--muted); }
+  table.plan tr.differs td { background: var(--differs-bg); }
+  table.plan .mark { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
-  code.sql { background: #f3f5f8; border-radius: 3px; padding: 0.05em 0.3em; white-space: pre-wrap;
+  code.sql { background: var(--code-bg); border-radius: 3px; padding: 0.05em 0.3em; white-space: pre-wrap;
              overflow-wrap: break-word; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-  pre.sql { background: #f3f5f8; border: 1px solid #d5dbe3; border-radius: 4px; padding: 0.75rem 1rem;
+  pre.sql { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0.75rem 1rem;
             overflow-x: auto; line-height: 1.4; }
   article { margin: 1rem 0 1.75rem; }
-  .note { color: #515b69; font-size: 0.92rem; }
+  .note { color: var(--note); font-size: 0.92rem; }
   details { margin: 0.5rem 0; }
   summary { cursor: pointer; }
   summary h3 { display: inline; margin: 0; }
   summary .source, summary .fate, summary .warn { display: block; margin-left: 1.1rem; }
-  summary .warn, p.warn { color: #8a5a00; font-weight: 600; }
+  summary .warn, p.warn { color: var(--warn); font-weight: 600; }
   /* The body repeats the warning, so show it once while the section is open. */
   details[open] > summary .warn { display: none; }
   /* ::details-content needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section. */
   details.query:target::details-content { content-visibility: visible; }
-  details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }
-  details.query { background: #f4effb; border-left: 5px solid #7b4bb3; padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
-  details.query > summary { position: sticky; top: 0; z-index: 1; background: #f4effb; padding: 0.5rem 7rem 0.5rem 0; }
-  details.query > summary::after { content: "\25BC  Expand"; position: absolute; top: 0.5rem; right: 0; color: #5b3a8a; font-weight: 600; }
+  details.query:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }
+  details.query { background: var(--query-bg); border-left: 5px solid var(--query-edge); padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
+  details.query > summary { position: sticky; top: 0; z-index: 1; background: var(--query-bg); padding: 0.5rem 7rem 0.5rem 0; }
+  details.query > summary::after { content: "\25BC  Expand"; position: absolute; top: 0.5rem; right: 0; color: var(--query-accent); font-weight: 600; }
   details.query[open] > summary::after { content: "\25B2  Collapse"; }
   details.query > pre.sql, details.not-ranked > table { margin-top: 0.5rem; }
   svg.funnel { display: block; width: 100%; height: auto; margin: 0.75rem 0; }
-  svg.funnel text { font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1c2430; }
+  svg.funnel text { font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--funnel-text); }
   svg.funnel text.stage { font-weight: 600; }
-  svg.funnel text.counts { font-size: 12px; fill: #515b69; }
+  svg.funnel text.counts { font-size: 12px; fill: var(--funnel-count); }
   svg.funnel .unknown text.counts { font-style: italic; }
 </style>
 </head><body>

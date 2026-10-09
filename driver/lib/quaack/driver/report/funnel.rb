@@ -45,16 +45,28 @@ module Quaack
         VIEW_WIDTH = 940
         LINE = 96
         STRIPE = 10
-        BLUE = "#2f6fb3"
-        KNOWN_GREY = "#5b6470"
-        # One color per stage, dark enough to stand out from the page.
-        COLORS = { "index-from-query" => "#1f5fa8", "index-from-plan" => "#0f766e", "index-dedupe" => "#7b3fb0",
-                   "index-test" => "#a1561c", "llm-index-ideas" => "#b02a5b", "llm-index-refine" => "#4d7c0f",
-                   "index-rank" => "#8a6d00", "rewrite-rules" => "#1f5fa8", "llm-rewrites" => "#7b3fb0",
-                   "operator-rewrites" => "#0f766e", "assumption-check" => "#a1561c", "plan-pruning" => "#b02a5b",
-                   "rewrite-test" => "#4d7c0f", "counterexamples" => "#8a6d00", "rewrite-index-ideas" => "#3b5bdb",
-                   "measurement" => "#334e68" }.freeze
-        UNCOUNTED = 'fill="#eef0f3" stroke="#8a929d" stroke-dasharray="4 3"'
+        BLUE = "var(--st-default)"
+        KNOWN_GREY = "var(--known-line)"
+        # One color per stage, a CSS variable the template defines for both themes.
+        COLORS = {
+          "index-from-query" => "var(--st-blue)",
+          "index-from-plan" => "var(--st-teal)",
+          "index-dedupe" => "var(--st-violet)",
+          "index-test" => "var(--st-brown)",
+          "llm-index-ideas" => "var(--st-rose)",
+          "llm-index-refine" => "var(--st-green)",
+          "index-rank" => "var(--st-gold)",
+          "rewrite-rules" => "var(--st-blue)",
+          "llm-rewrites" => "var(--st-violet)",
+          "operator-rewrites" => "var(--st-teal)",
+          "assumption-check" => "var(--st-brown)",
+          "plan-pruning" => "var(--st-rose)",
+          "rewrite-test" => "var(--st-green)",
+          "counterexamples" => "var(--st-gold)",
+          "rewrite-index-ideas" => "var(--st-indigo)",
+          "measurement" => "var(--st-slate)"
+        }.freeze
+        UNCOUNTED = 'style="fill: var(--uncounted-fill); stroke: var(--uncounted-stroke)" stroke-dasharray="4 3"'
         NOT_NONE = "This run didn't count it, which doesn't mean none."
 
         # Words, escaped for the SVG, with any SQL marks dropped.
@@ -126,7 +138,7 @@ module Quaack
 
         def funnel_band(at, widths, name, record, stage, of_rewrite) # rubocop:disable Metrics/ParameterLists
           color = COLORS.fetch(stage, BLUE)
-          shape = funnel_polygon(at, *widths, %(fill="#{color}" fill-opacity="0.85" stroke="#{color}"))
+          shape = funnel_polygon(at, *widths, %(style="fill: #{color}; stroke: #{color}" fill-opacity="0.85"))
           %(<g class="band"><title>#{Funnel.text(funnel_summary(name, record, stage, of_rewrite:))}</title>#{shape}) +
             %(#{funnel_words(at, name, funnel_label(record, stage))}</g>)
         end
@@ -145,7 +157,7 @@ module Quaack
           summary = Funnel.text(funnel_summary(name, record, stage, went_on, of_rewrite:))
           left = (WIDTH - known) / 2
           line = %(<line class="known" x1="#{left.round(2)}" y1="#{at}" x2="#{(left + known).round(2)}" y2="#{at}" ) +
-                 %(stroke="#{KNOWN_GREY}" stroke-width="4"/>)
+                 %(style="stroke: #{KNOWN_GREY}" stroke-width="4"/>)
           %(<g class="band partial"><title>#{summary}</title>#{funnel_polygon(at, width, width, UNCOUNTED)}) +
             %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, stage, "out #{Words::MISSING}"))}</g>)
         end
@@ -166,7 +178,7 @@ module Quaack
           left = (WIDTH - width) / 2
           right = left + width
           stripes = (left + STRIPE).step(right + HEIGHT, STRIPE).map { funnel_stripe(at, left, right, it) }
-          %(<path class="hatch" d="#{stripes.join}" stroke="#b5bcc6" stroke-width="2"/>)
+          %(<path class="hatch" d="#{stripes.join}" style="stroke: var(--hatch)" stroke-width="2"/>)
         end
 
         # The stripe that crosses the band's top line at across, as a path segment.

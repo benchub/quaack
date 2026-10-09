@@ -111,9 +111,54 @@ RSpec.describe Quaack::Driver::Report do
         .not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
     end
 
+    describe "the color theme" do
+      let(:style) { html[%r{<style>(.*?)</style>}m, 1] }
+      let(:dark) { style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1] }
+      let(:light) { style[/^  :root \{(.*?)^  \}/m, 1] }
+      let(:names) { light.scan(/(--[a-z-]+):/).flatten }
+
+      it "defines the colors once on :root and redefines every one in the dark block" do
+        expect(names.size).to be > 25
+        expect(names - dark.scan(/(--[a-z-]+):/).flatten).to eq([])
+        expect(dark.scan(/(--[a-z-]+):/).flatten - names).to eq([])
+      end
+
+      it "gives every color variable a different dark value from its light one, bar the page-matched panels" do
+        pair = ->(css) { css.scan(/(--[a-z-]+): (#\h+)/).to_h }
+        same = pair.call(light).select { |k, v| pair.call(dark)[k] == v }.keys
+        expect(same).to eq([])
+      end
+
+      it "leaves no color literal outside :root and the dark block" do
+        rest = style.sub(light, "").sub(dark, "")
+        expect(rest).not_to match(/:[^;{}]*#\h{3,8}\b|rgba?\(|hsla?\(|(?<![-\w])(white|black)(?![-\w])/)
+        expect(rest).to include("var(--bg)").and include("var(--text)")
+      end
+
+      it "uses only variables that :root defines" do
+        used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
+        expect(used - names).to eq([])
+      end
+
+      it "gives every funnel color and the funnel's grey a variable that :root defines" do
+        funnel = Quaack::Driver::Report::Funnel
+        vars = (funnel::COLORS.values + [funnel::BLUE, funnel::KNOWN_GREY, funnel::UNCOUNTED]).flat_map do |v|
+          v.scan(/var\((--[a-z-]+)\)/).flatten
+        end
+        expect(funnel::COLORS.values).to all(match(/\Avar\(--st-[a-z]+\)\z/))
+        expect(vars.uniq - names).to eq([])
+      end
+
+      it "paints the funnel from variables, with no hex color in the body" do
+        body = html[%r{</style>.*}m]
+        expect(body).not_to match(/#\h{6}\b/)
+        expect(render(negative_payload)).to include("<style>")
+      end
+    end
+
     it "sets inline SQL apart in monospace on a subtle background, wrapping long DDL inside the page" do
       rule = html[/^\s*code\.sql\s*\{[^}]*\}/]
-      expect(rule).to match(/background:\s*#f3f5f8/).and match(/overflow-wrap:\s*break-word/)
+      expect(rule).to match(/background:\s*var\(--code-bg\)/).and match(/overflow-wrap:\s*break-word/)
         .and match(/white-space:\s*pre-wrap/)
       expect(html).to match(/^\s*code, pre \{ font-family: ui-monospace, Menlo, Consolas, monospace;/)
     end
@@ -422,12 +467,13 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "styles each query section with a violet stripe and background, unlike the blue verdict" do
-      expect(html).to include("details.query { background: #f4effb; border-left: 5px solid #7b4bb3;")
+      expect(html).to include("details.query { background: var(--query-bg); border-left: 5px solid var(--query-edge);")
       expect(html).to include("scroll-margin-top: 0.5rem; }")
     end
 
     it "pins an open query's summary bar to the top of the window, in the section's background" do
-      expect(html).to include("details.query > summary { position: sticky; top: 0; z-index: 1; background: #f4effb;")
+      expect(html).to include("details.query > summary { position: sticky; top: 0; z-index: 1;")
+      expect(html).to include("background: var(--query-bg); padding: 0.5rem 7rem 0.5rem 0;")
     end
 
     it "labels the bar Collapse while open and Expand while closed, with no script" do
@@ -437,7 +483,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "outlines the section a link lands on, so it stands out from the others" do
-      expect(html).to include("details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }")
+      expect(html).to include("details.query:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }")
     end
 
     it "shows SQL that pg_query can't parse as it was sent, escaped" do
@@ -2364,8 +2410,8 @@ RSpec.describe Quaack::Driver::Report do
       grey = Quaack::Driver::Report::Funnel::UNCOUNTED
       expect(index.values_at(3, 4).map { it[/<polygon [^>]*>/] }).to all(end_with(%( #{grey}/>)))
       colors = Quaack::Driver::Report::Funnel::COLORS
-      expect(index.values_at(3, 4).join).not_to include(%(fill="#{colors["index-dedupe"]}"))
-      expect(index[2][/<polygon [^>]*>/]).to include(%(fill="#{colors["index-dedupe"]}"))
+      expect(index.values_at(3, 4).join).not_to include(%(fill: #{colors["index-dedupe"]};))
+      expect(index[2][/<polygon [^>]*>/]).to include(%(fill: #{colors["index-dedupe"]};))
     end
 
     it "gives each stage its own color, the same in every funnel" do
@@ -2374,9 +2420,9 @@ RSpec.describe Quaack::Driver::Report do
       keys = Quaack::Driver::Report::Words::INDEX_STAGES.keys + Quaack::Driver::Report::Words::REWRITE_STAGES.keys +
              Quaack::Driver::Report::Words::LATE_STAGES.keys
       expect(keys - funnel_module::COLORS.keys).to eq([])
-      fills = bands(funnel("rewrite")).filter_map { it[/<polygon [^>]*fill="(#\h+)"/, 1] }
+      fills = bands(funnel("rewrite")).filter_map { it[/<polygon [^>]*style="fill: (var\(--st-[a-z]+\))/, 1] }
       expect(fills.uniq).to eq(fills)
-      expect(bands(funnel("rewrite-index")).first[/<polygon [^>]*fill="(#\h+)"/, 1])
+      expect(bands(funnel("rewrite-index")).first[/<polygon [^>]*style="fill: (var\(--st-[a-z]+\))/, 1])
         .to eq(funnel_module::COLORS["index-dedupe"])
     end
 
