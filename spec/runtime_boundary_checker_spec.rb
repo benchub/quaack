@@ -15,6 +15,19 @@ RSpec.describe RuntimeBoundary do
     end
   end
 
+  # With a symlinked Ruby (rbenv shims, say), loaded files report real paths,
+  # so the stdlib directories must be real paths too.
+  it "resolves symlinked Ruby directories to real paths" do
+    real = File.join(@dir, "real-lib")
+    FileUtils.mkdir_p(real)
+    link = File.join(@dir, "link-lib")
+    File.symlink(real, link)
+    config = RbConfig::CONFIG.merge("rubylibdir" => link, "rubyarchdir" => link)
+    stub_const("RbConfig::CONFIG", config)
+
+    expect(described_class.stdlib_dirs).to eq([File.realpath(real)] * 2)
+  end
+
   # Copies the repo gem in `gem_dir`, such as "enclave", and returns the
   # copy's gemspec path.
   def copy_of(gem_dir)

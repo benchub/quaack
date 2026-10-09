@@ -47,8 +47,9 @@ end
 # The specs that check SPEC_SUITES live in the root suite, so they can't catch
 # the root suite being left out. The task checks that itself: it fails if the
 # root has a spec/ folder and the root suite didn't run, or couldn't start.
-# That catches a wrong glob or a loop that skips the root suite. A loop that
-# skips another suite would go unnoticed, since only the root is checked. It
+# That catches a wrong glob or a loop that skips the root suite. It also fails
+# if any suite in SPEC_SUITES never ran, so a loop that skips another suite
+# is caught too. It
 # can't stop a deliberate edit that also changes this check, or that runs the
 # root suite with its specs filtered out.
 #
@@ -93,8 +94,15 @@ task :spec do
       print_suite(printing, "#{suite}: failed (#{reason})", rerun_line(path, cmd)) { failed << "#{suite} (#{reason})" }
     end
   end.each(&:join)
-  abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
+  abort_if_skipped(ran, failed)
   abort "Spec suites failed: #{failed.join(", ")}" unless failed.empty?
+end
+
+# A suite that never ran and isn't in the failures was skipped by the loop.
+def abort_if_skipped(ran, failed)
+  abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
+  skipped = SPEC_SUITES - ran
+  abort "Spec suites didn't run: #{skipped.join(", ")}" unless skipped.empty? || failed.any?
 end
 
 # The shell line that reruns one suite by hand, from any directory.
