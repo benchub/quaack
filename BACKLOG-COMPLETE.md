@@ -8903,3 +8903,21 @@ These were found in the second review of 20261003-23, and they fail safe (the lo
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 316ba2fe and 44042a9b. In `Builder#bound_value`, a NOT NULL key-class member whose atom picks NULL takes the class key instead, so only the child FK holds NULL. Items 2 and 3 were already fixed by 20261003-30, and regression specs were added for them. Opus review: sound, and the IS NULL atom is exercised both ways (the dropped-filter rewrite is disproved by row_count). Minor and not filed: the `:skip` path in the new branch is untested.
+
+### 20261003-35. `distinct_join_to_exists`: loose ends from 20261002-16.
+
+These are minor findings from building and reviewing 20261002-16:
+
+- **`catalog/calls.rb` matches a function by name only, across schemas.** A user function in another schema with the same name as a known-safe one is treated as safe. Match on the schema too, or refuse when the name is ambiguous.
+- **A bare key column in ORDER BY under LIMIT is refused.** Rails often sends `ORDER BY id LIMIT n`. It's safe when the key is the outer table's unique key, so allow it.
+- **The rule's description string is stale.** It no longer says what the rule matches.
+- **The cache key test is weak.** Make it fail if the cache key drops an input.
+- **The `x.*` check needs a test** that goes red if the check is removed.
+- **A nondeterministic-collation key with a `COLLATE "C"` unique index** (pre-existing). `DISTINCT` folds `Ann` and `ann` together, but the unique index lets both rows exist, so dropping `DISTINCT` changes the result. Refuse when the key's collation is nondeterministic and differs from the unique index's.
+
+- **Depends on:** 20261002-16.
+- **Came from:** The build and review of 20261002-16, 2026-10-03.
+- **Design:** rewrite-rules, `distinct_join_to_exists`.
+- **Note (2026-10-07):** the nondeterministic-collation key with a `COLLATE "C"` index is covered by 20261002-4's shared unique check (`assumption_check/index_equality.rb`).
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** f46ba899 and 357afdd6. A bare `ORDER BY <key>` is now accepted, with or without LIMIT, when every output of that name is the kept table's column (`order_by.rb`). The description is fixed. New tests cover the cache key, `x.*`, and collation. The function-schema and nondeterministic-collation items were already handled. Opus review: sound.

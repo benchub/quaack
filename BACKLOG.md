@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-35: distinct_join_to_exists bare ORDER BY key.
 - 20261003-32: nullable FK IS NULL loads.
 - 20261009-23: suggested drops see varchar partial indexes.
 
@@ -117,11 +118,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-16. `distinct_join_to_exists`: handle what Rails sends. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261002-6. 6c rule: `shared_scan_cte`. Done, see BACKLOG-COMPLETE.md.
-
-### 20261002-4. `distinct_join_to_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-41. Support DML statements.
 
@@ -301,23 +298,6 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 ### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-34. Step 9 values: loose ends from 20261003-33. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-35. `distinct_join_to_exists`: loose ends from 20261002-16.
-
-These are minor findings from building and reviewing 20261002-16:
-
-- **`catalog/calls.rb` matches a function by name only, across schemas.** A user function in another schema with the same name as a known-safe one is treated as safe. Match on the schema too, or refuse when the name is ambiguous.
-- **A bare key column in ORDER BY under LIMIT is refused.** Rails often sends `ORDER BY id LIMIT n`. It's safe when the key is the outer table's unique key, so allow it.
-- **The rule's description string is stale.** It no longer says what the rule matches.
-- **The cache key test is weak.** Make it fail if the cache key drops an input.
-- **The `x.*` check needs a test** that goes red if the check is removed.
-- **A nondeterministic-collation key with a `COLLATE "C"` unique index** (pre-existing). `DISTINCT` folds `Ann` and `ann` together, but the unique index lets both rows exist, so dropping `DISTINCT` changes the result. Refuse when the key's collation is nondeterministic and differs from the unique index's.
-
-- **Depends on:** 20261002-16.
-- **Came from:** The build and review of 20261002-16, 2026-10-03.
-- **Design:** rewrite-rules, `distinct_join_to_exists`.
-- **Note (2026-10-07):** the nondeterministic-collation key with a `COLLATE "C"` index is covered by 20261002-4's shared unique check (`assumption_check/index_equality.rb`).
-- **Status:** todo
 
 ### 20261003-37. rewrite-test values: loose ends from 20261003-34.
 
