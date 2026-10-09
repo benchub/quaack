@@ -111,9 +111,7 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
     scans = conn.exec("SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'rt_a_idx'").getvalue(0, 0).to_i
 
     expect(scans).to be_positive
-    expect(suggested("CREATE INDEX ON public.rt USING btree (a, b)").size).to eq(1)
-    built = { "q" => { "ddl" => "CREATE INDEX ON public.rt USING btree (a, b)" } }
-    expect(described_class.new(store).for(["q"], built))
+    expect(drops_for("CREATE INDEX ON public.rt USING btree (a, b)"))
       .to eq([{ "name" => "rt_a_idx", "size_bytes" => sizes, "idx_scan" => scans }])
   end
 
