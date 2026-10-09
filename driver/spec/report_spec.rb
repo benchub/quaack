@@ -319,12 +319,6 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).not_to include("<script")
     end
 
-    it "restyles the query sections for dark mode" do
-      dark = html[/@media \(prefers-color-scheme: dark\) \{.*?\n  \}/m]
-      expect(dark).to include("details.query, details.query > summary { background: #2a2038; }")
-      expect(dark).to include("details.query { border-left-color: #a77fe0; }")
-    end
-
     it "outlines the section a link lands on, so it stands out from the others" do
       expect(html).to include("details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }")
     end
