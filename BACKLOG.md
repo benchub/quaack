@@ -1191,3 +1191,18 @@ The user, 2026-10-09. A rewrite's summary reads "Where it came from: made by QUA
 - **Came from:** The user, 2026-10-09.
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-32. Report: reword the fate of a rewrite that regressed, and drop its correctness caution.
+
+The user, 2026-10-09. A rewrite that wasn't ranked as `not_better` reads: "What became of it: It passed every test, but on the real data it read over 5% more blocks on some values, so QUAACK didn't rank it." and under it, "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." The user finds the pair confusing. A reader expects that anything QUAACK recommends is correct, and explaining that slow candidates are set aside before a full correctness check muddles the story. The user's suggested wording: "Performance testing showed a regression, so QUAACK did not fully test its logic."
+
+1. **Check the claim first.** Read DESIGN.md's step order (minimax, result-comparison, counterexamples) and confirm that a rewrite dropped as `not_better` really gets less correctness testing than a ranked one. If it does, say so in the report's own words. If it doesn't (its counterexamples ran like any other's), the suggested sentence would be false; stop and take the question to the user.
+2. **Reword.** The wording lives in `Report::NotBetterFate` (`REGRESSED`, `SMALL_GAIN`, `EITHER`, with `LEAD` "It passed every test, but on the real data it") and the "unproven" caution in `Report::Cautions` (`UNPROVEN_FIRST`, `UNPROVEN_AFTER`). Cover all three of the not-better cases (regression, under a 5% gain, either), not only the regression. Keep the 5% threshold visible where it helps the reader.
+3. **Don't show a rewrite's untested-conditions caution when the rewrite wasn't ranked for performance**, if step 1 shows that caution tells the reader nothing useful there. Keep it for ranked rewrites, where it matters. Say what you decided and why.
+4. Update DESIGN.md's bullet on each query's summary and warnings, README.md where it quotes either sentence, and the report specs, with a test per case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09. Related: 20261009-18 (the same caution reading twice).
+- **Design:** report, counterexamples.
+- **Open questions:** Whether the suggested sentence is true for every not-better rewrite (step 1).
+- **Status:** todo
