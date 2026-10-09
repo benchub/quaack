@@ -31,6 +31,8 @@ module Quaack
     #   (DESIGN.md's schema-dump), an Array of non-empty one-line names, for
     #   objects Postgres records no dependency on, such as what a SQL
     #   function with a string body reads. Without it, there are none.
+    # - baseline_cap_seconds: DESIGN.md's baseline's ceiling on each run of
+    #   the original query, a positive Integer. Without it, it's one hour.
     #
     # A missing file is an empty config. A file that's there but can't be
     # used is bad_config: a symlink, even to a good file, anything but a
@@ -55,6 +57,9 @@ module Quaack
       NOT_ONE_LINE = /[\r\n\x00]/
       # DESIGN.md's classify: fewer than this many distinct values is few.
       DEFAULT_CARDINALITY_THRESHOLD = 50
+
+      # DESIGN.md's baseline: one hour per run of the original.
+      DEFAULT_BASELINE_CAP_SECONDS = 3600
 
       def self.default_path = File.join(Dir.home, ".quaack", "config.json")
 
@@ -91,7 +96,7 @@ module Quaack
       private_class_method :read, :parse
 
       attr_reader :memory_command, :run_server_command, :destroy_command, :pii_columns, :cardinality_threshold,
-                  :extra_dump_schemas
+                  :extra_dump_schemas, :baseline_cap_ms
 
       def initialize(object)
         @memory_command = command(object, "memory_command")
@@ -102,9 +107,8 @@ module Quaack
         raise Error, "bad_config" unless @pii_columns.instance_of?(Array)
 
         @pii_globs = @pii_columns.map { glob(it) }
-        @cardinality_threshold = object.fetch("cardinality_threshold", DEFAULT_CARDINALITY_THRESHOLD)
-        raise Error, "bad_config" unless positive_integer?(@cardinality_threshold)
-
+        @cardinality_threshold = positive(object, "cardinality_threshold", DEFAULT_CARDINALITY_THRESHOLD)
+        @baseline_cap_ms = positive(object, "baseline_cap_seconds", DEFAULT_BASELINE_CAP_SECONDS) * 1000
         @extra_dump_schemas = schemas(object.fetch("extra_dump_schemas", []))
       end
 
@@ -115,6 +119,13 @@ module Quaack
       end
 
       private
+
+      def positive(object, key, default)
+        value = object.fetch(key, default)
+        raise Error, "bad_config" unless positive_integer?(value)
+
+        value
+      end
 
       # The one-line command at key, or nil if the key isn't there. A null
       # is bad_config, not unset.

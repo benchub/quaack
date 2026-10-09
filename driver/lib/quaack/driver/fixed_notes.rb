@@ -288,6 +288,10 @@ module Quaack
                                 "on the run server: another session, or a statement_timeout set on the server, " \
                                 "database, or role. Make sure nothing else uses the run server and that " \
                                 "statement_timeout is off there. #{GO_ON}",
+        "baseline_original_exceeded_cap" => "The original query ran past QUAACK's cap on a baseline run, one hour " \
+                                            "unless baseline_cap_seconds in ~/.quaack/config.json on the jump " \
+                                            "server says otherwise, so QUAACK can't measure it. Raise the cap " \
+                                            "there if you can wait longer. #{GO_ON}",
 
         # teardown. The driver says how to tear the run down after these.
         "teardown_failed" => "QUAACK couldn't finish deleting the run's store on the jump server, and part of " \

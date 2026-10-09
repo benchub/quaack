@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../config"
 require_relative "../measurement"
 require_relative "../run_discipline"
 require_relative "../run_server"
@@ -11,8 +12,9 @@ module Quaack
       # with every index that index-build built hidden, measures anchored_query
       # for each literal set (Measurement, combination nil).
       #
-      # The original gets up to 15 minutes per run (ORIGINAL_TIMEOUT_MS), not
-      # the 3x clamp; a set that still times out counts as infinite in minimax.
+      # The original gets up to the config's baseline_cap_ms per run (one
+      # hour without one), not the 3x clamp. If any run hits it, baseline
+      # refuses as baseline_original_exceeded_cap and writes nothing.
       # It writes baseline:
       #   "sets"       { set name => measurement, as Measurement gives it }
       #   "timed_out"  the set names whose runs timed out
@@ -23,14 +25,23 @@ module Quaack
       # It sends one step_counts: sets, how many literal sets it measured,
       # and timed_out, how many of those timed out. Then DONE.
       module Baseline
-        ORIGINAL_TIMEOUT_MS = 900_000
+        class Error < StandardError
+          attr_reader :rule
+
+          def initialize(rule)
+            @rule = rule
+            super
+          end
+        end
 
         module_function
 
-        def call(store:, **)
+        def call(store:, config: Config.load, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
           sets = Measurement.measure(connection:, store:, sql: store.read("anchored_query"), combination: nil,
-                                     timeout_ms: ORIGINAL_TIMEOUT_MS)
+                                     timeout_ms: config.baseline_cap_ms)
+          raise Error, "baseline_original_exceeded_cap" if sets.values.any? { it["timed_out"] }
+
           entry = entry(sets)
           store.write("baseline", entry)
           [{ type: :step_counts, sets: sets.size, timed_out: entry["timed_out"].size }]

@@ -24,6 +24,7 @@ module Quaack
                  execute_failed explain_failed
                  expression_unique_index
                  fixture_load_failed fk_cycle forbidden_in_index foreign_relation hypopg_failed in_transaction
+                 baseline_original_exceeded_cap
                  index_build_bad_index index_build_hidden_index_used index_build_orphan_cancel_denied
                  index_build_orphan_running index_build_unique index_build_unqualified index_build_wrong_set_hidden
                  index_feedback_no_index_search index_feedback_unknown_search index_payload_no_index_search
