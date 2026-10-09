@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20260927-19 (index search: one low-cardinality source; at most two set-asides per search).
 - 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
 - 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
 - 20261008-70 (CastlessIndex merges array-literal = ANY with IN).
@@ -863,16 +864,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260927-18. Make rewrite-test scenarios load instead of skipping them. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-19. Set-aside loose ends.
-
-These are minor findings from the review of 20260927-11:
-- There's no cap on set-asides. The worst realistic case is about 2 extra real builds per low-cardinality table, per search (about 18 for a 3-table join with 2 rewrites). Add a per-search cap, or limit set-asides to the moved key-only variant.
-- There are two low-cardinality thresholds: the generator's hardcoded 50 (`TableCandidates::LOW_CARDINALITY`) and classify's configurable one used by `UnusedSetAside`. Unify them.
-
-- **Depends on:** 20260927-11.
-- **Came from:** Review of 20260927-11.
-- **Design:** index-from-query, index-test, index-build.
-- **Status:** todo
+### 20260927-19. Set-aside loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite. Done, see BACKLOG-COMPLETE.md.
 
@@ -2350,4 +2342,14 @@ Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` with
 - **Depends on:** none.
 - **Came from:** The build of 20261008-73, 2026-10-08.
 - **Design:** baseline, run-discipline.
+- **Status:** todo
+
+### 20261008-77. Set-asides: leftovers from 20260927-19.
+
+- **The cap takes the first two in report order,** not the most useful. On a 2-3 table join, the first table's two unused variants can use up both slots and starve the second table. Spread the cap across tables (one per table first), or rank.
+- **`index_search_step_postgres_spec.rb:97` recomputes the generator_one count with `low_cardinality: []`.** That's right only because its fixture has no low-cardinality columns. Pass the real list.
+
+- **Depends on:** 20260927-19.
+- **Came from:** The review of 20260927-19, 2026-10-08.
+- **Design:** index-from-query, index-test.
 - **Status:** todo

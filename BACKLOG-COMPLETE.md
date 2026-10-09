@@ -8414,3 +8414,15 @@ Found by the second review of 20260927-22. `Use {the "plan:\n```json\n{"a": ["x"
 - **Design:** none (test harness).
 - **Status:** done
 - **Landed:** 10ceaddb, 3b20c57d (harness and root spec only, no bump). Review clean. Case 054 passes; case 034 exposed an uncapped baseline, filed as 20261008-76. rewrites:, stderr:, and setup: left out on purpose (comment in run.rb).
+
+### 20260927-19. Set-aside loose ends.
+
+These are minor findings from the review of 20260927-11:
+- There's no cap on set-asides. The worst realistic case is about 2 extra real builds per low-cardinality table, per search (about 18 for a 3-table join with 2 rewrites). Add a per-search cap, or limit set-asides to the moved key-only variant.
+- There are two low-cardinality thresholds: the generator's hardcoded 50 (`TableCandidates::LOW_CARDINALITY`) and classify's configurable one used by `UnusedSetAside`. Unify them.
+
+- **Depends on:** 20260927-11.
+- **Came from:** Review of 20260927-11.
+- **Design:** index-from-query, index-test, index-build.
+- **Status:** done
+- **Landed:** 3a7d8298, 56334f04 (enclave; on the unreleased list). Review clean. Cap of 2 picked by the builder to match e2e 055. Minors filed as 20261008-77.
