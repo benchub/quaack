@@ -14,7 +14,7 @@ It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](.
 - A subquery, or a `UNION` branch, that has `GROUP BY`, `LIMIT`, or the like, or is a `VALUES` list.
 - A `UNION` with its own `WITH`, `ORDER BY`, or `LIMIT`.
 - An `INTERSECT` or an `EXCEPT`, alone or anywhere in a `UNION`. `x` is in an `INTERSECT` when it's in every branch, which would take an OR of `NOT EXISTS`, and the rows an `EXCEPT` keeps hang on what the other branch holds, not on `x`.
-- A `UNION` whose branches select, in one place, columns of different types or collations.
+- A `UNION` whose branches select, in one place, columns of different types or collations. A typmod doesn't count, so `varchar(10)` beside `varchar(20)` is fine.
 - A `UNION` without `ALL` of a type Postgres can't dedupe, such as `box`.
 - A row with a pair whose `=` isn't an operator of a btree family, such as `box`'s.
 
@@ -24,7 +24,7 @@ It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](.
 
 The rule also checks three things itself, which it doesn't state as assumptions:
 
-- In a `UNION`, every branch's column in one place has the same type and collation. A `UNION` compares as its columns' common type, so a `numeric` branch beside a `float8` one is compared as `float8` by `NOT IN` and as `numeric` by `NOT EXISTS`.
+- In a `UNION`, every branch's column in one place has the same type and collation. A `UNION` compares as its columns' common type, so a `numeric` branch beside a `float8` one is compared as `float8` by `NOT IN` and as `numeric` by `NOT EXISTS`. The rule compares the types without their typmods. A typmod changes neither a type's `=` nor what a `UNION` dedupes on, since each value is stored already cut to its column's typmod, and a `UNION` of `varchar(10)` and `varchar(20)` is of plain `varchar`. So `NOT IN` and `NOT EXISTS` compare such columns with the same `=`, and give the same rows, with or without `ALL`.
 - For a row, Postgres takes each pair's `=`. It refuses a row comparison unless each pair's `=` is in a btree family, so `NOT IN` is an error where `NOT EXISTS` would give rows. The rule asks Postgres whether it takes each pair.
 - For a `UNION` without `ALL`, Postgres can dedupe each column's type. It refuses one it can't, such as `box`, so `NOT IN` is an error there too. The rule asks Postgres whether it can.
 

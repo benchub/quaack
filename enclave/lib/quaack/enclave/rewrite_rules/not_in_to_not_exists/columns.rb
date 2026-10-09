@@ -37,8 +37,16 @@ module Quaack
               (!deduped?(sub) || unionable?(branches.first, catalog))
           end
 
-          # The type and collation of each column a branch selects.
-          def infos(branch, catalog) = branch.target_list.map { catalog.column_info(*inner(branch, it)) }
+          # The type, without its typmod, and the collation of each column a
+          # branch selects. A typmod changes neither the type's = nor what
+          # a UNION dedupes on, since a value is stored already cut to it,
+          # and a UNION of varchar(10) and varchar(20) is of varchar.
+          def infos(branch, catalog)
+            branch.target_list.map do |target|
+              info = catalog.column_info(*inner(branch, target))
+              [info.base_type, info.collation] if info
+            end
+          end
 
           # Whether Postgres can dedupe each column a branch selects.
           def unionable?(branch, catalog) = branch.target_list.all? { catalog.unionable?(inner(branch, it)) }

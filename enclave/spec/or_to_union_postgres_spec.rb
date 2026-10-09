@@ -417,6 +417,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         CREATE TABLE public.pairjson (a_id int, d jsonb, PRIMARY KEY (a_id, d));
         CREATE TABLE public.pairpartial (a_id int NOT NULL, n int NOT NULL);
         CREATE UNIQUE INDEX pairpartial_key ON public.pairpartial (a_id, n) WHERE n > 0;
+        CREATE TABLE public.pairdefer (a_id int, n int, PRIMARY KEY (a_id, n) DEFERRABLE);
+        CREATE TABLE public.pairexpr (a_id int NOT NULL, t text NOT NULL);
+        CREATE UNIQUE INDEX pairexpr_key ON public.pairexpr (a_id, pg_catalog.lower(t));
+        CREATE DOMAIN public.num AS int;
+        CREATE TABLE public.pairdomain (a_id int, n public.num, PRIMARY KEY (a_id, n));
+        CREATE EXTENSION citext SCHEMA public;
+        CREATE TABLE public.paircitext (a_id int, t public.citext, PRIMARY KEY (a_id, t));
+        CREATE TABLE public.pairrep (a_id int NOT NULL, n int NOT NULL);
+        CREATE UNIQUE INDEX pairrep_key ON public.pairrep (a_id, n, a_id);
         INSERT INTO public.a VALUES (1, 1), (2, 2), (3, 3);
         INSERT INTO public.pair VALUES (1, 1, 'x'), (1, 2, 'x'), (2, 1, 'y'), (3, 5, NULL);
         INSERT INTO public.triple VALUES (1, 1, 1, 1), (1, 1, 2, 2), (2, 1, 1, 1);
@@ -424,6 +433,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         INSERT INTO public.pairnull VALUES (1, NULL), (1, NULL), (2, 1);
         INSERT INTO public.pairjson VALUES (1, '1'), (1, '2');
         INSERT INTO public.pairpartial VALUES (1, 1), (1, 2);
+        INSERT INTO public.pairrep VALUES (1, 1), (1, 2);
       SQL
     end
 
@@ -480,13 +490,30 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "a column of the only key is nullable" => "pairnull",
       "a column of the only key is nullable, though the key is NULLS NOT DISTINCT" => "pairnnd",
       "a column of the only key is of a type the rule doesn't know UNION compares" => "pairjson",
-      "the only key's index is partial" => "pairpartial"
+      "the only key's index is partial" => "pairpartial",
+      "the only key is deferrable" => "pairdefer",
+      "the only key's index has an expression" => "pairexpr",
+      "a column of the only key is of a domain" => "pairdomain",
+      "a column of the only key is citext" => "paircitext"
     }.each do |why, table|
       it "doesn't fire when #{why}" do
         expect(rewritten(sql).size).to eq(1)
         expect(rewritten("SELECT a.id FROM public.a JOIN public.#{table} s ON s.a_id = a.id " \
                          "WHERE s.a_id = 2 OR a.loose = 1")).to eq([])
       end
+    end
+
+    it "lists each column of a key once, when its index repeats one" do
+      rep = "SELECT a.id FROM public.a JOIN public.pairrep s ON s.a_id = a.id WHERE s.n = 1 OR a.loose = 1"
+
+      expect(rule.rewrites(PgQuery.parse(rep), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "unique", "table" => "public.a", "columns" => %w[id] },
+          { "kind" => "not_null", "table" => "public.a", "column" => "id" },
+          { "kind" => "unique", "table" => "public.pairrep", "columns" => %w[a_id n] },
+          { "kind" => "not_null", "table" => "public.pairrep", "column" => "a_id" },
+          { "kind" => "not_null", "table" => "public.pairrep", "column" => "n" }]]
+      )
+      expect(same_rows(rep, rewritten(rep))).to eq([["1"], ["1"]])
     end
 
     it "would be wrong on a nullable key: a UNION on it merges rows the original returns twice" do
