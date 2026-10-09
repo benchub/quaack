@@ -8400,3 +8400,17 @@ Found by the second review of 20260927-22. `Use {the "plan:\n```json\n{"a": ["x"
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 6884ce14, ea335850 (driver only, no bump). First review blocked on junk speed; fixed by rescanning only a failed span's interior. Second review clean: realistic replies match main, junk 6-28 ms. The wording item wasn't built; it and the review's minors went to 20261008-75.
+
+### 20261008-73. e2e harness: leftovers from 20261008-71.
+
+- **Unconfirmed cases.** 054 and 034 timed out under host load during the build of 20261008-71 and weren't rerun. Run them alone and fix or file what breaks.
+- **Output lost on timeout.** `e2e/run.rb` buffers stdout when it's redirected, so a killed run leaves an empty log. Set `$stdout.sync = true`.
+- **Pipeline options differ from the CLI.** The harness doesn't pass `rewrites:`, `stderr:`, `setup:`, or `home:` the way the CLI does. Check whether any of them changes what a case exercises.
+- **`spec/e2e_run_spec.rb` checks only the verdict and detail shape,** not `why_none`'s tally numbers. Pin them if they're stable.
+- **`why_none` says "covered" for every existing index,** so the count adds nothing beyond "exists".
+
+- **Depends on:** 20261008-71.
+- **Came from:** The build and review of 20261008-71, 2026-10-08.
+- **Design:** none (test harness).
+- **Status:** done
+- **Landed:** 10ceaddb, 3b20c57d (harness and root spec only, no bump). Review clean. Case 054 passes; case 034 exposed an uncapped baseline, filed as 20261008-76. rewrites:, stderr:, and setup: left out on purpose (comment in run.rb).

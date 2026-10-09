@@ -2327,18 +2327,7 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Design:** none (CLAUDE.md Development).
 - **Status:** todo
 
-### 20261008-73. e2e harness: leftovers from 20261008-71.
-
-- **Unconfirmed cases.** 054 and 034 timed out under host load during the build of 20261008-71 and weren't rerun. Run them alone and fix or file what breaks.
-- **Output lost on timeout.** `e2e/run.rb` buffers stdout when it's redirected, so a killed run leaves an empty log. Set `$stdout.sync = true`.
-- **Pipeline options differ from the CLI.** The harness doesn't pass `rewrites:`, `stderr:`, `setup:`, or `home:` the way the CLI does. Check whether any of them changes what a case exercises.
-- **`spec/e2e_run_spec.rb` checks only the verdict and detail shape,** not `why_none`'s tally numbers. Pin them if they're stable.
-- **`why_none` says "covered" for every existing index,** so the count adds nothing beyond "exists".
-
-- **Depends on:** 20261008-71.
-- **Came from:** The build and review of 20261008-71, 2026-10-08.
-- **Design:** none (test harness).
-- **Status:** todo
+### 20261008-73. e2e harness: leftovers from 20261008-71. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-74. Reply parsing: a stray `{` and stray quotes that balance can hide the JSON. Done, see BACKLOG-COMPLETE.md.
 
@@ -2350,4 +2339,15 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Depends on:** 20261008-74.
 - **Came from:** The build and reviews of 20261008-74, 2026-10-08.
 - **Design:** LLM client.
+- **Status:** todo
+
+### 20261008-76. Baseline has no cap on the original query's runtime.
+
+Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` without finishing: literals' worst-case pick (`tier = 'standard'`) makes its `NOT IN` rescan `orders` per customer, and baseline runs the original three times per literal set with no `statement_timeout`, since later steps' timeouts derive from the baseline. On a real replica a slow enough original keeps QUAACK busy for an hour or more with no sign of ending.
+
+- **Needs a decision:** (1) a configurable ceiling, about 5 minutes per run by default, that refuses cleanly ("the original exceeded the cap"); (2) the same ceiling, but record "slower than the cap" and go on; or (3) no cap, and mark e2e 034 slow and skip it by default. The main session recommends (1).
+
+- **Depends on:** none.
+- **Came from:** The build of 20261008-73, 2026-10-08.
+- **Design:** baseline, run-discipline.
 - **Status:** todo
