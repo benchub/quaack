@@ -8365,3 +8365,13 @@ The build and review of 20261001-17 found these:
 - **Design:** report, negative-result.
 - **Status:** done
 - **Landed:** 2c2b00f7, items 1 and 2 (enclave; on the unreleased list). Review clean; a whitespace mutation of the literal regex survives but can't cause a wrong merge. Items 3 (10 vs 10.0) and 4 (old entries) dropped as harmless. Item 5: e2e/run.rb crashes, filed as 20261008-71; replay spec speed filed as 20261008-72.
+
+### 20261008-71. `e2e/run.rb` crashes: the harness passes a plain LLM client.
+
+Found while building 20261008-70. Every case tried (`036`, `054`, `034`) crashes before `why_none` with `NoMethodError: undefined method 'branches' for an instance of Quaack::Driver::LLM::Client`. `rewrite_generation.rb:106` and `generator_three.rb:120` call `@client.branches`, which only `llm/fan_out.rb` defines. The harness needs to build the fan-out router the way the real driver does, and a spec should run at least one e2e case so this can't rot again. Then check that `why_none`'s fate tally reads right.
+
+- **Depends on:** 20261008-62.
+- **Came from:** The build of 20261008-70, 2026-10-08.
+- **Design:** none (test harness).
+- **Status:** done
+- **Landed:** 62231633 (harness and root spec only, no bump). Review clean. Case 036's why_none prints: no fix selected (declined: unused 4; existing: covered 5; rewrites: not_better 1); needs the LLM. Leftovers filed as 20261008-73.

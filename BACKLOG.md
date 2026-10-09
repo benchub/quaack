@@ -2328,14 +2328,7 @@ From the second review of 20261008-63:
 
 ### 20261008-70. Report payload: leftovers from 20261003-3. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-71. `e2e/run.rb` crashes: the harness passes a plain LLM client.
-
-Found while building 20261008-70. Every case tried (`036`, `054`, `034`) crashes before `why_none` with `NoMethodError: undefined method 'branches' for an instance of Quaack::Driver::LLM::Client`. `rewrite_generation.rb:106` and `generator_three.rb:120` call `@client.branches`, which only `llm/fan_out.rb` defines. The harness needs to build the fan-out router the way the real driver does, and a spec should run at least one e2e case so this can't rot again. Then check that `why_none`'s fate tally reads right.
-
-- **Depends on:** 20261008-62.
-- **Came from:** The build of 20261008-70, 2026-10-08.
-- **Design:** none (test harness).
-- **Status:** todo
+### 20261008-71. `e2e/run.rb` crashes: the harness passes a plain LLM client. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-72. `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
 
@@ -2344,4 +2337,17 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Depends on:** none.
 - **Came from:** 20261003-3, 2026-10-08.
 - **Design:** none (CLAUDE.md Development).
+- **Status:** todo
+
+### 20261008-73. e2e harness: leftovers from 20261008-71.
+
+- **Unconfirmed cases.** 054 and 034 timed out under host load during the build of 20261008-71 and weren't rerun. Run them alone and fix or file what breaks.
+- **Output lost on timeout.** `e2e/run.rb` buffers stdout when it's redirected, so a killed run leaves an empty log. Set `$stdout.sync = true`.
+- **Pipeline options differ from the CLI.** The harness doesn't pass `rewrites:`, `stderr:`, `setup:`, or `home:` the way the CLI does. Check whether any of them changes what a case exercises.
+- **`spec/e2e_run_spec.rb` checks only the verdict and detail shape,** not `why_none`'s tally numbers. Pin them if they're stable.
+- **`why_none` says "covered" for every existing index,** so the count adds nothing beyond "exists".
+
+- **Depends on:** 20261008-71.
+- **Came from:** The build and review of 20261008-71, 2026-10-08.
+- **Design:** none (test harness).
 - **Status:** todo
