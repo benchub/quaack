@@ -156,11 +156,8 @@ module Quaack
     module GeneratorOne
       module_function
 
-      def candidates(parse, statistics, max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000,
-                     low_cardinality: [])
-        limits = { max_key_columns:, brin_min_correlation:, brin_min_reltuples: }
-        Input.check_limits(limits)
-        limits[:low_cardinality] = low_cardinality
+      def candidates(parse, statistics, low_cardinality: [], **options)
+        limits = Input.limits(options).merge(low_cardinality:)
         Input.branches(parse).flat_map do |select|
           scope = Scope.new(select, statistics)
           Uses.variants(select, scope).flat_map do |uses|
@@ -174,6 +171,16 @@ module Quaack
       # treated like a query of its own.
       module Input
         module_function
+
+        LIMITS = { max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000 }.freeze
+
+        # The limits options gives, with LIMITS' defaults, checked.
+        def limits(options)
+          unknown = options.keys - LIMITS.keys
+          raise ArgumentError, "unknown keywords: #{unknown.join(", ")}" unless unknown.empty?
+
+          LIMITS.merge(options).tap { check_limits(it) }
+        end
 
         def check_limits(limits)
           cap = limits[:max_key_columns]
