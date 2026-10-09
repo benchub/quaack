@@ -56,6 +56,9 @@ module Quaack
 
         def enforces_schema? = false
 
+        # The copilot command reports no tokens (Client).
+        def usage = nil
+
         def reply(step:, system:, messages:, max_tokens:, schema:, count:) # rubocop:disable Metrics/ParameterLists
           count.call
           Dir.mktmpdir("quaack-copilot-cli") do |dir|

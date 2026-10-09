@@ -158,6 +158,17 @@ RSpec.describe "the copilot_cli adapter" do
     expect(argv[argv.index("-p") + 1]).to include("prompt.md")
   end
 
+  it "reports no tokens, but times each command under the ask's provider" do
+    command = File.join(@dir, "fake-copilot")
+    script(command, 'print("{\"ddl\":[]}")')
+    client(template: [command, "{prompt_file}", "{model}"])
+      .ask(step: "llm-index-ideas", messages:, max_tokens: 1000, schema:, provider: "copilot")
+
+    usage = burndown.llm_usage.fetch("copilot")
+    expect(usage.except("seconds")).to eq("used" => 1, "reported" => 0)
+    expect(usage["seconds"]).to be_positive
+  end
+
   it "asks once more when the reply does not match the schema, and counts both commands" do
     command = File.join(@dir, "fake-copilot")
     script(command, <<~'RUBY')

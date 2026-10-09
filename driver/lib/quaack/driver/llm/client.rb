@@ -30,6 +30,12 @@ module Quaack
       # it asks for structured output if the provider has it; and it raises
       # Error with one of the rules for every way the call can fail.
       #
+      # It answers `usage` too: the last reply's tokens, as a Hash of
+      # Burndown::TOKENS kinds, or nil when no reply came or its provider
+      # reported none. The front times each `reply` and counts it, with
+      # that usage, in the burndown under the ask's provider
+      # (Burndown#llm_wait), when the ask names one.
+      #
       # It also answers `enforces_schema?`: whether the provider holds a
       # reply to the schema. One that doesn't must put the schema in the
       # prompt itself, and the front asks once more when a reply doesn't
@@ -112,7 +118,7 @@ module Quaack
         def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false, purpose: ASKING, # rubocop:disable Metrics/ParameterLists
                 provider: nil, shown: nil, context: nil)
           system = self.class.system(system, schema)
-          ask_once(step:, system:, messages:, max_tokens:, schema:, json:,
+          ask_once(step:, system:, messages:, max_tokens:, schema:, json:, provider:,
                    count: counter(step, said(purpose, shown), provider, context))
         rescue Error => e
           sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
@@ -126,16 +132,32 @@ module Quaack
 
         private
 
-        def ask_once(step:, system:, messages:, max_tokens:, schema:, json:, count:) # rubocop:disable Metrics/ParameterLists
-          text = @adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:)
-          return text unless schema || json
-
-          ReplyJSON.parse(text, schema)
+        def ask_once(step:, system:, messages:, max_tokens:, schema:, json:, provider:, count:) # rubocop:disable Metrics/ParameterLists
+          reply = ->(said) { @adapter.reply(step:, system:, messages: said, max_tokens:, schema:, count:) }
+          text = nil
+          timed(provider) do
+            text = reply.call(messages)
+            schema || json ? ReplyJSON.parse(text, schema) : text
+          end
         rescue Error => e
           raise unless reask?(schema, text)
 
           messages = [*messages, { role: "assistant", content: text }, { role: "user", content: reask(e) }]
-          ReplyJSON.parse(@adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:), schema)
+          timed(provider) { ReplyJSON.parse(reply.call(messages), schema) }
+        end
+
+        # The block's value, a reply the ask can use, with the wait for it
+        # and its usage counted in the burndown under provider, if any.
+        # A block that raises counts as a reply not used.
+        def timed(provider)
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          used = false
+          yield.tap { used = true }
+        ensure
+          if provider
+            seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+            @burndown.llm_wait(provider, seconds, @adapter.usage, used:)
+          end
         end
 
         # The count an adapter calls before each attempt of one ask: it counts

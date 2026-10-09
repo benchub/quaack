@@ -247,6 +247,16 @@
 </tbody></table>
 <p class="note">Names come from your own <code>~/.quaack/driver.json</code>. Calls are this run of quaack's, as below.</p>
 <% end %>
+<% unless usage_rows.empty? %>
+<h3>LLM wait and tokens</h3>
+<table id="llm-usage"><thead><tr><th scope="col">LLM</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Failed or not used</th><th scope="col" class="num">Waiting for replies</th><th scope="col" class="num">Input tokens</th><th scope="col" class="num">Output tokens</th><th scope="col" class="num">Total tokens</th><th scope="col" class="num">Cached tokens</th><th scope="col" class="num">Reasoning tokens</th></tr></thead>
+<tbody>
+<% usage_rows.each do |name, calls, failed, seconds, *tokens| %>
+<tr><th scope="row"><%= h name %></th><%= num(calls) %><%= failed ? num(failed) : MISSING %><%= seconds ? num(wait(seconds)) : MISSING %><%= tokens.map { it ? num(it) : MISSING }.join %></tr>
+<% end %>
+</tbody></table>
+<p class="note">Failed or not used counts the calls that got no reply, such as a retry after an error, and the replies QUAACK couldn't use. The wait includes the time between retries. &ldquo;Not reported&rdquo; means the provider didn't say how many tokens it used. The total adds up only what was recorded and reported. If you resumed the run, these include what it did before it stopped.</p>
+<% end %>
 <% unless failed_branch_lines.empty? %>
 <p>Fan-out steps, which ask each healthy provider in turn, dropped these providers:</p>
 <ul id="llm-failed-branches"><% failed_branch_lines.each do |line| %><li><%= h line %></li><% end %></ul>

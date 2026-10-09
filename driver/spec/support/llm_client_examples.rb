@@ -101,6 +101,33 @@ RSpec.shared_examples "an LLM client" do
       expect(burndown.llm_calls).to eq("operator-rewrites" => 3)
     end
 
+    it "records the wait and the reply's tokens under the provider, retries included" do
+      fake.error("llm-rewrites", status: 529).reply("llm-rewrites", "ok")
+      ask("llm-rewrites", provider: "p")
+
+      usage = burndown.llm_usage.fetch("p")
+      expect(usage.except("seconds")).to eq("used" => 1, "reported" => 1, "input" => 1, "output" => 1)
+      expect(usage["seconds"]).to be_a(Float).and be_positive
+      expect(burndown.llm_calls_by_provider).to eq("p" => { "llm-rewrites" => 2 })
+    end
+
+    it "records a reply it can't use as not used, with its tokens, and an ask with no reply as neither" do
+      fake.reply("llm-rewrites", "not json")
+      3.times { fake.error("operator-rewrites", status: 529) }
+      expect { ask("llm-rewrites", json: true, provider: "p") }.to llm_error("llm_bad_response")
+      expect { ask("operator-rewrites", provider: "p") }.to llm_error("llm_unavailable")
+
+      expect(burndown.llm_usage.fetch("p").except("seconds"))
+        .to eq("used" => 0, "reported" => 1, "input" => 1, "output" => 1)
+    end
+
+    it "records no wait for an ask that names no provider" do
+      fake.reply("llm-rewrites", "ok")
+      ask("llm-rewrites")
+
+      expect(burndown.llm_usage).to eq({})
+    end
+
     it "counts an attempt whose reply can't be used" do
       fake.reply("llm-rewrites", "not json")
 

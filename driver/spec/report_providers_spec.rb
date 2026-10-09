@@ -216,6 +216,47 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
+  describe "the LLM wait and tokens table" do
+    let(:usage) do
+      { "groq" => { "seconds" => 12.34, "used" => 2, "reported" => 2, "input" => 12_000, "output" => 800,
+                    "cached" => 9_000, "reasoning" => 150 },
+        "opus" => { "seconds" => 61.5, "used" => 3, "reported" => 3, "input" => 3_000, "output" => 400 },
+        "gpt" => { "seconds" => 5.0, "used" => 0, "reported" => 0 } }
+    end
+    let(:calls) do
+      { "groq" => { "llm-rewrites" => 1, "llm-counterexamples" => 2 },
+        "opus" => { "llm-index-ideas" => 1, "llm-counterexamples" => 2 }, "gpt" => { "llm-rewrites" => 1 } }
+    end
+    let(:html) do
+      described_class.render(payload, run_id: "RUN-1", llm_calls:,
+                                      llm: { "record" => record, "calls" => calls, "usage" => usage })
+    end
+
+    it "has a row per entry and a total: calls, failed, wait, and tokens, not reported where none were" do
+      expect(header("llm-usage")).to eq(["LLM", "Calls", "Failed or not used", "Waiting for replies",
+                                         "Input tokens", "Output tokens", "Total tokens", "Cached tokens",
+                                         "Reasoning tokens"])
+      expect(rows("llm-usage")).to eq(
+        "groq" => ["3", "1", "12.3 s", "12,000", "800", "12,800", "9,000", "150"],
+        "opus" => ["3", "0", "1 min 1.5 s", "3,000", "400", "3,400", "not reported", "not reported"],
+        "gpt" => ["1", "1", "5.0 s", "not reported", "not reported", "not reported", "not reported",
+                  "not reported"],
+        "Total" => ["7", "2", "1 min 18.8 s", "15,000", "1,200", "16,200", "9,000", "150"]
+      )
+    end
+
+    it "says not recorded for an entry whose wait wasn't recorded, and the total leaves it out" do
+      usage.delete("gpt")
+      expect(rows("llm-usage")["gpt"]).to eq(["1", *["not recorded"] * 7])
+      expect(rows("llm-usage")["Total"].take(3)).to eq(["7", "1", "1 min 13.8 s"])
+    end
+
+    it "has no table when no entry's wait was recorded" do
+      usage.clear
+      expect(html).not_to include(%(<table id="llm-usage">))
+    end
+  end
+
   # DESIGN.md, "Several LLM providers" (Routing): the report says which
   # fan-out branch was dropped, and why.
   describe "the fan-out branches dropped" do

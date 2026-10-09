@@ -5,6 +5,7 @@ require "openai"
 require "uri"
 require_relative "api_error_detail"
 require_relative "error"
+require_relative "usage"
 
 module Quaack
   module Driver
@@ -48,7 +49,7 @@ module Quaack
       # plus the step, and returns an OpenAI::HTTPClient::Response, standing
       # in for the HTTP call. nil means HTTP, through the gem's
       # NetHTTPClient.
-      class OpenAICompatibleAdapter
+      class OpenAICompatibleAdapter # rubocop:disable Metrics/ClassLength
         DEFAULT_KEY_ENV = "OPENAI_API_KEY"
 
         # The name the token limit goes under, unless the settings'
@@ -92,10 +93,14 @@ module Quaack
 
         def enforces_schema? = false
 
+        # The last reply's tokens (Client, Usage), or nil.
+        attr_reader :usage
+
         def reply(step:, system:, messages:, max_tokens:, schema:, count:) # rubocop:disable Metrics/ParameterLists
+          @usage = nil
           system = [system, SCHEMA_LINE + JSON.generate(schema)].compact.join("\n\n") if schema
           params = { model: @model, @token_limit_param => max_tokens, messages: chat(system, messages) }
-          @attempts.during(count, step) { reply_text(complete(params, schema)) }
+          @attempts.during(count, step) { reply_text(used(complete(params, schema))) }
         rescue ::OpenAI::Errors::APIError => e
           # The gem's error holds the response's headers and whole body,
           # which a refused key's can quote, and which a gateway or proxy's
@@ -316,6 +321,9 @@ module Quaack
           bad_response("the reply had no text") if message.content.to_s.empty?
           message.content
         end
+
+        # completion, its usage kept for Client.
+        def used(completion) = completion.tap { @usage = Usage.openai(it.usage) }
 
         def bad_response(detail) = raise(Error.new("llm_bad_response", detail))
       end

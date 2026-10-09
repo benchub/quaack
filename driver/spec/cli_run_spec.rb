@@ -179,6 +179,18 @@ RSpec.describe "quaack run" do
       expect(lines.grep(/Waiting for the LLM|Testing the LLM/)).to eq([])
     end
 
+    it "puts each entry's calls, wait, and tokens in the report" do
+      entries.merge!("index_generated_original" => false)
+      fake.error("llm-index-ideas", status: 529).reply("llm-index-ideas", { "indexes" => [] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      table = File.read(out)[%r{<table id="llm-usage">.*?</table>}m]
+      row = ->(name) { table[%r{<tr><th scope="row">#{name}</th>(.*?)</tr>}, 1].scan(%r{<td[^>]*>(.*?)</td>}).flatten }
+      expect([row.call("anthropic").values_at(0, 1, 3, 4, 5), row.call("Total").first])
+        .to eq([%w[2 1 1 1 2], "2"])
+    end
+
     it "names the LLM's provider and model in llm-index-refine's notes" do
       replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => false,
                                      "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
@@ -399,6 +411,8 @@ RSpec.describe "quaack run" do
 
     expect(cli.run(["run", "--run", run_id, "--out", out, "--rewrites", rewrites_file])).to eq(0)
     record = JSON.parse(File.read(File.join(home, ".quaack", "runs", "#{run_id}.llm.json")))
+    expect(record.delete("llm_usage").transform_values { it.except("seconds") })
+      .to eq("anthropic" => { "used" => 1, "reported" => 1, "input" => 1, "output" => 1 })
     expect(record).to eq("providers" => [{ "name" => "anthropic", "provider" => "anthropic",
                                            "model" => Quaack::Driver::LLM::DEFAULT_MODEL }],
                          "operator_inference" => "anthropic",

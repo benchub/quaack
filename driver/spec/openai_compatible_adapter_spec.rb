@@ -27,6 +27,28 @@ RSpec.describe "the OpenAI-compatible adapter" do
     client.ask(step: step, messages: messages, max_tokens: 1000, **)
   end
 
+  def completion_with(usage)
+    { id: "c", object: "chat.completion", created: 0, model: FakeOpenAI::MODEL, usage:,
+      choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop", logprobs: nil }] }
+  end
+
+  it "records cached and reasoning tokens where the provider reports them" do
+    fake.raw("llm-rewrites", completion_with({ prompt_tokens: 40, completion_tokens: 9, total_tokens: 49,
+                                               prompt_tokens_details: { cached_tokens: 32 },
+                                               completion_tokens_details: { reasoning_tokens: 6 } }))
+    ask("llm-rewrites", provider: "p")
+
+    expect(burndown.llm_usage.fetch("p").except("seconds"))
+      .to eq("used" => 1, "reported" => 1, "input" => 40, "output" => 9, "cached" => 32, "reasoning" => 6)
+  end
+
+  it "records a completion with no usage as not reported" do
+    fake.raw("llm-rewrites", completion_with(nil))
+    ask("llm-rewrites", provider: "p")
+
+    expect(burndown.llm_usage.fetch("p").except("seconds")).to eq("used" => 1, "reported" => 0)
+  end
+
   # The LLM::Error an ask raises. Fails the spec if it raises nothing.
   def ask_error(step = "llm-index-ideas", **)
     ask(step, **)

@@ -4,6 +4,7 @@ require "anthropic"
 require "json"
 require_relative "api_error_detail"
 require_relative "error"
+require_relative "usage"
 
 module Quaack
   module Driver
@@ -72,7 +73,11 @@ module Quaack
         # never asks again.
         def enforces_schema? = true
 
+        # The last reply's tokens (Client, Usage), or nil.
+        attr_reader :usage
+
         def reply(step:, system:, messages:, max_tokens:, schema:, count:) # rubocop:disable Metrics/ParameterLists
+          @usage = nil
           timeout = nonstreaming_timeout(max_tokens)
           reply_text(send_message(params(system, messages, max_tokens, schema), step, count, timeout))
         rescue ::Anthropic::Errors::APIError => e
@@ -204,6 +209,7 @@ module Quaack
         def refused(status) = "the API refused the key (#{status})"
 
         def reply_text(message)
+          @usage = Usage.anthropic(message.usage)
           reason = message.stop_reason
           raise Error.new("llm_bad_response", "the reply stopped for #{reason}") unless WHOLE.include?(reason)
 

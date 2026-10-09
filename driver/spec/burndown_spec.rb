@@ -89,4 +89,28 @@ RSpec.describe Quaack::Driver::Burndown do
     expect(sum.llm_calls_by_provider).to eq("groq" => { "llm-rewrites" => 1, "llm-index-ideas" => 1 },
                                             "opus" => { "llm-rewrites" => 1 })
   end
+
+  describe "wait time and tokens" do
+    it "adds up each provider's wait, used replies, and tokens, keeping a token kind only once one is reported" do
+      burndown.llm_wait("groq", 1.5, { "input" => 10, "output" => 4 }, used: true)
+      burndown.llm_wait("groq", 0.25, nil, used: false)
+      burndown.llm_wait("groq", 2.0, { "input" => 5, "output" => 1, "cached" => 3 }, used: false)
+      burndown.llm_wait("copilot", 4.0, nil, used: true)
+
+      expect(burndown.llm_usage).to eq(
+        "groq" => { "seconds" => 3.75, "used" => 1, "reported" => 2, "input" => 15, "output" => 5, "cached" => 3 },
+        "copilot" => { "seconds" => 4.0, "used" => 1, "reported" => 0 }
+      )
+    end
+
+    it "sums and restores usage with the calls" do
+      burndown.llm_wait("groq", 1.0, { "input" => 2, "output" => 1 }, used: true)
+      restored = described_class.restore({}, {}, burndown.llm_usage)
+      restored.llm_wait("groq", 0.5, { "input" => 1, "output" => 1, "reasoning" => 7 }, used: true)
+
+      expect(described_class.sum([burndown, restored]).llm_usage)
+        .to eq("groq" => { "seconds" => 2.5, "used" => 3, "reported" => 3, "input" => 5, "output" => 3,
+                           "reasoning" => 7 })
+    end
+  end
 end

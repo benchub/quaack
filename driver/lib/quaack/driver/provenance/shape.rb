@@ -16,6 +16,8 @@ module Quaack
         FAN_OUT_STEPS = %w[llm-rewrites llm-index-ideas rewrite-llm-index-ideas].freeze
         FAILS_OVER = %w[llm_rate_limited llm_unavailable llm_auth llm_bad_response].freeze
         BRANCH_KEYS = %w[entry rule step].freeze
+        # A provider's usage counts besides seconds (Burndown#llm_usage).
+        USAGE = %w[used reported input output cached reasoning].freeze
 
         module_function
 
@@ -30,7 +32,22 @@ module Quaack
           { "counterexamples" => counterexamples(raw["counterexamples"]),
             "index_ideas" => index_ideas(raw["index_ideas"]),
             "failed_branches" => list(raw["failed_branches"]) { branch(it) },
-            "llm_calls" => llm_calls(raw["llm_calls"]) }
+            "llm_calls" => llm_calls(raw["llm_calls"]), "llm_usage" => llm_usage(raw["llm_usage"]) }
+        end
+
+        # Each provider's wait and tokens (Burndown#llm_usage), by name:
+        # seconds of zero or more, and counts of the rest. Any other key
+        # is dropped, and a provider without seconds, used, and reported.
+        def llm_usage(raw)
+          map(raw) { |name, counts| name?(name) && counts.is_a?(Hash) }
+            &.transform_values { it.select { |kind, n| usage?(kind, n) } }
+            &.select { |_, kept| %w[seconds used reported].all? { kept.key?(it) } }
+        end
+
+        def usage?(kind, value)
+          return value.is_a?(Numeric) && !value.negative? if kind == "seconds"
+
+          USAGE.include?(kind) && count?(value)
         end
 
         # The run's LLM calls so far: steps, by LLM step, and providers, by
