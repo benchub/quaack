@@ -10,7 +10,7 @@
 # production database on a throwaway harness Postgres
 # (spec/support/test_postgres.rb), captures slow.sql's EXPLAIN ANALYZE, runs
 # the enclave's intake through racetrack-setup over Transport::Local, then
-# the driver's Pipeline, with a fake LLM (CaseLLM) behind the real client.
+# the driver's Pipeline, with a fake LLM (CaseLLM) behind the real client and router.
 # Last it reads the run's report payload and judges the case:
 #
 # - refused: intake must refuse with the rule results.md names
@@ -31,6 +31,7 @@ require "rbconfig"
 require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/enclave_error"
+require "quaack/driver/llm/router"
 require "quaack/driver/pipeline"
 require "quaack/driver/transport/local"
 require_relative "../spec/support/test_postgres"
@@ -214,8 +215,10 @@ module E2ERun
     setup(transport, run_id, server, racetrack)
     stage = :pipeline
     llm = CaseLLM.new
-    Quaack::Driver::Pipeline.new(transport:, client: llm.client(burndown: Quaack::Driver::Burndown.new), run_id:,
-                                 out: File.join(home, "report.html")).run
+    # The pipeline asks through a router, as the CLI's is (Router.for), here
+    # around the one fake client.
+    client = Quaack::Driver::LLM::Router.one(llm.client(burndown: Quaack::Driver::Burndown.new))
+    Quaack::Driver::Pipeline.new(transport:, client:, run_id:, out: File.join(home, "report.html")).run
     report = transport.call("report-payload", args: { run: run_id }).messages.find { it["type"] == "report" }
     { stage: :done, report:, asks: llm.asks.map(&:step) }
   rescue Quaack::Driver::EnclaveError => e
