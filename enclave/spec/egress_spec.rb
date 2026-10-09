@@ -250,9 +250,9 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     let(:index_sources) do
-      { "generator_one" => { "built" => 2, "not_better" => 1, "ranked" => 1 },
-        "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
-        "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1 } }
+      { "generator_one" => { "built" => 2, "not_better" => 1, "ranked" => 1, "existed" => 0, "ignored" => 0 },
+        "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0, "existed" => 0, "ignored" => 0 },
+        "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1, "existed" => 0, "ignored" => 0 } }
     end
 
     it "sends a report whose plans are plan nodes and index sources are counts as it is, other fields unchecked" do

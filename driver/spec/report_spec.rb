@@ -1419,9 +1419,9 @@ RSpec.describe Quaack::Driver::Report do
       # proposed counts under each.
       describe "built, not better, and ranked by source" do
         let(:index_sources) do
-          { "generator_one" => { "built" => 1, "not_better" => 0, "ranked" => 1 },
-            "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
-            "llm" => { "built" => 2, "not_better" => 1, "ranked" => 1 } }
+          { "generator_one" => { "built" => 1, "not_better" => 0, "ranked" => 1, "existed" => 3, "ignored" => 4 },
+            "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0, "existed" => 0, "ignored" => 5 },
+            "llm" => { "built" => 2, "not_better" => 1, "ranked" => 1, "existed" => 0, "ignored" => 0 } }
         end
         let(:sourced) { render(payload.merge("index_sources" => index_sources)) }
 
@@ -1430,6 +1430,17 @@ RSpec.describe Quaack::Driver::Report do
           expect(counted["Generator one, from the query&#39;s text"].last(3)).to eq(%w[1 0 1])
           expect(counted["Generator two, from the query&#39;s plan"].last(3)).to eq(%w[0 0 0])
           expect(counted["The LLM"].last(3)).to eq(%w[2 1 1])
+        end
+
+        # Task 20261003-5: and each generator's already existing and planner
+        # ignored candidates. The LLM's come from its rounds' burndown.
+        it "fills in each generator's already existed and planner ignored from the payload's index sources" do
+          counted = rows(sourced, "indexes")
+          expect(counted["Generator one, from the query&#39;s text"][1, 2]).to eq(%w[3 4])
+          expect(counted["Generator two, from the query&#39;s plan"][1, 2]).to eq(%w[0 5])
+          expect(counted["The LLM"][1, 2]).to eq(rows(html, "indexes")["The LLM"][1, 2])
+          expect(rows(html, "indexes")["Generator one, from the query&#39;s text"][1, 2])
+            .to eq(["not recorded", "not recorded"])
         end
 
         it "keeps all sources together's counts of each built index once" do

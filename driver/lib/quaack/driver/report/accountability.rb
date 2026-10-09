@@ -71,8 +71,8 @@ module Quaack
 
         def index_account
           proposals = [added("index-from-query"), added("index-from-plan"), added(*LLM_ROUNDS)]
-          [["Generator one, from the query's text", proposals[0], nil, nil, *built_by("generator_one")],
-           ["Generator two, from the query's plan", proposals[1], nil, nil, *built_by("generator_two")],
+          [["Generator one, from the query's text", proposals[0], *by_source("generator_one")],
+           ["Generator two, from the query's plan", proposals[1], *by_source("generator_two")],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),
             dropped(LLM_ROUNDS, COULDNT_TRY), *built_by("llm")], *llm_index_rows(proposals[2]),
            ["All sources together", (proposals.sum if proposals.all?), *index_totals]]
@@ -83,6 +83,16 @@ module Quaack
         def built_by(source)
           counts = index_sources&.fetch(source, nil)
           counts ? counts.values_at(*BY_SOURCE) : [nil] * BY_SOURCE.size
+        end
+
+        # A generator's already existed and planner ignored counts from the
+        # payload's index_sources, or nils without it. The LLM's come from
+        # its rounds' burndown records instead.
+        def by_source(source) = [*dropped_by(source), *built_by(source)]
+
+        def dropped_by(source)
+          counts = index_sources&.fetch(source, nil)
+          counts ? counts.values_at("existed", "ignored") : [nil, nil]
         end
 
         def index_sources = @payload["index_sources"]

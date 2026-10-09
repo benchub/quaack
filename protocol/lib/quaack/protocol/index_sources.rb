@@ -5,14 +5,17 @@ module Quaack
     # The shape of the report's index_sources (DESIGN.md's report): for each
     # of QUAACK's index sources, how many of the indexes it built that
     # source proposed, how many of those were not better, and how many were
-    # ranked. An index more than one source proposed counts under each of
+    # ranked, and how many of its proposals index-dedupe dropped as already
+    # existing (existed) and index-test dropped as never used, refused by
+    # HypoPG, or unrenderable (ignored), once per search, as the burndown
+    # counts them. An index more than one source proposed counts under each of
     # them. Only counts, under names from these fixed lists, never an index
     # name, DDL, or anything else a store entry holds.
     module IndexSources
       # Generator one (index-from-query), generator two (index-from-plan),
       # and the LLM's rounds, as the burndown names what each added.
       SOURCES = %w[generator_one generator_two llm].map(&:freeze).freeze
-      COLUMNS = %w[built not_better ranked].map(&:freeze).freeze
+      COLUMNS = %w[built not_better ranked existed ignored].map(&:freeze).freeze
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12

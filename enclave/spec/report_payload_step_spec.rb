@@ -1161,7 +1161,9 @@ RSpec.describe "quaacks report-payload" do
       { "proposals" => proposals, "set_aside" => set_aside, "drops" => [], "considered" => proposals.size }
     end
 
-    def counts(built, not_better, ranked) = { "built" => built, "not_better" => not_better, "ranked" => ranked }
+    def counts(built, not_better, ranked, existed = 0, ignored = 0)
+      { "built" => built, "not_better" => not_better, "ranked" => ranked, "existed" => existed, "ignored" => ignored }
+    end
 
     # quaack_a is generator one's in the original's search and the LLM's in
     # the rewrite's. quaack_b is generator two's, and the LLM repeated it, so
@@ -1173,7 +1175,7 @@ RSpec.describe "quaacks report-payload" do
       store.write("index_search_original",
                   "dedupe" => dedupe([plain(a, :parse), plain(b, :plan, :llm),
                                       plain("CREATE INDEX ON public.orders USING btree (note)", :parse, :plan, :llm)]),
-                  "results" => [{ "candidate" => plain(b, :plan) }])
+                  "results" => [{ "candidate" => plain(b, :plan), "plans" => { "slow" => { "used" => true } } }])
       store.write("index_search_rewrite_1",
                   store.read("index_search_rewrite_1").merge(
                     "dedupe" => dedupe([plain(a, :llm)], set_aside: [plain(b, :existing)]),
@@ -1215,6 +1217,46 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # Task 20261003-5: index-dedupe's already-existing drops and index-test's
+    # declined candidates, by source, once per search, as the burndown counts.
+    context "when index-dedupe and index-test dropped candidates" do
+      let(:outcome) do
+        payload_of do |store|
+          sourced(store)
+          note = "CREATE INDEX ON public.orders USING btree (note)"
+          id = "CREATE INDEX ON public.orders USING btree (id, created_at) WHERE note = '#{sentinel}'"
+          used = { "slow" => { "used" => true } }
+          unused = { "slow" => { "used" => false } }
+          drop = { "reason" => "covered_by_existing", "covered_by" => { "existing" => "orders_created_at_id_idx" } }
+          dup = { "reason" => "duplicate", "candidate" => plain(id, :plan), "covered_by" => {} }
+          original = store.read("index_search_original")
+          tested = [{ "candidate" => plain(id, :plan), "plans" => unused },
+                    { "candidate" => plain(note, :parse), "plans" => unused,
+                      "refusal" => { "rule" => "hypopg_refused", "sqlstate" => "42P01" } },
+                    { "candidate" => plain(proposed["quaack_b"], :plan), "plans" => used },
+                    { "candidate" => plain(proposed["quaack_c"], :plan), "plans" => unused }]
+          drops = [drop.merge("candidate" => plain(note, :parse, :plan)), dup]
+          store.write("index_search_original",
+                      original.merge("dedupe" => original["dedupe"].merge("drops" => drops), "results" => tested,
+                                     "set_aside" => [plain(proposed["quaack_c"], :plan)],
+                                     "llm_results" => [{ "candidate" => plain(id, :llm), "plans" => unused }]))
+          rewrite = store.read("index_search_rewrite_1")
+          drops = [drop.merge("candidate" => plain(note, :parse))]
+          store.write("index_search_rewrite_1",
+                      rewrite.merge("dedupe" => rewrite["dedupe"].merge("drops" => drops),
+                                    "results" => [{ "candidate" => plain(id, :plan, :parse), "plans" => unused }]))
+        end
+      end
+
+      it "counts each source's already existing and planner ignored candidates in every search" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(1, 0, 1, 2, 2), "generator_two" => counts(2, 1, 0, 1, 2),
+          "llm" => counts(3, 1, 1, 0, 1)
+        )
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
     context "when a built index came up in only one search" do
       let(:outcome) do
         payload_of do |store|
@@ -1235,7 +1277,8 @@ RSpec.describe "quaacks report-payload" do
         payload_of do |store|
           store.write("index_search_original",
                       "dedupe" => dedupe([], set_aside: [plain(proposed["quaack_c"], :plan)]),
-                      "llm_results" => [{ "candidate" => plain(proposed["quaack_a"], :llm) }])
+                      "llm_results" => [{ "candidate" => plain(proposed["quaack_a"], :llm),
+                                          "plans" => { "slow" => { "used" => true } } }])
         end
       end
 

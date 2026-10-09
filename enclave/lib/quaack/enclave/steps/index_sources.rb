@@ -9,11 +9,13 @@ module Quaack
     module Steps
       # ReportPayload's index_sources (DESIGN.md's report): for each of
       # QUAACK's index sources, how many of the indexes index-build built
-      # it proposed, how many of those were not better, and how many were
-      # ranked.
+      # it proposed, how many of those were not better, how many were
+      # ranked, and how many of its candidates already existed or the
+      # planner ignored (drops).
       #
       #   IndexSources.call(store, labels, selection)
-      #   # => { "generator_one" => { "built" => 2, "not_better" => 0, "ranked" => 1 },
+      #   # => { "generator_one" => { "built" => 2, "not_better" => 0, "ranked" => 1,
+      #   #                            "existed" => 1, "ignored" => 3 },
       #   #      "generator_two" => { ... }, "llm" => { ... } }
       #
       # A built index's sources are those of every candidate with its
@@ -43,8 +45,44 @@ module Quaack
         def call(store, labels, selection)
           built = sources(store)
           outcomes = [ranked(labels, selection["top"]), not_better(labels, selection["excluded"], built.keys)]
-          NAMES.values.to_h { |source| [source, counts(built.select { _2.include?(source) }.keys, *outcomes)] }
+          dropped = drops(store)
+          NAMES.values.to_h do |source|
+            [source, counts(built.select { _2.include?(source) }.keys, *outcomes).merge(tally(dropped, source))]
+          end
         end
+
+        def tally(dropped, source) = dropped.transform_values { it.count { |names| names.include?(source) } }
+
+        # Each search's dropped candidates, as the names of their sources:
+        # "existed", index-dedupe's drops as covered by an existing index,
+        # and "ignored", index-test's results (the generators' and the LLM
+        # rounds') that the planner never used, that HypoPG refused, or that
+        # couldn't be rendered, but not the unused ones set aside for
+        # index-build. Once per search, as the burndown counts them.
+        def drops(store)
+          entries = searches(store).map { store.read("index_search_#{it}") }
+          { "existed" => entries.flat_map { existed(it) }, "ignored" => entries.flat_map { ignored(it) } }
+        end
+
+        def existed(entry)
+          entry.dig("dedupe", "drops").to_a.filter_map do |drop|
+            names(drop["candidate"]) if drop["reason"] == "covered_by_existing"
+          end
+        end
+
+        def ignored(entry)
+          set_aside = entry.fetch("set_aside", []).map { IndexStore.candidate(it) }
+          (entry.fetch("results", []) + entry.fetch("llm_results", [])).filter_map do |result|
+            names(result["candidate"]) if result["refusal"] || !kept?(result, set_aside)
+          end
+        end
+
+        def kept?(result, set_aside)
+          used = result["plans"].to_h.values.any? { it["used"] }
+          used || set_aside.include?(IndexStore.candidate(result["candidate"]))
+        end
+
+        def names(plain) = IndexStore.candidate(plain).sources.filter_map { NAMES[it] }
 
         def counts(names, ranked, not_better)
           { "built" => names.size, "not_better" => (names & not_better).size, "ranked" => (names & ranked).size }
