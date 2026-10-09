@@ -445,6 +445,7 @@ The burndown counts every attempt under its step, as today, and now also under i
 ##### Progress and failure messages.
 
 - Each ask's progress line names the entry it goes to in place of "the LLM": its `name`, or, for an `llm` block, its provider and model, such as `Waiting for anthropic claude-opus-5-5 (llm-rewrites)`. An ask with a purpose of its own names it there: `Asking groq again for replacements (llm-index-ideas)`. Lines printed before an entry is chosen, such as a step's own line, keep "the LLM". Names and models are the operator's own config, so they show only in progress and messages, never in a prompt.
+- Notes for enclave calls that work on one entry's output name it too: `Testing groq's index ideas (llm-index-ideas)`, or `Testing 2 LLMs' index ideas` for a fan-out's union, and `Loading groq's rows and comparing results, round 2 (counterexamples)`. Totals such as `Got 3 rewrites from the LLM` stay generic.
 - A failover unit's line names the entry it's trying. When it switches, the failover line says so (below), and the next ask's line names the new entry: `Waiting for opus (llm-rewrites)`.
 - A fan-out step's branches run one after another, so each branch's line names its entry, then the ones still to ask: `Waiting for groq (llm-rewrites; then opus, copilot-gpt, and 2 more)`. More than three left shows the first two and a count.
 - A paired counterexample unit's line names the reviewer and the rewrite's author: `Waiting for opus (llm-counterexamples; reviewing groq's rewrite)`.

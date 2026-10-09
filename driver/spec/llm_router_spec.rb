@@ -486,6 +486,11 @@ RSpec.describe Quaack::Driver::LLM::Router do
       expect(fakes.transform_values { it.asks.size }).to eq("a" => 1, "b" => 2, "c" => 1)
     end
 
+    it "says whose work a note is about: one entry's, several LLMs', or the LLM's" do
+      expect([router.possessive(%w[a a]), router.possessive(%w[a b]), router.possessive([nil])])
+        .to eq(["a's", "2 LLMs'", "the LLM's"])
+    end
+
     it "names each branch's entry, then the ones still to ask, in one line each" do
       names.each { fakes[it].reply("llm-rewrites", it) }
       branches

@@ -36,6 +36,16 @@ module Quaack
         # reviewing, by the author's entry name, or nil without pairing.
         def reviewing(pairing) = ("reviewing #{pairing.author["name"]}'s rewrite" if pairing&.author)
 
+        # Whose work a note is about, by the entries' names, possessive:
+        # "groq's", "anthropic claude-opus-5-5's", "2 LLMs'", or "the
+        # LLM's" when no entry is known by a label.
+        def possessive(names)
+          names = names.compact.uniq
+          return "#{names.size} LLMs'" if names.size > 1
+
+          "#{(label(names.first) if names.any?) || "the LLM"}'s"
+        end
+
         # Whether step fans out.
         def fan_out?(step) = @routing.steps.dig(step, "fan_out") == true
 

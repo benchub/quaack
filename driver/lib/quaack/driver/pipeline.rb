@@ -104,7 +104,7 @@ module Quaack
         def generate(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           step = search == SEARCH ? GeneratorThree::STEP : GeneratorThree::REWRITE_STEP
           test = GeneratorThree.index_test(transport, run_id:, search:)
-          index_test = StepSummary.noting(progress, step, "Testing the LLM's index ideas", test)
+          index_test = StepSummary.whose(progress, step, "Testing %s index ideas", test, client)
           result = GeneratorThree.new(client:, index_test:, step:).run(payload)
           none = StepSummary.noting(progress, step, "Recording that the LLM gave no index ideas", test)
           none.call([]) if result.rounds.empty?
@@ -281,18 +281,21 @@ module Quaack
         def survives_counterexamples?(transport, client, args, progress, record)
           progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-          rounds = numbered(progress, "Loading the LLM's rows and comparing results", compare(transport, args))
+          rounds = numbered(progress, compare(transport, args), client)
           result = counterexamples(client, args, record).run(payload, compare: rounds)
           record.call { it.counterexamples!(args[:search], result.units) }
           !result.disproved
         end
 
-        # call, noted under counterexamples as text and its round, from 1.
-        def numbered(progress, text, call)
+        # call, noted under counterexamples with whose rows it loads, by:,
+        # entry names client words (LLM::Router#possessive), and its round,
+        # from 1.
+        def numbered(progress, call, client)
           round = 0
-          lambda do |*args, **options|
-            progress.step_note("counterexamples", "#{text}, round #{round += 1}")
-            call.call(*args, **options)
+          lambda do |inserts, by: []|
+            progress.step_note("counterexamples",
+                               "Loading #{client.possessive(by)} rows and comparing results, round #{round += 1}")
+            call.call(inserts)
           end
         end
 

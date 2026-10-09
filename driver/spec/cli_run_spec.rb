@@ -167,6 +167,18 @@ RSpec.describe "quaack run" do
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
     end
 
+    it "names the LLM's provider and model while llm-index-ideas waits for it, and in its notes" do
+      entries.merge!("index_generated_original" => false)
+      fake.reply("llm-index-ideas", { "indexes" => [{ "ddl" => "CREATE INDEX ON public.t (a)" }] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      lines = progress.grep(/\(llm-index-ideas\)/)
+      expect(lines).to include("quaack: [2/18] Asking anthropic claude-opus-5-5 for index ideas (llm-index-ideas)\n",
+                               "quaack: [2/18] Testing anthropic claude-opus-5-5's index ideas (llm-index-ideas)\n")
+      expect(lines.grep(/Waiting for the LLM|Testing the LLM/)).to eq([])
+    end
+
     it "counts operator-rewrites, and prints each LLM ask and retry, when there's a rewrites file" do
       reply = { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] }
       fake.error("operator-rewrites", status: 529).reply("operator-rewrites", reply)

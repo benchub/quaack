@@ -21,7 +21,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
   let(:rounds) { [] }
   let(:answers) { [] }
   let(:index_test) do
-    lambda do |ddls|
+    lambda do |ddls, **|
       rounds << ddls
       answers.shift or raise "index-test called more often than scripted"
     end

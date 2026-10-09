@@ -58,7 +58,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
     let(:outcomes) { [] }
     let(:compared) { [] }
     let(:compare) do
-      lambda do |inserts|
+      lambda do |inserts, **|
         compared << inserts
         outcomes.shift or raise "compare called more often than scripted"
       end
@@ -103,6 +103,19 @@ RSpec.describe Quaack::Driver::Counterexamples do
       2.times { described_class.new(client: router).run(payload, compare:) }
 
       expect([fake.asks.size, other.asks.size]).to eq([3, 1])
+    end
+
+    it "tells compare whose rows each round loads, by the entry that wrote them" do
+      fake.reply("llm-counterexamples", { "inserts" => ["INSERT 1"] })
+      outcomes.push({ "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
+      whose = []
+      recorded = lambda do |inserts, by:|
+        whose << by
+        compare.call(inserts)
+      end
+      described_class.new(client: router_over({ "groq" => fake })).run(payload, compare: recorded)
+
+      expect(whose).to eq([["groq"]])
     end
 
     it "stops once a round disproves the candidate" do
