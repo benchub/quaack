@@ -8171,3 +8171,18 @@ Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/q
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-50 (commit b8657898). It's a small driver-words and docs diff, reviewed by the main session.
+
+### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6.
+
+The review of 20260924-6 found these test gaps. In each case the code behaves correctly today.
+
+1. **Nonzero constant OFFSET.** No test covers one, such as `OFFSET 1 LIMIT 1` with a tie at the window's edge. A mutation of the window's start would likely survive.
+2. **Non-constant OFFSET.** No test covers its refusal (`shape.offset.nil?`).
+3. **LIMIT inside a subquery or CTE.** No test covers it.
+4. **ORDER BY an expression.** No test covers a tie on an expression sort key that straddles the window.
+
+- **Depends on:** 20260924-6.
+- **Came from:** The review of 20260924-6, 2026-10-08.
+- **Design:** fixture-compare.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-40 (commit d8701871). The main session ran four mutations on tiebreaker.rb, and each one turned the new tests red. The inner-LIMIT and CTE case (item 3) is now a bug, 20261008-61.

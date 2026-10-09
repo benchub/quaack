@@ -2156,19 +2156,7 @@ The second review of 20261008-31 found these:
 - **Design:** What goes into the enclave.
 - **Status:** todo
 
-### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6.
-
-The review of 20260924-6 found these test gaps. In each case the code behaves correctly today.
-
-1. **Nonzero constant OFFSET.** No test covers one, such as `OFFSET 1 LIMIT 1` with a tie at the window's edge. A mutation of the window's start would likely survive.
-2. **Non-constant OFFSET.** No test covers its refusal (`shape.offset.nil?`).
-3. **LIMIT inside a subquery or CTE.** No test covers it.
-4. **ORDER BY an expression.** No test covers a tie on an expression sort key that straddles the window.
-
-- **Depends on:** 20260924-6.
-- **Came from:** The review of 20260924-6, 2026-10-08.
-- **Design:** fixture-compare.
-- **Status:** todo
+### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name.
 
