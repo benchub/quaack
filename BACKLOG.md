@@ -2276,22 +2276,13 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 
 ### 20261008-74. Reply parsing: a stray `{` and stray quotes that balance can hide the JSON. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-75. Reply parsing: leftovers from 20261008-74.
-
-- **Dedupe is untested.** Dropping `.reject { |s, _| @spans.key?(s) }` in `Spans#added` stays green, but `{"x" {"y" }}` x100 then re-parses (235 parses for 200 braces). Add a nested-span shape that pins the exact parse count. The `@restarts.positive?` guard in `rescan` and the `interior.include?('"')` check are redundant or speed-only, so drop the guard or leave both.
-- **Wording.** `oops { then {"a": 1}`, an unclosed stray `{` plus a complete object that fails the schema, says "wasn't valid JSON". The scan alone can't tell it from a reply cut off mid-object that holds a parsable inner object. That case must keep "wasn't valid JSON". Needs a design call, for example whether the unclosed `{` comes before or after every parsed object.
-
-- **Depends on:** 20261008-74.
-- **Came from:** The build and reviews of 20261008-74, 2026-10-08.
-- **Design:** LLM client.
-- **Partly landed (2026-10-09):** Item 1 (53d4b537, 2bb83215; driver only). Item 2, the wording, is still open and needs a design call.
-- **Status:** todo
+### 20261008-75. Reply parsing: leftovers from 20261008-74. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-76. Baseline has no cap on the original query's runtime.
 
 Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` without finishing: literals' worst-case pick (`tier = 'standard'`) makes its `NOT IN` rescan `orders` per customer, and baseline runs the original three times per literal set with no `statement_timeout`, since later steps' timeouts derive from the baseline. On a real replica a slow enough original keeps QUAACK busy for an hour or more with no sign of ending.
 
-- **Needs a decision:** (1) a configurable ceiling, about 5 minutes per run by default, that refuses cleanly ("the original exceeded the cap"); (2) the same ceiling, but record "slower than the cap" and go on; or (3) no cap, and mark e2e 034 slow and skip it by default. The main session recommends (1).
+- **Decided (user, 2026-10-09):** Option (1), a configurable ceiling per baseline run that refuses cleanly ("the original exceeded the cap"), but the default is one hour, not five minutes. The original is the query we are trying to fix, so it may well be terrible. The e2e harness may pass a lower cap so case 034 finishes.
 
 - **Depends on:** none.
 - **Came from:** The build of 20261008-73, 2026-10-08.
