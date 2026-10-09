@@ -255,11 +255,13 @@ RSpec.describe Quaack::Enclave::Egress do
         "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1, "existed" => 0, "ignored" => 0 } }
     end
 
+    let(:top) { [{ "label" => "original:top:1", "kind" => "original_new_indexes" }] }
+
     it "sends a report whose plans are plan nodes and index sources are counts as it is, other fields unchecked" do
       out = egress.serialize(type: :report, original_plan: [plan_node], rewrites:, index_sources:,
-                             labels:, top: "value of top", rows: EGRESS_SENTINEL)
+                             labels:, top:, rows: EGRESS_SENTINEL)
 
-      expect(JSON.parse(out)).to eq("type" => "report", "top" => "value of top", "original_plan" => [plan_node],
+      expect(JSON.parse(out)).to eq("type" => "report", "top" => top, "original_plan" => [plan_node],
                                     "labels" => labels, "rewrites" => rewrites, "index_sources" => index_sources)
     end
 
@@ -279,6 +281,25 @@ RSpec.describe Quaack::Enclave::Egress do
         message = { type: :report, original_plan: [plan_node], rewrites:, labels: changed.call(plan_node),
                     index_sources: }.compact
         refusal = "a value in this report message has a plan that isn't plan nodes"
+        expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
+          expect(e.message).not_to include(EGRESS_SENTINEL)
+          expect(e.cause).to be_nil
+        }
+      end
+    end
+
+    # Task 20261009-6: each ranked entry's kind must be one of
+    # Protocol::CandidateKinds::KINDS.
+    [
+      ["a planted kind", ->(_) { [{ "label" => "a:none", "kind" => EGRESS_SENTINEL }] }],
+      ["no kind", ->(_) { [{ "label" => "a:none" }] }],
+      ["a value in place of an entry", ->(_) { [EGRESS_SENTINEL] }],
+      ["a value in place of top", ->(_) { EGRESS_SENTINEL }]
+    ].each do |what, changed|
+      it "refuses one with #{what} in top, without quoting it" do
+        message = { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:,
+                    top: changed.call(top) }
+        refusal = "a value in this report message has a top that doesn't carry a kind from the fixed list"
         expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
           expect(e.message).not_to include(EGRESS_SENTINEL)
           expect(e.cause).to be_nil

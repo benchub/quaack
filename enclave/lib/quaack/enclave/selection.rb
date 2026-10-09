@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/candidate_kinds"
 require_relative "result_comparator"
 
 module Quaack
@@ -12,8 +13,10 @@ module Quaack
     # rewrite is the part before its first ":", so "rewrite_1:top:2" goes
     # with "rewrite_1"; "original:..." index-only candidates are never
     # discarded), ranks the rest by slow blocks and then by the sum across
-    # literals, and keeps the top three. It returns:
-    #   "top"           [{ "label", "slow_blocks", "total_blocks_sum", "footprint" }], ranked
+    # literals, and keeps the top three of each kind of change
+    # (Protocol::CandidateKinds: the original with new indexes, a rewrite
+    # with new indexes, a rewrite with none). It returns:
+    #   "top"           [{ "label", "slow_blocks", "total_blocks_sum", "footprint", "kind" }], best first overall
     #   "excluded"      { label => one of REASONS } for every other candidate.
     #                   A label whose rewrite result-comparison discarded is
     #                   result_mismatch if a failing verdict's rule is one of
@@ -31,10 +34,21 @@ module Quaack
       def select(minimax:, result_comparison:)
         discarded = result_comparison["discarded"]
         mismatched, kept = minimax["survivors"].partition { discarded.include?(it["label"].split(":").first) }
-        ranked = kept.sort_by { [it["slow_blocks"], it["total_blocks_sum"]] }
-        top = ranked.first(KEEP)
-        { "top" => top, "excluded" => excluded(minimax, dropped(result_comparison, mismatched), ranked.drop(KEEP), top),
+        top, below = by_kind(kept)
+        { "top" => top, "excluded" => excluded(minimax, dropped(result_comparison, mismatched), below, top),
           "infinite_sets" => minimax["infinite_sets"] }
+      end
+
+      # [top, below]: the best KEEP of each kind, each tagged with its kind and best first overall, and the
+      # rest. A label with no kind (the baseline) is in neither.
+      def by_kind(kept)
+        ranked = kept.sort_by { rank(it) }.group_by { Protocol::CandidateKinds.of(it["label"]) }.except(nil)
+        top = ranked.flat_map { |kind, entries| entries.first(KEEP).map { it.merge("kind" => kind) } }
+        [top.sort_by { rank(it) }, ranked.values.flat_map { it.drop(KEEP) }]
+      end
+
+      def rank(entry)
+        [entry["slow_blocks"], entry["total_blocks_sum"]]
       end
 
       def excluded(minimax, dropped, below, top)

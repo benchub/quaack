@@ -21,7 +21,8 @@ RSpec.describe Quaack::Enclave::Selection do
 
   it "keeps all survivors when there are fewer than three" do
     result = pick(minimax([s("rewrite_1:none", 10, 30), s("original:top:1", 5, 20, 100)]))
-    expect(result["top"]).to eq([s("original:top:1", 5, 20, 100), s("rewrite_1:none", 10, 30)])
+    expect(result["top"]).to eq([s("original:top:1", 5, 20, 100).merge("kind" => "original_new_indexes"),
+                                 s("rewrite_1:none", 10, 30).merge("kind" => "rewrite_same_indexes")])
     expect(result["excluded"]).to eq({})
   end
 
@@ -29,6 +30,24 @@ RSpec.describe Quaack::Enclave::Selection do
     result = pick(minimax([s("a:none", 40, 1), s("b:none", 10, 1), s("c:none", 30, 1), s("d:none", 20, 1)]))
     expect(result["top"].map { it["label"] }).to eq(%w[b:none d:none c:none])
     expect(result["excluded"]).to eq("a:none" => "below_top_three")
+  end
+
+  it "keeps the top three in each kind of change, each entry carrying its kind, best first overall" do
+    survivors = [s("original:top:1", 50, 1), s("original:top:2", 51, 1), s("original:top:3", 52, 1),
+                 s("original:combination", 53, 1), s("rewrite_1:top:1", 60, 1), s("rewrite_1:none", 70, 1),
+                 s("rewrite_2:none", 71, 1), s("rewrite_3:none", 72, 1), s("rewrite_4:none", 73, 1),
+                 s("rewrite_2:top:1", 5, 1), s("rewrite_2:top:2", 6, 1), s("rewrite_2:top:3", 7, 1),
+                 s("rewrite_2:combination", 8, 1)]
+    result = pick(minimax(survivors))
+    kinds = result["top"].group_by { it["kind"] }.transform_values { |entries| entries.map { it["label"] } }
+    expect(kinds).to eq("rewrite_new_indexes" => %w[rewrite_2:top:1 rewrite_2:top:2 rewrite_2:top:3],
+                        "original_new_indexes" => %w[original:top:1 original:top:2 original:top:3],
+                        "rewrite_same_indexes" => %w[rewrite_1:none rewrite_2:none rewrite_3:none])
+    expect(result["top"].map { it["slow_blocks"] }).to eq(result["top"].map { it["slow_blocks"] }.sort)
+    expect(result["excluded"]).to eq("original:combination" => "below_top_three",
+                                     "rewrite_1:top:1" => "below_top_three",
+                                     "rewrite_2:combination" => "below_top_three",
+                                     "rewrite_4:none" => "below_top_three")
   end
 
   it "breaks ties in slow blocks by the sum across literals" do

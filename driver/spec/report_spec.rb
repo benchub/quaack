@@ -606,10 +606,28 @@ RSpec.describe Quaack::Driver::Report do
   describe "the ranking" do
     let(:ranking) { section(html, "ranking") }
 
-    it "ranks the candidates overall, winner first, each described in words" do
+    it "ranks the candidates within each kind, each described in words" do
       expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
         .to eq([["1", "Rewrite Vivid Cove with no new indexes"],
-                ["2", "Your query with a new index on #{sq("public.t (created_at)")}"]])
+                ["1", "Your query with a new index on #{sq("public.t (created_at)")}"]])
+    end
+
+    it "groups the ranked candidates by kind, ranking within each, with the payload's kind deciding the group" do
+      payload["top"] = [
+        { "label" => "original:top:1", "kind" => "original_new_indexes", "slow_blocks" => 10, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:none", "kind" => "rewrite_same_indexes", "slow_blocks" => 20, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:top:1", "kind" => "rewrite_new_indexes", "slow_blocks" => 30, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
+          "footprint" => 0 }
+      ]
+      expect(ranking.scan(/<tr class="(?:kind|rank)">(?:<th[^>]*>|<td class="num">)([^<]*)/))
+        .to eq([["A rewrite of your query, with new indexes"], ["1"], ["2"],
+                ["A rewrite of your query, with no new indexes"], ["1"],
+                ["Your query as it is, with new indexes"], ["1"]])
+      expect(ranking.scan(/<article class="candidate"><h3>(\d)\./).flatten).to eq(%w[1 2 1 1])
     end
 
     it "shows each candidate's blocks and index footprint, right-aligned, with separators and a fitting unit" do
@@ -623,7 +641,7 @@ RSpec.describe Quaack::Driver::Report do
       def baseline(html = ranking) = html[%r{<tr class="baseline">.*?</tr>}m]
 
       it "is a row above the ranked ones, with no rank, marked as the baseline, with its own blocks" do
-        expect(ranking.scan(/<tr class="(\w+)"/).flatten).to eq(%w[baseline rank rank])
+        expect(ranking.scan(/<tr class="(\w+)"/).flatten).to eq(%w[baseline kind rank kind rank])
         expect(baseline).to eq('<tr class="baseline"><td class="num"></td><td>Your query as it is (the baseline, ' \
                                'not ranked)</td><td class="num">1,000</td><td class="num">1,200</td>' \
                                '<td class="num">none</td></tr>')
@@ -848,7 +866,7 @@ RSpec.describe Quaack::Driver::Report do
       it "has its own block, in rank order, and no unranked candidate has one" do
         expect(ranking.scan(%r{<article class="candidate"><h3>(.*?)</h3>}))
           .to eq([["1. Rewrite Vivid Cove with no new indexes"],
-                  ["2. Your query with a new index on #{sq("public.t (created_at)")}"]])
+                  ["1. Your query with a new index on #{sq("public.t (created_at)")}"]])
         expect(ranking.scan("<article").size).to eq(2)
       end
 

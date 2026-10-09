@@ -85,12 +85,15 @@
 </section>
 <section id="ranking"><h2>Ranking</h2>
 <% if winner %>
-<p>A candidate is your query, or a rewrite of it, run with a set of new indexes. To be ranked, it must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins.</p>
+<p>A candidate is your query, or a rewrite of it, run with a set of new indexes or none. QUAACK ranks the three best of each kind of change: your query with new indexes, a rewrite with new indexes, and a rewrite with none. To be ranked, it must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins within each kind.</p>
 <table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indexes</th></tr></thead>
 <tbody>
 <tr class="baseline"><td class="num"></td><td>Your query as it is (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
-<% top.each_with_index do |t, i| %>
+<% ranked_by_kind.each do |kind, entries| %>
+<tr class="kind"><th scope="rowgroup" colspan="5"><%= h KIND_NAMES.fetch(kind) %></th></tr>
+<% entries.each_with_index do |t, i| %>
 <tr class="rank"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
+<% end %>
 <% end %>
 </tbody></table>
 <% else %>
@@ -109,7 +112,9 @@
 <p class="note">Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index, so for your query with new indexes it says <%= h Words::MISSING %>. It also says that for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
 </details>
 <% end %>
-<% top.each_with_index do |t, i| %>
+<% ranked_by_kind.each do |kind, entries| %>
+<h3 class="kind"><%= h KIND_NAMES.fetch(kind) %></h3>
+<% entries.each_with_index do |t, i| %>
 <article class="candidate"><h3><%= i + 1 %>. <%= h describe(t["label"]) %></h3>
 <% if (r = rewrite_of(t["label"])) %>
 <p>Its SQL is under <a href="#<%= h anchor(r["rewrite"]) %>"><%= h Words.lower(called(r)) %></a>, above.</p>
@@ -125,6 +130,7 @@
 <% end %>
 </tbody></table>
 </article>
+<% end %>
 <% end %>
 </section>
 <% if winner %>

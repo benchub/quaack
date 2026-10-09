@@ -88,9 +88,10 @@ RSpec.describe "quaacks report-payload" do
                                            "rewrite_1:top:1" => { "slow" => "worse", "typical" => "no_worse" },
                                            "original:top:1" => { "slow" => "better", "typical" => "no_worse" } })
     store.write("selection", "top" => [
-                  { "label" => "rewrite_1:none", "slow_blocks" => 300, "total_blocks_sum" => 400, "footprint" => 0 },
-                  { "label" => "original:top:1", "slow_blocks" => 400, "total_blocks_sum" => 590,
-                    "footprint" => 8192 }
+                  { "label" => "rewrite_1:none", "kind" => "rewrite_same_indexes", "slow_blocks" => 300,
+                    "total_blocks_sum" => 400, "footprint" => 0 },
+                  { "label" => "original:top:1", "kind" => "original_new_indexes", "slow_blocks" => 400,
+                    "total_blocks_sum" => 590, "footprint" => 8192 }
                 ], "excluded" => { "rewrite_1:top:1" => "not_better" }, "infinite_sets" => [])
     store.write("rewrite_1", "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
                              "transformation" => "moved #{sentinel}", "assumptions" => [{ "kind" => sentinel }],
@@ -454,7 +455,8 @@ RSpec.describe "quaacks report-payload" do
         # A rewrite ranked under one label and excluded under another.
         measured(store, 22, "none" => "not_better", "rewrite_22:top:1" => nil)
         selection = store.read("selection")
-        store.write("selection", selection.merge("top" => [*selection["top"], { "label" => "rewrite_22:top:1" }]))
+        ranked = { "label" => "rewrite_22:top:1", "kind" => "rewrite_new_indexes" }
+        store.write("selection", selection.merge("top" => [*selection["top"], ranked]))
         # No run stores this: a rewrite that rewrite-test disproved is never measured.
         # If a store held both, the earlier step is the fate.
         measured(store, 23, "none" => "not_better")
