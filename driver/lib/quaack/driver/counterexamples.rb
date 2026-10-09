@@ -124,7 +124,7 @@ module Quaack
       # next round, or, when the ask failed with a LaterError, the block's,
       # given the error and the session.
       def turn((session, messages, after), rounds, compare)
-        inserts = ask_with(messages, rounds.empty? ? FIRST : AGAIN, session)
+        inserts = ask_with(messages, "#{rounds.empty? ? FIRST : AGAIN}, round #{rounds.size + 1}", session)
         rounds << Round.new(inserts:, outcome: compare.call(inserts), provider: session.provider, after:,
                             pairing: session.pairing)
         [session, messages + follow_up(rounds.last)]

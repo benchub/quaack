@@ -150,8 +150,8 @@ RSpec.describe "quaack run" do
       expect(progress).to eq(
         ["quaack: [1/18] Already done, skipping: Checking the query plan and searching for indexes (index-search)\n",
          "quaack: [2/18] Already done, skipping: " \
-         "Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)\n",
-         "quaack: [3/18] Asking the LLM to improve its index ideas (llm-index-refine)\n",
+         "Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)\n",
+         "quaack: [3/18] Getting the LLM to improve its index ideas (llm-index-refine)\n",
          "quaack: [3/18] Reading how the LLM's index ideas did (llm-index-refine)\n",
          "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",

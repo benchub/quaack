@@ -291,15 +291,15 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
       run
 
-      round = "#{name}: Loading the LLM's rows and comparing results (counterexamples)"
-      again = "Asking the LLM again, for different rows (llm-counterexamples)"
+      round = ->(n) { "#{name}: Loading the LLM's rows and comparing results, round #{n} (counterexamples)" }
+      again = ->(n) { "Asking the LLM again, for different rows, round #{n} (llm-counterexamples)" }
       expect(lines_of("rewrite-correctness"))
         .to eq(["Testing each rewrite for wrong results (rewrite-correctness)",
                 "#{name}: Testing the rewrite on generated rows (rewrite-test)",
-                "#{name}: Asking the LLM for rows that could break the rewrite (counterexamples)",
+                "#{name}: Trying to break the rewrite with rows from the LLM (counterexamples)",
                 "#{name}: Reading the rewrite's shape for the LLM (counterexamples)",
-                "Asking the LLM for rows that could break the rewrite (llm-counterexamples)",
-                round, again, round, again, round])
+                "Asking the LLM for rows that could break the rewrite, round 1 (llm-counterexamples)",
+                round[1], again[2], round[2], again[3], round[3]])
     end
 
     context "with two providers, when a later round's ask fails" do
@@ -332,12 +332,12 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(lines_of("llm-index-ideas"))
-        .to eq(["Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+        .to eq(["Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)",
                 "Reading the query's shape for the LLM (llm-index-ideas)",
                 "Asking the LLM for index ideas (llm-index-ideas)",
                 "Testing the LLM's index ideas (llm-index-ideas)"])
       expect(lines_of("llm-index-refine"))
-        .to eq(["Asking the LLM to improve its index ideas (llm-index-refine)",
+        .to eq(["Getting the LLM to improve its index ideas (llm-index-refine)",
                 "Reading how the LLM's index ideas did (llm-index-refine)",
                 "Asking the LLM (llm-index-refine)",
                 "Testing the LLM's revised index ideas (llm-index-refine)"])
@@ -351,7 +351,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(lines_of("llm-index-refine"))
-        .to eq(["Asking the LLM to improve its index ideas (llm-index-refine)",
+        .to eq(["Getting the LLM to improve its index ideas (llm-index-refine)",
                 "Reading how the LLM's index ideas did (llm-index-refine)",
                 "Reading the query's shape for the LLM (llm-index-refine)",
                 "Asking the LLM (llm-index-refine)",
@@ -365,7 +365,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(lines_of("llm-index-ideas"))
-        .to eq(["Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+        .to eq(["Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)",
                 "Reading the query's shape for the LLM (llm-index-ideas)",
                 "Asking the LLM for index ideas (llm-index-ideas)",
                 "Recording that the LLM gave no index ideas (llm-index-ideas)"])
@@ -396,11 +396,11 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
       expect(lines_of("rewrite-index-ideas"))
         .to eq(["Asking the LLM for index ideas for each rewrite (rewrite-index-ideas)",
-                "#{name}: Asking the LLM for index ideas the mechanical search missed (rewrite-llm-index-ideas)",
+                "#{name}: Getting index ideas from the LLM that the mechanical search missed (rewrite-llm-index-ideas)",
                 "#{name}: Reading the rewrite's shape for the LLM (rewrite-llm-index-ideas)",
                 "Asking the LLM for index ideas (rewrite-llm-index-ideas)",
                 "#{name}: Testing the LLM's index ideas (rewrite-llm-index-ideas)",
-                "#{name}: Asking the LLM to improve its index ideas (rewrite-llm-index-refine)",
+                "#{name}: Getting the LLM to improve its index ideas (rewrite-llm-index-refine)",
                 "#{name}: Reading how the LLM's index ideas did (rewrite-llm-index-refine)",
                 "#{name}: Already done, skipping: Ranking the index ideas (rewrite-index-rerank)"])
     end
@@ -436,7 +436,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       # every step with a summary closes.
     end
 
-    it "waits on a short line for counterexamples' first ask, which repeats its sub-step, and keeps the asks again" do
+    it "prints counterexamples' lines in the order they happen, each round by number" do
       entries.merge!(rewrite(1, rewrite_survived: false))
       tests.push(true)
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
@@ -445,27 +445,27 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(ended.select { it.include?("(counterexamples)") || it.include?("(llm-counterexamples)") })
-        .to eq(["#{name}: Asking the LLM for rows that could break the rewrite (counterexamples)",
+        .to eq(["#{name}: Trying to break the rewrite with rows from the LLM (counterexamples)",
                 "#{name}: Reading the rewrite's shape for the LLM (counterexamples)",
-                "Waiting for the LLM (llm-counterexamples)",
-                "#{name}: Loading the LLM's rows and comparing results (counterexamples)",
-                "Asking the LLM again, for different rows (llm-counterexamples)",
-                "#{name}: Loading the LLM's rows and comparing results (counterexamples)",
-                "Asking the LLM again, for different rows (llm-counterexamples)",
-                "#{name}: Loading the LLM's rows and comparing results (counterexamples)"])
+                "Asking the LLM for rows that could break the rewrite, round 1 (llm-counterexamples)",
+                "#{name}: Loading the LLM's rows and comparing results, round 1 (counterexamples)",
+                "Asking the LLM again, for different rows, round 2 (llm-counterexamples)",
+                "#{name}: Loading the LLM's rows and comparing results, round 2 (counterexamples)",
+                "Asking the LLM again, for different rows, round 3 (llm-counterexamples)",
+                "#{name}: Loading the LLM's rows and comparing results, round 3 (counterexamples)"])
     end
 
-    it "waits on a short line for llm-index-ideas' ask, which repeats its step, after the query's shape note" do
+    it "prints llm-index-ideas' lines in the order they happen, its ask after the query's shape note" do
       entries["index_generated_original"] = false
       fake.reply("llm-index-ideas", { "indexes" => [] })
 
       run
 
-      first = ended.index("Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)")
+      first = ended.index("Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)")
       expect(ended[first, 4])
-        .to eq(["Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+        .to eq(["Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)",
                 "Reading the query's shape for the LLM (llm-index-ideas)",
-                "Waiting for the LLM (llm-index-ideas)",
+                "Asking the LLM for index ideas (llm-index-ideas)",
                 "Recording that the LLM gave no index ideas (llm-index-ideas)"])
     end
   end

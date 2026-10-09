@@ -281,11 +281,19 @@ module Quaack
         def survives_counterexamples?(transport, client, args, progress, record)
           progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-          rounds = StepSummary.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
-                                      compare(transport, args))
+          rounds = numbered(progress, "Loading the LLM's rows and comparing results", compare(transport, args))
           result = counterexamples(client, args, record).run(payload, compare: rounds)
           record.call { it.counterexamples!(args[:search], result.units) }
           !result.disproved
+        end
+
+        # call, noted under counterexamples as text and its round, from 1.
+        def numbered(progress, text, call)
+          round = 0
+          lambda do |*args, **options|
+            progress.step_note("counterexamples", "#{text}, round #{round += 1}")
+            call.call(*args, **options)
+          end
         end
 
         # The rewrite's Counterexamples, with its recorded author, from the
@@ -473,8 +481,8 @@ module Quaack
       # step's ID follows it in parentheses.
       SAY = {
         "index-search" => "Checking the query plan and searching for indexes",
-        "llm-index-ideas" => "Asking the LLM for index ideas the mechanical search missed",
-        "llm-index-refine" => "Asking the LLM to improve its index ideas",
+        "llm-index-ideas" => "Getting index ideas from the LLM that the mechanical search missed",
+        "llm-index-refine" => "Getting the LLM to improve its index ideas",
         "index-rank" => "Ranking the index ideas",
         "rewrite-rules" => "Applying QUAACK's own rewrite rules to the query",
         "llm-rewrites" => "Asking the LLM for rewrites of the query",
@@ -487,10 +495,10 @@ module Quaack
         "rewrite-correctness" => "Testing each rewrite for wrong results",
         "rewrite-tested" => "Testing the rewrite for wrong results",
         "rewrite-test" => "Testing the rewrite on generated rows",
-        "counterexamples" => "Asking the LLM for rows that could break the rewrite",
+        "counterexamples" => "Trying to break the rewrite with rows from the LLM",
         "rewrite-index-ideas" => "Asking the LLM for index ideas for each rewrite",
-        "rewrite-llm-index-ideas" => "Asking the LLM for index ideas the mechanical search missed",
-        "rewrite-llm-index-refine" => "Asking the LLM to improve its index ideas",
+        "rewrite-llm-index-ideas" => "Getting index ideas from the LLM that the mechanical search missed",
+        "rewrite-llm-index-refine" => "Getting the LLM to improve its index ideas",
         "rewrite-index-rerank" => "Ranking the index ideas",
         "index-build" => "Building the candidate indexes",
         "baseline" => "Measuring the original query",

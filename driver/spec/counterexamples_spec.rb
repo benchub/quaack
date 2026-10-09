@@ -89,9 +89,9 @@ RSpec.describe Quaack::Driver::Counterexamples do
       outcomes.push(clean, clean, clean)
       run
 
-      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite (llm-counterexamples)",
-                           "Asking the LLM again, for different rows (llm-counterexamples)",
-                           "Asking the LLM again, for different rows (llm-counterexamples)"])
+      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite, round 1 (llm-counterexamples)",
+                           "Asking the LLM again, for different rows, round 2 (llm-counterexamples)",
+                           "Asking the LLM again, for different rows, round 3 (llm-counterexamples)"])
     end
 
     it "keeps a rewrite's rounds on one provider, as one unit, and starts the next rewrite's on the next" do
