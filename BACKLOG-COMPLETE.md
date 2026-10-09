@@ -8566,3 +8566,14 @@ Asked for by the user on 2026-10-09. Links to a rule's documentation page, such 
 - **Design:** report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 4b6ab067, plus spec fixes in the following commits through a4f3d20d. `RuleLinks#rule_link` adds `target="_blank" rel="noopener"`. Driver only.
+
+### 20261009-10. Report: say "the original query", not "your query".
+
+Reported by the user, 2026-10-09. The report and its notes often say "your query", for example "planned the same as your query" and "against 3,454 for your query as it is". That's ambiguous. It could mean the original query, a rewrite the operator supplied (operator-rewrites), or the question the operator is really asking the database. Everywhere it means the original query, say "the original query", or "the original query's". Change "your query as it is" too. Any phrase that means something else should name that thing plainly, such as "your own rewrite". As of 2026-10-09 it appears about 25 times across five files under driver/lib, enclave/lib, and protocol/lib. Grep for "your query" in DESIGN.md and the specs too. Report text built from enclave words, such as reasons, may live in the enclave or protocol. That makes it an enclave change, so add it to the unreleased list.
+- **Also:** the `below_top_three` wording in report/candidates.rb and rewrites.rb ("three other candidates did better") should say three others of its kind (from 20261009-6).
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 20ffa4da, driver and README only. Every "your query" that meant the original now says "the original query", and below_top_three says "three others of its kind".
