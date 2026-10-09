@@ -8681,3 +8681,13 @@ The user wasn't happy with how the last row shows "none found". Use ⚠ and a ho
 - **Design:** index-dedupe.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 6ed6344b. `IndexSql.comparable` now sorts, fixing `from_indexdef` returning nil for existing indexes whose predicates were out of order. `PredicateSort` flattens nested AND and OR groups that share an operator. Cast differences moved to 20261009-20.
+
+### 20261009-15. e2e case 034: assert the baseline cap refusal instead.
+
+Split from 20261009-5. Case 034's original is pathological on purpose, since that's what lets the rewrite win. Every lighter dataset tried (fewer or wider `orders` rows, more `work_mem`) let the original hash its `NOT IN` and beat the rewrite. So the case can't finish quickly and still make its point. Proposed: run 034 with a short `baseline_cap_seconds` in its e2e config, and assert that baseline refuses with `baseline_original_exceeded_cap` and shows the driver's note. That turns the case into an end-to-end test of the cap. Keep the "rewrite beats a pathological NOT IN" claim only if another case can show it cheaply.
+
+- **Depends on:** 20261009-5.
+- **Came from:** The build of 20261009-5, 2026-10-09.
+- **Design:** baseline, e2e.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** d8468ebb, harness only. case.json gains optional `config` and `expect_stop` keys. Case 034 runs under a 5 s cap and passes, in about 57 s, when baseline refuses with `baseline_original_exceeded_cap`. The "rewrite beats a pathological NOT IN" claim is still made only by the case's verify.rb proof.
