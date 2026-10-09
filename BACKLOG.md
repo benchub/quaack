@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-11: transitive_predicate_copy typmods and enums.
 - 20261009-21: ImplicitCast edge cases.
 - 20261009-8: suggested index drops (protocol payload change).
 - 20261009-20: implicit text casts dropped from existing predicates.
@@ -928,20 +929,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-5. Report payload: what the index accountability table still lacks. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns.
-
-Findings from the build and review of 20261002-7:
-
-- **An untested soundness guard.** Equalities come only from the WHERE and inner-join ONs, which is right, but no test pins it. A mutation that also took equalities from outer-join ONs stayed green. Add `FROM posts p JOIN users u ON u.id = p.id LEFT JOIN accounts a ON p.account_id = u.account_id WHERE u.account_id IN (1,2)` and expect no rewrite.
-- **`Catalog#default_btree?`'s `families.size == 1`** (catalog.rb ~146) survives being changed to `>= 1`. Test it, or accept it as untested.
-- **Typmods block common Rails rewrites.** `Catalog::Info.type` comes from `format_type`, so `varchar(255) = varchar` and `numeric(10,2) = numeric(12,2)` are refused. Compare base types (`atttypid`) instead.
-- **Enum, domain and array columns are refused,** since they have no default btree family of their own. Resolve the base type or the generic family (`anyenum`, `anyarray`) if it's safe.
-- **Inner joins nested on an outer join's nullable side get no copies,** though copying within that nested inner join would be sound.
-
-- **Depends on:** 20261002-7.
-- **Came from:** The build and review of 20261002-7, 2026-10-03.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-12. `rake full`: fail fast on an unreadable version, and fix a comment. Done, see BACKLOG-COMPLETE.md.
 
@@ -2324,3 +2312,13 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 ### 20261009-20. index-dedupe: match predicates that differ only in implicit casts. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-21. ImplicitCast: leftovers from 20261009-20. Done, see BACKLOG-COMPLETE.md.
+
+### 20261009-22. `transitive_predicate_copy`: leftovers from 20261003-11.
+
+- **Doc page:** `docs/transforms/transitive_predicate_copy.md` still says "differ in type". Say that typmods are ignored and enums are accepted.
+- **Untested:** an enum against text, or two different enum types, must still be refused. Add a spec. A `bpchar(n)` against `bpchar(m)` pair with trailing spaces is untested too. Add one, or refuse bpchar pairs.
+
+- **Depends on:** 20261003-11.
+- **Came from:** The review of 20261003-11, 2026-10-09.
+- **Design:** rewrite-rules.
+- **Status:** todo

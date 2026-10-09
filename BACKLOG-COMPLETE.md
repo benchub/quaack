@@ -8795,3 +8795,19 @@ From 20261009-13's review. The body's `p.warn` now repeats the whole summary war
 - **Landed so far:** 2026-10-08, task/20260927-17 (commit f3598049). A unique expression index that reads a generated column is now refused as `expression_unique_index`. Still open: perturb-and-retry, and the pools (a v1 limit).
 - **Status:** done
 - **Landed:** - **Dropped (user, 2026-10-09):** stale or covered, per the note above. Nothing was built.
+
+### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns.
+
+Findings from the build and review of 20261002-7:
+
+- **An untested soundness guard.** Equalities come only from the WHERE and inner-join ONs, which is right, but no test pins it. A mutation that also took equalities from outer-join ONs stayed green. Add `FROM posts p JOIN users u ON u.id = p.id LEFT JOIN accounts a ON p.account_id = u.account_id WHERE u.account_id IN (1,2)` and expect no rewrite.
+- **`Catalog#default_btree?`'s `families.size == 1`** (catalog.rb ~146) survives being changed to `>= 1`. Test it, or accept it as untested.
+- **Typmods block common Rails rewrites.** `Catalog::Info.type` comes from `format_type`, so `varchar(255) = varchar` and `numeric(10,2) = numeric(12,2)` are refused. Compare base types (`atttypid`) instead.
+- **Enum, domain and array columns are refused,** since they have no default btree family of their own. Resolve the base type or the generic family (`anyenum`, `anyarray`) if it's safe.
+- **Inner joins nested on an outer join's nullable side get no copies,** though copying within that nested inner join would be sound.
+
+- **Depends on:** 20261002-7.
+- **Came from:** The build and review of 20261002-7, 2026-10-03.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 79023b37. Columns are compared by base type, so typmods are ignored. Enums map to the `anyenum` btree opclass. A spec pins that outer-join ONs supply no equalities. Domain and array columns, the `families.size == 1` guard, and inner joins nested under an outer join stay refused (rare). Leftovers are in 20261009-22.
