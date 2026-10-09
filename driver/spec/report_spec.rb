@@ -18,7 +18,7 @@ RSpec.describe Quaack::Driver::Report do
 
   def render(payload, **) = described_class.render(payload, run_id: "RUN-1", **)
 
-  def section(html, id) = html[%r{<section id="#{id}">.*?</section>}m]
+  def section(html, id) = html[%r{<section id="#{id}"[^>]*>.*?</section>}m]
 
   # SQL as the report sets it apart from the words around it.
   def sq(text) = %(<code class="sql">#{text}</code>)
@@ -173,7 +173,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "puts the verdict first, then the queries, the ranking, the indexes, who proposed what, and the burndown" do
-      ids = html.scan(/<section id="([a-z-]+)">/).flatten
+      ids = html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten
       expect(ids).to eq(%w[summary queries ranking explanation indexes accountability burndown])
     end
 
@@ -220,6 +220,35 @@ RSpec.describe Quaack::Driver::Report do
       expect(verdict(render(payload))).to include("The verdict: substantial improvements possible")
       payload["top"][0]["slow_blocks"] = 701
       expect(verdict(render(payload))).to include("The verdict: minor improvements possible")
+    end
+
+    describe "the verdict section's color" do
+      def summary_open(out)
+        out[/<section id="summary"[^>]*>/]
+      end
+
+      def css(out, kind)
+        out[/#summary\.#{kind} \{[^}]*\}/]
+      end
+
+      it "is green for substantial improvements and no other kind" do
+        out = render(payload)
+        expect(summary_open(out)).to eq('<section id="summary" class="substantial">')
+        expect(css(out, "substantial")).to include("var(--good-bg)", "var(--good-edge)")
+      end
+
+      it "is cream for minor improvements and no other kind" do
+        payload["top"][0]["slow_blocks"] = 701
+        out = render(payload)
+        expect(summary_open(out)).to eq('<section id="summary" class="minor">')
+        expect(css(out, "minor")).to include("var(--minor-bg)", "var(--minor-edge)")
+      end
+
+      it "stays blue when QUAACK found nothing" do
+        out = render(negative_payload)
+        expect(summary_open(out)).to eq('<section id="summary" class="nothing">')
+        expect(css(out, "nothing")).to be_nil
+      end
     end
 
     it "says QUAACK found nothing that could help when nothing beat the original, and what it tried" do
@@ -1420,7 +1449,7 @@ RSpec.describe Quaack::Driver::Report do
     let(:bug_section) { section(bug_html, "quaack-bugs") }
 
     it "says so first, above everything else, as a bug in QUAACK" do
-      expect(bug_html.scan(/<section id="([a-z-]+)">/).flatten.first(2)).to eq(%w[quaack-bugs summary])
+      expect(bug_html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten.first(2)).to eq(%w[quaack-bugs summary])
       expect(bug_section).to include("<h2>QUAACK bug: a rule made a wrong rewrite</h2>")
       expect(bug_section).to include("a rule has a bug")
     end
@@ -1455,7 +1484,7 @@ RSpec.describe Quaack::Driver::Report do
     let(:why) { section(negative_html, "negative-result") }
 
     it "comes after the ranking, and only when nothing was ranked" do
-      expect(negative_html.scan(/<section id="([a-z-]+)">/).flatten)
+      expect(negative_html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten)
         .to eq(%w[summary queries ranking negative-result indexes accountability burndown])
       expect(html).not_to include("negative-result")
     end
@@ -1536,7 +1565,7 @@ RSpec.describe Quaack::Driver::Report do
     let(:ideas) { section(winning, "index-ideas") }
 
     it "lists them in their own section, after the explanation, with no rewrites' fates" do
-      expect(winning.scan(/<section id="([a-z-]+)">/).flatten)
+      expect(winning.scan(/<section id="([a-z-]+)"[^>]*>/).flatten)
         .to eq(%w[summary queries ranking explanation index-ideas indexes accountability burndown])
       expect(ideas).to include("<h2>Index ideas that went nowhere</h2>")
       expect(winning).not_to include("negative-result")

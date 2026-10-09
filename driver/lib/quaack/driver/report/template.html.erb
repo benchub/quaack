@@ -10,6 +10,7 @@
     --query-bg: #f4effb; --query-edge: #7b4bb3; --query-accent: #5b3a8a;
     --funnel-text: #1c2430; --funnel-count: #515b69;
     --uncounted-fill: #eef0f3; --uncounted-stroke: #8a929d; --known-line: #5b6470; --hatch: #b5bcc6;
+    --good-bg: #e8f5e9; --good-edge: #2e7d32; --minor-bg: #fbf5e1; --minor-edge: #b08a1e;
     --st-default: #2f6fb3; --st-blue: #1f5fa8; --st-teal: #0f766e; --st-violet: #7b3fb0; --st-brown: #a1561c;
     --st-rose: #b02a5b; --st-green: #4d7c0f; --st-gold: #8a6d00; --st-indigo: #3b5bdb; --st-slate: #334e68;
   }
@@ -22,6 +23,7 @@
       --query-bg: #251d33; --query-edge: #a37ad6; --query-accent: #c4a3ee;
       --funnel-text: #e6eaf0; --funnel-count: #a9b3c1;
       --uncounted-fill: #232932; --uncounted-stroke: #7d8794; --known-line: #9aa5b4; --hatch: #4a5463;
+      --good-bg: #17291c; --good-edge: #5cb372; --minor-bg: #2b2614; --minor-edge: #d1ad4a;
       --st-default: #5b9bea; --st-blue: #5b9bea; --st-teal: #2fb5a8; --st-violet: #b07ae0; --st-brown: #d98a4a;
       --st-rose: #e0699a; --st-green: #8cc63f; --st-gold: #d4b030; --st-indigo: #7c93f5; --st-slate: #7fa0c4;
     }
@@ -33,6 +35,8 @@
   h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
   p, ul { margin: 0.5rem 0; }
   #summary { background: var(--summary-bg); border-left: 5px solid var(--accent); padding: 0.75rem 1.25rem; }
+  #summary.substantial { background: var(--good-bg); border-left-color: var(--good-edge); }
+  #summary.minor { background: var(--minor-bg); border-left-color: var(--minor-edge); }
   #summary h2 { border: 0; margin-top: 0; }
   #summary h2 { font-size: 1.4rem; }
   #summary table { background: var(--panel); }
@@ -87,7 +91,7 @@
 <ul><% rule_bugs.each do |b| %><li><%= h bug(b) %></li><% end %></ul>
 </section>
 <% end %>
-<section id="summary"><h2><%= h headline %></h2>
+<section id="summary" class="<%= headline_kind %>"><h2><%= h headline %></h2>
 <% unless winner %>
 <p><%= h tried %></p>
 <% end %>
