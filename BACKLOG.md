@@ -16,12 +16,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 
 
-- 20261008-18 (or_to_union: key columns deduped).
-- 20261008-20 (not_in_to_not_exists: UNION branch types compared without typmod).
 
-- 20261008-47 (scenarios: && exclusions load; generated-column boundaries narrowed).
 
-- 20261008-61 (fixture-compare: inner LIMIT and OFFSET cuts refused unless on a key; soundness fix).
 
 ## How this file works.
 
