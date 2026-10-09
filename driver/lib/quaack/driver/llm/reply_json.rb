@@ -35,44 +35,28 @@ module Quaack
         def self.matches?(value, schema) = ReplyShape.matches?(value, schema)
 
         def self.embedded_match(text, schema)
-          spans, unclosed = balanced_spans(text)
+          spans = Spans.new(text)
           parsed = false
-          spans.each do |start, stop|
-            object = JSON.parse(text.byteslice(start..stop))
+          spans.each do |object|
             parsed = true
             return object if matches?(object, schema)
-          rescue JSON::ParserError
-            next
           end
-          raise(parsed && !unclosed ? mismatch : invalid, cause: nil)
+          raise(parsed && !spans.unclosed ? mismatch : invalid, cause: nil)
         end
 
         def self.invalid = Error.new("llm_bad_response", "the reply wasn't valid JSON")
 
-        # [[start, stop], ...] for each { with a balanced }, as byte offsets in
-        # order of start, and whether any { was left open. Quotes count only
-        # inside braces, since prose outside them isn't JSON. A stray { before
+        # Spans map each { with a balanced } to that }, as byte offsets.
+        # Quotes count only inside braces, since prose outside them isn't JSON. A stray { before
         # an odd quote would hide every later {, so when a scan ends with a {
         # still open, it starts again just past that {, keeping what it found.
-        # Each restart rescans the rest of the text, so they stop after
-        # MAX_RESTARTS, far above the few stray braces prose holds.
+        # Stray quotes that pair up can instead swallow the real object into a
+        # stray {'s span, so when a span doesn't parse, it rescans just past
+        # that span's { too. Each restart rescans the rest of the text, so
+        # they stop after MAX_RESTARTS, far above the few stray braces prose holds.
         OUTSIDE = /[^{]+/
         INSIDE = /(?:[^{}"]|"(?:\\.|[^"\\])*")+/m
         MAX_RESTARTS = 100
-
-        def self.balanced_spans(text)
-          spans = {}
-          scanner = StringScanner.new(text)
-          unclosed = false
-          (MAX_RESTARTS + 1).times do
-            open = scan(scanner, spans)
-            unclosed ||= !open.nil?
-            break unless open
-
-            scanner.pos = open + 1
-          end
-          [spans.sort, unclosed]
-        end
 
         # Scans to the end, or to a quote that never closes, and returns the
         # first { still open, if any. Each { keeps the first } it balances with.
@@ -91,6 +75,59 @@ module Quaack
           else return false
           end
           true
+        end
+
+        # The objects embedded in a text, parsed in order of their {, with the
+        # restarts above. unclosed says whether the first scan left a { open.
+        class Spans
+          attr_reader :unclosed
+
+          def initialize(text)
+            @text = text
+            @scanner = StringScanner.new(text)
+            @spans = {}
+            @restarts = MAX_RESTARTS + 1
+            @unclosed = collect(0)
+          end
+
+          def each
+            queue = @spans.sort
+            until queue.empty?
+              start, stop = queue.shift
+              if (result = parsed(start, stop))
+                yield result.first
+              elsif @restarts.positive?
+                collect(start + 1)
+                queue = @spans.select { |s, _| s > start }.sort
+              end
+            end
+          end
+
+          private
+
+          # [object], or nil when the span isn't JSON.
+          def parsed(start, stop)
+            [JSON.parse(@text.byteslice(start..stop))]
+          rescue JSON::ParserError
+            nil
+          end
+
+          # Scans from pos, then restarts past each { left open, while
+          # restarts last. Each scan spends one. Says whether a { was left
+          # open.
+          def collect(pos)
+            unclosed = false
+            while @restarts.positive?
+              @restarts -= 1
+              @scanner.pos = pos
+              pos = ReplyJSON.scan(@scanner, @spans)
+              unclosed ||= !pos.nil?
+              break unless pos
+
+              pos += 1
+            end
+            unclosed
+          end
         end
       end
     end

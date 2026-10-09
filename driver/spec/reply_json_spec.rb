@@ -46,6 +46,11 @@ RSpec.describe Quaack::Driver::LLM::ReplyJSON do
     expect(described_class.parse(%({ note: it's "odd } {"ddl": []}), schema)).to eq("ddl" => [])
   end
 
+  it "finds the object when a stray { and two prose quotes swallow it into a span that won't parse" do
+    text = %(Use {the "plan:\n```json\n{"ddl": ["x"]}\n```\nsee "notes} ok)
+    expect(described_class.parse(text, schema)).to eq("ddl" => ["x"])
+  end
+
   it "finds the fenced object after more prose braces than any fixed count of starts" do
     text = "#{"see {a} " * 33}\n```json\n{\"ddl\": [\"CREATE INDEX i ON t(a)\"]}\n```"
 
