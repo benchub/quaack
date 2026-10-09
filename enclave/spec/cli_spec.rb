@@ -33,6 +33,29 @@ RSpec.describe "quaacks executable" do
     expect([out, err, status.exitstatus]).to eq([%({"type":"error","rule":"driver_present"}\n), "", 1])
   end
 
+  # QUAACKS_DEV_CHECKOUT=1 counts only when quaacks runs from a git checkout,
+  # with a .git and a Gemfile two levels above exe/, so an operator who
+  # exports it on a jump server by mistake still gets the guard.
+  it "ignores QUAACKS_DEV_CHECKOUT unless the exe sits in a git checkout with a Gemfile" do
+    Dir.mktmpdir do |root|
+      copy = File.join(root, "enclave", "exe", "quaacks")
+      FileUtils.mkdir_p(File.dirname(copy))
+      FileUtils.cp(exe, copy)
+      lib = ["-I", File.join(GEM_ROOT, "lib")]
+      refused = [%({"type":"error","rule":"driver_present"}\n), 1]
+
+      results = [[], [".git"], ["Gemfile"], [".git", "Gemfile"]].map do |marks|
+        marks.each { FileUtils.touch(File.join(root, it)) }
+        out, _, status = with_env("QUAACKS_DEV_CHECKOUT" => "1") { run_ruby(*lib, copy, "--version") }
+        marks.each { FileUtils.rm_f(File.join(root, it)) }
+        [out, status.exitstatus]
+      end
+
+      expect(results.first(3)).to eq([refused] * 3)
+      expect(results.last.first).to start_with(%({"type":"version"))
+    end
+  end
+
   it "refuses with driver_present when the driver's code is on its load path, outside any bundle" do
     env = { "QUAACKS_DEV_CHECKOUT" => nil, "RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil, "BUNDLER_SETUP" => nil }
     lib = ["-I", File.join(GEM_ROOT, "lib"), "-I", File.join(REPO_ROOT, "protocol", "lib")]
