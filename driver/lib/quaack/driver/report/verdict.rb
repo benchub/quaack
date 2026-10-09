@@ -65,7 +65,7 @@ module Quaack
         # The built size of a label's new indexes, "+56.0 MB".
         def added_size(label)
           sizes = (measured(label)&.fetch("indexes", nil) || []).map { indexes.dig(it, "size") }
-          return Words::MISSING unless sizes.all?(Integer)
+          return Words::MISSING if sizes.empty? || !sizes.all?(Integer)
 
           "+#{Format.size(sizes.sum)}"
         end
@@ -77,16 +77,20 @@ module Quaack
         end
 
         def nothing_tried(kind)
-          if kind == "original_new_indexes"
-            ["No new index found that the original query could use",
-             "QUAACK built #{Words.count(indexes.size, "index", "indexes")} in all, and none was measured with " \
-             "the original query."]
-          else
-            ["No rewrite survived testing",
-             "QUAACK kept #{Words.count(rewrites.size, "rewrite")}, and none was measured " \
-             "#{kind == "rewrite_same_indexes" ? "with no new indexes" : "with new indexes"}. " \
-             "The queries section says what became of each."]
-          end
+          return no_rewrite_tried(kind) unless kind == "original_new_indexes"
+
+          ["No new index found that the original query could use",
+           "QUAACK built #{Words.count(indexes.size, "index", "indexes")} in all, and none was measured with " \
+           "the original query."]
+        end
+
+        def no_rewrite_tried(kind)
+          return ["No rewrite survived testing", "QUAACK kept no rewrite of the original query."] if rewrites.empty?
+
+          how = kind == "rewrite_same_indexes" ? "with no new indexes" : "with new indexes"
+          ["No rewrite was measured #{how}",
+           "QUAACK kept #{Words.count(rewrites.size, "rewrite")}, and none was measured #{how}. " \
+           "The queries section says what became of each."]
         end
 
         def nothing_won(kind, tried)

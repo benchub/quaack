@@ -201,8 +201,26 @@ RSpec.describe Quaack::Driver::Report do
       expect(out).to include("&#9888; No new index found that the original query could use")
       expect(out).to include(%(title="QUAACK built 2 indexes in all, and none was measured with the original ) +
                              %(query."))
-      expect(out).to include("&#9888; No rewrite survived testing")
+      expect(out).to include("&#9888; No rewrite was measured with no new indexes")
       expect(out).to include("QUAACK kept 1 rewrite, and none was measured with no new indexes.")
+    end
+
+    it "doesn't say no rewrite survived when rewrites were kept but none was measured with new indexes" do
+      payload["labels"].reject! { it["label"] == "rewrite_1:top:1" }
+      out = verdict(render(payload))
+      expect(out).to include("&#9888; No rewrite was measured with new indexes")
+      expect(out).not_to include("No rewrite survived testing")
+      payload["rewrites"] = []
+      payload["labels"].reject! { it["search"] == "rewrite_1" }
+      expect(verdict(render(payload))).to include("&#9888; No rewrite survived testing")
+    end
+
+    it "says a new-indexes row's added size isn't recorded when its label has no indexes or no entry" do
+      payload["labels"][0]["indexes"] = []
+      expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
+      payload["labels"].shift
+      row = verdict_rows(render(payload)).grep(/\Athe original query, with new indexes/i).first
+      expect(row).to include("| not recorded |")
     end
 
     it "adds up the built size of every new index a candidate ran with, and says so when one isn't recorded" do
