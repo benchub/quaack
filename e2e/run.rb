@@ -17,6 +17,9 @@
 # - index: the top-ranked fix must exist, and touch at most the case's bound
 #   of total blocks on the slow literals. One whose own index comes from
 #   the LLM (llm-index-ideas) and misses is LLM, not FAIL.
+# - a case with expect_stop in case.json (a step and a rule): the run must
+#   stop there, and the driver's note for the rule is shown. Its config
+#   key is written to the enclave's ~/.quaack/config.json first.
 # - rewrite, both, trap, none: these need the LLM, so the outcome is only
 #   recorded, but a crash or a stopped run still fails
 #
@@ -25,6 +28,7 @@
 # of `rake`: it runs the whole pipeline once per case.
 
 require "bundler/setup"
+require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
@@ -97,6 +101,12 @@ module E2ERun
     def settings = meta.fetch("settings", {}).map { |k, v| "SET #{k} = #{v};" }.join
     def results = read("results.md")
     def bound = results[/must touch at most (\d+) total blocks/, 1]&.to_i
+    # The quaacks config this case runs under (written to the enclave's
+    # ~/.quaack/config.json), such as a short baseline_cap_seconds.
+    def config = meta["config"]
+    # The rule a case expects the pipeline to stop at, with its step: a
+    # case whose claim is the refusal, not a fix (034's baseline cap).
+    def expect_stop = meta["expect_stop"]
     def refusal_rule = results[/must refuse the query with `([a-z_]+)`/, 1]
     def llm_index? = meta.fetch("features").any? { it.match?(/llm-index-ideas|llm-index-refine|set aside untested/) }
     def database = "e2e_#{name[0, 3]}"
@@ -208,6 +218,7 @@ module E2ERun
   # What happened: { stage:, error:, report:, asks: }. stage is where it
   # stopped: :intake, :setup, :pipeline, or :done.
   def outcome(home, server, kase, prod, racetrack)
+    write_config(home, kase)
     transport = Quaack::Driver::Transport::Local.new(command: QUAACKS)
     stage = :intake
     run_id = intake(transport, home, server, kase, prod)
@@ -227,6 +238,13 @@ module E2ERun
     { stage: :done, report:, asks: llm.asks.map(&:step) }
   rescue Quaack::Driver::EnclaveError => e
     { stage:, error: e, asks: llm ? llm.asks.map(&:step) : [] }
+  end
+
+  def write_config(home, kase)
+    return unless kase.config
+
+    FileUtils.mkdir_p(File.join(home, ".quaack"))
+    File.write(File.join(home, ".quaack", "config.json"), JSON.generate(kase.config))
   end
 
   def intake(transport, home, server, kase, prod)
@@ -255,6 +273,7 @@ module E2ERun
 
   def judge(kase, out)
     return judge_refused(kase, out) if kase.category == "refused"
+    return judge_stop(kase.expect_stop, out) if kase.expect_stop
     return ["FAIL", describe_error(out)] if out[:error]
 
     top = top_fix(out[:report])
@@ -283,6 +302,17 @@ module E2ERun
               "rewrites" => Array(report["rewrites"]).map { it["fate"] } }
     text = parts.reject { _2.empty? }.map { |k, v| "#{k}: #{v.tally.map { |r, n| "#{r} #{n}" }.join(" ")}" }
     text.empty? ? "no candidates" : text.join("; ")
+  end
+
+  # A case that expects the pipeline to stop at a step with a rule, and the
+  # driver's note for it, as the operator would read it.
+  def judge_stop(want, out)
+    e = out[:error]
+    return ["FAIL", "the run didn't stop; wanted #{want["rule"]} at #{want["step"]}"] unless e
+    return ["FAIL", "#{describe_error(out)}; wanted #{want["rule"]} at #{want["step"]}"] unless
+      e.rule == want["rule"] && e.step == want["step"]
+
+    ["PASS", "stopped at #{e.step} with #{e.rule_with_note}"]
   end
 
   def judge_refused(kase, out)
