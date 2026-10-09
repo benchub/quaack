@@ -186,8 +186,9 @@ module Quaack
         # how many candidates each generator made, for the burndown.
         def mechanical(store, sql, plan:, analyzed:)
           statistics = PlannerStatistics.load(store).statistics
-          dedupe = Dedupe.new(statistics:, low_cardinality: PiiClassification.load(store).low_cardinality)
-          one = GeneratorOne.candidates(PgQuery.parse(sql), statistics)
+          low_cardinality = PiiClassification.load(store).low_cardinality
+          dedupe = Dedupe.new(statistics:, low_cardinality:)
+          one = GeneratorOne.candidates(PgQuery.parse(sql), statistics, low_cardinality:)
           two = GeneratorTwo.candidates(plan, statistics:, schemas: schemas(store), analyzed:)
           [dedupe, dedupe.filter(one) + dedupe.filter(two), { generator_one: one.size, generator_two: two.size }]
         end
