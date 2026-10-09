@@ -151,63 +151,133 @@ RSpec.describe Quaack::Driver::Report do
   end
 
   describe "the summary" do
-    it "says what won, and by how much, in words" do
-      expect(section(html, "summary")).to include(
-        "QUAACK found something better than the original query: rewrite Vivid Cove with no new indexes. It read 300 " \
-        "blocks on the slow values, against 1,000 for the original query (70% fewer)."
-      )
-      expect(section(html, "summary")).not_to include("It built and measured")
+    def verdict(html) = section(html, "summary")
+
+    # The table's rows as text: each row's cells, joined by " | ".
+    def verdict_rows(html)
+      verdict(html)[%r{<tbody>.*</tbody>}m].scan(%r{<tr.*?</tr>}m).map do |row|
+        row.scan(%r{<t[dh][^>]*>(.*?)</t[dh]>}m).flatten.map { it.gsub(/<[^>]+>/, " ").gsub(/\s+/, " ").strip }
+           .join(" | ")
+      end
     end
 
-    it "says over 99% fewer, as the winner's table does, when rounding would say all of them" do
+    it "heads the verdict by how much the best row beats the original, and ranks one row per kind by improvement" do
+      expect(verdict(html)).to include("<h2>The verdict: substantial improvements possible</h2>")
+      expect(verdict_rows(html)).to eq(
+        ["Best rewrite, with the same indexes Rewrite Vivid Cove with no new indexes | 300 | 0 | 70%",
+         "The original query, with new indexes The original query with a new index on public.t (created_at) | " \
+         "400 | +8 kB | 60%",
+         "The original query, with the same indexes | 1,000 | 0 | 0%",
+         "Best rewrite, with new indexes | " \
+         "&#9888; No rewrite with new indexes beat the original"]
+      )
+    end
+
+    it "calls 30% fewer blocks substantial and anything less minor" do
+      payload["top"][0]["slow_blocks"] = 700
+      expect(verdict(render(payload))).to include("The verdict: substantial improvements possible")
+      payload["top"][0]["slow_blocks"] = 701
+      expect(verdict(render(payload))).to include("The verdict: minor improvements possible")
+    end
+
+    it "says QUAACK found nothing that could help when nothing beat the original, and what it tried" do
+      out = verdict(render(negative_payload))
+      expect(out).to include("The verdict: QUAACK found nothing that could help")
+      expect(out).to include("It built and measured 2 indexes and kept 1 rewrite.")
+      expect(verdict_rows(render(negative_payload)).map { it.split(" | ").first }).to eq(
+        ["The original query, with the same indexes", "Best rewrite, with new indexes",
+         "Best rewrite, with the same indexes", "The original query, with new indexes"]
+      )
+    end
+
+    it "gives a kind with no candidate a ⚠ and a hover that says more, from what QUAACK measured" do
+      out = verdict(render(negative_payload))
+      expect(out).to include("<td colspan=\"3\" title=\"QUAACK measured 1 candidate of this kind, and none made " \
+                             "the ranking. The ranking section says why.\"><span class=\"warn\">&#9888; No " \
+                             "rewrite beat the original without an index</span>")
+      expect(out).to include("&#9888; No new index beat the original query")
+    end
+
+    it "says no index was found or no rewrite survived when nothing of that kind was measured" do
+      payload["top"].shift(2)
+      payload["labels"].select! { it["label"] == "rewrite_1:top:1" }
+      out = verdict(render(payload))
+      expect(out).to include("The verdict: QUAACK found nothing that could help")
+      expect(out).to include("&#9888; No new index found that the original query could use")
+      expect(out).to include(%(title="QUAACK built 2 indexes in all, and none was measured with the original ) +
+                             %(query."))
+      expect(out).to include("&#9888; No rewrite was measured with no new indexes")
+      expect(out).to include("QUAACK kept 1 rewrite, and none was measured with no new indexes.")
+    end
+
+    it "doesn't say no rewrite survived when rewrites were kept but none was measured with new indexes" do
+      payload["labels"].reject! { it["label"] == "rewrite_1:top:1" }
+      out = verdict(render(payload))
+      expect(out).to include("&#9888; No rewrite was measured with new indexes")
+      expect(out).not_to include("No rewrite survived testing")
+      payload["rewrites"] = []
+      payload["labels"].reject! { it["search"] == "rewrite_1" }
+      expect(verdict(render(payload))).to include("&#9888; No rewrite survived testing")
+    end
+
+    it "says a new-indexes row's added size isn't recorded when its label has no indexes or no entry" do
+      payload["labels"][0]["indexes"] = []
+      expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
+      payload["labels"].shift
+      row = verdict_rows(render(payload)).grep(/\Athe original query, with new indexes/i).first
+      expect(row).to include("| not recorded |")
+    end
+
+    it "adds up the built size of every new index a candidate ran with, and says so when one isn't recorded" do
+      payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
+      expect(verdict_rows(render(payload))[1]).to include("| +24 kB |")
+      payload["indexes"]["quaack_b"]["size"] = nil
+      expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
+    end
+
+    it "says over 99% fewer, as the ranked tables do, when rounding would say all of them" do
       payload["top"][0]["slow_blocks"] = 12
       payload["original_measurements"]["slow"] = m(5120, 0)
-      expect(section(html, "summary")).to include("It read 12 blocks on the slow values, against 5,120 for " \
-                                                  "the original query (over 99% fewer).")
+      expect(verdict_rows(render(payload)).first).to end_with("| 12 | 0 | over 99%")
     end
 
-    it "says a candidate won where the original timed out" do
+    it "says a candidate won where the original timed out, and warns about the timeout" do
       payload["original_measurements"]["slow"] = { "timed_out" => true }
       payload["infinite_sets"] = ["slow"]
-      expect(section(html, "summary")).to include("It read 300 blocks on the slow values, where the original query " \
-                                                  "timed out.")
-      expect(section(html, "summary")).to include("The original query timed out on the slow values")
+      out = render(payload)
+      expect(verdict(out)).to include("The verdict: substantial improvements possible")
+      expect(verdict_rows(out).first).to end_with("| 300 | 0 | the original query timed out")
+      expect(verdict_rows(out)[2]).to eq("The original query, with the same indexes | timed out | 0 | 0%")
+      expect(verdict(out)).to include("&#9888; The original query timed out on the slow values")
     end
 
-    it "says how many measurement runs timed out, and nothing when none did" do
-      expect(section(html, "summary")).to include("2 measurement runs of candidates timed out")
+    it "gives each caveat a short ⚠ line that links to its detail, and none when there's nothing to say" do
+      expect(verdict(html)).to include('<li class="warn">&#9888; 2 measurement runs of candidates timed out, ' \
+                                       'and QUAACK dropped those candidates. <a href="#ranking">Details</a></li>')
       payload["timed_out_count"] = 0
-      expect(section(render(payload), "summary")).not_to include("timed out")
+      expect(verdict(render(payload))).not_to include("&#9888; 2")
+      expect(verdict(render(payload))).not_to include("verdict-caveats")
     end
 
     # Task 20261008-34.
     it "says which statistics the production role couldn't see, and nothing when it saw them all" do
       payload["hidden_statistics"] = { "indexes" => %w[orders_lower_idx orders_expr_idx], "extended_statistics" => 2 }
-      expect(section(render(payload), "summary")).to include(
-        "Your role on the production server couldn&#39;t see the statistics of 2 extended statistics objects " \
-        "and of these expression indexes: <code class=\"sql\">orders_lower_idx</code>, " \
-        "<code class=\"sql\">orders_expr_idx</code>. QUAACK went on without them, so its estimates for " \
-        "those may be off. A role that owns the tables can see them."
+      expect(verdict(render(payload))).to include(
+        "&#9888; Your role on the production server couldn&#39;t see the statistics of 2 extended statistics " \
+        "objects and of these expression indexes: <code class=\"sql\">orders_lower_idx</code>, " \
+        "<code class=\"sql\">orders_expr_idx</code>, so QUAACK&#39;s estimates for those may be off. A role that " \
+        "owns the tables can see them. <a href=\"#indexes\">Details</a>"
       )
       payload["hidden_statistics"] = { "indexes" => [], "extended_statistics" => 1 }
-      expect(section(render(payload), "summary")).to include(
-        "couldn&#39;t see the statistics of 1 extended statistics object. QUAACK went on"
-      )
+      expect(verdict(render(payload))).to include("couldn&#39;t see the statistics of 1 extended statistics object, so")
       payload["hidden_statistics"] = { "indexes" => ["orders_lower_idx"], "extended_statistics" => 0 }
-      expect(section(render(payload), "summary")).to include(
-        "couldn&#39;t see the statistics of this expression index: <code class=\"sql\">orders_lower_idx</code>. "
+      expect(verdict(render(payload))).to include(
+        "couldn&#39;t see the statistics of this expression index: <code class=\"sql\">orders_lower_idx</code>, so"
       )
       [{ "indexes" => [], "extended_statistics" => 0 }, nil].each do |hidden|
         payload["hidden_statistics"] = hidden
-        expect(section(render(payload.compact), "summary")).not_to include("couldn&#39;t see")
+        expect(verdict(render(payload.compact))).not_to include("couldn&#39;t see")
       end
-    end
-
-    it "says nothing beat the query, and how much was tried" do
-      summary = section(render(negative_payload), "summary")
-      expect(summary).to include("Nothing QUAACK tried beat the original query.")
-      expect(summary).to include("It built and measured 2 indexes and kept 1 rewrite.")
-      expect(summary).not_to include("found something better")
     end
   end
 
@@ -2399,7 +2469,7 @@ RSpec.describe Quaack::Driver::Report do
       expect_escaped(rendered(sentinels),
                      "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<details class="query" id="',
                      %(<article class="rewrite"><details class="query" id="#{escaped}">\n<summary><h3>),
-                     "QUAACK found something better than the original query: ",
+                     %(<span class="note">),
                      "<code>SELECT ", "rewrite rules ", '<li><code class="sql">',
                      '<tr class="rank"><td class="num">1</td><td>',
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
