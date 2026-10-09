@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/store"
+require "json"
+require "quaack/enclave/error_filter"
 require "quaack/enclave/steps/baseline"
 
 # `quaacks minimax --run <run ID>` (DESIGN.md's blocks-metric, minimax) the way the jump server
@@ -64,7 +66,7 @@ RSpec.describe Quaack::Enclave::Steps::Baseline do
     seen = []
     allow(Quaack::Enclave::Measurement).to receive(:measure) do |**kw|
       seen << kw[:timeout_ms]
-      {}
+      { "slow" => { "timed_out" => false, "runs" => [{ "execution_ms" => 5 }] } }
     end
 
     described_class.call(store:, config: Quaack::Enclave::Config.new({}))
@@ -88,8 +90,22 @@ RSpec.describe Quaack::Enclave::Steps::Baseline do
     quaacks&.remove
   end
 
-  it "clamps the candidates' timeout when every set timed out" do
-    entry = described_class.entry({ "slow" => { "timed_out" => true } })
-    expect(entry).to include("timed_out" => ["slow"], "timeout_ms" => Quaack::Enclave::RunDiscipline::MAX_MS)
+  # 20261009-5: the refusal reaches the wire as an error line with its rule,
+  # and nothing of the error's message.
+  it "sends the cap refusal through ErrorFilter as one error line with its rule" do
+    quaacks = LeakCheck::Quaacks.new
+    store = baseline_store(quaacks)
+    allow(Quaack::Enclave::Measurement).to receive(:measure)
+      .and_return({ "slow" => { "timed_out" => true, "ran" => 1 } })
+    error = begin
+      described_class.call(store:, config: Quaack::Enclave::Config.new({}))
+    rescue described_class::Error => e
+      e
+    end
+
+    expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "baseline")))
+      .to eq("type" => "error", "step" => "baseline", "rule" => "baseline_original_exceeded_cap")
+  ensure
+    quaacks&.remove
   end
 end
