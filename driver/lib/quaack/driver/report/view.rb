@@ -6,6 +6,7 @@ require_relative "format"
 require_relative "index_ddl"
 require_relative "candidates"
 require_relative "kinds"
+require_relative "verdict"
 require_relative "rewrites"
 require_relative "rule_links"
 require_relative "indexes"
@@ -28,6 +29,7 @@ module Quaack
       class View
         include Candidates
         include Kinds
+        include Verdict
         include Rewrites
         include RuleLinks
         include Indexes
@@ -73,29 +75,9 @@ module Quaack
 
         def winner = top.first
 
-        # The verdict, a paragraph each.
-        def summary
-          [verdict, *(tried unless winner), *timeouts]
-        end
-
-        def verdict
-          return "Nothing QUAACK tried beat #{ORIGINAL}." unless winner
-
-          "QUAACK found something better than #{ORIGINAL}: #{Words.lower(describe(winner["label"]))}. " \
-            "It #{compared}"
-        end
-
         def tried
           "It built and measured #{Words.count(indexes.size, "index", "indexes")} and kept " \
             "#{Words.count(rewrites.size, "rewrite")}. The sections below say what became of each."
-        end
-
-        def timeouts
-          runs = "#{Words.count(timed_out_count, "measurement run")} of candidates timed out, and QUAACK dropped " \
-                 "those candidates."
-          original = "#{ORIGINAL.capitalize} timed out on the #{list(infinite_sets.map { Words.set(it) })} values, " \
-                     "so any candidate that finished there counts as better."
-          [*(runs if timed_out_count.positive?), *(original unless infinite_sets.empty?), *hidden_statistics]
         end
 
         # DESIGN.md's statistics: what the production role couldn't see,
@@ -107,8 +89,8 @@ module Quaack
                    *hidden_indexes(hidden["indexes"])]
           return if parts.empty?
 
-          "Your role on the production server couldn't see the statistics of #{parts.join(" and of ")}. QUAACK " \
-            "went on without them, so its estimates for those may be off. A role that owns the tables can see them."
+          "Your role on the production server couldn't see the statistics of #{parts.join(" and of ")}, so " \
+            "QUAACK's estimates for those may be off. A role that owns the tables can see them."
         end
 
         def hidden_indexes(names)

@@ -9,7 +9,11 @@
   p, ul { margin: 0.5rem 0; }
   #summary { background: #eef4fb; border-left: 5px solid #2f6fb3; padding: 0.75rem 1.25rem; }
   #summary h2 { border: 0; margin-top: 0; }
-  #summary p:first-of-type { font-size: 1.1rem; font-weight: 600; }
+  #summary h2 { font-size: 1.4rem; }
+  #summary table { background: #fff; }
+  #summary .warn, #summary li.warn { color: #8a5a00; }
+  #summary ul { list-style: none; padding: 0; }
+  #summary td[title] { cursor: help; }
   #quaack-bugs { background: #fdecec; border-left: 5px solid #c0392b; padding: 0.75rem 1.25rem; margin-bottom: 2rem; }
   #quaack-bugs h2 { border: 0; margin-top: 0; }
   table { border-collapse: collapse; margin: 0.75rem 0; }
@@ -56,9 +60,18 @@
 <ul><% rule_bugs.each do |b| %><li><%= h bug(b) %></li><% end %></ul>
 </section>
 <% end %>
-<section id="summary"><h2>The verdict</h2>
-<% summary.each do |paragraph| %>
-<p><%= h paragraph %></p>
+<section id="summary"><h2><%= h headline %></h2>
+<% unless winner %>
+<p><%= h tried %></p>
+<% end %>
+<table id="verdict"><thead><tr><th scope="col">Plan</th><th scope="col" class="num">Blocks read (slow values)</th><th scope="col" class="num">Index change</th><th scope="col" class="num">Improvement</th></tr></thead>
+<tbody><% verdict_rows.each do |row| %>
+<% if row[:warn] %><tr class="none-found"><td><%= h row[:plan] %></td><td colspan="3" title="<%= h row[:hover] %>"><span class="warn">&#9888; <%= h row[:warn] %></span></td></tr>
+<% else %><tr<%= %( class="baseline") if row[:improvement] == "0%" %>><td><%= h row[:plan] %><% if row[:detail] %><br><span class="note"><%= h row[:detail] %></span><% end %></td><td class="num"><%= h row[:blocks_text] %></td><td class="num"><%= h row[:delta] %></td><td class="num"><%= h row[:improvement] %></td></tr>
+<% end %>
+<% end %></tbody></table>
+<% unless caveats.empty? %>
+<ul id="verdict-caveats"><% caveats.each do |text, target| %><li class="warn">&#9888; <%= h text %> <a href="#<%= target %>">Details</a></li><% end %></ul>
 <% end %>
 </section>
 <section id="queries"><h2>The queries</h2>
