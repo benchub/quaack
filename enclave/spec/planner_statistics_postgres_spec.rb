@@ -293,7 +293,7 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(result.statistics.table(orders).indexes.keys)
         .to eq(%w[orders_customer_id_idx orders_pending_idx orders_pkey orders_status_created_at_idx])
       expect([pending.key.map(&:name), pending.predicate, pending.sources.to_a])
-        .to eq([["created_at"], "status = 'pending'::text", [:existing]])
+        .to eq([["created_at"], "status = 'pending'", [:existing]])
       expect(result.statistics.table(orders).indexes["orders_pkey"].unique).to be(true)
       lower = result.statistics.table(customers).indexes["customers_lower_email_idx"]
       expect(lower.key.map(&:expression)).to eq(["lower(email)"])
