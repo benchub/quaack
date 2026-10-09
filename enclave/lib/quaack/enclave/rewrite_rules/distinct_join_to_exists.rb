@@ -65,11 +65,12 @@ module Quaack
       # - Nothing in the query could call a volatile function
       #   (Catalog#calls_volatile?): the rewrite calls it for other rows.
       # - With a LIMIT or OFFSET, the ORDER BY holds every column of the key
-      #   by name.column. That makes the order total, so both queries give the
+      #   by name.column, or by a bare name that is that column (see OrderBy:
+      #   ORDER BY id is the key's id, but not when another output column is
+      #   named id). That makes the order total, so both queries give the
       #   same rows. Without it the original may give any of several
       #   answers, and a test that compares the two would call a sound
-      #   rewrite wrong. A bare name there may be an output column's, as in
-      #   ORDER BY x for SELECT a.title AS x, so it doesn't count.
+      #   rewrite wrong.
       # - Every column in the conditions is name.column or a bare column
       #   of one FROM table, never a star.
       # - A subquery is only in a condition that reads the kept table alone,
@@ -84,8 +85,8 @@ module Quaack
         def name = "distinct_join_to_exists"
 
         def description
-          "A SELECT DISTINCT of one table's columns over a join, with a unique, not-null key of that table among " \
-            "them, becomes that table alone with an EXISTS on the other tables, and no DISTINCT."
+          "A SELECT DISTINCT over a join that reads only one table, with a unique, not-null key of that table among " \
+            "its columns, becomes that table alone with an EXISTS on the other tables, and no DISTINCT."
         end
 
         def rewrites(parse, catalog, _literals = nil)
