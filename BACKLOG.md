@@ -2321,41 +2321,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 
 ### 20261009-6. Selection: keep the top three in each kind of change. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-7. Report: the verdict as a headline and one table.
-
-Asked for by the user on 2026-10-09. Today the verdict is three paragraphs, which is too much for a summary and too little to choose from. Replace it with:
-
-- **A headline.** "The verdict: substantial improvements possible" when the best row reads at least 30% fewer blocks on the slow values than the original. "The verdict: minor improvements possible" when it beats the original by less than that. "The verdict: QUAACK found nothing that could help" when nothing beat the original.
-- **One table**, one row per kind, ranked by improvement:
-  - best rewrite with new indexes,
-  - best rewrite with the same indexes,
-  - the original with new indexes,
-  - the original with the same indexes (the baseline, 0%).
-
-  Columns are Plan, Blocks read (slow values), Index Δ, and Improvement. Index Δ is the net change in index size, today the built size of the new indexes, and 0 for the same indexes. Improvement uses the same percentage rule as the ranked tables ("over 99% fewer").
-
-  A kind with no candidate still gets its row, with ⚠ and a short reason, and a hover (`title`) that says more. Examples: "No new index found that the original query could use", "No rewrite survived testing", and "No rewrite beat the original without an index". Each reason comes from the fates and burndown the payload already carries. Don't invent any.
-- **Caveats** go below the table as short ⚠ lines, each linking to its detail lower in the report. Examples: runs that timed out, and statistics the production role couldn't see, with what the second one may throw off.
-
-The user's mock-up:
-
-```
-The verdict: substantial improvements possible
-
-Plan                             Blocks read     Index 𝚫    Improvement
-Best rewrite, index change       1,612           +56MB      53%
-Best rewrite, same indices       2,000           0          42%
-Original query, same indices     3,454           0          0%
-Original query, index change     3,454           n/a        0%
-  (no new indices were found for that the original query could use)
-```
-
-The user wasn't happy with how the last row shows "none found". Use ⚠ and a hover instead.
-
-- **Depends on:** 20261009-6, and 20261009-4 if both touch the report template at once.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
+### 20261009-7. Report: the verdict as a headline and one table. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-8. Suggest dropping an existing index that a new one makes truly redundant.
 
