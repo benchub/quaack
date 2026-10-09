@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-19: existing reordered predicates read, nested AND/OR flattened.
 - 20261009-17: partial index predicates sorted.
 - 20261009-5: baseline dead code removed.
 - 20261009-6: top three per kind.
@@ -2381,15 +2382,7 @@ From 20261009-13's review. The body's `p.warn` now repeats the whole summary war
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-19. Predicate sort: leftovers from 20261009-17.
-
-- **Untested:** an existing index whose predicate pg_indexes writes in a different order from a candidate's must still match in index-dedupe. Add a Postgres spec: create a partial index, then propose its predicate reordered, and expect it to come back as already covered.
-- **Nested same-op groups:** `c AND (b AND a)` may sort differently from `a AND b AND c`. Flatten nested ANDs inside an AND, and nested ORs inside an OR, before sorting, if pg_query doesn't already do that. Pin it with a spec.
-
-- **Depends on:** 20261009-17.
-- **Came from:** The review of 20261009-17, 2026-10-09.
-- **Design:** index-dedupe.
-- **Status:** todo
+### 20261009-19. Predicate sort: leftovers from 20261009-17. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-20. index-dedupe: match predicates that differ only in implicit casts.
 

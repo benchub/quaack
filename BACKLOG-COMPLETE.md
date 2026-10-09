@@ -8670,3 +8670,14 @@ The user wasn't happy with how the last row shows "none found". Use ⚠ and a ho
 - **Design:** report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** b42cd6a9, 0aed78c0, 9958adf4, and 15dc9dc0, driver only. The new `Verdict` module adds a headline (substantial at 30% or more, minor below that, or nothing found), a table with one row per kind plus the baseline, ⚠ rows whose reasons come from measured labels, and ⚠ caveat lines with Details links. For now the index change counts only the added size (see 20261009-8).
+
+### 20261009-19. Predicate sort: leftovers from 20261009-17.
+
+- **Untested:** an existing index whose predicate pg_indexes writes in a different order from a candidate's must still match in index-dedupe. Add a Postgres spec: create a partial index, then propose its predicate reordered, and expect it to come back as already covered.
+- **Nested same-op groups:** `c AND (b AND a)` may sort differently from `a AND b AND c`. Flatten nested ANDs inside an AND, and nested ORs inside an OR, before sorting, if pg_query doesn't already do that. Pin it with a spec.
+
+- **Depends on:** 20261009-17.
+- **Came from:** The review of 20261009-17, 2026-10-09.
+- **Design:** index-dedupe.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 6ed6344b. `IndexSql.comparable` now sorts, fixing `from_indexdef` returning nil for existing indexes whose predicates were out of order. `PredicateSort` flattens nested AND and OR groups that share an operator. Cast differences moved to 20261009-20.
