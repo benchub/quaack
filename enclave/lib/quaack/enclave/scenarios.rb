@@ -295,10 +295,13 @@ module Quaack
         end
 
         # The value of a column no rule above settles: an atom's, a key's,
-        # or a free one.
+        # or a free one. An IS NULL atom on a nullable foreign key picks
+        # NULL for its whole key class, so a NOT NULL member, the parent key,
+        # skips the pick and takes the key's own value: only the child holds
+        # NULL.
         def bound_value(slot, atoms, group, table, col)
-          near = atoms.include?(group.near) ? group.near : nil
-          return @picker.pick(atoms, slots.columns(slot), near, group.mode, group.shift) if atoms.any?
+          picked = @picker.pick_for(atoms, slots.columns(slot), group) if atoms.any?
+          return picked unless picked.nil? && (atoms.empty? || !col.nullable)
           return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
 
           free_values.value(table, col, group.mode)

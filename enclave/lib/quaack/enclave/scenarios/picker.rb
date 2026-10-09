@@ -24,6 +24,11 @@ module Quaack
         # near miss needs none.
         def satisfiable(atoms) = atoms.reject { |i| @pools[i].satisfying.empty? }
 
+        # pick for a group: its near miss counts only when it's one of the atoms.
+        def pick_for(atoms, columns, group)
+          pick(atoms, columns, (group.near if atoms.include?(group.near)), group.mode, group.shift)
+        end
+
         # :skip when a near miss has no value. With no value that fits every
         # atom, it takes the first that passes the CHECKs, or :skip when none
         # does, rather than load a row that breaks a CHECK. shift takes the
