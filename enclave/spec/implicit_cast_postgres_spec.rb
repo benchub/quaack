@@ -66,4 +66,17 @@ RSpec.describe "implicit casts in an existing index's predicate, against a real 
     index = existing("ctx COLLATE \"C\" = 'abc'")
     expect(covers?(index, "ctx = 'abc'")).to be(false)
   end
+
+  it "keeps the cast when the constant's cast isn't plain text" do
+    index = existing("ctx::text = 'abc'::name")
+    expect(index.predicate).to include("::name")
+    expect(covers?(index, "ctx = 'abc'")).to be(false)
+  end
+
+  it "doesn't rewrite an empty array into an empty IN list" do
+    ddl = "CREATE INDEX cast_idx ON public.cast_t USING btree (a) WHERE ((ctx)::text = ANY (ARRAY[]::text[]))"
+    index = Quaack::Enclave::IndexCandidate.from_indexdef(ddl, types:)
+    expect(index.predicate).not_to include("IN ()")
+    expect(index.predicate).to include("ANY")
+  end
 end

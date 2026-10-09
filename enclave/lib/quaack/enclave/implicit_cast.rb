@@ -81,7 +81,7 @@ module Quaack
       # The string constants of the array node, or nil if any is something else.
       def array_consts(node)
         consts = array_of(node)&.elements&.map { text_const(it) }
-        consts if consts&.all?
+        consts if consts&.any? && consts.all?
       end
 
       def array_of(node)
