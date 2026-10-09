@@ -163,9 +163,11 @@ module RuntimeBoundary
     # driver gem sits beside it. The guard has its own specs. It counts only
     # in a git checkout, with a .git and a Gemfile two levels above exe/, so
     # the install's gems directory gets stand-ins for both.
+    def mark_as_checkout = %w[.git Gemfile].each { FileUtils.touch(File.join(@install.home, "gems", it)) }
+
     def runs
       env = { "QUAACKS_DEV_CHECKOUT" => "1" }
-      %w[.git Gemfile].each { FileUtils.touch(File.join(@install.home, "gems", it)) }
+      mark_as_checkout
       runs = COMMANDS.to_h do |args, status|
         [[@side.exe, *args].join(" "), [@install.run(@side.exe, *args, env:), status]]
       end
