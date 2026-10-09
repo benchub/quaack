@@ -1094,6 +1094,28 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
     end
 
+    it "refuses a set operation's arm cut without a key, in a subquery, a CTE, and at the top level" do
+      arm = "(SELECT grp, label FROM items ORDER BY grp LIMIT 1)"
+      keyed = "(SELECT grp, label FROM items ORDER BY id LIMIT 1)"
+      union = "#{arm} UNION ALL (SELECT grp, label FROM items WHERE id = 5)"
+      queries = ["SELECT grp, label FROM (#{union}) s ORDER BY grp, label",
+                 "WITH s AS (#{union}) SELECT grp, label FROM s ORDER BY grp, label",
+                 "#{arm} UNION ALL #{keyed} ORDER BY grp, label LIMIT 5"]
+
+      queries.each { |sql| expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order) }
+      keyed_union = "SELECT grp, label FROM (#{keyed} UNION ALL #{keyed}) s ORDER BY grp, label"
+      expect(compare(keyed_union, keyed_union).match?).to be(true)
+    end
+
+    it "refuses an inner cut ordered by a nullable unique column" do
+      conn.exec("CREATE UNIQUE INDEX ON items (label)")
+      sql = both_forms("SELECT * FROM items ORDER BY label LIMIT 1").first
+      keyed = both_forms("SELECT * FROM items ORDER BY id LIMIT 1").first
+
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+      expect(compare(keyed, keyed).match?).to be(true)
+    end
+
     it "refuses an inner cut in a query with no ORDER BY at its top level" do
       sql = both_forms("SELECT * FROM items ORDER BY grp LIMIT 1", outer_order: "").last
 

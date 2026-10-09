@@ -57,13 +57,15 @@ module Quaack
 
         def inner_selects(tree)
           top = tree[:stmts].first[:stmt][:select_stmt]
-          selects(top.values).select { cut?(it) }
+          selects(top).select { cut?(it) }
         end
 
+        # Every SELECT below node: each select_stmt, and each set
+        # operation's arm, which the hash holds with no select_stmt key.
         def selects(node)
           case node
           when Hash
-            own = node[:select_stmt] ? [node[:select_stmt]] : []
+            own = node.values_at(:select_stmt, :larg, :rarg).compact
             own + node.values.flat_map { selects(it) }
           when Array then node.flat_map { selects(it) }
           else []
