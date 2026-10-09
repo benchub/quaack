@@ -2380,15 +2380,7 @@ Left over from 20261009-4. The user asked for more detail on hover. The hover al
 
 ### 20261009-12. Report: open rule documentation links in a new tab. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-13. Report: make "passed every test" and "conditions untested" agree.
-
-Reported by the user, 2026-10-09. A rewrite's section can say "It passed every test, …" and then "Read it with care: the test data left some of its conditions untested." The reader can't tell whether it passed. What's true: every test QUAACK ran passed, but the test data never exercised some of the rewrite's conditions (`Cautions#unchecked_atoms`), so those parts are unproven. Say it that way. One example: "Every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." Name the conditions if the payload already carries them, and don't invent any. Also, the caution prints twice when the section is open: once in the summary line, which DESIGN.md keeps so a closed section doesn't hide it, and again in the body. Show it once while the section is open, or make the two read as one.
-
-- **Also (user, 2026-10-09): the untested-conditions note under each rewrite** (`Rewrites::UNTESTED`, `atoms_note`). It's convoluted. List only the conditions no test ever exercised, and leave out the ones the LLM's counterexample rows covered later ("checked later"), since those did get checked. If there are none, show nothing. Lead with one plain sentence, for example: "QUAACK's tests never made these conditions from the original query both true and false, so they can't show the rewrite handles them the same way:". Keep the summary-line warning in step with it.
-- **Depends on:** none. Land after 20261009-10 and 20261009-11, which touch the same text and markup.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
+### 20261009-13. Report: make "passed every test" and "conditions untested" agree. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-14. Report: plainer wording for a rewrite that wasn't better. Done, see BACKLOG-COMPLETE.md.
 
@@ -2427,4 +2419,13 @@ The sort must be deterministic and must not change meaning. Test that sorted and
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-09.
 - **Design:** index-dedupe, index-from-query, report.
+- **Status:** todo
+
+### 20261009-18. Report: a rewrite's "relies on your data" caution reads twice when open.
+
+From 20261009-13's review. The body's `p.warn` now repeats the whole summary warning, including "it relies on what your data holds today" and the pairing warning. The `p.empirical` paragraph right below it says the first of those again. In an open section, say each caution once.
+
+- **Depends on:** 20261009-13.
+- **Came from:** The review of 20261009-13, 2026-10-09.
+- **Design:** report.
 - **Status:** todo

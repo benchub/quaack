@@ -8602,3 +8602,14 @@ Reported by the user, 2026-10-09. The `not_better` fate (`report/rewrites.rb`) r
 - **Design:** report, minimax.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 095ef363, driver only. A new `NotBetterFate` module picks a sentence from the not_better labels' minimax verdicts: "less than a 5% improvement", "read over 5% more blocks on some values", or one sentence that covers both. Minor and not filed: a redundant `verdicts.empty?` guard. The 5% figure is still hard-coded in the template and in candidates.rb, since protocol doesn't carry the minimax constant.
+
+### 20261009-13. Report: make "passed every test" and "conditions untested" agree.
+
+Reported by the user, 2026-10-09. A rewrite's section can say "It passed every test, …" and then "Read it with care: the test data left some of its conditions untested." The reader can't tell whether it passed. What's true: every test QUAACK ran passed, but the test data never exercised some of the rewrite's conditions (`Cautions#unchecked_atoms`), so those parts are unproven. Say it that way. One example: "Every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." Name the conditions if the payload already carries them, and don't invent any. Also, the caution prints twice when the section is open: once in the summary line, which DESIGN.md keeps so a closed section doesn't hide it, and again in the body. Show it once while the section is open, or make the two read as one.
+
+- **Also (user, 2026-10-09): the untested-conditions note under each rewrite** (`Rewrites::UNTESTED`, `atoms_note`). It's convoluted. List only the conditions no test ever exercised, and leave out the ones the LLM's counterexample rows covered later ("checked later"), since those did get checked. If there are none, show nothing. Lead with one plain sentence, for example: "QUAACK's tests never made these conditions from the original query both true and false, so they can't show the rewrite handles them the same way:". Keep the summary-line warning in step with it.
+- **Depends on:** none. Land after 20261009-10 and 20261009-11, which touch the same text and markup.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** eb744c17, driver only. The red-first check was confirmed by the reviewer. Leftovers are in 20261009-18.
