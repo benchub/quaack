@@ -182,7 +182,8 @@ RSpec.describe "quaack run" do
                                   "quaack: [6/19] Waiting for anthropic claude-opus-5-5 (llm-rewrites)\n",
                                   "quaack: [7/19] Checking your own rewrites (operator-rewrites)\n",
                                   "quaack: [7/19] Waiting for anthropic claude-opus-5-5 (operator-rewrites)\n",
-                                  "quaack: [7/19] Waiting for anthropic claude-opus-5-5, attempt 2 (operator-rewrites)\n",
+                                  "quaack: [7/19] Waiting for anthropic claude-opus-5-5, attempt 2 " \
+                                  "(operator-rewrites)\n",
                                   "quaack: [7/19] Checked your 1 rewrite, 0 kept in Ns (operator-rewrites)\n",
                                   "quaack: [19/19] Writing the report (report)\n")
     end

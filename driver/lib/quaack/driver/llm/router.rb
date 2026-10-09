@@ -93,7 +93,7 @@ module Quaack
 
           # Asks as Client#ask does.
           def ask(**ask)
-            return @router.later(@provider, ask, @failures, pairing: @pairing) if @provider
+            return @router.later(@provider, ask, @failures, @router.reviewing(@pairing)) if @provider
 
             @provider, reply = @router.first(ask, skip: @skip, fresh: @fresh, failures: @failures,
                                                   pairing: @pairing)
@@ -188,9 +188,9 @@ module Quaack
         end
 
         # A later ask in name's unit, adding a failure to failures. Session
-        # calls it, with its pairing, if any.
-        def later(name, ask, failures = {}, pairing: nil)
-          call(name, ask, reviewing(pairing))
+        # calls it, with what its line adds after the step (reviewing).
+        def later(name, ask, failures = {}, context = nil)
+          call(name, ask, context)
         rescue Error => e
           failed(name, e)
           failures[name] = e
@@ -211,21 +211,9 @@ module Quaack
 
         # Asks name's client, which names the entry in its progress line
         # (label), with context after the step.
-        def call(name, ask, context = nil) = @clients.fetch(name).ask(**ask, provider: name, shown: label(name), context:)
-
-        # The entry as progress lines name it: its name, from an llms list,
-        # or else its provider and model, such as "anthropic
-        # claude-opus-5-5". Router.one's has neither, so it's nil, and lines
-        # say the LLM. All of it is the operator's own config.
-        def label(name)
-          return name if @named
-
-          "#{@kinds[name]} #{@models[name]}" if @kinds[name] && @models[name]
+        def call(name, ask, context = nil)
+          @clients.fetch(name).ask(**ask, provider: name, shown: label(name), context:)
         end
-
-        # What a paired unit's line adds after the step: whose rewrite it's
-        # reviewing, by the author's entry name.
-        def reviewing(pairing) = ("reviewing #{pairing.author["name"]}'s rewrite" if pairing&.author)
 
         # The healthy providers of step's pool, in the order its unit tries
         # them, paired by pairing. A round_robin unit turns the cursor to
@@ -266,11 +254,6 @@ module Quaack
         # then what happens next, rest: "trying groq (llm-rewrites)"
         # (RouterLines).
         def note(name, error, rest) = @progress&.note(line(name, error, rest))
-
-        # The line itself, as RouterLines words it.
-        def line(name, error, rest)
-          RouterLines.line(name, error, rest, named: @named, copilot: copilot?(name), label: label(name))
-        end
 
         # error, naming the provider after its rule, when the providers are
         # named.

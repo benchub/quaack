@@ -1015,7 +1015,8 @@ RSpec.describe Quaack::Driver::LLM::Router do
     end
 
     {
-      429 => "anthropic claude-opus-5-5 is rate limited, so the rest of this run skips it; going on without replacement ideas " \
+      429 => "anthropic claude-opus-5-5 is rate limited, so the rest of this run skips it; going on without " \
+             "replacement ideas " \
              "(llm-index-ideas)",
       401 => "llm_auth: the API refused the credentials, so the rest of this run skips anthropic claude-opus-5-5. " \
              "Fix its credentials before the next run. Going on without replacement ideas (llm-index-ideas)"

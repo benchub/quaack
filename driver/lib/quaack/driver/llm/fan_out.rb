@@ -32,6 +32,10 @@ module Quaack
         # rule it failed with, never its reason.
         def failed_branches = @failed_branches.to_a.map(&:dup)
 
+        # What a paired unit's line adds after the step: whose rewrite it's
+        # reviewing, by the author's entry name, or nil without pairing.
+        def reviewing(pairing) = ("reviewing #{pairing.author["name"]}'s rewrite" if pairing&.author)
+
         # Whether step fans out.
         def fan_out?(step) = @routing.steps.dig(step, "fan_out") == true
 
@@ -95,6 +99,21 @@ module Quaack
           labels = rest.map { label(it) }
           labels = [*labels.first(2), "#{labels.size - 2} more"] if labels.size > 3
           "then #{RouterLines.listed(labels)}"
+        end
+
+        # The line saying why name was left, as RouterLines words it.
+        def line(name, error, rest)
+          RouterLines.line(name, error, rest, named: @named, copilot: copilot?(name), label: label(name))
+        end
+
+        # The entry as progress lines name it: its name, from an llms list,
+        # or else its provider and model, such as "anthropic
+        # claude-opus-5-5". Router.one's has neither, so it's nil, and lines
+        # say the LLM. All of it is the operator's own config.
+        def label(name)
+          return name if @named
+
+          "#{@kinds[name]} #{@models[name]}" if @kinds[name] && @models[name]
         end
 
         # Whether name is a copilot command, whose llm_auth means it isn't
