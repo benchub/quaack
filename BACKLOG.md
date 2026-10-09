@@ -19,6 +19,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-18 (or_to_union: key columns deduped).
 - 20261008-20 (not_in_to_not_exists: UNION branch types compared without typmod).
 
+- 20261008-47 (scenarios: && exclusions load; generated-column boundaries narrowed).
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -2194,19 +2196,7 @@ The review of 20261007-21 part 1 found these minor issues:
 - **Design:** qualify.
 - **Status:** todo
 
-### 20261008-47. Scenario loading: minors from 20260927-18.
-
-The review of 20260927-18 found these minor issues:
-
-1. **The booking-table example doesn't test the `&&` part.** The `(room WITH =, during WITH &&)` example stays green when the `=` columns aren't added to `uniques`, because its rows never happen to overlap. Make it force overlapping `during` values.
-2. **The generated-column skip is too broad.** It drops boundary values for every column of the table. Skip only the columns the generation expression reads, from `pg_depend` or by parsing the expression.
-3. **`EXCLUDE USING gist (during WITH &&)` is refused, and that's common.** Booking and scheduling tables use it. Give each row's range column a distinct, non-overlapping value, such as `[2i, 2i+1)`, instead of refusing.
-4. **The equality check matches the operator by name only.** It checks `oprname = '='` but not the namespace, and not that the operator is a btree equality. Check both.
-
-- **Depends on:** 20260927-18.
-- **Came from:** The review of 20260927-18, 2026-10-08.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261008-47. Scenario loading: minors from 20260927-18. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-48. Schema dump dependency walk: minors from 20261001-10.
 
@@ -2370,4 +2360,16 @@ From the second review of 20261008-62. The refine step's notes in `pipeline.rb`,
 - **Depends on:** 20261008-62.
 - **Came from:** The second review of 20261008-62, 2026-10-08.
 - **Design:** quaack run.
+- **Status:** todo
+
+### 20261008-66. Exclusion keys: two untested checks from 20261008-47.
+
+From the review of 20261008-47:
+
+1. **The btree strategy-3 condition is untested.** Changing it to `AND true` keeps every spec green. Add a test with an exclusion over a non-equality btree operator, such as `WITH <`.
+2. **The subtype namespace check is untested.** `sn.nspname = 'pg_catalog'` can be removed and every spec stays green. Add a test with a user range over a user type named like a stepped one, such as `other.int4`.
+
+- **Depends on:** 20261008-47.
+- **Came from:** The review of 20261008-47, 2026-10-08.
+- **Design:** rewrite-test.
 - **Status:** todo

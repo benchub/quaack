@@ -8233,3 +8233,18 @@ Every user-visible line that says "the LLM" gets the same treatment where the dr
 - **Design:** LLM providers, quaack run.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-62 (commits 10bb1251, 8de798ba, 84de43c0, b41fc509, eae901da) after a fix round. The second review was clean, and its minor went to 20261008-65. This also covers the user's report of out-of-order counterexample lines.
+
+### 20261008-47. Scenario loading: minors from 20260927-18.
+
+The review of 20260927-18 found these minor issues:
+
+1. **The booking-table example doesn't test the `&&` part.** The `(room WITH =, during WITH &&)` example stays green when the `=` columns aren't added to `uniques`, because its rows never happen to overlap. Make it force overlapping `during` values.
+2. **The generated-column skip is too broad.** It drops boundary values for every column of the table. Skip only the columns the generation expression reads, from `pg_depend` or by parsing the expression.
+3. **`EXCLUDE USING gist (during WITH &&)` is refused, and that's common.** Booking and scheduling tables use it. Give each row's range column a distinct, non-overlapping value, such as `[2i, 2i+1)`, instead of refusing.
+4. **The equality check matches the operator by name only.** It checks `oprname = '='` but not the namespace, and not that the operator is a btree equality. Check both.
+
+- **Depends on:** 20260927-18.
+- **Came from:** The review of 20260927-18, 2026-10-08.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-47 (commits cdc5b792, 8bc0805a). Review had no blocking findings; its minors went to 20261008-66.
