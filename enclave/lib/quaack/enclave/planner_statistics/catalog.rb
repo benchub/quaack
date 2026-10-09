@@ -46,9 +46,13 @@ module Quaack
         SQL
 
         INDEXES_SQL = <<~SQL
-          SELECT c.relname, pg_catalog.pg_get_indexdef(i.indexrelid), pg_catalog.pg_relation_size(i.indexrelid)
+          SELECT c.relname, pg_catalog.pg_get_indexdef(i.indexrelid), pg_catalog.pg_relation_size(i.indexrelid),
+                 i.indisunique OR i.indisprimary OR i.indisexclusion OR EXISTS (
+                   SELECT 1 FROM pg_catalog.pg_constraint k WHERE k.conindid OPERATOR(pg_catalog.=) i.indexrelid),
+                 s.idx_scan
           FROM pg_catalog.pg_index i
           JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) i.indexrelid
+          LEFT JOIN pg_catalog.pg_stat_user_indexes s ON s.indexrelid OPERATOR(pg_catalog.=) i.indexrelid
           WHERE i.indrelid OPERATOR(pg_catalog.=) $1 AND i.indisvalid
           ORDER BY c.relname COLLATE pg_catalog."C"
         SQL
@@ -119,9 +123,10 @@ module Quaack
         end
 
         def indexes(connection, schema, oid)
-          connection.exec_params(INDEXES_SQL, [oid]).values.map do |name, definition, size|
+          connection.exec_params(INDEXES_SQL, [oid]).values.map do |name, definition, size, constrained, scans|
             columns, skipped = pg_stats(connection, schema, name)
             { "name" => name, "definition" => definition, "size_bytes" => Integer(size, 10),
+              "constrained" => constrained == "t", "idx_scan" => scans && Integer(scans, 10),
               "columns" => columns, "array_statistics_skipped" => skipped }
           end
         end

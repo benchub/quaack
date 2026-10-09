@@ -62,12 +62,14 @@ module Quaack
           "#{Format.apart(ours, theirs)}%"
         end
 
-        # The built size of a label's new indexes, "+56.0 MB".
+        # The built size of a label's new indexes, less the size of the existing indexes
+        # it suggests dropping (nothing is dropped, so it's a suggestion): "+56.0 MB", or
+        # "-12 kB" when the drops outweigh the new indexes.
         def added_size(label)
-          sizes = (measured(label)&.fetch("indexes", nil) || []).map { indexes.dig(it, "size") }
-          return Words::MISSING if sizes.empty? || !sizes.all?(Integer)
+          net = net_added(label, (measured(label)&.fetch("indexes", nil) || []).map { indexes.dig(it, "size") })
+          return Words::MISSING unless net
 
-          "+#{Format.size(sizes.sum)}"
+          "#{net.negative? ? "-" : "+"}#{Format.size(net.abs)}"
         end
 
         def missing_row(kind)

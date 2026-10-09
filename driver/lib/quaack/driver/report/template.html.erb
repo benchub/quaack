@@ -145,6 +145,10 @@
 <p>Its new indexes:</p>
 <ul><% measured(t["label"])["indexes"].each do |name| %><li><%= sql_code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
 <% end %>
+<% unless suggested_drops(t["label"]).empty? %>
+<p class="note">With these new indexes, you may be able to drop <%= suggested_drops(t["label"]).size == 1 ? "this existing index" : "these existing indexes" %>. Each starts with the same columns as a new index, so the new index can do its work. QUAACK doesn't drop anything. Other queries may use <%= suggested_drops(t["label"]).size == 1 ? "it" : "them" %>, so check before you drop one. Scan counts come from the production server, so a replica's use isn't in them. The size counted against this candidate's index change is the new indexes' size less the size here.</p>
+<ul class="drops"><% suggested_drops(t["label"]).each do |drop| %><li><%= h suggested_drop(drop) %></li><% end %></ul>
+<% end %>
 <table><thead><tr><th scope="col">Values</th><th scope="col" class="num">Blocks read</th><th scope="col" class="num">The original query</th><th scope="col" class="num">Already in memory</th><th scope="col" class="num">Read from disk</th><th scope="col">Against the original query</th><th scope="col">Note</th></tr></thead>
 <tbody>
 <% measurement_rows(t["label"]).each do |set, *counts, verdict, note| %>

@@ -233,6 +233,26 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
                "WHERE (status = 'pending'::text)")
     end
 
+    # Task 20261009-8: whether an index is unique or backs a constraint, and
+    # production's idx_scan, for the suggested drops.
+    it "has whether each index backs a constraint, and its idx_scan from pg_stat_user_indexes" do
+      conn.exec("SELECT pg_stat_force_next_flush()")
+      conn.exec("SET enable_seqscan = off; SELECT id FROM orders WHERE id = 5; RESET enable_seqscan")
+      conn.exec("SELECT pg_stat_force_next_flush()")
+      conn.exec("SELECT 1")
+      run
+      indexes = stored_table("orders")["indexes"].to_h { [it["name"], it] }
+      scans = conn.exec("SELECT indexrelname, idx_scan FROM pg_stat_user_indexes WHERE relname = 'orders'").values.to_h
+      scans.delete("orders_customer_id_key")
+      expect(indexes["orders_pkey"]["idx_scan"]).to be_positive
+
+      expect(indexes.transform_values { it["constrained"] })
+        .to eq("orders_customer_id_idx" => false, "orders_pending_idx" => false, "orders_pkey" => true,
+               "orders_status_created_at_idx" => false)
+      expect(indexes.transform_values { it["idx_scan"] }).to eq(scans.transform_values { Integer(it, 10) })
+      expect(indexes.values.map { it["idx_scan"] }).to all(be_a(Integer))
+    end
+
     it "has the statistics Postgres keeps for an expression index's columns" do
       run
       lower = stored_table("customers")["indexes"].find { it["name"] == "customers_lower_email_idx" }

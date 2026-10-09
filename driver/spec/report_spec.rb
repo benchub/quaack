@@ -235,6 +235,51 @@ RSpec.describe Quaack::Driver::Report do
       expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
     end
 
+    # Task 20261009-8.
+    describe "a suggested drop" do
+      let(:drops) do
+        [{ "name" => "t_old_idx", "size_bytes" => 10_240, "idx_scan" => 1234 },
+         { "name" => "t_older_idx", "size_bytes" => 2048, "idx_scan" => 1 }]
+      end
+
+      before do
+        payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
+        payload["labels"][0]["suggested_drops"] = drops
+      end
+
+      def candidate_section(html)
+        html[%r{<article class="candidate">(?:(?!</article>).)*?Its new indexes.*?</article>}m]
+      end
+
+      it "subtracts the dropped indexes' sizes from the row's index change, and goes negative if they outweigh it" do
+        expect(verdict_rows(render(payload))[1]).to include("| +12 kB |")
+        drops[0]["size_bytes"] = 40_960
+        expect(verdict_rows(render(payload))[1]).to include("| -18 kB |")
+      end
+
+      it "says a row's index change isn't recorded when a dropped index's size isn't" do
+        drops[1]["size_bytes"] = nil
+        expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
+      end
+
+      it "names each index in the ranked candidate's section, with its size and scan count, and warns" do
+        section = candidate_section(render(payload))
+
+        expect(section).to include("Other queries may use them, so check before you drop one.")
+        expect(section).to include("#{sq("t_old_idx")} (10 kB), production&#39;s statistics show 1,234 scans")
+        expect(section).to include("#{sq("t_older_idx")} (2 kB), production&#39;s statistics show 1 scan<")
+        expect(section).to include("QUAACK doesn't drop anything.", "a replica's use isn't in them")
+      end
+
+      it "says so when an index's scan count isn't recorded, and shows nothing for a label with no drops" do
+        drops[0]["idx_scan"] = nil
+        expect(candidate_section(render(payload))).to include("its scan count isn&#39;t known")
+        payload["labels"][0].delete("suggested_drops")
+        expect(render(payload)).not_to include("QUAACK doesn't drop anything.")
+        expect(verdict_rows(render(payload))[1]).to include("| +24 kB |")
+      end
+    end
+
     it "says over 99% fewer, as the ranked tables do, when rounding would say all of them" do
       payload["top"][0]["slow_blocks"] = 12
       payload["original_measurements"]["slow"] = m(5120, 0)

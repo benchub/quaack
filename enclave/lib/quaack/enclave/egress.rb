@@ -6,6 +6,7 @@ require "quaack/protocol/burndown"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
+require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/step_counts"
 require_relative "plain_data"
@@ -146,9 +147,19 @@ module Quaack
         end
 
         check_ranking(fields)
+        check_suggested_drops(fields["labels"])
         return if !fields.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(fields["hidden_statistics"])
 
         raise Error, "a value in this report message has hidden statistics that aren't index names and a count"
+      end
+
+      # Each label's suggested_drops, if it has one, must pass
+      # Protocol::SuggestedDrops.valid?: index names and counts only.
+      def check_suggested_drops(labels)
+        drops = labels.map { |label| label.fetch(:suggested_drops) { label.fetch("suggested_drops", []) } }
+        return if drops.all? { Protocol::SuggestedDrops.valid?(it) }
+
+        raise Error, "a value in this report message has suggested drops that aren't index names and counts"
       end
 
       # index_sources and top, which a report may carry only as the fixed lists allow.

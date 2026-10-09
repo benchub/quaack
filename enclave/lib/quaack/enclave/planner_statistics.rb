@@ -58,7 +58,9 @@ module Quaack
     #   PgArray can't read. Each keeps its scalars, and its
     #   most_common_vals, most_common_freqs, and histogram_bounds are nil.
     # - indexes: each valid index, sorted by name, with its name, definition
-    #   (pg_get_indexdef), size_bytes (pg_relation_size), columns, the
+    #   (pg_get_indexdef), size_bytes (pg_relation_size), constrained (true
+    #   if it's unique, a primary key, an exclusion, or any constraint's
+    #   index), idx_scan (the pg_stat_user_indexes count, or nil), columns, the
     #   pg_stats rows Postgres keeps for an expression index's expressions,
     #   in the same form, and array_statistics_skipped, as above for those
     #   rows. An invalid index (indisvalid false), such as one
