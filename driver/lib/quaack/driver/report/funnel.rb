@@ -10,27 +10,31 @@ module Quaack
       # DESIGN.md's burndown, drawn: each burndown table as an inline SVG
       # funnel above it, one band per row, in the table's order.
       #
-      # A band is a trapezoid as wide at its top as the count that came in,
-      # and at its bottom as the count that went on, on one scale per
-      # funnel: its largest count is WIDTH. So a stage's drop is the band
-      # narrowing, and a stage that adds (rewrite-rules, llm-rewrites,
-      # operator-rewrites) widens. Beside it are the stage, its counts, and
-      # its drops by reason, and its <title> says the whole row on hover.
+      # The width is what's in the pipe, on one scale per funnel: its
+      # widest point is WIDTH. The first band starts at zero. Every band
+      # starts as wide as the one before it ended, so a stage that adds
+      # nothing and drops nothing keeps its width, one that drops or sets
+      # aside narrows, and one that adds (rewrite-rules, llm-rewrites,
+      # operator-rewrites) widens. A band's bottom is its top plus what it
+      # went on with, less what came in: top + added - dropped - set aside.
+      # The drawing carries that running width whatever a record's own
+      # "in" says, so a count that doesn't join up shows in the table, not
+      # as a gap in the funnel. Beside each band are the stage, its counts,
+      # and its drops by reason, and its <title> says the whole row on hover.
+      # Each stage has its own color (COLORS), the same in every report.
       #
-      # A row the run didn't record is drawn grey, dashed, and striped and says "not
-      # recorded", never a zero. It has no count, so it takes no part in the
-      # scale: it's as wide as the last counted band's bottom, to keep the
-      # funnel's line, or WIDTH if none came before it, but never narrower
-      # than UNKNOWN, so it can't look like a band that counted zero.
+      # A row the run didn't record is drawn grey, dashed, and striped and
+      # says "not recorded", never a zero. It has no count, so it keeps the
+      # running width, but never narrower than UNKNOWN, so it can't look like
+      # a band that counted zero.
       #
       # A row that counted what came in but not what went on is drawn as
-      # far as it's known: a solid line along its top as wide as what came
-      # in, over the unknown band's grey stripes, as wide as that line but
-      # never narrower than UNKNOWN. Its count takes part in the scale.
+      # far as it's known: a solid line along its top at the running width,
+      # over the unknown band's grey stripes. It keeps the running width.
       #
       # Every text in it goes through text, never Format.h, since an SVG
       # <text> can't hold the <code> h sets SQL in.
-      module Funnel
+      module Funnel # rubocop:disable Metrics/ModuleLength
         WIDTH = 320.0
         UNKNOWN = 96.0
         HEIGHT = 46
@@ -41,6 +45,14 @@ module Quaack
         LINE = 96
         STRIPE = 10
         BLUE = "#2f6fb3"
+        KNOWN_GREY = "#5b6470"
+        # One color per stage, dark enough to stand out from the page.
+        COLORS = { "index-from-query" => "#1f5fa8", "index-from-plan" => "#0f766e", "index-dedupe" => "#7b3fb0",
+                   "index-test" => "#a1561c", "llm-index-ideas" => "#b02a5b", "llm-index-refine" => "#4d7c0f",
+                   "index-rank" => "#8a6d00", "rewrite-rules" => "#1f5fa8", "llm-rewrites" => "#7b3fb0",
+                   "operator-rewrites" => "#0f766e", "assumption-check" => "#a1561c", "plan-pruning" => "#b02a5b",
+                   "rewrite-test" => "#4d7c0f", "counterexamples" => "#8a6d00", "rewrite-index-ideas" => "#3b5bdb",
+                   "measurement" => "#334e68" }.freeze
         UNCOUNTED = 'fill="#eef0f3" stroke="#8a929d" stroke-dasharray="4 3"'
         NOT_NONE = "This run didn't count it, which doesn't mean none."
 
@@ -58,43 +70,62 @@ module Quaack
         private
 
         def funnel_bands(rows)
-          last = WIDTH
           funnel_widths(rows).each_with_index.map do |widths, i|
             at = funnel_top(i)
             case widths
-            in nil then funnel_unknown(at, [last, UNKNOWN].max, rows[i].first)
-            in [known, nil] then funnel_partial(at, known, last = [known, UNKNOWN].max, *rows[i])
-            else funnel_band(at, widths, *rows[i]).tap { last = widths.last }
+            in [width, nil] then funnel_unknown(at, [width, UNKNOWN].max, rows[i].first)
+            in [width, :partial] then funnel_partial(at, width, [width, UNKNOWN].max, *rows[i])
+            else funnel_band(at, widths, *rows[i])
             end
           end
         end
 
-        # Each row's widths at its top and bottom, on the scale of the
-        # largest count: nil for a row with no count, and a nil bottom for
-        # one that counted what came in but not what went on.
+        # Each row's [top, bottom] widths, on the scale of the widest point.
+        # The running width, in counts, starts at zero, and a row with both
+        # counts moves it by out - in. A row with no count is [width, nil],
+        # and one with only what came in [width, :partial], at the running
+        # width and leaving it be.
         def funnel_widths(rows)
-          counted = rows.map { |_, record, _| funnel_counted(record) }
-          largest = counted.flatten.compact.max.to_i
-          counted.map { it&.map { |count| count && funnel_scaled(count, largest) } }
+          running = 0
+          drawn = rows.map do |_, record, _|
+            inn, out = funnel_counted(record)
+            top = running
+            running = [running + out - inn, 0].max if out
+            [top, funnel_bottom(inn, out, running)]
+          end
+          largest = drawn.flat_map { it.grep(Integer) }.max.to_i
+          drawn.map { |top, bottom| [funnel_scaled(top, largest), funnel_scaled(bottom, largest)] }
         end
+
+        # A row's bottom, in counts: where the running width ended up, or
+        # :partial for a row with only what came in, or nil for one with nothing.
+        def funnel_bottom(inn, out, running) = out ? running : (:partial if inn)
 
         def funnel_top(index) = TOP + (index * (HEIGHT + GAP))
 
-        # A record's in and out, in and nil if it has no out, or nil if it
-        # has no count of what came in, or a count that can't be one.
+        # A record's [in, out], [in, nil] if it has no out, or [nil, nil] if
+        # it has no count of what came in, or a count that can't be one.
         def funnel_counted(record)
           inn, out = record&.values_at("in", "out")
-          return unless funnel_count?(inn)
+          return [nil, nil] unless funnel_count?(inn)
 
-          out.nil? ? [inn, nil] : ([inn, out] if funnel_count?(out))
+          return [inn, nil] if out.nil?
+
+          funnel_count?(out) ? [inn, out] : [nil, nil]
         end
 
         def funnel_count?(count) = count.is_a?(Integer) && !count.negative?
 
-        def funnel_scaled(count, largest) = largest.zero? ? 0.0 : (WIDTH * count / largest).round(1)
+        # A count's width on the scale, or the marker (nil, :partial) as it is.
+        def funnel_scaled(count, largest)
+          return count unless count.is_a?(Integer)
+
+          largest.zero? ? 0.0 : (WIDTH * count / largest).round(1)
+        end
 
         def funnel_band(at, widths, name, record, stage)
-          shape = funnel_polygon(at, *widths, %(fill="#{BLUE}" fill-opacity="0.8" stroke="#{BLUE}"))
+          color = COLORS.fetch(stage, BLUE)
+          shape = funnel_polygon(at, *widths, %(fill="#{color}" fill-opacity="0.85" stroke="#{color}"))
           %(<g class="band"><title>#{Funnel.text(funnel_summary(name, record, stage))}</title>#{shape}) +
             %(#{funnel_words(at, name, funnel_label(record, stage))}</g>)
         end
@@ -113,7 +144,7 @@ module Quaack
           summary = Funnel.text(funnel_summary(name, record, stage, went_on))
           left = (WIDTH - known) / 2
           line = %(<line class="known" x1="#{left.round(2)}" y1="#{at}" x2="#{(left + known).round(2)}" y2="#{at}" ) +
-                 %(stroke="#{BLUE}" stroke-width="4"/>)
+                 %(stroke="#{KNOWN_GREY}" stroke-width="4"/>)
           %(<g class="band partial"><title>#{summary}</title>#{funnel_polygon(at, width, width, UNCOUNTED)}) +
             %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, stage, "out #{Words::MISSING}"))}</g>)
         end
@@ -159,12 +190,18 @@ module Quaack
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
         end
 
+        # The record's extra counts, whole, for the hover.
+        def funnel_extra(record)
+          extra = breakdown(record["extra"].to_h)
+          extra == "none" ? "" : " Also counted: #{extra}."
+        end
+
         def funnel_summary(name, record, stage, went_on = "#{Format.number(record["out"])} went on.")
           "#{name}: #{Format.number(record["in"])} came in. " \
             "Added: #{breakdown(record["added"].to_h, rules: stage == "rewrite-rules")}. " \
             "Dropped: #{breakdown(record["dropped"].to_h, stage:)}. " \
             "Set aside: #{Format.number(record["set_aside"].to_i)}. " \
-            "#{went_on}"
+            "#{went_on}#{funnel_extra(record)}"
         end
       end
     end

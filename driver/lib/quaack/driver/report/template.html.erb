@@ -267,7 +267,8 @@
 <% end %>
 </section>
 <section id="burndown"><h2>Burndown: how much QUAACK did, and where ideas dropped out</h2>
-<% [["index", "Index ideas for your query", index_rows], ["rewrite", "Rewrites", rewrite_rows]].each do |id, title, rows| %>
+<% [["index", "Index ideas for your query", index_rows], ["rewrite", "Rewrites", rewrite_rows],
+   ["rewrite-index", "Index ideas for the rewrites", rewrite_index_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
 <%= funnel(id, title, rows) %>
 <table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col" class="num">Came in</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>

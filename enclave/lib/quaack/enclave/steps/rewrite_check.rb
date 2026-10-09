@@ -97,7 +97,7 @@ module Quaack
         # already stored (stored) keeps that entry, and nothing new is
         # written for it. That's how rewrite-rules and rewrite-check, run again
         # after a call that died before its marker, store no rewrite twice.
-        def check(store, source:, also: ->(_) { [] })
+        def check(store, source:, also: ->(*) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
           context = context(store, connection, source).merge(stored: StoredRewrites.call(store, source))
           tagged = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }

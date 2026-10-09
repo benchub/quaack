@@ -83,12 +83,13 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 0)
   end
 
-  it "records rewrite-rules alone, its check failures in failed_checks, not in plan-pruning or llm-rewrites" do
+  it "records rewrite-rules and assumption-check, so the stage that follows starts where rewrite-rules ended" do
     prepare
 
     rewrite_rules
 
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"].keys).to eq(["rewrite-rules"])
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"].keys).to eq(%w[rewrite-rules assumption-check])
+    expect(burndown("assumption-check")).to include("in" => 1, "out" => 1, "dropped" => { "unmet_assumption" => 0 })
   end
 
   def burndown(stage) = Quaack::Enclave::Burndown.read(stored)["stages"].dig(stage, "rewrites")
@@ -138,7 +139,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(stored.entry?("burndown")).to be(false)
       rewrite_rules
       first = Quaack::Enclave::Burndown.read(stored)
-      expect(first["stages"].keys).to eq(%w[rewrite-rules])
+      expect(first["stages"].keys).to eq(%w[rewrite-rules assumption-check])
       remove("rewrite_rules_applied")
       remove("burndown")
 
@@ -236,8 +237,10 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         "sql" => "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1",
         "transformation" => "the fake rule sound", "source" => "rule", "rules" => ["sound"]
       )
-      expect(Quaack::Enclave::Burndown.read(stored)["stages"]).not_to have_key("plan-pruning")
-      expect(burndown("rewrite-rules")).to eq(six_c(rules.to_h { [it.name, 1] }, 1, failed_checks: 4))
+      # rewrite-rules ends with what got past arrival, and the stages after it take it from there.
+      expect(burndown("rewrite-rules")).to eq(six_c(rules.to_h { [it.name, 1] }, 3, failed_checks: 2))
+      expect(burndown("assumption-check")).to include("in" => 3, "out" => 2, "dropped" => { "unmet_assumption" => 1 })
+      expect(burndown("plan-pruning")).to include("in" => 1, "out" => 0, "dropped" => { "output_mismatch" => 1 })
     end
 
     # Run again after a call that died before its marker (DESIGN.md's rewrite-rules), with two
