@@ -274,8 +274,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-5. Report payload: what the index accountability table still lacks. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261003-14. `cte_hoist_dedupe`: build-time loose ends.
 
 Out-of-scope findings from the build of 20261002-8:
@@ -1225,8 +1223,5 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-22. `transitive_predicate_copy`: leftovers from 20261003-11. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261009-23. Suggested drops miss partial indexes on varchar columns. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-24. Pin that operand order matters in predicate matching. Done, see BACKLOG-COMPLETE.md.
