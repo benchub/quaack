@@ -670,6 +670,45 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
       expect(same_rows(all, rewritten(all))).to eq([["1"]])
     end
 
+    it "doesn't fire on a UNION under a UNION ALL of a type it can't dedupe, where NOT IN is an error" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.shapes (id int PRIMARY KEY, a box NOT NULL, b box NOT NULL);
+        INSERT INTO public.shapes VALUES (1, '((0,0),(1,1))', '((5,5),(7,7))');
+      SQL
+      sql = "SELECT s.id FROM public.shapes s WHERE s.a NOT IN ((SELECT t.b FROM public.shapes t " \
+            "UNION SELECT r.b FROM public.shapes r) UNION ALL SELECT q.b FROM public.shapes q)"
+
+      expect { rows(sql) }.to raise_error(PG::Error, /could not identify an equality operator for type box/)
+      expect(rewritten(sql)).to eq([])
+      expect(rewritten(sql.sub("t UNION SELECT", "t UNION ALL SELECT")).size).to eq(1)
+    end
+
+    # A column's typmod doesn't change its = or what UNION dedupes on: a
+    # value is stored already cut to it, and a UNION of two typmods is of
+    # the type with none. So branches that differ only in typmod rewrite,
+    # with or without ALL, and give the original's rows.
+    %w[v n c].product(["UNION", "UNION ALL"]).each do |column, op|
+      it "fires on a #{op} whose #{column} columns differ only in typmod, and returns the original's rows" do
+        conn.exec(<<~SQL)
+          CREATE TABLE public.typmods (id int PRIMARY KEY, v varchar(30) NOT NULL, n numeric NOT NULL,
+            c char(4) NOT NULL);
+          CREATE TABLE public.short (id int PRIMARY KEY, v varchar(10) NOT NULL, n numeric(5, 2) NOT NULL,
+            c char(3) NOT NULL);
+          CREATE TABLE public.long (id int PRIMARY KEY, v varchar(20) NOT NULL, n numeric(10, 1) NOT NULL,
+            c char(5) NOT NULL);
+          INSERT INTO public.typmods VALUES (1, 'a', 1.5, 'ab'), (2, 'b', 2.25, 'cd'), (3, 'c', 3, 'ef'),
+            (4, 'd', 4, 'gh');
+          INSERT INTO public.short VALUES (1, 'a', 1.50, 'ab'), (2, 'a', 9, 'zz');
+          INSERT INTO public.long VALUES (1, 'b', 3.0, 'cd'), (2, 'a', 1.5, 'ab');
+        SQL
+        sql = "SELECT t.id FROM public.typmods t WHERE t.#{column} NOT IN " \
+              "(SELECT s.#{column} FROM public.short s #{op} SELECT l.#{column} FROM public.long l)"
+
+        expect(same_rows(sql, rewritten(sql))).to eq({ "v" => [["3"], ["4"]], "n" => [["2"], ["4"]],
+                                                       "c" => [["3"], ["4"]] }.fetch(column))
+      end
+    end
+
     it "doesn't fire when the branches' columns have different collations" do
       conn.exec(<<~SQL)
         CREATE TABLE public.labels (id int PRIMARY KEY, a text NOT NULL, b text COLLATE "C" NOT NULL);
