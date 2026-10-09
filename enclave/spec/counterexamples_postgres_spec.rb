@@ -258,17 +258,50 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       expect(prepared.inserts.size).to eq(1)
     end
 
+    # A function or trigger of the user's can raise any SQLSTATE, with the
+    # value in its message. Which codes count as the value's fault is
+    # Evaluated.bad_value?'s call (20261004-3).
+    describe "when a function raises a SQLSTATE while evaluating it" do
+      before do
+        %w[P0001 54000 42501].each do |code|
+          conn.exec(<<~SQL)
+            CREATE FUNCTION fx.raise_#{code.downcase}(integer) RETURNS boolean LANGUAGE plpgsql IMMUTABLE
+              AS $f$BEGIN RAISE EXCEPTION 'bad %', $1 USING ERRCODE = '#{code}'; END$f$;
+            CREATE DOMAIN fx.dom_#{code.downcase} AS integer CHECK (fx.raise_#{code.downcase}(VALUE));
+          SQL
+        end
+      end
+
+      def raising(code) = "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, $1, $2::fx.dom_#{code})"
+
+      %w[p0001 54000].each do |code|
+        it "refuses it as bad_value for #{code.upcase}, by rule alone" do
+          expect(everything_from { prepare(good, raising(code)) }).not_to include("SENTINEL_10a")
+          expect(prepare(good, raising(code)).refused).to eq([{ index: 1, rule: "bad_value" }])
+        end
+      end
+
+      it "doesn't call a permission error (42501) a bad value, and keeps the value out of what it raises" do
+        expect(everything_from { prepare(good, raising("42501")) }).not_to include("SENTINEL_10a")
+        expect { prepare(good, raising("42501")) }
+          .to raise_error(Quaack::Enclave::Redaction::Error) { |e| expect([e.rule, e.sqlstate, e.cause]).to eq([:internal_error, "42501", nil]) }
+      end
+    end
+
     # Each call to fx.slow sleeps, so evaluating a fx.slow_int value takes
     # long enough to be timed out or have its backend terminated. It claims
     # IMMUTABLE so the inbound check lets the cast through.
     describe "when evaluating it fails for a reason that isn't the value" do
-      let(:slow) { "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, $1, $2::fx.slow_int)" }
+      let(:slow) { "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, $1::fx.slow_text, $2)" }
 
       before do
         conn.exec(<<~SQL)
           CREATE FUNCTION fx.slow(integer) RETURNS boolean LANGUAGE plpgsql IMMUTABLE
             AS 'BEGIN PERFORM pg_sleep(5); RETURN true; END';
           CREATE DOMAIN fx.slow_int AS integer CHECK (fx.slow(VALUE));
+          CREATE FUNCTION fx.slow_t(text) RETURNS boolean LANGUAGE plpgsql IMMUTABLE
+            AS 'BEGIN PERFORM pg_sleep(5); RETURN true; END';
+          CREATE DOMAIN fx.slow_text AS text CHECK (fx.slow_t(VALUE));
         SQL
       end
 
@@ -280,7 +313,8 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       it "lets a statement timeout go up, not as bad_value, with no value in it" do
         conn.exec("SET statement_timeout = 300")
         expect(everything_from { prepare(good, slow) }).not_to include("SENTINEL_10a")
-        expect { prepare(good, slow) }.to raise_error(PG::QueryCanceled)
+        expect { prepare(good, slow) }
+          .to raise_error(Quaack::Enclave::Redaction::Error) { |e| expect([e.rule, e.sqlstate, e.cause]).to eq([:internal_error, "57014", nil]) }
       end
 
       it "lets a terminated connection go up, not as bad_value, with no value in it" do
@@ -295,7 +329,8 @@ RSpec.describe Quaack::Enclave::Counterexamples do
         killer.join
         # Raised by Evaluated itself: a later query would fail with
         # "PQsocket() can't get socket descriptor" instead.
-        expect(outcome).to include("PG::ConnectionBad", "terminating connection due to administrator command")
+        expect(outcome).to include("Quaack::Enclave::Redaction::Error")
+        expect(outcome).not_to include("terminating connection")
         expect(outcome).not_to include("SENTINEL_10a")
       ensure
         killer&.kill
