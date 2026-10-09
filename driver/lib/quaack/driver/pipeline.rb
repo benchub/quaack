@@ -254,7 +254,7 @@ module Quaack
         # Whether rewrite number passed, or nil, printing the skip, if the
         # store says it's decided.
         def undecided(transport, client, run_id, entries, number, progress, record) # rubocop:disable Metrics/ParameterLists
-          if entries["rewrite_survived_#{number}"]
+          if entries["rewrite_survived_#{number}"] && entries["rewrite_tested_#{number}"]
             progress.skip("rewrite-correctness", Pipeline::SAY.fetch("rewrite-tested"))
             return
           end

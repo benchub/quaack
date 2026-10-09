@@ -142,7 +142,8 @@ RSpec.describe Quaack::Driver::Pipeline do
     def rewrite(number, *outputs)
       %w[index_search_rewrite_ index_ranking_rewrite_ rewrite_pruned_]
         .to_h { ["#{it}#{number}", outputs.include?(it)] }
-        .merge("rewrite_#{number}" => true, "rewrite_survived_#{number}" => true)
+        .merge("rewrite_#{number}" => true, "rewrite_survived_#{number}" => true,
+               "rewrite_tested_#{number}" => true)
     end
 
     it "generates rewrites (llm-rewrites) after index-search, then runs plan-pruning on each stored rewrite" do
@@ -277,7 +278,7 @@ RSpec.describe Quaack::Driver::Pipeline do
     def rewrite(number, index_ideas:, generated: false, ranked: false)
       pruning.to_h { ["#{it}#{number}", true] }
              .merge("rewrite_#{number}" => true, "rewrite_survived_#{number}" => true,
-                    "rewrite_index_ideas_#{number}" => index_ideas,
+                    "rewrite_tested_#{number}" => true, "rewrite_index_ideas_#{number}" => index_ideas,
                     "index_generated_rewrite_#{number}" => generated, "index_llm_ranked_rewrite_#{number}" => ranked)
     end
 
@@ -432,6 +433,19 @@ RSpec.describe Quaack::Driver::Pipeline do
       run
 
       expect(ninth_on).to eq(%w[counterexample-payload] + (["counterexample-round"] * 3))
+    end
+
+    # 20261003-41: the enclave stores survival before the test result, so a
+    # crash between them leaves survived with no tested entry. That rewrite
+    # isn't decided: the resumed run tests it again.
+    it "resumes: runs rewrite-test again for a rewrite that has survival stored but no test result" do
+      status.merge!(rewrite(1, survived: true))
+      tests.push(false)
+
+      run
+
+      expect(ninth_on).to eq(%w[rewrite-test])
+      expect(transport.calls.find { it.first == "rewrite-test" }.last[:args]).to include(search: "rewrite_1")
     end
   end
 end
