@@ -13,14 +13,18 @@ RSpec.describe Quaack::Enclave::UnusedSetAside do
 
   let(:users) { Quaack::Enclave::TableName.new(schema: "public", name: "users") }
 
-  def candidate(key, table: orders, **rest) = Quaack::Enclave::IndexCandidate.new(table:, key:, sources: [:parse], **rest)
+  def candidate(key, table: orders, **)
+    Quaack::Enclave::IndexCandidate.new(table:, key:, sources: [:parse], **)
+  end
 
   def result(candidate, used: false, refusal: nil)
     plans = refusal ? {} : { "slow" => sct::Plan.new(used:, total_cost: 1.0, canonical_plan: nil, raw_plan: nil) }
     sct::Result.new(candidate:, size: refusal ? nil : 8192, plans:, refusal:, literal_sets: {})
   end
 
-  def select(*results, low_cardinality: low) = described_class.select(sct::Report.new(baseline: nil, results:), low_cardinality)
+  def select(*results, low_cardinality: low)
+    described_class.select(sct::Report.new(baseline: nil, results:), low_cardinality)
+  end
 
   it "sets aside an unused key-only B-tree led by a low-cardinality column" do
     status = candidate(%w[status total])
