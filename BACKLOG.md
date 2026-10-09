@@ -812,6 +812,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - Perturb-and-retry for colliding expression keys.
 - A generated column counts as NULL when an expression key is worked out.
 
+- **Proposed drop (2026-10-09, awaiting the user):** Item 1 is a documented v1 limit, pinned by vacuity_guard_postgres_spec.rb:60, and it marks the atoms untested. Item 2 is covered by the try-later-pool-values step, with the dropped groups counted (DESIGN.md:1193, :1426). Item 3 landed in 20260927-17 (f3598049).
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
 - **Design:** rewrite-test.
