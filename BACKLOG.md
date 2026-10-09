@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-8: suggested index drops (protocol payload change).
 - 20261009-20: implicit text casts dropped from existing predicates.
 - 20261009-19: existing reordered predicates read, nested AND/OR flattened.
 - 20261009-17: partial index predicates sorted.
@@ -2325,15 +2326,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 
 ### 20261009-7. Report: the verdict as a headline and one table. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-8. Suggest dropping an existing index that a new one makes truly redundant.
-
-Asked for by the user on 2026-10-09. QUAACK only ever adds indexes. When a winning new index makes an existing index truly redundant, suggest dropping that one, and count its size against the verdict's Index Δ (20261009-7). One example is an existing index whose key columns are a leading prefix of the new one's, with the same predicate, no unique constraint, and nothing else depending on it. The user expects this to be rare. Suggest a drop only when the redundancy is certain. Never suggest one on a guess. This needs scoping first. Ask what counts as certain: constraints, unique indexes, indexes that other queries may use, and replica-only usage stats.
-
-- **Decided (user, 2026-10-09):** (1) Redundant means a strict prefix only. The existing index has the same access method. Its key columns are a leading prefix of the new index's, in the same order, opclass, and collation. Its predicate is the same, or both have none. Its INCLUDE columns are all covered by the new index's keys or INCLUDE. It's non-unique and backs no constraint (PK, UNIQUE, EXCLUDE). It's not an expression index, unless the expressions match exactly. Implication between partial predicates is out. (2) Suggest the drop, never make it. Say plainly that other queries may use the index, and report its idx_scan count from production's pg_stat_user_indexes as a number (shape-class data), so the operator can judge. Index Δ subtracts the dropped index's size.
-- **Depends on:** 20261009-7.
-- **Came from:** The user, 2026-10-09.
-- **Design:** index-dedupe, report.
-- **Status:** todo
+### 20261009-8. Suggest dropping an existing index that a new one makes truly redundant. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-9. Funnel hover: say what each stage does. Done, see BACKLOG-COMPLETE.md.
 

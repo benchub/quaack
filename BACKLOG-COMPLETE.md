@@ -8711,3 +8711,14 @@ Found in the build of 20261009-19. `pg_get_indexdef` writes an existing index's 
 - **Design:** index-dedupe.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** f324e399 and 311bcdc7. `ImplicitCast` strips `::text` casts from an existing index's predicate, only for bare varchar or text columns of known type, compared with a text constant. It also rewrites `= ANY` to `IN` and `<> ALL` to `NOT IN`. Leftovers are in 20261009-21.
+
+### 20261009-8. Suggest dropping an existing index that a new one makes truly redundant.
+
+Asked for by the user on 2026-10-09. QUAACK only ever adds indexes. When a winning new index makes an existing index truly redundant, suggest dropping that one, and count its size against the verdict's Index Δ (20261009-7). One example is an existing index whose key columns are a leading prefix of the new one's, with the same predicate, no unique constraint, and nothing else depending on it. The user expects this to be rare. Suggest a drop only when the redundancy is certain. Never suggest one on a guess. This needs scoping first. Ask what counts as certain: constraints, unique indexes, indexes that other queries may use, and replica-only usage stats.
+
+- **Decided (user, 2026-10-09):** (1) Redundant means a strict prefix only. The existing index has the same access method. Its key columns are a leading prefix of the new index's, in the same order, opclass, and collation. Its predicate is the same, or both have none. Its INCLUDE columns are all covered by the new index's keys or INCLUDE. It's non-unique and backs no constraint (PK, UNIQUE, EXCLUDE). It's not an expression index, unless the expressions match exactly. Implication between partial predicates is out. (2) Suggest the drop, never make it. Say plainly that other queries may use the index, and report its idx_scan count from production's pg_stat_user_indexes as a number (shape-class data), so the operator can judge. Index Δ subtracts the dropped index's size.
+- **Depends on:** 20261009-7.
+- **Came from:** The user, 2026-10-09.
+- **Design:** index-dedupe, report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 96b9a9c2, df93d4d2, and 2708bea6. `RedundantIndexes` applies the user's strict-prefix rule. Each ranked label's `suggested_drops` carries name, size_bytes, and idx_scan, and `Protocol::SuggestedDrops` checks it in egress and in the driver. The report suggests drops, never makes them, and warns that other queries may use the index. The Index change nets out the dropped sizes. The looser `makes_redundant` column was removed. As with dedupe before 20261009-20, a cast in a partial predicate can make a match miss (the safe direction).
