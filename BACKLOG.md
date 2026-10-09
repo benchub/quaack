@@ -2342,14 +2342,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 
 ### 20261009-15. e2e case 034: assert the baseline cap refusal instead. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-16. Report: a full dark theme.
-
-Came from 20261009-11's review. The report has no dark theme. A partial one, with dark body text over sections left light, made the verdict, the tables, and the SQL blocks unreadable, so it was taken out. Move every hardcoded color in the template into CSS custom properties on `:root`, and redefine all of them under `@media (prefers-color-scheme: dark)`. That covers the verdict, the bug box, table heads, the baseline and differs rows, SQL blocks, notes, missing cells, borders, the query sections, and the funnel's text and palette. Check contrast for each, and look at the result in a browser.
-
-- **Depends on:** 20261009-11.
-- **Came from:** The review of 20261009-11, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
+### 20261009-16. Report: a full dark theme. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-17. Sort a partial index's top-level AND conditions, so equal predicates read the same. Done, see BACKLOG-COMPLETE.md.
 

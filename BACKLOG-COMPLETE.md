@@ -8722,3 +8722,13 @@ Asked for by the user on 2026-10-09. QUAACK only ever adds indexes. When a winni
 - **Design:** index-dedupe, report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 96b9a9c2, df93d4d2, and 2708bea6. `RedundantIndexes` applies the user's strict-prefix rule. Each ranked label's `suggested_drops` carries name, size_bytes, and idx_scan, and `Protocol::SuggestedDrops` checks it in egress and in the driver. The report suggests drops, never makes them, and warns that other queries may use the index. The Index change nets out the dropped sizes. The looser `makes_redundant` column was removed. As with dedupe before 20261009-20, a cast in a partial predicate can make a match miss (the safe direction).
+
+### 20261009-16. Report: a full dark theme.
+
+Came from 20261009-11's review. The report has no dark theme. A partial one, with dark body text over sections left light, made the verdict, the tables, and the SQL blocks unreadable, so it was taken out. Move every hardcoded color in the template into CSS custom properties on `:root`, and redefine all of them under `@media (prefers-color-scheme: dark)`. That covers the verdict, the bug box, table heads, the baseline and differs rows, SQL blocks, notes, missing cells, borders, the query sections, and the funnel's text and palette. Check contrast for each, and look at the result in a browser.
+
+- **Depends on:** 20261009-11.
+- **Came from:** The review of 20261009-11, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** driver only. Moves every report color into 26 CSS variables on `:root`, each redefined under `prefers-color-scheme: dark`, including the funnel palette. Contrast is AA in both themes (computed from the hex values). Specs reject color literals and dark gaps. Not yet looked at in a browser.
