@@ -94,7 +94,9 @@ RSpec.describe "quaacks index-search, against a real server" do
     entry = stored.read("index_search_original")
     search = restored_search(entry)
     statistics = Quaack::Enclave::PlannerStatistics.load(stored).statistics
-    one = Quaack::Enclave::GeneratorOne.candidates(PgQuery.parse(stored.read("anchored_query")), statistics).size
+    low_cardinality = Quaack::Enclave::PiiClassification.load(stored).low_cardinality
+    one = Quaack::Enclave::GeneratorOne.candidates(PgQuery.parse(stored.read("anchored_query")), statistics,
+                                                   low_cardinality:).size
     two = search.considered - one
     used = entry["results"].count { used?(it) }
     expect([one, two, used]).to all(be_positive)
