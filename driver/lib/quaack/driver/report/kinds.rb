@@ -8,9 +8,9 @@ module Quaack
       # The ranked candidates by kind of change (DESIGN.md's selection and report).
       module Kinds
         # What each kind (Protocol::CandidateKinds) is called above its ranked rows.
-        KIND_NAMES = { "rewrite_new_indexes" => "A rewrite of your query, with new indexes",
-                       "rewrite_same_indexes" => "A rewrite of your query, with no new indexes",
-                       "original_new_indexes" => "Your query as it is, with new indexes" }.freeze
+        KIND_NAMES = { "rewrite_new_indexes" => "A rewrite of the original query, with new indexes",
+                       "rewrite_same_indexes" => "A rewrite of the original query, with no new indexes",
+                       "original_new_indexes" => "The original query, with new indexes" }.freeze
 
         # A ranked entry's kind: the payload's, else the one its label says.
         def kind_of(entry) = entry["kind"] || Protocol::CandidateKinds.of(entry["label"])

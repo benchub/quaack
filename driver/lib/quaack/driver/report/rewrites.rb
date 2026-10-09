@@ -13,35 +13,36 @@ module Quaack
         SOURCES = { "llm" => "suggested by the LLM", "operator" => "your own rewrite" }.freeze
         RULES = "made by QUAACK's own rewrite"
 
-        DIFFERENT = "It returned different results from your query on"
+        DIFFERENT = "It returned different results from the original query on"
         UNCOMPARED = "ended without comparing results%<why>s, so QUAACK dropped it. That says nothing about " \
                      "whether it's right."
         PASSED = "It passed the tests on made-up data, but"
         DROPPED = "so QUAACK dropped it. That says nothing about whether it's right."
 
         FATES = {
-          "ranked" => "It beat your query and is ranked below.",
-          "same_plans" => "Postgres plans it exactly as it plans your query, so it can't run any differently. " \
-                          "QUAACK didn't test it further.",
+          "ranked" => "It beat the original query and is ranked below.",
+          "same_plans" => "Postgres plans it exactly as it plans the original query, so it can't run any " \
+                          "differently. QUAACK didn't test it further.",
           "rewrite_test_disproved" => "#{DIFFERENT} made-up test data%<scenario>s, so it's wrong.",
           "counterexamples_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
           "rewrite_test_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
           "counterexamples_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
-          "rewrite_test_untested" => "QUAACK couldn't make up test data for your query%<refusal>s, so it never " \
-                                     "tested this rewrite and won't recommend it. That says nothing about " \
+          "rewrite_test_untested" => "QUAACK couldn't make up test data for the original query%<refusal>s, so it " \
+                                     "never tested this rewrite and won't recommend it. That says nothing about " \
                                      "whether it's right.",
-          "production_mismatch" => "#{PASSED} returned different results from your query on the real data, so " \
-                                   "it's wrong.",
-          "production_timed_out" => "#{PASSED} timed out when QUAACK compared its results with your query's on " \
-                                    "the real data, #{DROPPED}",
-          "production_not_compared" => "#{PASSED} QUAACK couldn't compare its results with your query's on the " \
-                                       "real data%<why>s, #{DROPPED}",
-          "below_top_three" => "It passed every test and beat your query, but three other candidates did better.",
-          "footprint_tie" => "It passed every test and beat your query, but tied with a candidate whose new " \
-                             "indexes take less disk space.",
-          "not_better" => "It passed every test, but didn't read enough fewer blocks than your query. To count, " \
-                          "a candidate must read more than 5%% fewer blocks on the slow values, and no more than " \
-                          "5%% more on any others.",
+          "production_mismatch" => "#{PASSED} returned different results from the original query on the real " \
+                                   "data, so it's wrong.",
+          "production_timed_out" => "#{PASSED} timed out when QUAACK compared its results with the original query's " \
+                                    "on the real data, #{DROPPED}",
+          "production_not_compared" => "#{PASSED} QUAACK couldn't compare its results with the original query's on " \
+                                       "the real data%<why>s, #{DROPPED}",
+          "below_top_three" => "It passed every test and beat the original query, but three others of its kind " \
+                               "did better.",
+          "footprint_tie" => "It passed every test and beat the original query, but tied with a candidate " \
+                             "whose new indexes take less disk space.",
+          "not_better" => "It passed every test, but didn't read enough fewer blocks than the original query. " \
+                          "To count, a candidate must read more than 5%% fewer blocks on the slow values, " \
+                          "and no more than 5%% more on any others.",
           "measurement_timed_out" => "It passed every test, but every measurement run of it timed out."
         }.freeze
 
@@ -71,7 +72,7 @@ module Quaack
         def empirical(entry)
           said = Array(entry["empirical"]).grep(Hash).map do |a|
             "#{column(a["table"], a["column"])} equals #{column(a["references_table"], a["id_column"])} " \
-              "wherever #{column(a["references_table"], a["type_column"])} names the type in your query"
+              "wherever #{column(a["references_table"], a["type_column"])} names the type in the original query"
           end
           return if said.empty?
 
@@ -120,13 +121,14 @@ module Quaack
           "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
-        UNTESTED = "QUAACK tests a rewrite on rows it makes up, to check that it returns what your query returns. " \
-                   "Those rows never made the conditions below, from your query's WHERE and JOIN clauses, both " \
-                   "true and false, so a rewrite that changed one of them could still have passed."
+        UNTESTED = "QUAACK tests a rewrite on rows it makes up, to check that it returns what the original query " \
+                   "returns. Those rows never made the conditions below, from the original query's " \
+                   "WHERE and JOIN clauses, both true and false, " \
+                   "so a rewrite that changed one of them could still have passed."
         LATER = "The test data the LLM wrote afterwards to break the rewrite"
         CHECKED_LATER = "checked later"
 
-        # The conditions of your query that rewrite-test's made-up rows never
+        # The conditions of the original query that rewrite-test's made-up rows never
         # exercised (vacuity-guard), by their redacted shapes. Anything else
         # the payload holds there, such as an atom's index, isn't one.
         def atoms(entry) = Array(entry["untested_atoms"]).grep(String).uniq

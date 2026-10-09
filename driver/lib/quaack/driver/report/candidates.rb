@@ -8,16 +8,16 @@ module Quaack
       # report says what it is: the query it ran, and the new indexes it
       # ran with, from the label's entry in the payload's labels.
       #
-      #   describe("original:top:1")  # => "Your query with a new index on public.t (a, b)"
+      #   describe("original:top:1")  # => "The original query with a new index on public.t (a, b)"
       #   describe("rewrite_2:none")  # => "Rewrite Silver Fox with no new indexes"
       #
       # It also says, for each label selection left out of the ranking, what it
       # read against the original and why that wasn't enough.
       module Candidates
-        ORIGINAL = "your query as it is"
+        ORIGINAL = "the original query"
         LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indexes take less " \
                                     "disk space.",
-                 "below_top_three" => "beat #{ORIGINAL}, but three other candidates did better." }.freeze
+                 "below_top_three" => "beat #{ORIGINAL}, but three others of its kind did better." }.freeze
 
         # How result-comparison dropped a label's rewrite, by selection's reason.
         COMPARED = { "result_mismatch" => "was dropped when QUAACK compared",
@@ -29,7 +29,7 @@ module Quaack
 
         def describe(label)
           search, key = label.to_s.split(":", 2)
-          "#{search == "original" ? "Your query" : Words.rewrite(search, run_id)} #{with(measured(label), key)}"
+          "#{search == "original" ? "The original query" : Words.rewrite(search, run_id)} #{with(measured(label), key)}"
         end
 
         # The new indexes a label ran with. Without the label's entry, only
@@ -60,7 +60,7 @@ module Quaack
 
         # A row for each measured label that isn't ranked: selection's
         # excluded ones, then the ones whose measurement timed out. A row is
-        # what the label was, who proposed its rewrite (nil for your query,
+        # what the label was, who proposed its rewrite (nil for the original query,
         # or when the payload doesn't say), and why it wasn't ranked.
         def unranked
           excluded.map { |label, reason| unranked_row(label, lost(label, reason)) } +
@@ -83,7 +83,7 @@ module Quaack
 
           compared = COMPARED[reason] or return "wasn't ranked."
 
-          "#{compared} the rewrite's results with your query's on the real data. " \
+          "#{compared} the rewrite's results with the original query's on the real data. " \
             "See #{Words.search(label.to_s.split(":").first, run_id)} under the queries."
         end
 
@@ -149,7 +149,7 @@ module Quaack
           counts["total_blocks"].is_a?(Integer) ? Format.number(counts["total_blocks"]) : Words::MISSING
         end
 
-        # The ranking table's cells for your query as it is: its blocks on
+        # The ranking table's cells for the original query: its blocks on
         # the slow values, and summed over the sets of values the ranked
         # candidates were summed over.
         def baseline

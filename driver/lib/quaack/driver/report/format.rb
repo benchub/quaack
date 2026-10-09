@@ -64,7 +64,7 @@ module Quaack
           "#{number(whole.to_i)}.#{tenth} #{unit}"
         end
 
-        # A candidate's blocks against your query's, such as "52% fewer
+        # A candidate's blocks against the original query's, such as "52% fewer
         # blocks", or nil when either is missing.
         def against(ours, theirs)
           return unless ours && theirs

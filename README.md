@@ -122,7 +122,7 @@ flowchart TB
 
   Depending upon your environment, restoring and analyzing production data might add more hours to this time.
 - **"Faster" means fewer blocks read, not fewer milliseconds.** Blocks are stable and comparable. Timing isn't. Fewer blocks almost always means faster, and it always means less pressure on the cache.
-- **Rewrites are tested hard, not proven.** QUAACK checks each rewrite several different ways, but a test can still miss a case. Read a winning rewrite before you ship it. The report lists any condition in your query that the tests never managed to exercise.
+- **Rewrites are tested hard, not proven.** QUAACK checks each rewrite several different ways, but a test can still miss a case. Read a winning rewrite before you ship it. The report lists any condition in the original query that the tests never managed to exercise.
 - **A partial index only helps if your app sends a constant.** If a winning index has a `WHERE` clause, check that your app writes that value into the SQL. If the app sends it as a bind parameter, a generic plan can't use the partial index.
 - **QUAACK never changes production.** It reads production inside read-only transactions. Everything it builds, it builds on the run server. Applying a fix is up to you.
 
@@ -429,7 +429,7 @@ The run keeps the port, and every connection to production uses it: inventory, q
 
 The paths are on the jump server. A relative path starts from your home directory there, so `slow/events.sql` means the jump server's `~/slow/events.sql`. A quoted leading `~/`, as in `--query '~/slow/events.sql'`, is expanded by `quaacks` on the jump server; `~otheruser` is not special. If your laptop's shell expands `~` first and gives QUAACK a path under your laptop home, `quaack start` refuses before ssh and asks for a jump-server path. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it. If the jump server can't read the file, QUAACK says whether it was missing, a final symlink, not a regular file, or permission denied, without printing the path.
 
-QUAACK runs every candidate as if `now()` and `current_date` were the moment the production plan ran. By default, that's the moment you ran `quaack start`. If your query uses them and you captured the plan earlier, pass the time it ran with `--captured-at`:
+QUAACK runs every candidate as if `now()` and `current_date` were the moment the production plan ran. By default, that's the moment you ran `quaack start`. If the original query uses them and you captured the plan earlier, pass the time it ran with `--captured-at`:
 
 ```sh
 quaack start --server prod-db-1 --query slow/events.sql --plan slow/events-plan.json \
@@ -587,17 +587,17 @@ The report says things in words. It never shows QUAACK's internal labels, such a
 
 ### The verdict.
 
-> QUAACK found something better than your query as it is: your query with a new index on public.events (account_id, created_at) INCLUDE (kind). It read 4 blocks on the slow values, against 509 for your query as it is (99% fewer).
+> QUAACK found something better than the original query: the original query with a new index on public.events (account_id, created_at) INCLUDE (kind). It read 4 blocks on the slow values, against 509 for the original query (99% fewer).
 
 Or, when nothing helped:
 
-> Nothing QUAACK tried beat your query as it is. It built and measured 2 indexes and kept 1 rewrite. The sections below say what became of each.
+> Nothing QUAACK tried beat the original query. It built and measured 2 indexes and kept 1 rewrite. The sections below say what became of each.
 
-It also says here if any measurement runs timed out, and if your query itself timed out on some set of values.
+It also says here if any measurement runs timed out, and if the original query itself timed out on some set of values.
 
 ### The queries.
 
-Your query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
+The original query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
 
 ```sql
 SELECT id, kind, created_at
@@ -609,34 +609,34 @@ WHERE
 ORDER BY created_at, id
 ```
 
-Each `$1`, `$2`, and so on stands for a value from your query. Put your real values or bind parameters back in the same spots. QUAACK lays the SQL out again for reading, so spacing, brackets, and the case of keywords can differ from what you wrote.
+Each `$1`, `$2`, and so on stands for a value from the original query. Put your real values or bind parameters back in the same spots. QUAACK lays the SQL out again for reading, so spacing, brackets, and the case of keywords can differ from what you wrote.
 
 Next to each rewrite's name, on the line you click, are two lines:
 
 - **Where it came from:** `made by QUAACK's own rewrite rule key_in_self_join` for one of QUAACK's own rules (two rules applied in a row are both named, in order), `suggested by the LLM`, or `your own rewrite`. Each rule's name links to its page in [docs/transforms](docs/transforms), which says what the rule does and shows an example. Every rewrite goes through the same tests, whatever its source.
 - **What became of it,** as a sentence. For example:
-  - "It beat your query and is ranked below."
-  - "Postgres plans it exactly as it plans your query, so it can't run any differently. QUAACK didn't test it further."
-  - "It returned different results from your query on made-up test data (NULLs), so it's wrong." The brackets name the kind of test data: empty tables, rows that just match and just miss, NULLs, duplicate join keys, rows with no join partner, extreme values, or groups of one, many, and none.
-  - "It returned different results from your query on test data the LLM wrote to break it (round 2), so it's wrong."
-  - "A test on made-up data (empty tables) ended without comparing results, because the order of your query's rows can't be checked, so QUAACK dropped it. That says nothing about whether it's right."
-  - "It passed the tests on made-up data, but returned different results from your query on the real data, so it's wrong."
-  - "It passed every test, but didn't read enough fewer blocks than your query."
+  - "It beat the original query and is ranked below."
+  - "Postgres plans it exactly as it plans the original query, so it can't run any differently. QUAACK didn't test it further."
+  - "It returned different results from the original query on made-up test data (NULLs), so it's wrong." The brackets name the kind of test data: empty tables, rows that just match and just miss, NULLs, duplicate join keys, rows with no join partner, extreme values, or groups of one, many, and none.
+  - "It returned different results from the original query on test data the LLM wrote to break it (round 2), so it's wrong."
+  - "A test on made-up data (empty tables) ended without comparing results, because the order of the original query's rows can't be checked, so QUAACK dropped it. That says nothing about whether it's right."
+  - "It passed the tests on made-up data, but returned different results from the original query on the real data, so it's wrong."
+  - "It passed every test, but didn't read enough fewer blocks than the original query."
 
   Only a rewrite that returned different results is called wrong. One that was dropped because a test failed, timed out, or never ran is not.
 
-A rewrite may also list **conditions from your query that QUAACK's made-up rows never made both true and false**, such as `o.status = $1`. A rewrite that changed such a condition could still have passed those tests. The report marks each one the LLM's test data, written afterwards to break the rewrite, did check, and collapses the list when it checked them all. Read the rewrites with unchecked conditions extra carefully.
+A rewrite may also list **conditions from the original query that QUAACK's made-up rows never made both true and false**, such as `o.status = $1`. A rewrite that changed such a condition could still have passed those tests. The report marks each one the LLM's test data, written afterwards to break the rewrite, did check, and collapses the list when it checked them all. Read the rewrites with unchecked conditions extra carefully.
 
 ### Ranking.
 
 | # | Candidate | Blocks read, slow values | Blocks read, all values | Size of its new indexes |
 | --- | --- | ---: | ---: | ---: |
-| | Your query as it is (the baseline, not ranked) | 509 | 5,635 | none |
-| 1 | Your query with a new index on public.events (account_id, created_at) INCLUDE (kind) | 4 | 20 | 14.8 MB |
-| 2 | Your query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
+| | The original query (the baseline, not ranked) | 509 | 5,635 | none |
+| 1 | The original query with a new index on public.events (account_id, created_at) INCLUDE (kind) | 4 | 20 | 14.8 MB |
+| 2 | The original query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
 | 3 | Rewrite Silver Fox with no new indexes | 31 | 140 | 0 kB |
 
-The first row, with no rank, is your query as it is, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where your query timed out, "timed out". The winner is the first ranked row. Each **candidate** is your query, or a rewrite, run with a set of new indexes, and the report names it that way.
+The first row, with no rank, is the original query, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where the original query timed out, "timed out". The winner is the first ranked row. Each **candidate** is the original query, or a rewrite, run with a set of new indexes, and the report names it that way.
 
 - **Blocks read, slow values:** blocks read with the values from your slow plan. This is the number you most want down.
 - **Blocks read, all values:** blocks read, added up over the slow, worst-case, and typical values.
@@ -648,35 +648,35 @@ Only candidates that pass the **minimax rule** are ranked. A candidate must be *
 
 | What it was | Who proposed it | Why it didn't make the cut |
 | --- | --- | --- |
-| Your query with a new index on public.events (kind) | not recorded | Read 498 blocks on the slow values, against 509 for your query as it is, which isn't more than 5% fewer. |
-| Rewrite Silver Fox with a new index on public.events (account_id) | Suggested by the LLM | Beat your query as it is, but three other candidates did better. |
+| The original query with a new index on public.events (kind) | not recorded | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
+| Rewrite Silver Fox with a new index on public.events (account_id) | Suggested by the LLM | Beat the original query, but three others of its kind did better. |
 
-Who proposed it means who proposed the rewrite. QUAACK doesn't record who thought of each index, so for your query with new indexes it says not recorded.
+Who proposed it means who proposed the rewrite. QUAACK doesn't record who thought of each index, so for the original query with new indexes it says not recorded.
 
 A candidate can also be left out because it tied with one whose indexes take less space, because three others did better, because its measurement timed out, or because the rewrite was dropped on the real data.
 
-When nothing beat your query, there's no ranking table, and this table is the whole section.
+When nothing beat the original query, there's no ranking table, and this table is the whole section.
 
 Each ranked candidate then gets its own table:
 
-| Values | Blocks read | Your query as it is | Already in memory | Read from disk | Against your query | Note |
+| Values | Blocks read | The original query | Already in memory | Read from disk | Against the original query | Note |
 | --- | ---: | ---: | ---: | ---: | --- | --- |
 | slow | 4 | 509 | 4 | 0 | 99% fewer blocks | |
 | worst case | 12 | 5,120 | 9 | 3 | over 99% fewer blocks | |
 | typical | 4 | 6 | 4 | 0 | 33% fewer blocks | |
 
 - **Values:** `slow` is the values from your plan. `worst case` uses the most common values from the statistics, which match the most rows. `typical` uses middle-of-the-road values.
-- **Blocks read** is the total, next to what **your query as it is** read on the same values. **Already in memory** and **Read from disk** split the candidate's total. Blocks matter most. The split shows whether a win saves disk reads or just saves work in memory.
-- **Against your query** compares the two block counts in the row: how many percent fewer or more blocks the candidate read, such as "52% fewer blocks", "same" when they're equal, "under 1% more blocks" or "over 99% fewer blocks" when rounding would hide a difference. When your query read no blocks, there's no percentage, so it says how many more the candidate read. Where either number is missing or timed out, it says better, no worse, or worse instead, or "not recorded" when there's no verdict either.
+- **Blocks read** is the total, next to what **the original query** read on the same values. **Already in memory** and **Read from disk** split the candidate's total. Blocks matter most. The split shows whether a win saves disk reads or just saves work in memory.
+- **Against the original query** compares the two block counts in the row: how many percent fewer or more blocks the candidate read, such as "52% fewer blocks", "same" when they're equal, "under 1% more blocks" or "over 99% fewer blocks" when rounding would hide a difference. When the original query read no blocks, there's no percentage, so it says how many more the candidate read. Where either number is missing or timed out, it says better, no worse, or worse instead, or "not recorded" when there's no verdict either.
 - **Note** says `unstable` if the block count moved between the three runs. That usually means the plan changed between runs, so be wary of that row.
 
 ### Why the winner reads fewer blocks.
 
-> Rewrite Silver Fox with no new indexes read 31 blocks on the slow values, against 509 for your query as it is (94% fewer).
+> Rewrite Silver Fox with no new indexes read 31 blocks on the slow values, against 509 for the original query (94% fewer).
 >
 > A step marked “differs”, and shaded, is one the other plan doesn't have in the same place.
 >
-> How Postgres runs your query now:
+> How Postgres runs the original query now:
 
 | Step | Table | Index | Estimated rows | Actual rows | Share of the table |
 |---|---|---|--:|--:|--:|
@@ -689,9 +689,9 @@ Each ranked candidate then gets its own table:
 |---|---|---|--:|--:|--:|
 | Index Only Scan **DIFFERS** | public.events | events_account_created_idx | 10 | 10 | under 0.1% |
 
-This part is generated from the measurements and plans, not written by the LLM. Each plan is a table of its steps, in the style of explain.depesz.com, with each step indented under the one it feeds. The steps one plan has and the other doesn't are shaded and marked "differs". The payload doesn't say how many blocks each step read, so the table doesn't either. A report from an older run, whose plans don't say how deep each step is, shows the steps unindented. The second plan is shown only for a rewrite. When the winner is your own query with new indexes, the report says its plan is not recorded. It's left out when nothing beat your query.
+This part is generated from the measurements and plans, not written by the LLM. Each plan is a table of its steps, in the style of explain.depesz.com, with each step indented under the one it feeds. The steps one plan has and the other doesn't are shaded and marked "differs". The payload doesn't say how many blocks each step read, so the table doesn't either. A report from an older run, whose plans don't say how deep each step is, shows the steps unindented. The second plan is shown only for a rewrite. When the winner is your own query with new indexes, the report says its plan is not recorded. It's left out when nothing beat the original query.
 
-### Why nothing beat your query.
+### Why nothing beat the original query.
 
 This section appears only when no candidate won. It has:
 
@@ -707,7 +707,7 @@ This section appears only when no candidate won. It has:
 | --- | ---: | --- | --- |
 | `CREATE INDEX ON public.events USING btree (account_id, created_at) INCLUDE (kind)` | 14.8 MB | none | events_account_id_idx (9.1 MB) |
 
-Only the ranked candidates' indexes are proposed. A second table, **Other indexes QUAACK built and measured,** lists the ones it built that no ranked candidate uses. When nothing beat your query, nothing is proposed, and the section is one table called **Indexes QUAACK built and measured.**
+Only the ranked candidates' indexes are proposed. A second table, **Other indexes QUAACK built and measured,** lists the ones it built that no ranked candidate uses. When nothing beat the original query, nothing is proposed, and the section is one table called **Indexes QUAACK built and measured.**
 
 Sizes use the unit that fits: kB, MB, or GB. The **built size** is real: QUAACK built the index on the racetrack. The last two columns name your existing indexes, each with its size: one that already covers the new index, and the ones the new index would make redundant, which you could drop after checking that nothing else needs them.
 
@@ -725,15 +725,15 @@ Two tables say where each idea came from and what became of it. Each has a row p
 | The LLM | 3 | 0 | 1 | 1 | 0 | 0 | 1 |
 | You | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 
-A rewrite **not kept** is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, for one of QUAACK's own, repeated another. **Stopped for another reason** counts the rewrites whose tests failed or timed out without comparing anything, the ones that beat your query and still weren't ranked, and the ones the run never finished. None of those was shown to be wrong.
+A rewrite **not kept** is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, for one of QUAACK's own, repeated another. **Stopped for another reason** counts the rewrites whose tests failed or timed out without comparing anything, the ones that beat the original query and still weren't ranked, and the ones the run never finished. None of those was shown to be wrong.
 
-**Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try also counts the ideas HypoPG couldn't create, so the planner was never asked about them. An index counts as **not better** only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
+**Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try also counts the ideas HypoPG couldn't create, so the planner was never asked about them. An index counts as **not better** only if no candidate that ran with it beat the original query. A built index whose candidate beat the original query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
 
-Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for your query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once. QUAACK counts how many indexes each source proposed, and, for the LLM's, how many already existed and how many the planner ignored or QUAACK couldn't try; for the two generators those two cells say not recorded. For each index it built, QUAACK knows every source that proposed it, so an index that more than one source proposed, such as an LLM idea that repeats a generator's, counts in each of their rows. The rows by source can then add up to more than all sources together, which counts each index once, and a note under the table says so.
+Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for the original query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once. QUAACK counts how many indexes each source proposed, and, for the LLM's, how many already existed and how many the planner ignored or QUAACK couldn't try; for the two generators those two cells say not recorded. For each index it built, QUAACK knows every source that proposed it, so an index that more than one source proposed, such as an LLM idea that repeats a generator's, counts in each of their rows. The rows by source can then add up to more than all sources together, which counts each index once, and a note under the table says so.
 
 ### Burndown.
 
-The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas for your query and one for rewrites. Above each table is a funnel: a band per stage, narrowing as ideas drop out, labeled with the stage, how many came in and went on, and why the rest dropped. Hover over a band for its whole row. A stage that adds ideas, such as the LLM's rewrites, widens instead. A stage the run didn't count is a grey, striped band that says not recorded, never zero. The table under it has the exact numbers. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas came in, how many were added and from where, how many were dropped and why, how many were set aside, and how many went on. A stage the run didn't count says not recorded.
+The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas for the original query and one for rewrites. Above each table is a funnel: a band per stage, narrowing as ideas drop out, labeled with the stage, how many came in and went on, and why the rest dropped. Hover over a band for its whole row. A stage that adds ideas, such as the LLM's rewrites, widens instead. A stage the run didn't count is a grey, striped band that says not recorded, never zero. The table under it has the exact numbers. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas came in, how many were added and from where, how many were dropped and why, how many were set aside, and how many went on. A stage the run didn't count says not recorded.
 
 In the index table, the LLM's rows count every index it wrote, including the ones QUAACK's checks refused, and the second round's row says why it was skipped when it was. "Trying indexes together" counts the combinations of indexes tried, and drops the ones that left an index unused or weren't the best.
 
@@ -745,7 +745,7 @@ Read it when the result surprises you. If the LLM proposed five rewrites and all
 
 ### QUAACK bug: a rule made a wrong rewrite.
 
-You should never see this section. It appears at the very top of the report, above the verdict, when a test proved one of the rules' own rewrites wrong, such as "Rewrite Dreamy Wren, made by QUAACK's own rewrite rule key_in_self_join, returned different results on made-up test data." QUAACK's rules are meant to be sound, so that's a bug in the rule, not a finding about your query. The tests did their job: the rewrite was dropped, and the rest of the report still holds. Please report it, with the names of the rules.
+You should never see this section. It appears at the very top of the report, above the verdict, when a test proved one of the rules' own rewrites wrong, such as "Rewrite Dreamy Wren, made by QUAACK's own rewrite rule key_in_self_join, returned different results on made-up test data." QUAACK's rules are meant to be sound, so that's a bug in the rule, not a finding about the original query. The tests did their job: the rewrite was dropped, and the rest of the report still holds. Please report it, with the names of the rules.
 
 Only a test that found different results counts. A rule's rewrite that timed out in the final check on production data isn't listed here: a timeout means the rewrite was too slow there, not that it's wrong. A rewrite that was only dropped for planning the same way as the original isn't listed here either. That happens when Postgres already makes the rule's change by itself, and it says nothing about whether the rule is right.
 
