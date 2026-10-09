@@ -55,9 +55,10 @@ module Quaack
       # its plain columns compared with =, since rows that differ in one of
       # them never conflict, which is conservative. unequal_exclusion is
       # whether an exclusion constraint has no such column, so rewrite-test
-      # can't keep its rows apart.
+      # can't keep its rows apart (see Exclusions). generation_inputs names
+      # the columns generated columns' expressions read, from pg_depend.
       Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
-                                :user_function, :foreign_operator, :unequal_exclusion) do
+                                :user_function, :foreign_operator, :unequal_exclusion, :generation_inputs) do
         # The names of the columns of free (Columns a row may set freely)
         # that need a distinct value per row. A unique key, or an
         # expression unique index's key columns, needs only one of its
@@ -126,10 +127,10 @@ module Quaack
       end
 
       def self.read_constraints(conn, table)
-        of = conn.exec_params(CONSTRAINTS_SQL, [regclass(conn, table)]).values.group_by(&:first)
-        rel = regclass(conn, table)
+        of = conn.exec_params(CONSTRAINTS_SQL, [rel = regclass(conn, table)]).values.group_by(&:first)
         Constraints.new(**Exclusions.add(conn, rel, UniqueIndexes.read(conn, rel, keys(of))),
-                        foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) }, **checks(conn, table, of))
+                        foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) }, **checks(conn, table, of),
+                        generation_inputs: GenerationInputs.read(conn, rel))
       end
 
       def self.keys(of) = (of.fetch("p", []) + of.fetch("u", [])).map { |r| JSON.parse(r[1]) }
@@ -179,4 +180,5 @@ end
 
 require_relative "arena_schema/domain_checks"
 require_relative "arena_schema/exclusions"
+require_relative "arena_schema/generation_inputs"
 require_relative "arena_schema/unique_indexes"

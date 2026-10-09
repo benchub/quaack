@@ -69,8 +69,9 @@ module Quaack
     # rows whose expression values still collide (lower('A') = lower('a')).
     # An expression unique index that calls a function outside pg_catalog,
     # or reads a generated column, raises Error(:expression_unique_index). An exclusion constraint
-    # counts as a unique key over its = columns; one with none raises
-    # Error(:exclusion_constraint). Another column with a DEFAULT (or
+    # counts as a unique key over its = columns, or over its && range
+    # columns when it has none (see ArenaSchema::Exclusions); any other
+    # raises Error(:exclusion_constraint). Another column with a DEFAULT (or
     # an identity) is left out, so the default
     # applies. The rest take the type's typical value (0, '', the epoch),
     # or a value that satisfies the column's CHECKs. S1 has no NULLs but
