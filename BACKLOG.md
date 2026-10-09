@@ -2390,14 +2390,7 @@ Reported by the user, 2026-10-09. A rewrite's section can say "It passed every t
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-14. Report: plainer wording for a rewrite that wasn't better.
-
-Reported by the user, 2026-10-09. The `not_better` fate (`report/rewrites.rb`) reads: "It passed every test, but didn't read enough fewer blocks than your query. To count, a candidate must read more than 5% fewer blocks on the slow values, and no more than 5% more on any others." That's awkward. The user's wording: "It passed every test, but was less than a 5% performance improvement, so QUAACK did not bother to rank it on real data." One correction: a `not_better` rewrite was measured on the real data, and it fell short there. So say something like "It passed every test, but on the real data it was less than a 5% improvement, so QUAACK didn't rank it." When the minimax verdict shows it failed by reading more than 5% more blocks on another value, say that instead, for example "… but on the real data it read over 5% more blocks on some values, so QUAACK didn't rank it". Use that only if the payload can tell the two cases apart. Otherwise keep one sentence that covers both, and file a task for the split. Keep the 5% figures tied to the minimax constants, not hard-coded twice.
-
-- **Depends on:** 20261009-10, which changes the same strings.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, minimax.
-- **Status:** todo
+### 20261009-14. Report: plainer wording for a rewrite that wasn't better. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-15. e2e case 034: assert the baseline cap refusal instead.
 
