@@ -1460,6 +1460,8 @@ Write the report for a reader who hasn't read this document:
 
 The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network. Its only links, to the rules' pages, load nothing until the reader follows one. Its only drawings are the burndown's funnels, inline SVG the driver writes, with no external assets.
 
+The report has a light theme and a dark one. Every color is a CSS custom property defined on `:root`, and a `@media (prefers-color-scheme: dark)` block redefines every one of them, so the page follows the reader's system setting. No color literal appears outside those two places. The funnel's text, its per-stage palette, its grey for stages the run didn't record, and its stripes use the same variables, set through `style` so the inline SVG follows the theme. Text keeps at least 4.5:1 contrast against its background in both themes, and bar fills keep at least 3:1 against the page. A spec checks that each variable has a dark value, that no literal color sits elsewhere, and that the report still loads nothing external.
+
 ### negative-result. Negative result.
 
 If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed rewrite-test and counterexamples but minimax or result-comparison knocked out. The rewrites' fates say the first and the last.
