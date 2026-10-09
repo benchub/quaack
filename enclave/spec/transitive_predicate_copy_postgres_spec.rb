@@ -363,6 +363,35 @@ RSpec.describe Quaack::Enclave::RewriteRules::TransitivePredicateCopy do
     end
   end
 
+  it "refuses an enum against text, and two different enum types", :aggregate_failures do
+    conn.exec(<<~SQL)
+      CREATE TYPE public.mood AS ENUM ('sad', 'ok', 'happy');
+      CREATE TYPE public.feeling AS ENUM ('sad', 'ok', 'happy');
+      CREATE TABLE public.l_moods (id int, m public.mood);
+      CREATE TABLE public.r_text (id int, m text);
+      CREATE TABLE public.r_feelings (id int, m public.feeling);
+    SQL
+    %w[r_text r_feelings].each do |table|
+      sql = "SELECT l_moods.id FROM public.l_moods, public.#{table} WHERE l_moods.m = #{table}.m AND l_moods.m >= 'ok'"
+
+      expect(rewritten(sql)).to eq([]), table
+    end
+  end
+
+  it "copies across bpchar(n) and bpchar(m), whose trailing spaces don't count in comparisons" do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.l_chars (id int, c char(3));
+      CREATE TABLE public.r_chars (id int, c char(5));
+      INSERT INTO public.l_chars VALUES (1, 'a'), (2, 'b  '), (3, 'c');
+      INSERT INTO public.r_chars VALUES (1, 'a'), (2, 'b'), (3, 'c   ');
+    SQL
+    expect_rewrite(
+      "SELECT l_chars.id FROM public.l_chars, public.r_chars WHERE l_chars.c = r_chars.c AND l_chars.c IN ('b ', 'c')",
+      "SELECT l_chars.id FROM public.l_chars, public.r_chars WHERE l_chars.c = r_chars.c " \
+      "AND l_chars.c IN ($1, $2) AND r_chars.c IN ($1, $2)"
+    )
+  end
+
   it "copies between tables that aren't on an outer join's nullable side when the query has one" do
     expect_rewrite(
       "SELECT enrollments.id, courses.id FROM public.enrollments JOIN public.assessor_asset " \
