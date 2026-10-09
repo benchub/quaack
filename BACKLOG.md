@@ -2392,3 +2392,12 @@ Left over from 20261009-4. The user asked for more detail on hover. The hover al
 - **Came from:** The build and review of 20261009-4, 2026-10-09.
 - **Design:** report, burndown.
 - **Status:** todo
+
+### 20261009-10. Report: say "the original query", not "your query".
+
+Reported by the user, 2026-10-09. The report and its notes often say "your query", for example "planned the same as your query" and "against 3,454 for your query as it is". That's ambiguous. It could mean the original query, a rewrite the operator supplied (operator-rewrites), or the question the operator is really asking the database. Everywhere it means the original query, say "the original query", or "the original query's". Change "your query as it is" too. Any phrase that means something else should name that thing plainly, such as "your own rewrite". As of 2026-10-09 it appears about 25 times across five files under driver/lib, enclave/lib, and protocol/lib. Grep for "your query" in DESIGN.md and the specs too. Report text built from enclave words, such as reasons, may live in the enclave or protocol. That makes it an enclave change, so add it to the unreleased list.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
