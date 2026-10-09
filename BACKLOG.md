@@ -6,13 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20260927-29 (QUAACKS_DEV_CHECKOUT honored only from a git checkout).
-- 20260927-19 (index search: one low-cardinality source; at most two set-asides per search).
-- 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
-- 20261003-5 (index sources: per-generator existed and ignored; declined and existing lists sent in winning reports too).
-- 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
-- 20261008-70 (CastlessIndex merges array-literal = ANY with IN).
-- 20261008-77 (set-aside cap spread across tables, one per table first).
 
 
 
