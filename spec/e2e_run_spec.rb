@@ -18,7 +18,8 @@ RSpec.describe "e2e/run.rb" do
     result = with_kept_home { E2ERun.run_case(TestPostgres.server, kase) }
     homes = Dir.glob(File.join(Dir.tmpdir, "quaack-e2e-036-*")) - before
     records = homes.flat_map { Dir.glob(File.join(it, ".quaack", "runs", "*.llm.json")) }
-    expect([result.verdict, result.detail]).to eq(["INFO", "no fix selected (declined: unused 4; existing: covered 5; rewrites: not_better 1); needs the LLM"])
+    why = "declined: unused 4; existing: covered 5; rewrites: not_better 1"
+    expect([result.verdict, result.detail]).to eq(["INFO", "no fix selected (#{why}); needs the LLM"])
     expect(records.size).to eq(1)
   ensure
     homes&.each { FileUtils.rm_rf(it) }
