@@ -285,11 +285,11 @@
 <% [["index", "Index ideas for the original query", index_rows], ["rewrite", "Rewrites", rewrite_rows],
    ["rewrite-index", "Index ideas for the rewrites", rewrite_index_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
-<%= funnel(id, title, rows) %>
+<%= funnel(id, title, rows, of_rewrite: id == "rewrite-index") %>
 <table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col" class="num">Came in</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
 <tbody>
 <% rows.each do |name, record, stage| %>
-<tr><th scope="row"><%= h name %></th><%= stage_cells(record, stage) %></tr>
+<tr<%= stage_tip(stage, of_rewrite: id == "rewrite-index") %>><th scope="row"><%= h name %></th><%= stage_cells(record, stage) %></tr>
 <% end %>
 </tbody></table>
 <% end %>
