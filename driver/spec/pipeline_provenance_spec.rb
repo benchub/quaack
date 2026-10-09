@@ -136,8 +136,15 @@ RSpec.describe "The pipeline's provenance record" do
   it "records, as it goes, which provider and model produced each idea, rewrite, and counterexample round" do
     script
     run
+    record = JSON.parse(File.read(path))
+    usage = record.delete("llm_usage")
 
-    expect(JSON.parse(File.read(path))).to eq(
+    # The first entry's cut-short reply spent tokens but wasn't used.
+    expect(usage.transform_values { it.except("seconds") })
+      .to eq(names[0] => { "used" => 2, "reported" => 3, "input" => 3, "output" => 3 },
+             names[1] => { "used" => 3, "reported" => 3, "input" => 3, "output" => 3 })
+    expect(usage.values.map { it["seconds"] }).to all(be_positive)
+    expect(record).to eq(
       "providers" => [{ "name" => names[0], "provider" => "anthropic", "model" => models[0],
                         "down" => "llm_rate_limited" },
                       { "name" => names[1], "provider" => "anthropic", "model" => models[1] }],

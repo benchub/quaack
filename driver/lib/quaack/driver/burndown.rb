@@ -19,15 +19,28 @@ module Quaack
     #
     #   burndown.llm_call("llm-rewrites", "groq")
     #   burndown.llm_calls_by_provider   # => { "groq" => { "llm-rewrites" => 1 } }
+    #
+    # Each provider's wait for replies and tokens, as llm_usage gives them,
+    # are counted too, for the report's table of them:
+    #
+    #   burndown.llm_wait("groq", 1.5, { "input" => 10, "output" => 4 }, used: true)  # a reply it used
+    #   burndown.llm_wait("groq", 0.2, nil, used: false)       # no reply came, or no usage was reported
+    #   burndown.llm_usage   # => { "groq" => { "seconds" => 1.7, "used" => 1, "reported" => 1,
+    #                        #                  "input" => 10, "output" => 4 } }
     class Burndown
+      # The token kinds an adapter reports (LLM::Client), each kept only
+      # once some reply reports it.
+      TOKENS = %w[input output cached reasoning].freeze
+
       # One Burndown that holds every count of burndowns, added up.
       def self.sum(burndowns) = new.tap { |sum| burndowns.each { sum.add_all(it) } }
 
       # A Burndown holding steps, counts by step, and providers, each
       # provider's counts by step, as llm_calls and llm_calls_by_provider
       # give them (Provenance's record of earlier processes).
-      def self.restore(steps, providers)
+      def self.restore(steps, providers, usage = {})
         new.tap do |burndown|
+          burndown.add_usage(usage)
           steps.each { |step, count| burndown.send(:add, step, nil, count) }
           providers.each { |name, calls| calls.each { |step, count| burndown.send(:add, step, name, count, 0) } }
         end
@@ -36,6 +49,29 @@ module Quaack
       def initialize
         @llm_calls = {}
         @by_provider = {}
+        @usage = {}
+      end
+
+      # Counts seconds spent waiting on provider for one ask of its
+      # adapter, retries included: tokens are the reply's by TOKENS kind,
+      # or nil if no reply came or the provider reported none, and used is
+      # whether the client could use the reply.
+      def llm_wait(provider, seconds, tokens, used:)
+        add_usage(provider => { "seconds" => seconds, "used" => used ? 1 : 0, "reported" => tokens ? 1 : 0,
+                                **tokens.to_h.slice(*TOKENS) })
+        nil
+      end
+
+      # Each provider's wait and tokens so far, as llm_wait adds them up.
+      def llm_usage = @usage.transform_values { it.dup.freeze }.freeze
+
+      # Adds usage, as llm_usage gives it, to this one's.
+      def add_usage(usage)
+        usage.each do |provider, counts|
+          sums = @usage[provider] ||= { "seconds" => 0, "used" => 0, "reported" => 0 }
+          counts.each { |kind, n| sums[kind] = sums.fetch(kind, 0) + n }
+        end
+        self
       end
 
       # Counts one LLM call made for step, by provider, if given.
@@ -60,7 +96,7 @@ module Quaack
       def add_all(other)
         other.llm_calls.each { |step, count| add(step, nil, count) }
         other.llm_calls_by_provider.each { |name, calls| calls.each { |step, count| add(step, name, count, 0) } }
-        self
+        add_usage(other.llm_usage)
       end
 
       private

@@ -51,7 +51,7 @@ module Quaack
     # or a reply. Each writer takes only those, and a record read back keeps
     # only the parts that have exactly those shapes, so the report reads
     # nothing else from it. Nothing in it goes to the enclave or an LLM.
-    class Provenance
+    class Provenance # rubocop:disable Metrics/ClassLength
       NAME = /\A[a-z0-9_-]{1,32}\z/
       PROVIDER = /\A[a-z_]{1,32}\z/
       MODEL = /\A[^\n\r]{1,256}\z/
@@ -95,11 +95,13 @@ module Quaack
 
       # What the report reads of the driver's own (Report::Providers):
       # provenance's record, and each of the router's (client's) providers'
-      # calls in the run, by step, from every process of the run.
+      # calls in the run, by step, and wait and tokens, for those that have
+      # any, from every process of the run.
       def self.for_report(provenance, client)
-        by = burndown(provenance, client).llm_calls_by_provider
-        calls = client ? client.entries.to_h { [it["name"], by.fetch(it["name"], {})] } : {}
-        { "record" => provenance&.record || {}, "calls" => calls }
+        sum = burndown(provenance, client)
+        names = client ? client.entries.map { it["name"] } : []
+        { "record" => provenance&.record || {}, "calls" => names.to_h { [it, sum.llm_calls_by_provider.fetch(it, {})] },
+          "usage" => sum.llm_usage.slice(*names).transform_values(&:to_h) }
       end
 
       def self.path(home, run_id)

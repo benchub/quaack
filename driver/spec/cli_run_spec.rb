@@ -152,7 +152,7 @@ RSpec.describe "quaack run" do
          "quaack: [2/18] Already done, skipping: " \
          "Getting index ideas from the LLM that the mechanical search missed (llm-index-ideas)\n",
          "quaack: [3/18] Getting the LLM to improve its index ideas (llm-index-refine)\n",
-         "quaack: [3/18] Reading how the LLM's index ideas did (llm-index-refine)\n",
+         "quaack: [3/18] Reading how the index ideas did (llm-index-refine)\n",
          "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",
          "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
@@ -177,6 +177,33 @@ RSpec.describe "quaack run" do
       expect(lines).to include("quaack: [2/18] Asking anthropic claude-opus-5-5 for index ideas (llm-index-ideas)\n",
                                "quaack: [2/18] Testing anthropic claude-opus-5-5's index ideas (llm-index-ideas)\n")
       expect(lines.grep(/Waiting for the LLM|Testing the LLM/)).to eq([])
+    end
+
+    it "puts each entry's calls, wait, and tokens in the report" do
+      entries.merge!("index_generated_original" => false)
+      fake.error("llm-index-ideas", status: 529).reply("llm-index-ideas", { "indexes" => [] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      table = File.read(out)[%r{<table id="llm-usage">.*?</table>}m]
+      row = ->(name) { table[%r{<tr><th scope="row">#{name}</th>(.*?)</tr>}, 1].scan(%r{<td[^>]*>(.*?)</td>}).flatten }
+      expect([row.call("anthropic").values_at(0, 1, 3, 4, 5), row.call("Total").first])
+        .to eq([%w[2 1 1 1 2], "2"])
+    end
+
+    it "names the LLM's provider and model in llm-index-refine's notes" do
+      replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => false,
+                                     "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
+      replies["index-test"] = []
+      fake.reply("llm-index-refine", { "indexes" => ["CREATE INDEX ON public.t (b)"] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      lines = progress.grep(/\(llm-index-refine\)/)
+      expect(lines).to include("quaack: [3/18] Reading how the index ideas did (llm-index-refine)\n",
+                               "quaack: [3/18] Testing anthropic claude-opus-5-5's revised index ideas " \
+                               "(llm-index-refine)\n")
+      expect(lines.grep(/the LLM's/)).to eq([])
     end
 
     it "counts operator-rewrites, and prints each LLM ask and retry, when there's a rewrites file" do
@@ -384,6 +411,8 @@ RSpec.describe "quaack run" do
 
     expect(cli.run(["run", "--run", run_id, "--out", out, "--rewrites", rewrites_file])).to eq(0)
     record = JSON.parse(File.read(File.join(home, ".quaack", "runs", "#{run_id}.llm.json")))
+    expect(record.delete("llm_usage").transform_values { it.except("seconds") })
+      .to eq("anthropic" => { "used" => 1, "reported" => 1, "input" => 1, "output" => 1 })
     expect(record).to eq("providers" => [{ "name" => "anthropic", "provider" => "anthropic",
                                            "model" => Quaack::Driver::LLM::DEFAULT_MODEL }],
                          "operator_inference" => "anthropic",

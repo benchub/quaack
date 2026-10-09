@@ -44,6 +44,17 @@ RSpec.describe Quaack::Driver::LLM::Client do
     client.ask(step: step, messages: messages, max_tokens: 1000, **)
   end
 
+  it "counts cache reads among the input tokens, and as cached" do
+    fake.raw("llm-rewrites", { id: "m", type: "message", role: "assistant", model: "fake", stop_reason: "end_turn",
+                               stop_sequence: nil, content: [{ type: "text", text: "ok" }],
+                               usage: { input_tokens: 10, output_tokens: 7, cache_read_input_tokens: 30,
+                                        cache_creation_input_tokens: 5 } })
+    ask("llm-rewrites", provider: "p")
+
+    expect(burndown.llm_usage.fetch("p").except("seconds"))
+      .to eq("used" => 1, "reported" => 1, "input" => 45, "output" => 7, "cached" => 30)
+  end
+
   # The LLM::Error an ask raises. Fails the spec if it raises nothing.
   def ask_error(step = "llm-index-ideas", **)
     ask(step, **)

@@ -338,7 +338,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 "Testing the LLM's index ideas (llm-index-ideas)"])
       expect(lines_of("llm-index-refine"))
         .to eq(["Getting the LLM to improve its index ideas (llm-index-refine)",
-                "Reading how the LLM's index ideas did (llm-index-refine)",
+                "Reading how the index ideas did (llm-index-refine)",
                 "Asking the LLM (llm-index-refine)",
                 "Testing the LLM's revised index ideas (llm-index-refine)"])
     end
@@ -352,7 +352,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
       expect(lines_of("llm-index-refine"))
         .to eq(["Getting the LLM to improve its index ideas (llm-index-refine)",
-                "Reading how the LLM's index ideas did (llm-index-refine)",
+                "Reading how the index ideas did (llm-index-refine)",
                 "Reading the query's shape for the LLM (llm-index-refine)",
                 "Asking the LLM (llm-index-refine)",
                 "Testing the LLM's revised index ideas (llm-index-refine)"])
@@ -401,7 +401,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 "Asking the LLM for index ideas (rewrite-llm-index-ideas)",
                 "#{name}: Testing the LLM's index ideas (rewrite-llm-index-ideas)",
                 "#{name}: Getting the LLM to improve its index ideas (rewrite-llm-index-refine)",
-                "#{name}: Reading how the LLM's index ideas did (rewrite-llm-index-refine)",
+                "#{name}: Reading how the index ideas did (rewrite-llm-index-refine)",
                 "#{name}: Already done, skipping: Ranking the index ideas (rewrite-index-rerank)"])
     end
   end

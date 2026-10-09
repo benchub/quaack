@@ -68,7 +68,8 @@ module Quaack
 
         session = @client.session
         ddls = ask(session, payload, feedback)
-        Result.new(ddls:, outcomes: @index_test.call(ddls, round: "refinement"), provider: session.provider)
+        Result.new(ddls:, outcomes: @index_test.call(ddls, round: "refinement", by: [session.provider]),
+                   provider: session.provider)
       end
 
       private

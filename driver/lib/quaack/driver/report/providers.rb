@@ -118,6 +118,9 @@ module Quaack
         def call_columns = provider_calls.keys
         def call_total? = call_columns.size != 1
 
+        # name's calls in this run of quaack, or nil if it had none.
+        def calls_of(name) = provider_calls[name]&.values&.sum
+
         # A row per step that called an LLM: its words, each provider's
         # calls, and all of them together.
         def call_rows
@@ -135,9 +138,6 @@ module Quaack
           steps = @llm_calls.keys | provider_calls.values.flat_map(&:keys)
           steps.sort_by { Words::LLM_STEPS.keys.index(it) || Words::LLM_STEPS.size }
         end
-
-        # name's calls in this run of quaack, or nil if it had none.
-        def calls_of(name) = provider_calls[name]&.values&.sum
 
         # names, of those recorded, in the record's order.
         def recorded_names(names) = llm_providers.map { it["name"] } & names

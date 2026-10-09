@@ -117,10 +117,10 @@ module Quaack
         def refine(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           feedback = nil
           step = search == SEARCH ? RefinementRound::STEP : RefinementRound::REWRITE_STEP
-          fetch = StepSummary.noting(progress, step, "Reading how the LLM's index ideas did",
+          fetch = StepSummary.noting(progress, step, "Reading how the index ideas did",
                                      RefinementRound.index_feedback(transport, run_id:, search:))
-          index_test = StepSummary.noting(progress, step, "Testing the LLM's revised index ideas",
-                                          RefinementRound.index_test(transport, run_id:, search:))
+          index_test = StepSummary.whose(progress, step, "Testing %s revised index ideas",
+                                         RefinementRound.index_test(transport, run_id:, search:), client)
           result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:, step:)
                                   .run(-> { payload.call(step) })
           record.call { it.refinement!(search, result) } if result

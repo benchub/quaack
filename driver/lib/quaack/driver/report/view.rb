@@ -13,6 +13,7 @@ require_relative "plans"
 require_relative "stages"
 require_relative "funnel"
 require_relative "providers"
+require_relative "usage"
 require_relative "failed_branches"
 require_relative "cautions"
 
@@ -33,6 +34,7 @@ module Quaack
         include Stages
         include Funnel
         include Providers
+        include Usage
         include FailedBranches
         include Cautions
 
@@ -132,6 +134,12 @@ module Quaack
         def sql(text) = %(<pre class="sql"><code>#{h Format.sql(text)}</code></pre>)
 
         def sql_code(text) = h(Format.sql_span(text))
+
+        # A wait in seconds: "12.3 s", or "1 min 1.5 s" from a minute on.
+        def wait(seconds)
+          minutes, rest = seconds.divmod(60)
+          minutes.zero? ? Format.decimal(rest, "s") : "#{Format.number(minutes.to_i)} min #{Format.decimal(rest, "s")}"
+        end
 
         def num(value) = %(<td class="num">#{h(value.is_a?(Integer) ? Format.number(value) : value)}</td>)
 

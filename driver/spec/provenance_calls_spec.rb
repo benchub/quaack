@@ -64,4 +64,41 @@ RSpec.describe Quaack::Driver::Provenance, "LLM calls across processes" do
     expect(described_class.llm_calls(provenance, client([]))).to eq("llm-rewrites" => 2)
     expect(described_class.for_report(provenance, client([]))["calls"]).to eq("groq" => {})
   end
+
+  it "adds an earlier process's wait and tokens to this one's, in what the report reads" do
+    provenance, client = process([])
+    client.burndown.llm_wait("groq", 1.5, { "input" => 10, "output" => 2 }, used: true)
+    provenance.router!(client).save
+    provenance, client = process([])
+    client.burndown.llm_wait("groq", 0.5, nil, used: false)
+
+    expect(described_class.for_report(provenance, client)["usage"])
+      .to eq("groq" => { "seconds" => 2.0, "used" => 1, "reported" => 1, "input" => 10, "output" => 2 })
+  end
+
+  it "drops a stored provider's usage that says it reported tokens but holds no input or output" do
+    path = described_class.path(@home, run_id)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, JSON.generate("llm_usage" => {
+                                     "groq" => { "seconds" => 1.0, "used" => 1, "reported" => 1 },
+                                     "opus" => { "seconds" => 2.0, "used" => 1, "reported" => 1, "input" => 3 }
+                                   }))
+    provenance = described_class.open(@home, run_id)
+
+    expect(provenance.record).not_to have_key("llm_usage")
+  end
+
+  it "drops stored usage that isn't a provider's counts" do
+    path = described_class.path(@home, run_id)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, JSON.generate("llm_usage" => {
+                                     "groq" => { "seconds" => 1.5, "used" => 1, "reported" => 1, "input" => 4,
+                                                 "SENTINEL" => 9, "output" => 2, "cached" => -1 },
+                                     "bad name!" => { "seconds" => 1 }, "x" => "SENTINEL"
+                                   }))
+    provenance = described_class.open(@home, run_id)
+
+    expect(described_class.for_report(provenance, client([]))["usage"])
+      .to eq("groq" => { "seconds" => 1.5, "used" => 1, "reported" => 1, "input" => 4, "output" => 2 })
+  end
 end
