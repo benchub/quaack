@@ -8340,3 +8340,14 @@ The build and review of 20261001-17 found these:
 - **Design:** report, negative-result.
 - **Status:** done
 - **Landed:** 5ef097be, items 1 to 7 (enclave; on the unreleased list). Items 8 (e2e/run.rb why_none) and 9 (replay spec time) not built; moved to 20261008-70. Review clean.
+
+### 20260926-53. Candidate clock anchoring loose ends.
+
+- `RewriteEntry.run_sql` falls back to `"sql"` for entries without `anchored_sql`. Only hand-written spec fixtures and stores from before the change hit it. Consider requiring `anchored_sql` and updating the fixtures (about 30 writes).
+
+- **Depends on:** 20260926-52.
+- **Came from:** 20260926-52 build and review.
+- **Design:** clock-anchor.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** 74fb84e8 (enclave; on the unreleased list). Review clean. Minors noted, not filed: one counterexample override (rewrite_2) is redundant; no egress spec for the KeyError case, but ErrorFilter never reads error content.

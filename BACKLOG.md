@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
 - 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
 
 
@@ -778,15 +779,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-52. Anchor the clock in rewrite candidates too. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260926-53. Candidate clock anchoring loose ends.
-
-- `RewriteEntry.run_sql` falls back to `"sql"` for entries without `anchored_sql`. Only hand-written spec fixtures and stores from before the change hit it. Consider requiring `anchored_sql` and updating the fixtures (about 30 writes).
-
-- **Depends on:** 20260926-52.
-- **Came from:** 20260926-52 build and review.
-- **Design:** clock-anchor.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260926-53. Candidate clock anchoring loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
 
