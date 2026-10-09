@@ -249,6 +249,36 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome, objects: { tested: })
     end
 
+    # 20261003-41: a crash between the two stored results must not leave
+    # a rewrite tested but with no survival entry.
+    it "stores a failed test's survival before its result, so a crash between them leaves it untested" do
+      ready(looser)
+      FileUtils.mkdir_p(File.join(stored.path, "rewrite_survived_1.json"))
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect(outcome.status.exitstatus).not_to eq(0)
+      expect(stored.entry?("rewrite_tested_1")).to be(false)
+    end
+
+    # A refusal comes from the query, so it's recorded once per run.
+    it "reuses the first refusal for a later rewrite, without connecting to the arena again" do
+      ready(same, status_check: "status = 'open' OR status = 'closed'")
+      step("rewrite-test", "--search", "rewrite_1")
+      production.server.admin.exec(%(DROP DATABASE "#{arena_name}" WITH (FORCE)))
+      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => looser, "anchored_sql" => looser))
+
+      outcome = step("rewrite-test", "--search", "rewrite_2")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => false,
+                                      "scenario" => nil, "rule" => "complex_check" }, { "type" => "done" }])
+      expect(stored.read("rewrite_tested_2")).to eq(stored.read("rewrite_tested_1"))
+      none = { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }
+      expect(burndown["stages"]["rewrite-test"]["rewrite_2"]).to eq(counted(dropped: { "complex_check" => 1 },
+                                                                            extra: none))
+    end
+
     it "skips a rewrite plan-pruning discarded, without connecting to the arena" do
       ready(same, arena: false)
       store.write("rewrite_pruned_1", "discarded" => true)
