@@ -6,12 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261004-3: Evaluated SQLSTATE filtering (trust boundary).
-- 20261003-37: rewrite-test shared FK columns, column-list aliases.
-- 20261003-44: existence_in_flip COLLATE placeholder refusal.
-- 20261003-35: distinct_join_to_exists bare ORDER BY key.
-- 20261003-32: nullable FK IS NULL loads.
-- 20261009-23: suggested drops see varchar partial indexes.
 
 
 
