@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
+
 
 
 
@@ -265,8 +267,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-5. Report payload: what the index accountability table still lacks. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-18. A scenario refusal shouldn't end the run. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261003-19. Name the tables in an `fk_cycle` refusal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
@@ -310,19 +310,6 @@ Each needs a wrong rewrite that's disproved and a correct twin that passes, on r
 - **Status:** todo
 
 ### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-41. rewrite-test refusals and results: loose ends from 20261003-18.
-
-These are minor findings from building and reviewing 20261003-18:
-
-- **A crash between two stored results.** If the enclave crashes after writing `rewrite_tested_<n>` but before `rewrite_survived_<n>`, a resumed run goes on to llm-counterexamples, and `counterexample-round` fails with `counterexample_round_untested`. This predates the task, and it affects rewrites that fail rewrite-test too. Store both results together, or have resume rebuild `survived` from `tested`.
-- **Scenarios are rebuilt for every rewrite.** A refusal comes from the query, not the rewrite, so every rewrite is refused the same way. Record the refusal once per run, and reuse it.
-- **The rule-bug check counts `rewrite_test_failed` results that compared nothing.** This predates the task. Count only failures that compared rows.
-
-- **Depends on:** 20261003-18.
-- **Came from:** The build and review of 20261003-18, 2026-10-03.
-- **Design:** rewrite-correctness.
-- **Status:** todo
 
 ### 20261003-42. rewrite-test further fixtures: loose ends from 20261003-40.
 
@@ -1125,8 +1112,6 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Came from:** The review of 20261003-5, 2026-10-09.
 - **Design:** report.
 - **Status:** todo
-
-### 20261009-23. Suggested drops miss partial indexes on varchar columns. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-25. `counterexample_steps_postgres_spec.rb` fails when run alone.
 

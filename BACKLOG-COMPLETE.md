@@ -8952,3 +8952,17 @@ The review of 20261003-38 found four minor issues:
 - **Design:** rewrite-test, ErrorFilter.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 15a828af. P0001 and 54000 are bad_value, and 42501 isn't. Other PG errors are re-raised as `Redaction::Error(:internal_error, sqlstate)` with `cause: nil`. The timeout and termination sentinel tests check the whole error chain. Leftover in 20261009-25.
+
+### 20261003-41. rewrite-test refusals and results: loose ends from 20261003-18.
+
+These are minor findings from building and reviewing 20261003-18:
+
+- **A crash between two stored results.** If the enclave crashes after writing `rewrite_tested_<n>` but before `rewrite_survived_<n>`, a resumed run goes on to llm-counterexamples, and `counterexample-round` fails with `counterexample_round_untested`. This predates the task, and it affects rewrites that fail rewrite-test too. Store both results together, or have resume rebuild `survived` from `tested`.
+- **Scenarios are rebuilt for every rewrite.** A refusal comes from the query, not the rewrite, so every rewrite is refused the same way. Record the refusal once per run, and reuse it.
+- **The rule-bug check counts `rewrite_test_failed` results that compared nothing.** This predates the task. Count only failures that compared rows.
+
+- **Depends on:** 20261003-18.
+- **Came from:** The build and review of 20261003-18, 2026-10-03.
+- **Design:** rewrite-correctness.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** c56c5908, cc5956c2, 1bfb225e, and 5edc0c5b. RewriteTest writes survived=false before tested. The driver's `CounterexampleStage.undecided` treats a stored survived with no rewrite_tested as undecided, so a resume reruns the step, and `record_latest` keeps the burndown from double counting. The first scenario-build refusal is stored in `rewrite_test_refusal` and reused for later rewrites. Item 3 (`rewrite_test_failed` in RuleBugs) was stale.
