@@ -30,6 +30,13 @@ RSpec.describe Quaack::Enclave::Config do
     e
   end
 
+  it "reads the baseline cap in seconds, one hour without it" do
+    expect(config.new({}).baseline_cap_ms).to eq(3_600_000)
+    write(%({"baseline_cap_seconds": 90}))
+
+    expect(config.load(path).baseline_cap_ms).to eq(90_000)
+  end
+
   it "lives at ~/.quaack/config.json" do
     expect(config.default_path).to eq(File.join(Dir.home, ".quaack", "config.json"))
   end
@@ -128,6 +135,8 @@ RSpec.describe Quaack::Enclave::Config do
     "has a threshold that isn't whole" => %({"cardinality_threshold": 50.5}),
     "has a threshold of zero" => %({"cardinality_threshold": 0}),
     "has a negative threshold" => %({"cardinality_threshold": -5}),
+    "has a baseline cap that isn't a number" => %({"baseline_cap_seconds": "60"}),
+    "has a baseline cap of zero" => %({"baseline_cap_seconds": 0}),
     "has null extra dump schemas" => %({"extra_dump_schemas": null}),
     "has extra dump schemas that aren't a list" => %({"extra_dump_schemas": "dba"}),
     "has an extra dump schema that isn't a string" => %({"extra_dump_schemas": [1]}),

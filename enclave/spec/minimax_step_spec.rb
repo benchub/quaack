@@ -50,21 +50,40 @@ RSpec.describe "quaacks minimax" do
 end
 
 RSpec.describe Quaack::Enclave::Steps::Baseline do
-  it "gives the original's measurement 15 minutes per run" do
-    quaacks = LeakCheck::Quaacks.new
+  def baseline_store(quaacks)
     store = Quaack::Enclave::Store.create(base: quaacks.store_base)
     store.write("anchored_query", "SELECT 1")
     connection = instance_double(PG::Connection, close: nil)
     allow(Quaack::Enclave::RunServer).to receive(:connect).with(store, :racetrack).and_return(connection)
+    store
+  end
+
+  it "gives the original's measurement the config's cap per run, one hour without one" do
+    quaacks = LeakCheck::Quaacks.new
+    store = baseline_store(quaacks)
     seen = []
     allow(Quaack::Enclave::Measurement).to receive(:measure) do |**kw|
       seen << kw[:timeout_ms]
       {}
     end
 
-    described_class.call(store:)
+    described_class.call(store:, config: Quaack::Enclave::Config.new({}))
+    described_class.call(store:, config: Quaack::Enclave::Config.new({ "baseline_cap_seconds" => 90 }))
 
-    expect(seen).to eq([900_000])
+    expect(seen).to eq([3_600_000, 90_000])
+  ensure
+    quaacks&.remove
+  end
+
+  it "refuses as baseline_original_exceeded_cap when the original times out, and stores no baseline" do
+    quaacks = LeakCheck::Quaacks.new
+    store = baseline_store(quaacks)
+    allow(Quaack::Enclave::Measurement).to receive(:measure)
+      .and_return({ "slow" => { "timed_out" => true, "ran" => 1 } })
+
+    expect { described_class.call(store:, config: Quaack::Enclave::Config.new({})) }
+      .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("baseline_original_exceeded_cap") }
+    expect { store.read("baseline") }.to raise_error(Quaack::Enclave::Store::MissingEntry)
   ensure
     quaacks&.remove
   end

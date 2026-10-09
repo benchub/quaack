@@ -1349,6 +1349,8 @@ For each set of literals the literals step chose, run the original query with `E
 
 For a fixed plan, total blocks is nearly deterministic and doesn't depend on what's in the cache. So you need three runs, not the large sample you'd need for timing. The runs are there to confirm that the plan didn't change and the count didn't move. They aren't there to average out noise. If the count does move between runs, record the plan for each run and mark that literal as unstable in the report. Either way, keep the redacted plan of the run with the most blocks, the run whose hit and read counts the report shows, as that literal's measured plan.
 
+The original is the query we're trying to fix, so it may well be slow. But it can't run forever: each baseline run of it has a ceiling, the config's `baseline_cap_seconds` (a positive whole number; one hour, 3600, without it). The ceiling is its `statement_timeout`, under run-discipline's rules. If any run of the original hits it, baseline refuses as `baseline_original_exceeded_cap`, stores nothing, and says the original exceeded the cap and that the operator can raise it. Later steps' timeouts derive from the baseline, so there's no useful baseline to go on with.
+
 Also record the split between hits and reads. It's secondary, since it depends on whatever happened to be cached. But it's what tells you whether a candidate avoids I/O or just avoids work that was already in memory.
 
 ### index-baseline. Index baselines.
