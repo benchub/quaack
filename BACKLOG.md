@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-32: nullable FK IS NULL loads.
 - 20261009-23: suggested drops see varchar partial indexes.
 
 
@@ -297,18 +298,7 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 
 ### 20261003-31. Step 9: two false passes on ordinary joins. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups.
-
-These were found in the second review of 20261003-23, and they fail safe (the load fails, so the rewrite is refused):
-
-- **`IS NULL` on a nullable FK column fails the load.** The NULL goes into the parent primary key's class. Seen on an acyclic schema.
-- **A group that skips leaves orphaned copies.** This is 20261003-30's mechanism in an acyclic schema: `courses JOIN accounts LEFT JOIN templates t … WHERE t.id IS NULL`. 20261003-30 may fix it in general. If so, add a test here and close this task.
-- **An anti-join on a cut edge itself** fails the load for every candidate. Recheck it after 20261003-30.
-
-- **Depends on:** 20261003-30.
-- **Came from:** The second review of 20261003-23, 2026-10-03.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-34. Step 9 values: loose ends from 20261003-33. Done, see BACKLOG-COMPLETE.md.
 

@@ -8889,3 +8889,17 @@ From the build of 20261002-9:
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** - **Dropped (2026-10-09):** Nothing was built. Duplicates are already dropped: `RewriteRules.chained` keeps a shared `seen` set and counts each duplicate under its rule, with specs. Widening to int/bigint arms isn't simply sound, because arithmetic in a conjunct can overflow on int where the bigint copy doesn't, so the rule keeps refusing. The other widenings are rare and stay refused in v1.
+
+### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups.
+
+These were found in the second review of 20261003-23, and they fail safe (the load fails, so the rewrite is refused):
+
+- **`IS NULL` on a nullable FK column fails the load.** The NULL goes into the parent primary key's class. Seen on an acyclic schema.
+- **A group that skips leaves orphaned copies.** This is 20261003-30's mechanism in an acyclic schema: `courses JOIN accounts LEFT JOIN templates t … WHERE t.id IS NULL`. 20261003-30 may fix it in general. If so, add a test here and close this task.
+- **An anti-join on a cut edge itself** fails the load for every candidate. Recheck it after 20261003-30.
+
+- **Depends on:** 20261003-30.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 316ba2fe and 44042a9b. In `Builder#bound_value`, a NOT NULL key-class member whose atom picks NULL takes the class key instead, so only the child FK holds NULL. Items 2 and 3 were already fixed by 20261003-30, and regression specs were added for them. Opus review: sound, and the IS NULL atom is exercised both ways (the dropped-filter rewrite is disproved by row_count). Minor and not filed: the `:skip` path in the new branch is untested.
