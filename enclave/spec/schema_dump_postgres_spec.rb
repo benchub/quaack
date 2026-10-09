@@ -287,6 +287,31 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(ddl).to match(/^CREATE FUNCTION deep\.k\(\)/)
     end
 
+    # A dumped table's column uses a domain from a schema the query doesn't
+    # name, so the dump needs that schema and the domain, or arena can't
+    # create the table.
+    it "adds the schema of a domain a dumped column uses, and loads into arena" do
+      conn.exec(<<~SQL)
+        DROP FUNCTION other.setting_count(); DROP TABLE other.picked;
+        CREATE SCHEMA types;
+        CREATE DOMAIN types.pos AS int CHECK (VALUE > 0);
+        CREATE TABLE other.qty (n types.pos);
+      SQL
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[other public types])
+      expect(ddl).to match(/^CREATE DOMAIN types\.pos AS integer/)
+
+      admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+      arena = PG.connect(**db.connection_params, dbname: target)
+      Quaack::Enclave::Arena.load_dump(arena, ddl)
+      expect(arena.exec("SELECT format_type(atttypid, NULL) FROM pg_attribute " \
+                        "WHERE attrelid = 'other.qty'::regclass AND attname = 'n'").getvalue(0, 0)).to eq("types.pos")
+      expect { arena.exec("INSERT INTO other.qty VALUES (0)") }.to raise_error(PG::CheckViolation)
+    ensure
+      arena&.close
+    end
+
     # pg_dump dumps an added schema's functions whole, so what any of them
     # needs comes too, though nothing in the first schemas uses it.
     it "adds what an added schema's other functions need" do
