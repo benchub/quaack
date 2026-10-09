@@ -1225,23 +1225,8 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-22. `transitive_predicate_copy`: leftovers from 20261003-11.
-
-- **Doc page:** `docs/transforms/transitive_predicate_copy.md` still says "differ in type". Say that typmods are ignored and enums are accepted.
-- **Untested:** an enum against text, or two different enum types, must still be refused. Add a spec. A `bpchar(n)` against `bpchar(m)` pair with trailing spaces is untested too. Add one, or refuse bpchar pairs.
-
-- **Depends on:** 20261003-11.
-- **Came from:** The review of 20261003-11, 2026-10-09.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261009-22. `transitive_predicate_copy`: leftovers from 20261003-11. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-23. Suggested drops miss partial indexes on varchar columns. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-24. Pin that operand order matters in predicate matching.
-
-From the Opus review of 20261009-23. Nothing commutes the sides of a comparison, so `'a' < ws` never equals `ws < 'a'`, but no test pins it. Add specs: an existing `'deleted' <> ws` against a candidate `ws <> 'deleted'`, and `'a' < ws` against `ws < 'a'`. Each pair must not match in dedupe or in RedundantIndexes. (A later normalization that commutes `=` and `<>` would be safe, but it must flip `<` and `>` correctly.)
-
-- **Depends on:** 20261009-23.
-- **Came from:** The Opus review of 20261009-23, 2026-10-09.
-- **Design:** index-dedupe.
-- **Status:** todo
+### 20261009-24. Pin that operand order matters in predicate matching. Done, see BACKLOG-COMPLETE.md.

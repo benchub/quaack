@@ -8836,3 +8836,24 @@ Found by the Opus review of the 0.1.29 batch, 2026-10-09. `RedundantIndexes#exis
 - **Design:** index-dedupe, report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** ba6088fd. `RedundantIndexes` passes each table's `column_types` to `from_indexdef`, so varchar partial indexes match. `ImplicitCast` strips the constant-on-left form too, keeping operand order. Leftovers are in 20261009-24.
+
+### 20261009-22. `transitive_predicate_copy`: leftovers from 20261003-11.
+
+- **Doc page:** `docs/transforms/transitive_predicate_copy.md` still says "differ in type". Say that typmods are ignored and enums are accepted.
+- **Untested:** an enum against text, or two different enum types, must still be refused. Add a spec. A `bpchar(n)` against `bpchar(m)` pair with trailing spaces is untested too. Add one, or refuse bpchar pairs.
+
+- **Depends on:** 20261003-11.
+- **Came from:** The review of 20261003-11, 2026-10-09.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 9b2f7e0e, spec and doc only. The doc page now matches the base-type and enum rule. New specs refuse enum vs text and two different enums. A bpchar(3) vs bpchar(5) copy is shown sound on real Postgres.
+
+### 20261009-24. Pin that operand order matters in predicate matching.
+
+From the Opus review of 20261009-23. Nothing commutes the sides of a comparison, so `'a' < ws` never equals `ws < 'a'`, but no test pins it. Add specs: an existing `'deleted' <> ws` against a candidate `ws <> 'deleted'`, and `'a' < ws` against `ws < 'a'`. Each pair must not match in dedupe or in RedundantIndexes. (A later normalization that commutes `=` and `<>` would be safe, but it must flip `<` and `>` correctly.)
+
+- **Depends on:** 20261009-23.
+- **Came from:** The Opus review of 20261009-23, 2026-10-09.
+- **Design:** index-dedupe.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** d717f933, spec only. Operand order is pinned in dedupe and RedundantIndexes for `<>` and `<`.
