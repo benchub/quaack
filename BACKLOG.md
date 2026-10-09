@@ -890,6 +890,7 @@ These are minor findings from the review of 20260927-21:
 - **Depends on:** 20260927-21.
 - **Came from:** Review of 20260927-21.
 - **Design:** LLM client.
+- **Set aside (2026-10-08):** Nothing landed. Branch `task/20260927-22` (b9267735, 2d02b503) bounded the scan with a shared 1000-parse budget, but the second review found it still hides fenced JSON after about 20 lines of prose with braces (each junk start tries every `}` end, so it spends the budget). Next try: a string-aware brace-depth scan, so each `{` parses only at its balanced `}` (linear per start, no budget needed), and the error words cut-off as "wasn't valid JSON". Reuse the branch's specs, including the 33-brace prose repro and the ReplyShape no-type key test (item 4). Delete the branch once this lands.
 - **Status:** todo
 
 ### 20260927-23. Driver calls run teardown (20260922-65, part four). Done, see BACKLOG-COMPLETE.md.
