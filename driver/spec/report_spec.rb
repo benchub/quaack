@@ -597,10 +597,26 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says how a rewrite that passed every test lost" do
-        expect(fate("not_better")).to start_with(esc("It passed every test, but didn't read enough fewer blocks"))
+        expect(fate("not_better")).to eq(esc("It passed every test, but on the real data it was either less than a " \
+                                             "5% improvement on the slow values or over 5% more blocks on some " \
+                                             "others, so QUAACK didn't rank it."))
         expect(fate("footprint_tie")).to include("tied with a candidate whose new indexes take less disk space")
         expect(fate("below_top_three")).to include("three others of its kind did better")
         expect(fate("measurement_timed_out")).to include("every measurement run of it timed out")
+      end
+
+      it "tells a small gain from a regression when the verdicts show which" do
+        payload["labels"] << { "label" => "rewrite_2:none", "search" => "rewrite_2", "indexes" => [],
+                               "timed_out" => false, "measurements" => {},
+                               "verdicts" => { "slow" => "no_worse", "typical" => "no_worse" } }
+        payload["excluded"]["rewrite_2:none"] = "not_better"
+        expect(fate("not_better"))
+          .to eq(esc("It passed every test, but on the real data it was less than a 5% improvement, " \
+                     "so QUAACK didn't rank it."))
+        payload["labels"].last["verdicts"] = { "slow" => "better", "typical" => "worse" }
+        expect(fate("not_better"))
+          .to eq(esc("It passed every test, but on the real data it read over 5% more blocks on some values, " \
+                     "so QUAACK didn't rank it."))
       end
 
       it "says how far an unfinished rewrite got" do

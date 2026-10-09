@@ -7,6 +7,7 @@ require_relative "index_ddl"
 require_relative "candidates"
 require_relative "kinds"
 require_relative "rewrites"
+require_relative "not_better_fate"
 require_relative "rule_links"
 require_relative "indexes"
 require_relative "accountability"
@@ -27,6 +28,7 @@ module Quaack
       # modules it includes.
       class View
         include Candidates
+        include NotBetterFate
         include Kinds
         include Rewrites
         include RuleLinks
