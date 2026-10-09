@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261008-76: baseline cap.
 
 
 
@@ -2278,16 +2279,7 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 
 ### 20261008-75. Reply parsing: leftovers from 20261008-74. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-76. Baseline has no cap on the original query's runtime.
-
-Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` without finishing: literals' worst-case pick (`tier = 'standard'`) makes its `NOT IN` rescan `orders` per customer, and baseline runs the original three times per literal set with no `statement_timeout`, since later steps' timeouts derive from the baseline. On a real replica a slow enough original keeps QUAACK busy for an hour or more with no sign of ending.
-
-- **Decided (user, 2026-10-09):** Option (1), a configurable ceiling per baseline run that refuses cleanly ("the original exceeded the cap"), but the default is one hour, not five minutes. The original is the query we are trying to fix, so it may well be terrible. The e2e harness may pass a lower cap so case 034 finishes.
-
-- **Depends on:** none.
-- **Came from:** The build of 20261008-73, 2026-10-08.
-- **Design:** baseline, run-discipline.
-- **Status:** todo
+### 20261008-76. Baseline has no cap on the original query's runtime. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-77. Set-asides: leftovers from 20260927-19. Done, see BACKLOG-COMPLETE.md.
 
@@ -2329,4 +2321,15 @@ Reported by the user, 2026-10-09, against 20261004-55's funnels. Each band is dr
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, burndown.
+- **Status:** todo
+
+### 20261009-5. Baseline cap: leftovers from 20261008-76.
+
+- **e2e case 034** runs its original for many minutes. Any cap low enough to finish quickly makes baseline refuse instead. Make the case finish, for example with a lighter dataset or a planted query that isn't pathological, without lowering the default.
+- **Dead code:** `Baseline.entry` still handles timed-out sets, and its spec "clamps the candidates' timeout when every set timed out" still tests that, but `call` now refuses first. Remove both.
+- **Untested:** the driver's fixed note for `baseline_original_exceeded_cap` has no `fixed_notes_spec` coverage, and neither does the full path from `Baseline::Error` through ErrorFilter to an egress line.
+
+- **Depends on:** 20261008-76.
+- **Came from:** The build and review of 20261008-76, 2026-10-09.
+- **Design:** baseline.
 - **Status:** todo

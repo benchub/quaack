@@ -8504,3 +8504,15 @@ Then have the report render them. Trust boundary: sources are constants, DDL goe
 - **Partly landed (2026-10-09):** Item 1 (53d4b537, 2bb83215; driver only). Item 2, the wording, is still open and needs a design call.
 - **Status:** done
 - **Landed:** - **Landed:** Item 1 in 53d4b537, 2bb83215 (driver only). Item 2 needed no change: the user decided on 2026-10-09 that ambiguous replies stay invalid JSON.
+
+### 20261008-76. Baseline has no cap on the original query's runtime.
+
+Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` without finishing: literals' worst-case pick (`tier = 'standard'`) makes its `NOT IN` rescan `orders` per customer, and baseline runs the original three times per literal set with no `statement_timeout`, since later steps' timeouts derive from the baseline. On a real replica a slow enough original keeps QUAACK busy for an hour or more with no sign of ending.
+
+- **Decided (user, 2026-10-09):** Option (1), a configurable ceiling per baseline run that refuses cleanly ("the original exceeded the cap"), but the default is one hour, not five minutes. The original is the query we are trying to fix, so it may well be terrible. The e2e harness may pass a lower cap so case 034 finishes.
+
+- **Depends on:** none.
+- **Came from:** The build of 20261008-73, 2026-10-08.
+- **Design:** baseline, run-discipline.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 997d2a1f, merged in 1ab6dd1e. Adds the `baseline_cap_seconds` config key (default 3600), passed as the statement_timeout for each baseline run. A timeout refuses with `baseline_original_exceeded_cap`, and the driver has a note for it. The e2e harness is unchanged (see 20261009-5).
