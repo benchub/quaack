@@ -19,10 +19,16 @@ module Quaack
         SAME = "The original query, with the same indexes"
 
         def headline
-          return HEADLINES[:nothing] unless winner
+          HEADLINES[headline_kind]
+        end
+
+        # Which headline reads: :substantial, :minor, or :nothing. The headline's text and
+        # the verdict section's color both come from this, so they can't disagree.
+        def headline_kind
+          return :nothing unless winner
 
           theirs = original_measurements.dig("slow", "total_blocks")
-          HEADLINES[substantial?(winner["slow_blocks"], theirs) ? :substantial : :minor]
+          substantial?(winner["slow_blocks"], theirs) ? :substantial : :minor
         end
 
         # Whether ours is at least SUBSTANTIAL_PERCENT fewer blocks than theirs. Any finish
