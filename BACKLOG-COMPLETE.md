@@ -8753,3 +8753,45 @@ From 20261009-13's review. The body's `p.warn` now repeats the whole summary war
 - **Design:** index-dedupe.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** `array_consts` refuses an empty array, which used to crash pg_query's deparser. A `::name` constant spec pins `bare_text_const`. Minor, not filed: the empty-array spec's red was a segfault, not an assertion failure.
+
+### 20260926-29. Remaining test-infrastructure unknowns.
+
+- The 1216-failure run is still unexplained. Two guesses, neither confirmed: spec processes in different PID namespaces or sandboxes on the same hostname, where `kill(0)` returns ESRCH; or containers dying outside our code, such as a Docker Desktop restart or OOM. Watch for a repeat.
+- A resumed run still restarts counterexamples at round 1 (from 20260926-25).
+
+- **Needs a decision (asked 2026-10-09):** The restart is still true, but nothing can be double counted. The burndown records only when a rewrite is decided. Picking up at round N+1 would need each earlier round's inserts and feedback. Option (1): save them in the driver's provenance record (`~/.quaack/runs/<id>.llm.json`) and replay them through `fresh_message`. If the enclave's `rewrite_round_<n>` disagrees, restart at round 1. Option (2): drop the item as correct by design, since a resume loses at most three LLM asks per interrupted rewrite. Storing the inserts in the enclave is ruled out, because it would send LLM SQL back out. The main session leans toward (2), given cost first.
+- **Depends on:** 20260926-21, 20260926-25.
+- **Came from:** Build of 20260926-21 and -25.
+- **Design:** counterexamples; CLAUDE.md Development.
+- **Status:** done
+- **Landed:** - **Dropped (user, 2026-10-09):** stale or covered, per the note above. Nothing was built.
+
+### 20260926-49. Schema dump, clock anchoring and deparse items left over.
+
+- An empty conninfo has no defined behavior in the schema dump, and no test.
+- Restore LLM candidates by their anchored form, not by position. This is a large redesign.
+- The subset DDL doesn't restore into an empty arena on its own (schemas, types, extensions), and a partitioned query table needs its parent in the dump.
+- Table sort order for EUC_JP and WIN1252 databases.
+
+- **Proposed drop (2026-10-09, awaiting the user):** Item 1 is stale, because the only caller always sets host. Item 2 is the large redesign: drop it, or reopen it as its own task if candidate SQL ever shows in the report. Item 3 is stale, because fixtures use the full dump and partitioned parents are refused. That leaves only a rare query on a leaf partition. Item 4 is real but rare (non-ASCII table names in EUC_JP or WIN1252 databases). Add an "unsupported in v1" note to DESIGN.md instead of building it.
+- **Depends on:** 20260924-15, -22, -23.
+- **Came from:** Build and review of those tasks.
+- **Design:** schema-dump, clock-anchor, input.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Landed:** - **Dropped (user, 2026-10-09):** stale or covered, per the note above. Nothing was built.
+
+### 20260926-55. Keyset and expression-unique leftovers.
+
+- No pools for `=` or `<>` row comparisons, or rows built on expressions (listed as a v1 limit).
+- Perturb-and-retry for colliding expression keys.
+- A generated column counts as NULL when an expression key is worked out.
+
+- **Proposed drop (2026-10-09, awaiting the user):** Item 1 is a documented v1 limit, pinned by vacuity_guard_postgres_spec.rb:60, and it marks the atoms untested. Item 2 is covered by the try-later-pool-values step, with the dropped groups counted (DESIGN.md:1193, :1426). Item 3 landed in 20260927-17 (f3598049).
+- **Depends on:** 20260926-40, -44.
+- **Came from:** Their build and review.
+- **Design:** rewrite-test.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Landed so far:** 2026-10-08, task/20260927-17 (commit f3598049). A unique expression index that reads a generated column is now refused as `expression_unique_index`. Still open: perturb-and-retry, and the pools (a v1 limit).
+- **Status:** done
+- **Landed:** - **Dropped (user, 2026-10-09):** stale or covered, per the note above. Nothing was built.
