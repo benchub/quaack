@@ -103,8 +103,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
   it "has a name and a description that are QUAACK's own constants" do
     expect([rule.name, rule.description]).to eq(
       ["distinct_join_to_exists",
-       "A SELECT DISTINCT of one table's columns over a join, with a unique, not-null key of that table among " \
-       "them, becomes that table alone with an EXISTS on the other tables, and no DISTINCT."]
+       "A SELECT DISTINCT over a join that reads only one table, with a unique, not-null key of that table among " \
+       "its columns, becomes that table alone with an EXISTS on the other tables, and no DISTINCT."]
     )
   end
 
@@ -369,6 +369,101 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     expect(same_ordered_rows(sql, rewrites).map(&:first)).to eq(%w[6 5])
   end
 
+  # Task 20261003-35: Rails sends ORDER BY id LIMIT n. A bare name in an
+  # ORDER BY is an output column's first, so it only counts as the key when
+  # it's the key.
+  describe "a bare key column in the ORDER BY under a LIMIT" do
+    from = "FROM public.assignments a JOIN public.submissions s ON s.a_id = a.id WHERE s.state = 'done'"
+
+    {
+      "a selected key" => "SELECT DISTINCT a.id, a.title #{from} ORDER BY id LIMIT 2 OFFSET 1",
+      "a star, where both tables have the column" => "SELECT DISTINCT a.* #{from} ORDER BY id DESC LIMIT 2",
+      "a key that an alias names for itself" => "SELECT DISTINCT a.id AS id, a.title #{from} ORDER BY id LIMIT 2",
+      "a key another table doesn't have" => "SELECT DISTINCT a.slug, a.title #{from} ORDER BY slug LIMIT 2"
+    }.each do |what, sql|
+      it "is taken for #{what}, with the rows in the same order" do
+        rewrites = rewritten(sql)
+
+        expect(rewrites.size).to eq(1)
+        expect(rewrites.first).to include("FROM public.assignments a WHERE EXISTS")
+        expect(same_ordered_rows(sql, rewrites)).not_to be_empty
+      end
+    end
+
+    {
+      "an output name is another column's" =>
+        "SELECT DISTINCT a.title AS id, a.id AS k #{from} ORDER BY id LIMIT 2",
+      "an output name is the key's, for another column" =>
+        "SELECT DISTINCT a.slug AS id, a.id AS k #{from} ORDER BY id LIMIT 2",
+      "an unaliased expression might be named for the column" =>
+        "SELECT DISTINCT a.title || 'x', a.id #{from} ORDER BY id LIMIT 2",
+      "the name is both tables' and the select list doesn't name it" =>
+        "SELECT DISTINCT a.slug, a.title #{from} ORDER BY id LIMIT 2",
+      "the name is not the key" => "SELECT DISTINCT a.id, a.title #{from} ORDER BY title LIMIT 2",
+      "the name is a table's" => "SELECT DISTINCT a.id, a.title #{from} ORDER BY a LIMIT 2"
+    }.each do |why, sql|
+      it "is refused when #{why}" do
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+  end
+
+  # Task 20261003-35: the answers a Catalog keeps are keyed by everything
+  # that decides them, so one Catalog asked about a schema's function, then
+  # another's of the name, gives each its own answer, in either order.
+  describe "the catalog's kept answers" do
+    let(:safe) { PgQuery.parse("SELECT public.shout(a.title) FROM public.assignments a").tree }
+    let(:many) { PgQuery.parse("SELECT elsewhere.shout(a.title) FROM public.assignments a").tree }
+
+    it "tell a function of one schema from that of the same name in another, asked in either order" do
+      expect([catalog.row_wise?([safe]), catalog.row_wise?([many])]).to eq([true, false])
+      fresh = Quaack::Enclave::RewriteRules::Catalog.new(conn)
+      expect([fresh.row_wise?([many]), fresh.row_wise?([safe])]).to eq([false, true])
+    end
+
+    it "tell a function from an operator of the same name" do
+      conn.exec("CREATE FUNCTION public.\"###\"(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT $1'")
+      function = PgQuery.parse('SELECT "###"(a.title) FROM public.assignments a').tree
+      operator = PgQuery.parse("SELECT a.id ### 2 FROM public.assignments a").tree
+
+      expect([catalog.row_wise?([function]), catalog.row_wise?([operator])]).to eq([true, false])
+    end
+
+    it "tell a table's keys from those of the same name in another schema" do
+      conn.exec("CREATE TABLE elsewhere.assignments (id int, title text)")
+
+      expect([catalog.keys("public", "assignments").size, catalog.keys("elsewhere", "assignments")]).to eq([4, []])
+    end
+  end
+
+  describe "a nondeterministic collation" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE COLLATION public.ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+        CREATE TABLE public.names (name text COLLATE public.ci NOT NULL, note text);
+        CREATE TABLE public.nested (name text COLLATE public.ci NOT NULL, note text);
+        CREATE UNIQUE INDEX names_c ON public.names (name COLLATE "C");
+        CREATE UNIQUE INDEX nested_ci ON public.nested (name);
+        INSERT INTO public.names VALUES ('Ann', 'x'), ('ann', 'y');
+        INSERT INTO public.nested VALUES ('Ann', 'x');
+      SQL
+    end
+
+    it "refuses a key whose unique index compares differently, where DISTINCT folds two rows the index lets in" do
+      sql = "SELECT DISTINCT n.name FROM public.names n JOIN public.submissions s ON s.state = n.note"
+
+      expect(rewritten(sql)).to eq([])
+      conn.exec("INSERT INTO public.submissions VALUES (1000, 1, 'x'), (1001, 1, 'y')")
+      expect(rows(sql).size).to eq(1)
+    end
+
+    it "takes a key whose unique index compares the same way" do
+      sql = "SELECT DISTINCT n.name FROM public.nested n JOIN public.submissions s ON s.state = n.note"
+
+      expect(rewritten(sql).size).to eq(1)
+    end
+  end
+
   # Task 20261002-4: pairs' key is (x, y), and pair 1 has three submissions.
   describe "with a key of several columns" do
     pairs = "FROM public.pairs p JOIN public.submissions s ON s.a_id = p.x"
@@ -442,6 +537,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     "an unqualified column of the kept table alone" => ["a.id, title", ""],
     "an unqualified key" => ["slug, a.title", ""],
     "an unqualified column of the kept table, in an expression" => ["a.id, upper(title)", ""],
+    "an output name in the ORDER BY" => ["a.id AS x, a.title", "ORDER BY x"],
     "an expression in the ORDER BY that's in the select list" =>
       ["a.id, lower(a.title)", "ORDER BY lower(a.title) DESC, a.id"],
     "an expression in the ORDER BY with the key, and a LIMIT" =>
@@ -670,7 +766,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     "a join condition has a subquery" =>
       "SELECT DISTINCT a.id, a.title FROM public.assignments a JOIN public.submissions s " \
       "ON s.a_id = a.id AND s.id IN (SELECT 101)",
-    "the ORDER BY has an output name" => "SELECT DISTINCT a.id AS x, a.title #{from} #{where} ORDER BY x",
     "the ORDER BY reads another table" => "SELECT DISTINCT a.id, a.title #{from} #{where} ORDER BY s.id",
     "the ORDER BY has a volatile function" =>
       "SELECT DISTINCT a.id, a.title #{from} #{where} ORDER BY random()",

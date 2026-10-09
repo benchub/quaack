@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "../tree"
 require_relative "columns"
+require_relative "order_by"
 
 module Quaack
   module Enclave
@@ -26,12 +27,14 @@ module Quaack
 
             columns = Columns.new(items:, catalog:)
             conditions = conditions.map { [it, condition_reads(columns, it)] }
-            shown = shown(select)
-            kept = kept(items, columns.reads(shown)) if conditions.all?(&:last)
-            return unless kept && kept_alone?(conditions, kept)
+            kept = kept(items, columns.reads(OrderBy.new(select:).inputs)) if conditions.all?(&:last)
+            build(select, columns, items, conditions, kept) if kept && kept_alone?(conditions, kept)
+          end
 
-            new(kept:, others: items - [kept], conditions:, selected: selected(select, columns), sorted: sorted(select),
-                limited: limited?(select), shown:)
+          def self.build(select, columns, items, conditions, kept)
+            new(kept:, others: items - [kept], conditions:, selected: selected(select, columns),
+                sorted: sorted(select, columns, kept),
+                limited: limited?(select), shown: shown(select))
           end
 
           def self.shown(select)
@@ -82,12 +85,10 @@ module Quaack
             select.target_list.filter_map { (ref = it.res_target.val.column_ref) && columns.resolve(ref).last }
           end
 
-          # The column of each ORDER BY item written name.column. A bare
-          # name there may be an output column's, as in ORDER BY x for
-          # SELECT a.title AS x, so it isn't taken as the column of that
-          # name.
-          def self.sorted(select)
-            select.sort_clause.filter_map { (ref = it.sort_by.node.column_ref) && Tree.qualified(ref)&.last }
+          # The column of each ORDER BY item that's only a column of the
+          # kept table (see OrderBy).
+          def self.sorted(select, columns, kept)
+            OrderBy.new(select:, columns:, kept:, catalog: columns.catalog).sorted
           end
 
           # The kept table's column names, which its star stands for.
