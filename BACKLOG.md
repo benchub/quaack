@@ -1125,15 +1125,7 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 - **Design:** none (test infrastructure).
 - **Status:** todo
 
-### 20261009-26. Verdict section: background color follows the verdict.
-
-The report's verdict section (`<section id="summary">`, headline and table) has one background, the blue verdict. Make it follow the headline: a green background when the headline reads "substantial improvements possible", a cream background for "minor improvements possible", and the current blue for "QUAACK found nothing that could help" (the original query is best). The color comes from the same `substantial?` check that picks the headline, so the two can't disagree. Keep the text readable on each background, in the report's light and dark themes if it has both. Update DESIGN.md's verdict bullet, which now doesn't say what color the section is, and the report spec, with a test for each of the three headlines.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Open questions:** The exact green and cream (pick ones that sit with the report's violet query sections, and show the user), and whether the verdict table's baseline and warning rows need new shades.
-- **Status:** todo
+### 20261009-26. Verdict section: background color follows the verdict. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-27. Verdict section: drop the index definitions.
 
@@ -1249,5 +1241,14 @@ A direction to start from: give the heading row a tinted background and a bold w
 
 - **Depends on:** None. Touches the report CSS that 20261009-26 and 20261009-34 also change; build after them.
 - **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-36. Verdict section: the cream stripe is a little faint on its own background.
+
+From the review of 20261009-26. The light theme's cream stripe `#b08a1e` is 2.96:1 against its own cream background (`#fbf5e1`), just under the 3:1 guideline for non-text marks. It is 3.23:1 against the white page, and the text passes AA, so it's decorative. Darken it to about `#9a7615` and recheck that the report's contrast spec still passes.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-26, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo

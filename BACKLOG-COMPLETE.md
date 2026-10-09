@@ -8966,3 +8966,14 @@ These are minor findings from building and reviewing 20261003-18:
 - **Design:** rewrite-correctness.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** c56c5908, cc5956c2, 1bfb225e, and 5edc0c5b. RewriteTest writes survived=false before tested. The driver's `CounterexampleStage.undecided` treats a stored survived with no rewrite_tested as undecided, so a resume reruns the step, and `record_latest` keeps the burndown from double counting. The first scenario-build refusal is stored in `rewrite_test_refusal` and reused for later rewrites. Item 3 (`rewrite_test_failed` in RuleBugs) was stale.
+
+### 20261009-26. Verdict section: background color follows the verdict.
+
+The report's verdict section (`<section id="summary">`, headline and table) has one background, the blue verdict. Make it follow the headline: a green background when the headline reads "substantial improvements possible", a cream background for "minor improvements possible", and the current blue for "QUAACK found nothing that could help" (the original query is best). The color comes from the same `substantial?` check that picks the headline, so the two can't disagree. Keep the text readable on each background, in the report's light and dark themes if it has both. Update DESIGN.md's verdict bullet, which now doesn't say what color the section is, and the report spec, with a test for each of the three headlines.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Open questions:** The exact green and cream (pick ones that sit with the report's violet query sections, and show the user), and whether the verdict table's baseline and warning rows need new shades.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-26; review clean). `Verdict#headline_kind` picks :substantial, :minor, or :nothing, and both the headline and the section's class come from it. Light/dark: green #e8f5e9 / stripe #2e7d32 and #17291c / #5cb372; cream #fbf5e1 / #b08a1e and #2b2614 / #d1ad4a; "nothing" keeps the blue. Contrast computed in review: text and warning pass AA on every background. Not yet looked at in a browser (see 20261009-30). One minor left: 20261009-36.
