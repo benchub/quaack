@@ -553,6 +553,20 @@ RSpec.describe Quaack::Driver::Report do
         expect(body).to eq(section(out, "queries")[%r{<span class="warn">(.*?)</span>}m, 1])
         expect(out).to include("details[open] > summary .warn { display: none; }")
       end
+
+      it "says the data caution once in an open body, and keeps it whole in the summary" do
+        entry = payload["rewrites"].first
+        entry["empirical"] = [{ "table" => "a", "column" => "x", "references_table" => "b", "id_column" => "id",
+                                "type_column" => "kind" }]
+        entry["untested_atoms"] = ["a < $1"]
+        queries = section(render(payload), "queries")
+        summary = queries[%r{<span class="warn">(.*?)</span>}m, 1]
+        body = queries[%r{</summary>.*?(?=<div class="untested">)}m]
+        expect(summary).to include("relies on what your data holds today")
+        expect(body.scan("what your data holds today").size).to eq(1)
+        expect(body).to include("something your data holds today but your schema")
+        expect(body[%r{<p class="warn body-warn">(.*?)</p>}m, 1]).to start_with("Read it with care: every test")
+      end
     end
 
     describe "where a rewrite came from (rewrite-rules)" do

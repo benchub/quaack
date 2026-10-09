@@ -110,7 +110,7 @@
 <% rewrites.each do |r| %>
 <article class="rewrite"><details class="query" id="<%= h anchor(r["rewrite"]) %>">
 <summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= source_html(r) %>.</span> <span class="fate">What became of it: <%= h fate(r) %></span><% if (warn = warning(r)) %> <span class="warn"><%= h warn %></span><% end %></summary>
-<% if (warn = warning(r)) %>
+<% if (warn = warning(r, body: true)) %>
 <p class="warn body-warn"><%= h warn %></p>
 <% end %>
 <% if (assumed = empirical(r)) %>
