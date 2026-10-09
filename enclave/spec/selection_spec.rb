@@ -50,6 +50,12 @@ RSpec.describe Quaack::Enclave::Selection do
                                      "rewrite_4:none" => "below_top_three")
   end
 
+  it "orders the kept entries best first overall even when the kinds interleave" do
+    result = pick(minimax([s("rewrite_1:top:1", 5, 1), s("original:top:1", 6, 1), s("rewrite_1:top:2", 7, 1),
+                           s("rewrite_1:none", 8, 1)]))
+    expect(result["top"].map { it["label"] }).to eq(%w[rewrite_1:top:1 original:top:1 rewrite_1:top:2 rewrite_1:none])
+  end
+
   it "breaks ties in slow blocks by the sum across literals" do
     result = pick(minimax([s("a:none", 10, 50), s("b:none", 10, 20)]))
     expect(result["top"].map { it["label"] }).to eq(%w[b:none a:none])
