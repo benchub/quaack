@@ -882,17 +882,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260927-26. Chat-friendly versions of multi-turn prompt-pack prompts. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-27. Replay wrong-rewrite spec gaps.
-
-These are minor findings from the review of 20260927-24:
-- The per-query spec "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" runs no expectation for queries whose reply lacks the condition.
-- `PipelineReplay.wrong` matching the whole rewrite hash (`to_s`) instead of its `"sql"` field survives mutation.
-- From the review of 20260927-26: `spec/prompt_pack_chat_spec.rb` doesn't check that "You were asked:" labels the first ask and "Your reply:" labels the planted reply. Swapping them stays green.
-
-- **Depends on:** 20260927-24.
-- **Came from:** Review of 20260927-24.
-- **Design:** none.
-- **Status:** todo
+### 20260927-27. Replay wrong-rewrite spec gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade. Done, see BACKLOG-COMPLETE.md.
 

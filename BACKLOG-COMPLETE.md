@@ -8451,3 +8451,16 @@ These are minor findings from the review of 20260927-11:
 - **Design:** none.
 - **Status:** done
 - **Landed:** c4fb2e97, items 4 and 5 (spec only, no bump). Review clean; the builder's planted leak through an allowed field went red. Item 3 dropped (note-only, unreachable). Item 1 moved to 20261009-1, item 2 to 20261009-2.
+
+### 20260927-27. Replay wrong-rewrite spec gaps.
+
+These are minor findings from the review of 20260927-24:
+- The per-query spec "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" runs no expectation for queries whose reply lacks the condition.
+- `PipelineReplay.wrong` matching the whole rewrite hash (`to_s`) instead of its `"sql"` field survives mutation.
+- From the review of 20260927-26: `spec/prompt_pack_chat_spec.rb` doesn't check that "You were asked:" labels the first ask and "Your reply:" labels the planted reply. Swapping them stays green.
+
+- **Depends on:** 20260927-24.
+- **Came from:** Review of 20260927-24.
+- **Design:** none.
+- **Status:** done
+- **Landed:** 80c97ddb (spec only, no bump). Review clean; each new assertion goes red under its mutation.
