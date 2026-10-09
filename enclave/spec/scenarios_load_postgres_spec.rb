@@ -23,7 +23,8 @@ RSpec.describe Quaack::Enclave::Scenarios do
   def all_ok = eq(described_class::NAMES.to_h { [it, :ok] })
 
   def refused(ddl, sql)
-    expect { outcomes(ddl, sql) }.to raise_error(described_class::Error) { expect(it.rule).to eq(:exclusion_constraint) }
+    expect { outcomes(ddl, sql) }
+      .to raise_error(described_class::Error) { expect(it.rule).to eq(:exclusion_constraint) }
   end
 
   it "gives boundary values to columns a generated column doesn't read" do
@@ -95,6 +96,12 @@ RSpec.describe Quaack::Enclave::Scenarios do
     it "refuses an exclusion with another operator" do
       ddl = "CREATE TABLE fx.slots (id integer PRIMARY KEY, during int4range NOT NULL, status text NOT NULL, " \
             "EXCLUDE USING gist (during WITH -|-))"
+      refused(ddl, "SELECT s.id FROM fx.slots s WHERE s.status = 'open'")
+    end
+
+    it "refuses an overlap exclusion that also has another operator" do
+      ddl = "CREATE TABLE fx.slots (id integer PRIMARY KEY, during int4range NOT NULL, spare int4range NOT NULL, " \
+            "status text NOT NULL, EXCLUDE USING gist (during WITH &&, spare WITH -|-))"
       refused(ddl, "SELECT s.id FROM fx.slots s WHERE s.status = 'open'")
     end
 
