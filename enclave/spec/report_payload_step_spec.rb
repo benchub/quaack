@@ -57,6 +57,7 @@ RSpec.describe "quaacks report-payload" do
                   "schema" => "public", "name" => "orders", "reltuples" => 1000.0,
                   "column_names" => %w[id created_at note], "columns" => {},
                   "indexes" => [{ "name" => "orders_created_at_id_idx", "size_bytes" => 40_960,
+                                  "constrained" => false, "idx_scan" => 7,
                                   "definition" => "CREATE INDEX orders_created_at_id_idx ON public.orders " \
                                                   "USING btree (created_at, id)" }]
                 }])
@@ -215,7 +216,7 @@ RSpec.describe "quaacks report-payload" do
           "slow" => { "total_blocks" => 400, "hit" => 300, "read" => 100, "stable" => true, "timed_out" => false },
           "typical" => { "total_blocks" => 190, "hit" => 190, "read" => 0, "stable" => true, "timed_out" => false }
         },
-        "verdicts" => { "slow" => "better", "typical" => "no_worse" }, "plan" => nil
+        "verdicts" => { "slow" => "better", "typical" => "no_worse" }, "plan" => nil, "suggested_drops" => []
       )
       expect(label("rewrite_1:none")).to include("indexes" => [],
                                                  "verdicts" => { "slow" => "better", "typical" => "better" })
@@ -903,13 +904,33 @@ RSpec.describe "quaacks report-payload" do
     end
   end
 
-  it "sends each proposed index's redacted DDL, size, prefix coverage, and redundancy" do
+  # Task 20261009-8.
+  context "with a ranked label whose new index makes an existing index redundant" do
+    let(:outcome) do
+      payload_of do |store|
+        selection = store.read("selection")
+        ranked = { "label" => "original:top:2", "kind" => "original_new_indexes", "slow_blocks" => 500,
+                   "total_blocks_sum" => 700, "footprint" => 8192 }
+        store.write("selection", selection.merge("top" => [*selection["top"], ranked]))
+      end
+    end
+
+    it "sends that label's suggested drop as the index's name, size, and idx_scan, and no other label's" do
+      expect(label("original:top:2")["suggested_drops"])
+        .to eq([{ "name" => "orders_created_at_id_idx", "size_bytes" => 40_960, "idx_scan" => 7 }])
+      expect(label("original:top:1")["suggested_drops"]).to eq([])
+      expect(label("rewrite_1:top:1")).not_to have_key("suggested_drops")
+      expect(outcome.stdout).not_to include(sentinel)
+    end
+  end
+
+  it "sends each proposed index's redacted DDL, size, and prefix coverage" do
     expect(report["indexes"]["quaack_a"]).to eq(
       "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)", "size" => 8192,
-      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }, "makes_redundant" => []
+      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }
     )
-    expect(report["indexes"]["quaack_b"]).to include(
-      "covered_by" => nil, "makes_redundant" => [{ "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }]
+    expect(report["indexes"]["quaack_b"]).to eq(
+      "ddl" => "CREATE INDEX ON public.orders USING btree (created_at, id, note)", "size" => 8192, "covered_by" => nil
     )
     expect(report["indexes"]["quaack_c"]["ddl"]).to include("note = ?")
   end

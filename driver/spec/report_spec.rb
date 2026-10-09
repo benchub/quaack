@@ -62,12 +62,9 @@ RSpec.describe Quaack::Driver::Report do
           "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
-                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 },
-                                     "makes_redundant" => [] },
+                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 } },
                      "quaack_b" => { "ddl" => "CREATE INDEX ON public.t USING btree (a, b)", "size" => 16_384,
-                                     "covered_by" => nil,
-                                     "makes_redundant" => [{ "name" => "t_a_idx", "size_bytes" => 8192 },
-                                                           { "name" => "t_a_b_idx", "size_bytes" => nil }] } },
+                                     "covered_by" => nil } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
                             "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0,
                             "shared_hit_blocks" => 1_200, "shared_read_blocks" => 34 }],
@@ -233,6 +230,51 @@ RSpec.describe Quaack::Driver::Report do
       expect(verdict_rows(render(payload))[1]).to include("| +24 kB |")
       payload["indexes"]["quaack_b"]["size"] = nil
       expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
+    end
+
+    # Task 20261009-8.
+    describe "a suggested drop" do
+      let(:drops) do
+        [{ "name" => "t_old_idx", "size_bytes" => 10_240, "idx_scan" => 1234 },
+         { "name" => "t_older_idx", "size_bytes" => 2048, "idx_scan" => 1 }]
+      end
+
+      before do
+        payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
+        payload["labels"][0]["suggested_drops"] = drops
+      end
+
+      def candidate_section(html)
+        html[%r{<article class="candidate">(?:(?!</article>).)*?Its new indexes.*?</article>}m]
+      end
+
+      it "subtracts the dropped indexes' sizes from the row's index change, and goes negative if they outweigh it" do
+        expect(verdict_rows(render(payload))[1]).to include("| +12 kB |")
+        drops[0]["size_bytes"] = 40_960
+        expect(verdict_rows(render(payload))[1]).to include("| -18 kB |")
+      end
+
+      it "says a row's index change isn't recorded when a dropped index's size isn't" do
+        drops[1]["size_bytes"] = nil
+        expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
+      end
+
+      it "names each index in the ranked candidate's section, with its size and scan count, and warns" do
+        section = candidate_section(render(payload))
+
+        expect(section).to include("Other queries may use them, so check before you drop one.")
+        expect(section).to include("#{sq("t_old_idx")} (10 kB), production&#39;s statistics show 1,234 scans")
+        expect(section).to include("#{sq("t_older_idx")} (2 kB), production&#39;s statistics show 1 scan<")
+        expect(section).to include("QUAACK doesn't drop anything.", "a replica's use isn't in them")
+      end
+
+      it "says so when an index's scan count isn't recorded, and shows nothing for a label with no drops" do
+        drops[0]["idx_scan"] = nil
+        expect(candidate_section(render(payload))).to include("its scan count isn&#39;t known")
+        payload["labels"][0].delete("suggested_drops")
+        expect(render(payload)).not_to include("QUAACK doesn't drop anything.")
+        expect(verdict_rows(render(payload))[1]).to include("| +24 kB |")
+      end
     end
 
     it "says over 99% fewer, as the ranked tables do, when rounding would say all of them" do
@@ -1254,13 +1296,13 @@ RSpec.describe Quaack::Driver::Report do
       expect(indexes.scan("<table").size).to eq(2)
     end
 
-    it "gives each index its size, and each existing index it overlaps with its size, in the last two columns" do
+    it "gives each index its size, and the existing index that covers it with its size, in the last two columns" do
       expect(indexes).to include(
         "<tr><td>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</td><td class=\"num\">8 kB</td>" \
-        "<td>#{sq("t_created_at_id_idx")} (40 kB)</td><td>none</td></tr>"
+        "<td>#{sq("t_created_at_id_idx")} (40 kB)</td></tr>"
       )
-      expect(indexes).to include('<td class="num">16 kB</td><td>none</td>' \
-                                 "<td>#{sq("t_a_idx")} (8 kB)<br>#{sq("t_a_b_idx")} (size not recorded)</td></tr>")
+      expect(indexes).to include('<td class="num">16 kB</td><td>none</td></tr>')
+      expect(indexes).not_to include("make redundant", "makes_redundant")
     end
 
     it "uses the unit that fits, with thousands separators" do
@@ -2501,9 +2543,8 @@ RSpec.describe Quaack::Driver::Report do
                          "plan" => [node], "untested_atoms" => [z, "a < $1"], "covered" => [z],
                          "evidence" => false }],
         "indexes" => { "quaack_z" => { "ddl" => "CREATE INDEX ON #{z}", "size" => 8192,
-                                       "covered_by" => { "name" => z, "size_bytes" => 1 },
-                                       "makes_redundant" => [{ "name" => z, "size_bytes" => nil }] },
-                       z => { "ddl" => nil, "size" => z, "covered_by" => nil, "makes_redundant" => [] } },
+                                       "covered_by" => { "name" => z, "size_bytes" => 1 } },
+                       z => { "ddl" => nil, "size" => z, "covered_by" => nil } },
         "original_plan" => [node], "timed_out_count" => 1,
         "rule_bugs" => [{ "rewrite" => z, "rules" => [z], "step" => z }],
         "burndown" => { "stages" => { "index-dedupe" => { "original" => record, z => record },

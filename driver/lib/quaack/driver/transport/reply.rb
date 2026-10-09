@@ -7,6 +7,7 @@ require "quaack/protocol/plan_nodes"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
+require "quaack/protocol/suggested_drops"
 require_relative "../enclave_error"
 require_relative "error_fields"
 require_relative "lexical"
@@ -194,15 +195,22 @@ module Quaack
           end
         end
 
-        # A report's index_sources and top, as egress checks.
+        # A report's index_sources, top, and labels' suggested_drops, as egress checks.
         def report_counts?(line)
-          Protocol::IndexSources.valid?(line["index_sources"]) && Protocol::CandidateKinds.valid?(line.fetch("top", []))
+          Protocol::IndexSources.valid?(line["index_sources"]) &&
+            Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line)
         end
 
         # A report's hidden_statistics, if it has one, must pass
         # Protocol::HiddenStatistics.valid?, as egress checks.
         def hidden_statistics?(line)
           !line.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(line["hidden_statistics"])
+        end
+
+        # Each label's suggested_drops, if it has one, must pass
+        # Protocol::SuggestedDrops.valid?, as egress checks.
+        def suggested_drops?(line)
+          line["labels"].all? { Protocol::SuggestedDrops.valid?(it.fetch("suggested_drops", [])) }
         end
 
         # Whether a report's original_plan, and the plan of each of its

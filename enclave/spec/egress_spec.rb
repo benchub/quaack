@@ -329,6 +329,35 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261009-8: a label's suggested_drops is index names and counts
+    # (Protocol::SuggestedDrops.valid?).
+    describe "a label's suggested_drops" do
+      let(:drops) { [{ "name" => "orders_created_at_idx", "size_bytes" => 40_960, "idx_scan" => 12 }] }
+
+      def report_with(drops)
+        planted = labels.first.merge("suggested_drops" => drops)
+        { type: :report, original_plan: [plan_node], rewrites:, labels: [planted], index_sources: }
+      end
+
+      it "sends names and counts as they are" do
+        expect(JSON.parse(egress.serialize(report_with(drops)))["labels"].first["suggested_drops"]).to eq(drops)
+      end
+
+      [
+        ["a predicate under a planted key", ->(d) { [d.first.merge("predicate" => EGRESS_SENTINEL)] }],
+        ["a String in place of the scan count", ->(d) { [d.first.merge("idx_scan" => EGRESS_SENTINEL)] }],
+        ["a value in place of the list", ->(_) { EGRESS_SENTINEL }]
+      ].each do |what, changed|
+        it "refuses one with #{what}, without quoting it" do
+          expect { egress.serialize(report_with(changed.call(drops))) }
+            .to raise_error(described_class::Error, /suggested drops/) { |e|
+              expect(e.message).not_to include(EGRESS_SENTINEL)
+              expect(e.cause).to be_nil
+            }
+        end
+      end
+    end
+
     # Task 20261008-34: hidden_statistics is expression index names and a
     # count of extended statistics objects, never their names
     # (Protocol::HiddenStatistics.valid?). An older payload has none.

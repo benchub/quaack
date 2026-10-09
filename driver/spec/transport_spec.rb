@@ -849,6 +849,26 @@ RSpec.describe Quaack::Driver::Transport do
         "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1, "existed" => 0, "ignored" => 0 } }
     end
 
+    # Task 20261009-8. Egress sends a label's suggested_drops only if
+    # Protocol::SuggestedDrops.valid? passes, so the driver checks the same.
+    it "reads a label whose suggested_drops Protocol::SuggestedDrops.valid? passes, and refuses one it doesn't" do
+      report = lambda do |drops|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "index_sources" => index_sources,
+                        "labels" => [{ "label" => "original:top:1", "suggested_drops" => drops }] })
+      end
+      drops = [{ "name" => "orders_idx", "size_bytes" => 8192, "idx_scan" => 3 }]
+      result = raw("print #{"#{report.call(drops)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first["labels"].first["suggested_drops"]).to eq(drops)
+      [[drops.first.merge("predicate" => sentinel)], [drops.first.merge("idx_scan" => sentinel)],
+       sentinel].each do |planted|
+        error = refusal(report.call(planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Task 20261008-34. Egress sends hidden_statistics only if
     # Protocol::HiddenStatistics.valid? passes, so the driver checks the same.
     it "reads a report whose hidden_statistics Protocol::HiddenStatistics.valid? passes, and refuses one it doesn't" do
