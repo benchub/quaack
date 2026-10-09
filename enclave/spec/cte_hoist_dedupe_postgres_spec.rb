@@ -251,6 +251,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
     end
   end
 
+  it "merges bodies whose literals match in value and shape (control for the refusals above)" do
+    sql = "SELECT users.id FROM public.users WHERE users.id IN (WITH a AS (#{body(1)}) SELECT user_id FROM a) " \
+          "AND users.id IN (WITH a AS (#{body(1)}) SELECT user_id FROM a)"
+
+    expect(rewritten(sql).size).to eq(1)
+  end
+
   it "doesn't merge copies whose materialization or column names differ", :aggregate_failures do
     [
       ["a AS MATERIALIZED", "a AS"],
@@ -262,6 +269,16 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
             "AND users.id IN (WITH #{other} (#{body}) SELECT * FROM a)"
 
       expect(rewritten(sql)).to eq([]), other
+    end
+  end
+
+  it "merges copies whose materialization and column names match (control for the refusals above)",
+     :aggregate_failures do
+    ["a AS MATERIALIZED", "a AS NOT MATERIALIZED", "a (user_id) AS"].each do |same|
+      sql = "SELECT users.id FROM public.users WHERE users.id IN (WITH #{same} (#{body}) SELECT * FROM a) " \
+            "AND users.id IN (WITH #{same} (#{body}) SELECT * FROM a)"
+
+      expect(rewritten(sql).size).to eq(1), same
     end
   end
 
@@ -290,6 +307,16 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
     end
   end
 
+  it "merges a CTE with the same shape as a correlated one but no outside name (control)" do
+    sql = "SELECT users.id FROM public.users WHERE users.id IN " \
+          "(WITH a AS (SELECT uaa.user_id FROM public.user_account_associations uaa WHERE uaa.user_id = uaa.id) " \
+          "SELECT user_id FROM a) AND users.id IN " \
+          "(WITH a AS (SELECT uaa.user_id FROM public.user_account_associations uaa WHERE uaa.user_id = uaa.id) " \
+          "SELECT user_id FROM a)"
+
+    expect(rewritten(sql).size).to eq(1)
+  end
+
   it "refuses a CTE that reads another CTE from outside its body, even when a table has that name" do
     conn.exec("CREATE TABLE public.b (user_id int)")
     sql = "WITH b AS (#{body}) SELECT users.id FROM public.users " \
@@ -297,6 +324,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
           "AND users.id IN (WITH a AS (SELECT user_id FROM b) SELECT user_id FROM a)"
 
     expect(rewritten(sql)).to eq([])
+  end
+
+  it "hoists the same copies when they read a table, not an outer CTE (control)" do
+    conn.exec("CREATE TABLE public.b (user_id int)")
+    sql = "SELECT users.id FROM public.users " \
+          "WHERE users.id IN (WITH a AS (SELECT user_id FROM public.b) SELECT user_id FROM a) " \
+          "AND users.id IN (WITH a AS (SELECT user_id FROM public.b) SELECT user_id FROM a)"
+
+    expect(rewritten(sql).size).to eq(1)
   end
 
   it "hoists sibling copies but not a CTE that reads its earlier sibling, even when a table has that name" do
@@ -350,6 +386,14 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
     expect(rewritten(sql)).to eq([])
   end
 
+  it "merges a CTE that calls an immutable function (control for the volatile refusal)" do
+    immutable = "SELECT user_id FROM public.user_account_associations WHERE account_id < abs(-3)"
+    sql = "SELECT users.id FROM public.users WHERE users.id IN (WITH a AS (#{immutable}) SELECT user_id FROM a) " \
+          "AND users.id IN (WITH a AS (#{immutable}) SELECT user_id FROM a)"
+
+    expect(rewritten(sql).size).to eq(1)
+  end
+
   it "refuses recursive CTEs, and a query with a recursive top-level WITH", :aggregate_failures do
     recursive = "WITH RECURSIVE a AS (#{body}) SELECT user_id FROM a"
     [
@@ -360,6 +404,14 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
     ].each do |sql|
       expect(rewritten(sql)).to eq([]), sql
     end
+  end
+
+  it "merges the same copies under a non-recursive WITH (control for the recursive refusals)" do
+    plain = "WITH a AS (#{body}) SELECT user_id FROM a"
+    sql = "WITH r AS (SELECT 1 AS n) SELECT users.id FROM public.users " \
+          "WHERE users.id IN (#{plain}) AND users.id IN (#{plain})"
+
+    expect(rewritten(sql).size).to eq(1)
   end
 
   it "refuses a query with a data-modifying CTE" do
