@@ -323,7 +323,8 @@ module Quaack
         end
 
         # completion, its usage kept for Client.
-        def used(completion) = completion.tap { @usage = Usage.openai(it.usage) }
+        # Read from the Hash, since the gem's reader raises for a null count.
+        def used(completion) = completion.tap { @usage = Usage.openai(it.to_h[:usage]) }
 
         def bad_response(detail) = raise(Error.new("llm_bad_response", detail))
       end

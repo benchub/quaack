@@ -41,7 +41,15 @@ module Quaack
         def llm_usage(raw)
           map(raw) { |name, counts| name?(name) && counts.is_a?(Hash) }
             &.transform_values { it.select { |kind, n| usage?(kind, n) } }
-            &.select { |_, kept| %w[seconds used reported].all? { kept.key?(it) } }
+            &.select { |_, kept| whole?(kept) }
+        end
+
+        # Whether usage holds seconds, used, and reported, and, if it
+        # reported tokens, input and output counts.
+        def whole?(usage)
+          needed = %w[seconds used reported]
+          needed += %w[input output] unless usage["reported"]&.zero?
+          needed.all? { usage.key?(it) }
         end
 
         def usage?(kind, value)

@@ -251,6 +251,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows("llm-usage")["Total"].take(3)).to eq(["7", "1", "1 min 13.8 s"])
     end
 
+    it "says not reported in the total's token columns that no entry reported" do
+      usage.replace("gpt" => usage["gpt"])
+      expect(rows("llm-usage")["Total"]).to eq(["7", "1", "5.0 s", *["not reported"] * 5])
+    end
+
     it "has no table when no entry's wait was recorded" do
       usage.clear
       expect(html).not_to include(%(<table id="llm-usage">))

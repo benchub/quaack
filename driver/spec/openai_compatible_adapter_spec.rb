@@ -42,6 +42,16 @@ RSpec.describe "the OpenAI-compatible adapter" do
       .to eq("used" => 1, "reported" => 1, "input" => 40, "output" => 9, "cached" => 32, "reasoning" => 6)
   end
 
+  it "records partial usage, with a null or missing count, as not reported, and goes on" do
+    fake.raw("llm-rewrites", completion_with({ prompt_tokens: nil, completion_tokens: 3 }))
+    fake.raw("llm-rewrites", completion_with({ prompt_tokens: 4 }))
+    fake.reply("llm-rewrites", "ok")
+    3.times { expect(ask("llm-rewrites", provider: "p")).to eq("ok") }
+
+    expect(burndown.llm_usage.fetch("p").except("seconds"))
+      .to eq("used" => 3, "reported" => 1, "input" => 1, "output" => 1)
+  end
+
   it "records a completion with no usage as not reported" do
     fake.raw("llm-rewrites", completion_with(nil))
     ask("llm-rewrites", provider: "p")
