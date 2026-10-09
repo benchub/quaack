@@ -1182,3 +1182,12 @@ The user, 2026-10-09: "I thought I saw you'd implemented a dark mode, but I don'
 - **Design:** report.
 - **Open questions:** Does the user's system or browser prefer dark? Which `quaack` version made the report? Do they want a manual theme choice?
 - **Status:** todo
+
+### 20261009-31. Report: shorten "made by QUAACK's own rewrite rule" to "transform rule".
+
+The user, 2026-10-09. A rewrite's summary reads "Where it came from: made by QUAACK's own rewrite rule key_in_self_join". Shorten it to "Where it came from: transform rule key_in_self_join". The wording comes from `RULES` in `driver/lib/quaack/driver/report/rewrites.rb:14` and the rule-link helper (`rule_links.rb`). README.md (the "Where it came from" bullet, and the example in the section that should never appear) quotes the old phrase; DESIGN.md may too. Update all of them and the report specs, checking that two rules applied in a row are still both named in order and each still links to its page. Sweep the report for other places that say "QUAACK's own rewrite rule" and give the user the list, but change only the "Where it came from" phrase unless the user says otherwise.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
