@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-4: rule rewrites counted in assumption-check and plan-pruning.
 - 20261008-76: baseline cap.
 
 
@@ -2311,17 +2312,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-4. Burndown funnels: width is what's in the pipe.
-
-Reported by the user, 2026-10-09, against 20261004-55's funnels. Each band is drawn from its own record's `in` to its `out`, so a generator stage (in 0) starts from a point, and the bands don't join up. What the user wants instead: the width shows how many things are in the pipe. Every band starts exactly as wide as the band before it ended. A stage that adds nothing and drops nothing keeps that width. One that drops (or sets aside) narrows, and one that adds widens. So the bottom is top + added − dropped − set aside, which should equal the stage's `out`. The first band starts at zero width.
-
-- **Decided (user, 2026-10-09):** (1) If a stage's recorded `in` doesn't match the previous band's end, that's a counting bug. The drawing carries the running width anyway. A spec over the recorded runs must catch any such mismatch, and the bug that causes it gets fixed. In report quaack-20261008T211715Z-c349a0af.html, "Checking what each rewrite assumes" says 4 came in, after the rules (4) and the LLM (4) leave 8, and the next stage says 8 again. It probably counts only the rule rewrites. Find that and fix it. (2) The index search for rewrites ("Index ideas for the rewrites: …" stages) counts index ideas, not rewrites, so it comes out of the rewrite funnel into a third funnel, with its own table and its own scale. The rewrite funnel then goes straight on to "Choosing indexes for each rewrite".
-- **Also (user, 2026-10-09):** Give each stage its own color from a fixed, accessible palette, so a stage keeps its color across reports. Unknown and partial bands stay grey. Make the hover show more: the band <title> lists the full added, dropped, and set-aside breakdowns, plus a short note on what the stage does if a source for that text already exists.
-- **Unknown bands:** a "not recorded" row keeps the running width, grey and striped as now, never narrower than UNKNOWN. A partial row (in known, out not) keeps the width it came in at.
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, burndown.
-- **Status:** todo
+### 20261009-4. Burndown funnels: width is what's in the pipe. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-5. Baseline cap: leftovers from 20261008-76.
 
@@ -2391,4 +2382,13 @@ Asked for by the user on 2026-10-09. QUAACK only ever adds indexes. When a winni
 - **Depends on:** 20261009-7.
 - **Came from:** The user, 2026-10-09.
 - **Design:** index-dedupe, report.
+- **Status:** todo
+
+### 20261009-9. Funnel hover: say what each stage does.
+
+Left over from 20261009-4. The user asked for more detail on hover. The hover already shows full counts, but no text says what each stage does, so none was added. Write one short, plain sentence per stage, in a Words table, drawn from DESIGN.md's stage descriptions. Show it in each band's hover and in the table row's tooltip.
+
+- **Depends on:** 20261009-4.
+- **Came from:** The build and review of 20261009-4, 2026-10-09.
+- **Design:** report, burndown.
 - **Status:** todo
