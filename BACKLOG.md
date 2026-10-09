@@ -1240,3 +1240,14 @@ Reuse the `details.query` rules (a left stripe, a `position: sticky` summary bar
 - **Design:** report.
 - **Open questions:** Whether the index-ideas sections start open or closed.
 - **Status:** todo
+
+### 20261009-35. Ranking: set each kind's heading apart from its rows.
+
+The user, 2026-10-09. In the Ranking table, the kind headings ("A rewrite of the original query, with new indexes", "A rewrite of the original query, with no new indexes", "The original query, with new indexes") are `<tr class="kind"><th scope="rowgroup" colspan="5">` rows in the one table, and they don't stand out from the ranked rows under them. Make each heading read as a heading for its rows. The user leaves the design to us; they suggested an indent for the rows, and maybe a vertical stripe for each group.
+
+A direction to start from: give the heading row a tinted background and a bold weight, indent the rank and candidate cells of the rows under it, and run a left stripe of that group's color down the heading and its rows (a different stripe color per kind, from the report's existing color variables, so it works in both themes). Keep it a single `<table>` with `rowgroup` headings, so screen readers still announce the group, and keep each group's rows numbered from 1. Add any new colors as variables with dark values, as the report's spec requires, and check contrast. Show the user the result as a screenshot in both themes, since this is a visual choice. Update DESIGN.md's ranking bullet and the report spec (assert the heading's class, the group's rows carry the stripe class, and each kind's stripe class differs).
+
+- **Depends on:** None. Touches the report CSS that 20261009-26 and 20261009-34 also change; build after them.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
