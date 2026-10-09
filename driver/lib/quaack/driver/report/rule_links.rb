@@ -34,12 +34,13 @@ module Quaack
             rules.map { rule_link(it) }.join(", then ")
         end
 
-        # A rule's name, escaped, and linked to its page if it's one of QUAACK's.
+        # A rule's name, escaped, and linked to its page, in a new tab, if
+        # it's one of QUAACK's.
         def rule_link(name)
           known = Protocol::StepCounts::RULE_NAMES.find { it == name }
           return Format.h(name) unless known
 
-          %(<a href="#{Format.h("#{PAGES}#{known}.md")}">#{Format.h(known)}</a>)
+          %(<a href="#{Format.h("#{PAGES}#{known}.md")}" target="_blank" rel="noopener">#{Format.h(known)}</a>)
         end
       end
     end

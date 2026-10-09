@@ -186,7 +186,7 @@ RSpec.describe PipelineReplay do
       it "shows the source and the rewrite-rules row in the report file `quaack run` writes" do
         expect(outcome.html).to include(
           "Where it came from: made by QUAACK&#39;s own rewrite rule <a href=\"https://github.com/benchub/quaack/" \
-          "blob/main/docs/transforms/key_in_self_join.md\">key_in_self_join</a>."
+          "blob/main/docs/transforms/key_in_self_join.md\" target=\"_blank\" rel=\"noopener\">key_in_self_join</a>."
         )
         expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
                                         '<td class="num">0</td><td>by the rule key_in_self_join: 1</td>')
