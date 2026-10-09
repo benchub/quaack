@@ -8544,3 +8544,15 @@ Each ranked label carries its kind in the report payload, from a fixed list in t
 - **Design:** selection, report.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 2d66ff7f and 4c441ca3. Selection keeps the top three per kind (`Protocol::CandidateKinds`), and each `top` entry carries its kind, which egress and the driver check. The report groups the ranking by kind. Left over: the `below_top_three` wording ("three other candidates did better") now means three others of its kind. Fold that into 20261009-10's wording pass.
+
+### 20261009-5. Baseline cap: leftovers from 20261008-76.
+
+- **e2e case 034** runs its original for many minutes. Any cap low enough to finish quickly makes baseline refuse instead. Make the case finish, for example with a lighter dataset or a planted query that isn't pathological, without lowering the default.
+- **Dead code:** `Baseline.entry` still handles timed-out sets, and its spec "clamps the candidates' timeout when every set timed out" still tests that, but `call` now refuses first. Remove both.
+- **Untested:** the driver's fixed note for `baseline_original_exceeded_cap` has no `fixed_notes_spec` coverage, and neither does the full path from `Baseline::Error` through ErrorFilter to an egress line.
+
+- **Depends on:** 20261008-76.
+- **Came from:** The build and review of 20261008-76, 2026-10-09.
+- **Design:** baseline.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** aac806fc. Removes the dead timed-out handling in `Baseline.entry`, and adds specs for the fixed note and for the path from `Baseline::Error` to an egress line. Case 034 moved to 20261009-15: every lighter dataset also made the original beat the rewrite.

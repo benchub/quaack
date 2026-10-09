@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-5: baseline dead code removed.
 - 20261009-6: top three per kind.
 - 20261009-4: rule rewrites counted in assumption-check and plan-pruning.
 - 20261008-76: baseline cap.
@@ -2315,16 +2316,7 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 
 ### 20261009-4. Burndown funnels: width is what's in the pipe. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-5. Baseline cap: leftovers from 20261008-76.
-
-- **e2e case 034** runs its original for many minutes. Any cap low enough to finish quickly makes baseline refuse instead. Make the case finish, for example with a lighter dataset or a planted query that isn't pathological, without lowering the default.
-- **Dead code:** `Baseline.entry` still handles timed-out sets, and its spec "clamps the candidates' timeout when every set timed out" still tests that, but `call` now refuses first. Remove both.
-- **Untested:** the driver's fixed note for `baseline_original_exceeded_cap` has no `fixed_notes_spec` coverage, and neither does the full path from `Baseline::Error` through ErrorFilter to an egress line.
-
-- **Depends on:** 20261008-76.
-- **Came from:** The build and review of 20261008-76, 2026-10-09.
-- **Design:** baseline.
-- **Status:** todo
+### 20261009-5. Baseline cap: leftovers from 20261008-76. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-6. Selection: keep the top three in each kind of change. Done, see BACKLOG-COMPLETE.md.
 
@@ -2431,4 +2423,13 @@ Reported by the user, 2026-10-09. The `not_better` fate (`report/rewrites.rb`) r
 - **Depends on:** 20261009-10, which changes the same strings.
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, minimax.
+- **Status:** todo
+
+### 20261009-15. e2e case 034: assert the baseline cap refusal instead.
+
+Split from 20261009-5. Case 034's original is pathological on purpose, since that's what lets the rewrite win. Every lighter dataset tried (fewer or wider `orders` rows, more `work_mem`) let the original hash its `NOT IN` and beat the rewrite. So the case can't finish quickly and still make its point. Proposed: run 034 with a short `baseline_cap_seconds` in its e2e config, and assert that baseline refuses with `baseline_original_exceeded_cap` and shows the driver's note. That turns the case into an end-to-end test of the cap. Keep the "rewrite beats a pathological NOT IN" claim only if another case can show it cheaply.
+
+- **Depends on:** 20261009-5.
+- **Came from:** The build of 20261009-5, 2026-10-09.
+- **Design:** baseline, e2e.
 - **Status:** todo
