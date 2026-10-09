@@ -64,18 +64,41 @@ module Quaack
         text && PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: text)))
       end
 
-      # x = ANY (ARRAY[...]) as x IN (...), its elements respelled too.
+      # An array literal's text ('{1,2}') whose elements are all plain and
+      # unquoted. Anything else (quotes, NULL, nesting, empty) isn't merged.
+      LITERAL = /\A\{[^{}"\\,\s]+(?:,[^{}"\\,\s]+)*\}\z/
+
+      # x = ANY (ARRAY[...]) or x = ANY ('{...}') as x IN (...), its elements respelled too.
       def in_list(expr)
         return unless any_array?(expr)
 
-        items = expr.rexpr.a_array_expr.elements.map { spelled(it) || it }
+        items = elements(expr.rexpr)&.map { spelled(it) || it }
+        return unless items
+
         lexpr = spelled(expr.lexpr) || expr.lexpr
         PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_IN, name: expr.name.to_a, lexpr:,
                                                       rexpr: PgQuery::Node.new(list: PgQuery::List.new(items:))))
       end
 
       def any_array?(expr)
-        expr.kind == :AEXPR_OP_ANY && expr.name.map { it.string.sval } == ["="] && expr.rexpr&.node == :a_array_expr
+        expr.kind == :AEXPR_OP_ANY && expr.name.map { it.string.sval } == ["="]
+      end
+
+      def elements(rexpr)
+        case rexpr&.node
+        when :a_array_expr then rexpr.a_array_expr.elements.to_a
+        when :a_const then literal_elements(rexpr.a_const)
+        end
+      end
+
+      def literal_elements(const)
+        text = const.val == :sval && const.sval.sval
+        return unless text && LITERAL.match?(text)
+
+        values = text[1...-1].split(",")
+        return if values.any? { it.casecmp?("null") }
+
+        values.map { PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: it))) }
       end
 
       # The constant, column, or array under node's casts, its own
