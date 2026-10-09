@@ -30,10 +30,17 @@ module Quaack
 
           # The columns of node, each qualified, or nil if node can't move.
           def movable(node, sub, catalog)
-            return if node.node == :param_ref || Tree.find(node, PgQuery::SubLink).any?
+            return if bare_placeholder?(node) || Tree.find(node, PgQuery::SubLink).any?
 
             columns = Tree.find(node, PgQuery::ColumnRef)
             columns if columns.all? { qualify!(it, sub, catalog) }
+          end
+
+          # Whether node is a placeholder, alone or under COLLATE, which
+          # keeps it a plain constant.
+          def bare_placeholder?(node)
+            node = node.collate_clause.arg while node.node == :collate_clause
+            node.node == :param_ref
           end
 
           # The column as name.column, or nil: it was, or it was a bare
