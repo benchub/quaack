@@ -2,6 +2,13 @@
   "title": "NOT IN over a NOT NULL column",
   "category": "rewrite",
   "compare": "multiset",
+  "config": {
+    "baseline_cap_seconds": 5
+  },
+  "expect_stop": {
+    "step": "baseline",
+    "rule": "baseline_original_exceeded_cap"
+  },
   "features": [
     "NOT IN subquery",
     "anti-join rewrite",

@@ -25,6 +25,18 @@ RSpec.describe "e2e/run.rb" do
     homes&.each { FileUtils.rm_rf(it) }
   end
 
+  # Task 20261009-15: case 034's original is too slow for a 5 second
+  # baseline_cap_seconds, so the case ends as an end-to-end test of the cap.
+  it "runs case 034 with a short baseline cap and passes on the cap's refusal and the driver's note" do
+    kase = E2ERun::Case.new(File.join(E2ERun::CASES, "034-not-in-to-not-exists"))
+    result = E2ERun.run_case(TestPostgres.server, kase)
+    expect(result.verdict).to eq("PASS")
+    expect(result.detail).to start_with("stopped at baseline with baseline_original_exceeded_cap: The original " \
+                                        "query ran past QUAACK's cap on a baseline run")
+    expect(result.detail).to include("baseline_cap_seconds in ~/.quaack/config.json")
+    expect(result.seconds).to be < 120
+  end
+
   def with_kept_home
     saved = ENV.fetch("QUAACK_E2E_KEEP", nil)
     ENV["QUAACK_E2E_KEEP"] = "1"

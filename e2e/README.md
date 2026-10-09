@@ -35,6 +35,8 @@ Each literal set replaces text in the queries, such as `{"4242": "31337"}`. The 
 
 Each `results.md` ends with the bound for BACKLOG 20260922-65. For `index`, `rewrite`, and `both` cases, QUAACK's top-ranked fix must touch no more total blocks on the slow literals than the case's own fix, and must pass minimax. QUAACK may find a different index or rewrite, often a better covering index, and that still passes. The named fix proves the bound can be reached, and the case README explains why. `none`, `trap`, and `refused` cases state an outcome instead.
 
+A case can also set `config` in `case.json`, written to the enclave's `~/.quaack/config.json` by `run.rb`, and `expect_stop` (`step` and `rule`), which makes `run.rb` pass the case only when the pipeline stops there. Case 034 uses both: a 5 second `baseline_cap_seconds` makes baseline refuse its pathological `NOT IN` as `baseline_original_exceeded_cap`. `verify.rb` still proves the rewrite wins.
+
 ## Categories.
 
 | Category | Meaning | What `verify.rb` checks |
