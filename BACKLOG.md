@@ -120,8 +120,6 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20261002-6. 6c rule: `shared_scan_cte`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-8. 6c rule: `cte_hoist_dedupe`. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261002-9. 6c rule: `union_outer_filter_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-4. `distinct_join_to_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
@@ -273,19 +271,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20261003-3. Report payload: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-5. Report payload: what the index accountability table still lacks. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-14. `cte_hoist_dedupe`: build-time loose ends.
-
-Out-of-scope findings from the build of 20261002-8:
-
-- **Untyped body placeholders are treated as text.** If Postgres can't infer a placeholder's type in a CTE body, `self_contained?` prepares it as text. Some bodies may then be refused, or matched, for the wrong reason. Check whether this costs real rewrites.
-- **Unqualified table names resolve with the catalog connection's `search_path`.** If that differs from the app's, the rule could judge a body against the wrong table. Pin the search_path, or refuse unqualified names when it's ambiguous.
-- **Some older refusal tests in the rule spec have no positive control.** Mutation testing shows they aren't vacuous, but a positive twin for each would make that obvious.
-
-- **Depends on:** 20261002-8.
-- **Came from:** The build of 20261002-8, 2026-10-03.
-- **Design:** rewrite-rules.
-- **Status:** todo
 
 ### 20261003-18. A scenario refusal shouldn't end the run. Done, see BACKLOG-COMPLETE.md.
 
@@ -1224,4 +1209,3 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Status:** todo
 
 ### 20261009-23. Suggested drops miss partial indexes on varchar columns. Done, see BACKLOG-COMPLETE.md.
-

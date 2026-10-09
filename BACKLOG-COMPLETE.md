@@ -8857,3 +8857,17 @@ From the Opus review of 20261009-23. Nothing commutes the sides of a comparison,
 - **Design:** index-dedupe.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** d717f933, spec only. Operand order is pinned in dedupe and RedundantIndexes for `<>` and `<`.
+
+### 20261003-14. `cte_hoist_dedupe`: build-time loose ends.
+
+Out-of-scope findings from the build of 20261002-8:
+
+- **Untyped body placeholders are treated as text.** If Postgres can't infer a placeholder's type in a CTE body, `self_contained?` prepares it as text. Some bodies may then be refused, or matched, for the wrong reason. Check whether this costs real rewrites.
+- **Unqualified table names resolve with the catalog connection's `search_path`.** If that differs from the app's, the rule could judge a body against the wrong table. Pin the search_path, or refuse unqualified names when it's ambiguous.
+- **Some older refusal tests in the rule spec have no positive control.** Mutation testing shows they aren't vacuous, but a positive twin for each would make that obvious.
+
+- **Depends on:** 20261002-8.
+- **Came from:** The build of 20261002-8, 2026-10-03.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** spec only. Six positive controls, each paired with a refusal test. Item 1 was stale: placeholders are prepared as unknown, and their type can't change name resolution. Item 2 was stale: rules run on `qualified_query`, so tables are already schema-qualified.
