@@ -722,6 +722,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - The 1216-failure run is still unexplained. Two guesses, neither confirmed: spec processes in different PID namespaces or sandboxes on the same hostname, where `kill(0)` returns ESRCH; or containers dying outside our code, such as a Docker Desktop restart or OOM. Watch for a repeat.
 - A resumed run still restarts counterexamples at round 1 (from 20260926-25).
 
+- **Needs a decision (asked 2026-10-09):** The restart is still true, but nothing can be double counted. The burndown records only when a rewrite is decided. Picking up at round N+1 would need each earlier round's inserts and feedback. Option (1): save them in the driver's provenance record (`~/.quaack/runs/<id>.llm.json`) and replay them through `fresh_message`. If the enclave's `rewrite_round_<n>` disagrees, restart at round 1. Option (2): drop the item as correct by design, since a resume loses at most three LLM asks per interrupted rewrite. Storing the inserts in the enclave is ruled out, because it would send LLM SQL back out. The main session leans toward (2), given cost first.
 - **Depends on:** 20260926-21, 20260926-25.
 - **Came from:** Build of 20260926-21 and -25.
 - **Design:** counterexamples; CLAUDE.md Development.
