@@ -198,12 +198,12 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(JSON.generate(stored.read("redacted_plan"))).to include(sentinels.text)
     expect_no_leaks(sentinels, outcome)
     expect(sent["mechanical_results"]["set_aside"].last(2).map { it["ddl"] }).to eq(
-      ["CREATE INDEX ON public.orders USING btree (created_at) WHERE status = ? OR status = 'held'",
+      ["CREATE INDEX ON public.orders USING btree (created_at) WHERE status = 'held' OR status = ?",
        "CREATE INDEX ON public.orders USING btree (COALESCE(note, ?))"]
     )
     planted = sent["mechanical_results"]["candidates"].last(2)
     expect(planted.map { it["ddl"] }).to eq(
-      ["CREATE INDEX ON public.orders USING btree (created_at) WHERE status = ? OR status = 'held'",
+      ["CREATE INDEX ON public.orders USING btree (created_at) WHERE status = 'held' OR status = ?",
        "CREATE INDEX ON public.orders USING btree (COALESCE(note, ?))"]
     )
     expect(planted.map { it["partial_constant_only"] }).to eq([true, false])

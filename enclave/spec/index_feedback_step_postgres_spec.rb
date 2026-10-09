@@ -71,7 +71,7 @@ RSpec.describe "quaacks index-feedback, against a real server" do
     expect(sent["baseline"]).to eq(entry["baseline"].transform_values { it["total_cost"] })
     expect(sent["candidates"].map { it.slice("ddl", "shortfall", "beaten_by") }).to eq(
       [{ "ddl" => "CREATE INDEX ON public.orders USING btree (COALESCE(note, ?)) " \
-                  "WHERE status = 'held' AND note = ?", "shortfall" => "unused", "beaten_by" => nil },
+                  "WHERE note = ? AND status = 'held'", "shortfall" => "unused", "beaten_by" => nil },
        { "ddl" => "CREATE INDEX ON public.orders USING btree (status, total)", "shortfall" => "beaten",
          "beaten_by" => "CREATE INDEX ON public.orders USING btree (status)" },
        { "ddl" => "CREATE INDEX ON public.orders USING btree (status, note)", "shortfall" => nil,
