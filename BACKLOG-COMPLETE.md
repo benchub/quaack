@@ -8871,3 +8871,21 @@ Out-of-scope findings from the build of 20261002-8:
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** spec only. Six positive controls, each paired with a refusal test. Item 1 was stale: placeholders are prepared as unknown, and their type can't change name resolution. Item 2 was stale: rules run on `qualified_query`, so tables are already schema-qualified.
+
+### 20261003-26. `union_outer_filter_removal`: widenings, and duplicate candidates.
+
+From the build of 20261002-9:
+
+- **Widen the rule where it's sound.** It now refuses:
+  - arms whose output columns come from a CTE or subquery, since the catalog gives no types for them;
+  - arms whose column types differ harmlessly, such as `int` and `bigint`;
+  - unqualified columns, column aliases, and correlated subqueries in conjuncts.
+  
+  Widen each only with a soundness argument and a real-Postgres test.
+- **The same rewrite can come out twice.** The rule can fire both before and after `cte_hoist_dedupe`, so the candidate list may hold the same SQL reached by different rule orders. Drop candidates whose SQL matches one already listed.
+
+- **Depends on:** 20261002-9.
+- **Came from:** The build of 20261002-9, 2026-10-03.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** - **Dropped (2026-10-09):** Nothing was built. Duplicates are already dropped: `RewriteRules.chained` keeps a shared `seen` set and counts each duplicate under its rule, with specs. Widening to int/bigint arms isn't simply sound, because arithmetic in a conjunct can overflow on int where the bigint copy doesn't, so the rule keeps refusing. The other widenings are rare and stay refused in v1.

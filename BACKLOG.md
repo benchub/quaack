@@ -120,8 +120,6 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20261002-6. 6c rule: `shared_scan_cte`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-9. 6c rule: `union_outer_filter_removal`. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261002-4. `distinct_join_to_exists`: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-41. Support DML statements.
@@ -277,23 +275,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20261003-19. Name the tables in an `fk_cycle` refusal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-26. `union_outer_filter_removal`: widenings, and duplicate candidates.
-
-From the build of 20261002-9:
-
-- **Widen the rule where it's sound.** It now refuses:
-  - arms whose output columns come from a CTE or subquery, since the catalog gives no types for them;
-  - arms whose column types differ harmlessly, such as `int` and `bigint`;
-  - unqualified columns, column aliases, and correlated subqueries in conjuncts.
-  
-  Widen each only with a soundness argument and a real-Postgres test.
-- **The same rewrite can come out twice.** The rule can fire both before and after `cte_hoist_dedupe`, so the candidate list may hold the same SQL reached by different rule orders. Drop candidates whose SQL matches one already listed.
-
-- **Depends on:** 20261002-9.
-- **Came from:** The build of 20261002-9, 2026-10-03.
-- **Design:** rewrite-rules.
-- **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
 
