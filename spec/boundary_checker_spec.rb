@@ -227,6 +227,13 @@ RSpec.describe Boundary do
       expect(flagged_lines(source.join("\n"), forbidden: Boundary::PROTOCOL_FORBIDDEN_REQUIRES)).to eq([1, 2, 3, 4])
     end
 
+    it "give the real driver names-only mode, which ignores paths that leave the gem" do
+      source = %(require_relative "../../../enclave/lib/x"\nrequire "quaack/enclave"\n)
+
+      expect(Boundary::DRIVER_RULES).to include(names_only: true)
+      expect(flagged_lines(source, **Boundary::DRIVER_RULES)).to eq([2])
+    end
+
     it "stop the driver from requiring the enclave" do
       source = %(require "quaack/enclave"\nrequire "quaack/enclave/cli"\nrequire "anthropic"\n)
 

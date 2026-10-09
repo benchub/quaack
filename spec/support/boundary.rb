@@ -53,6 +53,8 @@ module Boundary
   # Both sides load the protocol gem, so it obeys both sides' rules.
   PROTOCOL_FORBIDDEN_REQUIRES = ["quaack/enclave", *ENCLAVE_FORBIDDEN_REQUIRES].freeze
   DRIVER_FORBIDDEN_REQUIRES = ["quaack/enclave"].freeze
+  # The static check's rules for the real driver: forbidden names only.
+  DRIVER_RULES = { forbidden: DRIVER_FORBIDDEN_REQUIRES, names_only: true }.freeze
 
   REQUIRE_METHODS = %i[require require_relative load autoload].freeze
   SHEBANG = "#!/usr/bin/env ruby"

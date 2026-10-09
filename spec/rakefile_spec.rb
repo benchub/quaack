@@ -271,6 +271,21 @@ RSpec.describe "the Rakefile" do
       expect(out).to include("The root spec/ suite didn't run")
     end
 
+    it "fails when the loop skips a suite other than the root" do
+      out, status = run_with(%w[. foo], <<~RUBY)
+        module SkipFoo
+          def run_suite(*, chdir:, &)
+            super unless File.basename(chdir) == "foo"
+          end
+        end
+        extend SkipFoo
+      RUBY
+
+      expect(status).not_to be_success, out
+      expect(runs(out).keys).to contain_exactly("root")
+      expect(out).to include("Spec suites didn't run: foo")
+    end
+
     it "fails, and says why, when a suite can't start" do
       out, status = run_with(%w[foo], 'def Gem.ruby = "/nonexistent/ruby"')
 
