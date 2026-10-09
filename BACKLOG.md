@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
 - 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
 - 20261008-70 (CastlessIndex merges array-literal = ANY with IN).
+- 20261008-77 (set-aside cap spread across tables, one per table first).
 
 
 
@@ -2344,12 +2345,4 @@ Found by 20261008-73. e2e case 034 ran 25 minutes inside `quaacks baseline` with
 - **Design:** baseline, run-discipline.
 - **Status:** todo
 
-### 20261008-77. Set-asides: leftovers from 20260927-19.
-
-- **The cap takes the first two in report order,** not the most useful. On a 2-3 table join, the first table's two unused variants can use up both slots and starve the second table. Spread the cap across tables (one per table first), or rank.
-- **`index_search_step_postgres_spec.rb:97` recomputes the generator_one count with `low_cardinality: []`.** That's right only because its fixture has no low-cardinality columns. Pass the real list.
-
-- **Depends on:** 20260927-19.
-- **Came from:** The review of 20260927-19, 2026-10-08.
-- **Design:** index-from-query, index-test.
-- **Status:** todo
+### 20261008-77. Set-asides: leftovers from 20260927-19. Done, see BACKLOG-COMPLETE.md.

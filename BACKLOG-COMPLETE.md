@@ -8426,3 +8426,14 @@ These are minor findings from the review of 20260927-11:
 - **Design:** index-from-query, index-test, index-build.
 - **Status:** done
 - **Landed:** 3a7d8298, 56334f04 (enclave; on the unreleased list). Review clean. Cap of 2 picked by the builder to match e2e 055. Minors filed as 20261008-77.
+
+### 20261008-77. Set-asides: leftovers from 20260927-19.
+
+- **The cap takes the first two in report order,** not the most useful. On a 2-3 table join, the first table's two unused variants can use up both slots and starve the second table. Spread the cap across tables (one per table first), or rank.
+- **`index_search_step_postgres_spec.rb:97` recomputes the generator_one count with `low_cardinality: []`.** That's right only because its fixture has no low-cardinality columns. Pass the real list.
+
+- **Depends on:** 20260927-19.
+- **Came from:** The review of 20260927-19, 2026-10-08.
+- **Design:** index-from-query, index-test.
+- **Status:** done
+- **Landed:** c46bf95b, fb888ac9, 85d1056e (enclave; on the unreleased list). Review clean. Noted, not filed: the report-order re-sort is untested, but with a cap of 2 the picks are already in report order, so it only matters if the cap grows.
