@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-17: partial index predicates sorted.
 - 20261009-5: baseline dead code removed.
 - 20261009-6: top three per kind.
 - 20261009-4: rule rewrites counted in assumption-check and plan-pruning.
@@ -2402,24 +2403,7 @@ Came from 20261009-11's review. The report has no dark theme. A partial one, wit
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-17. Sort a partial index's top-level AND conditions, so equal predicates read the same.
-
-Reported by the user, 2026-10-09. The same run proposed both of these:
-- `(context_id, id) WHERE context_type = 'Course' AND workflow_state <> 'deleted' AND type = 'Assignment' AND (muted IS NULL OR NOT muted)`
-- `(context_id) INCLUDE (id) WHERE context_type = 'Course' AND type = 'Assignment' AND workflow_state <> 'deleted' AND (muted IS NULL OR NOT muted)`
-
-Their predicates are the same, but in a different order, so the two are hard to compare. When QUAACK writes or normalizes a partial index's predicate, sort the operands of each AND by their deparsed text. Do the same for each OR's operands, and apply it at every level of nesting. Never move a condition across an AND/OR boundary. `c AND b AND a` becomes `a AND b AND c`, and `c OR (b AND a)` becomes `(a AND b) OR c`, but never `a OR b AND c`. Work on pg_query's parse tree (BoolExpr args), never on strings, so precedence is preserved.
-
-Apply it in two places:
-- index DDL that QUAACK emits: the generators, the LLM's ideas after they pass the checks, and the report
-- index-dedupe's normalization, so ideas that differ only in order merge (check whether it already does)
-
-The sort must be deterministic and must not change meaning. Test that sorted and unsorted predicates give the same EXPLAIN on Postgres.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-09.
-- **Design:** index-dedupe, index-from-query, report.
-- **Status:** todo
+### 20261009-17. Sort a partial index's top-level AND conditions, so equal predicates read the same. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-18. Report: a rewrite's "relies on your data" caution reads twice when open.
 
@@ -2428,4 +2412,14 @@ From 20261009-13's review. The body's `p.warn` now repeats the whole summary war
 - **Depends on:** 20261009-13.
 - **Came from:** The review of 20261009-13, 2026-10-09.
 - **Design:** report.
+- **Status:** todo
+
+### 20261009-19. Predicate sort: leftovers from 20261009-17.
+
+- **Untested:** an existing index whose predicate pg_indexes writes in a different order from a candidate's must still match in index-dedupe. Add a Postgres spec: create a partial index, then propose its predicate reordered, and expect it to come back as already covered.
+- **Nested same-op groups:** `c AND (b AND a)` may sort differently from `a AND b AND c`. Flatten nested ANDs inside an AND, and nested ORs inside an OR, before sorting, if pg_query doesn't already do that. Pin it with a spec.
+
+- **Depends on:** 20261009-17.
+- **Came from:** The review of 20261009-17, 2026-10-09.
+- **Design:** index-dedupe.
 - **Status:** todo
