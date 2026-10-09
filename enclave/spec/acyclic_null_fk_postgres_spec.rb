@@ -31,7 +31,8 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
 
   it "loads IS NULL on a nullable foreign key, passing an equivalent rewrite and disproving a wrong one" do
     expect(verdicts("SELECT c.id FROM fx.courses c WHERE c.template_id IS NULL ORDER BY c.id",
-                    ["SELECT c.id FROM fx.courses c WHERE NOT EXISTS (SELECT 1 FROM fx.templates t WHERE t.id = c.template_id) ORDER BY c.id",
+                    ["SELECT c.id FROM fx.courses c WHERE NOT EXISTS " \
+                     "(SELECT 1 FROM fx.templates t WHERE t.id = c.template_id) ORDER BY c.id",
                      "SELECT c.id FROM fx.courses c ORDER BY c.id"]))
       .to eq([[true, nil], [false, :row_count]])
   end
