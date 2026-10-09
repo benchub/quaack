@@ -8320,3 +8320,23 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 - **Design:** schema-dump.
 - **Status:** done
 - **Landed:** 1bc225b3 (spec only, no bump). Review clean.
+
+### 20261003-3. Report payload: minor findings.
+
+The build and review of 20261001-17 found these:
+
+- **`excluded` goes out as stored.** The report message's top-level `excluded` map sends selection's reason strings straight from the selection entry. Send them through a closed list, as `RewriteFate` does.
+- **Selection calls every result-comparison discard `result_mismatch`,** a timeout included. The rewrite's fate is right, but the per-label `excluded` reason still says `result_mismatch` for a result-comparison timeout.
+- **`RewriteFate::FAILURES` is a hand copy** and misses `transaction_closed`, which `ArenaFixture::Error::RULES` has. A rewrite-test or counterexamples failure with that rule goes out with a nil rule. Build the list from `RULES.keys` plus `unsupported_order`.
+- **Two branches no test needs.** `NegativeResult`'s `once` sends an index declined for two different reasons once for each, and grouping by the index alone stays green. `RewriteFate`'s `production` handles selection saying `result_mismatch` when result-comparison's entry has no failing verdict, which `Selection` can't produce, and dropping that stays green. Test each or drop it.
+- **negative-result still repeats other spellings of one predicate:** `amount > 10` and `amount > '10'::numeric`; `status IN ('a', 'b')` and `status = ANY (ARRAY['a'::text, 'b'::text])`; the varchar form `(status)::text = ANY ((ARRAY[...])::text[])`.
+- **Rewrite numbering gaps.** `CandidateRuns.candidates` and `IndexBuild.searches` stop at the first gap in rewrite numbers, while the report lists rewrites across gaps. A rewrite after a gap would never be measured and would read `unfinished`. Find out whether a real run can leave a gap, and make the two agree.
+- **`NegativeResult.disproved` is a shim** kept only for `RuleBugs`. Item 1 of 20261002-2 moves `RuleBugs` onto an allowlist; have it use `RewriteFate` and `ResultComparator::MISMATCHES`, then delete the shim and `RuleBugs`' own copy of `MISMATCHES`.
+- **`e2e/run.rb`'s `why_none`** now tallies rewrite fates, and nobody has run it since.
+- **`spec/pipeline_replay_spec.rb` takes about 24 minutes** on its own. See whether it can share setup or run less.
+
+- **Depends on:** 20261001-17.
+- **Came from:** The build and review of 20261001-17, 2026-10-03.
+- **Design:** report, negative-result.
+- **Status:** done
+- **Landed:** 5ef097be, items 1 to 7 (enclave; on the unreleased list). Items 8 (e2e/run.rb why_none) and 9 (replay spec time) not built; moved to 20261008-70. Review clean.

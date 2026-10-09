@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
+
 
 
 
@@ -999,24 +1001,7 @@ These are minor findings from the review of 20260927-24:
 
 ### 20261003-10. Operator-cancel test: don't blame pg_sleep for other failures. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-3. Report payload: minor findings.
-
-The build and review of 20261001-17 found these:
-
-- **`excluded` goes out as stored.** The report message's top-level `excluded` map sends selection's reason strings straight from the selection entry. Send them through a closed list, as `RewriteFate` does.
-- **Selection calls every result-comparison discard `result_mismatch`,** a timeout included. The rewrite's fate is right, but the per-label `excluded` reason still says `result_mismatch` for a result-comparison timeout.
-- **`RewriteFate::FAILURES` is a hand copy** and misses `transaction_closed`, which `ArenaFixture::Error::RULES` has. A rewrite-test or counterexamples failure with that rule goes out with a nil rule. Build the list from `RULES.keys` plus `unsupported_order`.
-- **Two branches no test needs.** `NegativeResult`'s `once` sends an index declined for two different reasons once for each, and grouping by the index alone stays green. `RewriteFate`'s `production` handles selection saying `result_mismatch` when result-comparison's entry has no failing verdict, which `Selection` can't produce, and dropping that stays green. Test each or drop it.
-- **negative-result still repeats other spellings of one predicate:** `amount > 10` and `amount > '10'::numeric`; `status IN ('a', 'b')` and `status = ANY (ARRAY['a'::text, 'b'::text])`; the varchar form `(status)::text = ANY ((ARRAY[...])::text[])`.
-- **Rewrite numbering gaps.** `CandidateRuns.candidates` and `IndexBuild.searches` stop at the first gap in rewrite numbers, while the report lists rewrites across gaps. A rewrite after a gap would never be measured and would read `unfinished`. Find out whether a real run can leave a gap, and make the two agree.
-- **`NegativeResult.disproved` is a shim** kept only for `RuleBugs`. Item 1 of 20261002-2 moves `RuleBugs` onto an allowlist; have it use `RewriteFate` and `ResultComparator::MISMATCHES`, then delete the shim and `RuleBugs`' own copy of `MISMATCHES`.
-- **`e2e/run.rb`'s `why_none`** now tallies rewrite fates, and nobody has run it since.
-- **`spec/pipeline_replay_spec.rb` takes about 24 minutes** on its own. See whether it can share setup or run less.
-
-- **Depends on:** 20261001-17.
-- **Came from:** The build and review of 20261001-17, 2026-10-03.
-- **Design:** report, negative-result.
-- **Status:** todo
+### 20261003-3. Report payload: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-4. Readable report: minor findings. Done, see BACKLOG-COMPLETE.md.
 
@@ -2345,3 +2330,16 @@ From the second review of 20261008-63:
 - **Status:** todo
 
 ### 20261008-69. Schema dump: test a domain or column type from a schema that isn't dumped. Done, see BACKLOG-COMPLETE.md.
+
+### 20261008-70. Report payload: leftovers from 20261003-3.
+
+- **`result_not_compared` survives a mutation.** Removing it from `Selection::REASONS` stays green; add a test that sends every REASON through `MeasuredLabels.excluded`.
+- **CastlessIndex misses the array-literal form.** `x = ANY ('{1,2}'::int[])`, which plans print, doesn't merge with `x IN (1, 2)`. Nested `ARRAY[ARRAY[...]]` elements key oddly too (rare).
+- **`fval` keys by raw text,** so `10` and `10.0` key apart (harmless).
+- **Selection entries stored before 20261003-3** still say `result_mismatch` for a timeout. The fate is still right.
+- **Not built from 20261003-3:** `e2e/run.rb`'s `why_none` hasn't been run since it tallied fates; `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
+
+- **Depends on:** 20261003-3.
+- **Came from:** The build and review of 20261003-3, 2026-10-08.
+- **Design:** report, negative-result.
+- **Status:** todo
