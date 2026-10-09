@@ -203,6 +203,18 @@ RSpec.describe Quaack::Enclave::Dedupe do
         expect(covered?(index, candidate(["customer_id"], predicate: "(status = 'open')"))).to be(true)
       end
 
+      it "keeps a partial candidate whose comparison has its operands the other way round", :aggregate_failures do
+        {
+          "'deleted' <> status" => "status <> 'deleted'",
+          "'a' < status" => "status < 'a'"
+        }.each do |on_index, on_candidate|
+          expect(covered?(existing(%w[customer_id], predicate: on_index),
+                          candidate(["customer_id"], predicate: on_candidate))).to be(false), on_candidate
+          expect(covered?(existing(%w[customer_id], predicate: on_index),
+                          candidate(["customer_id"], predicate: on_index))).to be(true), on_index
+        end
+      end
+
       it "keeps a partial candidate under an index with a different predicate, or none" do
         partial = existing(%w[customer_id created_at], predicate: "status = 'open'")
 

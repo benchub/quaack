@@ -44,6 +44,7 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
       ALTER TABLE rt ADD CONSTRAINT rt_x_excl EXCLUDE USING btree (x WITH =);
       CREATE INDEX rt_ws_part_idx ON rt (n) WHERE ws <> 'deleted';
       CREATE INDEX rt_ws_left_idx ON rt (p) WHERE 'deleted' <> ws;
+      CREATE INDEX rt_ws_lt_idx ON rt (q) WHERE 'a' < ws;
       CREATE INDEX rt_m_hash ON rt USING hash (m);
       ANALYZE rt;
     SQL
@@ -96,6 +97,12 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
   it "suggests a varchar partial index whose predicate has the constant on the left" do
     expect(suggested("CREATE INDEX ON public.rt USING btree (p, b) WHERE 'deleted' <> ws")).to eq(["rt_ws_left_idx"])
     expect(suggested("CREATE INDEX ON public.rt USING btree (p, b) WHERE 'archived' <> ws")).to eq([])
+  end
+
+  it "doesn't match a predicate with the operands the other way round", :aggregate_failures do
+    expect(suggested("CREATE INDEX ON public.rt USING btree (p, b) WHERE ws <> 'deleted'")).to eq([])
+    expect(suggested("CREATE INDEX ON public.rt USING btree (q, b) WHERE ws < 'a'")).to eq([])
+    expect(suggested("CREATE INDEX ON public.rt USING btree (q, b) WHERE 'a' < ws")).to eq(["rt_ws_lt_idx"])
   end
 
   it "lists a drop once when two of a label's new indexes cover it" do
