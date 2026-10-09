@@ -25,14 +25,19 @@ module Quaack
         # data, conditions no test exercised, even later, or a
         # counterexample pairing that wasn't met or couldn't be checked
         # (pairing_warning). nil if none.
-        def warning(entry)
-          said = []
-          said << "it relies on what your data holds today." if empirical(entry)
+        #
+        # The open section's body passes body: true. Its empirical paragraph
+        # already says the data caution, so the body's warning leaves it out
+        # and each caution reads once.
+        def warning(entry, body: false)
+          said = body ? [] : data_caution(entry)
           said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
           paired = pairing_warning(entry)
           said << (said.empty? ? paired : paired.sub(/\A./, &:upcase)) if paired
           "Read it with care: #{said.join(" ")}" unless said.empty?
         end
+
+        def data_caution(entry) = empirical(entry) ? ["it relies on what your data holds today."] : []
 
         UNPROVEN_FIRST = "every test QUAACK ran passed, but the test data never exercised some of its " \
                          "conditions, so those parts are unproven."
