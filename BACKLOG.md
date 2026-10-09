@@ -2344,11 +2344,4 @@ From the second review of 20261008-63:
 - **Design:** report, LLM providers.
 - **Status:** todo
 
-### 20261008-69. Schema dump: test a domain or column type from a schema that isn't dumped.
-
-20261001-10 walks pg_depend from every dumped object, and that walk follows types and domains. But no spec covers case 2 of 20260929-26: a dumped table whose column uses a domain or type (`CREATE DOMAIN types.pos ...`) from a schema the query doesn't name. Add a real-Postgres spec in `enclave/spec/schema_dump_postgres_spec.rb` showing the dump pulls in that schema and the arena load succeeds. Mutation-check it.
-
-- **Depends on:** 20261001-10.
-- **Came from:** The stale check of 20260929-26, 2026-10-08.
-- **Design:** schema-dump.
-- **Status:** todo
+### 20261008-69. Schema dump: test a domain or column type from a schema that isn't dumped. Done, see BACKLOG-COMPLETE.md.

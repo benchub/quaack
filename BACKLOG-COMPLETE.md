@@ -8310,3 +8310,13 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 - **Decided by the user (2026-10-05):** Refuse cleanly, and list it as unsupported in v1.
 - **Status:** dropped
 - **Landed:** Nothing built. Superseded by 20261001-10 (the user's decision of 2026-10-08), which closes the dumped schema set over pg_depend instead of refusing (d67a882a). Cases 1, 3, and 4 have direct tests; case 2 moved to 20261008-69.
+
+### 20261008-69. Schema dump: test a domain or column type from a schema that isn't dumped.
+
+20261001-10 walks pg_depend from every dumped object, and that walk follows types and domains. But no spec covers case 2 of 20260929-26: a dumped table whose column uses a domain or type (`CREATE DOMAIN types.pos ...`) from a schema the query doesn't name. Add a real-Postgres spec in `enclave/spec/schema_dump_postgres_spec.rb` showing the dump pulls in that schema and the arena load succeeds. Mutation-check it.
+
+- **Depends on:** 20261001-10.
+- **Came from:** The stale check of 20260929-26, 2026-10-08.
+- **Design:** schema-dump.
+- **Status:** done
+- **Landed:** 1bc225b3 (spec only, no bump). Review clean.
