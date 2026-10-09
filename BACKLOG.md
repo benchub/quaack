@@ -2333,3 +2333,62 @@ Reported by the user, 2026-10-09, against 20261004-55's funnels. Each band is dr
 - **Came from:** The build and review of 20261008-76, 2026-10-09.
 - **Design:** baseline.
 - **Status:** todo
+
+### 20261009-6. Selection: keep the top three in each kind of change.
+
+Asked for by the user on 2026-10-09, for the new verdict (20261009-7). selection keeps the top three candidates by total blocks across every label. Instead, keep the top three in each of three kinds:
+- the same query with new indexes (`original:top:<n>` and the original's combinations),
+- a rewrite with new indexes,
+- a rewrite with no new indexes (`rewrite_<n>:none`).
+
+Each ranked label carries its kind in the report payload, from a fixed list in the protocol gem. The ranked-candidates section of the report groups by kind and ranks within each one. A label that falls outside its kind's top three keeps the `below_top_three` fate. Update DESIGN.md's selection and report sections.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** selection, report.
+- **Status:** todo
+
+### 20261009-7. Report: the verdict as a headline and one table.
+
+Asked for by the user on 2026-10-09. Today the verdict is three paragraphs, which is too much for a summary and too little to choose from. Replace it with:
+
+- **A headline.** "The verdict: substantial improvements possible" when the best row reads at least 30% fewer blocks on the slow values than the original. "The verdict: minor improvements possible" when it beats the original by less than that. "The verdict: QUAACK found nothing that could help" when nothing beat the original.
+- **One table**, one row per kind, ranked by improvement:
+  - best rewrite with new indexes,
+  - best rewrite with the same indexes,
+  - the original with new indexes,
+  - the original with the same indexes (the baseline, 0%).
+
+  Columns are Plan, Blocks read (slow values), Index Δ, and Improvement. Index Δ is the net change in index size, today the built size of the new indexes, and 0 for the same indexes. Improvement uses the same percentage rule as the ranked tables ("over 99% fewer").
+
+  A kind with no candidate still gets its row, with ⚠ and a short reason, and a hover (`title`) that says more. Examples: "No new index found that the original query could use", "No rewrite survived testing", and "No rewrite beat the original without an index". Each reason comes from the fates and burndown the payload already carries. Don't invent any.
+- **Caveats** go below the table as short ⚠ lines, each linking to its detail lower in the report. Examples: runs that timed out, and statistics the production role couldn't see, with what the second one may throw off.
+
+The user's mock-up:
+
+```
+The verdict: substantial improvements possible
+
+Plan                             Blocks read     Index 𝚫    Improvement
+Best rewrite, index change       1,612           +56MB      53%
+Best rewrite, same indices       2,000           0          42%
+Original query, same indices     3,454           0          0%
+Original query, index change     3,454           n/a        0%
+  (no new indices were found for that the original query could use)
+```
+
+The user wasn't happy with how the last row shows "none found". Use ⚠ and a hover instead.
+
+- **Depends on:** 20261009-6, and 20261009-4 if both touch the report template at once.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-8. Suggest dropping an existing index that a new one makes truly redundant.
+
+Asked for by the user on 2026-10-09. QUAACK only ever adds indexes. When a winning new index makes an existing index truly redundant, suggest dropping that one, and count its size against the verdict's Index Δ (20261009-7). One example is an existing index whose key columns are a leading prefix of the new one's, with the same predicate, no unique constraint, and nothing else depending on it. The user expects this to be rare. Suggest a drop only when the redundancy is certain. Never suggest one on a guess. This needs scoping first. Ask what counts as certain: constraints, unique indexes, indexes that other queries may use, and replica-only usage stats.
+
+- **Depends on:** 20261009-7.
+- **Came from:** The user, 2026-10-09.
+- **Design:** index-dedupe, report.
+- **Status:** todo
