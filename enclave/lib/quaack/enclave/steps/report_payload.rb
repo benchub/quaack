@@ -38,7 +38,9 @@ module Quaack
       #                    "stable", "timed_out" } }, the bare original's
       #                    baseline; hit and read are the run with the most
       #                    blocks
-      #   top, excluded, infinite_sets  the selection entry
+      #   top, infinite_sets  the selection entry
+      #   excluded         the selection entry's, through a closed list
+      #                    (MeasuredLabels.excluded)
       #   labels           one per measured label, ranked or not
       #                    (MeasuredLabels): { "label", "search" (original
       #                    or rewrite_<n>), "indexes" (built names),
@@ -116,15 +118,16 @@ module Quaack
           selection = store.read("selection")
           stats = PlannerStatistics.load(store).statistics
           labels = MeasuredLabels.call(store)
-          [{ type: :report, **selection.slice("top", "excluded", "infinite_sets").transform_keys(&:to_sym),
+          [{ type: :report, **selection.slice("top", "infinite_sets").transform_keys(&:to_sym),
              **original(store, stats), labels: measured_plans(store, labels, stats), rewrites: rewrites(store, stats),
              indexes: indexes(store, stats), timed_out_count: store.read("candidate_runs")["timed_out_count"],
-             index_sources: IndexSources.call(store, labels, selection), **findings(store, selection["top"]) }]
+             index_sources: IndexSources.call(store, labels, selection), **findings(store, selection) }]
         end
 
-        # negative-result, rewrite-rules, and burndown: what the report says beyond the candidates.
-        def findings(store, top)
-          { negative: top.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
+        # selection's excluded labels, negative-result, rewrite-rules, and burndown.
+        def findings(store, selection)
+          { excluded: MeasuredLabels.excluded(selection["excluded"]),
+            negative: selection["top"].empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
             burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store) }
         end
 

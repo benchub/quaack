@@ -143,6 +143,23 @@ RSpec.describe "quaacks report-payload" do
     )
   end
 
+  context "when selection's excluded holds a reason or a label that isn't QUAACK's own" do
+    let(:outcome) do
+      payload_of do |store|
+        selection = store.read("selection")
+        selection["excluded"].merge!("original:top:2" => REPORT_WORD_SENTINEL, REPORT_WORD_SENTINEL => "not_better",
+                                     "rewrite_1:top:2" => "result_timed_out")
+        store.write("selection", selection)
+      end
+    end
+
+    it "sends each of QUAACK's labels with only a reason selection gives, and leaks neither" do
+      expect(report["excluded"]).to eq("rewrite_1:top:1" => "not_better", "original:top:2" => nil,
+                                       "rewrite_1:top:2" => "result_timed_out")
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
+
   it "sends the original query, with placeholders and the clock functions put back" do
     expect(report["original_sql"])
       .to eq("SELECT id FROM public.orders WHERE created_at > (now() - $1::interval) AND note = $2")
@@ -332,6 +349,18 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # rewrite-check stores each rewrite under the first free number and the store
+    # never deletes one, so a run has no gap. Every step stops at the first
+    # one, as candidate-runs and index-build do, so the report lists no rewrite
+    # they never reached.
+    context "with a gap in the stored rewrites' numbers" do
+      let(:outcome) { payload_of { it.write("rewrite_3", "sql" => "SELECT 3", "source" => "llm") } }
+
+      it "sends only the rewrites before the gap" do
+        expect(report["rewrites"].map { it["rewrite"] }).to eq(["rewrite_1"])
+      end
+    end
+
     context "with a rewrite that was stored and taken no further" do
       let(:outcome) { payload_of { it.write("rewrite_2", "sql" => "SELECT $1", "source" => "operator") } }
 
@@ -397,8 +426,8 @@ RSpec.describe "quaacks report-payload" do
         stored(store, 7, tested: tested(true), survived: false,
                          round: { "round" => 1, "evidence" => true, "rule" => "statement_timeout" })
         measured(store, 8, "none" => "result_mismatch")
-        measured(store, 9, "none" => "result_mismatch", "rewrite_9:top:1" => "not_better")
-        measured(store, 10, "none" => "not_better")
+        measured(store, 9, "none" => "result_timed_out", "rewrite_9:top:1" => "not_better")
+        measured(store, 10, "none" => "result_not_compared")
         compared(store, 8 => { "slow" => "timed_out", "typical" => "multiset" },
                         9 => { "slow" => "timed_out", "typical" => nil },
                         10 => { "slow" => "unsupported_order", "typical" => "unsupported_order" },
@@ -436,6 +465,9 @@ RSpec.describe "quaacks report-payload" do
           31 => "exclusion_constraint" }.each do |number, rule|
           stored(store, number, tested: tested(false, nil, rule).merge("refused" => true), survived: false)
         end
+        stored(store, 32, tested: tested(false, "s1", "transaction_closed"), survived: false)
+        stored(store, 33, tested: tested(true), survived: false,
+                          round: { "round" => 2, "evidence" => true, "rule" => "transaction_closed" })
       end
     end
 
@@ -470,7 +502,9 @@ RSpec.describe "quaacks report-payload" do
       28 => { "fate" => "rewrite_test_untested", "rule" => "expression_unique_index" },
       29 => { "fate" => "rewrite_test_untested", "rule" => "unsupported_type" },
       30 => { "fate" => "rewrite_test_untested", "rule" => "domain_check" },
-      31 => { "fate" => "rewrite_test_untested", "rule" => "exclusion_constraint" }
+      31 => { "fate" => "rewrite_test_untested", "rule" => "exclusion_constraint" },
+      32 => { "fate" => "rewrite_test_failed", "scenario" => "s1", "rule" => "transaction_closed" },
+      33 => { "fate" => "counterexamples_failed", "round" => 2, "rule" => "transaction_closed" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
@@ -1041,6 +1075,25 @@ RSpec.describe "quaacks report-payload" do
          { "ddl" => "CREATE INDEX ON public.orders USING btree (id)", "reason" => "unused", "sqlstate" => nil,
            "searches" => ["rewrite_1"] }]
       )
+    end
+
+    context "with an index declined for two different reasons" do
+      let(:outcome) do
+        payload_of do |store|
+          populate_negative(store)
+          search = store.read("index_search_rewrite_1")
+          gone = result("btree (id)", used: false, refusal: { "rule" => "unrenderable", "sqlstate" => nil })
+          store.write("index_search_rewrite_1", search.merge("llm_results" => [*search["llm_results"], gone]))
+        end
+      end
+
+      it "sends it once for each reason" do
+        lines = report["negative"]["declined"].select { it["ddl"].end_with?("btree (id)") }
+        expect(lines).to eq([{ "ddl" => "CREATE INDEX ON public.orders USING btree (id)", "reason" => "unused",
+                               "sqlstate" => nil, "searches" => ["rewrite_1"] },
+                             { "ddl" => "CREATE INDEX ON public.orders USING btree (id)", "reason" => "unrenderable",
+                               "sqlstate" => nil, "searches" => ["rewrite_1"] }])
+      end
     end
 
     it "sends each proposed index that already existed once, with the existing index's name and size" do

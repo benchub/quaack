@@ -13,8 +13,10 @@ RSpec.describe Quaack::Enclave::Selection do
       "discarded_ties" => ties, "infinite_sets" => infinite }
   end
 
+  # Each discarded rewrite failed with a result mismatch.
   def pick(minimax, discarded = [])
-    described_class.select(minimax:, result_comparison: { "discarded" => discarded })
+    verdicts = discarded.to_h { [it, { "slow" => { "result" => "fail", "rule" => "multiset" } }] }
+    described_class.select(minimax:, result_comparison: { "discarded" => discarded, "verdicts" => verdicts })
   end
 
   it "keeps all survivors when there are fewer than three" do
@@ -39,6 +41,21 @@ RSpec.describe Quaack::Enclave::Selection do
                            s("original:top:1", 4, 4)]), ["rewrite_1"])
     expect(result["top"].map { it["label"] }).to eq(%w[rewrite_10:none original:top:1])
     expect(result["excluded"]).to eq("rewrite_1:none" => "result_mismatch", "rewrite_1:top:1" => "result_mismatch")
+  end
+
+  it "says why result-comparison discarded a rewrite: different results, a timeout, or nothing compared" do
+    fail_on = ->(rule) { { "slow" => { "result" => "fail", "rule" => rule } } }
+    verdicts = { "rewrite_1" => fail_on.call("multiset"), "rewrite_2" => fail_on.call("timed_out"),
+                 "rewrite_3" => fail_on.call("unsupported_order"),
+                 "rewrite_4" => { "slow" => { "result" => "fail", "rule" => "timed_out" },
+                                  "typical" => { "result" => "fail", "rule" => "row_count" } } }
+    survivors = (1..4).map { s("rewrite_#{it}:none", it, it) }
+    result = described_class.select(minimax: minimax(survivors),
+                                    result_comparison: { "discarded" => %w[rewrite_1 rewrite_2 rewrite_3 rewrite_4],
+                                                         "verdicts" => verdicts })
+    expect(result["excluded"]).to eq("rewrite_1:none" => "result_mismatch", "rewrite_2:none" => "result_timed_out",
+                                     "rewrite_3:none" => "result_not_compared",
+                                     "rewrite_4:none" => "result_mismatch")
   end
 
   it "explains candidates dropped by minimax and by the footprint tiebreaker" do

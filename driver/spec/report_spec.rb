@@ -791,6 +791,14 @@ RSpec.describe Quaack::Driver::Report do
         expect(section(render(payload), "ranking"))
           .to include("<td>Was dropped when QUAACK compared the rewrite&#39;s results with your query&#39;s on " \
                       "the real data. See rewrite Vivid Cove under the queries.</td></tr>")
+        payload["excluded"] = { "rewrite_1:top:1" => "result_timed_out" }
+        expect(section(render(payload), "ranking"))
+          .to include("<td>Timed out when QUAACK compared the rewrite&#39;s results with your query&#39;s on " \
+                      "the real data. See rewrite Vivid Cove under the queries.</td></tr>")
+        payload["excluded"] = { "rewrite_1:top:1" => "result_not_compared" }
+        expect(section(render(payload), "ranking"))
+          .to include("<td>Was dropped because QUAACK couldn&#39;t compare the rewrite&#39;s results with your " \
+                      "query&#39;s on the real data. See rewrite Vivid Cove under the queries.</td></tr>")
       end
 
       it "says a candidate's measurement timed out" do

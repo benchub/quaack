@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../selection"
+
 module Quaack
   module Enclave
     module Steps
@@ -40,6 +42,13 @@ module Quaack
             { "label" => label, "search" => label.split(":").first, "indexes" => build.fetch(label, []),
               **blocks(sets), "verdicts" => verdicts[label] }
           end
+        end
+
+        # selection's excluded labels, each a label LABEL matches, with its
+        # reason if it's one of Enclave::Selection::REASONS, or else nil.
+        def excluded(stored)
+          stored.select { |label, _| LABEL.match?(label) }
+                .transform_values { |reason| Enclave::Selection::REASONS.find { it == reason } }
         end
 
         def blocks(sets)
