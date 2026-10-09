@@ -19,7 +19,8 @@ RSpec.describe Quaack::Driver::Report do
   def sq(text) = %(<code class="sql">#{text}</code>)
 
   # A rule's name as the report links it to the rule's page (DESIGN.md's rewrite-rules).
-  def link(rule) = %(<a href="https://github.com/benchub/quaack/blob/main/docs/transforms/#{rule}.md" target="_blank" rel="noopener">#{rule}</a>)
+  def docs = "https://github.com/benchub/quaack/blob/main/docs/transforms/"
+  def link(rule) = %(<a href="#{docs}#{rule}.md" target="_blank" rel="noopener">#{rule}</a>)
 
   def fated(number, fate, **details)
     { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
@@ -95,7 +96,7 @@ RSpec.describe Quaack::Driver::Report do
   describe "the layout" do
     # The html less its links to rules' pages, which load nothing.
     def unlinked(html)
-      html.gsub(%r{<a href="https://github\.com/benchub/quaack/blob/main/docs/transforms/\w+\.md" target="_blank" rel="noopener">}, "")
+      html.gsub(/<a href="#{Regexp.escape(docs)}\w+\.md" target="_blank" rel="noopener">/, "")
     end
 
     it "is one file of plain HTML and CSS: no scripts, no animation, nothing from the network" do
