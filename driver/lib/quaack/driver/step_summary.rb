@@ -29,6 +29,17 @@ module Quaack
         end
       end
 
+      # As noting, for a call told whose work it's on, by:, the names of
+      # the entries, which the router, client, words as a possessive, such
+      # as "groq's" (LLM::Router#possessive): text holds %s where that
+      # goes, "the LLM's" without them.
+      def whose(progress, name, text, call, client)
+        lambda do |arg, by: []|
+          progress.step_note(name, format(text, client.possessive(by)))
+          call.call(arg)
+        end
+      end
+
       # n and the noun, singular or plural: 1 rewrite, 3 rewrites.
       def count(number, one, many = "#{one}s") = "#{number} #{number == 1 ? one : many}"
 

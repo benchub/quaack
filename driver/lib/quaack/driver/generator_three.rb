@@ -166,7 +166,7 @@ module Quaack
         return [rounds, union] if union.empty?
 
         ddls = union.map(&:last)
-        [rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls), round:,
+        [rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls, by: union.map { it.first.provider }), round:,
                              entries: union.map { it.first.provider })], union]
       end
 

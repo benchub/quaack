@@ -68,11 +68,12 @@ module Quaack
           end
 
           # The column sets that may be the table's key, each of columns
-          # UNION compares, best first.
+          # UNION compares, best first, and each column once: an index on
+          # (a, b, a) is a key (a, b).
           def self.candidates(item, catalog)
             comparable = columns(item, catalog).select(&:comparable).map(&:name)
             several = catalog.keys(item.table.schemaname, item.table.relname)
-                             .select { it.size > 1 && (it - comparable).empty? }
+                             .map(&:uniq).select { it.size > 1 && (it - comparable).empty? }
             comparable.map { [it] } + by_size(several)
           end
 

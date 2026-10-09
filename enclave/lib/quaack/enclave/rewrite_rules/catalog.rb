@@ -65,7 +65,9 @@ module Quaack
         include Types
 
         Column = Data.define(:name, :comparable)
-        Info = Data.define(:type, :collation, :deterministic)
+        # type has the typmod, as character varying(10); base_type hasn't,
+        # as character varying.
+        Info = Data.define(:type, :base_type, :collation, :deterministic)
 
         COMPARABLE = %w[bool int2 int4 int8 oid float4 float8 numeric text varchar bpchar name uuid date time timetz
                         timestamp timestamptz interval bytea].freeze
@@ -88,6 +90,7 @@ module Quaack
 
         COLUMN_INFO = <<~SQL.freeze
           SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+                 pg_catalog.format_type(a.atttypid, NULL) AS base_type,
                  CASE WHEN a.attcollation #{EQ} 0 THEN NULL
                       ELSE pg_catalog.format('%I.%I', cn.nspname, co.collname)
                  END AS collation,
@@ -140,7 +143,10 @@ module Quaack
         def column_info(schema, table, column)
           @column_info[[schema, table, column]] ||= begin
             row = @connection.exec_params(COLUMN_INFO, [schema, table, column]).first
-            Info.new(type: row["type"], collation: row["collation"], deterministic: row["deterministic"] == "t") if row
+            if row
+              Info.new(type: row["type"], base_type: row["base_type"], collation: row["collation"],
+                       deterministic: row["deterministic"] == "t")
+            end
           end
         end
 

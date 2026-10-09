@@ -93,7 +93,7 @@ module Quaack
 
           # Asks as Client#ask does.
           def ask(**ask)
-            return @router.later(@provider, ask, @failures) if @provider
+            return @router.later(@provider, ask, @failures, @router.reviewing(@pairing)) if @provider
 
             @provider, reply = @router.first(ask, skip: @skip, fresh: @fresh, failures: @failures,
                                                   pairing: @pairing)
@@ -180,7 +180,7 @@ module Quaack
           prior = prior(step, skip)
           order = start(step, skip, fresh, pairing)
           order.each_with_index do |name, i|
-            return [name, call(name, ask)]
+            return [name, call(name, ask, reviewing(pairing))]
           rescue Error => e
             failures[name] = failover(e, name, order[i + 1], step)
           end
@@ -188,9 +188,9 @@ module Quaack
         end
 
         # A later ask in name's unit, adding a failure to failures. Session
-        # calls it.
-        def later(name, ask, failures = {})
-          call(name, ask)
+        # calls it, with what its line adds after the step (reviewing).
+        def later(name, ask, failures = {}, context = nil)
+          call(name, ask, context)
         rescue Error => e
           failed(name, e)
           failures[name] = e
@@ -209,7 +209,11 @@ module Quaack
         # already down, then each in skip, each with its Error.
         def prior(step, skip) = @down.slice(*@routing.pool(step)).except(*skip.keys).to_a + skip.to_a
 
-        def call(name, ask) = @clients.fetch(name).ask(**ask, provider: name, shown: (name if @named))
+        # Asks name's client, which names the entry in its progress line
+        # (label), with context after the step.
+        def call(name, ask, context = nil)
+          @clients.fetch(name).ask(**ask, provider: name, shown: label(name), context:)
+        end
 
         # The healthy providers of step's pool, in the order its unit tries
         # them, paired by pairing. A round_robin unit turns the cursor to
@@ -250,9 +254,6 @@ module Quaack
         # then what happens next, rest: "trying groq (llm-rewrites)"
         # (RouterLines).
         def note(name, error, rest) = @progress&.note(line(name, error, rest))
-
-        # The line itself, as RouterLines words it.
-        def line(name, error, rest) = RouterLines.line(name, error, rest, named: @named, copilot: copilot?(name))
 
         # error, naming the provider after its rule, when the providers are
         # named.

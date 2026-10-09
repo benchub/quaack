@@ -124,8 +124,9 @@ module Quaack
       # next round, or, when the ask failed with a LaterError, the block's,
       # given the error and the session.
       def turn((session, messages, after), rounds, compare)
-        inserts = ask_with(messages, rounds.empty? ? FIRST : AGAIN, session)
-        rounds << Round.new(inserts:, outcome: compare.call(inserts), provider: session.provider, after:,
+        inserts = ask_with(messages, "#{rounds.empty? ? FIRST : AGAIN}, round #{rounds.size + 1}", session)
+        outcome = compare.call(inserts, by: [session.provider])
+        rounds << Round.new(inserts:, outcome:, provider: session.provider, after:,
                             pairing: session.pairing)
         [session, messages + follow_up(rounds.last)]
       rescue LLM::Router::LaterError => e

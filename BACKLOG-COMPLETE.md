@@ -8186,3 +8186,50 @@ The review of 20260924-6 found these test gaps. In each case the code behaves co
 - **Design:** fixture-compare.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-40 (commit d8701871). The main session ran four mutations on tiebreaker.rb, and each one turned the new tests red. The inner-LIMIT and CTE case (item 3) is now a bug, 20261008-61.
+
+### 20261008-18. `or_to_union` composite keys: minors from 20261008-6.
+
+The review of 20261008-6 found these minor issues:
+
+1. **Missing rule-level tests.** The rule refuses these key cases, but `or_to_union_postgres_spec.rb` has no test for them. The fact-level `assumption_check_postgres_spec.rb` covers some of them.
+   - a deferrable composite key
+   - an expression index
+   - a domain key column
+   - a citext key column
+2. **Incomplete refusal bullet.** The bullet in `docs/transforms/or_to_union.md` leaves out two conditions: the key must not be deferrable, and each column must compare as the column's own `=` does.
+3. **Repeated column in the assumption.** An index like `(a, b, a)` states a `unique` assumption that lists a column twice. It's sound, since the carried columns are de-duplicated, but it's untidy.
+
+- **Depends on:** 20261008-6.
+- **Came from:** The review of 20261008-6, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-18 (commit f29eaa07). Review had no blocking findings. The expression-index test minor went to 20261008-64.
+
+### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3.
+
+The review of 20261008-3 found these minor issues:
+
+1. **No test covers the recursion in `Columns.deduped?`.** That's the check for a UNION without ALL nested under a UNION ALL. Cutting it to `!sub.all` stays green. Test `(SELECT t.b ... UNION SELECT r.b ...) UNION ALL SELECT q.b ...` on `box` columns. Postgres errors on the original, and the mutated rule would rewrite it.
+2. **The branch type check refuses more than it needs to.** It compares branch types with their typmod (through `format_type`), so `varchar(10) UNION varchar(20)` is refused even though the rewrite would be sound. Consider comparing types without the typmod. Either way, say in the docs page and DESIGN.md how typmods are treated.
+
+- **Depends on:** 20261008-3.
+- **Came from:** The review of 20261008-3, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-18 (commit e4306d7c). Review clean. Typmods are now ignored, which the review checked as sound on real Postgres.
+
+### 20261008-62. Progress lines name the LLM, not just "the LLM".
+
+The user asked for this on 2026-10-08. Many `quaack` output lines say "the LLM", such as `quaack: [2/18] Waiting for the LLM (llm-index-ideas) 27s`. The driver knows which `llms` entry each call goes to, so name it: the entry's provider and model, for example `Waiting for Anthropic claude-opus-5-5 (llm-index-ideas) 27s`. Use the entry's `name` if it has one.
+
+- **Fan-out:** when a step calls several entries at once, the line should still make sense. For example: `Waiting for 3 LLMs: anthropic claude-opus-5-5, openai gpt-5, ollama llama4 (llm-index-ideas) 27s`, or the ones still pending as each finishes. Keep it to one line, and shorten it sensibly when there are many entries.
+- **Failover:** name the entry currently being tried, and say when QUAACK switches to the next one.
+- **Pairing:** say which entry is the author and which is the reviewer.
+
+Every user-visible line that says "the LLM" gets the same treatment where the driver knows the entry. Lines that come before any entry is chosen keep the generic wording. Model and provider names are the operator's own config, so nothing here crosses the trust boundary. Update DESIGN.md and README examples to match, and pin the new lines in specs.
+
+- **Depends on:** 20261007-18 (multi-provider routing).
+- **Came from:** The user, 2026-10-08.
+- **Design:** LLM providers, quaack run.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-62 (commits 10bb1251, 8de798ba, 84de43c0, b41fc509, eae901da) after a fix round. The second review was clean, and its minor went to 20261008-65. This also covers the user's report of out-of-order counterexample lines.

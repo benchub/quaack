@@ -104,7 +104,7 @@ module Quaack
         def generate(transport, client, run_id, search, payload, progress, record) # rubocop:disable Metrics/ParameterLists
           step = search == SEARCH ? GeneratorThree::STEP : GeneratorThree::REWRITE_STEP
           test = GeneratorThree.index_test(transport, run_id:, search:)
-          index_test = StepSummary.noting(progress, step, "Testing the LLM's index ideas", test)
+          index_test = StepSummary.whose(progress, step, "Testing %s index ideas", test, client)
           result = GeneratorThree.new(client:, index_test:, step:).run(payload)
           none = StepSummary.noting(progress, step, "Recording that the LLM gave no index ideas", test)
           none.call([]) if result.rounds.empty?
@@ -281,11 +281,22 @@ module Quaack
         def survives_counterexamples?(transport, client, args, progress, record)
           progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-          rounds = StepSummary.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
-                                      compare(transport, args))
+          rounds = numbered(progress, compare(transport, args), client)
           result = counterexamples(client, args, record).run(payload, compare: rounds)
           record.call { it.counterexamples!(args[:search], result.units) }
           !result.disproved
+        end
+
+        # call, noted under counterexamples with whose rows it loads, by:,
+        # entry names client words (LLM::Router#possessive), and its round,
+        # from 1.
+        def numbered(progress, call, client)
+          round = 0
+          lambda do |inserts, by: []|
+            progress.step_note("counterexamples",
+                               "Loading #{client.possessive(by)} rows and comparing results, round #{round += 1}")
+            call.call(inserts)
+          end
         end
 
         # The rewrite's Counterexamples, with its recorded author, from the
@@ -473,8 +484,8 @@ module Quaack
       # step's ID follows it in parentheses.
       SAY = {
         "index-search" => "Checking the query plan and searching for indexes",
-        "llm-index-ideas" => "Asking the LLM for index ideas the mechanical search missed",
-        "llm-index-refine" => "Asking the LLM to improve its index ideas",
+        "llm-index-ideas" => "Getting index ideas from the LLM that the mechanical search missed",
+        "llm-index-refine" => "Getting the LLM to improve its index ideas",
         "index-rank" => "Ranking the index ideas",
         "rewrite-rules" => "Applying QUAACK's own rewrite rules to the query",
         "llm-rewrites" => "Asking the LLM for rewrites of the query",
@@ -487,10 +498,10 @@ module Quaack
         "rewrite-correctness" => "Testing each rewrite for wrong results",
         "rewrite-tested" => "Testing the rewrite for wrong results",
         "rewrite-test" => "Testing the rewrite on generated rows",
-        "counterexamples" => "Asking the LLM for rows that could break the rewrite",
+        "counterexamples" => "Trying to break the rewrite with rows from the LLM",
         "rewrite-index-ideas" => "Asking the LLM for index ideas for each rewrite",
-        "rewrite-llm-index-ideas" => "Asking the LLM for index ideas the mechanical search missed",
-        "rewrite-llm-index-refine" => "Asking the LLM to improve its index ideas",
+        "rewrite-llm-index-ideas" => "Getting index ideas from the LLM that the mechanical search missed",
+        "rewrite-llm-index-refine" => "Getting the LLM to improve its index ideas",
         "rewrite-index-rerank" => "Ranking the index ideas",
         "index-build" => "Building the candidate indexes",
         "baseline" => "Measuring the original query",
