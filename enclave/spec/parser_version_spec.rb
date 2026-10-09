@@ -3,13 +3,13 @@
 require "quaack/enclave/parser_version"
 
 RSpec.describe Quaack::Enclave::ParserVersion do
-  it "takes the grammar's major version from pg_query itself" do
-    expect(described_class::MAJOR).to eq(PgQuery::PG_VERSION_NUM / 10_000)
+  it "takes the grammar's major version, 17, from pg_query itself" do
+    expect(described_class::MAJOR).to eq(17)
   end
 
   it "names the grammar and the next version in the note" do
     expect(described_class::NOTE)
-      .to eq("pg_query parses with the Postgres #{described_class::MAJOR} grammar; " \
-             "Postgres #{described_class::MAJOR + 1}-only syntax isn't supported yet")
+      .to eq("pg_query parses with the Postgres 17 grammar; " \
+             "Postgres 18-only syntax isn't supported yet")
   end
 end

@@ -2,6 +2,7 @@
 
 require "json"
 require "quaack/enclave/deparse"
+require "quaack/enclave/error_filter"
 require "quaack/enclave/relation_qualifier"
 
 # Every example runs against real Postgres, since resolving a name means
@@ -47,6 +48,20 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
                                       "Postgres 18-only syntax isn't supported yet)")
           expect(error.cause).to be_nil
         }
+    end
+
+    it "leaves only the rule in the egress error line, with no trace of the query" do
+      sentinel = "SENTINEL_9d41c7"
+      error = begin
+        qualify("SELECT '#{sentinel}' FROM")
+      rescue described_class::Unparsable => e
+        e
+      end
+
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "plan")
+
+      expect(line).to eq('{"type":"error","step":"plan","rule":"query_unparsable"}')
+      expect(line).not_to include(sentinel)
     end
   end
 
