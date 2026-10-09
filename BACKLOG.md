@@ -2414,3 +2414,21 @@ Asked for by the user on 2026-10-09. Links to a rule's documentation page, such 
 - **Came from:** The user, 2026-10-09.
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-13. Report: make "passed every test" and "conditions untested" agree.
+
+Reported by the user, 2026-10-09. A rewrite's section can say "It passed every test, …" and then "Read it with care: the test data left some of its conditions untested." The reader can't tell whether it passed. What's true: every test QUAACK ran passed, but the test data never exercised some of the rewrite's conditions (`Cautions#unchecked_atoms`), so those parts are unproven. Say it that way. One example: "Every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." Name the conditions if the payload already carries them, and don't invent any. Also, the caution prints twice when the section is open: once in the summary line, which DESIGN.md keeps so a closed section doesn't hide it, and again in the body. Show it once while the section is open, or make the two read as one.
+
+- **Depends on:** none. Land after 20261009-10 and 20261009-11, which touch the same text and markup.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-14. Report: plainer wording for a rewrite that wasn't better.
+
+Reported by the user, 2026-10-09. The `not_better` fate (`report/rewrites.rb`) reads: "It passed every test, but didn't read enough fewer blocks than your query. To count, a candidate must read more than 5% fewer blocks on the slow values, and no more than 5% more on any others." That's awkward. The user's wording: "It passed every test, but was less than a 5% performance improvement, so QUAACK did not bother to rank it on real data." One correction: a `not_better` rewrite was measured on the real data, and it fell short there. So say something like "It passed every test, but on the real data it was less than a 5% improvement, so QUAACK didn't rank it." When the minimax verdict shows it failed by reading more than 5% more blocks on another value, say that instead, for example "… but on the real data it read over 5% more blocks on some values, so QUAACK didn't rank it". Use that only if the payload can tell the two cases apart. Otherwise keep one sentence that covers both, and file a task for the split. Keep the 5% figures tied to the minimax constants, not hard-coded twice.
+
+- **Depends on:** 20261009-10, which changes the same strings.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report, minimax.
+- **Status:** todo
