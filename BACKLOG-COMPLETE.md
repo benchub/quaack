@@ -8159,3 +8159,30 @@ From the review of 20260926-42. The `!dropped.negative?` half of the egress guar
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-08, merged from task/20261008-55 (commit ecb82cbc). Review clean.
+
+### 20261008-50. Orphan index-build notes: advice that's moot after teardown.
+
+From the review of 20261008-16. `index_build_orphan_running` and `index_build_orphan_cancel_denied` fire in index-build during `quaack run`, and that run is torn down, often along with the run server. The note's "wait for it or cancel it yourself, then resume" advice only applies with `--keep`, or when teardown fails. Word these notes like the stale-statistics note, or make the advice depend on the run being kept.
+
+
+Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/quaack/driver/teardown.rb:12` doesn't show the now-required `jump:`. And DESIGN.md's "the burndown's own calls that record one stage at a time" should name `record_dedupe` and `record_single_candidate_test`.
+- **Depends on:** 20261008-16.
+- **Came from:** The review of 20261008-16, 2026-10-08.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-50 (commit b8657898). It's a small driver-words and docs diff, reviewed by the main session.
+
+### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6.
+
+The review of 20260924-6 found these test gaps. In each case the code behaves correctly today.
+
+1. **Nonzero constant OFFSET.** No test covers one, such as `OFFSET 1 LIMIT 1` with a tie at the window's edge. A mutation of the window's start would likely survive.
+2. **Non-constant OFFSET.** No test covers its refusal (`shape.offset.nil?`).
+3. **LIMIT inside a subquery or CTE.** No test covers it.
+4. **ORDER BY an expression.** No test covers a tie on an expression sort key that straddles the window.
+
+- **Depends on:** 20260924-6.
+- **Came from:** The review of 20260924-6, 2026-10-08.
+- **Design:** fixture-compare.
+- **Status:** done
+- **Landed:** 2026-10-08, merged from task/20261008-40 (commit d8701871). The main session ran four mutations on tiebreaker.rb, and each one turned the new tests red. The inner-LIMIT and CTE case (item 3) is now a bug, 20261008-61.

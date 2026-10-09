@@ -7,23 +7,14 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 
-- 20261008-51 (quaack start --database; bad_database; Protocol::DatabaseName).
 
-- 20260924-25 (redact: plan_too_deep, cast type preference, boolean masks, 42P18 by SQLSTATE).
 
-- 20260929-22 (qualify: system_relation).
 
-- 20260929-29 (counterexample-round and rewrite-test: a foreign cancel ends the step).
 
-- 20261002-1 (assumption-check: unique unmet with legacy INHERITS children).
 
-- 20261002-2 (report rule_bugs counts only mismatches; rewrite-check stores no rewrite twice).
 
-- 20260926-42 (rewrite-test stores dropped; report-payload sends it).
 
-- 20260927-17 and 20260926-55 (index-from-query correlated reads; generated-column expression keys refused).
 
-- 20261008-55 (a foreign cancel on BEGIN or ROLLBACK ends the step).
 
 ## How this file works.
 
@@ -2156,19 +2147,7 @@ The second review of 20261008-31 found these:
 - **Design:** What goes into the enclave.
 - **Status:** todo
 
-### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6.
-
-The review of 20260924-6 found these test gaps. In each case the code behaves correctly today.
-
-1. **Nonzero constant OFFSET.** No test covers one, such as `OFFSET 1 LIMIT 1` with a tie at the window's edge. A mutation of the window's start would likely survive.
-2. **Non-constant OFFSET.** No test covers its refusal (`shape.offset.nil?`).
-3. **LIMIT inside a subquery or CTE.** No test covers it.
-4. **ORDER BY an expression.** No test covers a tie on an expression sort key that straddles the window.
-
-- **Depends on:** 20260924-6.
-- **Came from:** The review of 20260924-6, 2026-10-08.
-- **Design:** fixture-compare.
-- **Status:** todo
+### 20261008-40. Top-N hidden-tie check: test gaps from 20260924-6. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name.
 
@@ -2268,16 +2247,7 @@ The review of 20261001-10 found these minor issues:
 
 ### 20261008-49. Teardown message fallback when no jump host is known. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-50. Orphan index-build notes: advice that's moot after teardown.
-
-From the review of 20261008-16. `index_build_orphan_running` and `index_build_orphan_cancel_denied` fire in index-build during `quaack run`, and that run is torn down, often along with the run server. The note's "wait for it or cancel it yourself, then resume" advice only applies with `--keep`, or when teardown fails. Word these notes like the stale-statistics note, or make the advice depend on the run being kept.
-
-
-Also, from the review of 20261008-49 and -27: the usage comment at `driver/lib/quaack/driver/teardown.rb:12` doesn't show the now-required `jump:`. And DESIGN.md's "the burndown's own calls that record one stage at a time" should name `record_dedupe` and `record_single_candidate_test`.
-- **Depends on:** 20261008-16.
-- **Came from:** The review of 20261008-16, 2026-10-08.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20261008-50. Orphan index-build notes: advice that's moot after teardown. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-51. `quaack start --database`: name production's database. Done, see BACKLOG-COMPLETE.md.
 
@@ -2371,6 +2341,7 @@ The review of 20261008-55 found two gaps:
 - **Depends on:** 20261008-55.
 - **Came from:** The review of 20261008-55, 2026-10-08.
 - **Design:** rewrite-test.
+- **Landed so far:** item 1, 2026-10-08 (task/20261008-50, commit e5cf49f8). Item 2 is still open.
 - **Status:** todo
 
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties.
@@ -2397,4 +2368,23 @@ Every user-visible line that says "the LLM" gets the same treatment where the dr
 - **Depends on:** 20261007-18 (multi-provider routing).
 - **Came from:** The user, 2026-10-08.
 - **Design:** LLM providers, quaack run.
+- **Status:** todo
+
+### 20261008-63. Report: calls, wait time, and tokens for each LLM model.
+
+The user asked for this on 2026-10-08. The report should show a table with one row per LLM model the run used, in the form provider and model, or the `llms` entry's name. Each row gives:
+
+- the number of calls
+- the total time spent waiting for replies
+- the tokens used: input, output, and total, or cached and reasoning tokens where the provider reports them
+
+Count failed and retried calls and show them, so a failover shows up. Add a total row.
+
+On a resumed run, include the earlier processes' numbers, saved in the provenance record `~/.quaack/runs/<id>.llm.json` the same way 20260926-42 saves `llm_calls`.
+
+Token counts come from each adapter's usage data. A provider that gives none shows "not reported", not 0. This is the operator's own data, kept on the laptop, so nothing crosses the trust boundary. Update the DESIGN.md report section and pin the table in specs.
+
+- **Depends on:** 20260926-42, 20261007-18.
+- **Came from:** The user, 2026-10-08.
+- **Design:** report, LLM providers.
 - **Status:** todo

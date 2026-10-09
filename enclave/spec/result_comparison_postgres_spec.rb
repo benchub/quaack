@@ -687,6 +687,33 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
           expect(fields(compare(sql, sql, rows: docs))).to include(match: false, rule: :unsupported_order)
         end
+
+        # Sorted by grp, the rows are 1, 1, 2, 3, and the two grp 1 rows
+        # hide different jsonb values.
+        it "places a constant OFFSET's window where the OFFSET starts" do
+          reaches = "SELECT grp, jb FROM items ORDER BY grp OFFSET 1 LIMIT 1"
+          misses = "SELECT grp, jb FROM items ORDER BY grp OFFSET 2 LIMIT 1"
+
+          expect(fields(compare(reaches, reaches, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(compare(misses, misses, rows: docs).match?).to be(true)
+        end
+
+        it "refuses an OFFSET that isn't a constant, even where a constant one would compare" do
+          sql = "SELECT grp, jb FROM items ORDER BY grp OFFSET (SELECT 2) LIMIT 1"
+
+          expect(fields(compare(sql, sql, rows: docs))).to include(match: false, rule: :unsupported_order)
+        end
+
+        # Sorted by -grp, the rows are 3, 2, 1, 1.
+        it "finds a hidden tie on an expression sort key only where it straddles the LIMIT" do
+          misses = "SELECT grp, jb FROM items ORDER BY -grp LIMIT 2"
+          reaches = "SELECT grp, jb FROM items ORDER BY -grp LIMIT 3"
+
+          candidate = "SELECT grp, jb FROM #{reversed} ORDER BY -grp LIMIT 2"
+
+          expect(compare(misses, candidate, rows: docs).match?).to be(true)
+          expect(fields(compare(reaches, reaches, rows: docs))).to include(match: false, rule: :unsupported_order)
+        end
       end
 
       it "refuses a numeric array in a tie, since {1.0} and {1.00} are equal" do
