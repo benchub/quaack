@@ -1431,7 +1431,6 @@ For each proposed index, include:
 
 - Its built size from index-build.
 - Whether an existing index already covers it as a prefix.
-- Whether it would make an existing index redundant.
 
 Each existing index named there comes with its size from the planner statistics.
 

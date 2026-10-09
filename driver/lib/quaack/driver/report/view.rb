@@ -144,13 +144,12 @@ module Quaack
         end
 
         # A built index's row: its DDL, its size, the existing index that
-        # covers it, and the existing ones it makes redundant, with sizes.
+        # covers it, with its size.
         def built_row(name)
           index = indexes.fetch(name)
           unread = "#{Format.sql_span(name)} (QUAACK couldn't read this index's definition back)"
           ddl = index["ddl"] ? sql_code(index["ddl"]) : h(unread)
-          "<tr><td>#{ddl}</td>#{num(Format.size(index["size"]))}<td>#{overlap([index["covered_by"]].compact)}</td>" \
-            "<td>#{overlap(index["makes_redundant"])}</td></tr>"
+          "<tr><td>#{ddl}</td>#{num(Format.size(index["size"]))}<td>#{overlap([index["covered_by"]].compact)}</td></tr>"
         end
 
         def overlap(existing) = existing.empty? ? "none" : existing.map { h existing(it) }.join("<br>")

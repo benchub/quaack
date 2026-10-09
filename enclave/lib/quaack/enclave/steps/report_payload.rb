@@ -71,8 +71,7 @@ module Quaack
       #                    "evidence" (whether a counterexamples round compared it
       #                    on loaded inserts; nil unless it survived) }
       #   indexes          { built index name => { "ddl", "size",
-      #                    "covered_by" (nil or an existing index),
-      #                    "makes_redundant" (existing indexes) } }, each
+      #                    "covered_by" (nil or an existing index) } }, the
       #                    existing index as { "name", "size_bytes" }
       #                    (ExistingIndexes)
       #   timed_out_count  candidate runs dropped for timing out
@@ -204,13 +203,11 @@ module Quaack
         end
 
         # The existing index (from the catalog) that covers proposed as a
-        # prefix, and the existing ones proposed covers.
+        # prefix. The ones proposed makes redundant are the label's
+        # suggested_drops (RedundantIndexes), under the strict rule.
         def coverage(proposed, stats, sizes)
-          existing = existing(proposed, stats)
-          covering = existing.select { |_, e| Dedupe.covers?(e, proposed) }.keys.first(1)
-          redundant = existing.select { |_, e| Dedupe.covers?(proposed, e) }.keys
-          covering, redundant = [covering, redundant].map { |names| names.map { sizes.named(proposed.table, it) } }
-          { "covered_by" => covering.first, "makes_redundant" => redundant }
+          covering = existing(proposed, stats).select { |_, e| Dedupe.covers?(e, proposed) }.keys.first
+          { "covered_by" => covering && sizes.named(proposed.table, covering) }
         end
 
         # The existing indexes on proposed's table that the catalog could

@@ -62,12 +62,9 @@ RSpec.describe Quaack::Driver::Report do
           "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
-                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 },
-                                     "makes_redundant" => [] },
+                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 } },
                      "quaack_b" => { "ddl" => "CREATE INDEX ON public.t USING btree (a, b)", "size" => 16_384,
-                                     "covered_by" => nil,
-                                     "makes_redundant" => [{ "name" => "t_a_idx", "size_bytes" => 8192 },
-                                                           { "name" => "t_a_b_idx", "size_bytes" => nil }] } },
+                                     "covered_by" => nil } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
                             "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0,
                             "shared_hit_blocks" => 1_200, "shared_read_blocks" => 34 }],
@@ -1299,13 +1296,13 @@ RSpec.describe Quaack::Driver::Report do
       expect(indexes.scan("<table").size).to eq(2)
     end
 
-    it "gives each index its size, and each existing index it overlaps with its size, in the last two columns" do
+    it "gives each index its size, and the existing index that covers it with its size, in the last two columns" do
       expect(indexes).to include(
         "<tr><td>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</td><td class=\"num\">8 kB</td>" \
-        "<td>#{sq("t_created_at_id_idx")} (40 kB)</td><td>none</td></tr>"
+        "<td>#{sq("t_created_at_id_idx")} (40 kB)</td></tr>"
       )
-      expect(indexes).to include('<td class="num">16 kB</td><td>none</td>' \
-                                 "<td>#{sq("t_a_idx")} (8 kB)<br>#{sq("t_a_b_idx")} (size not recorded)</td></tr>")
+      expect(indexes).to include('<td class="num">16 kB</td><td>none</td></tr>')
+      expect(indexes).not_to include("make redundant", "makes_redundant")
     end
 
     it "uses the unit that fits, with thousands separators" do
@@ -2461,9 +2458,8 @@ RSpec.describe Quaack::Driver::Report do
                          "plan" => [node], "untested_atoms" => [z, "a < $1"], "covered" => [z],
                          "evidence" => false }],
         "indexes" => { "quaack_z" => { "ddl" => "CREATE INDEX ON #{z}", "size" => 8192,
-                                       "covered_by" => { "name" => z, "size_bytes" => 1 },
-                                       "makes_redundant" => [{ "name" => z, "size_bytes" => nil }] },
-                       z => { "ddl" => nil, "size" => z, "covered_by" => nil, "makes_redundant" => [] } },
+                                       "covered_by" => { "name" => z, "size_bytes" => 1 } },
+                       z => { "ddl" => nil, "size" => z, "covered_by" => nil } },
         "original_plan" => [node], "timed_out_count" => 1,
         "rule_bugs" => [{ "rewrite" => z, "rules" => [z], "step" => z }],
         "burndown" => { "stages" => { "index-dedupe" => { "original" => record, z => record },

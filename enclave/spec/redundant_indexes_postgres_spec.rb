@@ -26,10 +26,12 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
     conn.exec(<<~SQL)
       DROP TABLE IF EXISTS rt;
       CREATE TABLE rt (id int PRIMARY KEY, a int, b int, c int, d int, e int, f int, g int, h int, k int, m int,
-                       n int, p int, note text, flag boolean, status text, x int, u int);
-      INSERT INTO rt SELECT i, i, i, i, i, i, i, i, i, i, i, i, i, 'n' || i, i % 2 = 0, 'open', i, i
+                       n int, p int, q int, r int, s int, t int, note text, flag boolean, status text, x int, u int);
+      INSERT INTO rt SELECT i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, 'n' || i, i % 2 = 0, 'open', i, i
         FROM generate_series(1, 200) i;
       CREATE INDEX rt_a_idx ON rt (a);
+      CREATE INDEX rt_qr_idx ON rt (q, r);
+      CREATE INDEX rt_ts_idx ON rt (t, s);
       CREATE INDEX rt_c_inc_idx ON rt (c) INCLUDE (d);
       CREATE INDEX rt_e_part_idx ON rt (e) WHERE flag;
       CREATE INDEX rt_note_pat_idx ON rt (note text_pattern_ops);
@@ -63,6 +65,12 @@ RSpec.describe Quaack::Enclave::Steps::RedundantIndexes do
 
   it "doesn't suggest an index that's a non-prefix of the new one's key" do
     expect(suggested("CREATE INDEX ON public.rt USING btree (b, a)")).to eq(["rt_b_idx"])
+  end
+
+  it "suggests a multicolumn index only when every one of its columns leads the new key, in order" do
+    expect(suggested("CREATE INDEX ON public.rt USING btree (q, r, c)")).to eq(["rt_qr_idx"])
+    expect(suggested("CREATE INDEX ON public.rt USING btree (q, c)")).to eq([])
+    expect(suggested("CREATE INDEX ON public.rt USING btree (s, t, c)")).to eq([])
   end
 
   it "suggests one whose INCLUDE columns the new index covers, in its key or its INCLUDE list" do

@@ -924,13 +924,13 @@ RSpec.describe "quaacks report-payload" do
     end
   end
 
-  it "sends each proposed index's redacted DDL, size, prefix coverage, and redundancy" do
+  it "sends each proposed index's redacted DDL, size, and prefix coverage" do
     expect(report["indexes"]["quaack_a"]).to eq(
       "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)", "size" => 8192,
-      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }, "makes_redundant" => []
+      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }
     )
-    expect(report["indexes"]["quaack_b"]).to include(
-      "covered_by" => nil, "makes_redundant" => [{ "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }]
+    expect(report["indexes"]["quaack_b"]).to eq(
+      "ddl" => "CREATE INDEX ON public.orders USING btree (created_at, id, note)", "size" => 8192, "covered_by" => nil
     )
     expect(report["indexes"]["quaack_c"]["ddl"]).to include("note = ?")
   end
