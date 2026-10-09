@@ -8351,3 +8351,17 @@ The build and review of 20261001-17 found these:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Landed:** 74fb84e8 (enclave; on the unreleased list). Review clean. Minors noted, not filed: one counterexample override (rewrite_2) is redundant; no egress spec for the KeyError case, but ErrorFilter never reads error content.
+
+### 20261008-70. Report payload: leftovers from 20261003-3.
+
+- **`result_not_compared` survives a mutation.** Removing it from `Selection::REASONS` stays green; add a test that sends every REASON through `MeasuredLabels.excluded`.
+- **CastlessIndex misses the array-literal form.** `x = ANY ('{1,2}'::int[])`, which plans print, doesn't merge with `x IN (1, 2)`. Nested `ARRAY[ARRAY[...]]` elements key oddly too (rare).
+- **`fval` keys by raw text,** so `10` and `10.0` key apart (harmless).
+- **Selection entries stored before 20261003-3** still say `result_mismatch` for a timeout. The fate is still right.
+- **Not built from 20261003-3:** `e2e/run.rb`'s `why_none` hasn't been run since it tallied fates; `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
+
+- **Depends on:** 20261003-3.
+- **Came from:** The build and review of 20261003-3, 2026-10-08.
+- **Design:** report, negative-result.
+- **Status:** done
+- **Landed:** 2c2b00f7, items 1 and 2 (enclave; on the unreleased list). Review clean; a whitespace mutation of the literal regex survives but can't cause a wrong merge. Items 3 (10 vs 10.0) and 4 (old entries) dropped as harmless. Item 5: e2e/run.rb crashes, filed as 20261008-71; replay spec speed filed as 20261008-72.

@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20260926-53 (rewrite entries must carry anchored_sql; no fallback to sql).
 - 20261003-3 (report payload: closed list for excluded, timeout reasons, FAILURES from RULES, predicate spellings merged).
+- 20261008-70 (CastlessIndex merges array-literal = ANY with IN).
 
 
 
@@ -2324,15 +2325,22 @@ From the second review of 20261008-63:
 
 ### 20261008-69. Schema dump: test a domain or column type from a schema that isn't dumped. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-70. Report payload: leftovers from 20261003-3.
+### 20261008-70. Report payload: leftovers from 20261003-3. Done, see BACKLOG-COMPLETE.md.
 
-- **`result_not_compared` survives a mutation.** Removing it from `Selection::REASONS` stays green; add a test that sends every REASON through `MeasuredLabels.excluded`.
-- **CastlessIndex misses the array-literal form.** `x = ANY ('{1,2}'::int[])`, which plans print, doesn't merge with `x IN (1, 2)`. Nested `ARRAY[ARRAY[...]]` elements key oddly too (rare).
-- **`fval` keys by raw text,** so `10` and `10.0` key apart (harmless).
-- **Selection entries stored before 20261003-3** still say `result_mismatch` for a timeout. The fate is still right.
-- **Not built from 20261003-3:** `e2e/run.rb`'s `why_none` hasn't been run since it tallied fates; `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
+### 20261008-71. `e2e/run.rb` crashes: the harness passes a plain LLM client.
 
-- **Depends on:** 20261003-3.
-- **Came from:** The build and review of 20261003-3, 2026-10-08.
-- **Design:** report, negative-result.
+Found while building 20261008-70. Every case tried (`036`, `054`, `034`) crashes before `why_none` with `NoMethodError: undefined method 'branches' for an instance of Quaack::Driver::LLM::Client`. `rewrite_generation.rb:106` and `generator_three.rb:120` call `@client.branches`, which only `llm/fan_out.rb` defines. The harness needs to build the fan-out router the way the real driver does, and a spec should run at least one e2e case so this can't rot again. Then check that `why_none`'s fate tally reads right.
+
+- **Depends on:** 20261008-62.
+- **Came from:** The build of 20261008-70, 2026-10-08.
+- **Design:** none (test harness).
+- **Status:** todo
+
+### 20261008-72. `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
+
+Carried from 20261003-3. It sets the per-commit check's wall time. See whether replays can share setup (one Postgres load per schema, say) or run less.
+
+- **Depends on:** none.
+- **Came from:** 20261003-3, 2026-10-08.
+- **Design:** none (CLAUDE.md Development).
 - **Status:** todo
