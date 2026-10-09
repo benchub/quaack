@@ -8556,3 +8556,13 @@ Each ranked label carries its kind in the report payload, from a fixed list in t
 - **Design:** baseline.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** aac806fc. Removes the dead timed-out handling in `Baseline.entry`, and adds specs for the fixed note and for the path from `Baseline::Error` to an egress line. Case 034 moved to 20261009-15: every lighter dataset also made the original beat the rewrite.
+
+### 20261009-12. Report: open rule documentation links in a new tab.
+
+Asked for by the user on 2026-10-09. Links to a rule's documentation page, such as "Where it came from: made by QUAACK's own rewrite rule key_in_self_join", should open in a new tab. Give them `target="_blank" rel="noopener"` (`RuleLinks#rule_link`). In-page `#` links are unchanged.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 4b6ab067, plus spec fixes in the following commits through a4f3d20d. `RuleLinks#rule_link` adds `target="_blank" rel="noopener"`. Driver only.
