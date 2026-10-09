@@ -2378,3 +2378,22 @@ Every user-visible line that says "the LLM" gets the same treatment where the dr
 - **Came from:** The user, 2026-10-08.
 - **Design:** LLM providers, quaack run.
 - **Status:** todo
+
+### 20261008-63. Report: calls, wait time, and tokens for each LLM model.
+
+The user asked for this on 2026-10-08. The report should show a table with one row per LLM model the run used, in the form provider and model, or the `llms` entry's name. Each row gives:
+
+- the number of calls
+- the total time spent waiting for replies
+- the tokens used: input, output, and total, or cached and reasoning tokens where the provider reports them
+
+Count failed and retried calls and show them, so a failover shows up. Add a total row.
+
+On a resumed run, include the earlier processes' numbers, saved in the provenance record `~/.quaack/runs/<id>.llm.json` the same way 20260926-42 saves `llm_calls`.
+
+Token counts come from each adapter's usage data. A provider that gives none shows "not reported", not 0. This is the operator's own data, kept on the laptop, so nothing crosses the trust boundary. Update the DESIGN.md report section and pin the table in specs.
+
+- **Depends on:** 20260926-42, 20261007-18.
+- **Came from:** The user, 2026-10-08.
+- **Design:** report, LLM providers.
+- **Status:** todo
