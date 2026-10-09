@@ -8811,3 +8811,18 @@ Findings from the build and review of 20261002-7:
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** - **Landed (2026-10-09):** 79023b37. Columns are compared by base type, so typmods are ignored. Enums map to the `anyenum` btree opclass. A spec pins that outer-join ONs supply no equalities. Domain and array columns, the `families.size == 1` guard, and inner joins nested under an outer join stay refused (rare). Leftovers are in 20261009-22.
+
+### 20261003-25. FK-cycle breaking: loose ends.
+
+Minor findings from the build and review of 20261003-17:
+
+- **One code path has no test.** No test has a nullable foreign key from a table in a cycle to a table outside it. If "this edge is in a cycle" is changed to "this table is in any cycle", every test stays green (`topology.rb:73`). Add that case.
+- **A DEFAULT in a cut column stays DEFAULT.** If the default references a row that isn't loaded yet, the load fails. Load NULL there instead, or say in DESIGN.md that this case is unsupported.
+- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. vacuity-guard keeps this safe, but check whether it ever refuses a query it shouldn't.
+- **Partitioned tables with foreign keys may not load through the counterexample path.** The builder's attempt failed with `fixture_load_failed`. Reproduce it, and fix it or list it as unsupported.
+
+- **Depends on:** 20261003-17.
+- **Came from:** The build and review of 20261003-17, 2026-10-03.
+- **Design:** rewrite-test, llm-counterexamples.
+- **Status:** done
+- **Landed:** - **Landed (2026-10-09):** 5bcdcf90, spec and DESIGN.md only. Item 1: a spec pins that a nullable FK from a cycle table to an outside table stays uncut. Item 2: an "Unsupported in v1" note covers a DEFAULT in a cut column on the counterexample path (fails safe as insert_failed). Items 3 and 4 were stale: `read?` only orders cuts, and partitioned parents are refused at qualify.

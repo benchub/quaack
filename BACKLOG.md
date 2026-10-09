@@ -966,19 +966,7 @@ Out-of-scope findings from the build of 20261002-8:
 
 ### 20261003-24. ParentRows can leak a value in a Postgres error. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-25. FK-cycle breaking: loose ends.
-
-Minor findings from the build and review of 20261003-17:
-
-- **One code path has no test.** No test has a nullable foreign key from a table in a cycle to a table outside it. If "this edge is in a cycle" is changed to "this table is in any cycle", every test stays green (`topology.rb:73`). Add that case.
-- **A DEFAULT in a cut column stays DEFAULT.** If the default references a row that isn't loaded yet, the load fails. Load NULL there instead, or say in DESIGN.md that this case is unsupported.
-- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. vacuity-guard keeps this safe, but check whether it ever refuses a query it shouldn't.
-- **Partitioned tables with foreign keys may not load through the counterexample path.** The builder's attempt failed with `fixture_load_failed`. Reproduce it, and fix it or list it as unsupported.
-
-- **Depends on:** 20261003-17.
-- **Came from:** The build and review of 20261003-17, 2026-10-03.
-- **Design:** rewrite-test, llm-counterexamples.
-- **Status:** todo
+### 20261003-25. FK-cycle breaking: loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-26. `union_outer_filter_removal`: widenings, and duplicate candidates.
 
