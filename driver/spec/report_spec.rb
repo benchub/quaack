@@ -140,7 +140,7 @@ RSpec.describe Quaack::Driver::Report do
       it "uses only variables that :root defines" do
         used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
         # Set per fold color by details.query and details.rose, and per kind by tr.stripe-*.
-        folds = %w[--fold-bg --fold-edge --fold-accent --stripe]
+        folds = %w[--fold-bg --fold-edge --fold-accent --stripe --stripe-bg]
         expect(used - names - folds).to eq([])
         expect(style.scan(/^  details\.(?:query|rose) \{ --fold-bg: var/).size).to eq(2)
         expect(names).to include("--rose-bg", "--rose-edge", "--rose-accent")
@@ -1023,11 +1023,18 @@ RSpec.describe Quaack::Driver::Report do
       expect(table.scan("<tr class=\"rank ").size).to eq(4)
       expect(ranking.scan(/<tr class="kind [^"]*"><th scope="rowgroup" colspan="5">/).size).to eq(3)
       style = html[%r{<style>(.*?)</style>}m, 1]
-      expect(style[/tr\.kind > th \{[^}]*\}/]).to include("font-weight: 700", "background: var(--head-bg)")
-      expect(style).to match(/tr\.rank > td:first-child \{[^}]*padding-left: 1\.5rem/)
-      stripes = style.scan(/tr\.stripe-(\w+) \{ --stripe: (var\(--st-[a-z]+\)); \}/)
+      # The heading is tinted from its kind (the table header's --head-bg is 1.1:1 against white), and
+      # the rank number isn't indented: it sits in a right-aligned, no-wrap column.
+      heading = style[/tr\.kind > th \{[^}]*\}/]
+      expect(heading).to include("background: var(--stripe-bg)")
+      expect(heading).not_to include("--head-bg")
+      expect(style[/tr\.rank > td:first-child \{[^}]*\}/]).not_to include("padding-left")
+      stripes = style.scan(/tr\.stripe-(\w+) \{ --stripe: (var\(--st-[a-z]+\)); --stripe-bg: (var\(--sb-[a-z]+\)); \}/)
       expect(stripes.map(&:first)).to eq(%w[rewrite_new_indexes rewrite_same_indexes original_new_indexes])
-      expect(stripes.map(&:last).uniq.size).to eq(3)
+      expect(stripes.map { it[1] }.uniq.size).to eq(3)
+      expect(stripes.map(&:last)).to eq(%w[var(--sb-teal) var(--sb-violet) var(--sb-brown)])
+      dark = style[/prefers-color-scheme: dark\).*?\n  \}\n/m]
+      expect(dark).to include("--sb-teal:", "--sb-violet:", "--sb-brown:")
       expect(style).to include("border-left: 5px solid var(--stripe)")
     end
 
