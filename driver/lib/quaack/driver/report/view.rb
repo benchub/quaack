@@ -109,10 +109,10 @@ module Quaack
           parts = hidden_parts or return
 
           "Your role on the production server couldn't read the statistics of #{parts.join(" and of ")}. " \
-            "Postgres shows them only to a role that owns the table. QUAACK went on without them, so the run " \
-            "server's planner had no statistics for those and may estimate row counts differently from production, " \
-            "and so may pick a different plan. The blocks QUAACK counted are real reads on a copy of your data. " \
-            "To have QUAACK copy these statistics, run it with a role that owns the tables."
+            "Postgres hides them from a role that doesn't own the table or can't read its columns. QUAACK went " \
+            "on without them, so the index ideas it built from the statistics it captured, and the choice of " \
+            "which ideas to try, may be off for those. To let QUAACK read these statistics, run it with a role " \
+            "that owns the tables."
         end
 
         def hidden_indexes(names)
