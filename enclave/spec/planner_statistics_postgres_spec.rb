@@ -625,6 +625,19 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(store.entry?("statistics")).to be(false)
     end
 
+    it "doesn't refuse a row-security table whose entry has column statistics" do
+      conn.exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
+      conn.exec("CREATE POLICY everyone ON orders FOR SELECT USING (true)")
+      conn.exec("SET ROLE #{role}")
+      oid = conn.exec("SELECT 'public.orders'::regclass::oid").getvalue(0, 0)
+      hidden = Quaack::Enclave::PlannerStatistics::Hidden
+      check = ->(columns) { hidden.check_row_security!("public.orders", oid, { "columns" => columns }, conn) }
+
+      expect(check.call("id" => {})).to be_nil
+      expect { check.call({}) }
+        .to raise_error(Quaack::Enclave::PlannerStatistics::Error, /row_security_statistics_hidden/)
+    end
+
     it "reads a row-security table's statistics with a role that bypasses row security" do
       conn.exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
       admin.exec("ALTER ROLE #{role} BYPASSRLS")
