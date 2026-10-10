@@ -5,6 +5,7 @@ require "pg_query"
 require_relative "arena_schema"
 require_relative "predicate_atoms"
 require_relative "value_pools/category"
+require_relative "value_pools/pooled"
 
 module Quaack
   module Enclave
@@ -32,8 +33,7 @@ module Quaack
     # written. Trust boundary: pools hold real values, so they stay in the
     # enclave. inspect leaves the values out.
     module ValuePools
-      KINDS = %i[equality range like in null_test].freeze
-      BOOLEAN_TESTS = ["IS TRUE", "IS NOT TRUE", "IS FALSE", "IS NOT FALSE", "IS UNKNOWN", "IS NOT UNKNOWN"].freeze
+      KINDS = Pooled::KINDS
 
       Pool = Data.define(:column, :type, :oid, :nullable, :satisfying, :failing, :boundaries) do
         def inspect = "#<data #{self.class} column=#{column.name} values=<redacted>>"
@@ -80,25 +80,7 @@ module Quaack
         end.to_h
       end
 
-      # The row comparison operators whose leading column can decide them.
-      ROW_RANGE = %w[< <= > >=].freeze
-
-      # A keyset row comparison with a range operator is pooled through its
-      # leading column, when every element of its column row is a plain
-      # column of a table. A boolean test (IS TRUE, IS NOT FALSE, ...) on
-      # a plain column of a table, and a bare boolean column as a test, are
-      # pooled too: the probe sorts t, f, and NULL, so the hit gets a value
-      # that satisfies it and the near miss one that fails it.
-      def pooled?(atom)
-        return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
-        return atom.bare && atom.columns.size == 1 && !atom.columns[0].table.nil? if boolean_test?(atom)
-
-        atom.kind == :row_comparison && ROW_RANGE.include?(atom.operator) && atom.bare && atom.columns.all?(&:table)
-      end
-
-      def boolean_test?(atom)
-        atom.kind == :other && (atom.operator.nil? || BOOLEAN_TESTS.include?(atom.operator))
-      end
+      def pooled?(atom) = Pooled.call(atom)
 
       # The probe for a pooled atom (see Probe).
       def probe(conn, parse, atom, col) = Probe.new(conn, node(parse, atom), col)
@@ -191,8 +173,7 @@ module Quaack
         def initialize(conn, node, col)
           @conn = conn
           @col = col
-          # A bare boolean column is the whole test, so it's $1 itself.
-          copy = Sides.column_node?(node) ? Sides.param : Sides.copy(node)
+          copy = Sides.copy(node)
           Sides.replace_columns(copy)
           @sql = Sides.select_of(copy)
         end

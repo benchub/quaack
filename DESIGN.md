@@ -1159,7 +1159,7 @@ From the pg_query parse, pull out every predicate atom:
 - Range and `LIKE` predicates.
 - `IN` lists.
 - `IS NULL` tests.
-- Boolean tests (`IS TRUE`, `IS NOT TRUE`, `IS FALSE`, `IS NOT FALSE`, `IS UNKNOWN`, `IS NOT UNKNOWN`) on a plain column, and a bare boolean column used as a test (`WHERE published`, `count(*) FILTER (WHERE published)`). Their pool is the column's `t`, `f`, and `NULL` when nullable, so the near miss gets a value that fails the test. One on an expression, such as `(qty > 2) IS TRUE`, gets no pool.
+- Boolean tests (`IS TRUE`, `IS NOT TRUE`, `IS FALSE`, `IS NOT FALSE`, `IS UNKNOWN`, `IS NOT UNKNOWN`) on a plain column. Their pool is the column's `t`, `f`, and `NULL` when nullable, so the near miss gets a value that fails the test. One on an expression, such as `(qty > 2) IS TRUE`, gets no pool.
 - Every join condition.
 - Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. S1 through S5 also get tie rows, where the later columns decide: for each later column, a copy of the hit row with the columns before it at their literals and that column at its literal or one unit either side. A tie that would set a join key column or break a CHECK is left out. Unsupported in v1: a keyset whose columns span tables, or whose elements don't all evaluate to literals, gets no tie rows, and one with `=` or `<>`, or with an expression in the column row, gets no pool, so vacuity-guard may mark it untested.
 
