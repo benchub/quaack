@@ -96,6 +96,31 @@ RSpec.describe "quaacks literals" do
     expect(stored.entry?("literal_sets")).to be(false)
   end
 
+  # 20261004-92: later steps compare measurements made in separate processes by set name, so the
+  # sets mustn't change once one has measured with them.
+  it "can run again while no later step has measured with the sets, storing the same sets" do
+    literals
+    first = stored.read("literal_sets")
+
+    expect(literals.status.exitstatus).to eq(0)
+    expect(stored.read("literal_sets")).to eq(first)
+  end
+
+  %w[baseline index_baseline candidate_runs result_comparison index_search_original
+     index_search_rewrite_2].each do |entry|
+    it "refuses to run again once #{entry} exists, leaving the stored sets alone" do
+      literals
+      first = stored.read("literal_sets")
+      stored.write(entry, {})
+
+      outcome = literals
+
+      expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+        .to eq([%({"type":"error","step":"literals","rule":"literals_already_used"}\n), "", 70])
+      expect(stored.read("literal_sets")).to eq(first)
+    end
+  end
+
   it "refuses a run with no statistics entry as missing_statistics, storing nothing" do
     drop_entry("statistics")
 

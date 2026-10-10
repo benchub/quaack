@@ -328,7 +328,7 @@ module Quaack
       # and of what an LLM or rewrite rule gave, which the steps that take
       # it record rather than fail on.
       INTERNAL = %w[
-        internal_error usage bad_input input_too_large volatility_not_passed
+        internal_error usage bad_input input_too_large volatility_not_passed literals_already_used
         run_server_no_inventory racetrack_setup_no_run_server arena_setup_no_run_server racetrack_bad_clock_anchor
         index_search_no_racetrack_setup index_search_unknown_search index_feedback_no_index_search
         index_feedback_unknown_search index_payload_no_index_search index_payload_unknown_search
