@@ -9229,3 +9229,26 @@ From the review of 20261009-48 (minor).
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-54; two reviews, one fix round). The README's verdict, Ranking (grouped by kind), not-ranked and "Why the winner" samples describe one invented run (original 509 slow blocks; winner 4 at +14.8 MB), the tie rule is defined as within 5% on slow-value blocks across all kinds before grouping, and the Proposed indexes sample has the template's three columns. Left: 20261009-56 (the accountability sample) and 20261009-55.
+
+### 20261009-55. README samples: four small wording gaps from the review of 20261009-54.
+
+- The Proposed indexes sample lists one index, but the sample run's ranked candidates use two (the INCLUDE one and the plain (account_id, created_at) one); `proposed` takes all ranked labels' indexes. List both, or say the sample is shortened.
+- "Within a kind, the fewest blocks on the slow values ranks first" leaves out the secondary key: `selection.rb` ranks by slow blocks, then by the sum across value sets.
+- "Suggested by the LLM" in the sample is shorter than the real text, "Suggested by the LLM (name, model)" or "(its model wasn't recorded)" (`providers.rb`).
+- "the one the verdict and the next section describe" is loose: the verdict describes the best of each kind, and the winner is the best of all of them.
+
+- **Depends on:** 20261009-54.
+- **Came from:** The review of 20261009-54, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-55; review, then a one-line fix by the main session). Ranking sentence names the tie-break key (slow-value blocks, then the sum across value sets); the winner sentence says the verdict has a row for the best of each kind and the next section describes the best of any kind. The not-ranked rows' "Who proposed it" cells stay "Suggested by the LLM", as the report prints (the reviewer found the provider/model form belongs only to the queries section's "Where it came from" line). The Proposed indexes sample already listed both ranked indexes.
+
+### 20261009-56. README's "Who proposed what" sample contradicts the invented run.
+
+From the second review of 20261009-54 (it predates that task's diff). The sample's Rewrites table (README about lines 748 to 756) shows "QUAACK's own rules" with Ranked 1 and "The LLM" with Ranked 0, but the only rewrite in the invented run is Silver Fox, which the not-ranked sample says the LLM suggested, and which is ranked (rows 1 and 2 of the Ranking sample). Make the accountability tables agree with the run (the LLM row ranked 1, or change who suggested Silver Fox everywhere), with the totals, the indexes table (generators, the LLM, all sources) and the burndown sample consistent too; the verdict's "nothing helps" example line ("built and measured 2 indexes and kept 1 rewrite") is a different scenario, and should be labeled so. Check each number and string against `Accountability` and the template, as the other samples were.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261009-54, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-55 branch; review clean). The accountability Rewrites sample agrees with the run: rules 2 proposed (1 not kept, 1 same plan, 0 ranked), the LLM 3 proposed (1 same plan, 1 wrong results, 1 ranked: Silver Fox), you 1 (not better); the "nothing helps" line is labeled as a different run.
