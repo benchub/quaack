@@ -1252,3 +1252,19 @@ From the review of 20261009-26. The light theme's cream stripe `#b08a1e` is 2.96
 - **Came from:** The review of 20261009-26, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-37. Report: an LLM-written "tl;dr" at the top of "Why the winner reads fewer blocks".
+
+The user, 2026-10-09: the section is "honestly not very informative", and it might open with a short LLM-written summary. Their example: "Rewrite Steady Lute removes redundant table scans and transforms an IN to an EXISTS, which allows Postgres to make better use of index scans. Additionally, a new index further improves performance by allowing even tighter selectivity scans on the assignments table." They aren't sure what quality a summary like that would reach.
+
+Two things to settle before this is built, since it departs from what the README promises today ("This part is generated from the measurements and plans, not written by the LLM"):
+- **Quality.** Start with a throwaway prototype, not a feature. From a recorded run (the repo's `spec/fixtures` replays, never a real report), build the input a summary would get and ask each configured provider for a few sentences. Show the user several outputs next to the plans, and judge whether they're correct and useful. The risk is a fluent explanation that's wrong about why a plan is faster; a reader can't tell. Report what the prototype found before building anything else.
+- **What it may see.** Only what the driver already holds outside the enclave and already sends to LLM steps: redacted query shapes (`$n` placeholders), the rewrite's SQL, the rule names that made it, index DDL, plan nodes (type, table, index, row estimates, block counts), and the measured block counts. Never a literal, a value, or a store entry the enclave doesn't send. The input is built from the same payload the report already holds, and a spec plants a sentinel in a value the summary must never carry. Name the data (query shapes, schema names, a customer's table names) and the rules that likely apply in the design note; ask whether Security or Privacy review wants to see the input list.
+
+If the prototype is good enough, the feature needs: a new LLM step (its own entry under `llm_routing.steps`, its pool, its call counted in the provenance record and the burndown's LLM table, with its tokens); a summary labeled in the report as written by an LLM and not measured, with the provider and model named; a fallback when no LLM answers (the section reads as it does today, with no placeholder); a check that the summary names only the rewrite and the indexes the report shows; and the README and DESIGN.md changed to say the section now opens with an LLM summary and the rest is still generated from the measurements.
+
+- **Depends on:** None for the prototype. The feature depends on the prototype's result.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report, Several LLM providers.
+- **Open questions:** Whether the user wants the summary only for the winner or for each ranked candidate; which provider writes it (the cheapest one that does well in the prototype); whether a reader who can't tell it's LLM-written is acceptable (no: it's labeled).
+- **Status:** todo
