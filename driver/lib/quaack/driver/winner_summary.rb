@@ -30,8 +30,9 @@ module Quaack
     class WinnerSummary
       STEP = "winner-summary"
       MAX_TOKENS = 1500
-      # The prompt asks for under 600; real answers ran 650 to 730 with the
-      # first wording, so the cap leaves headroom over what the prompt asks.
+      # The prompt asks for under 500. Real answers ran 434 to 451 with that
+      # wording (598 to 602 when it asked for 600), so they land at or just
+      # under the ask. The cap leaves room for a longer plan.
       MAX_CHARS = 800
 
       # outcome is used, or why the report goes without: no_winner,
@@ -46,7 +47,7 @@ module Quaack
 
         The winner is either a rewrite of the original query, or the original query run with new indexes, or a rewrite run with new indexes. Compare the winner only with the original query as it runs now, on the indexes the database already has. Don't compare it with any other candidate.
 
-        Write two to four plain sentences. Use short sentences, each making one point, and keep the whole summary under 600 characters. Say what the winner does differently from the original, using the plans' steps, tables, and indexes, the rewrite's rules and SQL when there is a rewrite, and the new indexes' definitions when there are any. Say how many blocks each read on the slow values, which are the values from the engineer's slow plan, and say whether the winner held up on the other sets of values.
+        Write three or four plain sentences, each short and making one point. The whole summary must stay under 500 characters, so pick the two or three points that matter most. Say what the winner does differently from the original, using the plans' steps, tables, and indexes, the rewrite's rules and SQL when there is a rewrite, and the new indexes' definitions when there are any. Say how many blocks each read on the slow values, which are the values from the engineer's slow plan, and say whether the winner held up on the other sets of values.
 
         Say only what the plans and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, statistics, or data distribution, so leave those out unless a number in the payload says so. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that.
 
@@ -63,13 +64,15 @@ module Quaack
       # address, and a format character (zero-width, bidi override).
       REFUSED = [
         %r{<\s*[A-Za-z/!?]}, /&#?\w+;/, /https?:|www\.|\w+\.(?:com|org|net|io|dev)\b/i,
-        /\b(?:javascript|data):/i, /\w@\w/, /\p{Cf}/, /\]\(|```|\*\*|__/,
+        /\b(?:javascript|data|vbscript|mailto|file|ftp|about)\s*:/i, /\w@\w/,
+        /\p{Cf}|[\u2028\u2029\u3164\u2800\uFE0F]/, /\]\(|```|\*\*|__/,
         /\A\s*(?:[#>*]|-\s|\d+[.)]\s)/, /\n\s*(?:[#>*]|-\s|\d+[.)]\s)/, /\b(?:rewrite_\d|original:|quaack_)/i
       ].freeze
       # A dotted token that could be a host: it ends in a word of two or more
       # letters. A table, schema, or alias name looks the same, so a token the
       # input holds (public.orders, o.status) is fine, and any other is not.
-      DOTTED = /\b\w+(?:\.\w+)*\.[A-Za-z]{2,}\b/
+      WORD = /[\p{L}\p{N}_]/
+      DOTTED = /(?<!#{WORD})#{WORD}+(?:\.#{WORD}+)*\.\p{L}{2,}(?!#{WORD})/
       REWRITE_NAME = /\bRewrite [A-Z][a-z]+ [A-Z][a-z]+\b/
 
       def initialize(client:)
@@ -113,10 +116,20 @@ module Quaack
         return false if text.size > MAX_CHARS || text.match?(/[\p{Cntrl}&&[^\n\t]]/) || REFUSED.any? { text.match?(it) }
 
         sent = JSON.generate(input)
-        return false if text.scan(DOTTED).any? { !sent.include?(it) }
+        return false if text.scan(DOTTED).any? { !in_input?(it, sent) }
 
         winner = input.dig("winner", "rewrite", "name")
         text.scan(REWRITE_NAME).all? { it == winner }
+      end
+
+      # Whether a dotted token is one the input holds as whole words: either
+      # verbatim, or with every part present as a word of its own, which
+      # takes public.orders.status when the input has public.orders and
+      # status, and orders.id when the query aliases orders. Any part the
+      # input lacks refuses it.
+      def in_input?(token, sent)
+        whole = ->(part) { sent.match?(/(?<!#{WORD})#{Regexp.escape(part)}(?!#{WORD})/) }
+        whole.call(token) || token.split(".").all?(&whole)
       end
     end
   end

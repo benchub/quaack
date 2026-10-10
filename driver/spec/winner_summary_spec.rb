@@ -181,7 +181,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(system).to include("only with the original query as it runs now, on the indexes the database already has")
         .and include("Say only what the plans and numbers in the payload show")
         .and include("Don't guess at a cause you can't see")
-        .and include("Use short sentences").and include("under 600 characters")
+        .and include("each short and making one point").and include("under 500 characters")
         .and include("Quote a plan step's own numbers")
         .and include("never carry one step's row count to another step")
       expect(ask.body).not_to have_key(:output_config)
@@ -215,6 +215,18 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       "a bare domain on an unlisted ending" => "Rewrite Steady Lute reads fewer blocks, see evil.example.co now.",
       "a javascript link as text" => "Rewrite Steady Lute reads fewer blocks, see javascript:alert(1) now.",
       "a data link as text" => "Rewrite Steady Lute reads fewer blocks, see data:text/plain,hi now.",
+      "a vbscript link as text" => "Rewrite Steady Lute reads fewer blocks, see vbscript:msgbox now.",
+      "a mailto link as text" => "Rewrite Steady Lute reads fewer blocks, mail mailto:dba now.",
+      "a file link as text" => "Rewrite Steady Lute reads fewer blocks, see file:/etc/passwd now.",
+      "an ftp link as text" => "Rewrite Steady Lute reads fewer blocks, see ftp:/pub now.",
+      "an about link as text" => "Rewrite Steady Lute reads fewer blocks, see about:blank now.",
+      "a spaced odd-case javascript link" => "Rewrite Steady Lute reads fewer blocks, see JaVaScRiPt :alert(1) now.",
+      "a line separator" => "Rewrite Steady Lute reads fewer\u2028blocks.",
+      "a paragraph separator" => "Rewrite Steady Lute reads fewer\u2029blocks.",
+      "a hangul filler" => "Rewrite Steady Lute reads fewer\u3164blocks.",
+      "a braille blank" => "Rewrite Steady Lute reads fewer\u2800blocks.",
+      "a variation selector" => "Rewrite Steady Lute reads fewer blocks.\uFE0F",
+      "a unicode-lettered bare domain" => "Rewrite Steady Lute reads fewer blocks, see evil.\u0440\u0444 now.",
       "an email address" => "Rewrite Steady Lute reads fewer blocks, ask dba@corp for more.",
       "a zero-width character" => "Rewrite Steady Lute reads fewer​ blocks.",
       "a bidi override" => "Rewrite Steady Lute reads fewer blocks.‮",
@@ -263,10 +275,41 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(run(answer)).to have_attributes(text: nil, outcome: "rejected")
     end
 
-    it "refuses an answer over 800 characters, and keeps one of 700" do
-      expect(run("#{good} #{"It reads fewer blocks. " * 26}")).to have_attributes(text: nil, outcome: "rejected")
-      keep = "#{good} #{"It reads fewer blocks. " * 20}"[0, 700].strip
-      expect(run(keep)).to have_attributes(text: keep, outcome: "used")
+    it "keeps an answer of exactly 800 characters and refuses one of 801" do
+      pad = ->(size) { "#{good} #{"a" * (size - good.size - 1)}" }
+
+      expect(run(pad.call(800))).to have_attributes(text: pad.call(800), outcome: "used")
+      expect(run(pad.call(801))).to have_attributes(text: nil, outcome: "rejected")
+    end
+
+    it "refuses a dotted name only when the input holds it as a whole word, not as the start of a longer one" do
+      payload["original_sql"] = "SELECT 1 FROM example.company WHERE a = $1"
+
+      expect(run("Rewrite Steady Lute reads fewer blocks than example.co does.", payload))
+        .to have_attributes(text: nil, outcome: "rejected")
+      expect(run("Rewrite Steady Lute reads fewer blocks than example.company does.", payload))
+        .to have_attributes(outcome: "used")
+    end
+
+    context "with an orders query" do
+      before { payload["original_sql"] = "SELECT o.id FROM public.orders o WHERE o.status = $1" }
+
+      it "keeps a dotted name whose parts each appear in the input, such as a schema added to a column" do
+        answer = "Rewrite Steady Lute reads fewer blocks filtering on public.orders.status."
+
+        expect(run(answer, payload)).to have_attributes(text: answer, outcome: "used")
+      end
+
+      it "keeps a column named by its table instead of the alias the query uses" do
+        answer = "Rewrite Steady Lute reads fewer blocks, filtering on orders.status and orders.id."
+
+        expect(run(answer, payload)).to have_attributes(text: answer, outcome: "used")
+      end
+
+      it "refuses a dotted name when one part isn't in the input, even if the others are" do
+        expect(run("Rewrite Steady Lute reads fewer blocks than public.evil.status does.", payload))
+          .to have_attributes(text: nil, outcome: "rejected")
+      end
     end
 
     it "keeps one paragraph: runs of whitespace in a good answer become a space" do
