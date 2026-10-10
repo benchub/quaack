@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
+- 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
 
 
@@ -1218,22 +1219,6 @@ If the prototype is good enough, the feature needs: a new LLM step (its own entr
 
 ### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have". Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-39. Report: show the definition of the existing index that covers each idea.
-
-The user, 2026-10-09. In "Indexes QUAACK thought of that you already have" (`#existing-indexes`), the "Your index that covers it" cell shows only the existing index's name (`e.dig("covered_by", "name")`) and its size sits in the next column. Show its definition too (the `CREATE INDEX` text, in the same SQL style as the first column), so the reader can see why it covers the idea without looking it up.
-
-Where the definition comes from decides the size of the task. Look first:
-- DESIGN.md says the existing index definitions already reach the driver, in the LLM payloads (the "existing index definitions from statistics", DESIGN.md around the index payload). If the report's payload or the driver's own copy of that data holds each existing index's definition by name, look it up by `covered_by.name` in the driver. No enclave change, and no change to what crosses the boundary.
-- If it doesn't (`covered_by` carries a name and a size only, per `Protocol::Whitelist`), the enclave has to send the definition in the payload entry, and the egress check, the whitelist, and the report's payload-shape check change. That's an enclave and protocol change: put it on the unreleased list when it lands. An existing index's definition is schema, not data, but name the data (index definitions over a customer's columns) and the rules that likely apply, and say whether Security or Privacy review wants to see it.
-Either way: show nothing but the definition text. A definition that holds a partial index's predicate must show it redacted the way the rest of the report's SQL is, never with a literal. Test with a sentinel literal in a partial-index predicate, asserting it never appears in the payload or the report, and that the check catches it when planted.
-
-Update README.md's bullet for the table and DESIGN.md's index paragraph.
-
-- **Depends on:** 20261009-38 (the same table loses its "Tried for" column first).
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, statistics.
-- **Status:** todo
-
 ### 20261009-40. Caution: warn only about untested atoms in the part the rewrite changed.
 
 Decided by the user, 2026-10-09, from 20261009-33's diagnosis. `Report::Cautions#warning` adds "every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven" whenever any atom of the whole query is untested (`unchecked_atoms(entry)`). An atom the rewrite left exactly as the original had it can't tell the two apart, so an untested one says nothing about the rewrite. Warn only when an untested atom lies in a part the rewrite changed.
@@ -1315,4 +1300,13 @@ Seen 2026-10-09 by the builders of 20261009-39 and 20261009-28, each on its firs
 - **Depends on:** None.
 - **Came from:** The builders of 20261009-39 and 20261009-28, 2026-10-09.
 - **Design:** none (CLAUDE.md Development).
+- **Status:** todo
+
+### 20261009-50. An egress check on every DDL field of `negative`.
+
+From the review of 20261009-39 (minor, defense in depth). `negative` goes out with no whitelist check, and its `ddl` fields (declined and existing indexes) and the new `covered_by.definition` are produced by the NegativeResult step and checked nowhere on the way out; DESIGN.md says the step is where they're reviewed. Add an egress check that every DDL string in `negative` is in redacted form (no literal other than an MCV value the payload carries), with a sentinel test that the check catches a planted literal. Enclave change: put it on the unreleased list.
+
+- **Depends on:** 20261009-39.
+- **Came from:** The review of 20261009-39, 2026-10-09 (minor).
+- **Design:** What goes out of the enclave, trust boundary.
 - **Status:** todo

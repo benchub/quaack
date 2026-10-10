@@ -9080,3 +9080,20 @@ Update the specs that quote the old hover text and column headers, with a test f
 - **Open questions:** What to call "set aside"; whether the "Also counted" counts should stay in the hover for stages with no sentence.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-42; two reviews, one fix round). The "Set aside" column and label are now "Held back for a real build", with a note under each table naming the stages that do it (index-dedupe, the LLM's index-idea rounds, index-test). "Came in" is gone from the table, hover and label (the `in` field and the join-up spec stay). `GAP` is removed. Band hovers keep only the stage's sentence. Minor findings: 20261009-47.
+
+### 20261009-39. Report: show the definition of the existing index that covers each idea.
+
+The user, 2026-10-09. In "Indexes QUAACK thought of that you already have" (`#existing-indexes`), the "Your index that covers it" cell shows only the existing index's name (`e.dig("covered_by", "name")`) and its size sits in the next column. Show its definition too (the `CREATE INDEX` text, in the same SQL style as the first column), so the reader can see why it covers the idea without looking it up.
+
+Where the definition comes from decides the size of the task. Look first:
+- DESIGN.md says the existing index definitions already reach the driver, in the LLM payloads (the "existing index definitions from statistics", DESIGN.md around the index payload). If the report's payload or the driver's own copy of that data holds each existing index's definition by name, look it up by `covered_by.name` in the driver. No enclave change, and no change to what crosses the boundary.
+- If it doesn't (`covered_by` carries a name and a size only, per `Protocol::Whitelist`), the enclave has to send the definition in the payload entry, and the egress check, the whitelist, and the report's payload-shape check change. That's an enclave and protocol change: put it on the unreleased list when it lands. An existing index's definition is schema, not data, but name the data (index definitions over a customer's columns) and the rules that likely apply, and say whether Security or Privacy review wants to see it.
+Either way: show nothing but the definition text. A definition that holds a partial index's predicate must show it redacted the way the rest of the report's SQL is, never with a literal. Test with a sentinel literal in a partial-index predicate, asserting it never appears in the payload or the report, and that the check catches it when planted.
+
+Update README.md's bullet for the table and DESIGN.md's index paragraph.
+
+- **Depends on:** 20261009-38 (the same table loses its "Tried for" column first).
+- **Came from:** The user, 2026-10-09.
+- **Design:** report, statistics.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-39; Opus review clean). The definition wasn't available in the driver, so it's an enclave change: `NegativeResult#definition` builds it from index-dedupe's stored drop through `CandidateDdlRedaction` (a partial index's literal becomes `?` unless it's an MCV value the payload carries). It goes out unchecked, like the rest of `negative`, and DESIGN.md says so. The driver shows it under the index name, escaped. On the unreleased list. Minor finding: 20261009-50.
