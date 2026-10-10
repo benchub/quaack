@@ -19,8 +19,10 @@ module Quaack
         #
         # - The FROM holds only tables, each schema-qualified (so not a
         #   CTE), read without ONLY and without column aliases, under a
-        #   name of its own, joined only by plain inner or cross joins: no
-        #   outer join, NATURAL, USING, or join alias.
+        #   name of its own, joined only by plain joins, inner, cross, or
+        #   outer: no NATURAL, USING, or join alias. An outer join's
+        #   nullable side gives a NULL key for a null-extended row, which
+        #   UNION keeps apart by the preserved side's key (see OrToUnion).
         # - Every table has a key: columns the catalog proves unique
         #   together and each not null, each of a type UNION compares (see
         #   Catalog#columns). A key of one column is used first; see key.
@@ -49,7 +51,7 @@ module Quaack
           # The FROM's Tree::Items, if it holds only tables Reads takes.
           def self.tables(from)
             items = Tree.from_items(from)
-            items if !items.empty? && Tree.inner_conditions(from) && Tree.tables?(items)
+            items if !items.empty? && Tree.plain_joins?(from) && Tree.tables?(items)
           end
 
           # [[[name, column], ...], their assumptions] for the table's key,

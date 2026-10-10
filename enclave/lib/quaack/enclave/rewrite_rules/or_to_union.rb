@@ -44,6 +44,15 @@ module Quaack
       # in the select list both stay, and the order and the limit apply to
       # the whole UNION. Output columns keep their names.
       #
+      # An outer join changes nothing in that argument. The WHERE filters
+      # the join's output, null-extended rows included, so the rows that
+      # pass it are still those that pass with one arm or with another; the
+      # ON clauses stay in every branch as written. A null-extended row has
+      # NULL in the nullable side's key, and UNION merges NULLs, but two
+      # rows of the join never share a key of every table: a row of the
+      # join is its tables' rows, or NULLs where a side was extended, so
+      # equal keys everywhere make equal rows.
+      #
       # It gives one rewrite per OR it can split, each splitting only that
       # OR, and each stating a key of every FROM table unique and not null.
       #

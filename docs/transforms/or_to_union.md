@@ -12,7 +12,7 @@ It leaves a query alone when:
 
 - It has a window function, `WINDOW`, `DISTINCT ON`, a locking clause, `WITH`, or `INTO`.
 - It has `GROUP BY` or `HAVING` and Postgres might accept it only for a key. See the next section.
-- Its `FROM` has an outer join, a `NATURAL` join, a join with `USING`, a join with an alias, or an item that isn't a schema-qualified table. A table read with `ONLY`, or under an alias that renames its columns, counts too.
+- Its `FROM` has a `NATURAL` join, a join with `USING`, a join with an alias, or an item that isn't a schema-qualified table. A table read with `ONLY`, or under an alias that renames its columns, counts too.
 - Outside the `WHERE`, it has a subquery, in the select list or the `ORDER BY`.
 - Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column or a bare `*`, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
 - A select-list entry with no `AS` has a column in it but isn't a column, a function call, or an operator, such as a cast, a `COALESCE`, or a `CASE` over a column. A cast takes its name from its column, which the `UNION` renames, so the rule leaves all of these alone.
@@ -41,6 +41,12 @@ What can differ is whether Postgres accepts the query. It takes `SELECT a.id, a.
 - The `HAVING` has no subquery, like the rest of the query outside its `WHERE`.
 
 A `HAVING` with no `GROUP BY` works the same way.
+
+## Outer joins.
+
+`LEFT`, `RIGHT`, and `FULL` joins work like inner ones. The `WHERE` filters the join's output, null-extended rows included, so each branch keeps the `FROM` and every `ON` as written and gets only the arm in the `OR`'s place. The rule never moves an arm into an `ON`, which would change what an outer join keeps.
+
+A null-extended row has `NULL` in the nullable side's key columns, and `UNION` treats two `NULL`s as the same. That merges nothing it shouldn't: a row of the join is one row of each table, or `NULL`s where a side was extended, so two rows with the same keys everywhere are the same row, and a preserved row's key keeps the rows apart that a different preserved row null-extends.
 
 ## What it rests on.
 

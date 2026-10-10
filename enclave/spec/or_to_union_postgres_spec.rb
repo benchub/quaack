@@ -422,8 +422,12 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "it has no FROM" =>
         "SELECT 1 WHERE EXISTS (SELECT 1 FROM public.a WHERE a.loose = 3) " \
         "OR EXISTS (SELECT 1 FROM public.s WHERE s.flag)",
-      "it has an outer join" =>
-        "SELECT a.id, a.title FROM public.a LEFT JOIN public.s ON s.a_id = a.id WHERE s.flag OR a.loose = 3",
+      "it has a NATURAL outer join" =>
+        "SELECT a.id, a.title FROM public.a NATURAL LEFT JOIN public.s WHERE s.flag OR a.loose = 3",
+      "it has an outer join USING" =>
+        "SELECT a.id, a.title FROM public.a LEFT JOIN public.s USING (id) WHERE s.flag OR a.loose = 3",
+      "it has an outer join with an alias" =>
+        "SELECT j.id FROM (public.a LEFT JOIN public.s ON s.a_id = a.id) j WHERE j.flag OR j.loose = 3",
       "it has a NATURAL JOIN" =>
         "SELECT a.id, a.title FROM public.a NATURAL JOIN public.s WHERE s.flag OR a.loose = 3",
       "it has JOIN USING" =>
@@ -777,6 +781,88 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(rewrites.first.scan(" UNION ").size).to eq(1)
       expect(rewrites.first).to include("WHERE i.qty = 0 OR i.val = '9' UNION")
       expect(same_rows(sql, rewrites)).to eq([["1"], ["2"]])
+    end
+  end
+
+  # Parents p and their children c, with parents that have no child and
+  # children that have no parent, so an outer join null-extends rows:
+  #   p 1: children 11 (flag true), 12 (flag NULL)   p 2: child 13 (false)
+  #   p 3: child 14 (NULL)   p 4, 5: no children, both named 'same'
+  #   p 6: no children, grp NULL
+  #   c 15: no parent (NULL)   c 16: parent 99, which doesn't exist
+  context "with an outer join, where the WHERE reads both sides" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.p (id int PRIMARY KEY, name text, grp int);
+        CREATE TABLE public.c (id int PRIMARY KEY, p_id int, flag boolean, tag text);
+        CREATE TABLE public.d (id int PRIMARY KEY, c_id int, mark int);
+        INSERT INTO public.p VALUES (1, 'one', 1), (2, 'two', 1), (3, 'three', 2), (4, 'same', 3), (5, 'same', 3),
+          (6, 'six', NULL);
+        INSERT INTO public.c VALUES (11, 1, true, 'x'), (12, 1, NULL, 'x'), (13, 2, false, 'y'), (14, 3, NULL, 'z'),
+          (15, NULL, true, 'q'), (16, 99, true, 'r');
+        INSERT INTO public.d VALUES (21, 11, 1), (22, 12, 2), (23, 14, 1), (24, 99, 3);
+      SQL
+    end
+
+    %w[LEFT RIGHT FULL].each do |kind|
+      it "reads the UNION of a #{kind} JOIN's arms, and keeps the rows that are null-extended" do
+        sql = "SELECT p.id AS pid, p.name, c.id AS cid FROM public.p #{kind} JOIN public.c ON c.p_id = p.id " \
+              "WHERE c.flag OR p.grp = 3 OR c.flag IS NULL"
+
+        rewrites = rewritten(sql)
+
+        expect(rewrites.size).to eq(1)
+        expect(rewrites.first).to include("#{kind} JOIN public.c ON c.p_id = p.id WHERE c.flag OR c.flag IS NULL UNION")
+        expect(same_rows(sql, rewrites).size).to be >= 4
+      end
+    end
+
+    it "keeps a preserved row once when its arm is true only because the other side is NULL" do
+      sql = "SELECT p.id, c.id FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.id IS NULL OR p.grp = 2"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites)).to eq([%w[3 14], ["4", nil], ["5", nil], ["6", nil]])
+    end
+
+    it "keeps rows that look alike, from the null-extended side" do
+      sql = "SELECT p.name FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.id IS NULL OR p.grp = 3"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[same], %w[same], %w[six]])
+    end
+
+    it "keeps rows that look alike, from the nullable side's rows of one preserved row" do
+      sql = "SELECT p.name FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.flag IS NULL OR p.grp = 1"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[one], %w[one], %w[same], %w[same], %w[six], %w[three], %w[two]])
+    end
+
+    it "takes a chain of outer joins and an aggregate, with a key of every table" do
+      sql = "SELECT count(*), count(d.id), max(p.id) FROM public.p LEFT JOIN public.c ON c.p_id = p.id " \
+            "LEFT JOIN public.d ON d.c_id = c.id WHERE d.mark = 1 OR p.grp = 3 OR c.tag = 'y'"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites).size).to eq(1)
+    end
+
+    it "groups an outer join" do
+      sql = "SELECT p.name, count(c.id) AS kids, count(*) AS n FROM public.p LEFT JOIN public.c ON c.p_id = p.id " \
+            "WHERE c.flag IS NOT TRUE OR p.grp = 3 GROUP BY p.name ORDER BY p.name"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites, [], ordered: true).size).to be >= 3
+    end
+
+    it "would be wrong with the OR in the ON instead of the WHERE: every preserved row comes back" do
+      where = "SELECT p.id FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.flag OR p.grp = 3"
+      on = "SELECT p.id FROM public.p LEFT JOIN public.c ON c.p_id = p.id AND (c.flag OR p.grp = 3)"
+
+      expect(conn.exec(where).ntuples).to be < conn.exec(on).ntuples
     end
   end
 end
