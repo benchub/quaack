@@ -1131,21 +1131,7 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 
 ### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-32. Report: reword the fate of a rewrite that regressed, and drop its correctness caution.
-
-The user, 2026-10-09. A rewrite that wasn't ranked as `not_better` reads: "What became of it: It passed every test, but on the real data it read over 5% more blocks on some values, so QUAACK didn't rank it." and under it, "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." The user finds the pair confusing. A reader expects that anything QUAACK recommends is correct, and explaining that slow candidates are set aside before a full correctness check muddles the story. The user's suggested wording: "Performance testing showed a regression, so QUAACK did not fully test its logic."
-
-1. **Check the claim first.** Read DESIGN.md's step order (minimax, result-comparison, counterexamples) and confirm that a rewrite dropped as `not_better` really gets less correctness testing than a ranked one. If it does, say so in the report's own words. If it doesn't (its counterexamples ran like any other's), the suggested sentence would be false; stop and take the question to the user.
-2. **Reword.** The wording lives in `Report::NotBetterFate` (`REGRESSED`, `SMALL_GAIN`, `EITHER`, with `LEAD` "It passed every test, but on the real data it") and the "unproven" caution in `Report::Cautions` (`UNPROVEN_FIRST`, `UNPROVEN_AFTER`). Cover all three of the not-better cases (regression, under a 5% gain, either), not only the regression. Keep the 5% threshold visible where it helps the reader.
-3. **Don't show a rewrite's untested-conditions caution when the rewrite wasn't ranked for performance**, if step 1 shows that caution tells the reader nothing useful there. Keep it for ranked rewrites, where it matters. Say what you decided and why.
-4. Update DESIGN.md's bullet on each query's summary and warnings, README.md where it quotes either sentence, and the report specs, with a test per case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-09. Related: 20261009-18 (the same caution reading twice).
-- **Design:** report, counterexamples.
-- **Finding (2026-10-09, step 1):** the suggested sentence is false. A rewrite dropped as `not_better` gets the same correctness testing as a ranked one: DESIGN.md's step order puts rewrite-correctness (rewrite-test, then counterexamples) at step 12 and minimax at step 18, and only survivors of step 12 are measured, so `not_better` is assigned after counterexamples. Nothing skips them. The confusion is the pairing of "It passed every test, but on the real data it ..." with the "unproven" caution, which is what 20261009-40 (the caution's scope) and 20261009-33 (why most atoms are untested) address. Reword on the true basis, together with 20261009-40, and never claim the logic went untested.
-- **Open questions:** None left; do this together with 20261009-40.
-- **Status:** todo
+### 20261009-32. Report: reword the fate of a rewrite that regressed, and drop its correctness caution. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-33. Ranked rewrites carry the "unproven" caution: find out why, and fix the cause.
 
