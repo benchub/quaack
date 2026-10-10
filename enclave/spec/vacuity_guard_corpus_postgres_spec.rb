@@ -356,28 +356,16 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     },
     "correlated scalar count" => {
       untested: ["fx.comments.post_id = fx.posts.id"],
-      cause: "correlated join atom in a scalar subquery; no comment of another post is built"
+      cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
+             "once more than 2 comments exist in all, and S1 builds 1"
     },
     "Rails count with where.not" => {
       untested: ["fx.comments.workflow_state <> $2"],
       cause: "unclear; plain count(*) with a filter passes, so maybe the pinned post_id = 3 near miss"
     },
-    "NOT EXISTS correlated" => {
-      untested: ["EXISTS (SELECT $1 FROM fx.comments WHERE fx.comments.post_id = fx.posts.id)",
-                 "fx.comments.post_id = fx.posts.id"],
-      cause: "the hit for NOT EXISTS is a post with no comment; scenarios build the comment instead"
-    },
     "boolean IS TRUE" => {
       untested: ["fx.users.active IS TRUE"],
       cause: "IS TRUE (a BooleanTest) seems to get no pool, so no false near miss"
-    },
-    "full join" => {
-      untested: ["fx.posts.user_id = fx.users.id"],
-      cause: "an outer join's ON atom needs an unmatched row on a side, or two of each; none built"
-    },
-    "left join anti (IS NULL)" => {
-      untested: ["fx.posts.user_id = fx.users.id"],
-      cause: "the hit for an anti-join is a user with no post; the near miss needs a post of another user"
     },
     "scalar subquery in WHERE" => {
       untested: ["p2.published = $1"],
@@ -390,10 +378,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     "Rails exists?" => {
       untested: ["fx.memberships.user_id = $2", "fx.memberships.group_name = $3"],
       cause: "SELECT 1 ... LIMIT 1 returns 1 while any row exists; needs a fixture holding near misses only"
-    },
-    "Rails left_joins where nil" => {
-      untested: ["fx.comments.post_id = fx.posts.id", "fx.posts.published = $1"],
-      cause: "the anti-join hit needs a post with no comment; scenarios join every post, so no row returns"
     }
   }.freeze
 

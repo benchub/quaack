@@ -20,6 +20,7 @@ require_relative "scenarios/row_set"
 require_relative "scenarios/slots"
 require_relative "scenarios/ties"
 require_relative "scenarios/topology"
+require_relative "scenarios/unmatched"
 require_relative "scenarios/values"
 
 module Quaack
@@ -47,6 +48,10 @@ module Quaack
     #   (see Topology#crossings), with no parent of its own for it.
     # - orphan: one side of a join with no foreign key, alone (with the
     #   tables it references).
+    # - unmatched: a parent with no child, for a foreign-key join an outer
+    #   join or correlated subquery leaves optional (see Unmatched), with
+    #   every atom satisfied, and one per pooled atom on the parent's
+    #   tables that fails it. Last in S1 through S5.
     # - boundary: the hit group, with type boundary values wherever they
     #   still satisfy the atoms and CHECKs.
     # - empty: only the tables that reference no other fixture table
@@ -232,7 +237,7 @@ module Quaack
         def build(variants = {})
           start(variants)
           ties = tie_groups
-          Plan.new(@topology, @atoms, @pools.keys, masked, siblings).scenarios.to_h do |name, groups|
+          Plan.new(@topology, @atoms, @pools.keys, masked, siblings, @parse.tree).scenarios.to_h do |name, groups|
             scenario!
             first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
             @spills[name] = rest unless rest.empty?

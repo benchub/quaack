@@ -8,12 +8,15 @@ module Quaack
         # masked maps an atom to its masking near miss's also atoms.
         # siblings maps an atom to the table whose near-miss row gets a
         # sibling (see #siblings).
-        def initialize(topology, atoms, pooled, masked = {}, siblings = {})
+        # tree is the query's parse tree, for the unmatched groups (see
+        # Unmatched); without it there are none.
+        def initialize(topology, atoms, pooled, masked = {}, siblings = {}, tree = nil) # rubocop:disable Metrics/ParameterLists
           @topology = topology
           @atoms = atoms
           @pooled = pooled
           @masked = masked
           @siblings = siblings
+          @unmatched = tree ? Unmatched.new(tree, atoms, topology).tables : []
           @next_key = 0
         end
 
@@ -28,8 +31,22 @@ module Quaack
 
         private
 
-        # The masking near misses, then the near misses' siblings.
-        def last_groups(near) = masking_near_misses.then { it + siblings(near + it) }
+        # For each parent an outer or anti join can leave unmatched, a group
+        # of the parent's tables alone, with no row of the child: one with
+        # every atom satisfied, and a near miss for each pooled atom on those
+        # tables, so an atom on the parent changes which unmatched parents
+        # the query returns. Last, after the masking near misses, so their
+        # keys come after every other group's.
+        def unmatched
+          @unmatched.flat_map do |tables|
+            near = @pooled.select { |i| @atoms[i].columns.all? { tables.include?(it.table) } }
+            [group(fresh_key, tables), *near.map { |i| group(fresh_key, tables, near: i) }]
+          end
+        end
+
+        # The masking near misses, then the near misses' siblings, then the
+        # unmatched groups.
+        def last_groups(near) = masking_near_misses.then { it + siblings(near + it) } + unmatched
 
         # A near miss whose atom's column is tested in another scope too
         # (s.state <> 'x' in a subquery's branch and outside it) fails both,
