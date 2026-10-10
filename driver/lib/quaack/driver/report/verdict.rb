@@ -115,14 +115,11 @@ module Quaack
           [reason, hover]
         end
 
-        # The timeouts section's rows: each label a measurement run of timed
-        # out, as [what it was, the sets it timed out on, in words].
-        def timed_out_runs
-          labels.select { it["timed_out"] }.map do |entry|
-            sets = (entry["measurements"] || {}).select { |_, counts| counts&.dig("timed_out") }.keys
-            [describe(entry["label"]), sets.map { Words.set(it) }]
-          end
-        end
+        # The timeouts section's rows: what each candidate whose run was
+        # dropped for timing out was. timed_out_count counts these, and no
+        # others: a label that was measured and timed out in some set has
+        # measurements, and minimax set it aside.
+        def timed_out_runs = labels.select { it["timed_out"] && it["measurements"].nil? }.map { describe(it["label"]) }
 
         # Short caveats, as [sentence, link target].
         def caveats

@@ -205,7 +205,7 @@
 <p><%= h Words.count(timed_out_count, "measurement run") %> of candidates timed out. QUAACK dropped those candidates, so they aren't ranked, and it didn't measure them to the end.</p>
 <% unless timed_out_runs.empty? %>
 <ul>
-<% timed_out_runs.each do |what, sets| %><li><%= h what %><%= h(" timed out on the #{list(sets)} values") unless sets.empty? %>.</li>
+<% timed_out_runs.each do |what| %><li><%= h what %> timed out.</li>
 <% end %></ul>
 <% end %>
 <% end %>

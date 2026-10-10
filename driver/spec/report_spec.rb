@@ -438,18 +438,22 @@ RSpec.describe Quaack::Driver::Report do
     # for them goes in then. Until then only the target's existence is asserted.
     describe "the caveat links" do
       let(:caveat_payload) do
-        payload.merge("timed_out_count" => 2, "infinite_sets" => %w[slow typical],
-                      "labels" => payload["labels"] + [timed_out_label],
+        payload.merge("timed_out_count" => 1, "infinite_sets" => %w[slow typical],
+                      "labels" => payload["labels"] + [timed_out_label, measured_timed_out_label],
                       "hidden_statistics" => { "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 })
       end
       let(:out) { render(caveat_payload) }
       let(:timed_out_label) do
         { "label" => "rewrite_1:top:2", "search" => "rewrite_1", "indexes" => ["quaack_a"], "timed_out" => true,
+          "measurements" => nil, "verdicts" => nil }
+      end
+      let(:measured_timed_out_label) do
+        { "label" => "original:top:2", "search" => "original", "indexes" => ["quaack_b"], "timed_out" => true,
           "measurements" => { "slow" => { "timed_out" => true }, "typical" => m(100, 100) }, "verdicts" => nil }
       end
       # [caveat text fragment, subject the target must mention (nil: known gap, see above)]
       let(:caveats) do
-        [["measurement runs of candidates timed out", "Rewrite Vivid Cove with a new index"],
+        [["measurement run of candidates timed out", "Rewrite Vivid Cove with a new index"],
          ["timed out on the slow and typical values", "Any candidate that finished there counts as better"],
          ["couldn&#39;t see the statistics", "orders_lower_idx"]]
       end
@@ -468,13 +472,16 @@ RSpec.describe Quaack::Driver::Report do
 
       it "explains the timed-out runs in a section of their own, from the payload's labels and sets" do
         sec = section(out, "timeouts")
-        expect(sec).to include("<h2>", "Rewrite Vivid Cove with a new index", "timed out on the slow values",
-                               "dropped", "aren't ranked", "didn't measure them to the end",
+        expect(sec).to include("<h2>", "1 measurement run of candidates", "Rewrite Vivid Cove with a new index",
+                               "</code> timed out.</li>", "dropped", "aren't ranked", "didn't measure them to the end",
                                "The original query timed out on the slow and typical values",
                                "Any candidate that finished there counts as better")
-        expect(sec).not_to include("timed out on the typical values.</li>")
-        caveat_payload["labels"].last["label"] = "<b>x</b>"
-        expect(section(render(caveat_payload), "timeouts")).to include("&lt;b&gt;x&lt;/b&gt;")
+        expect(sec.scan("<li>").size).to eq(1)
+        expect(sec).not_to include("The original query with a new index")
+        caveat_payload["labels"][-2]["label"] = "<script>"
+        escaped = section(render(caveat_payload), "timeouts")
+        expect(escaped).to include("&lt;script&gt;")
+        expect(escaped).not_to include("<script>")
       end
 
       it "leaves the section out when nothing timed out" do
