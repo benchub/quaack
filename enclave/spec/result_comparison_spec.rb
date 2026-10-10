@@ -84,6 +84,41 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
   end
 
+  # 20261004-94
+  describe "Shape#offset and #cut_both_ends?" do
+    it "reads an integer constant, no OFFSET and a NULL OFFSET as their value, and a param as unknown" do
+      expect(["SELECT a FROM t LIMIT 5 OFFSET 7", "SELECT a FROM t LIMIT 5", "SELECT a FROM t LIMIT 5 OFFSET NULL",
+              "SELECT a FROM t LIMIT 5 OFFSET $1"].map { shape(it).offset }).to eq([7, 0, 0, nil])
+    end
+
+    it "keeps a NULL OFFSET from counting as a cut at the start" do
+      expect(["SELECT a FROM t ORDER BY a LIMIT 5 OFFSET NULL", "SELECT a FROM t ORDER BY a LIMIT 5 OFFSET 0",
+              "SELECT a FROM t ORDER BY a LIMIT 5 OFFSET 1", "SELECT a FROM t ORDER BY a LIMIT 5 OFFSET $1"]
+        .map { shape(it).cut_both_ends? }).to eq([false, false, true, true])
+    end
+  end
+
+  describe "ResultComparison.through_offset!" do
+    def select_of(sql) = PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt
+
+    it "refuses a SELECT with no LIMIT or no OFFSET, with its own message" do
+      ["SELECT a FROM t OFFSET 1", "SELECT a FROM t LIMIT 1", "SELECT a FROM t"].each do |sql|
+        expect { described_class.through_offset!(select_of(sql)) }
+          .to raise_error(ArgumentError, "through_offset! needs a LIMIT and an OFFSET")
+      end
+    end
+
+    it "writes a LIMIT that stops at the biggest bigint, counts a NULL OFFSET as 0, and drops the OFFSET" do
+      sql = shape("SELECT a FROM t ORDER BY a LIMIT $1 OFFSET $2").through_window([1])
+
+      expect(sql).to eq(
+        "SELECT a FROM t ORDER BY a, 1 LIMIT CASE WHEN $1::bigint IS NULL THEN NULL " \
+        "ELSE LEAST($1::bigint, (9223372036854775807)::bigint - COALESCE($2::bigint, 0::bigint)) + " \
+        "COALESCE($2::bigint, 0::bigint) END"
+      )
+    end
+  end
+
   describe "Shape#probe" do
     it "wraps the query to return its columns and no rows" do
       expect(shape("SELECT a FROM t ORDER BY a LIMIT 3").probe)
