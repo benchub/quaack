@@ -9051,3 +9051,14 @@ The user, 2026-10-09. Remove the "Tried for" column from the `#existing-indexes`
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-38; review clean). Both index-idea tables lose "Tried for"; the `searches` helper is gone; README.md and DESIGN.md updated. The reviewer saw each suite green but not one clean unpiped `rake` line; the driver suite passed on its own (1819 examples).
+
+### 20261009-27. Verdict section: drop the index definitions.
+
+The verdict table's Plan cell shows `describe(label)` under the plan name (`detail` in `Report::Verdict#candidate_row`), which spells out the label's new indexes. The verdict section doesn't need index definitions. Remove them there. The reader already gets each index's definition in the ranked candidates' tables further down, so check that every definition the verdict showed is still shown somewhere else before dropping it, and keep anything that isn't a definition (the plan's kind, the Index change size). Update DESIGN.md's verdict bullet and the report spec, with a test that plants a sentinel index definition and asserts it's absent from the verdict section but present in the candidates' tables.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Open questions:** Whether `describe` shows anything besides index definitions (such as a rewrite's name) that the user wants kept.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-27; review clean). `Report::Candidates#describe_plainly` gives the verdict's Plan cell the plan's name plus "with new indexes" or "with no new indexes"; `describe` is unchanged elsewhere. Each definition still shows in the ranked candidate's "Its new indexes" list. Minor finding: 20261009-48.

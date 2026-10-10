@@ -1126,16 +1126,6 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 - **Design:** none (test infrastructure).
 - **Status:** todo
 
-### 20261009-27. Verdict section: drop the index definitions.
-
-The verdict table's Plan cell shows `describe(label)` under the plan name (`detail` in `Report::Verdict#candidate_row`), which spells out the label's new indexes. The verdict section doesn't need index definitions. Remove them there. The reader already gets each index's definition in the ranked candidates' tables further down, so check that every definition the verdict showed is still shown somewhere else before dropping it, and keep anything that isn't a definition (the plan's kind, the Index change size). Update DESIGN.md's verdict bullet and the report spec, with a test that plants a sentinel index definition and asserts it's absent from the verdict section but present in the candidates' tables.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Open questions:** Whether `describe` shows anything besides index definitions (such as a rewrite's name) that the user wants kept.
-- **Status:** todo
-
 ### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it.
 
 Found by the user in a real report, 2026-10-09. The verdict section showed "⚠ Your role on the production server couldn't see the statistics of this expression index: index_submissions_on_user_and_greatest_dates, so QUAACK's estimates for those may be off. A role that owns the tables can see them." Its Details link jumped to the proposed indexes section (`#indexes`, from `Report::Verdict#caveats`), and that section says nothing about the hidden statistics. DESIGN.md says only that the verdict's caveats name them (the count of extended statistics objects, and the expression indexes by name).
@@ -1321,5 +1311,14 @@ From the review of 20261009-42 (minor). `driver/lib/quaack/driver/step_summary.r
 
 - **Depends on:** 20261009-42.
 - **Came from:** The review of 20261009-42, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-48. README: the verdict section's example still shows an index definition.
+
+From the review of 20261009-27 (minor). README.md's verdict section (about lines 588 to 596) shows a blockquote with an index definition ("the original query with a new index on public.events (account_id, created_at) INCLUDE (kind)"), and it was already out of step with DESIGN.md's verdict table before 20261009-27. Bring the whole section in line with the verdict as it is now: the colored section, the table's columns (Plan, Blocks read, Index change, Improvement), the Plan cell without definitions, the caveat lines. Check each claim against the template.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-27, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo
