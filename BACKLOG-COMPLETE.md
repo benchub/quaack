@@ -9514,3 +9514,34 @@ Each needs a wrong rewrite that's disproved and a correct twin that passes, on r
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261003-39; Opus review, low effort, nothing blocking). S3 gets a self-cross row and, per pooled atom, a failing row pointing at the hit row; two FKs into one parent take the nth distinct free-column value (`FreeValues#value(apart:)`, CHECKs respected); a unique FK gets a childless parent group for its cross row. Probes: a NOT NULL self-FK, a boolean free column, a single-value enum with a UNIQUE column all disprove a wrong twin and pass the correct rewrite. On the unreleased list. Minor findings: 20261010-4. Not checked by the reviewer: composite or CASCADE self-FKs, partitioned tables, exclusion constraints, row counts and runtime for a 10-FK schema.
+
+### 20261004-6. Pin the type part of rewrite-test's probe cache key.
+
+`ValuePools::Probe#key` is `[sql, oid, format_type]` (`value_pools.rb:200`). If it drops the type, entries are shared wrongly across types and fixtures change, yet every committed spec still passes. Add a spec where the same CHECK sits on columns of different types, for example `integer` and `numeric`, or `varchar(8)` and `varchar(255)`. Assert each fixture's value, and confirm the spec goes red when the key drops `oid` and the type.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The review of 20261004-2.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-6; Opus review clean). `enclave/spec/checks_probe_key_postgres_spec.rb` pins the type part of the probe cache key `[sql, oid, format_type]`: the same CHECK on integer and bigint columns gets different answers in both orders; the key differs for varchar(8) vs varchar(255). `oid` alone isn't pinned (the reviewer agrees no counterexample is buildable: `format_type` schema-qualifies any type not on the search path).
+
+### 20261004-8. rewrite-test gaps found by the FK-cycle review.
+
+The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts` ↔ `courses` schema:
+- `IS [NOT] NULL` on the cut column of an FK cycle fails to load with `fixture_load_failed` for every candidate, including the correct ones. It fails safe, but no rewrite of such a query can pass. Check whether 20261003-32 covers this first.
+- `Topology#roots` uses `load_parents`, and no spec pins that. Switching it back to `parents` stays green.
+- The S3 cross row for a cut FK (`crossings` in `topology.rb`) has no spec that fails without it. Since copies kept their parent, a copy already supplies the same row. Add a spec only the cross row can satisfy, or drop the cross row.
+- These wrong rewrites pass on acyclic schemas too, so they're general rewrite-test variety gaps:
+  - "own template" rewritten as "has template and has courses";
+  - a `<>` foreign template;
+  - its mirror, "has template and own courses" rewritten as "own template";
+  - a dropped plain ascending `ORDER BY course_template_id`;
+  - a dropped `ORDER BY t.name`.
+
+  No scenario has an account that has courses plus a template from another account.
+
+- **Depends on:** 20261003-23, 20261003-30.
+- **Came from:** The review of 20261003-23 and -30.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-6 branch; Opus review clean). A cut foreign key's S3 cross row keeps every table so the row has children of its own; `Topology#roots` uses `load_parents`; S5 builds the reversed boundary group first so a dropped `ORDER BY t.name` is disproved; specs for IS [NOT] NULL on the cut column, a `<>` foreign template and a dropped plain ascending ORDER BY. Merged with 20261003-39 (a conflict in plan.rb resolved by keeping 39's crosses with near-miss rows and taking the reversed boundary order); 162 scenario/counterexample specs and 56 variety/cycle specs pass on the merge. On the unreleased list. Minor finding: 20261010-5.

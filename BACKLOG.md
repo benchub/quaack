@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261003-28: `shared_scan_cte` widenings: copies in subqueries and CTE bodies, a nullable copy, GROUP BY on the primary key, ONLY, aliased joins (enclave).
 - 20261004-9: rewrite-test and counterexamples disproofs of a `denormalized_equal` rewrite are reported as rule bugs (enclave; no new fields).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
+- 20261004-8: rewrite-test fixtures: a cut foreign key's S3 cross row keeps every table, `Topology#roots` uses `load_parents`, S5 builds the reversed boundary group first (enclave).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
 - 20261009-63: a constant conjunct in a rewrite counts as new material in `AtomPosition` (enclave).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
@@ -334,34 +335,9 @@ These are findings from building and reviewing 20261003-29:
 
 ### 20261004-3. Tighten 20261003-38's SQLSTATE filtering. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-6. Pin the type part of rewrite-test's probe cache key.
+### 20261004-6. Pin the type part of rewrite-test's probe cache key. Done, see BACKLOG-COMPLETE.md.
 
-`ValuePools::Probe#key` is `[sql, oid, format_type]` (`value_pools.rb:200`). If it drops the type, entries are shared wrongly across types and fixtures change, yet every committed spec still passes. Add a spec where the same CHECK sits on columns of different types, for example `integer` and `numeric`, or `varchar(8)` and `varchar(255)`. Assert each fixture's value, and confirm the spec goes red when the key drops `oid` and the type.
-
-- **Depends on:** 20261004-2.
-- **Came from:** The review of 20261004-2.
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261004-8. rewrite-test gaps found by the FK-cycle review.
-
-The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts` ↔ `courses` schema:
-- `IS [NOT] NULL` on the cut column of an FK cycle fails to load with `fixture_load_failed` for every candidate, including the correct ones. It fails safe, but no rewrite of such a query can pass. Check whether 20261003-32 covers this first.
-- `Topology#roots` uses `load_parents`, and no spec pins that. Switching it back to `parents` stays green.
-- The S3 cross row for a cut FK (`crossings` in `topology.rb`) has no spec that fails without it. Since copies kept their parent, a copy already supplies the same row. Add a spec only the cross row can satisfy, or drop the cross row.
-- These wrong rewrites pass on acyclic schemas too, so they're general rewrite-test variety gaps:
-  - "own template" rewritten as "has template and has courses";
-  - a `<>` foreign template;
-  - its mirror, "has template and own courses" rewritten as "own template";
-  - a dropped plain ascending `ORDER BY course_template_id`;
-  - a dropped `ORDER BY t.name`.
-
-  No scenario has an account that has courses plus a template from another account.
-
-- **Depends on:** 20261003-23, 20261003-30.
-- **Came from:** The review of 20261003-23 and -30.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-8. rewrite-test gaps found by the FK-cycle review. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-9. Report `polymorphic_key_copy` disproofs in rewrite-test and counterexamples as rule bugs. Done, see BACKLOG-COMPLETE.md.
 
@@ -1172,5 +1148,14 @@ From the review of 20261003-39 (minor, and gaps in the review's coverage).
 
 - **Depends on:** 20261003-39.
 - **Came from:** The review of 20261003-39, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261010-5. rewrite-test: a unique cut foreign key's cross row.
+
+From the review of 20261004-8 (minor). With `course_template_id bigint UNIQUE` (a cycle through a unique key) the cross row collides with the hit account's template, so that group is dropped: the correct twin still passes, but the wrong rewrite ("own template" rewritten as EXISTS own courses) passes too and goes undetected (the ORDER BY drop is still caught). Point a unique cut key's cross at a parent the hit doesn't hold (as 20261003-39 did for a unique FK with `childless_parent`), or list the case as a v1 gap in DESIGN.md. Enclave change: unreleased list. Related: 20261010-4 (a unique self-FK has the same shape).
+
+- **Depends on:** 20261004-8, 20261003-39.
+- **Came from:** The review of 20261004-8, 2026-10-10 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
