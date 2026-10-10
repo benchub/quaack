@@ -1177,28 +1177,12 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-64. Winner summary: pin the "points that matter most" prompt line, and watch two guard edges.
+### 20261009-66. Tint hue check and IP guard: small gaps from the review of 20261009-64 and -65.
 
-From the review of 20261009-62 (minor).
-- No spec pins the prompt line "pick the two or three points that matter most": deleting it leaves all 71 examples green. Pin it.
-- The scheme rule also refuses honest prose such as "Notes about: the plan", "the file: scan" or "reads data: 935 blocks". Unlikely in a block-count summary; if it ever trips on real answers, require a non-space after the colon for the plain schemes and keep the spaced `JaVaScRiPt :` case.
-- IPv4 and IPv6 literals pass the host rule (inert text, as before). A column named by its table (`orders.name`) is accepted by the whole-word rule. Both are inert; decide whether to refuse bare IP literals.
-- Answer-2 of the first round said the winner's Index Scan "filters rows as it reads them", which the plan doesn't show: the prompt's "say only what the plans show" didn't stop an inference. Watch for it; consider a line in the prompt against describing a step's behavior beyond its node type, table, index, rows and blocks.
+- The Ranking tint hue check compares hue against white `--bg` and `--panel` in the light theme, where hue is undefined (atan2 gives 0), so the brown tint's 27 degree gap there means nothing. Skip hue for backgrounds with near-zero saturation (and say so in the spec), and fix the spec's comment: it says the closest hue gap is "21 degrees (light violet against `--head-bg`)", but the real chromatic minimum is 39.5 degrees (light violet against `--head-bg` is 55).
+- The IP rule refuses `bad::cafe`, `a::b`, `1::`, `12:30:45:10` and `2:3:4:5` (unlikely in a block-count summary) and misses `::ffff:a00:1` and an IPv4 literal followed by a period ("sees 5.10.1.2."): inert text. Tighten if real answers ever trip it.
 
-- **Depends on:** 20261009-62.
-- **Came from:** The review of 20261009-62, 2026-10-09 (minor).
-- **Design:** report, Several LLM providers.
-- **Status:** todo
-
-### 20261009-65. Transform rule docs: pin the wording; raise the tint floor.
-
-From the review of 20261009-60 and -61 (minor).
-- Nothing pins the "transform rules" wording on the 12 `docs/transforms/*.md` pages or README line ~762: reverting a page to "mechanical rewrite rules" stays green. Extend `spec/transform_docs_spec.rb` to assert each page's wording and that the DESIGN.md anchor the pages link to (`#rewrite-rules-mechanical-rules`) resolves to a heading.
-- `spec/transform_docs_spec.rb`'s header comment, DESIGN.md's mermaid label and its heading "rewrite-rules. Mechanical rules." still say "mechanical". Decide whether to rename the heading (and the anchor in the 12 pages) to "transform rules".
-- The Ranking tint distance floor of 15 is lenient: the dark violet tint passes at 15.6 from `--head-bg`. Raise it (to about 20) or, better, require a hue difference, and recheck the six tints.
-- The link spec lists twelve backgrounds but not the three `--sb-*` tints; add them (the lowest ratio, `--accent` on the light violet tint, is 4.78:1, so it passes).
-
-- **Depends on:** 20261009-60, 20261009-61.
-- **Came from:** The review of 20261009-60 and -61, 2026-10-09 (minor).
+- **Depends on:** 20261009-64, 20261009-65.
+- **Came from:** The reviews of 20261009-64 and -65, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo

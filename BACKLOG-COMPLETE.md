@@ -9423,3 +9423,31 @@ From the second review of 20261009-40 (minor). `AtomPosition` skips constant ato
 - **Design:** rewrite-test, counterexamples.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-57 branch; Opus review clean). `AtomPosition` records constant conjuncts as top-level entries, so `AND false`, `AND NULL::boolean`, `AND true`, `OR false` make every atom changed; a constant both queries carry is unchanged. A rewrite that REMOVES a bare constant leaves atoms unchanged (consistent with how a dropped conjunct is treated). On the unreleased list.
+
+### 20261009-64. Winner summary: pin the "points that matter most" prompt line, and watch two guard edges.
+
+From the review of 20261009-62 (minor).
+- No spec pins the prompt line "pick the two or three points that matter most": deleting it leaves all 71 examples green. Pin it.
+- The scheme rule also refuses honest prose such as "Notes about: the plan", "the file: scan" or "reads data: 935 blocks". Unlikely in a block-count summary; if it ever trips on real answers, require a non-space after the colon for the plain schemes and keep the spaced `JaVaScRiPt :` case.
+- IPv4 and IPv6 literals pass the host rule (inert text, as before). A column named by its table (`orders.name`) is accepted by the whole-word rule. Both are inert; decide whether to refuse bare IP literals.
+- Answer-2 of the first round said the winner's Index Scan "filters rows as it reads them", which the plan doesn't show: the prompt's "say only what the plans show" didn't stop an inference. Watch for it; consider a line in the prompt against describing a step's behavior beyond its node type, table, index, rows and blocks.
+
+- **Depends on:** 20261009-62.
+- **Came from:** The review of 20261009-62, 2026-10-09 (minor).
+- **Design:** report, Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-64; review clean, full check passed). The prompt pins "pick the two or three points that matter most" and says to describe a plan step only by its node type, table, index, rows and blocks; `javascript`/`vbscript` are refused with any spacing, the other schemes only when a non-space follows the colon (so "Notes about: the plan" passes); IPv4, IPv6 (3+ groups, `fe80::1`, `::1`, bracketed) literals are refused. Minor findings: 20261009-66.
+
+### 20261009-65. Transform rule docs: pin the wording; raise the tint floor.
+
+From the review of 20261009-60 and -61 (minor).
+- Nothing pins the "transform rules" wording on the 12 `docs/transforms/*.md` pages or README line ~762: reverting a page to "mechanical rewrite rules" stays green. Extend `spec/transform_docs_spec.rb` to assert each page's wording and that the DESIGN.md anchor the pages link to (`#rewrite-rules-mechanical-rules`) resolves to a heading.
+- `spec/transform_docs_spec.rb`'s header comment, DESIGN.md's mermaid label and its heading "rewrite-rules. Mechanical rules." still say "mechanical". Decide whether to rename the heading (and the anchor in the 12 pages) to "transform rules".
+- The Ranking tint distance floor of 15 is lenient: the dark violet tint passes at 15.6 from `--head-bg`. Raise it (to about 20) or, better, require a hue difference, and recheck the six tints.
+- The link spec lists twelve backgrounds but not the three `--sb-*` tints; add them (the lowest ratio, `--accent` on the light violet tint, is 4.78:1, so it passes).
+
+- **Depends on:** 20261009-60, 20261009-61.
+- **Came from:** The review of 20261009-60 and -61, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-64 branch; review clean). `spec/transform_docs_spec.rb` pins each docs page's exact wording and anchor and DESIGN.md's heading slug (DESIGN.md's heading stays "rewrite-rules. Mechanical rules."; only the mermaid label changed); the Ranking tint check adds a hue gap of at least 20 degrees to the distance floor of 15 (raising the floor to 20 would fail two dark tints); the link spec covers the three tints. Minor findings: 20261009-66.
