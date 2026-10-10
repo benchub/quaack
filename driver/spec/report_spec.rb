@@ -2177,6 +2177,14 @@ RSpec.describe Quaack::Driver::Report do
           )
         end
 
+        # Task 20261004-81 item 2: the definition's choice, said in the note.
+        it "says under the table that planner ignored leaves out a later re-test's drops" do
+          expect(section(html, "accountability")).to include(
+            "Planner ignored or couldn't try counts only the first test of each idea. An index the planner " \
+            "ignored or HypoPG refused when ranking tested it again isn't counted."
+          )
+        end
+
         it "says not recorded unless the generators' and the LLM's are both recorded" do
           stages.delete("index-dedupe")
           stages.delete("index-test")
