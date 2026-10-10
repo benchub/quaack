@@ -1017,10 +1017,11 @@ RSpec.describe "quaacks report-payload" do
   it "sends each proposed index's redacted DDL, size, and prefix coverage" do
     expect(report["indexes"]["quaack_a"]).to eq(
       "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)", "size" => 8192,
-      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }
+      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }, "sources" => []
     )
     expect(report["indexes"]["quaack_b"]).to eq(
-      "ddl" => "CREATE INDEX ON public.orders USING btree (created_at, id, note)", "size" => 8192, "covered_by" => nil
+      "ddl" => "CREATE INDEX ON public.orders USING btree (created_at, id, note)", "size" => 8192, "covered_by" => nil,
+      "sources" => []
     )
     expect(report["indexes"]["quaack_c"]["ddl"]).to include("note = ?")
   end
@@ -1335,6 +1336,34 @@ RSpec.describe "quaacks report-payload" do
         expect(report["index_sources"]).to eq(
           "generator_one" => counts(1, 0, 1), "generator_two" => counts(1, 0, 0), "llm" => counts(3, 1, 1)
         )
+      end
+    end
+
+    # Task 20261004-89 item 2: each built index's entry in indexes names the
+    # sources that proposed it, as index_sources counts them, in the
+    # protocol's order, and the stored names that aren't QUAACK's own never go.
+    context "when the searches hold each built index's candidates (sources of each index)" do
+      let(:outcome) { payload_of { sourced(it) } }
+
+      it "names, in each index's entry, every source that proposed it" do
+        expect(report["indexes"].transform_values { it["sources"] }).to eq(
+          "quaack_a" => %w[generator_one llm], "quaack_b" => %w[generator_two llm], "quaack_c" => %w[llm]
+        )
+      end
+    end
+
+    context "when a stored candidate's sources include names that aren't QUAACK's own (sources of each index)" do
+      let(:outcome) do
+        payload_of do |store|
+          planted = plain(proposed["quaack_a"], REPORT_WORD_SENTINEL, sentinel, :existing, :plan)
+          store.write("index_search_original", "dedupe" => dedupe([planted]))
+        end
+      end
+
+      it "names only the ones on the protocol's list, and never sends the others" do
+        expect(report["indexes"]["quaack_a"]["sources"]).to eq(%w[generator_two])
+        expect(Quaack::Protocol::IndexSources.entries_valid?(report["indexes"])).to be(true)
+        expect_no_leaks(sentinels, outcome)
       end
     end
 

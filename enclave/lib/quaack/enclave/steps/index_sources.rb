@@ -88,12 +88,15 @@ module Quaack
           { "built" => names.size, "not_better" => (names & not_better).size, "ranked" => (names & ranked).size }
         end
 
-        # Each built index's name and the names of the sources that proposed it.
+        # Each built index's name and the names of the sources that proposed
+        # it, in NAMES' order. The report's indexes carry these as each
+        # entry's sources.
         def sources(store)
           proposed = candidates(store)
           store.read("index_build")["indexes"].transform_values do |built|
             candidate = IndexCandidate.from_ddl(built["ddl"], sources: [])
-            ((candidate && proposed[candidate]) || Set.new).filter_map { NAMES[it] }
+            named = ((candidate && proposed[candidate]) || Set.new).filter_map { NAMES[it] }
+            NAMES.values & named
           end
         end
 

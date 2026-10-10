@@ -76,7 +76,7 @@ module Quaack
 
         def unranked_row(label, why)
           who = (r = rewrite_of(label)) && source(r)
-          [describe(label), who && Words.upper(who), Words.upper(why)]
+          [describe(label), proposers(label, who), Words.upper(why)]
         end
 
         # The labels that timed out, which selection neither ranks nor excludes.

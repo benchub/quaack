@@ -77,7 +77,10 @@ RSpec.describe "the DDL fields that leave the enclave" do
 
   # the report's indexes[].ddl
   it "refuses a planted literal in the report's indexes[].ddl, and passes a realistic one" do
-    store = Struct.new(:data) { def read(name) = data.fetch(name) }
+    store = Struct.new(:data) do
+      def read(name) = data.fetch(name)
+      def entry?(_) = false
+    end
     stats = Struct.new(:x) { def table?(_) = false }.new
     run = lambda { |redaction, ddl|
       st = store.new({ "index_build" => { "indexes" => { "quaack_a" => { "ddl" => ddl, "size" => 1 } } },

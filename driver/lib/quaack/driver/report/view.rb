@@ -5,6 +5,7 @@ require_relative "words"
 require_relative "format"
 require_relative "index_ddl"
 require_relative "candidates"
+require_relative "index_proposers"
 require_relative "suggested_drops"
 require_relative "kinds"
 require_relative "verdict"
@@ -31,6 +32,7 @@ module Quaack
       # modules it includes.
       class View
         include Candidates
+        include IndexProposers
         include SuggestedDrops
         include NotBetterFate
         include Kinds

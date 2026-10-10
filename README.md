@@ -674,11 +674,11 @@ Only candidates that pass the **minimax rule** are ranked. A candidate must be *
 
 | What it was | Who proposed it | Why it didn't make the cut |
 | --- | --- | --- |
-| The original query with a new index on public.events (kind) | not recorded | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
+| The original query with a new index on public.events (kind) | Indexes: generator one | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
 | Rewrite Silver Fox with no new indexes | Suggested by the LLM | Read 503 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
-| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
+| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM; indexes: the LLM | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
 
-Who proposed it means who proposed the rewrite. QUAACK doesn't record who thought of each index, so for the original query with new indexes it says not recorded.
+Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to who proposed the new indexes it ran with: generator one, which works from the query's text, generator two, which works from its plan, or the LLM. An index that more than one of them proposed lists each. It says not recorded where an older run didn't record who proposed the indexes, and for a rewrite whose source the run didn't record.
 
 A candidate can also be left out because it tied with one whose indexes take less space, because three others did better, because its measurement timed out, or because the rewrite was dropped on the real data.
 
@@ -763,7 +763,7 @@ A rewrite **not kept** is one QUAACK dropped before it was stored: it was over t
 
 **Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try also counts the ideas HypoPG couldn't create, so the planner was never asked about them. It counts only each idea's first test, not an index the planner ignored or HypoPG refused when ranking tested it again. An index counts as **not better** only if no candidate that ran with it beat the original query. A built index whose candidate beat the original query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
 
-Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for the original query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once. QUAACK counts how many indexes each source proposed, and, for the LLM's, how many already existed and how many the planner ignored or QUAACK couldn't try; for the two generators those two cells say not recorded. For each index it built, QUAACK knows every source that proposed it, so an index that more than one source proposed, such as an LLM idea that repeats a generator's, counts in each of their rows. The rows by source can then add up to more than all sources together, which counts each index once, and a note under the table says so.
+Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for the original query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once. QUAACK counts how many indexes each source proposed, how many already existed, and how many the planner ignored or QUAACK couldn't try; a run that didn't record these says not recorded in those cells. For each index it built, QUAACK knows every source that proposed it, so an index that more than one source proposed, such as an LLM idea that repeats a generator's, counts in each of their rows. The rows by source can then add up to more than all sources together, which counts each index once, and a note under the table says so.
 
 ### Burndown.
 

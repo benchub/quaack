@@ -71,6 +71,42 @@ RSpec.describe Quaack::Protocol::IndexSources do
     expect(valid?(field.merge("llm" => counts.merge("not_better" => 3, "ranked" => 3, "existed" => 9)))).to be(true)
   end
 
+  # Task 20261004-89 item 2: each built index's entry in the report's
+  # indexes carries the sources that proposed it, as names from SOURCES.
+  describe ".entries_valid?" do
+    let(:entry) { { "ddl" => "CREATE INDEX ON public.t USING btree (a)", "size" => 8192, "covered_by" => nil } }
+    let(:indexes) { { "quaack_a" => entry.merge("sources" => %w[generator_one llm]), "quaack_b" => entry } }
+
+    def entries_valid?(value) = described_class.entries_valid?(value)
+
+    it "takes entries with sources from the fixed list, or with none recorded, or no entries" do
+      expect(entries_valid?(indexes)).to be(true)
+      expect(entries_valid?({})).to be(true)
+      expect(entries_valid?(indexes.merge("quaack_c" => entry.merge("sources" => [])))).to be(true)
+    end
+
+    it "refuses a source that isn't on the list, such as a planted sentinel, or one twice" do
+      [[sentinel], %w[llm existing], %w[llm llm], [:llm], [nil], ["LLM"]].each do |bad|
+        expect(entries_valid?("quaack_a" => entry.merge("sources" => bad))).to be(false), bad.inspect
+      end
+    end
+
+    it "refuses sources that aren't a list of Strings" do
+      [sentinel, nil, { "llm" => 1 }, 3, true].each do |bad|
+        expect(entries_valid?("quaack_a" => entry.merge("sources" => bad))).to be(false), bad.inspect
+      end
+    end
+
+    it "refuses an extra field in an entry, an entry that isn't a Hash, or entries that aren't a Hash" do
+      expect(entries_valid?("quaack_a" => entry.merge(sentinel => 1))).to be(false)
+      expect(entries_valid?("quaack_a" => entry.merge("note" => sentinel))).to be(false)
+      expect(entries_valid?("quaack_a" => sentinel)).to be(false)
+      expect(entries_valid?([entry])).to be(false)
+      expect(entries_valid?(sentinel)).to be(false)
+      expect(entries_valid?(nil)).to be(false)
+    end
+  end
+
   it "is loaded by quaack/protocol" do
     lib = File.join(GEM_ROOT, "lib")
     out, err, status = Bundler.with_unbundled_env do

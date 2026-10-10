@@ -71,7 +71,9 @@ module Quaack
       #                    "evidence" (whether a counterexamples round compared it
       #                    on loaded inserts; nil unless it survived) }
       #   indexes          { built index name => { "ddl", "size",
-      #                    "covered_by" (nil or an existing index) } }, the
+      #                    "covered_by" (nil or an existing index),
+      #                    "sources" (names of the sources that proposed it,
+      #                    from Protocol::IndexSources::SOURCES) } }, the
       #                    existing index as { "name", "size_bytes" }
       #                    (ExistingIndexes)
       #   timed_out_count  candidate runs dropped for timing out
@@ -204,10 +206,11 @@ module Quaack
         def indexes(store, stats, redaction: nil)
           redaction ||= CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           sizes = ExistingIndexes.new(store)
-          store.read("index_build")["indexes"].transform_values do |built|
+          sources = IndexSources.sources(store)
+          store.read("index_build")["indexes"].to_h do |name, built|
             proposed = IndexCandidate.from_ddl(built["ddl"], sources: [:llm])
-            { "ddl" => proposed && redaction.outbound_ddl(proposed), "size" => built["size"],
-              **coverage(proposed, stats, sizes) }
+            [name, { "ddl" => proposed && redaction.outbound_ddl(proposed), "size" => built["size"],
+                     **coverage(proposed, stats, sizes), "sources" => sources.fetch(name) }]
           end
         end
 

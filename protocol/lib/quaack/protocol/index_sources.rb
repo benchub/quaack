@@ -17,6 +17,10 @@ module Quaack
       SOURCES = %w[generator_one generator_two llm].map(&:freeze).freeze
       COLUMNS = %w[built not_better ranked existed ignored].map(&:freeze).freeze
 
+      # What an entry of the report's indexes may hold: the index's redacted
+      # DDL, its size, the existing index covering it, and the names of its sources.
+      ENTRY_KEYS = %w[ddl size covered_by sources].map(&:freeze).freeze
+
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12
 
@@ -37,9 +41,24 @@ module Quaack
           counts.values.all? { count?(it) } && counts.values_at("not_better", "ranked").all? { it <= counts["built"] }
       end
 
+      # The report's indexes entries: a Hash, by built index name, of Hashes
+      # with only ENTRY_KEYS, whose sources, if it has them, are each a name
+      # from SOURCES once, so the report can say who proposed each index. An
+      # entry with no sources is an older enclave's, which the report says
+      # isn't recorded.
+      def entries_valid?(indexes)
+        indexes.is_a?(Hash) && indexes.values.all? { entry?(it) }
+      end
+
+      def entry?(entry)
+        entry.is_a?(Hash) && (entry.keys - ENTRY_KEYS).empty? && entry.fetch("sources", []).then do |sources|
+          sources.is_a?(Array) && sources.all? { SOURCES.include?(it) } && sources.uniq == sources
+        end
+      end
+
       def count?(count) = count.is_a?(Integer) && count >= 0 && count < MAX_COUNT
 
-      private_class_method :counts?, :count?
+      private_class_method :counts?, :count?, :entry?
     end
   end
 end

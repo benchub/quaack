@@ -358,6 +358,41 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261004-89 item 2: each entry of indexes may carry sources only
+    # from the fixed list (Protocol::IndexSources.entries_valid?).
+    describe "the report's indexes" do
+      let(:indexes) do
+        { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (a)", "size" => 8192, "covered_by" => nil,
+                          "sources" => %w[generator_one llm] } }
+      end
+
+      def report_with(indexes)
+        { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, indexes: }
+      end
+
+      it "sends each index's source names as they are, and an older entry with none" do
+        expect(JSON.parse(egress.serialize(report_with(indexes)))["indexes"]).to eq(indexes)
+        older = { "quaack_a" => indexes["quaack_a"].except("sources") }
+        expect(JSON.parse(egress.serialize(report_with(older)))["indexes"]).to eq(older)
+      end
+
+      [
+        ["a source that isn't QUAACK's own", ->(e) { e.merge("sources" => ["generator_one", EGRESS_SENTINEL]) }],
+        ["a value in place of the sources", ->(e) { e.merge("sources" => EGRESS_SENTINEL) }],
+        ["a planted field", ->(e) { e.merge(EGRESS_SENTINEL => 1) }],
+        ["a value in place of an entry", ->(_) { EGRESS_SENTINEL }]
+      ].each do |what, changed|
+        it "refuses an entry with #{what}, without quoting it" do
+          message = report_with("quaack_a" => changed.call(indexes["quaack_a"]))
+          refusal = "a value in this report message has indexes that aren't definitions, sizes, and sources"
+          expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
+      end
+    end
+
     # Task 20261009-8: a label's suggested_drops is index names and counts
     # (Protocol::SuggestedDrops.valid?).
     describe "a label's suggested_drops" do

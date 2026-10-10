@@ -177,7 +177,7 @@
 <tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
 <% end %>
 </tbody></table>
-<p class="note">Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index, so for the original query with new indexes it says <%= h Words::MISSING %>. It also says that for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
+<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to who proposed the new indexes it ran with: generator one, which works from the query's text, generator two, which works from its plan, or the LLM. An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indexes, and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
 </details>
 <% end %>
 <% ranked_by_kind.each do |kind, entries| %>

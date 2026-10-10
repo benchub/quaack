@@ -198,7 +198,9 @@ module Quaack
       # the way out: the egress function sends a report only if each passes
       # Protocol::PlanNodes.valid?, so every node has exactly the fields
       # above, each of its type, only if index_sources passes
-      # Protocol::IndexSources.valid?, and only if each rewrite's
+      # Protocol::IndexSources.valid?, and, if it has indexes, only if they pass
+      # Protocol::IndexSources.entries_valid? (each entry's sources are names
+      # from the fixed list), and only if each rewrite's
       # untested_unchanged passes Protocol::UnchangedAtoms.valid?. The rest go out unchecked, so the enclave's
       # ReportPayload step is where they're reviewed. Sources, rule names, fates, scenarios, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
