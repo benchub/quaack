@@ -6,11 +6,14 @@ module Quaack
       # Which groups make up each scenario (see Scenarios).
       class Plan
         # masked maps an atom to its masking near miss's also atoms.
-        def initialize(topology, atoms, pooled, masked = {})
+        # siblings maps an atom to the table whose near-miss row gets a
+        # sibling (see #siblings).
+        def initialize(topology, atoms, pooled, masked = {}, siblings = {})
           @topology = topology
           @atoms = atoms
           @pooled = pooled
           @masked = masked
+          @siblings = siblings
           @next_key = 0
         end
 
@@ -19,11 +22,29 @@ module Quaack
           near = pooled_near_misses
           base = [hit, *near, *join_near_misses]
           extras = { s1: [], s2: [nulls], s3: fan_outs(hit, near), s4: orphans, s5: boundaries }
-          masking = masking_near_misses
+          masking = last_groups(near)
           { s0: [], **extras.transform_values { base + it + masking }, s6: [hit] + many + [empty] }
         end
 
         private
+
+        # The masking near misses, then the near misses' siblings.
+        def last_groups(near) = masking_near_misses.then { it + siblings(near + it) }
+
+        # A near miss whose atom's column is tested in another scope too
+        # (s.state <> 'x' in a subquery's branch and outside it) fails both,
+        # so its parent's row drops out of the outer query with it. A
+        # sibling is a second row of the atom's table under the same parent
+        # (the near miss's key, a copy's own unique keys) that passes the
+        # atom: the outer query reaches the parent through it, so loosening
+        # the atom changes what the parent's other scope sees. It fails the
+        # near miss's also atoms, so a masked branch still fails.
+        def siblings(misses)
+          misses.filter_map do |miss|
+            table = @siblings[miss.near]
+            group(miss.key, [table], copy: 1, also: miss.also) if table
+          end
+        end
 
         def pooled_near_misses = @pooled.map { |i| group(fresh_key, near: i) }
 

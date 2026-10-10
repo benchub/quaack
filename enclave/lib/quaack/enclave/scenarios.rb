@@ -15,6 +15,7 @@ require_relative "scenarios/pinned_keys"
 require_relative "scenarios/plan"
 require_relative "scenarios/reads"
 require_relative "scenarios/retries"
+require_relative "scenarios/siblings"
 require_relative "scenarios/row_set"
 require_relative "scenarios/slots"
 require_relative "scenarios/ties"
@@ -231,7 +232,7 @@ module Quaack
         def build(variants = {})
           start(variants)
           ties = tie_groups
-          Plan.new(@topology, @atoms, @pools.keys, masked).scenarios.to_h do |name, groups|
+          Plan.new(@topology, @atoms, @pools.keys, masked, siblings).scenarios.to_h do |name, groups|
             scenario!
             first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
             @spills[name] = rest unless rest.empty?
@@ -258,6 +259,8 @@ module Quaack
 
         # The masking near misses' also atoms, by atom (see Branches).
         def masked = Branches.new(@parse.tree, @atoms, @pools.keys).masked(@topology.order) { build_group(it) }
+
+        def siblings = Siblings.new(@topology, @atoms, @pools.keys).tables
 
         # The pools and the picker share these, so each asks once per value.
         def probes = @probes ||= ValuePools.probes(@conn, @parse, @atoms, @schema)
