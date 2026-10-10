@@ -10119,3 +10119,20 @@ Move the grouping there: wrap each kind's heading and its numbered entries in on
 - **Came from:** The user, 2026-10-10.
 - **Design:** report.
 - **Status:** done. Landed 2026-10-10: each kind's h3 heading and numbered entries sit in `div.kind-group.stripe-KIND` with the tint and a 5px left stripe; the ranking table is plain (stripe classes and row CSS removed). Contrast spec also checks links on the tints. Screenshots checked in both themes.
+
+### 20261010-28. Winner summary: explain why the winner wins, as a heuristic a developer can reuse.
+
+The user, 2026-10-10, about the LLM summary at the top of "Why the winner reads fewer blocks" (20261009-37): it describes the mechanical differences between the two plans, which isn't useless, but they wanted the *why*. Their example of the quality they mean: "The original query repeated many of the same constraints in several OR clauses. Pulling those duplicates out of the ORs left something simple enough that the planner could switch to a more indexable EXISTS clause." The reader is a developer who wants a heuristic they can repeat on their own queries.
+
+Why it reads mechanical today: the prompt in `driver/lib/quaack/driver/winner_summary.rb` (`SYSTEM`) tells the model to describe plan steps only by node type, table, index, rows and blocks, not to say how a step works, and not to guess at a cause it can't see in the payload. Those limits came from reviews that found false sentences (a row count carried across plan steps, invented causes), so loosening them has to keep the claims checkable.
+
+Design to settle, then build:
+1. Ask for two parts: what changed in the query's structure (compare the original SQL with the winner's SQL: what was moved, merged, pulled out, or replaced, and which rewrite rule did it), and why that let the planner do less work (grounded in plan differences: a different scan or join type, a node that disappeared, a smaller row count at a named step, an index now used), then one sentence naming the pattern a developer could look for in their own queries. Keep it plain text, short, and the 800-character cap or a raised cap the user agrees to.
+2. Let the model reason about cause only from a payload it can check: the two SQL texts side by side, the rule's name and its documented one-line purpose (from DESIGN.md's transform list, passed as fixed text keyed by the rule name), and the plan nodes. Words like "so the planner could" are allowed only when a plan difference in the payload backs them; keep the ban on caching, bloat, statistics and data distribution unless a number says so.
+3. Keep the guards from 20261009-37 (no other candidate's name, no markdown or links, quote only a step's own numbers) and add a check that every plan node type the summary names appears in a plan in the payload.
+4. Test with synthetic originals and winners for a few rule families (or_to_union, not_in_to_not_exists, existence_in_flip, shared_scan_cte, union_outer_filter_removal, index-only wins), with a fake LLM at the edge; read real output once with a live provider if one is configured, and show the user the text before declaring it good. The user said earlier "just do it, if it's wrong we can adjust."
+
+- **Depends on:** 20261009-37 (landed).
+- **Came from:** The user, 2026-10-10.
+- **Design:** report.
+- **Status:** done. Landed 2026-10-10 (driver only): the prompt asks for what changed in the query's structure, why that let the planner do less work (only when a plan difference backs it), and a reusable pattern; `Input::RULE_PURPOSES` gives each of the 12 rules a fixed one-line purpose; the guard refuses a summary naming a plan node type that neither plan has; the cap rose from 800 to 1000 characters (prompt asks under 700). One live synthetic run read well but missed the duplicated-constraint angle: 20261010-37.
