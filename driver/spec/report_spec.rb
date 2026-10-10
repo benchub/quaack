@@ -2013,7 +2013,7 @@ RSpec.describe Quaack::Driver::Report do
 
     def row(name, *cells)
       added, dropped, extra = cells.values_at(1, 2, 5)
-      %(#{tr(name)}<td class="num">#{cells[0]}</td><td>#{added}</td><td>#{dropped}</td>) +
+      %(#{tr(name)}<td>#{added}</td><td>#{dropped}</td>) +
         %(<td class="num">#{cells[3]}</td><td class="num">#{cells[4]}</td><td>#{extra}</td></tr>)
     end
 
@@ -2044,7 +2044,19 @@ RSpec.describe Quaack::Driver::Report do
 
     it "names the columns in words" do
       expect(index_table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
-        .to eq(["Stage", "Came in", "Added", "Dropped", "Set aside", "Went on", "Also counted"])
+        .to eq(["Stage", "Added", "Dropped", "Held back for a real build", "Went on", "Also counted"])
+    end
+
+    it "has no Came in column or cell, and a note under each table says which stages hold ideas back" do
+      expect(index_table).not_to include("Came in")
+      expect(index_table.scan(%r{<tr[^>]*><th scope="row">[^<]*</th>(.*?)</tr>}).first.first.scan("<td").size).to eq(5)
+      %w[index rewrite rewrite-index].each do |id|
+        note = burndown_section[%r{</table>\s*<p class="note" id="burndown-#{id}-held-back">(.*?)</p>}m, 1]
+        expect(note).to include("index-dedupe, and the LLM&#39;s rounds of index ideas, hold back GIN, GiST, and " \
+                                "SP-GiST ideas")
+        expect(note).to include("index-test holds back").and include("the planner left unused")
+        expect(note).to include("real build")
+      end
     end
 
     it "shows the original's index ideas stage by stage, in words, drops by reason" do
@@ -2060,7 +2072,7 @@ RSpec.describe Quaack::Driver::Report do
                 "Removing duplicates and indexes you already have",
                 "Asking the planner whether it would use each one", "Ideas from the LLM",
                 "The LLM&#39;s second round of ideas", "Trying indexes together"])
-      expect(index_table).to include(tr("Ideas from the LLM") << '<td colspan="6" class="missing">' \
+      expect(index_table).to include(tr("Ideas from the LLM") << '<td colspan="5" class="missing">' \
                                                                  "not recorded</td></tr>")
       expect(index_table.scan("not recorded").size).to eq(5)
     end
@@ -2068,7 +2080,7 @@ RSpec.describe Quaack::Driver::Report do
     it "says not recorded in the went-on cell of a stage that counted what came in but not what went on" do
       burndown["stages"]["index-test"] = { "original" => rec(3, nil, dropped: { "never_used" => 1 }).except("out") }
       expect(index_table).to include("#{tr("Asking the planner whether it would use each one")}" \
-                                     '<td class="num">3</td><td>none</td><td>never used by the planner: 1</td>' \
+                                     "<td>none</td><td>never used by the planner: 1</td>" \
                                      '<td class="num">0</td><td class="missing">not recorded</td><td>none</td></tr>')
     end
 
@@ -2093,7 +2105,7 @@ RSpec.describe Quaack::Driver::Report do
                                            "wrong on duplicate join keys: 1", 0, 1,
                                            "conditions the test data never exercised: 2"))
       expect(rewrite_table).to include("#{tr("Rewrites from the LLM")}" \
-                                       '<td colspan="6" class="missing">not recorded</td></tr>')
+                                       '<td colspan="5" class="missing">not recorded</td></tr>')
     end
 
     it "puts the rewrite stages' own reasons and counts in words" do
@@ -2147,7 +2159,6 @@ RSpec.describe Quaack::Driver::Report do
       expect(table).to include(row("Testing on made-up edge-case data", 5, "none", esc(tested), 0, 0, "none"))
       expect(table).to include(row("Testing on data the LLM wrote to break them", 2, "none",
                                    "wrong in round 1: 1; failed to run in round 3: 1", 0, 0, "none"))
-      expect(table).to include(esc("Dropped: #{tested}."))
       expect(table).to include(esc("dropped: wrong on NULLs: 1; never tested, because a CHECK"))
     end
 
@@ -2204,7 +2215,7 @@ RSpec.describe Quaack::Driver::Report do
     it "says the rewrites' index searches weren't recorded when none was" do
       burndown["stages"].delete("index-dedupe")
       expect(rewrite_index_table).to include('<tr><th scope="row">Index ideas for the rewrites</th>' \
-                                             '<td colspan="6" class="missing">not recorded</td></tr>')
+                                             '<td colspan="5" class="missing">not recorded</td></tr>')
     end
 
     it "says each LLM call in English, by what it was for" do
@@ -2407,14 +2418,23 @@ RSpec.describe Quaack::Driver::Report do
       expect(rewrite[4][1]).to be < rewrite[4][0]
     end
 
-    it "labels each band with its stage, what came in and went on, and why the rest dropped out" do
+    it "labels each band with its stage, what went on, and why the rest dropped out, never what came in" do
       band = bands(funnel("index"))[2]
       expect(stage(band)).to eq("Removing duplicates and indexes you already have")
-      expect(counts(band)).to eq("6 in, 3 out · dropped: the same as another idea: 2; " \
+      expect(counts(band)).to eq("3 went on · dropped: the same as another idea: 2; " \
                                  "already covered by an index you have: 1")
-      expect(band).to include("<title>Removing duplicates and indexes you already have: 6 came in. " \
-                              "Added: none. Dropped: the same as another idea: 2; already covered by an index " \
-                              "you have: 1. Set aside: 0. 3 went on. What it does:")
+    end
+
+    it "keeps only the stage's sentence in a band's hover, none of the table's counts" do
+      band = bands(funnel("index"))[2]
+      sentence = Quaack::Driver::Report::StageSentences.for("index-dedupe", of_rewrite: false)
+      expect(band).to include("<title>#{esc(sentence)}</title>")
+      expect(band).not_to match(/came in|Added:|Dropped:|Set aside|went on\.|Also counted|What it does/)
+    end
+
+    it "gives a band for a stage with no sentence no hover when everything was recorded" do
+      allow(Quaack::Driver::Report::StageSentences).to receive(:for).and_return(nil)
+      expect(bands(funnel("index"))[2]).not_to include("<title>")
     end
 
     it "shows a stage the run didn't count as not recorded, never as zero, outside the scale" do
@@ -2422,7 +2442,7 @@ RSpec.describe Quaack::Driver::Report do
       unknown = index.values_at(3, 4, 5)
       expect(unknown).to all(start_with('<g class="band unknown">'))
       expect(unknown.map { counts(it) }).to all(eq("not recorded"))
-      expect(unknown.join).not_to match(/\b0 (in|out)\b|came in/)
+      expect(unknown.join).not_to match(/\b0 (in|out|went on)\b|came in/)
       expect(unknown).to all(include('<path class="hatch" d="M'))
       expect(index.values_at(0, 1, 2, 6).join).not_to include('class="hatch"')
       expect(index.map { widths(it) }.values_at(0, 1, 2, 6))
@@ -2451,7 +2471,7 @@ RSpec.describe Quaack::Driver::Report do
       stages["index-test"] = { "original" => rec(0, 0) }
       band = bands(funnel("index"))[3]
       expect(band).to start_with('<g class="band">')
-      expect(counts(band)).to eq("0 in, 0 out")
+      expect(counts(band)).to eq("0 went on")
       expect(widths(band)).to eq([width(3, 6)] * 2)
     end
 
@@ -2466,25 +2486,25 @@ RSpec.describe Quaack::Driver::Report do
     it "cuts a long label short beside its band, and keeps the whole of it in the tooltip" do
       stages["index-dedupe"]["original"]["dropped"] = (1..12).to_h { ["reason_number_#{it}", it] }
       band = bands(funnel("index"))[2]
-      whole = "6 in, 3 out · dropped: #{band[/Dropped: (.*?)\. Set aside/, 1]}"
+      whole = "3 went on · dropped: #{(1..12).map { "reason number #{it}: #{it}" }.join("; ")}"
       expect(whole).to include("reason number 1: 1; ").and include("reason number 12: 12")
       expect(whole.length).to be > Quaack::Driver::Report::Funnel::LINE
       expect(counts(band)).to eq("#{whole[0, Quaack::Driver::Report::Funnel::LINE - 1]}…")
     end
 
     it "leaves a label that just fits whole" do
-      prefix = "6 in, 3 out · dropped: "
+      prefix = "3 went on · dropped: "
       name = "x" * (Quaack::Driver::Report::Funnel::LINE - prefix.length - ": 1".length)
       stages["index-dedupe"]["original"]["dropped"] = { name => 1 }
       expect(counts(bands(funnel("index"))[2])).to eq("#{prefix}#{name}: 1")
       expect(counts(bands(funnel("index"))[2]).length).to eq(Quaack::Driver::Report::Funnel::LINE)
     end
 
-    it "says what a stage set aside, beside its band and in its tooltip" do
+    it "says what a stage held back beside its band, and not in its tooltip" do
       stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1200)
       band = bands(funnel("index"))[2]
-      expect(counts(band)).to eq("6 in, 3 out, 1,200 set aside · dropped: the same as another idea: 2")
-      expect(band).to include(" Set aside: 1,200. 3 went on. What it does:")
+      expect(counts(band)).to eq("3 went on, 1,200 held back · dropped: the same as another idea: 2")
+      expect(band[%r{<title>.*?</title>}m]).not_to include("1,200")
     end
 
     it "takes the scale's largest count from what went on, too" do
@@ -2519,11 +2539,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(known_top(band)).to eq([80.0, top, 240.0, top])
       expect(widths(band)).to eq([width(3, 6), width(3, 6)])
       expect(band).to include('<path class="hatch" d="M')
-      expect(counts(band)).to eq("3 in, out not recorded · dropped: never used by the planner: 1")
-      expect(band).to include("<title>Asking the planner whether it would use each one: 3 came in. Added: none. " \
-                              "Dropped: never used by the planner: 1. Set aside: 0. How many went on: not recorded. " \
-                              "This run didn&#39;t count it, which doesn&#39;t mean none. What it does:")
-      expect(band).not_to match(/\b\d+ (out|went on)\b/)
+      expect(counts(band)).to eq("went on not recorded · dropped: never used by the planner: 1")
+      sentence = Quaack::Driver::Report::StageSentences.for("index-test", of_rewrite: false)
+      expect(band).to include("<title>How many went on: not recorded. " \
+                              "This run didn&#39;t count it, which doesn&#39;t mean none. #{esc(sentence)}</title>")
+      expect(band).not_to match(/\b\d+ (out|went on)\b|came in/)
       expect(index.values_at(4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
     end
 
@@ -2600,12 +2620,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(first.first).to be >= Quaack::Driver::Report::Funnel::WIDTH / 4
     end
 
-    it "says the whole of a stage's added, dropped, set aside, and extra counts in its tooltip" do
+    it "keeps a stage's counts out of its tooltip, since the table has them" do
       stages["rewrite-test"] = { "rewrites" => rec(5, 3, dropped: { "s2" => 1 }, set_aside: 1,
                                                          extra: { "untested_atoms" => 4 }) }
       band = bands(funnel("rewrite"))[5]
-      expect(band).to include("Set aside: 1. 3 went on. " \
-                              "Also counted: conditions the test data never exercised: 4. What it does:")
+      expect(band).to include("<title>")
+      expect(band).not_to match(/Also counted|Set aside|came in|never exercised/)
     end
 
     it "centres a partly counted stage's solid top, and hatches the whole band, when it came in under the minimum" do
@@ -2623,7 +2643,7 @@ RSpec.describe Quaack::Driver::Report do
       stages["rewrite-test"] = { "rewrites" => rec(5, 4, dropped: { "statement_timeout" => 1 }).except("out") }
       band = bands(funnel("rewrite"))[5]
       expect(band).to start_with(%(<g class="band partial">))
-      expect(counts(band)).to eq("5 in, out not recorded · dropped: never tested, because a statement timed out: 1")
+      expect(counts(band)).to eq("went on not recorded · dropped: never tested, because a statement timed out: 1")
     end
 
     it "still shows a stage that counted what went on but not what came in as not recorded" do
@@ -2645,7 +2665,7 @@ RSpec.describe Quaack::Driver::Report do
     # A band's trapezoid's y at its corners: top left, top right, bottom right, bottom left.
     def rows_y(band) = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").last.to_f }
 
-    it "stacks its bands top to bottom, a gap apart, in a picture just tall enough for them" do
+    it "stacks its bands top to bottom, with no gap between them, in a picture just tall enough for them" do
       funnel_module = Quaack::Driver::Report::Funnel
       %w[index rewrite].each do |id|
         svg = funnel(id)
@@ -2654,11 +2674,11 @@ RSpec.describe Quaack::Driver::Report do
           expect([top2, bottom2, bottom - top]).to eq([top, bottom, funnel_module::HEIGHT])
         end
         expect(ys.first.first).to eq(funnel_module::TOP)
-        expect(ys.each_cons(2).map { |above, below| below.first - above.last }).to all(eq(funnel_module::GAP))
-        height = (ys.last.last + funnel_module::GAP).to_i
+        expect(ys.each_cons(2).map { |above, below| below.first - above.last }).to all(eq(0))
+        height = (ys.last.last + funnel_module::TOP).to_i
         expect(svg[/viewBox="([^"]+)"/, 1]).to eq("0 0 #{funnel_module::VIEW_WIDTH} #{height}")
       end
-      expect(funnel("index")[/viewBox="([^"]+)"/, 1]).to eq("0 0 940 354")
+      expect(funnel("index")[/viewBox="([^"]+)"/, 1]).to eq("0 0 940 330")
     end
 
     it "sets each band's words to its right, the stage's name over its counts, within the band's height" do
@@ -2698,7 +2718,7 @@ RSpec.describe Quaack::Driver::Report do
     it "says in an unknown band's tooltip that the run didn't count it, not that it counted none" do
       band = bands(funnel("index"))[3]
       expect(band).to include("<title>#{stage(band)}: not recorded. " \
-                              "This run didn&#39;t count it, which doesn&#39;t mean none. What it does:")
+                              "This run didn&#39;t count it, which doesn&#39;t mean none. ")
     end
 
     it "escapes what it shows, and sets no SQL apart in it" do
@@ -2708,7 +2728,6 @@ RSpec.describe Quaack::Driver::Report do
       svg = funnel("rewrite")
       expect(svg).not_to include("<script")
       expect(svg).not_to include("]]>")
-      expect(svg).to include("by the rule &lt;script&gt;alert(1)&lt;/script&gt;]]&gt;: 3")
       expect(svg).to include("dropped: &lt;script&gt;alert(1)&lt;/script&gt;]]&gt;: 1")
       expect(svg).not_to include("<code")
     end
@@ -2721,7 +2740,7 @@ RSpec.describe Quaack::Driver::Report do
     it "keeps each table, with its exact numbers, under its funnel" do
       table = section(out, "burndown")[%r{<table id="burndown-rewrite">.*?</table>}m]
       tip = esc(Quaack::Driver::Report::StageSentences::TABLE.fetch("operator-rewrites"))
-      expect(table).to include(%(<tr title="#{tip}"><th scope="row">Your own rewrites</th><td class="num">6</td>))
+      expect(table).to include(%(<tr title="#{tip}"><th scope="row">Your own rewrites</th><td>))
     end
   end
 

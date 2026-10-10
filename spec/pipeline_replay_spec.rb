@@ -189,7 +189,7 @@ RSpec.describe PipelineReplay do
           "blob/main/docs/transforms/key_in_self_join.md\" target=\"_blank\" rel=\"noopener\">key_in_self_join</a>."
         )
         expect(outcome.html).to include("Rewrites from QUAACK&#39;s own rules</th>" \
-                                        '<td class="num">0</td><td>by the rule key_in_self_join: 1</td>')
+                                        "<td>by the rule key_in_self_join: 1</td>")
         expect(outcome.html).to match(/<tr title="[^"]+"><th scope="row">Rewrites from QUAACK&#39;s own rules/)
         expect(outcome.html).not_to include('id="quaack-bugs"')
       end

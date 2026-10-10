@@ -21,8 +21,11 @@ module Quaack
       # went on with, less what came in: top + added - dropped - set aside.
       # The drawing carries that running width whatever a record's own
       # "in" says, so a count that doesn't join up shows in the table, not
-      # as a gap in the funnel. Beside each band are the stage, its counts,
-      # and its drops by reason, and its <title> says the whole row on hover.
+      # as a gap in the funnel. The bands touch, so the funnel reads as one
+      # shape; each stage's color tells them apart. Beside each band are the
+      # stage, what went on, and its drops by reason. Its <title> is the
+      # stage's sentence, after a short note for a stage the run didn't fully
+      # record. The table has the counts.
       # Each stage has its own color (COLORS), the same in every report.
       #
       # A row the run didn't record is drawn grey, dashed, and striped and
@@ -40,7 +43,6 @@ module Quaack
         WIDTH = 320.0
         UNKNOWN = 96.0
         HEIGHT = 46
-        GAP = 4
         TOP = 4
         LABEL_X = WIDTH + 20
         VIEW_WIDTH = 940
@@ -77,7 +79,7 @@ module Quaack
         def funnel(id, title, rows, of_rewrite: false)
           name = Funnel.text("#{title}, stage by stage. The table below has the exact numbers.")
           %(<svg id="funnel-#{id}" class="funnel" role="img" aria-labelledby="funnel-#{id}-title" ) +
-            %(viewBox="0 0 #{VIEW_WIDTH} #{TOP + (rows.size * (HEIGHT + GAP))}">) +
+            %(viewBox="0 0 #{VIEW_WIDTH} #{(TOP * 2) + (rows.size * HEIGHT)}">) +
             %(<title id="funnel-#{id}-title">#{name}</title>#{funnel_bands(rows, of_rewrite).join}</svg>)
         end
 
@@ -124,7 +126,7 @@ module Quaack
         # :partial for a row with only what came in, or nil for one with nothing.
         def funnel_bottom(inn, out, running) = out ? running : (:partial if inn)
 
-        def funnel_top(index) = TOP + (index * (HEIGHT + GAP))
+        def funnel_top(index) = TOP + (index * HEIGHT)
 
         # A record's [in, out], [in, nil] if it has no out, or [nil, nil] if
         # it has no count of what came in, or a count that can't be one.
@@ -149,14 +151,14 @@ module Quaack
         def funnel_band(at, widths, name, record, stage, of_rewrite) # rubocop:disable Metrics/ParameterLists
           color = COLORS.fetch(stage, BLUE)
           shape = funnel_polygon(at, *widths, %(style="fill: #{color}; stroke: #{color}" fill-opacity="0.85"))
-          %(<g class="band"><title>#{Funnel.text(funnel_summary(name, record, stage, of_rewrite:))}</title>#{shape}) +
+          %(<g class="band">#{funnel_tip(funnel_summary("", stage, of_rewrite))}#{shape}) +
             %(#{funnel_words(at, name, funnel_label(record, stage))}</g>)
         end
 
         def funnel_unknown(at, width, name, stage, of_rewrite)
-          summary = Funnel.text("#{name}: #{Words::MISSING}. #{NOT_NONE}#{funnel_does(stage, of_rewrite)}")
+          summary = funnel_summary("#{name}: #{Words::MISSING}. #{NOT_NONE}", stage, of_rewrite)
           shape = funnel_polygon(at, width, width, UNCOUNTED)
-          %(<g class="band unknown"><title>#{summary}</title>#{shape}#{funnel_hatch(at, width)}) +
+          %(<g class="band unknown">#{funnel_tip(summary)}#{shape}#{funnel_hatch(at, width)}) +
             %(#{funnel_words(at, name, Words::MISSING)}</g>)
         end
 
@@ -164,12 +166,12 @@ module Quaack
         # on: the unknown band, width wide, under a solid line for its top.
         def funnel_partial(at, known, width, name, record, stage, of_rewrite) # rubocop:disable Metrics/ParameterLists
           went_on = "How many went on: #{Words::MISSING}. #{NOT_NONE}"
-          summary = Funnel.text(funnel_summary(name, record, stage, went_on, of_rewrite:))
+          summary = funnel_summary(went_on, stage, of_rewrite)
           left = (WIDTH - known) / 2
           line = %(<line class="known" x1="#{left.round(2)}" y1="#{at}" x2="#{(left + known).round(2)}" y2="#{at}" ) +
                  %(style="stroke: #{KNOWN_GREY}" stroke-width="4"/>)
-          %(<g class="band partial"><title>#{summary}</title>#{funnel_polygon(at, width, width, UNCOUNTED)}) +
-            %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, stage, "out #{Words::MISSING}"))}</g>)
+          %(<g class="band partial">#{funnel_tip(summary)}#{funnel_polygon(at, width, width, UNCOUNTED)}) +
+            %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, stage, "went on #{Words::MISSING}"))}</g>)
         end
 
         # The trapezoid's corners: top left, top right, bottom right,
@@ -205,33 +207,21 @@ module Quaack
 
         # What's beside a band: its counts, and its drops by reason, cut to
         # fit. The band's <title> and the table have them whole.
-        def funnel_label(record, stage, out = "#{Format.number(record["out"])} out")
-          counts = "#{Format.number(record["in"])} in, #{out}"
-          counts += ", #{Format.number(record["set_aside"])} set aside" if record["set_aside"].to_i.positive?
+        def funnel_label(record, stage, went_on = "#{Format.number(record["out"])} went on")
+          counts = went_on
+          counts += ", #{Format.number(record["set_aside"])} held back" if record["set_aside"].to_i.positive?
           dropped = breakdown(record["dropped"].to_h, stage:)
           line = dropped == "none" ? counts : "#{counts} · dropped: #{dropped}"
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
         end
 
-        # The record's extra counts, whole, for the hover.
-        def funnel_extra(record)
-          extra = breakdown(record["extra"].to_h)
-          extra == "none" ? "" : " Also counted: #{extra}."
-        end
+        # A band's <title>, or nothing when there's no text to show.
+        def funnel_tip(text) = text.empty? ? "" : "<title>#{Funnel.text(text)}</title>"
 
-        # What the stage does, as a sentence after the counts, or nothing for
-        # a stage with no sentence.
-        def funnel_does(stage, of_rewrite)
-          sentence = StageSentences.for(stage, of_rewrite:)
-          sentence ? " What it does: #{sentence}" : ""
-        end
-
-        def funnel_summary(name, record, stage, went_on = "#{Format.number(record["out"])} went on.", of_rewrite: false)
-          "#{name}: #{Format.number(record["in"])} came in. " \
-            "Added: #{breakdown(record["added"].to_h, rules: stage == "rewrite-rules")}. " \
-            "Dropped: #{breakdown(record["dropped"].to_h, stage:)}. " \
-            "Set aside: #{Format.number(record["set_aside"].to_i)}. " \
-            "#{went_on}#{funnel_extra(record)}#{funnel_does(stage, of_rewrite)}"
+        # The hover: a note when the run didn't record the stage in full,
+        # then the stage's sentence, if it has one. The table has the counts.
+        def funnel_summary(note, stage, of_rewrite)
+          [note, StageSentences.for(stage, of_rewrite:)].compact.reject(&:empty?).join(" ")
         end
       end
     end

@@ -348,12 +348,13 @@
    ["rewrite-index", "Index ideas for the rewrites", rewrite_index_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
 <%= funnel(id, title, rows, of_rewrite: id == "rewrite-index") %>
-<table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col" class="num">Came in</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
+<table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Held back for a real build</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
 <tbody>
 <% rows.each do |name, record, stage| %>
 <tr<%= stage_tip(stage, of_rewrite: id == "rewrite-index") %>><th scope="row"><%= h name %></th><%= stage_cells(record, stage) %></tr>
 <% end %>
 </tbody></table>
+<p class="note" id="burndown-<%= id %>-held-back">Held back for a real build means QUAACK kept the idea instead of dropping it, so it can try building it. index-dedupe, and the LLM&#39;s rounds of index ideas, hold back GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test holds back B-tree ideas on columns with few distinct values that the planner left unused.</p>
 <% end %>
 <h3>LLM calls</h3>
 <% if call_rows.empty? %>
