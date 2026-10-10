@@ -115,13 +115,19 @@ module Quaack
           [reason, hover]
         end
 
+        # The timeouts section's rows: what each candidate whose run was
+        # dropped for timing out was. timed_out_count counts these, and no
+        # others: a label that was measured and timed out in some set has
+        # measurements, and minimax set it aside.
+        def timed_out_runs = labels.select { it["timed_out"] && it["measurements"].nil? }.map { describe(it["label"]) }
+
         # Short caveats, as [sentence, link target].
         def caveats
           runs = ["#{Words.count(timed_out_count, "measurement run")} of candidates timed out, and QUAACK dropped " \
-                  "those candidates.", "ranking"]
+                  "those candidates.", "timeouts"]
           original = ["#{Candidates::ORIGINAL.capitalize} timed out on the " \
                       "#{list(infinite_sets.map { Words.set(it) })} values, so any candidate that finished there " \
-                      "counts as better.", "ranking"]
+                      "counts as better.", "timeouts"]
           [*([runs] if timed_out_count.positive?), *([original] unless infinite_sets.empty?),
            *([[hidden_statistics, "indexes"]] if hidden_statistics)]
         end
