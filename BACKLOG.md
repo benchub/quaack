@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
 - 20261010-34: `Plan#scope_mate`, a sibling fails one other pooled atom of the near miss's scope on the same table (enclave).
 - 20261010-31: S1 gets a near-misses-only fixture for a top-level LIMIT without ORDER BY (enclave).
+- 20261010-22: `s1_nonzero_rows` in the rewrite_test message, the whitelist and `Protocol::VacuityDiagnostic` (enclave and protocol).
 
 ## How this file works.
 
@@ -878,14 +879,6 @@ The user asked, looking at the original query's index burndown: "Ideas from the 
 - **Design:** report, burndown.
 - **Status:** todo
 
-### 20261010-22. Vacuity diagnostic: say whether an aggregate query's S1 result was empty.
-
-`s1_rows` is 1 for any `count(*)`/aggregate query, so it can't tell "S1 matched nothing" from "S1 matched". Add a number-only diagnostic: whether S1's result value for an aggregate was zero or the aggregate's group count (a flag or an integer, never data). It touches Protocol `VacuityDiagnostic`, the egress whitelist, `VacuityGuard`, `ScenarioTests`, the counterexamples step and key-list assertions in several specs, with sentinel coverage. Skipped in 20261010-19, whose repro showed S1's count was 7 there; useful for the next real run.
-
-- **Depends on:** 20261010-19.
-- **Came from:** The work on 20261010-19, 2026-10-10.
-- **Design:** rewrite-test.
-- **Status:** todo
 
 ### 20261010-23. Untested conditions: an OR of four or more equality arms on one column plus another arm.
 
@@ -964,4 +957,13 @@ Found while building 20261010-33: in S6, with copies of posts under `posts.id IN
 - **Depends on:** 20261010-37 (landed).
 - **Came from:** The reviews of 20261010-37, 2026-10-10.
 - **Design:** report.
+- **Status:** todo
+
+### 20261010-42. `s1_nonzero_rows`: what counts as empty.
+
+From the review of 20261010-22. Only NULL and numeric zeros (regex `/\A[-+]?(0+(\.0*)?|\.0+)\z/`) count as empty, so values that read as empty but aren't numeric zeros count as nonzero: `bool_or`/`bool_and` returning `f`, a zero interval (`00:00:00`), an empty string, an epoch-like date. It is a heuristic, not a security issue. Say so in DESIGN.md (only NULL and numeric zero count as empty), and decide whether `bool_or` (the existence-check shapes) needs `f` counted as empty.
+
+- **Depends on:** 20261010-22 (landed).
+- **Came from:** The review of 20261010-22, 2026-10-10.
+- **Design:** rewrite-test.
 - **Status:** todo

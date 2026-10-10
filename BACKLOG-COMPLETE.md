@@ -10189,3 +10189,12 @@ From the live run and review of 20261010-28. (1) A live synthetic `or_to_union` 
 - **Came from:** The live run and review of 20261010-28, 2026-10-10.
 - **Design:** report.
 - **Status:** done. Landed 2026-10-10 (driver only): the summary is a conditional lesson (precondition from the query or schema, the transformation, why it helps here, when it would not; one or two sentences for an index-only winner); `Repeats` finds condition shapes repeated across OR arms or UNION branches (every `$n` treated as one placeholder; two copies may hold different values) and `Input::RULE_PRECONDITIONS` gives each of the 12 rules a fixed precondition (9 verified against the code, 3 read plausibly); guards refuse universal advice phrasings and Anti/Semi/Parallel qualifiers. Cap 1000 characters, prompt asks under 700 (the user should confirm). Minors: 20261010-41.
+
+### 20261010-22. Vacuity diagnostic: say whether an aggregate query's S1 result was empty.
+
+`s1_rows` is 1 for any `count(*)`/aggregate query, so it can't tell "S1 matched nothing" from "S1 matched". Add a number-only diagnostic: whether S1's result value for an aggregate was zero or the aggregate's group count (a flag or an integer, never data). It touches Protocol `VacuityDiagnostic`, the egress whitelist, `VacuityGuard`, `ScenarioTests`, the counterexamples step and key-list assertions in several specs, with sentinel coverage. Skipped in 20261010-19, whose repro showed S1's count was 7 there; useful for the next real run.
+
+- **Depends on:** 20261010-19.
+- **Came from:** The work on 20261010-19, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** done. Landed 2026-10-10 (enclave and protocol): `s1_nonzero_rows`, an Integer 0..MAX_ROWS (nil when S1 did not load): how many of the original's S1 result rows hold a value that is neither NULL nor a numeric zero. For count(*), sum() and max() it reads 0 when S1 matched nothing and 1 when it matched, while `s1_rows` stays 1. Only a count crosses the boundary. Minor: 20261010-42.
