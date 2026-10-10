@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-24: sibling rows for near misses on a column that another scope also tests (enclave).
 - 20261010-30: groups with a parent and no child where an outer join or a correlated subquery makes the child optional (enclave).
 - 20261010-32: a boolean test on a plain column gets a value pool, and a spill fixture skips a parent the group already brings (enclave).
+- 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
 
 ## How this file works.
 
@@ -894,34 +895,6 @@ Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... 
 - **Status:** todo
 
 
-### 20261010-28. Winner summary: explain why the winner wins, as a heuristic a developer can reuse.
-
-The user, 2026-10-10, about the LLM summary at the top of "Why the winner reads fewer blocks" (20261009-37): it describes the mechanical differences between the two plans, which isn't useless, but they wanted the *why*. Their example of the quality they mean: "The original query repeated many of the same constraints in several OR clauses. Pulling those duplicates out of the ORs left something simple enough that the planner could switch to a more indexable EXISTS clause." The reader is a developer who wants a heuristic they can repeat on their own queries.
-
-Why it reads mechanical today: the prompt in `driver/lib/quaack/driver/winner_summary.rb` (`SYSTEM`) tells the model to describe plan steps only by node type, table, index, rows and blocks, not to say how a step works, and not to guess at a cause it can't see in the payload. Those limits came from reviews that found false sentences (a row count carried across plan steps, invented causes), so loosening them has to keep the claims checkable.
-
-Design to settle, then build:
-1. Ask for two parts: what changed in the query's structure (compare the original SQL with the winner's SQL: what was moved, merged, pulled out, or replaced, and which rewrite rule did it), and why that let the planner do less work (grounded in plan differences: a different scan or join type, a node that disappeared, a smaller row count at a named step, an index now used), then one sentence naming the pattern a developer could look for in their own queries. Keep it plain text, short, and the 800-character cap or a raised cap the user agrees to.
-2. Let the model reason about cause only from a payload it can check: the two SQL texts side by side, the rule's name and its documented one-line purpose (from DESIGN.md's transform list, passed as fixed text keyed by the rule name), and the plan nodes. Words like "so the planner could" are allowed only when a plan difference in the payload backs them; keep the ban on caching, bloat, statistics and data distribution unless a number says so.
-3. Keep the guards from 20261009-37 (no other candidate's name, no markdown or links, quote only a step's own numbers) and add a check that every plan node type the summary names appears in a plan in the payload.
-4. Test with synthetic originals and winners for a few rule families (or_to_union, not_in_to_not_exists, existence_in_flip, shared_scan_cte, union_outer_filter_removal, index-only wins), with a fake LLM at the edge; read real output once with a live provider if one is configured, and show the user the text before declaring it good. The user said earlier "just do it, if it's wrong we can adjust."
-
-- **Depends on:** 20261009-37 (landed).
-- **Came from:** The user, 2026-10-10.
-- **Design:** report.
-- **Status:** todo
-
-### 20261010-29. Ranking: put the kind tint and stripe on the subsections below "Measured, and not ranked", not on the table.
-
-The user, 2026-10-10. 20261009-35 gave the Ranking section's three kinds (a rewrite with new indexes, a rewrite with no new indexes, the original with new indexes) a tinted background and a strong left color stripe, but on the rows of the ranking table (`tr.kind.stripe-<kind>` and the ranked rows). The user meant the subsections further down the Ranking section: the h3 kind heading (such as "A rewrite of the original query, with new indexes") and the numbered h3 entries under it ("1. Rewrite Blue Sunbeam with a new index on ..."), which follow the "Measured, and not ranked" h3. Everything else looks good to them.
-
-Move the grouping there: wrap each kind's heading and its numbered entries in one block with that kind's tint (`--head-bg` or the kind's own variable) and a strong left stripe in the kind's color, using the same three colors and dark-theme values as before (`--st-teal`, `--st-violet`, `--st-brown`). Since they said "move", take the tint and stripe off the table rows, and leave the table's rowgroup headings and numbering as plain structure; say so in the report of the work so the user can ask for them back. Keep the heading levels and the order so screen readers and the contents links still work, keep the caveat and link targets (#ranking and its subsections) intact, check contrast in both themes, update DESIGN.md's ranking bullet and the README sample if it shows the table, and show the user a screenshot of both themes (headless Firefox works).
-
-- **Depends on:** 20261009-35 (landed).
-- **Came from:** The user, 2026-10-10.
-- **Design:** report.
-- **Status:** todo
-
 
 ### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
 
@@ -967,17 +940,49 @@ From the review of 20261010-30:
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
 
-### 20261010-36. Untested conditions: aggregate FILTER, max() with a filter, CTE, scalar subquery, second column tie.
 
-What 20261010-32 didn't finish, with causes where the builder confirmed them (shapes are still in the corpus's `PENDING`):
-- **Aggregate FILTER** (`count(*) FILTER (WHERE published)`): `posts.score > $1` untested. The bare `published` inside the FILTER has no pool, so the hit and the near miss both take its default false and the FILTER counts neither. The builder pooled bare boolean columns, which fixed it but broke three `vacuity_guard_scopes_postgres_spec` examples (the NOT arm of `muted IS NULL OR NOT muted`, and the UNION ALL count shapes): a NOT arm's masking needs its own handling. Reverted.
-- **`max()` with a filter**: `posts.published = $1` untested. `score` has a DEFAULT, so both rows read 0 and max() can't change. The near miss needs a score above the hit's.
-- **CTE with an outer filter** (`posts.created_at > $1`): the near miss may fail the outer filter too. Unconfirmed.
-- **Scalar subquery in WHERE** (`p2.published = $1`): the near miss must move avg() across the hit's score. Unconfirmed.
-- **A second column-to-column tie between the same two tables** (`comments.user_id = posts.user_id`): no row joins on one and not the other. Unconfirmed.
-Start with the FILTER and `max()` cases (common in reports). Keep the guard sound.
+### 20261010-37. Winner summary: push the duplicated-constraint angle, and tighten the node check.
 
-- **Depends on:** 20261010-32 (landed).
-- **Came from:** The work on 20261010-32, 2026-10-10. Priority: the untested conditions.
+From the live run and review of 20261010-28. (1) A live synthetic `or_to_union` case (two OR arms that both repeated one condition) got a why about planning the arms separately, but never mentioned the duplicated condition, which is the angle in the user's own example ("the original repeated many of the same constraints in several OR clauses; pulling those out left something simple enough for the planner to switch to EXISTS"). Have the payload carry what the SQL comparison shows, as facts the model can't invent: conditions repeated across OR arms or UNION branches in the original, and which of them the winner no longer repeats (computed from the two SQL texts in the driver, as condition shapes with `$n`, never values), and have the prompt say to name that when present. Re-run a live synthetic case and show the user the text. (2) The node-type check passes a wrong qualifier ("Hash Anti Join" passes on "Hash", "Parallel Seq Scan" on "Seq Scan"): refuse Anti, Semi or Parallel unless the payload carries the join type or parallel flag. (3) The user should confirm the 1000-character cap and the looser prompt (the old rule against saying how a step works was dropped so the summary can explain).
+
+- **Depends on:** 20261010-28 (landed).
+- **Came from:** The live run and review of 20261010-28, 2026-10-10.
+- **Design:** report.
+- **Status:** todo
+
+### 20261010-38. Aggregated columns: untested CHECK guard and the `MIN_APART` wrap.
+
+From the review of 20261010-36:
+1. **The CHECK guard in `Scenarios::FreeValues#default_value` has no test.** Replacing `value && @checks.allows?(table, col, value) ? value : :omit` with `value || :omit` leaves every focused spec green. Add a spec: a defaulted, aggregated column whose CHECK rejects the near miss's own value; the scenario must load and the atom be reported untested; red when the guard is dropped.
+2. **`MIN_APART` (999_999) wraps negative on narrow numeric types** (`Literals.numeric` wraps above the type's maximum: smallint becomes -16989, `numeric(5,2)` goes negative), so a min() near miss silently stays untested. Clamp the value to the type's maximum, or skip the wrap for it; test with a smallint column.
+3. A column read by both min() and max() gets only the max treatment; under `MIN_APART` a min-only column in a boundary group loses its boundary values (builder's known gaps).
+
+- **Depends on:** 20261010-36 (landed).
+- **Came from:** The review and build of 20261010-36, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34.
+
+Still in the corpus's `PENDING`, causes unconfirmed unless noted:
+- CTE with an outer filter (`posts.created_at > $1`); scalar subquery in WHERE (`p2.published = $1`: the near miss must move avg() across the hit's score); a second column-to-column tie between the same two tables (`comments.user_id = posts.user_id`).
+- A sibling that must fail every other scope the parent could pass through (20261010-34 fixed one level with `Plan#scope_mate`): a variant whose second UNION branch is `published = true AND score > 9` still leaves `score > $6` untested because the sibling fails `published` but passes `score > 9`, which satisfies branch 1.
+- `SELECT count(*) FROM posts JOIN comments ... WHERE posts.id IN (SELECT posts.id FROM posts WHERE published AND title <> 'draft' AND user_id IN (...) AND id IN (501..504)) AND comments.user_id = 7` leaves `published`, `title` and the `id IN` untested.
+- A count over an IN subquery whose second UNION ALL branch pins `posts.id IN (11..14)` leaves that branch's `score`, `title` and `id IN` untested.
+- A manager self-join with both `m.id IN` and `e.id IN` lists gives an S1 that returns no rows; three atoms untested.
+- A `HAVING count(*) > 1` query with a pinned `users.id IN` list leaves three atoms untested.
+Add each to the corpus (`PENDING` with the shape and atoms), confirm each cause, fix what is cheap or clear and file the rest.
+
+- **Depends on:** 20261010-36 and 20261010-34 (landed).
+- **Came from:** The work on 20261010-36, -33 and -34, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-40. Scenarios: copies' child rows don't follow their copy's parent (possible fixture bug).
+
+Found while building 20261010-33: in S6, with copies of posts under `posts.id IN (201..204)`, all three copied comments point at post 202, not at their own copy's post. If real, a copy's children attach to the wrong parent, so what S6 tests differs from what its description says (it can hide or invent differences between a rewrite and the original). Reproduce on the corpus schema, find whether it is by design (copies of one table's row share a parent) or a bug, and fix or document it with a test.
+
+- **Depends on:** 20261010-33 (landed).
+- **Came from:** The work on 20261010-33, 2026-10-10.
+- **Design:** scenarios.
 - **Status:** todo

@@ -179,7 +179,7 @@ RSpec.describe Quaack::Driver::Report do
 
       it "uses only variables that :root defines" do
         used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
-        # Set per fold color by details.query and details.rose, and per kind by tr.stripe-*.
+        # Set per fold color by details.query and details.rose, and per kind by .stripe-*.
         folds = %w[--fold-bg --fold-edge --fold-accent --stripe --stripe-bg]
         expect(used - names - folds).to eq([])
         expect(style.scan(/^  details\.(?:query|rose) \{ --fold-bg: var/).size).to eq(2)
@@ -1062,7 +1062,7 @@ RSpec.describe Quaack::Driver::Report do
     let(:opening) { '<details class="fold rose" id="not-ranked-section">' }
 
     it "ranks the candidates within each kind, each described in words" do
-      expect(ranking.scan(%r{<tr class="rank stripe-\w+"><td class="num">(\d)</td><td>(.*?)</td>}))
+      expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
         .to eq([["1", "Rewrite Vivid Cove with no new indexes"],
                 ["1", "The original query with a new index on #{sq("public.t (created_at)")}"]])
     end
@@ -1078,14 +1078,14 @@ RSpec.describe Quaack::Driver::Report do
         { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
           "footprint" => 0 }
       ]
-      expect(ranking.scan(/<tr class="(?:kind|rank)(?: stripe-\w+)?">(?:<th[^>]*>|<td class="num">)([^<]*)/))
+      expect(ranking.scan(/<tr class="(?:kind|rank)">(?:<th[^>]*>|<td class="num">)([^<]*)/))
         .to eq([["A rewrite of the original query, with new indexes"], ["1"], ["2"],
                 ["A rewrite of the original query, with no new indexes"], ["1"],
                 ["The original query, with new indexes"], ["1"]])
       expect(ranking.scan(/<article class="candidate"><h3>(\d)\./).flatten).to eq(%w[1 2 1 1])
     end
 
-    it "sets each kind's heading apart: a heading class, and a stripe class per kind on the heading and its rows" do
+    it "wraps each kind's heading and numbered entries below the table in one block, tinted and striped by kind" do
       payload["top"] = [
         { "label" => "original:top:1", "kind" => "original_new_indexes", "slow_blocks" => 10, "total_blocks_sum" => 1,
           "footprint" => 0 },
@@ -1096,28 +1096,30 @@ RSpec.describe Quaack::Driver::Report do
         { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
           "footprint" => 0 }
       ]
-      rows = ranking.scan(/<tr class="(kind|rank) (stripe-\w+)">/)
-      expect(rows.map(&:first)).to eq(%w[kind rank rank kind rank kind rank])
-      expect(rows.map(&:last)).to eq((%w[stripe-rewrite_new_indexes] * 3) + (%w[stripe-rewrite_same_indexes] * 2) +
-                                     (%w[stripe-original_new_indexes] * 2))
+      # The table keeps its heading rows and numbering as plain structure: no tint or stripe class on them.
       table = ranking[%r{<table>.*?</table>}m]
-      expect(table.scan("<tr class=\"kind ").size).to eq(3)
-      expect(table.scan("<tr class=\"rank ").size).to eq(4)
-      expect(ranking.scan(/<tr class="kind [^"]*"><th scope="rowgroup" colspan="5">/).size).to eq(3)
+      expect(table.scan('<tr class="kind"><th scope="rowgroup" colspan="5">').size).to eq(3)
+      expect(table.scan('<tr class="rank">').size).to eq(4)
+      expect(table).not_to include("stripe-")
+      below = ranking[%r{</details>.*}m]
+      groups = below.scan(%r{<div class="kind-group (stripe-\w+)">\n(.*?)\n</div>}m)
+      expect(groups.map(&:first))
+        .to eq(%w[stripe-rewrite_new_indexes stripe-rewrite_same_indexes stripe-original_new_indexes])
+      expect(groups.map { |_, body| body.scan(%r{<h3 class="kind">[^<]*</h3>}).size }).to eq([1, 1, 1])
+      expect(groups.map { |_, body| body.start_with?('<h3 class="kind">') }).to eq([true] * 3)
+      expect(groups.map { |_, body| body.scan(/<article class="candidate"><h3>(\d)\./).flatten })
+        .to eq([%w[1 2], %w[1], %w[1]])
       style = html[%r{<style>(.*?)</style>}m, 1]
-      # The heading is tinted from its kind (the table header's --head-bg is 1.1:1 against white), and
-      # the rank number isn't indented: it sits in a right-aligned, no-wrap column.
-      heading = style[/tr\.kind > th \{[^}]*\}/]
-      expect(heading).to include("background: var(--stripe-bg)")
-      expect(heading).not_to include("--head-bg")
-      expect(style[/tr\.rank > td:first-child \{[^}]*\}/]).not_to include("padding-left")
-      stripes = style.scan(/tr\.stripe-(\w+) \{ --stripe: (var\(--st-[a-z]+\)); --stripe-bg: (var\(--sb-[a-z]+\)); \}/)
+      stripes = style.scan(/\.stripe-(\w+) \{ --stripe: (var\(--st-[a-z]+\)); --stripe-bg: (var\(--sb-[a-z]+\)); \}/)
       expect(stripes.map(&:first)).to eq(%w[rewrite_new_indexes rewrite_same_indexes original_new_indexes])
       expect(stripes.map { it[1] }.uniq.size).to eq(3)
       expect(stripes.map(&:last)).to eq(%w[var(--sb-teal) var(--sb-violet) var(--sb-brown)])
+      expect(style).not_to match(/\btr\.[^{]*\{[^}]*--stripe/)
+      group = style[/div\.kind-group \{[^}]*\}/]
+      expect(group).to include("background: var(--stripe-bg)").and include("border-left: 5px solid var(--stripe)")
+      expect(group).not_to include("--head-bg")
       dark = style[/prefers-color-scheme: dark\).*?\n  \}\n/m]
       expect(dark).to include("--sb-teal:", "--sb-violet:", "--sb-brown:")
-      expect(style).to include("border-left: 5px solid var(--stripe)")
     end
 
     it "tints each kind's heading differently from the page, the panel and the table header, with readable text" do
@@ -1130,6 +1132,10 @@ RSpec.describe Quaack::Driver::Report do
             expect(hue_gap(v[tint], v[other])).to be >= 20, "#{name} #{tint} hue against #{other}"
           end
           expect(contrast(v["--text"], v[tint])).to be >= 4.5, "#{name} text on #{tint}"
+          # The entries' links sit on the tint now.
+          %w[--accent --link-visited].each do |link|
+            expect(contrast(v[link], v[tint])).to be >= 4.5, "#{name} #{link} on #{tint}"
+          end
         end
         expect(v.values_at("--sb-teal", "--sb-violet", "--sb-brown").uniq.size).to eq(3)
       end

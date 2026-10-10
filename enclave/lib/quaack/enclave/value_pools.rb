@@ -173,7 +173,8 @@ module Quaack
         def initialize(conn, node, col)
           @conn = conn
           @col = col
-          copy = Sides.copy(node)
+          # A bare column (a FILTER's published) is the column itself.
+          copy = Sides.column_node?(node) ? Sides.param : Sides.copy(node)
           Sides.replace_columns(copy)
           @sql = Sides.select_of(copy)
         end
