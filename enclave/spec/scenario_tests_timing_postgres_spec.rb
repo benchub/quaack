@@ -47,14 +47,18 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
   describe "a build" do
     let(:builder) { Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql)) }
 
-    # Parts tries each colliding group's retries against every fixture.
-    it "builds each group's rows once" do
+    # Parts tries each colliding group's retries against every fixture. A
+    # group's pinned keys rank within its scenario (20261010-25), so its rows
+    # are built once per scenario.
+    it "builds each group's rows once a scenario" do
       built = []
       allow(builder).to(receive(:row).and_wrap_original { |original, *args| (built << args) && original.call(*args) })
+      allow(builder).to(receive(:scenario!).and_wrap_original { |original| (built << :scenario) && original.call })
       builder.build
 
-      expect(built).not_to be_empty
-      expect(built.size).to eq(built.uniq.size)
+      scenarios = built.slice_before(:scenario).map { it - [:scenario] }.reject(&:empty?)
+      expect(scenarios.size).to be > 1
+      expect(scenarios.map { it.size - it.uniq.size }.uniq).to eq([0])
     end
 
     # Finding a slot's members once walked every column of every foreign

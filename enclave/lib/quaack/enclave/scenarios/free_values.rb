@@ -26,13 +26,14 @@ module Quaack
           @topology = topology
           @checks = checks
           @values = values
+          @reads = reads
           @nulls = Nulls.new(schema, values, checks, reads)
           @constrained = constrained
           @varying = {}
         end
 
         # apart, when given, is a number that tells the row's group from
-        # others: the column takes the type's nth value for it, where it
+        # others in a column the query reads: the column takes the type's nth value for it, where it
         # fits, in place of the typical one.
         def value(table, col, mode, apart: nil)
           return unique_value(table, col) if varying(table).include?(col.name)
@@ -60,9 +61,10 @@ module Quaack
         end
 
         # A generation input keeps the typical value, as it gets no
-        # boundary value.
+        # boundary value. So does a column the query can't read, where a
+        # value of its own would change no result.
         def apart_value(table, col, apart)
-          return if apart.nil? || generation_input?(table, col)
+          return if apart.nil? || generation_input?(table, col) || !@reads.read?(table, col.name)
 
           @values.nth(col, apart, table:)
         rescue Error
