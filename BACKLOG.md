@@ -1141,15 +1141,6 @@ Give the first caveat a target that says which measurement runs timed out: which
 - **Decided by the user (2026-10-09):** the explanation goes in a section of its own, and the caveat links there.
 - **Status:** todo
 
-### 20261009-31. Report: shorten "made by QUAACK's own rewrite rule" to "transform rule".
-
-The user, 2026-10-09. A rewrite's summary reads "Where it came from: made by QUAACK's own rewrite rule key_in_self_join". Shorten it to "Where it came from: transform rule key_in_self_join". The wording comes from `RULES` in `driver/lib/quaack/driver/report/rewrites.rb:14` and the rule-link helper (`rule_links.rb`). README.md (the "Where it came from" bullet, and the example in the section that should never appear) quotes the old phrase; DESIGN.md may too. Update all of them and the report specs, checking that two rules applied in a row are still both named in order and each still links to its page. Sweep the report for other places that say "QUAACK's own rewrite rule" and give the user the list, but change only the "Where it came from" phrase unless the user says otherwise.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-32. Report: reword the fate of a rewrite that regressed, and drop its correctness caution.
 
 The user, 2026-10-09. A rewrite that wasn't ranked as `not_better` reads: "What became of it: It passed every test, but on the real data it read over 5% more blocks on some values, so QUAACK didn't rank it." and under it, "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." The user finds the pair confusing. A reader expects that anything QUAACK recommends is correct, and explaining that slow candidates are set aside before a full correctness check muddles the story. The user's suggested wording: "Performance testing showed a regression, so QUAACK did not fully test its logic."
@@ -1311,4 +1302,14 @@ From the review of 20261009-28 (minors).
 - **Depends on:** 20261009-28.
 - **Came from:** The review of 20261009-28, 2026-10-09 (minor).
 - **Design:** report.
+- **Status:** todo
+
+### 20261009-52. Use "transform rule" everywhere the report names where a rewrite came from.
+
+From the review of 20261009-31 (minor). The source line now says "transform rule X", but the same rewrite is still "made by QUAACK's own rewrite rule X" in the rule-bug section, the fate list, and the candidates table's "who" cell (all from `Rewrites::RULES`), and the "Rewrites from QUAACK's own rules" row in `words.rb`. A reader sees two phrasings for one thing. Change the candidates "who" cell and the row label to "Transform rule(s) X" (the reviewer's suggestion; the full-sentence uses in the fate list and the rule-bug section read fine and can stay unless the user wants them changed), update README's step 4 and its rule-bug example to match, and the specs that pin the old text. Ask the user whether the progress line ("Applying QUAACK's own rewrite rules to the query") should change too.
+
+- **Depends on:** 20261009-31.
+- **Came from:** The review of 20261009-31, 2026-10-09 (minor).
+- **Design:** report.
+- **Open questions:** Whether the full-sentence uses and the progress line should change too.
 - **Status:** todo

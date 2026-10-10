@@ -9110,3 +9110,13 @@ Give the caveat a target that explains it. Decide where: a short note in the ind
 - **Open questions:** A note under the indexes table or a section of its own.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-28; two reviews, one fix round, then one last wording fix by the main session). The indexes section has a `#hidden-statistics` note naming the count of extended statistics objects and each expression index, saying Postgres hides them from a role that doesn't own the table or can't read its columns, that QUAACK went on without them so the LLM's index ideas may rest on less than production has for those, and that a role that owns the tables lets QUAACK read them. A report spec checks every caveat's link target exists and that the statistics caveat's target names its subject. The final edit (dropping an unsupported "choice of which ideas to try" clause, as the second reviewer suggested) was made after the last review, and the report spec went red when the clause returned. Minor findings: 20261009-51.
+
+### 20261009-31. Report: shorten "made by QUAACK's own rewrite rule" to "transform rule".
+
+The user, 2026-10-09. A rewrite's summary reads "Where it came from: made by QUAACK's own rewrite rule key_in_self_join". Shorten it to "Where it came from: transform rule key_in_self_join". The wording comes from `RULES` in `driver/lib/quaack/driver/report/rewrites.rb:14` and the rule-link helper (`rule_links.rb`). README.md (the "Where it came from" bullet, and the example in the section that should never appear) quotes the old phrase; DESIGN.md may too. Update all of them and the report specs, checking that two rules applied in a row are still both named in order and each still links to its page. Sweep the report for other places that say "QUAACK's own rewrite rule" and give the user the list, but change only the "Where it came from" phrase unless the user says otherwise.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-31; review clean). `RuleLinks#source_html` says "transform rule X" / "transform rules X, then Y" (linked, in order); README's bullet updated. Left as they were, listed for the user: the rule-bug section, the fate list, the candidates table's "who" cell (all from `Rewrites::RULES`), the "Rewrites from QUAACK's own rules" row label in `words.rb`, the rewrite-rules progress line in `pipeline.rb`, and README step 4 and its rule-bug example. Follow-up: 20261009-52.
