@@ -1031,6 +1031,8 @@ One rule's rewrite can raise where its input doesn't. `or_to_union` splits an `O
 
 `or_to_union` also takes `LEFT`, `RIGHT`, and `FULL` joins, but not `NATURAL`, `USING`, or a join with an alias. Each branch keeps the `FROM` and its `ON` clauses as written, with only the arm in the `OR`'s place in the `WHERE`, which filters the join's output with its null-extended rows. Two rows of the join never share a key of every table, `NULL` for a null-extended side included, so `UNION` still merges only a row both arms return.
 
+`or_to_union` also takes a bare `*` in the select list. The rule writes it out as every `FROM` table's columns, in the `FROM`'s order, from the catalog, under their own names (duplicate names too), and refuses when a table has a column of a type `UNION` can't compare, or when the query has `GROUP BY`.
+
 Rules chain. A rule runs on the original and on every rule's output, its own included, breadth first, in the order the rules are listed, shallowest first, at most two rules deep. A result whose deparsed SQL was already produced is dropped. Keep at most ten rewrites.
 
 A rule is one object with a name, and one method that takes a parse tree, the catalog facts, and a literal oracle, then returns zero or more rewritten trees, each with its assumptions. The oracle answers only booleans: whether two placeholders have the same literal text and shape, or whether a boolean expression over placeholders holds when Postgres evaluates it with the real values bound as parameters. The generator knows nothing about any one rule: it holds a list. Adding a rule means adding one file and one line in that list. A rule's name and its description are QUAACK's own constants, so they're shape-class data and the report can show them.

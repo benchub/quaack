@@ -7,13 +7,17 @@ module Quaack
   module Enclave
     module RewriteRules
       class OrToUnion
+        # What Reads.star gives for a bare *.
+        ALL = :all
+
         # What a SELECT needs of its FROM tables once a UNION stands in
         # for them. columns is the UNION's select list, each as
         # [name, column], where name is what the query reads the table by:
         # every column the query uses outside its WHERE, then a key of
-        # every table. stars maps each name the select list has as name.*
-        # to that table's columns, and assumptions states each key unique
-        # and not null.
+        # every table. stars maps each name the select list has as name.*,
+        # or every table's if it has a *, to that table's columns, order is
+        # the tables' names in the FROM's order, which * expands in, and
+        # assumptions states each key unique and not null.
         #
         # Reads.of gives nil unless all of this holds:
         #
@@ -28,9 +32,11 @@ module Quaack
         #   Catalog#columns). A key of one column is used first; see key.
         # - Outside the WHERE, every column is written name.column or, as
         #   a whole select-list entry, name.*, where name is one of the
-        #   tables. Each is a column the catalog lists, so not a system
+        #   tables, or *. A * is every column of every table, as the
+        #   catalog lists them (so no system column), each of a type UNION
+        #   compares. Each is a column the catalog lists, so not a system
         #   column, of a type UNION compares.
-        Reads = Data.define(:columns, :stars, :assumptions) do
+        Reads = Data.define(:columns, :stars, :order, :assumptions) do
           def self.of(select, catalog)
             items = tables(select.from_clause)
             return unless items
@@ -39,11 +45,12 @@ module Quaack
             keys = items.map { key(it, catalog) }
             stars = stars(select, tables)
             used = used(select, tables, stars)
-            with_keys(used, keys, stars) if keys.all? && used
+            with_keys(used, keys, stars, tables.keys) if keys.all? && used
           end
 
-          def self.with_keys(used, keys, stars)
-            new(columns: (used + keys.flat_map(&:first)).uniq, stars:, assumptions: keys.flat_map(&:last).uniq)
+          def self.with_keys(used, keys, stars, order)
+            new(columns: (used + keys.flat_map(&:first)).uniq, stars:, order:,
+                assumptions: keys.flat_map(&:last).uniq)
           end
 
           def self.columns(item, catalog) = catalog.columns(item.table.schemaname, item.table.relname)
@@ -82,14 +89,20 @@ module Quaack
           # Keys by their number of columns, then in their order.
           def self.by_size(keys) = keys.sort_by.with_index { |key, i| [key.size, i] }
 
-          # The name of a select-list entry that is name.*, or nil.
+          # The name of a select-list entry that is name.*, ALL for one that
+          # is *, or nil.
           def self.star(target)
-            fields = target.val.column_ref.fields if target.val&.node == :column_ref
-            fields.first.string.sval if fields&.map(&:node) == %i[string a_star]
+            kinds = target.val.column_ref.fields.map(&:node) if target.val&.node == :column_ref
+            return ALL if kinds == %i[a_star]
+
+            target.val.column_ref.fields.first.string.sval if kinds == %i[string a_star]
           end
 
+          # For each table a name.* or * of the select list gives, in the
+          # FROM's order for *, the names of its columns.
           def self.stars(select, tables)
-            select.target_list.filter_map { star(it.res_target) }.uniq.to_h { [it, tables.fetch(it, []).map(&:name)] }
+            names = select.target_list.filter_map { star(it.res_target) }.uniq
+            names.flat_map { it == ALL ? tables.keys : [it] }.uniq.to_h { [it, tables.fetch(it, []).map(&:name)] }
           end
 
           # Everything outside the FROM and the WHERE, but for the name.*

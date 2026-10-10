@@ -14,7 +14,7 @@ It leaves a query alone when:
 - It has `GROUP BY` or `HAVING` and Postgres might accept it only for a key. See the next section.
 - Its `FROM` has a `NATURAL` join, a join with `USING`, a join with an alias, or an item that isn't a schema-qualified table. A table read with `ONLY`, or under an alias that renames its columns, counts too.
 - Outside the `WHERE`, it has a subquery, in the select list or the `ORDER BY`.
-- Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column or a bare `*`, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
+- Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
 - A select-list entry with no `AS` has a column in it but isn't a column, a function call, or an operator, such as a cast, a `COALESCE`, or a `CASE` over a column. A cast takes its name from its column, which the `UNION` renames, so the rule leaves all of these alone.
 - It uses a column of a type `UNION` can't compare, such as `json`.
 - A `FROM` table has no key the catalog proves: a unique index, of one column or several, with no predicate and no expression, not deferrable, that compares each column as the column's own `=` does, and whose columns are all `NOT NULL` and of types `UNION` compares. A key with a nullable column doesn't count, even under `NULLS NOT DISTINCT`. Nor does one with a domain or `citext` column, since the rule doesn't know `UNION` compares those. An index that names a column twice, such as `(a, b, a)`, is the key `(a, b)`.
@@ -47,6 +47,12 @@ A `HAVING` with no `GROUP BY` works the same way.
 `LEFT`, `RIGHT`, and `FULL` joins work like inner ones. The `WHERE` filters the join's output, null-extended rows included, so each branch keeps the `FROM` and every `ON` as written and gets only the arm in the `OR`'s place. The rule never moves an arm into an `ON`, which would change what an outer join keeps.
 
 A null-extended row has `NULL` in the nullable side's key columns, and `UNION` treats two `NULL`s as the same. That merges nothing it shouldn't: a row of the join is one row of each table, or `NULL`s where a side was extended, so two rows with the same keys everywhere are the same row, and a preserved row's key keeps the rows apart that a different preserved row null-extends.
+
+## A bare *.
+
+A `*` in the select list stands for every column of every `FROM` table, in the `FROM`'s order, a table's columns in the order the catalog lists them. The rule writes them out, each under its own name, so `SELECT * FROM public.s JOIN public.cp ON ...` returns the same columns, in the same order, duplicate names such as two `id` columns included. `SELECT *` already selects every key, so no key is added twice. It works beside other entries and with `name.*`. The `ORDER BY` can use ordinals, since the expanded select list has the same positions.
+
+It leaves a `*` alone when a table has a column of a type `UNION` can't compare, such as `json`, and a `*` with `GROUP BY`, since the columns it stands for aren't each grouped. A `*` never includes a system column, and neither does the rewrite.
 
 ## What it rests on.
 

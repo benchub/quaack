@@ -263,6 +263,60 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(same_rows(sql, rewritten(sql)).size).to eq(conn.exec(sql).ntuples)
     end
 
+    context "with a bare * in the select list" do
+      let(:joined) { "FROM public.s JOIN public.cp ON cp.s_id = s.id" }
+      let(:either) { "WHERE s.flag OR cp.user_id = 8 OR s.flag IS NULL OR NOT s.flag" }
+
+      it "expands * into every table's columns in the FROM's order, under their own names, duplicates included" do
+        sql = "SELECT * #{joined} #{either}"
+
+        rewrites = rewritten(sql)
+
+        expect(rewrites.first).to start_with(
+          "SELECT arms_1.id_1 AS id, arms_1.a_id_1 AS a_id, arms_1.user_id_1 AS user_id, arms_1.flag_1 AS flag, " \
+          "arms_1.id_2 AS id, arms_1.s_id_1 AS s_id, arms_1.user_id_2 AS user_id FROM (SELECT s.id AS id_1,"
+        )
+        expect(rewrites.size).to eq(1)
+        expect(same_rows(sql, rewrites).size).to eq(7)
+        expect(conn.exec(rewrites.first).fields).to eq(%w[id a_id user_id flag id s_id user_id])
+      end
+
+      it "follows the FROM's order across joins, and beside other entries and an ORDER BY of ordinals" do
+        sql = "SELECT 1 AS one, *, s.flag AS f FROM public.cp JOIN public.s ON cp.s_id = s.id " \
+              "LEFT JOIN public.a ON a.id = s.a_id AND a.id < 0 " \
+              "WHERE s.flag OR cp.user_id = 8 OR NOT s.flag OR s.flag IS NULL " \
+              "ORDER BY 2, 8"
+
+        expect(rewritten(sql)).to eq([])
+
+        sql = sql.sub("LEFT JOIN public.a ON a.id = s.a_id AND a.id < 0 ", "")
+        rewrites = rewritten(sql)
+
+        expect(rewrites.first).to start_with("SELECT 1 AS one, arms_1.id_1 AS id, arms_1.s_id_1 AS s_id, ")
+        expect(same_rows(sql, rewrites, [], ordered: true).size).to eq(7)
+      end
+
+      it "takes name.* and * together" do
+        sql = "SELECT s.*, * #{joined} #{either}"
+
+        expect(same_rows(sql, rewritten(sql)).size).to eq(7)
+      end
+
+      it "splits an OR over an outer join read by *" do
+        sql = "SELECT * FROM public.s LEFT JOIN public.cp ON cp.s_id = s.id " \
+              "WHERE cp.id IS NULL OR cp.user_id = 8 OR s.id = 101"
+
+        expect(same_rows(sql, rewritten(sql)).size).to be >= 4
+      end
+
+      it "would be wrong as a UNION of the arms' own * : the rows that the original returns twice would merge" do
+        plain = "SELECT s.id, cp.user_id #{joined} WHERE s.flag OR s.flag IS NULL OR NOT s.flag UNION " \
+                "SELECT s.id, cp.user_id #{joined} WHERE cp.user_id = 8"
+
+        expect(conn.exec(plain).ntuples).to be < conn.exec("SELECT s.id, cp.user_id #{joined} #{either}").ntuples
+      end
+    end
+
     it "splits an OR of three arms, and an arm that's an AND" do
       sql = "SELECT a.id #{from} WHERE (s.flag OR (a.loose = 1 AND s.user_id = 5) OR #{exists.sub("$2", "7")})"
 
@@ -374,7 +428,12 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         %(SELECT a.id FROM public.a JOIN public."my s" s ON s.a_id = a.id WHERE s.id = 1 OR a.loose = 3),
       "the select list has a column UNION can't compare" => "SELECT a.id, a.doc FROM_ WHERE s.flag OR a.loose = 3",
       "name.* has a column UNION can't compare" => "SELECT a.* FROM_ WHERE s.flag OR a.loose = 3",
-      "the select list is *" => "SELECT * FROM_ WHERE s.flag OR a.loose = 3",
+      "the select list is * and a table has a column UNION can't compare" =>
+        "SELECT * FROM_ WHERE s.flag OR a.loose = 3",
+      "the select list is * and it has GROUP BY" =>
+        "SELECT * FROM public.s JOIN public.cp ON cp.s_id = s.id WHERE s.flag OR cp.user_id = 8 GROUP BY s.id, cp.id",
+      "the select list is * and a table has no key" =>
+        "SELECT * FROM public.a JOIN public.nokey s ON s.a_id = a.id WHERE s.id = 1 OR a.loose = 3",
       "the select list has an unqualified column" => "SELECT title FROM_ WHERE s.flag OR a.loose = 3",
       "the select list has a system column" => "SELECT a.ctid FROM_ WHERE s.flag OR a.loose = 3",
       "the select list has a subquery" =>
