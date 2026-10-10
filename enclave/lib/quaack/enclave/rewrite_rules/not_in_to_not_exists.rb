@@ -4,7 +4,9 @@ require "pg_query"
 require_relative "rewrite"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "not_in_to_not_exists/build"
 require_relative "not_in_to_not_exists/columns"
+require_relative "not_in_to_not_exists/links"
 require_relative "not_in_to_not_exists/shadows"
 
 module Quaack
@@ -60,19 +62,34 @@ module Quaack
       # would be an OR of NOT EXISTS, and an EXCEPT's rows hang on which
       # values the other branch has, not on x.
       #
-      # It gives one rewrite per NOT IN it can rewrite, each changing only
-      # that NOT IN, and each stating each tested column and the column
+      # It gives one rewrite per NOT IN or <> ALL it can rewrite, each changing
+      # only that one, and each stating each tested column and the column
       # selected in its place not null.
       #
       # It's conservative. It fires only when all of this holds, and
       # otherwise gives nothing:
       #
-      # - The query is one SELECT, and the NOT IN is one of the conditions
-      #   its WHERE ANDs together. Under an OR or a NOT, in a select list, a
-      #   join's ON, or a subquery it would be as sound, but the tested
-      #   column's table would have to be found in another scope.
-      # - It's written NOT IN or NOT (... IN ...). <> ALL is refused, since
-      #   it's only the same if <> is the negation of =.
+      # - The statement is a SELECT, and the condition is in an expression of
+      #   one of its plain (not set operation) SELECTs, at any depth: a
+      #   WHERE, a HAVING, a select list, a join's ON, a CASE, under an OR
+      #   or a NOT, in a subquery, a FROM subquery, or a WITH. The condition
+      #   belongs to the nearest SELECT around it, the one whose FROM its
+      #   tested columns name (see Links). The not-null proof below is what
+      #   makes the position safe: NOT IN is NULL, not false, for a NULL
+      #   tested value or a NULL the subquery holds that no value matches,
+      #   and NOT EXISTS is true there, a difference a WHERE hides but a
+      #   select list, a CASE, or a NOT shows. With every column proven not
+      #   null the condition is only ever true or false, so NOT EXISTS
+      #   gives the same value in every position. The one thing that makes
+      #   a not null column NULL in a row is a grouping set (ROLLUP, CUBE,
+      #   GROUPING SETS) in the SELECT's GROUP BY, which is refused.
+      # - It's written NOT IN or NOT (... IN ...), or x <> ALL (SELECT ...)
+      #   of one column, which is true when no row the subquery gives equals
+      #   x and so is the same as NOT IN. That needs the <> to be the
+      #   negator of the = between the two columns, both pg_catalog's and
+      #   taking exactly the columns' types, as Postgres picks them (see
+      #   Catalog#negated_equality?). Another operator, ANY, and a row of
+      #   columns <> ALL are refused.
       # - The NOT IN tests name.x, or a row of one or more such columns,
       #   where each name is a table in the outer FROM that
       #   Tree.plain_table_named accepts: so no outer join can fill it with
@@ -107,24 +124,35 @@ module Quaack
         end
 
         def rewrites(parse, catalog, _literals = nil)
-          count = Tree.conjuncts(Tree.select(parse.tree)&.where_clause).size
-          Array.new(count) { rewrite(parse.tree, it, catalog) }.compact
+          return [] unless Tree.select(parse.tree)
+
+          Array.new(Links.all(parse.tree).size) { rewrite(parse.tree, it, catalog) }.compact
         end
 
         private
 
-        # A copy of the tree with the WHERE's index-th condition rewritten,
+        # A copy of the tree with the index-th NOT IN or <> ALL rewritten,
         # or nil if this rule doesn't apply to it.
         def rewrite(original, index, catalog)
           tree = Deparse.copy(original)
-          select = Tree.select(tree)
-          link = not_in(Tree.conjuncts(select.where_clause)[index])
-          branches = link && branches(link.subselect.select_stmt)
-          assumptions = branches && proven(select, link, branches, catalog)
+          found = Links.all(tree)[index]
+          select = found.owner
+          link = found.link
+          branches = tested(link) && branches(link.subselect.select_stmt)
+          assumptions = branches && order_proof(found) && proven(select, link, branches, catalog)
           return unless assumptions
 
-          correlate!(select, index, link, branches, Tree::Names.new(tree))
+          correlate!(found, branches, Tree::Names.new(tree))
           Rewrite.new(tree:, assumptions: assumptions.uniq)
+        end
+
+        # Whether the NOT IN or <> ALL can only be true or false where it
+        # is, which the not-null proof gives it unless a grouping set makes
+        # a tested grouped column NULL in a row of its own. A <> ALL also
+        # tests one column, not a row, whose <> is the negation of =.
+        def order_proof(found)
+          Tree.find(found.owner.group_clause, PgQuery::GroupingSet).empty? &&
+            (found.link.sub_link_type == :ANY_SUBLINK || tested(found.link).size == 1)
         end
 
         # The rewrite's assumptions, if the catalog proves them and NOT
@@ -134,27 +162,11 @@ module Quaack
           assumptions if assumptions&.all? { catalog.met?(it) } && comparable?(select, link, branches, catalog)
         end
 
-        # The SubLink of a condition that is name.column NOT IN (SELECT ...),
-        # or a row of such columns NOT IN (SELECT ...), or nil.
-        def not_in(condition)
-          link = negated(condition)
-          return unless link && link.sub_link_type == :ANY_SUBLINK && link.oper_name.empty?
-
-          link if tested(link) && link.subselect.node == :select_stmt
-        end
-
         # The ColumnRefs NOT IN tests: the one column, or each of the row's,
         # or nil if anything it tests isn't a column.
         def tested(link)
           columns = link.testexpr.node == :row_expr ? link.testexpr.row_expr.args : [link.testexpr]
           columns.map(&:column_ref) if columns.any? && columns.all? { it.node == :column_ref }
-        end
-
-        # The SubLink that condition is the NOT of, or nil.
-        def negated(condition)
-          return unless condition.node == :bool_expr && condition.bool_expr.boolop == :NOT_EXPR
-
-          condition.bool_expr.args.first.sub_link
         end
 
         # The SELECTs whose rows the subquery is: itself, or each branch of
@@ -199,56 +211,30 @@ module Quaack
           tested = tested(link)
           Columns.same_types?(link.subselect.select_stmt, branches, catalog) &&
             Columns.row_equalities?(select, tested, branches, catalog) &&
+            (link.sub_link_type == :ANY_SUBLINK || Columns.negated_equalities?(select, tested, branches, catalog)) &&
             branches.all? { Shadows.correlatable?(tested, it) }
         end
 
-        # Makes the NOT IN NOT EXISTS of its first branch, and ANDs a NOT
-        # EXISTS of each other branch after it, each asking that the tested
-        # columns equal the ones selected in their place.
-        def correlate!(select, index, link, branches, names)
+        # Makes the NOT IN, or the <> ALL, a NOT EXISTS of its first branch,
+        # and ANDs a NOT EXISTS of each other branch with it, each asking
+        # that the tested columns equal the ones selected in their place.
+        def correlate!(found, branches, names)
+          link = found.link
           tested = tested(link)
           branches.each do |sub|
             Shadows.unshadow!(tested, sub, names)
             exists!(sub, tested)
           end
-          link.sub_link_type = :EXISTS_SUBLINK
-          link.testexpr = nil
-          split!(select, index, link, branches) if branches.size > 1
-        end
-
-        # Makes the EXISTS the first branch's, and ANDs a NOT EXISTS of each
-        # other branch after it.
-        def split!(select, index, link, branches)
-          link.subselect = PgQuery::Node.new(select_stmt: branches.first)
-          conditions = Tree.conjuncts(select.where_clause)
-          conditions.insert(index + 1, *branches.drop(1).map { not_exists(it) })
-          select.where_clause = Tree.all_of(conditions)
-        end
-
-        def not_exists(sub)
-          link = PgQuery::SubLink.new(sub_link_type: :EXISTS_SUBLINK, subselect: PgQuery::Node.new(select_stmt: sub))
-          PgQuery::Node.new(bool_expr: PgQuery::BoolExpr.new(boolop: :NOT_EXPR,
-                                                             args: [PgQuery::Node.new(sub_link: link)]))
+          Build.replace!(found, Build.exists_of(link, branches.first), branches)
         end
 
         # Makes sub a SELECT 1 of its rows whose selected columns each equal
         # the tested column in their place.
         def exists!(sub, tested)
-          equal = tested.zip(sub.target_list).map { |column, target| equals(column, target.res_target.val) }
+          equal = tested.zip(sub.target_list).map { |column, target| Build.equals(column, target.res_target.val) }
           sub.where_clause = Tree.all_of(Tree.conjuncts(sub.where_clause) + equal)
-          sub.target_list.replace(one)
+          sub.target_list.replace(Build.one)
           sub.distinct_clause.clear
-        end
-
-        # The select list of SELECT 1.
-        def one = Tree.exists.sub_link.subselect.select_stmt.target_list.to_a
-
-        # tested = right, for a tested ColumnRef, which is copied, since
-        # each branch's correlation has its own.
-        def equals(tested, right)
-          left = PgQuery::Node.new(column_ref: PgQuery::ColumnRef.decode(PgQuery::ColumnRef.encode(tested)))
-          name = [PgQuery::Node.new(string: PgQuery::String.new(sval: "="))]
-          PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name:, lexpr: left, rexpr: right))
         end
       end
     end

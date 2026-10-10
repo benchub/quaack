@@ -81,6 +81,35 @@ module Quaack
             end
           end
 
+          # Whether <> between two columns, each [schema, table, column], is
+          # the negator of the = between them, with both operators
+          # pg_catalog's and taking exactly the columns' types, which is the
+          # pair Postgres picks for them. Then x <> y is NOT (x = y) when
+          # neither is NULL, so x <> ALL (...) is NOT IN. The columns must
+          # also have one collation.
+          NEGATED_EQUALITY = <<~SQL.freeze
+            SELECT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_attribute l, pg_catalog.pg_attribute r,
+                            pg_catalog.pg_operator eq, pg_catalog.pg_operator ne
+              WHERE l.attrelid #{EQ} #{AssumptionCheck::RELATION} AND l.attname #{EQ} $3 AND l.attnum OPERATOR(pg_catalog.>) 0
+                AND r.attrelid #{EQ} #{AssumptionCheck::RELATION.sub("$1", "$4").sub("$2", "$5")}
+                AND r.attname #{EQ} $6 AND r.attnum OPERATOR(pg_catalog.>) 0
+                AND l.attcollation #{EQ} r.attcollation
+                AND eq.oprname #{EQ} '=' AND ne.oprname #{EQ} '<>'
+                AND eq.oprnamespace #{EQ} 'pg_catalog'::pg_catalog.regnamespace
+                AND ne.oprnamespace #{EQ} 'pg_catalog'::pg_catalog.regnamespace
+                AND eq.oprleft #{EQ} l.atttypid AND eq.oprright #{EQ} r.atttypid
+                AND ne.oprleft #{EQ} l.atttypid AND ne.oprright #{EQ} r.atttypid
+                AND eq.oprnegate #{EQ} ne.oid AND ne.oprnegate #{EQ} eq.oid)
+          SQL
+
+          def negated_equality?(left, right)
+            (@negated_equality ||= {}).fetch([left, right]) do
+              @negated_equality[[left, right]] =
+                @connection.exec_params(NEGATED_EQUALITY, [*left, *right]).getvalue(0, 0) == "t"
+            end
+          end
+
           # Whether Postgres can dedupe a column, [schema, table, column], in
           # a UNION: its type has an equality to sort or hash by, which box's
           # = isn't. It asks Postgres, as row_equality? does.
