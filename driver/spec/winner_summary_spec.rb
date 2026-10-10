@@ -182,6 +182,8 @@ RSpec.describe Quaack::Driver::WinnerSummary do
         .and include("Say only what the plans and numbers in the payload show")
         .and include("Don't guess at a cause you can't see")
         .and include("each short and making one point").and include("under 500 characters")
+        .and include("so pick the two or three points that matter most")
+        .and include("Describe a plan step only by its node type, table, index, rows, and blocks")
         .and include("Quote a plan step's own numbers")
         .and include("never carry one step's row count to another step")
       expect(ask.body).not_to have_key(:output_config)
@@ -220,6 +222,11 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       "a file link as text" => "Rewrite Steady Lute reads fewer blocks, see file:/etc/passwd now.",
       "an ftp link as text" => "Rewrite Steady Lute reads fewer blocks, see ftp:/pub now.",
       "an about link as text" => "Rewrite Steady Lute reads fewer blocks, see about:blank now.",
+      "an IPv4 literal" => "Rewrite Steady Lute reads fewer blocks, see 10.0.0.12 now.",
+      "an IPv6 literal" => "Rewrite Steady Lute reads fewer blocks, see fe80::1 now.",
+      "a full IPv6 literal" => "Rewrite Steady Lute reads fewer blocks, see 2001:db8:0:0:0:0:0:1 now.",
+      "a loopback IPv6 literal" => "Rewrite Steady Lute reads fewer blocks, see ::1 now.",
+      "a spaced vbscript link" => "Rewrite Steady Lute reads fewer blocks, see VbScript :msgbox now.",
       "a spaced odd-case javascript link" => "Rewrite Steady Lute reads fewer blocks, see JaVaScRiPt :alert(1) now.",
       "a line separator" => "Rewrite Steady Lute reads fewer\u2028blocks.",
       "a paragraph separator" => "Rewrite Steady Lute reads fewer\u2029blocks.",
@@ -242,6 +249,19 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     }.each do |what, answer|
       it "refuses an answer with #{what}" do
         expect(run(answer)).to have_attributes(text: nil, outcome: "rejected", entry: "anthropic")
+      end
+    end
+
+    [
+      "Notes about: the plan show that Rewrite Steady Lute reads fewer blocks.",
+      "Rewrite Steady Lute reads fewer blocks, the file: scan is gone.",
+      "Rewrite Steady Lute reads data: 935 blocks against 1,200.",
+      "Rewrite Steady Lute reads fewer blocks, as the ftp: step shows. Version 1.2 and a ratio of 3:2 stay.",
+      "Rewrite Steady Lute reads fewer blocks and casts o.id::text, in 12.5 percent of the time."
+    ].each do |answer|
+      it "keeps prose with a plain scheme word and a colon then a space: #{answer[0, 30]}" do
+        payload["original_sql"] = "SELECT o.id FROM public.orders o WHERE o.status = $1"
+        expect(run(answer, payload)).to have_attributes(text: answer, outcome: "used")
       end
     end
 

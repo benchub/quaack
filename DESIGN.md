@@ -69,7 +69,7 @@ flowchart TD
     racetrack --> gate{"index-search's plan gate:<br/>does the racetrack plan match production's plan?"}
     gate -- no --> abort(["Abort: statistics don't match"])
     gate -- yes --> search["index-search<br/>parse, plan, and LLM generators, tested with HypoPG"]
-    search --> rules["rewrite-rules<br/>mechanical rewrite rules"]
+    search --> rules["rewrite-rules<br/>transform rules"]
     rules --> llm["llm-rewrites<br/>then operator-rewrites"]
     rules --> check["rewrite-check on each rewrite<br/>inbound-check, assumption-check, structural-discard"]
     llm --> check

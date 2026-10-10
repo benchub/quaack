@@ -38,6 +38,17 @@ RSpec.describe Quaack::Driver::Report do
   # How far apart two #hex colors are, as the straight-line distance between their RGB values.
   def distance(one, other) = Math.sqrt(rgb(one).zip(rgb(other)).sum { |a, b| (a - b)**2 })
 
+  # A #hex color's hue in degrees, 0 up to 360, and the gap between two hues, 0 to 180 around the wheel.
+  def hue(hex)
+    red, green, blue = rgb(hex)
+    Math.atan2(Math.sqrt(3) * (green - blue), (2 * red) - green - blue).*(180 / Math::PI) % 360
+  end
+
+  def hue_gap(one, other)
+    gap = (hue(one) - hue(other)).abs
+    gap > 180 ? 360 - gap : gap
+  end
+
   def contrast(one, other)
     hi, lo = [luminance(one), luminance(other)].sort.reverse
     (hi + 0.05) / (lo + 0.05)
@@ -267,7 +278,7 @@ RSpec.describe Quaack::Driver::Report do
     describe "links" do
       let(:backgrounds) do
         %w[--bg --panel --head-bg --code-bg --summary-bg --good-bg --minor-bg --bug-bg --rose-bg --query-bg
-           --baseline-bg --differs-bg]
+           --baseline-bg --differs-bg --sb-teal --sb-violet --sb-brown]
       end
 
       it "are the accent color, with their own visited and hover colors" do
@@ -1114,6 +1125,8 @@ RSpec.describe Quaack::Driver::Report do
           %w[--bg --panel --head-bg].each do |other|
             expect(v[tint]).not_to eq(v[other]), "#{name} #{tint} matches #{other}"
             expect(distance(v[tint], v[other])).to be >= 15, "#{name} #{tint} against #{other}"
+            # All six tints pass this: the closest hue gap is 21 degrees (light violet against --head-bg).
+            expect(hue_gap(v[tint], v[other])).to be >= 20, "#{name} #{tint} hue against #{other}"
           end
           expect(contrast(v["--text"], v[tint])).to be >= 4.5, "#{name} text on #{tint}"
         end
