@@ -345,6 +345,44 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
   end
 
+  # Task 20261004-81: a rule added to one of the four files without a RULES
+  # entry fails here, whatever the samples above say. The scan reads the rule
+  # names each file raises with: Error.new("rule", ...) calls, and the fixed
+  # @rule of SupportedSql's and Deparse's errors. VolatilityCheck's
+  # parse_error is the one it raises that the check can't reach, since the
+  # probe is a tree with no text to parse.
+  describe "RULES against the source of every check it takes rules from" do
+    lib = File.expand_path("../lib/quaack/enclave", __dir__)
+    files = %w[index_ddl_check supported_sql volatility_check deparse].to_h { [it, File.read("#{lib}/#{it}.rb")] }
+    unreachable = ["parse_error"]
+    scan = lambda do |source|
+      source.scan(/Error\.new\(\s*"([a-z_]+)"/).flatten + source.scan(/@rule = "([a-z_]+)"/).flatten
+    end
+    option_rules = %w[concurrently unique nulls_not_distinct tablespace on_only storage_options]
+
+    it "finds a rule in each file, so the scan itself reads something" do
+      expect(files.transform_values { scan.call(it).uniq }).to include(
+        "index_ddl_check" => include("unparsable", "unknown_relation"),
+        "supported_sql" => ["unsupported_construct"],
+        "volatility_check" => include("volatile_function", "bad_search_path"),
+        "deparse" => ["deparse_mismatch"]
+      )
+    end
+
+    it "has every rule the four files raise with, bar the one the check can't reach" do
+      raised = files.values.flat_map(&scan).uniq - unreachable
+
+      expect(described_class::RULES - option_rules).to match_array(raised)
+      expect(described_class::RULES).to include(*option_rules)
+    end
+
+    it "catches a rule planted in one of the files" do
+      planted = files.values.flat_map(&scan).uniq + scan.call('raise Error.new("brand_new", "x")')
+
+      expect(planted - unreachable - (described_class::RULES - option_rules)).to eq(["brand_new"])
+    end
+  end
+
   describe "the order of the checks" do
     it "checks the statement before its options, and the options in order" do
       expect { check("CREATE UNIQUE INDEX CONCURRENTLY ON public.orders (id); SELECT 1") }
