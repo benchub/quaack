@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261004-9: rewrite-test and counterexamples disproofs of a `denormalized_equal` rewrite are reported as rule bugs (enclave; no new fields).
 - 20261003-43: `fk_cycle` table names are built by the enclave from a stored [schema, name] pair and quoted like `quote_ident`; the enclave and driver shape checks accept bare or quoted parts; the counterexamples round's error line carries only the rule (enclave and driver).
 - 20261003-44: `existence_in_flip` scope check includes unaliased function names; ORDER BY positions out of range are refused; the same capture is refused in `cte_hoist_dedupe` and `union_outer_filter_removal` (enclave).
+- 20261004-61: the `$n` numbers in untested-condition shapes come from the real redaction (`Redaction.numbers`), so a GROUP BY constant keeps no number and a shared constant gets one (enclave).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
 - 20261004-8: rewrite-test fixtures: a cut foreign key's S3 cross row keeps every table, `Topology#roots` uses `load_parents`, S5 builds the reversed boundary group first (enclave).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
@@ -341,20 +342,6 @@ These are minor findings from building and reviewing 20261003-40:
 - **Status:** todo (item 1 needs the user)
 
 ### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-61. Untested conditions: loose ends from 20261004-51.
-
-From the build and review of 20261004-51:
-
-1. **Singular wording.** When one condition is covered and the list folds, the summary reads "The 1 conditions".
-2. **Runs recorded before `covered` existed.** A run whose rounds were recorded before 20261004-51 and then reported says "No later test checked them", even though rounds ran. Say "not recorded" instead when rounds exist but carry no `covered`.
-3. **Sentinel test.** No committed test sends planted WHERE literals, such as a text and a number, through rewrite-test and a counterexample round to a non-empty `covered` and the report payload, then asserts the sentinels never appear. The review's probe showed no leak. Lock that in with a spec, plus a planted-sentinel control.
-4. **`$n` numbering.** The conditions' `$n` placeholders come from a stand-in redaction inside `PredicateAtoms`, so they may not match the `$n` in the query text the report shows (`$69`, `$70` in the user's run). Number them the same way the shown query does, or render them without numbers.
-
-- **Depends on:** 20261004-51.
-- **Came from:** The build and review of 20261004-51, 2026-10-05.
-- **Design:** report, vacuity-guard.
-- **Status:** todo
 
 ### 20261004-77. Index burndown loose ends from 20261001-20. Done, see BACKLOG-COMPLETE.md.
 

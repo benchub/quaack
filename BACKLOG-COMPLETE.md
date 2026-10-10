@@ -9590,3 +9590,18 @@ These are findings from building and reviewing 20261003-29:
 - **Design:** rewrite-rules, `existence_in_flip`.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261003-43 branch; Opus review clean). The scope check includes unaliased function names (a composite-returning function and a bare `fx IS NULL` gave wrong rows in both directions before; now refused); an ORDER BY position outside the select list is refused; the `ival` guard test hands the rule an un-redacted tree; two siblings had the same capture and now refuse it (`cte_hoist_dedupe`'s `hoistable?`, `union_outer_filter_removal`'s `stands?`), each with a wrong-rows reproducer red before. Not built, on purpose: a flip inside an EXISTS body or `= ANY (SELECT ...)` (new features), ORDER BY keys from CTEs or subqueries (on demand), a `y` that can raise (a mismatch is caught by result comparison; refusing would remove the landed `y` as an expression), `y COLLATE "C"` against a nondeterministic collation (not reproduced). On the unreleased list.
+
+### 20261004-61. Untested conditions: loose ends from 20261004-51.
+
+From the build and review of 20261004-51:
+
+1. **Singular wording.** When one condition is covered and the list folds, the summary reads "The 1 conditions".
+2. **Runs recorded before `covered` existed.** A run whose rounds were recorded before 20261004-51 and then reported says "No later test checked them", even though rounds ran. Say "not recorded" instead when rounds exist but carry no `covered`.
+3. **Sentinel test.** No committed test sends planted WHERE literals, such as a text and a number, through rewrite-test and a counterexample round to a non-empty `covered` and the report payload, then asserts the sentinels never appear. The review's probe showed no leak. Lock that in with a spec, plus a planted-sentinel control.
+4. **`$n` numbering.** The conditions' `$n` placeholders come from a stand-in redaction inside `PredicateAtoms`, so they may not match the `$n` in the query text the report shows (`$69`, `$70` in the user's run). Number them the same way the shown query does, or render them without numbers.
+
+- **Depends on:** 20261004-51.
+- **Came from:** The build and review of 20261004-51, 2026-10-05.
+- **Design:** report, vacuity-guard.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-61; Opus review clean; the full check passed on `main` just before the merge). Items 1 ("The 1 conditions") and 2 ("No later test checked them") were stale: 20261009-32 and 20261009-40 changed that wording. Item 4: the `$n` numbers in `untested_atoms`, `untested_unchanged` and `covered` shapes now come from `Redaction.numbers` (location to number from `Redaction::Query`), so a GROUP BY constant redact leaves as written takes no number and a constant Postgres needs to match another gets one; if redact refuses the query (own `$n`, an interval with a field qualifier) it falls back to text-order numbering, with no literal surviving. Item 3: a sentinel spec runs the real rewrite-test and counterexample-round and asserts the report's checks hold exactly the shapes, with a planted control. On the unreleased list.
