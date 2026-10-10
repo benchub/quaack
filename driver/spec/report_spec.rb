@@ -211,12 +211,20 @@ RSpec.describe Quaack::Driver::Report do
       expect(verdict(html)).to include("<h2>The verdict: substantial improvements possible</h2>")
       expect(verdict_rows(html)).to eq(
         ["Best rewrite, with the same indexes Rewrite Vivid Cove with no new indexes | 300 | 0 | 70%",
-         "The original query, with new indexes The original query with a new index on public.t (created_at) | " \
-         "400 | +8 kB | 60%",
+         "The original query, with new indexes The original query with new indexes | 400 | +8 kB | 60%",
          "The original query, with the same indexes | 1,000 | 0 | 0%",
          "Best rewrite, with new indexes | " \
          "&#9888; No rewrite with new indexes beat the original"]
       )
+    end
+
+    it "leaves index definitions out of the verdict, and still shows each in the candidates' tables" do
+      sentinel = "sentinel_col_7f3a"
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING btree (#{sentinel})"
+      out = render(payload)
+      expect(verdict(out)).not_to include(sentinel)
+      expect(verdict(out)).to include("The original query with new indexes")
+      expect(out[%r{<article class="candidate">.*?Its new indexes.*?</article>}m]).to include(sentinel)
     end
 
     it "calls 30% fewer blocks substantial and anything less minor" do
