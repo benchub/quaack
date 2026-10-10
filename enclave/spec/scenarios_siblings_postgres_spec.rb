@@ -35,6 +35,18 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(passing_siblings(posts(sql))).not_to be_empty
   end
 
+  # A root table's row has no parent to share, so a sibling there would be
+  # just another row (20261010-34).
+  it "adds no sibling for an atom on a root table that two scopes test" do
+    sql = "SELECT fx.users.id FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
+          "AND fx.users.state = 'a' WHERE fx.users.id IN (SELECT fx.users.id FROM fx.users " \
+          "WHERE fx.users.state = 'a')"
+    s1 = described_class.build(conn, PgQuery.parse(sql))[:s1]
+    users = s1.select { it.table.name == "users" }.map { it.columns.zip(it.values).to_h }
+    expect(users.size).to eq(3)
+    expect(users.count { it["state"] == "a" }).to eq(1)
+  end
+
   it "adds no sibling when only one scope tests the column" do
     sql = "SELECT fx.users.id FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
           "WHERE fx.posts.score > 5 AND fx.users.state = 'a'"

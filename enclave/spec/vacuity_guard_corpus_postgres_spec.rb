@@ -29,7 +29,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       settings jsonb NOT NULL DEFAULT '{}', created_at timestamp NOT NULL);
     CREATE TABLE fx.posts (id bigint PRIMARY KEY, user_id bigint NOT NULL REFERENCES fx.users,
       title text NOT NULL, body text, published boolean NOT NULL DEFAULT false, score integer NOT NULL DEFAULT 0,
-      labels text[] NOT NULL DEFAULT '{}', published_on date, created_at timestamp NOT NULL);
+      labels text[] NOT NULL DEFAULT '{}', published_on date, kind text NOT NULL DEFAULT 'a',
+      created_at timestamp NOT NULL);
     CREATE TABLE fx.comments (id bigint PRIMARY KEY, post_id bigint NOT NULL REFERENCES fx.posts,
       user_id bigint REFERENCES fx.users, body text NOT NULL, workflow_state text NOT NULL,
       created_at timestamp NOT NULL);
@@ -326,6 +327,40 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "WHERE fx.posts.published = true AND fx.comments.workflow_state = 'active' " \
            "UNION ALL SELECT fx.posts.id FROM fx.posts WHERE fx.posts.published = true " \
            "AND fx.posts.id IN (11, 12, 13))", allowed: {} },
+    # Lists outside the generated keys, so each group that passes the list
+    # takes a list value by PinnedKeys' rank (20261010-33). Retries and
+    # spills part colliding groups too, so these stay green with the rank
+    # forced to 0; scenarios_pinned_keys_postgres_spec.rb pins the rank.
+    { name: "IN of three on parent key, two child filters",
+      sql: "SELECT fx.posts.id FROM fx.posts JOIN fx.users ON fx.users.id = fx.posts.user_id " \
+           "WHERE fx.users.id IN (101, 102, 103) AND fx.posts.published = true AND fx.posts.score > 5", allowed: {} },
+    { name: "IN of four on parent key, filters on both sides",
+      sql: "SELECT fx.comments.id FROM fx.comments JOIN fx.posts ON fx.posts.id = fx.comments.post_id " \
+           "WHERE fx.posts.id IN (201, 202, 203, 204) AND fx.posts.published = true " \
+           "AND fx.comments.workflow_state = 'active'", allowed: {} },
+    { name: "IN of three on grandparent key through a chain",
+      sql: "SELECT fx.comments.id FROM fx.comments JOIN fx.posts ON fx.posts.id = fx.comments.post_id " \
+           "JOIN fx.users ON fx.users.id = fx.posts.user_id WHERE fx.users.id IN (301, 302, 303) " \
+           "AND fx.posts.score > 2 AND fx.comments.workflow_state <> 'deleted'", allowed: {} },
+    { name: "IN on parent key with four parent filters",
+      sql: "SELECT fx.posts.id FROM fx.posts JOIN fx.users ON fx.users.id = fx.posts.user_id " \
+           "WHERE fx.users.id IN (101, 102, 103, 104, 105) AND fx.users.active = true " \
+           "AND fx.users.role = 'teacher' AND fx.users.deleted_at IS NULL AND fx.users.name = 'ann'", allowed: {} },
+
+    # One column tested in a join's ON clause and in UNION ALL branches of
+    # an IN subquery (20261010-34). A near miss's sibling passes the ON
+    # clause; it fails another atom of the near miss's branch, so the parent
+    # doesn't pass that branch through it.
+    { name: "count over join, ON and branch test one column",
+      sql: "SELECT count(*) FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id AND fx.posts.kind <> 'c' " \
+           "WHERE fx.users.active = true AND fx.users.id IN (SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.kind <> 'c' AND fx.posts.score > 5 UNION ALL SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.published = true AND fx.posts.kind <> 'c')", allowed: {} },
+    { name: "count over join, ON tests one branch's column, both branches test another",
+      sql: "SELECT count(*) FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id AND fx.posts.kind <> 'c' " \
+           "WHERE fx.users.active = true AND fx.users.id IN (SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.kind <> 'c' AND fx.posts.score > 5 UNION ALL SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.published = true AND fx.posts.score > 9)", allowed: {} },
 
     # Shapes with an allowed atom.
     { name: "implied lower bound",
@@ -340,6 +375,12 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
   # name: the untested set, pinned exactly, and a guess at the cause, which
   # isn't confirmed. Each is to become a backlog task pointing at 20261010-27.
   PENDING = {
+    "count over join, ON tests one branch's column, both branches test another" => {
+      untested: ["fx.posts.score > $6"],
+      cause: "confirmed (20261010-34): score > 9's near miss gets a sibling, since branch 1 tests score too; " \
+             "the sibling fails published, branch 2's other atom, but passes score > 9, so it passes " \
+             "branch 1's kind <> 'c' AND score > 5, and the parent stays in the IN through branch 1"
+    },
     "comment author and post author join" => {
       untested: ["fx.posts.id = fx.comments.post_id", "fx.comments.user_id = fx.posts.user_id"],
       cause: "a second column-to-column tie between the tables; no row joins on one and not the other"
