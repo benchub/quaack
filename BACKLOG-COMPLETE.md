@@ -10003,3 +10003,28 @@ The review of 20260924-29 found these:
 - **Came from:** The review of 20260924-29, 2026-10-08.
 - **Design:** inventory and run-server.
 - **Status:** done. qualify stores `relation_tablespaces` (the query's tables, descendants and indexes); run-server compares only those; setup now runs qualify before run-server. Minors: 20261010-17.
+
+### 20261008-48. Schema dump dependency walk: minors from 20261001-10.
+
+The review of 20261001-10 found these minor issues:
+
+1. **Mixed-case or non-ASCII names drop every table name.** If one unreadable table's name fails the shape check (mixed case, Unicode, or a quote), the whole `tables` field is dropped. The operator then gets "can't read these tables" with no tables named. Keep the names that pass, widen the shape so quoted identifiers can be shown safely, or word the note so it doesn't promise names when none come through.
+2. **The `a` (auto) dependency has no test.** A sequence owned by a column in another schema relies on it, and removing it from the walk keeps every test green. Add a spec where `A.seq OWNED BY B.t.col` and the dump loads.
+3. **`--exclude-table` has no cap.** It adds one argument per unneeded relation in each added schema. A schema with thousands of tables could approach ARG_MAX. Cap it, or refuse cleanly past the limit.
+4. **A misspelled extra schema gets a vague error.** A nonexistent `extra_dump_schemas` name fails as `pg_dump_failed`. Pre-check it against pg_namespace and give it a rule that tells the operator to fix the config.
+5. **Children outside the dump aren't pulled in.** A partition or inheritance child in a schema outside the dump is missed, because the walk follows dependencies in one direction only.
+
+- **Depends on:** 20261001-10.
+- **Came from:** The review of 20261001-10, 2026-10-08.
+- **Design:** schema-dump.
+- **Status:** done. All five items landed (quoted unreadable-table names, cross-schema auto dependency spec, `--exclude-table` cap with `dump_exclusions_too_long`, `unknown_extra_dump_schema`, pg_inherits walk). Minor: the enclave's `ident` is a regex approximation of quote_ident (reserved words aren't quoted; display only).
+
+### 20261008-52. `--database` and system relations: follow-ups.
+
+1. **From the review of 20261008-51:** confirm that a driver spec goes red when `database` is dropped from the `Runs#record` hash. The reviewer's run of that mutation loaded no specs. Also check whether run-server's database check uses only the bare `Protocol::DatabaseName::PATTERN` regex, without the encoding and ASCII guard that `DatabaseName` adds. If it does, use the full check.
+2. **From the builder of 20260929-22:** a query that names no relation at all, such as one that only selects from `generate_series`, and has no extension outside a system schema, still gives the full dump no `--schema` flags, so pg_dump dumps every schema. Refuse that case, or pass an explicit empty schema set.
+
+- **Depends on:** 20261008-51, 20260929-22.
+- **Came from:** The review of 20261008-51 and the builder of 20260929-22, 2026-10-08.
+- **Design:** input, schema-dump.
+- **Status:** done. The full dump excludes every schema when none is left; the other items were checked and needed no change.
