@@ -50,13 +50,14 @@ module Quaack
       # dropped counts the scenario groups left out because they collide on
       # a unique key (Scenarios::Builder#dropped). loads counts the fixtures
       # loaded in arena (ArenaRunner#loads), the guard's included. s1_load_rule
-      # and s1_rows are vacuity-guard's diagnostic (VacuityGuard::Result): the
-      # rule S1 failed to load with, and the original's row count on S1, each
+      # s1_rows and s1_nonzero_rows are vacuity-guard's diagnostic
+      # (VacuityGuard::Result): the rule S1 failed to load with, the
+      # original's row count on S1, and how many of those rows are nonzero, each
       # nil when it doesn't apply (and both nil on a refusal).
       # untested_paths are the untested atoms' paths into the original's parse
       # (PredicateAtoms::Atom#path), for AtomPosition; they stay in the enclave.
       Report = Data.define(:results, :untested, :untested_atoms, :untested_paths, :retries, :dropped, :refused,
-                           :cycle, :loads, :s1_load_rule, :s1_rows) do
+                           :cycle, :loads, :s1_load_rule, :s1_rows, :s1_nonzero_rows) do
         def initialize(untested_paths: [], **fields) = super
       end
       Result = Data.define(:passed, :scenario, :rule, :load_order)
@@ -78,13 +79,14 @@ module Quaack
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms,
                    untested_paths: guard.untested_paths, retries: guard.retries,
                    dropped: builder.dropped, refused: nil, cycle: nil, loads:, s1_load_rule: guard.s1_load_rule,
-                   s1_rows: guard.s1_rows)
+                   s1_rows: guard.s1_rows, s1_nonzero_rows: guard.s1_nonzero_rows)
       end
 
       def refused(candidates, rule, cycle: nil, loads: 0)
         results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
         Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule,
-                   cycle: (cycle if rule == :fk_cycle), loads:, s1_load_rule: nil, s1_rows: nil)
+                   cycle: (cycle if rule == :fk_cycle), loads:, s1_load_rule: nil, s1_rows: nil,
+                   s1_nonzero_rows: nil)
       end
 
       # A scenario's further fixtures (spills, see Scenarios::Parts) run
