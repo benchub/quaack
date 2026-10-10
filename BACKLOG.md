@@ -1268,3 +1268,12 @@ If the prototype is good enough, the feature needs: a new LLM step (its own entr
 - **Design:** report, Several LLM providers.
 - **Open questions:** Whether the user wants the summary only for the winner or for each ranked candidate; which provider writes it (the cheapest one that does well in the prototype); whether a reader who can't tell it's LLM-written is acceptable (no: it's labeled).
 - **Status:** todo
+
+### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have".
+
+The user, 2026-10-09. Remove the "Tried for" column from the `#existing-indexes` table in the template (the other columns stay: Index, Your index that covers it, Its size). Update README.md's bullet for that table, which says it lists "the queries it was tried for", and DESIGN.md if it names the column, and the report spec, with a test that the header and cells are gone and the others remain. Check that nothing else reads the removed cells (a helper such as `searches(e)` may then be used by one table only). The "Indexes the planner wouldn't use" table (`#declined-indexes`) has its own "Tried for" column; leave it unless the user asks, and say so in the report. The intro line above the table may mention it ("An index is listed once, with every query it was tried for"), so reword it to match.
+
+- **Depends on:** None. Edits the same template section as 20261009-34, so build after it lands.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** todo
