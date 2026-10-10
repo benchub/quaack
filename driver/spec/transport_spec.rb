@@ -1135,7 +1135,7 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     it "shows a cycle's quoted names, as the catalog quotes them" do
-      cycle = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', '"Sales"."Acc""ounts"']
+      cycle = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', "public.action", '"Sales"."Acc""ounts"']
       error = refusal(JSON.generate({ type: "error", rule: "fk_cycle", cycle: }))
 
       expect(error.cycle).to eq(cycle)

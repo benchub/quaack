@@ -622,20 +622,31 @@ RSpec.describe "quaacks report-payload" do
     context "when the cycle's tables have names that need quoting" do
       def refused(cycle) = tested(false, nil, "fk_cycle").merge("refused" => true, "cycle" => cycle)
 
+      let(:kw) { %w[action name a$b select int left] }
+
       let(:outcome) do
         payload_of do |store|
-          store.write("schema_subset", "tables" => [["Sales", "Acc\"ounts"], ["public", "user"], %w[a b.c]],
+          store.write("schema_subset", "tables" => [["Sales", "Acc\"ounts"], %w[public user], %w[a b.c],
+                                                    *kw.map { %w[public] + [it] }],
                                        "ddl" => "")
           stored(store, 2, tested: refused([["Sales", "Acc\"ounts"], %w[public user], ["Sales", "Acc\"ounts"]]),
                            survived: false)
           stored(store, 3, tested: refused([%w[a b.c], %w[public user], %w[a b.c]]), survived: false)
           stored(store, 4, tested: refused([%w[a.b c], %w[public user], %w[a.b c]]), survived: false)
+          stored(store, 5, tested: refused(kw.map { %w[public] + [it] } + [%w[public action]]), survived: false)
         end
       end
 
       it "sends mixed-case, quote-bearing, keyword, and dotted names quoted as the catalog quotes them" do
         expect(rewrite(2)["cycle"]).to eq(['"Sales"."Acc""ounts"', 'public."user"', '"Sales"."Acc""ounts"'])
         expect(rewrite(3)["cycle"]).to eq(['a."b.c"', 'public."user"', 'a."b.c"'])
+      end
+
+      # Pinned to quote_ident's own rule: only unreserved keywords stay bare.
+      it "quotes exactly as quote_ident does: unreserved keywords bare, other keywords and a $ name quoted" do
+        expect(rewrite(5)["cycle"]).to eq(%w[public.action public.name] + ['public."a$b"', 'public."select"',
+                                                                           'public."int"', 'public."left"',
+                                                                           "public.action"])
       end
 
       it "sends no cycle whose dotted schema and name only join to a held table's string" do

@@ -357,7 +357,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
 
       it "sends a quoted name, as the catalog quotes mixed case, a dot, a keyword, or a doubled quote" do
-        quoted = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', '"Sales"."Acc""ounts"']
+        quoted = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', "public.action", '"Sales"."Acc""ounts"']
         expect(cycle_line(quoted)).to eq(line(step: "counterexample-round", rule: "fk_cycle", cycle: quoted))
       end
 

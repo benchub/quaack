@@ -20,7 +20,9 @@ module Quaack
       module CycleTables
         # A cycle names at least two tables, and its first table again.
         MIN = 3
-        BARE = /\A[a-z_][a-z0-9_$]*\z/
+        BARE = /\A[a-z_][a-z0-9_]*\z/
+        # The only keywords quote_ident leaves bare.
+        UNQUOTED_KINDS = %i[NO_KEYWORD UNRESERVED_KEYWORD].freeze
 
         module_function
 
@@ -40,10 +42,12 @@ module Quaack
           names unless names.include?(nil)
         end
 
-        # A part is left bare only if it's a lowercase name that isn't a keyword
+        # As quote_ident: a part is left bare only if it's a lowercase name of
+        # letters, digits and underscores that isn't a reserved, column-name or
+        # type-or-function keyword (an unreserved one such as action stays bare).
         # the catalog would quote.
         def quote(name)
-          bare = name.match?(BARE) && PgQuery.scan(name).first.tokens.map(&:keyword_kind).all?(:NO_KEYWORD)
+          bare = name.match?(BARE) && PgQuery.scan(name).first.tokens.all? { UNQUOTED_KINDS.include?(it.keyword_kind) }
           bare ? name : %("#{name.gsub('"', '""')}")
         end
 
