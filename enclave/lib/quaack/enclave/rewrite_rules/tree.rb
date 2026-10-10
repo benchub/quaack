@@ -74,6 +74,19 @@ module Quaack
           node.is_a?(Array) ? node.flat_map { find(it, type) } : RewriteCandidateCheck.nodes(node, type)
         end
 
+        # Every node of type in node, nested ones included: find stops at a
+        # match, so a SELECT in a SELECT is found only once, as the outer one.
+        def find_all(node, type, found = [])
+          case node
+          when Google::Protobuf::RepeatedField then node.each { find_all(it, type, found) }
+          when PgQuery::Node then find_all(node.inner, type, found)
+          when Google::Protobuf::MessageExts
+            found << node if node.is_a?(type)
+            node.class.descriptor.each { find_all(it.get(node), type, found) }
+          end
+          found
+        end
+
         # The conditions a WHERE or ON holds, ANDed: [] for none, and a
         # nested AND's own conditions in its place.
         def conjuncts(node)
@@ -115,9 +128,10 @@ module Quaack
         def refname(range) = range.alias ? range.alias.aliasname : range.relname
 
         # Whether range is a schema-qualified table read whole: not a CTE
-        # (which has no schema), not ONLY, and with no column aliases.
-        def plain_table?(range)
-          !range.schemaname.empty? && range.inh && (range.alias.nil? || range.alias.colnames.empty?)
+        # (which has no schema), not ONLY unless only is true, and with no
+        # column aliases.
+        def plain_table?(range, only: false)
+          !range.schemaname.empty? && (only || range.inh) && (range.alias.nil? || range.alias.colnames.empty?)
         end
 
         def same_table?(one, other) = [one.schemaname, one.relname] == [other.schemaname, other.relname]

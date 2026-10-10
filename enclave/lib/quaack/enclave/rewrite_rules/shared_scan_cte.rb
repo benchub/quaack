@@ -6,6 +6,7 @@ require_relative "../deparse"
 require_relative "implied_predicate_removal/containers"
 require_relative "implied_predicate_removal/expressions"
 require_relative "shared_scan_cte/copies"
+require_relative "shared_scan_cte/grouping"
 require_relative "tree"
 
 module Quaack
@@ -42,11 +43,18 @@ module Quaack
       # the WHERE. SELECT * gives the CTE the table's columns, by name and
       # type, so every reference to a copy's column reads the same value.
       #
-      # It works only on the top-level FROM, where every FROM item must
-      # have a name (a set operation has none), and only on plain tables
-      # (see Tree.plain_table?): a copy elsewhere is left alone. It refuses
-      # a table with a copy on an outer join's nullable side, and a query
-      # that already has a CTE of the name, at any depth. A name longer
+      # It works on each SELECT that can have a WITH of its own, the
+      # statement and every subquery and CTE body in it, one scope at a
+      # time (see scopes): the CTE goes in that SELECT's WITH, and a
+      # conjunct that reads an outer query isn't the copy's own, so it stays.
+      # In a scope every FROM item must have a name (a set operation has
+      # none), and only plain tables count (see Tree.plain_table?): a copy
+      # elsewhere is left alone. Copies read
+      # with ONLY share a CTE that reads ONLY the table, and never with
+      # copies that read its children too. It refuses
+      # a table with fewer than two copies off every outer join's nullable
+      # side (a copy on one is left reading the table), and a query that
+      # already has a CTE of the name, at any depth. A name longer
       # than Postgres keeps, which it would cut short, fails
       # Deparse.faithfully. A locking clause and a data-modifying CTE
       # never get here: SupportedSql refuses them. A
@@ -54,11 +62,14 @@ module Quaack
       # a copy's whole row, other than as a copy.* in the select list. Last,
       # Postgres must be able to prepare the rewrite. It can't when the
       # query names a copy's system column, such as ctid, or a column as
-      # schema.table.column, or when GROUP BY relied on the table's primary
-      # key. It states no assumptions.
+      # schema.table.column. A GROUP BY that names a copy's whole primary
+      # key, and leaves the copy's other columns to the select list, HAVING,
+      # or ORDER BY, gets those columns added (see Grouping), since the CTE
+      # has no key. It states no assumptions.
       class SharedScanCte
         include ImpliedPredicateRemoval::Expressions
         include Copies
+        include Grouping
 
         PREFIX = "quaack_scan_of_"
         # Each copy's alias becomes this when its conjuncts are compared.
@@ -70,32 +81,40 @@ module Quaack
         def name = "shared_scan_cte"
 
         def description
-          "A table read more than once in the top-level FROM is read once, by a MATERIALIZED CTE of the WHERE and " \
+          "A table read more than once in one FROM is read once, by a MATERIALIZED CTE of the WHERE and " \
             "inner-join ON conjuncts every copy shares."
         end
 
         def rewrites(parse, catalog, literals)
-          top = Tree.select(parse.tree)
-          return [] unless literals && top
+          return [] unless literals && Tree.select(parse.tree)
 
-          tables(top).filter_map { rewrite(parse.tree, it, catalog, literals) }
+          scopes(parse.tree).each_with_index.flat_map do |scope, index|
+            tables(scope).filter_map { rewrite(parse.tree, index, it, catalog, literals) }
+          end
         end
 
         private
 
-        def rewrite(original, table, catalog, literals)
+        def rewrite(original, index, table, catalog, literals)
           tree = Deparse.copy(original)
-          top = Tree.select(tree)
+          top = scopes(tree)[index]
           copies, shared = shareable(tree, top, table, literals)
           return unless shared&.any?
 
-          cte = cte(PREFIX + table.last, copies.first.table, shared)
+          cte = cte(PREFIX + table[1], copies.first.table, shared)
           return if volatile?(catalog, cte)
 
           share!(top, copies, shared, cte, literals)
-          Rewrite.new(tree:, assumptions: []) if catalog.self_contained?(Deparse.faithfully(tree))
+          Rewrite.new(tree:, assumptions: []) if prepares?(tree, top, copies, table, catalog)
         rescue Deparse::Error
           nil
+        end
+
+        # Adds what a GROUP BY that relied on a key needs, then asks whether
+        # Postgres can prepare the rewrite.
+        def prepares?(tree, top, copies, table, catalog)
+          group_by_columns!(top, copies, table, catalog)
+          catalog.self_contained?(Deparse.faithfully(tree))
         end
 
         def volatile?(catalog, cte) = catalog.calls_volatile?(Deparse.statement(cte.ctequery.select_stmt))
@@ -103,17 +122,24 @@ module Quaack
         # The table's copies, and the conjuncts they share, unless it
         # refuses them.
         def shareable(tree, top, table, literals)
-          copies = items(top).select { copy?(it) && key(it.table) == table }
-          return if copies.any?(&:nullable) || taken?(tree, PREFIX + table.last) ||
-                    whole_row?(tree, top, copies.map(&:name))
+          copies = sharing(top, table)
+          return if copies.size < 2 || taken?(tree, PREFIX + table[1]) || whole_row?(tree, top, copies.map(&:name))
 
           [copies, shared(copies, places(top), literals)]
         end
 
-        # The WHERE and each inner join's ON.
+        # The WHERE and each inner join's ON, none from inside an aliased
+        # join, whose items the query can't name.
         def places(top)
-          joins = top.from_clause.flat_map { Tree.joins(it) }.select { it.jointype == :JOIN_INNER && it.quals }
+          joins = top.from_clause.flat_map { unaliased_joins(it) }.select { it.jointype == :JOIN_INNER && it.quals }
           [WherePlace.new(top), *joins.map { OnPlace.new(it) }]
+        end
+
+        def unaliased_joins(node)
+          return [] unless node.node == :join_expr && node.join_expr.alias.nil?
+
+          join = node.join_expr
+          [*unaliased_joins(join.larg), *unaliased_joins(join.rarg), join]
         end
 
         # The first copy's conjuncts that every other copy has too, each
@@ -154,7 +180,7 @@ module Quaack
         end
 
         # Takes the shared conjuncts out of every place, points each copy
-        # at the CTE, and puts the CTE first in the top-level WITH.
+        # at the CTE, and puts the CTE first in the scope's WITH.
         def share!(top, copies, shared, cte, literals)
           places(top).each { strip!(it, copies, shared, literals) }
           copies.each { point(it.table, cte.ctename) }
@@ -174,6 +200,7 @@ module Quaack
         def point(range, name)
           range.alias ||= PgQuery::Alias.new(aliasname: range.relname)
           range.schemaname = ""
+          range.inh = true
           range.relname = name
         end
       end

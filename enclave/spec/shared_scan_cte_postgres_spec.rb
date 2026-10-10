@@ -10,7 +10,7 @@ require "quaack/enclave/rewrite_rules/shared_scan_cte"
 require_relative "support/production_server"
 
 # DESIGN.md's rewrite-rules' shared_scan_cte, on a real server: a table read more than
-# once in the top-level FROM is read once, by a MATERIALIZED CTE of the
+# once in one FROM is read once, by a MATERIALIZED CTE of the
 # conjuncts every copy shares, and every rewrite returns the original's rows.
 RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
   subject(:rule) { described_class.new }
@@ -33,7 +33,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
         (5, 3, 1, 'submitted', 1),
         (6, NULL, 2, NULL, 1),
         (7, 1, NULL, 'submitted', NULL),
-        (8, 2, 2, 'submitted', 4);
+        (8, 2, 2, 'submitted', 4),
+        (9, 1, 99, 'submitted', 1),
+        (10, 2, 2, 'SUBMITTED', 3),
+        (11, 1, 1, 'submitted', 1);
       INSERT INTO public.users VALUES (1, 'a'), (2, 'b'), (3, NULL);
     SQL
   end
@@ -104,7 +107,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
   it "has a name and a description that are QUAACK's own constants" do
     expect([rule.name, rule.description]).to eq(
       ["shared_scan_cte",
-       "A table read more than once in the top-level FROM is read once, by a MATERIALIZED CTE of the WHERE and " \
+       "A table read more than once in one FROM is read once, by a MATERIALIZED CTE of the WHERE and " \
        "inner-join ON conjuncts every copy shares."]
     )
   end
@@ -230,7 +233,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     )
   end
 
-  it "leaves a copy in a subquery reading the table, and adds to a WITH the query has" do
+  it "leaves a lone copy in a subquery or CTE alone, and adds to a WITH the query has" do
     expect_rewrites(
       "WITH graded AS (SELECT g.id FROM public.submissions g WHERE g.workflow_state = 'graded') " \
       "SELECT s.id FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
@@ -245,6 +248,75 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
       "WHERE NOT EXISTS (SELECT $6 FROM public.submissions x WHERE x.id = s.user_id AND x.workflow_state = $7) " \
       "AND NOT s.id IN (SELECT graded.id FROM graded)"
     )
+  end
+
+  describe "with copies in a subquery or a CTE body" do
+    let(:inner) do
+      "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+        "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2) AND s.user_id = u.id"
+    end
+
+    it "shares in a correlated subquery, keeping the conjuncts that read the outer query where they were" do
+      expect_rewrites(
+        "SELECT u.id FROM public.users u WHERE EXISTS (SELECT 1 FROM public.submissions s " \
+        "JOIN public.submissions a ON a.id = s.assessor_asset_id WHERE s.course_id IN (1, 2) " \
+        "AND a.course_id IN (1, 2) AND s.user_id = u.id AND a.user_id = u.id AND a.workflow_state IS NOT NULL)",
+        "SELECT u.id FROM public.users u WHERE EXISTS (WITH quaack_scan_of_submissions AS MATERIALIZED " \
+        "(SELECT * FROM public.submissions WHERE submissions.course_id IN ($2, $3)) " \
+        "SELECT $1 FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+        "ON a.id = s.assessor_asset_id WHERE s.user_id = u.id AND a.user_id = u.id AND a.workflow_state IS NOT NULL)"
+      )
+    end
+
+    it "shares in a FROM subquery and in a CTE body" do
+      body = "SELECT s.id AS sid, a.id AS aid FROM public.submissions s JOIN public.submissions a " \
+             "ON a.id = s.assessor_asset_id WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2)"
+      shared = "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+               "WHERE submissions.course_id IN ($1, $2)) SELECT s.id AS sid, a.id AS aid " \
+               "FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a ON a.id = s.assessor_asset_id"
+      expect_rewrites("SELECT x.sid, x.aid FROM (#{body}) x", "SELECT x.sid, x.aid FROM (#{shared}) x")
+      expect_rewrites("WITH w AS (#{body}) SELECT w.sid FROM w", "WITH w AS (#{shared}) SELECT w.sid FROM w")
+    end
+
+    it "makes a rewrite for the outer query and one for each subquery, whatever aliases they reuse" do
+      sql = "SELECT s.id FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+            "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2) AND s.id IN " \
+            "(SELECT s.id FROM public.users u JOIN public.submissions s ON s.user_id = u.id " \
+            "JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+            "WHERE s.workflow_state IS NOT NULL AND a.workflow_state IS NOT NULL)"
+      outer, inner = rewritten(sql)
+
+      expect(outer).to start_with("WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+                                  "WHERE submissions.course_id IN ($1, $2)) " \
+                                  "SELECT s.id FROM quaack_scan_of_submissions s")
+      expect(outer).to include("(SELECT s.id FROM public.users u JOIN public.submissions s")
+      expect(inner).to include("AND s.id IN (WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM " \
+                               "public.submissions WHERE submissions.workflow_state IS NOT NULL)")
+      expect(inner).to start_with("SELECT s.id FROM public.submissions s JOIN public.submissions a")
+      want = runs(sql)
+      expect(want).not_to be_empty
+      map = redacted(sql).placeholder_map
+      expect([rows(outer, map), rows(inner, map)]).to eq([want, want])
+    end
+
+    it "leaves a branch of a set operation alone, and shares in a subquery inside one" do
+      branch = "SELECT s.id FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+               "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2)"
+      expect_refusals("SELECT 1 UNION #{branch}" => branch, "#{branch} UNION SELECT 1" => branch)
+      expect(rewritten("WITH RECURSIVE r AS (#{branch} UNION ALL SELECT r.id FROM r WHERE false) SELECT r.id FROM r"))
+        .to eq([])
+      expect(rewritten("SELECT 1 UNION SELECT u.id FROM public.users u WHERE EXISTS (#{branch})").size).to eq(1)
+    end
+
+    it "refuses a copy in a subquery that reads a copy's whole row, and one whose CTE name is taken" do
+      expect_refusals(
+        "SELECT u.id FROM public.users u WHERE EXISTS (SELECT to_json(s) #{inner})" =>
+          "SELECT u.id FROM public.users u WHERE EXISTS (SELECT s.id #{inner})",
+        "WITH quaack_scan_of_submissions AS (SELECT 1) SELECT u.id FROM public.users u " \
+        "WHERE EXISTS (SELECT 1 #{inner})" =>
+          "WITH other AS (SELECT 1) SELECT u.id FROM public.users u WHERE EXISTS (SELECT 1 #{inner})"
+      )
+    end
   end
 
   it "accepts a name as long as Postgres keeps, and refuses a longer one", :aggregate_failures do
@@ -270,6 +342,40 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
         "SELECT u.id FROM public.users u JOIN (public.submissions s JOIN public.submissions a " \
         "ON a.id = s.assessor_asset_id AND a.course_id IN (1, 2) AND s.course_id IN (1, 2)) ON u.id = s.user_id"
     )
+  end
+
+  it "shares the copies not on a nullable side, and leaves a nullable copy reading the table", :aggregate_failures do
+    from = "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+           "LEFT JOIN public.submissions n ON n.id = s.user_id AND n.workflow_state = 'graded' " \
+           "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2) AND (n.course_id IN (1, 2) OR n.id IS NULL)"
+    expect_rewrites(
+      "SELECT s.id, a.id, n.id #{from}",
+      "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+      "WHERE submissions.course_id IN ($2, $3)) " \
+      "SELECT s.id, a.id, n.id FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+      "ON a.id = s.assessor_asset_id LEFT JOIN public.submissions n " \
+      "ON n.id = s.user_id AND n.workflow_state = $1 WHERE n.course_id IN ($6, $7) OR n.id IS NULL"
+    )
+    # A nullable copy's WHERE conjunct filters out the rows the outer join
+    # null-extends, so it can't go in the CTE, and it isn't the other
+    # copies' to share.
+    sql = "SELECT s.id, a.id, n.id FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+          "LEFT JOIN public.submissions n ON n.id = s.user_id " \
+          "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2) AND n.course_id IN (1, 2)"
+    expect_rewrites(
+      sql,
+      "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+      "WHERE submissions.course_id IN ($1, $2)) " \
+      "SELECT s.id, a.id, n.id FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+      "ON a.id = s.assessor_asset_id LEFT JOIN public.submissions n ON n.id = s.user_id " \
+      "WHERE n.course_id IN ($5, $6)"
+    )
+    wrong = "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+            "WHERE submissions.course_id IN ($1, $2)) " \
+            "SELECT s.id, a.id, n.id FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+            "ON a.id = s.assessor_asset_id LEFT JOIN quaack_scan_of_submissions n ON n.id = s.user_id"
+    expect(rows(wrong, redacted(sql).placeholder_map)).not_to eq(runs(sql))
+    expect(rewritten(sql.sub("s JOIN public.submissions a", "s LEFT JOIN public.submissions a"))).to eq([])
   end
 
   it "doesn't count an outer join's ON conjuncts" do
@@ -304,7 +410,9 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     expect_refusals(
       "WITH quaack_scan_of_submissions AS (SELECT 1) #{body}" => "WITH other AS (SELECT 1) #{body}",
       "#{body} AND EXISTS (WITH quaack_scan_of_submissions AS (SELECT 1) SELECT 1 FROM quaack_scan_of_submissions)" =>
-        "#{body} AND EXISTS (WITH other AS (SELECT 1) SELECT 1 FROM other)"
+        "#{body} AND EXISTS (WITH other AS (SELECT 1) SELECT 1 FROM other)",
+      "WITH w AS (WITH quaack_scan_of_submissions AS (SELECT 1 AS id) SELECT id FROM quaack_scan_of_submissions) " \
+      "#{body}" => "WITH w AS (WITH other AS (SELECT 1 AS id) SELECT id FROM other) #{body}"
     )
   end
 
@@ -319,7 +427,173 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     )
   end
 
-  it "needs two copies in the top-level FROM" do
+  it "reads no ON of an aliased join, whatever else it refuses" do
+    top = PgQuery.parse(
+      "SELECT 1 FROM public.users u JOIN (public.submissions s JOIN public.submissions a ON a.id = s.id) AS j " \
+      "ON j.id = u.id JOIN public.users v ON v.id = u.id WHERE true"
+    ).tree.stmts.first.stmt.select_stmt
+
+    places = rule.send(:places, top)
+
+    expect(places.size).to eq(3)
+    refs = places.flat_map(&:conditions).flat_map { Quaack::Enclave::RewriteRules::Tree.find(it, PgQuery::ColumnRef) }
+    expect(refs.filter_map { Quaack::Enclave::RewriteRules::Tree.qualified(it)&.first }.uniq).to eq(%w[j u v])
+  end
+
+  describe "with inheritance" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.places (id int, ref int, kind text);
+        CREATE TABLE public.places_child () INHERITS (public.places);
+        INSERT INTO public.places VALUES (1, 2, 'a'), (2, 1, 'a'), (3, NULL, 'a'), (4, 4, 'b'), (2, 3, 'a'), (7, 4, 'a'), (8, 7, 'a');
+        INSERT INTO public.places_child VALUES (1, 4, 'a'), (5, 1, 'a'), (6, 6, 'b'), (4, 1, NULL);
+      SQL
+    end
+
+    let(:only) do
+      "SELECT p.id, q.id FROM ONLY public.places p JOIN ONLY public.places q ON q.id = p.ref " \
+        "WHERE p.kind IN ('a', 'b') AND q.kind IN ('a', 'b')"
+    end
+
+    it "shares copies that read ONLY the table, in a CTE that reads ONLY it, and keeps the child rows out" do
+      expect_rewrites(
+        only,
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM ONLY public.places " \
+        "WHERE places.kind IN ($1, $2)) " \
+        "SELECT p.id, q.id FROM quaack_scan_of_places p JOIN quaack_scan_of_places q ON q.id = p.ref"
+      )
+      expect(runs(only)).not_to eq(runs(only.gsub("ONLY ", "")))
+    end
+
+    it "shares copies that read the children too, and doesn't mix them with the ONLY copies", :aggregate_failures do
+      all = only.gsub("ONLY ", "")
+      expect_rewrites(
+        all,
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM public.places " \
+        "WHERE places.kind IN ($1, $2)) " \
+        "SELECT p.id, q.id FROM quaack_scan_of_places p JOIN quaack_scan_of_places q ON q.id = p.ref"
+      )
+      mixed = "SELECT p.id, q.id FROM ONLY public.places p JOIN public.places q ON q.id = p.ref " \
+              "WHERE p.kind IN ('a', 'b') AND q.kind IN ('a', 'b')"
+      expect(rewritten(mixed)).to eq([])
+      expect(runs(mixed)).not_to eq(runs(only))
+    end
+
+    it "makes a rewrite for each group of one kind of copy" do
+      sql = "SELECT p.id FROM ONLY public.places p, ONLY public.places q, public.places r, public.places s " \
+            "WHERE p.kind = 'a' AND q.kind = 'a' AND r.kind = 'b' AND s.kind = 'b' AND q.id = p.ref " \
+            "AND r.id = q.ref AND s.id = r.ref"
+      expect_rewrites(
+        sql,
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM ONLY public.places WHERE places.kind = $1) " \
+        "SELECT p.id FROM quaack_scan_of_places p, quaack_scan_of_places q, public.places r, public.places s " \
+        "WHERE r.kind = $3 AND s.kind = $4 AND q.id = p.ref AND r.id = q.ref AND s.id = r.ref",
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM public.places WHERE places.kind = $3) " \
+        "SELECT p.id FROM ONLY public.places p, ONLY public.places q, quaack_scan_of_places r, " \
+        "quaack_scan_of_places s WHERE p.kind = $1 AND q.kind = $2 AND q.id = p.ref AND r.id = q.ref " \
+        "AND s.id = r.ref"
+      )
+    end
+  end
+
+  describe "with a GROUP BY that relies on the primary key" do
+    let(:from) do
+      "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+        "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2)"
+    end
+    let(:cte) do
+      "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+        "WHERE submissions.course_id IN ($1, $2)) "
+    end
+    let(:shared_from) do
+      "FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a ON a.id = s.assessor_asset_id"
+    end
+
+    it "groups by the columns the query reads that the key stood in for, in the select list, HAVING, and ORDER BY" do
+      expect_rewrites(
+        "SELECT s.id, s.user_id, count(*) #{from} GROUP BY s.id HAVING s.workflow_state <> 'x' ORDER BY s.course_id",
+        "#{cte}SELECT s.id, s.user_id, count(*) #{shared_from} GROUP BY s.id, s.user_id, s.workflow_state, " \
+        "s.course_id HAVING s.workflow_state <> $5 ORDER BY s.course_id"
+      )
+    end
+
+    it "groups by every column of a copy listed as copy.*, and by a column a subquery reads" do
+      expect_rewrites(
+        "SELECT s.*, (SELECT max(u.id) FROM public.users u WHERE u.id = a.user_id) AS m, count(a.id) #{from} " \
+        "GROUP BY s.id, a.id",
+        "#{cte}SELECT s.*, (SELECT max(u.id) FROM public.users u WHERE u.id = a.user_id) AS m, count(a.id) " \
+        "#{shared_from} GROUP BY s.id, a.id, s.course_id, s.user_id, s.workflow_state, s.assessor_asset_id, " \
+        "a.user_id"
+      )
+    end
+
+    it "does the same for every copy whose key is grouped" do
+      expect_rewrites(
+        "SELECT s.id, s.user_id, a.id, a.user_id #{from} GROUP BY s.id, a.id",
+        "#{cte}SELECT s.id, s.user_id, a.id, a.user_id #{shared_from} GROUP BY s.id, a.id, s.user_id, a.user_id"
+      )
+    end
+
+    it "leaves a GROUP BY that doesn't hold the whole key alone, as a column expression's own is" do
+      expect_rewrites(
+        "SELECT lower(s.workflow_state), count(*) #{from} GROUP BY lower(s.workflow_state)",
+        "#{cte}SELECT lower(s.workflow_state), count(*) #{shared_from} GROUP BY lower(s.workflow_state)"
+      )
+      # Adding the column the expression reads would split its groups.
+      sql = "SELECT lower(s.workflow_state), count(*) #{from} GROUP BY lower(s.workflow_state)"
+      wrong = "#{cte}SELECT lower(s.workflow_state), count(*) #{shared_from} GROUP BY lower(s.workflow_state), " \
+              "s.workflow_state"
+      expect(rows(wrong, redacted(sql).placeholder_map)).not_to eq(runs(sql))
+    end
+
+    # SupportedSql refuses grouping sets before any rule runs, so this asks the step itself.
+    it "adds nothing to grouping sets" do
+      top = PgQuery.parse(
+        "SELECT s.id, s.user_id, s.workflow_state, count(*) #{from} GROUP BY s.id, ROLLUP (s.user_id)"
+      ).tree.stmts.first.stmt.select_stmt
+      copies = Quaack::Enclave::RewriteRules::Tree.from_items(top.from_clause)
+      before = top.group_clause.map { PgQuery::Node.encode(it) }
+
+      rule.send(:group_by_columns!, top, copies, %w[public submissions true], catalog)
+      expect(top.group_clause.map { PgQuery::Node.encode(it) }).to eq(before)
+    end
+
+    it "groups by a composite key's other columns only when the whole key is grouped" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.pairs (x int, y int, v text, PRIMARY KEY (x, y));
+        INSERT INTO public.pairs VALUES (1, 1, 'a'), (1, 2, 'A'), (2, 1, NULL), (2, 2, 'a'), (3, 1, 'c');
+      SQL
+      pairs = "FROM public.pairs p JOIN public.pairs q ON q.x = p.y WHERE p.x IN (1, 2) AND q.x IN (1, 2)"
+      expect_rewrites(
+        "SELECT p.x, p.y, p.v, count(*) #{pairs} GROUP BY p.x, p.y",
+        "WITH quaack_scan_of_pairs AS MATERIALIZED (SELECT * FROM public.pairs WHERE pairs.x IN ($1, $2)) " \
+        "SELECT p.x, p.y, p.v, count(*) FROM quaack_scan_of_pairs p JOIN quaack_scan_of_pairs q ON q.x = p.y " \
+        "GROUP BY p.x, p.y, p.v"
+      )
+      # With part of the key grouped, a column an expression reads must stay out, as it would split the groups.
+      sql = "SELECT p.x, lower(p.v), count(*) #{pairs} GROUP BY p.x, lower(p.v)"
+      expect_rewrites(
+        sql,
+        "WITH quaack_scan_of_pairs AS MATERIALIZED (SELECT * FROM public.pairs WHERE pairs.x IN ($1, $2)) " \
+        "SELECT p.x, lower(p.v), count(*) FROM quaack_scan_of_pairs p JOIN quaack_scan_of_pairs q ON q.x = p.y " \
+        "GROUP BY p.x, lower(p.v)"
+      )
+    end
+
+    it "refuses when inheritance children can repeat the key" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.kids (id int PRIMARY KEY, v text);
+        CREATE TABLE public.kids_child () INHERITS (public.kids);
+        INSERT INTO public.kids VALUES (1, 'a'), (2, 'b');
+        INSERT INTO public.kids_child VALUES (1, 'c'), (2, 'b');
+      SQL
+      kids = "FROM public.kids k JOIN public.kids j ON j.id = k.id WHERE k.id IN (1, 2) AND j.id IN (1, 2)"
+      expect_refusals("SELECT k.id, k.v, count(*) #{kids} GROUP BY k.id" =>
+                        "SELECT k.id, k.v, count(*) #{kids} GROUP BY k.id, k.v")
+    end
+  end
+
+  it "needs two copies in one FROM, not one in the query and one in a subquery" do
     expect_refusals(
       "SELECT s.id FROM public.submissions s WHERE s.course_id IN (1, 2) " \
       "AND s.id IN (SELECT a.id FROM public.submissions a WHERE a.course_id IN (1, 2))" =>
@@ -347,7 +621,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     )
   end
 
-  it "refuses a set operation, an unnamed FROM item, and a rewrite that won't prepare", :aggregate_failures do
+  it "refuses a set operation and an unnamed FROM item", :aggregate_failures do
     from = "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
            "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2)"
     expect_refusals(
@@ -359,9 +633,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
       "SELECT s.id FROM (public.submissions s JOIN public.users u ON u.id = s.user_id " \
       "AND s.course_id IN (1, 2)) AS j CROSS JOIN #{from.delete_prefix("FROM ")}" =>
         "SELECT s.id FROM (public.submissions x JOIN public.users u ON u.id = x.user_id " \
-        "AND x.course_id IN (1, 2)) CROSS JOIN #{from.delete_prefix("FROM ")}",
-      "SELECT s.id, s.user_id, count(*) #{from} GROUP BY s.id" =>
-        "SELECT s.id, s.user_id, count(*) #{from} GROUP BY s.id, s.user_id"
+        "AND x.course_id IN (1, 2)) CROSS JOIN #{from.delete_prefix("FROM ")}"
     )
   end
 

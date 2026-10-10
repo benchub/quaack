@@ -78,6 +78,25 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
       .to eq([[["a"]], [["a"]], []])
   end
 
+  # Task 20261003-28: Postgres lets a GROUP BY that holds a table's primary
+  # key name that table's other columns, as long as the key is unique in the
+  # table: not deferrable, and not spread over inheritance children.
+  it "lists a primary key's columns in key order, and nothing Postgres wouldn't group by", :aggregate_failures do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.pk (b int, a int, c int, PRIMARY KEY (a, b));
+      CREATE TABLE public.nopk (a int UNIQUE NOT NULL);
+      CREATE TABLE public.late (a int, PRIMARY KEY (a) DEFERRABLE);
+      CREATE TABLE public.parent (a int PRIMARY KEY);
+      CREATE TABLE public.parented (a int PRIMARY KEY);
+      CREATE TABLE public.child () INHERITS (public.parented);
+      CREATE TABLE public.parts (a int PRIMARY KEY, d int) PARTITION BY RANGE (a);
+      CREATE TABLE public.parts_1 PARTITION OF public.parts FOR VALUES FROM (0) TO (10);
+    SQL
+
+    expect(%w[pk nopk late parent parented child missing parts].map { catalog.primary_key("public", it) })
+      .to eq([%w[a b], [], [], ["a"], [], [], [], ["a"]])
+  end
+
   it "says whether a query analyzes on its own, with placeholders Postgres types or makes text", :aggregate_failures do
     {
       "SELECT t.id FROM public.t WHERE t.id = $2" => true,
