@@ -1043,10 +1043,10 @@ RSpec.describe "quaacks report-payload" do
         "refusal" => refusal, "plans" => refusal ? {} : { "slow" => { "used" => used, "total_cost" => 1.0 } } }
     end
 
-    def covered(ddl)
-      existing = "CREATE INDEX orders_created_at_id_idx ON public.orders USING btree (created_at, id)"
+    def covered(ddl, name: "orders_created_at_id_idx", using: "btree (created_at, id)")
+      existing = "CREATE INDEX #{name} ON public.orders USING #{using}"
       { "candidate" => plain("CREATE INDEX ON public.orders USING #{ddl}"), "reason" => "covered_by_existing",
-        "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } }
+        "covered_by" => { "existing" => name, "definition" => plain(existing) } }
     end
 
     def dedupe(*drops) = { "proposals" => [], "set_aside" => [], "considered" => drops.size, "drops" => drops }
@@ -1066,6 +1066,7 @@ RSpec.describe "quaacks report-payload" do
                   "dedupe" => dedupe(covered("btree (created_at)"),
                                      covered("btree (created_at) WHERE note = '#{sentinel}'"),
                                      covered("btree (created_at)"),
+                                     covered("btree (note) WHERE note = 'x'", name: "orders_note_idx", using: partial),
                                      { "candidate" => plain("CREATE INDEX ON public.orders USING btree (id)"),
                                        "reason" => "duplicate", "covered_by" => nil }),
                   "results" => [result("btree (status)", used: false), result(partial, used: false), refused,
@@ -1119,16 +1120,29 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
-    it "sends each proposed index that already existed once, with the existing index's name and size" do
-      by = { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }
+    it "sends each proposed index that already existed once, with the existing index's name, size, and definition" do
+      by = { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960,
+             "definition" => "CREATE INDEX ON public.orders USING btree (created_at, id)" }
       expect(report["negative"]["existing"]).to eq(
         [{ "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)", "covered_by" => by,
            "searches" => ["original"] },
          { "ddl" => "CREATE INDEX ON public.orders USING btree (created_at) WHERE note = ?", "covered_by" => by,
            "searches" => %w[original rewrite_1] },
+         { "ddl" => "CREATE INDEX ON public.orders USING btree (note) WHERE note = ?",
+           "covered_by" => { "name" => "orders_note_idx", "size_bytes" => nil,
+                             "definition" => "CREATE INDEX ON public.orders USING btree (note) WHERE note = ?" },
+           "searches" => ["original"] },
          { "ddl" => "CREATE INDEX ON public.orders USING btree (created_at, id)", "covered_by" => by,
            "searches" => ["rewrite_1"] }]
       )
+    end
+
+    it "masks a partial existing index's predicate literal, and would catch one that went out" do
+      definitions = report["negative"]["existing"].map { it["covered_by"]["definition"] }
+      expect(definitions).to include("CREATE INDEX ON public.orders USING btree (note) WHERE note = ?")
+      expect_no_leaks(sentinels, outcome)
+      leaky = definitions.map { it.sub("= ?", "= '#{sentinel}'") }.join("\n")
+      expect { expect_no_leaks(sentinels, stdout: leaky) }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
     end
 
     it "sends the original query, every rewrite, and every measured label, though none was ranked" do

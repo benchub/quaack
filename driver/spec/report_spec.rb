@@ -74,7 +74,8 @@ RSpec.describe Quaack::Driver::Report do
   let(:html) { render(payload) }
 
   let(:negative) do
-    by = { "name" => "t_c_d_idx", "size_bytes" => 3 * 1024 * 1024 }
+    by = { "name" => "t_c_d_idx", "size_bytes" => 3 * 1024 * 1024,
+           "definition" => "CREATE INDEX ON public.t USING btree (c, d) WHERE d = ?" }
     { "declined" => [{ "ddl" => "CREATE INDEX ON public.t USING btree (a) WHERE a < ?", "reason" => "unused",
                        "sqlstate" => nil, "searches" => %w[original rewrite_1] },
                      { "ddl" => "CREATE INDEX ON public.t USING gin (b)", "reason" => "hypopg_refused",
@@ -1625,11 +1626,19 @@ RSpec.describe Quaack::Driver::Report do
       expect(why).to include("<td>not recorded</td></tr>")
     end
 
-    it "says which suggested indexes already existed, with the existing index and its size" do
+    it "says which suggested indexes already existed, with the existing index, its definition, and its size" do
       table = why[%r{<table id="existing-indexes">.*?</table>}m]
       expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (c)")}</td>" \
-                               "<td>#{sq("t_c_d_idx")}</td>" \
+                               "<td>#{sq("t_c_d_idx")}<br>" \
+                               "#{sq("CREATE INDEX ON public.t USING btree (c, d) WHERE d = ?")}</td>" \
                                '<td class="num">3.0 MB</td></tr>')
+    end
+
+    it "shows just the name when the payload has no definition for the existing index" do
+      negative["existing"][0]["covered_by"].delete("definition")
+      table = why[%r{<table id="existing-indexes">.*?</table>}m]
+      expect(table).to include("<td>#{sq("t_c_d_idx")}</td>")
+      expect(table).not_to include("<br>")
     end
 
     it "has no Tried for column in either index table, and keeps the other columns" do
@@ -1672,7 +1681,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(table).not_to be_nil
         expect(table).to eq(section(negative_html, "negative-result")[%r{<table id="#{id}">.*?</table>}m])
       end
-      expect(ideas).to include("<td>#{sq("t_c_d_idx")}</td>")
+      expect(ideas).to include("<td>#{sq("t_c_d_idx")}<br>")
     end
 
     it "makes the declined and existing lists rose folds that start open and that a link opens" do
@@ -2791,8 +2800,8 @@ RSpec.describe Quaack::Driver::Report do
         "negative" => { "declined" => [{ "ddl" => z, "reason" => "hypopg_refused", "sqlstate" => z,
                                          "searches" => [z, "rewrite_#{z}"] },
                                        { "ddl" => nil, "reason" => z, "sqlstate" => z, "searches" => [z] }],
-                        "existing" => [{ "ddl" => z, "covered_by" => { "name" => z, "size_bytes" => z },
-                                         "searches" => [z] }] }
+                        "existing" => [{ "ddl" => z, "searches" => [z],
+                                         "covered_by" => { "name" => z, "size_bytes" => z, "definition" => z } }] }
       )
     end
 

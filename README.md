@@ -697,7 +697,7 @@ This section appears only when no candidate won. It has:
 
 - **The rewrites:** each one's source and what became of it, in the same sentences as under the queries.
 - **Indexes the planner wouldn't use:** a table of each index QUAACK thought of and the planner never chose, even when trying it cost nothing, and why not.
-- **Indexes QUAACK thought of that you already have:** each one, your index that covers it, and that index's size. If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.
+- **Indexes QUAACK thought of that you already have:** each one, your index that covers it (its name and its definition, with any partial index's constants hidden), and that index's size. If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.
 
 "Nothing helps" is a real answer. It often means the query is already as good as its indexes allow, and the fix is in the app: fetch less, or cache it.
 
