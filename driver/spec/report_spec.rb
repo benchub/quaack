@@ -137,7 +137,10 @@ RSpec.describe Quaack::Driver::Report do
 
       it "uses only variables that :root defines" do
         used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
-        expect(used - names).to eq([])
+        folds = %w[--fold-bg --fold-edge --fold-accent] # set per fold color by details.query and details.rose
+        expect(used - names - folds).to eq([])
+        expect(style.scan(/^  details\.(?:query|rose) \{ --fold-bg: var/).size).to eq(2)
+        expect(names).to include("--rose-bg", "--rose-edge", "--rose-accent")
       end
 
       it "gives every funnel color and the funnel's grey a variable that :root defines" do
@@ -427,7 +430,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows every rewrite, ranked or not, pretty-printed, in order" do
       payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5")
-      opening = %(<details class="query" id="rewrite-(\\d+)">\n<summary>)
+      opening = %(<details class="fold query" id="rewrite-(\\d+)">\n<summary>)
       expect(queries.scan(%r{<article class="rewrite">#{opening}<h3>([^<]+)</h3>}))
         .to eq([["1", "Rewrite Vivid Cove"], ["2", "Rewrite Smooth Kayak"]])
       expect(queries).to include("<code>SELECT id\nFROM t\nWHERE a &lt; $1\nORDER BY id</code>")
@@ -438,7 +441,7 @@ RSpec.describe Quaack::Driver::Report do
       payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5", source: "llm")
       same_plans = esc("Postgres plans it exactly as it plans the original query, so it can't run any differently. " \
                        "QUAACK didn't test it further.")
-      blocks = queries.scan(%r{<details class="query"[^>]*>\s*<summary>(.*?)</summary>(.*?)</details>}m)
+      blocks = queries.scan(%r{<details class="fold query"[^>]*>\s*<summary>(.*?)</summary>(.*?)</details>}m)
       expect(blocks.map(&:first)).to eq(
         ["<h3>The original query</h3>",
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: made by QUAACK&#39;s own rewrite " \
@@ -490,29 +493,38 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "points each link into the queries at the collapsed section, which opens to show it" do
-      expect(html).to include('<details class="query" id="rewrite-1">')
+      expect(html).to include('<details class="fold query" id="rewrite-1">')
       expect(html.scan(' id="rewrite-1"').size).to eq(1)
-      expect(html).to include("details.query:target::details-content { content-visibility: visible; }")
+      expect(html).to include("details.fold:target::details-content { content-visibility: visible; }")
     end
 
-    it "styles each query section with a violet stripe and background, unlike the blue verdict" do
-      expect(html).to include("details.query { background: var(--query-bg); border-left: 5px solid var(--query-edge);")
+    it "styles each fold with a stripe and background from its color, violet for a query, unlike the blue verdict" do
+      expect(html).to include("details.query { --fold-bg: var(--query-bg); --fold-edge: var(--query-edge); " \
+                              "--fold-accent: var(--query-accent); }")
+      expect(html).to include("details.fold { background: var(--fold-bg); border-left: 5px solid var(--fold-edge);")
       expect(html).to include("scroll-margin-top: 0.5rem; }")
     end
 
-    it "pins an open query's summary bar to the top of the window, in the section's background" do
-      expect(html).to include("details.query > summary { position: sticky; top: 0; z-index: 1;")
-      expect(html).to include("background: var(--query-bg); padding: 0.5rem 7rem 0.5rem 0;")
+    it "pins an open fold's summary bar to the top of the window, in the section's background" do
+      expect(html).to include("details.fold > summary { position: sticky; top: 0; z-index: 1;")
+      expect(html).to include("background: var(--fold-bg); padding: 0.5rem 7rem 0.5rem 0;")
     end
 
     it "labels the bar Collapse while open and Expand while closed, with no script" do
-      expect(html).to include('details.query > summary::after { content: "\\25BC  Expand";')
-      expect(html).to include('details.query[open] > summary::after { content: "\\25B2  Collapse"; }')
+      expect(html).to include('details.fold > summary::after { content: "\\25BC  Expand";')
+      expect(html).to include('details.fold[open] > summary::after { content: "\\25B2  Collapse"; }')
       expect(html).not_to include("<script")
     end
 
     it "outlines the section a link lands on, so it stands out from the others" do
-      expect(html).to include("details.query:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }")
+      expect(html).to include("details.fold:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }")
+    end
+
+    it "colors the not-ranked and index-idea folds rose, with its own light and dark values" do
+      expect(html).to include("details.rose { --fold-bg: var(--rose-bg); --fold-edge: var(--rose-edge); " \
+                              "--fold-accent: var(--rose-accent); }")
+      expect(html).to include("--rose-bg: #fcedf2; --rose-edge: #b02a5b; --rose-accent: #8e1f48;")
+      expect(html).to include("--rose-bg: #33202a; --rose-edge: #e0699a; --rose-accent: #f2a3c4;")
     end
 
     it "shows SQL that pg_query can't parse as it was sent, escaped" do
@@ -843,6 +855,7 @@ RSpec.describe Quaack::Driver::Report do
 
   describe "the ranking" do
     let(:ranking) { section(html, "ranking") }
+    let(:opening) { '<details class="fold rose" id="not-ranked-section">' }
 
     it "ranks the candidates within each kind, each described in words" do
       expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
@@ -972,7 +985,7 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "is a table behind a collapsed section, with a row each for what it was, who proposed it, and why" do
-        collapsed = ranking[%r{<details class="not-ranked">\s*<summary>(.*?)</summary>(.*?)</details>}m, 0]
+        collapsed = ranking[%r{#{opening}\s*<summary>(.*?)</summary>(.*?)</details>}m, 0]
         expect(collapsed).to include("<summary>Show the 1 thing QUAACK tried that didn't pan out</summary>")
         expect(collapsed).to include(unranked)
         expect(ranking).not_to match(/<details[^>]*\bopen\b/)
@@ -1097,7 +1110,7 @@ RSpec.describe Quaack::Driver::Report do
     it "says there's no ranking when nothing beat the original, and still says how each candidate measured" do
       ranking = section(render(negative_payload), "ranking")
       expect(ranking).to include("Nothing beat the original query, so there is no ranking.")
-      expect(ranking.sub(%r{<details class="not-ranked">.*?</details>}m, "")).not_to include("<tr")
+      expect(ranking.sub(%r{#{opening}.*?</details>}m, "")).not_to include("<tr")
       expect(ranking).to include("<tr><td>The original query with a new index on #{sq("public.t (created_at)")}</td>" \
                                  '<td class="missing">not recorded</td><td>Read 990 blocks on the ' \
                                  "slow values, against 1,000 for the original query, which isn&#39;t more than " \
@@ -1489,6 +1502,16 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).not_to include("negative-result")
     end
 
+    it "makes the rewrites, declined, and existing lists rose folds that start open" do
+      folds = why.scan(%r{<details class="fold rose" id="([a-z-]+)" open>\s*<summary><h3>(.*?)</h3></summary>})
+      expect(folds).to eq([["ideas-rewrites", "The rewrites"],
+                           ["ideas-declined", "Indexes the planner wouldn't use"],
+                           ["ideas-existing", "Indexes QUAACK thought of that you already have"]])
+      expect(why.scan("<details").size).to eq(3)
+      expect(why.scan("</details>").size).to eq(3)
+      expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m]).to include('<ul id="negative-rewrites">')
+    end
+
     it "says what became of every rewrite, with its source, in words" do
       list = why[%r{<ul id="negative-rewrites">.*?</ul>}m]
       expect(list.scan(/<li>(Rewrite [^(]+) \(/).flatten)
@@ -1580,6 +1603,16 @@ RSpec.describe Quaack::Driver::Report do
         expect(table).to eq(section(negative_html, "negative-result")[%r{<table id="#{id}">.*?</table>}m])
       end
       expect(ideas).to include("<td>the original query, rewrite Smooth Kayak</td><td>#{sq("t_c_d_idx")}</td>")
+    end
+
+    it "makes the declined and existing lists rose folds that start open and that a link opens" do
+      folds = ideas.scan(%r{<details class="fold rose" id="([a-z-]+)" open>\s*<summary><h3>(.*?)</h3></summary>})
+      expect(folds).to eq([["ideas-declined", "Indexes the planner wouldn't use"],
+                           ["ideas-existing", "Indexes QUAACK thought of that you already have"]])
+      expect(ideas.scan("<details").size).to eq(2)
+      expect(ideas.scan("</details>").size).to eq(2)
+      expect(ideas[%r{<details[^>]*id="ideas-declined".*?</details>}m]).to include('<table id="declined-indexes">')
+      expect(ideas[%r{<details[^>]*id="ideas-existing".*?</details>}m]).to include('<table id="existing-indexes">')
     end
 
     it "leaves the section out when the payload has no lists" do
@@ -2682,8 +2715,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "prints, escaped, every value a winning report shows" do
       expect_escaped(rendered(sentinels),
-                     "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<details class="query" id="',
-                     %(<article class="rewrite"><details class="query" id="#{escaped}">\n<summary><h3>),
+                     "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<details class="fold query" id="',
+                     %(<article class="rewrite"><details class="fold query" id="#{escaped}">\n<summary><h3>),
                      %(<span class="note">),
                      "<code>SELECT ", "rewrite rules ", '<li><code class="sql">',
                      '<tr class="rank"><td class="num">1</td><td>',

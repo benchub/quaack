@@ -8,6 +8,7 @@
     --head-bg: #f3f5f8; --code-bg: #f3f5f8; --muted: #5c6674; --note: #515b69;
     --baseline-bg: #f7f8fa; --differs-bg: #fff4d6;
     --query-bg: #f4effb; --query-edge: #7b4bb3; --query-accent: #5b3a8a;
+    --rose-bg: #fcedf2; --rose-edge: #b02a5b; --rose-accent: #8e1f48;
     --funnel-text: #1c2430; --funnel-count: #515b69;
     --uncounted-fill: #eef0f3; --uncounted-stroke: #8a929d; --known-line: #5b6470; --hatch: #b5bcc6;
     --good-bg: #e8f5e9; --good-edge: #2e7d32; --minor-bg: #fbf5e1; --minor-edge: #b08a1e;
@@ -21,6 +22,7 @@
       --head-bg: #252c37; --code-bg: #252c37; --muted: #9aa5b4; --note: #a9b3c1;
       --baseline-bg: #1c222b; --differs-bg: #3d3216;
       --query-bg: #251d33; --query-edge: #a37ad6; --query-accent: #c4a3ee;
+      --rose-bg: #33202a; --rose-edge: #e0699a; --rose-accent: #f2a3c4;
       --funnel-text: #e6eaf0; --funnel-count: #a9b3c1;
       --uncounted-fill: #232932; --uncounted-stroke: #7d8794; --known-line: #9aa5b4; --hatch: #4a5463;
       --good-bg: #17291c; --good-edge: #5cb372; --minor-bg: #2b2614; --minor-edge: #d1ad4a;
@@ -70,13 +72,15 @@
   /* The body repeats the warning, so show it once while the section is open. */
   details[open] > summary .warn { display: none; }
   /* ::details-content needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section. */
-  details.query:target::details-content { content-visibility: visible; }
-  details.query:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }
-  details.query { background: var(--query-bg); border-left: 5px solid var(--query-edge); padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
-  details.query > summary { position: sticky; top: 0; z-index: 1; background: var(--query-bg); padding: 0.5rem 7rem 0.5rem 0; }
-  details.query > summary::after { content: "\25BC  Expand"; position: absolute; top: 0.5rem; right: 0; color: var(--query-accent); font-weight: 600; }
-  details.query[open] > summary::after { content: "\25B2  Collapse"; }
-  details.query > pre.sql, details.not-ranked > table { margin-top: 0.5rem; }
+  details.fold:target::details-content { content-visibility: visible; }
+  details.fold:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }
+  details.query { --fold-bg: var(--query-bg); --fold-edge: var(--query-edge); --fold-accent: var(--query-accent); }
+  details.rose { --fold-bg: var(--rose-bg); --fold-edge: var(--rose-edge); --fold-accent: var(--rose-accent); }
+  details.fold { background: var(--fold-bg); border-left: 5px solid var(--fold-edge); padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
+  details.fold > summary { position: sticky; top: 0; z-index: 1; background: var(--fold-bg); padding: 0.5rem 7rem 0.5rem 0; }
+  details.fold > summary::after { content: "\25BC  Expand"; position: absolute; top: 0.5rem; right: 0; color: var(--fold-accent); font-weight: 600; }
+  details.fold[open] > summary::after { content: "\25B2  Collapse"; }
+  details.fold > pre.sql, details.fold > table, details.fold > ul { margin-top: 0.5rem; }
   svg.funnel { display: block; width: 100%; height: auto; margin: 0.75rem 0; }
   svg.funnel text { font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--funnel-text); }
   svg.funnel text.stage { font-weight: 600; }
@@ -107,12 +111,12 @@
 </section>
 <section id="queries"><h2>The queries</h2>
 <p class="note">Each <code class="sql">$1</code>, <code class="sql">$2</code>, and so on stands for a value from the original query. The values themselves never leave your jump server.</p>
-<details class="query">
+<details class="fold query">
 <summary><h3>The original query</h3></summary>
 <%= sql(original_sql) %>
 </details>
 <% rewrites.each do |r| %>
-<article class="rewrite"><details class="query" id="<%= h anchor(r["rewrite"]) %>">
+<article class="rewrite"><details class="fold query" id="<%= h anchor(r["rewrite"]) %>">
 <summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= source_html(r) %>.</span> <span class="fate">What became of it: <%= h fate(r) %></span><% if (warn = warning(r)) %> <span class="warn"><%= h warn %></span><% end %></summary>
 <% if (warn = warning(r, body: true)) %>
 <p class="warn body-warn"><%= h warn %></p>
@@ -152,7 +156,7 @@
 <% end %>
 <% unless unranked.empty? %>
 <h3>Measured, and not ranked</h3>
-<details class="not-ranked">
+<details class="fold rose" id="not-ranked-section">
 <summary>Show the <%= h Words.count(unranked.size, "thing") %> QUAACK tried that didn't pan out</summary>
 <table id="not-ranked"><thead><tr><th scope="col">What it was</th><th scope="col">Who proposed it</th><th scope="col">Why it didn't make the cut</th></tr></thead>
 <tbody>
@@ -218,15 +222,18 @@
 <section id="index-ideas"><h2>Index ideas that went nowhere</h2>
 <% elsif negative %>
 <section id="negative-result"><h2>Why nothing beat the original query</h2>
-<h3>The rewrites</h3>
+<details class="fold rose" id="ideas-rewrites" open>
+<summary><h3>The rewrites</h3></summary>
 <% if rewrites.empty? %>
 <p>QUAACK kept no rewrite to test.</p>
 <% else %>
 <ul id="negative-rewrites"><% rewrites.each do |r| %><li><%= h fate_line(r) %></li><% end %></ul>
 <% end %>
+</details>
 <% end %>
 <% if negative %>
-<h3>Indexes the planner wouldn't use</h3>
+<details class="fold rose" id="ideas-declined" open>
+<summary><h3>Indexes the planner wouldn't use</h3></summary>
 <% if negative["declined"].empty? %>
 <p>The planner would have used every index QUAACK thought of.</p>
 <% else %>
@@ -238,7 +245,9 @@
 <% end %>
 </tbody></table>
 <% end %>
-<h3>Indexes QUAACK thought of that you already have</h3>
+</details>
+<details class="fold rose" id="ideas-existing" open>
+<summary><h3>Indexes QUAACK thought of that you already have</h3></summary>
 <% if negative["existing"].empty? %>
 <p>None of the indexes QUAACK thought of already existed.</p>
 <% else %>
@@ -250,6 +259,7 @@
 <% end %>
 </tbody></table>
 <% end %>
+</details>
 </section>
 <% end %>
 <section id="indexes"><h2><%= winner ? "Proposed indexes" : "Indexes QUAACK built and measured" %></h2>

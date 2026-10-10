@@ -60,8 +60,8 @@ RSpec.describe Quaack::Driver::Report do
     described_class.render(payload, run_id: "RUN-1", llm_calls:, llm: { "record" => record, "calls" => calls })
   end
 
-  def summary(number) = html[%r{<details class="query" id="rewrite-#{number}">.*?</summary>}m]
-  def details(number) = html[%r{<details class="query" id="rewrite-#{number}">.*?</details></article>}m]
+  def summary(number) = html[%r{<details class="fold query" id="rewrite-#{number}">.*?</summary>}m]
+  def details(number) = html[%r{<details class="fold query" id="rewrite-#{number}">.*?</details></article>}m]
 
   def rows(id)
     table = html[%r{<table id="#{id}">.*?</table>}m]
