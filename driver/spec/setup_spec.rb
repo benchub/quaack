@@ -11,13 +11,20 @@ require "quaack/driver/setup"
 # records each call.
 RSpec.describe Quaack::Driver::Setup do
   let(:order) do
-    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
+    %w[inventory qualify run-server schema-dump statistics volatility classify redact literals clock-anchor
        racetrack-setup]
   end
   let(:outputs) do
     %w[inventory run_server qualified_query schema_subset statistics volatility classification redacted_plan
        literal_sets clock_replacements racetrack_setup]
   end
+  # Task 20261008-38 review: run-server compares only the tablespaces qualify
+  # recorded, so qualify must run first.
+  it "runs qualify before run-server, which reads what qualify recorded" do
+    subcommands = described_class::STEPS.map(&:subcommand)
+    expect(subcommands.index("qualify")).to be < subcommands.index("run-server")
+  end
+
   let(:entries) { {} }
   let(:failing) { {} }
   let(:transport) do
@@ -87,8 +94,8 @@ RSpec.describe Quaack::Driver::Setup do
 
     expect(subcommands).not_to include("run-server")
     expect(io.string.lines.grep(/run-server\)$/)).to eq(
-      ["quaack: [2/11] Already done, skipping: Checking the run server (run-server)\n",
-       "quaack: [2/11] Ignoring --host and --port, since the run already checked its run server. " \
+      ["quaack: [3/11] Already done, skipping: Checking the run server (run-server)\n",
+       "quaack: [3/11] Ignoring --host and --port, since the run already checked its run server. " \
        "To use another run server, start a new run with `quaack start` (run-server)\n"]
     )
     expect(io.string).not_to include("rs-1", "6432")
@@ -148,8 +155,8 @@ RSpec.describe Quaack::Driver::Setup do
 
     expect(io.string.lines.grep_v(/Done in/)).to eq(
       ["quaack: [1/11] Already done, skipping: Reading production's version, settings, and extensions (inventory)\n",
-       "quaack: [2/11] Checking the run server (run-server)\n",
-       "quaack: [3/11] Finding the tables the query reads (qualify)\n",
+       "quaack: [2/11] Finding the tables the query reads (qualify)\n",
+       "quaack: [3/11] Checking the run server (run-server)\n",
        "quaack: [4/11] Dumping the schema of those tables (schema-dump)\n",
        "quaack: [5/11] Reading the planner statistics for those tables (statistics)\n",
        "quaack: [6/11] Checking the query calls no volatile functions (volatility)\n",

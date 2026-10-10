@@ -19,7 +19,7 @@ RSpec.describe "quaack setup" do
   let(:hosts) { [] }
   let(:timeouts) { [] }
   let(:order) do
-    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
+    %w[inventory qualify run-server schema-dump statistics volatility classify redact literals clock-anchor
        racetrack-setup]
   end
   let(:entries) { {} }
@@ -92,7 +92,7 @@ RSpec.describe "quaack setup" do
   end
 
   it "skips the steps the store says are done" do
-    entries.merge!("inventory" => true, "run_server" => true)
+    entries.merge!("inventory" => true, "qualified_query" => true)
 
     expect(cli.run(["setup", "--run", run_id])).to eq(0)
 
@@ -107,7 +107,7 @@ RSpec.describe "quaack setup" do
 
     expect(cli.run(["setup", "--run", run_id])).to eq(1)
 
-    expect(subcommands).to eq(%w[version status inventory run-server qualify])
+    expect(subcommands).to eq(%w[version status inventory qualify])
     expect([stdout.string, errors])
       .to eq(["", "quaack setup failed: unknown_relation: #{Quaack::Driver::FixedNotes.for("unknown_relation", "")}\n"])
   end

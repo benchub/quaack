@@ -92,6 +92,30 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect_no_leaks(sentinels, outcome)
     end
 
+    # Task 20261008-38 review: setup runs qualify before run-server, so
+    # run-server reads qualify's own relation_tablespaces. A tablespace of
+    # production's that the query's tables don't use is missing here, by
+    # name, and the run server still passes; one they do use fails.
+    it "compares only the tablespaces qualify recorded for the query, run after qualify" do
+      record_inventory { it["tablespaces"][sentinels.word] = [] }
+      store.write("server", production.host)
+      production.connect.tap { it.exec("CREATE TABLE public.ts_probe (id int)") }.close
+      store.write("query", "SELECT id FROM ts_probe")
+      store.write("plan", [{ "Plan" => { "Node Type" => "Result" }, "Settings" => { "search_path" => "public" } }])
+      pgpass
+      qualify = quaacks.run("qualify", "--run", store.run_id,
+                            env: libpq_env(PGPORT: production.port.to_s, PGUSER: production.user,
+                                           PGDATABASE: production.name))
+      expect(qualify.stdout).to eq(done)
+      close_every_harness_connection
+
+      expect(run_server.stdout).to eq(done)
+
+      store.write("relation_tablespaces", [sentinels.word])
+      close_every_harness_connection
+      expect(run_server.stdout).to eq(error_line("run_server_tablespace_mismatch"))
+    end
+
     # PgBouncer in session mode in front of the run server reports a pid of
     # its own to libpq, not the server backend's (DESIGN.md's run-server).
     it "records a run server behind PgBouncer in session mode" do
