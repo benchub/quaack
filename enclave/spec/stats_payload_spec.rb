@@ -77,6 +77,24 @@ RSpec.describe Quaack::Enclave::StatsPayload do
       .to eq("orders" => [], "customers" => %w[id name email region])
   end
 
+  it "maps a list exactly as long as the table's columns, not keeping the whole table" do
+    expect(kept("SELECT o.e FROM public.orders o(a, b, c, d, e)"))
+      .to eq("orders" => %w[created_at], "customers" => [])
+  end
+
+  it "keeps every column of the tables under a join alias that has a column list" do
+    sql = "SELECT j.x FROM (public.orders o JOIN public.customers c ON o.customer_id = c.id) j(x)"
+
+    expect(kept(sql)).to eq("orders" => %w[id customer_id status note created_at],
+                            "customers" => %w[id name email region])
+  end
+
+  it "keeps only what it references under a join alias with no column list" do
+    sql = "SELECT j.status FROM (public.orders o JOIN public.customers c ON o.customer_id = c.id) j"
+
+    expect(kept(sql)).to eq("orders" => %w[customer_id status], "customers" => %w[id])
+  end
+
   it "keeps an unqualified or unresolvable column for every table that has it" do
     sql = "SELECT name, sub.status FROM public.orders o JOIN public.customers c ON true " \
           "JOIN (SELECT 1) sub ON id = 1"

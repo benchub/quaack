@@ -83,7 +83,7 @@ module Quaack
         nodes = []
         walk(tree, nodes)
         aliases = alias_map(nodes)
-        Collector.new(aliases, renames(nodes)).collect(nodes)
+        Collector.new(aliases, renames(nodes), listed_join_tables(nodes)).collect(nodes)
       rescue PgQuery::ParseError
         :all
       end
@@ -122,6 +122,26 @@ module Quaack
         end
       end
 
+      # The [schema, name] of every table under a join alias that has a column
+      # list, such as `(a JOIN b ON ...) j(x)`. The list renames columns of the
+      # join's output, which this doesn't map back, so all of those tables stay whole.
+      def listed_join_tables(nodes)
+        nodes.flat_map do |key, value|
+          key == :join_expr && value.dig(:alias, :colnames) ? range_vars_under(value).map { target(it) } : []
+        end.uniq
+      end
+
+      def range_vars_under(node, found = [])
+        case node
+        when Hash
+          node.each do |key, value|
+            key == :range_var ? found << value : range_vars_under(value, found)
+          end
+        when Array then node.each { range_vars_under(it, found) }
+        end
+        found
+      end
+
       def target(range_var)
         [range_var[:schemaname].to_s.empty? ? nil : range_var[:schemaname], range_var[:relname]]
       end
@@ -132,10 +152,10 @@ module Quaack
 
       # Builds one query's Keep from its ColumnRefs and joins.
       class Collector
-        def initialize(aliases, renames)
+        def initialize(aliases, renames, full)
           @aliases = aliases
           @renames = renames
-          @full = []
+          @full = full.dup
           @columns = []
         end
 
