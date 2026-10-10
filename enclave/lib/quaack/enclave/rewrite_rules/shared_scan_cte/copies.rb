@@ -26,6 +26,9 @@ module Quaack
             items if items.none? { it.name.nil? }
           end
 
+          # The table's copies that aren't on an outer join's nullable side.
+          def sharing(top, table) = items(top).select { copy?(it) && key(it.table) == table && !it.nullable }
+
           def copy?(item) = item.table && Tree.plain_table?(item.table, only: true)
 
           def key(range) = [range.schemaname, range.relname, range.inh]

@@ -47,8 +47,9 @@ module Quaack
       # (see Tree.plain_table?): a copy elsewhere is left alone. Copies read
       # with ONLY share a CTE that reads ONLY the table, and never with
       # copies that read its children too. It refuses
-      # a table with a copy on an outer join's nullable side, and a query
-      # that already has a CTE of the name, at any depth. A name longer
+      # a table with fewer than two copies off every outer join's nullable
+      # side (a copy on one is left reading the table), and a query that
+      # already has a CTE of the name, at any depth. A name longer
       # than Postgres keeps, which it would cut short, fails
       # Deparse.faithfully. A locking clause and a data-modifying CTE
       # never get here: SupportedSql refuses them. A
@@ -105,9 +106,8 @@ module Quaack
         # The table's copies, and the conjuncts they share, unless it
         # refuses them.
         def shareable(tree, top, table, literals)
-          copies = items(top).select { copy?(it) && key(it.table) == table }
-          return if copies.any?(&:nullable) || taken?(tree, PREFIX + table[1]) ||
-                    whole_row?(tree, top, copies.map(&:name))
+          copies = sharing(top, table)
+          return if copies.size < 2 || taken?(tree, PREFIX + table[1]) || whole_row?(tree, top, copies.map(&:name))
 
           [copies, shared(copies, places(top), literals)]
         end

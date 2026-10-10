@@ -33,7 +33,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
         (5, 3, 1, 'submitted', 1),
         (6, NULL, 2, NULL, 1),
         (7, 1, NULL, 'submitted', NULL),
-        (8, 2, 2, 'submitted', 4);
+        (8, 2, 2, 'submitted', 4),
+        (9, 1, 99, 'submitted', 1);
       INSERT INTO public.users VALUES (1, 'a'), (2, 'b'), (3, NULL);
     SQL
   end
@@ -270,6 +271,40 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
         "SELECT u.id FROM public.users u JOIN (public.submissions s JOIN public.submissions a " \
         "ON a.id = s.assessor_asset_id AND a.course_id IN (1, 2) AND s.course_id IN (1, 2)) ON u.id = s.user_id"
     )
+  end
+
+  it "shares the copies not on a nullable side, and leaves a nullable copy reading the table", :aggregate_failures do
+    from = "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+           "LEFT JOIN public.submissions n ON n.id = s.user_id AND n.workflow_state = 'graded' " \
+           "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2) AND (n.course_id IN (1, 2) OR n.id IS NULL)"
+    expect_rewrites(
+      "SELECT s.id, a.id, n.id #{from}",
+      "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+      "WHERE submissions.course_id IN ($2, $3)) " \
+      "SELECT s.id, a.id, n.id FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+      "ON a.id = s.assessor_asset_id LEFT JOIN public.submissions n " \
+      "ON n.id = s.user_id AND n.workflow_state = $1 WHERE n.course_id IN ($6, $7) OR n.id IS NULL"
+    )
+    # A nullable copy's WHERE conjunct filters out the rows the outer join
+    # null-extends, so it can't go in the CTE, and it isn't the other
+    # copies' to share.
+    sql = "SELECT s.id, a.id, n.id FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+          "LEFT JOIN public.submissions n ON n.id = s.user_id " \
+          "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2) AND n.course_id IN (1, 2)"
+    expect_rewrites(
+      sql,
+      "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+      "WHERE submissions.course_id IN ($1, $2)) " \
+      "SELECT s.id, a.id, n.id FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+      "ON a.id = s.assessor_asset_id LEFT JOIN public.submissions n ON n.id = s.user_id " \
+      "WHERE n.course_id IN ($5, $6)"
+    )
+    wrong = "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+            "WHERE submissions.course_id IN ($1, $2)) " \
+            "SELECT s.id, a.id, n.id FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a " \
+            "ON a.id = s.assessor_asset_id LEFT JOIN quaack_scan_of_submissions n ON n.id = s.user_id"
+    expect(rows(wrong, redacted(sql).placeholder_map)).not_to eq(runs(sql))
+    expect(rewritten(sql.sub("s JOIN public.submissions a", "s LEFT JOIN public.submissions a"))).to eq([])
   end
 
   it "doesn't count an outer join's ON conjuncts" do
