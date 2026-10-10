@@ -9451,3 +9451,19 @@ From the review of 20261009-60 and -61 (minor).
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-64 branch; review clean). `spec/transform_docs_spec.rb` pins each docs page's exact wording and anchor and DESIGN.md's heading slug (DESIGN.md's heading stays "rewrite-rules. Mechanical rules."; only the mermaid label changed); the Ranking tint check adds a hue gap of at least 20 degrees to the distance floor of 15 (raising the floor to 20 would fail two dark tints); the link spec covers the three tints. Minor findings: 20261009-66.
+
+### 20261003-28. `shared_scan_cte`: widenings.
+
+Minor follow-ups from building 20261002-6. Each one widens what the rule covers; none is a correctness bug.
+
+- **Copies inside subqueries or CTE bodies aren't shared.** Only the top-level `FROM` is searched.
+- **One nullable copy refuses the whole group.** When another two or more copies are on inner joins, they could still share a CTE.
+- **A GROUP BY that relies on the primary key is refused.** Postgres can't prepare the rewrite, since a CTE has no primary key. The rule could add the select list's columns to the GROUP BY.
+- **`places()` descends into aliased joins.** Only the refusal of unnamed FROM items stops it. Make it stop there by itself, so later widenings can't trip on it.
+- **`ONLY` tables aren't shared.**
+
+- **Depends on:** 20261002-6.
+- **Came from:** The build of 20261002-6, 2026-10-03.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261003-28; Opus review clean). All five widenings, each with equivalence conditions, a Postgres-backed test against the original on data with NULLs and duplicates, and mutation checks: places() stops at aliased joins by itself; ONLY copies share only with ONLY copies, the CTE reads `FROM ONLY`; copies off every outer join's nullable side share (at least two) while a nullable copy keeps reading the base table; a GROUP BY that groups a copy's whole primary key gets the copy's read columns added (refused for deferrable keys, inheritance, grouping sets); each SELECT that can carry a WITH is a scope (subqueries, sublinks, CTE bodies; set-operation arms are not). `Tree.find_all` added (finds nested matches; only this rule uses it). Not covered: ordinal GROUP BY, copies in set-operation arms, two scopes of one query rewritten in one chain. On the unreleased list. Minor finding: 20261010-1.

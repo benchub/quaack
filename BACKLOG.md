@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-37: `winner-summary` added to `Protocol::Burndown::LLM_STEPS` (protocol; the enclave's behavior is unchanged, but the protocol gem's file differs under the same VERSION).
 - 20261009-40: `untested_unchanged` (enclave `AtomPosition`, `Protocol::UnchangedAtoms`, an egress subset check) sends which untested atoms are in an unchanged part of the rewrite (enclave and protocol).
 - 20261009-57: the redaction re-check reads a jsonb `?` operator correctly (enclave).
+- 20261003-28: `shared_scan_cte` widenings: copies in subqueries and CTE bodies, a nullable copy, GROUP BY on the primary key, ONLY, aliased joins (enclave).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
 - 20261009-63: a constant conjunct in a rewrite counts as new material in `AtomPosition` (enclave).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
@@ -281,20 +282,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-28. `shared_scan_cte`: widenings.
-
-Minor follow-ups from building 20261002-6. Each one widens what the rule covers; none is a correctness bug.
-
-- **Copies inside subqueries or CTE bodies aren't shared.** Only the top-level `FROM` is searched.
-- **One nullable copy refuses the whole group.** When another two or more copies are on inner joins, they could still share a CTE.
-- **A GROUP BY that relies on the primary key is refused.** Postgres can't prepare the rewrite, since a CTE has no primary key. The rule could add the select list's columns to the GROUP BY.
-- **`places()` descends into aliased joins.** Only the refusal of unnamed FROM items stops it. Make it stop there by itself, so later widenings can't trip on it.
-- **`ONLY` tables aren't shared.**
-
-- **Depends on:** 20261002-6.
-- **Came from:** The build of 20261002-6, 2026-10-03.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261003-28. `shared_scan_cte`: widenings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings. Done, see BACKLOG-COMPLETE.md.
 
@@ -1185,4 +1173,13 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Depends on:** 20261009-64, 20261009-65.
 - **Came from:** The reviews of 20261009-64 and -65, 2026-10-09 (minor).
 - **Design:** report.
+- **Status:** todo
+
+### 20261010-1. `shared_scan_cte` GROUP BY widening: an untested guard.
+
+From the review of 20261003-28 (minor). The `ref.fields.size == 2` check in `Grouping#read_columns` (`enclave/lib/quaack/enclave/rewrite_rules/shared_scan_cte/grouping.rb`) survives mutation: no test covers it. A related case: a nested subquery that reuses the copy's alias can make the rule add that subquery's column to the outer GROUP BY (harmless or refused by the prepare check, but untested). Add a test per case that goes red without the guard, and run both rewrites against Postgres to confirm equal rows. Enclave change: unreleased list.
+
+- **Depends on:** 20261003-28.
+- **Came from:** The review of 20261003-28, 2026-10-10 (minor).
+- **Design:** rewrite-rules.
 - **Status:** todo
