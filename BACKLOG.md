@@ -1310,3 +1310,15 @@ From the review of 20261009-39 (minor, defense in depth). `negative` goes out wi
 - **Came from:** The review of 20261009-39, 2026-10-09 (minor).
 - **Design:** What goes out of the enclave, trust boundary.
 - **Status:** todo
+
+### 20261009-51. Caveat-link check: cover every caveat, and the note's other cases.
+
+From the review of 20261009-28 (minors).
+- The caveat-link spec hard-codes three fragments and a fixed payload (`items.size == caveats.size` guards the count). A new caveat triggered only by other payload fields would go unchecked. Iterate over `Verdict#caveats` with a payload that turns on every condition, or build the payload from the list of conditions, so a new caveat can't skip the check.
+- The two timed-out caveats carry a `nil` subject, so the check asserts only that the target exists; 20261009-29 replaces that.
+- No spec covers the hidden-statistics note with extended statistics objects only, or with both objects and indexes (the reviewer's probe showed it renders; pin it).
+
+- **Depends on:** 20261009-28.
+- **Came from:** The review of 20261009-28, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
