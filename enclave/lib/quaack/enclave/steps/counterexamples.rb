@@ -103,7 +103,8 @@ module Quaack
           end
 
           def discarded
-            { "passed" => false, "scenario" => nil, "rule" => "discarded", "untested" => [], "untested_atoms" => [] }
+            { "passed" => false, "scenario" => nil, "rule" => "discarded", "untested" => [], "untested_atoms" => [],
+              "shared_atoms" => [] }
           end
 
           # The result, once its burndown is recorded (RewriteBurndown.record_test).
@@ -120,7 +121,7 @@ module Quaack
             result = store.read("rewrite_test_refusal")
             report = ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
                                                refused: result["rule"], cycle: nil, loads: 0, s1_load_rule: nil,
-                                               s1_rows: nil)
+                                               s1_rows: nil, shared_atoms: [[]])
             result.tap { RewriteBurndown.record_test(store, search, it, report) }
           end
 
@@ -145,7 +146,14 @@ module Quaack
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
               **(report.refused ? { "refused" => true } : diagnostic(report)),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
-              "untested" => report.untested, "untested_atoms" => report.untested_atoms }
+              **untested(report) }
+          end
+
+          # The untested atoms' shapes, and which of them the rewrite holds
+          # as the original does (ScenarioTests.shared).
+          def untested(report)
+            { "untested" => report.untested, "untested_atoms" => report.untested_atoms,
+              "shared_atoms" => report.shared_atoms.first }
           end
         end
 

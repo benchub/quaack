@@ -12,11 +12,11 @@ module Quaack
         # The enclave's Minimax::PERCENT. The driver can't load the enclave
         # gem, and protocol doesn't carry it.
         PERCENT = 5
-        LEAD = "It passed every test, but on the real data it"
+        LEAD = "It passed every test, then QUAACK measured it on the real data, where it"
         TAIL = "so QUAACK didn't rank it."
-        SMALL_GAIN = "#{LEAD} was less than a %<percent>d%% improvement, #{TAIL}".freeze
+        SMALL_GAIN = "#{LEAD} improved by less than %<percent>d%%, #{TAIL}".freeze
         REGRESSED = "#{LEAD} read over %<percent>d%% more blocks on some values, #{TAIL}".freeze
-        EITHER = "#{LEAD} was either less than a %<percent>d%% improvement on the slow values or over " \
+        EITHER = "#{LEAD} either improved by less than %<percent>d%% on the slow values or read over " \
                  "%<percent>d%% more blocks on some others, #{TAIL}".freeze
 
         # The sentence for a not_better rewrite, as a format string.

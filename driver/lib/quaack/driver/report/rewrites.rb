@@ -121,8 +121,8 @@ module Quaack
           "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
-        UNTESTED = "QUAACK's tests never made these conditions from the original query both true and false, so " \
-                   "they can't show the rewrite handles them the same way:"
+        UNTESTED = "These conditions from the original query are in a part the rewrite changed, and QUAACK's tests " \
+                   "never made them both true and false, so they can't show the rewrite handles them the same way:"
 
         # The conditions of the original query that rewrite-test's made-up rows never
         # exercised (vacuity-guard), by their redacted shapes. Anything else
@@ -132,8 +132,13 @@ module Quaack
         # Those a counterexample round's rows exercised afterwards.
         def checked_later(entry) = atoms(entry) & Array(entry["covered"]).grep(String)
 
-        # Those no test exercised.
-        def unchecked_atoms(entry) = atoms(entry) - checked_later(entry)
+        # Those the rewrite holds exactly as the original does (the enclave's
+        # shared_atoms). An untested one there can't tell the two apart, so it
+        # says nothing about the rewrite. Without the key, none are known.
+        def shared_atoms(entry) = atoms(entry) & Array(entry["shared_atoms"]).grep(String)
+
+        # Those no test exercised, in a part the rewrite changed.
+        def unchecked_atoms(entry) = atoms(entry) - checked_later(entry) - shared_atoms(entry)
 
         # How many of rewrite-test's scenario groups it left out because
         # their rows would collide on a unique key, or nil for none.

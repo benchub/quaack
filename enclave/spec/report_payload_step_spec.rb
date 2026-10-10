@@ -101,7 +101,8 @@ RSpec.describe "quaacks report-payload" do
     # their indexes into the original's atoms, for counterexamples.
     store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil,
                                     "untested" => ["o.note = $2", "o.created_at > (now() - $1)"],
-                                    "untested_atoms" => [0, 3], "dropped" => 2)
+                                    "untested_atoms" => [0, 3], "dropped" => 2,
+                                    "shared_atoms" => ["o.created_at > (now() - $1)"])
     store.write("rewrite_round_1", "round" => 3, "evidence" => true, "rule" => nil, "covered" => ["o.note = $2"])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
@@ -315,7 +316,7 @@ RSpec.describe "quaacks report-payload" do
       expect(rewrite(1)).to include(
         "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
         "untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"], "covered" => ["o.note = $2"],
-        "evidence" => false, "dropped" => 2
+        "shared_atoms" => ["o.created_at > (now() - $1)"], "evidence" => false, "dropped" => 2
       )
       expect(rewrite(1)["plan"]).to eq(
         [{ "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 5, "actual_rows" => 5,
@@ -371,7 +372,8 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "covered" => nil, "evidence" => nil, "dropped" => nil)
+                                 "untested_atoms" => nil, "covered" => nil, "shared_atoms" => nil, "evidence" => nil,
+                                 "dropped" => nil)
       end
     end
   end

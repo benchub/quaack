@@ -67,7 +67,9 @@ module Quaack
       #                    (rewrite-test's redacted shapes, or nil if it
       #                    wasn't tested), "covered" (the shapes of those
       #                    the counterexample rounds covered, or nil if no
-      #                    round ran), and
+      #                    round ran), "shared_atoms" (the untested atoms
+      #                    the rewrite holds exactly as the original does,
+      #                    or nil if unknown), and
       #                    "evidence" (whether a counterexamples round compared it
       #                    on loaded inserts; nil unless it survived) }
       #   indexes          { built index name => { "ddl", "size",
@@ -181,6 +183,7 @@ module Quaack
           dropped = tested&.fetch("dropped", nil)
           { "untested_atoms" => tested&.fetch("untested"),
             "dropped" => (dropped if dropped.is_a?(Integer) && !dropped.negative?),
+            "shared_atoms" => tested&.fetch("shared_atoms", nil),
             "covered" => NegativeResult.optional(store, "rewrite_round_#{number}")&.fetch("covered", nil),
             "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
         end

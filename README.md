@@ -621,11 +621,11 @@ Next to each rewrite's name, on the line you click, are two lines:
   - "It returned different results from the original query on test data the LLM wrote to break it (round 2), so it's wrong."
   - "A test on made-up data (empty tables) ended without comparing results, because the order of the original query's rows can't be checked, so QUAACK dropped it. That says nothing about whether it's right."
   - "It passed the tests on made-up data, but returned different results from the original query on the real data, so it's wrong."
-  - "It passed every test, but didn't read enough fewer blocks than the original query."
+  - "It passed every test, then QUAACK measured it on the real data, where it improved by less than 5%, so QUAACK didn't rank it." A rewrite is tested for correctness before it is measured, so one that wasn't ranked got the same tests as one that was. The same sentence says "read over 5% more blocks on some values" for a regression, or names both when the measurements don't say which.
 
   Only a rewrite that returned different results is called wrong. One that was dropped because a test failed, timed out, or never ran is not.
 
-A rewrite may also list **conditions from the original query that QUAACK's made-up rows never made both true and false**, such as `o.status = $1`. A rewrite that changed such a condition could still have passed those tests. The report marks each one the LLM's test data, written afterwards to break the rewrite, did check, and collapses the list when it checked them all. Read the rewrites with unchecked conditions extra carefully.
+A rewrite may also list **conditions from the original query, in a part the rewrite changed, that QUAACK's made-up rows never made both true and false**, such as `o.status = $1`. A rewrite that changed such a condition could still have passed those tests. A condition the rewrite kept exactly as the original had it isn't listed, since it can't tell the two apart. The report marks each one the LLM's test data, written afterwards to break the rewrite, did check, and collapses the list when it checked them all. Read the rewrites with unchecked conditions extra carefully.
 
 ### Ranking.
 
