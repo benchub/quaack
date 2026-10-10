@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
 require_relative "index_sql"
+require_relative "rewrite_candidate_check"
 require_relative "supported_sql"
 require_relative "table_name"
 require_relative "volatility_check"
@@ -65,7 +66,17 @@ module Quaack
     #    on that SELECT, finds a volatile function, operator, or cast. Its
     #    conservative rule holds here too: a call is refused if any
     #    function it could resolve to is volatile.
-    # 9. deparse_mismatch: the DDL, with its name, IF NOT EXISTS, and
+    # 9. unsupported_reg_literal, name_lookup_function, or untyped_literal:
+    #    a key expression or the predicate gets a reg type's value from a
+    #    literal or a cast, or looks up a name given as text. RewriteCandidate
+    #    Check's RegValues finds those from the parse alone (the DDL has no
+    #    original to make the same call, and no $n), and RegTypes prepares
+    #    the key expressions and predicate as a SELECT over the table, with
+    #    each string literal a $n of no type, to find one Postgres would
+    #    read as a reg type. Postgres reads a reg type's text through the
+    #    catalog while it builds the index, so whether the DDL builds would
+    #    say whether a relation exists (20261008-35).
+    # 10. deparse_mismatch: the DDL, with its name, IF NOT EXISTS, and
     #    comments dropped, doesn't parse back to the same tree when pg_query
     #    deparses it (see Deparse).
     #
@@ -96,7 +107,7 @@ module Quaack
     # EXISTS (which needs a name), or comments, as pg_query deparses it;
     # that SQL's parse; and the table, so later steps name each index
     # themselves.
-    module IndexDdlCheck
+    module IndexDdlCheck # rubocop:disable Metrics/ModuleLength
       class Error < StandardError
         attr_reader :rule
 
@@ -127,7 +138,8 @@ module Quaack
       # report has words for each one.
       RULES = ["unparsable", "not_create_index", *REFUSED_OPTIONS.map(&:first), "unqualified_table",
                "unknown_relation", "forbidden_in_index", "unsupported_construct", "volatile_function",
-               "bad_search_path", "deparse_mismatch"].freeze
+               "bad_search_path", "unsupported_reg_literal", "name_lookup_function", "untyped_literal",
+               "deparse_mismatch"].freeze
 
       module_function
 
@@ -137,6 +149,7 @@ module Quaack
         table = table!(stmt.relation, tables)
         forbidden!(stmt)
         volatility!(probe(stmt), settings, connection)
+        reg_values!(stmt, connection)
         accepted(stmt, table)
       end
 
@@ -214,6 +227,15 @@ module Quaack
 
         VolatilityCheck.check_parse(probe, settings, connection)
       rescue SupportedSql::Error, VolatilityCheck::Error => e
+        raise Error.from(e), cause: nil
+      end
+
+      # RegValues' parse checks, then RegTypes', on the key expressions and
+      # the predicate as a SELECT over the table, so a column has its type.
+      # The DDL has no $n, so the original has no placeholders.
+      def reg_values!(stmt, connection)
+        RewriteCandidateCheck::RegTypes.check_index!(probe(stmt), stmt.relation, connection)
+      rescue RewriteCandidateCheck::Error => e
         raise Error.from(e), cause: nil
       end
 

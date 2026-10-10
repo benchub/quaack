@@ -242,6 +242,21 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       end
     end
 
+    # 20261008-35: a refused reg literal in a candidate is one rewrite's
+    # rejected outcome, not an error of the step, so it never reaches the
+    # driver's fixed note for the original query's unsupported_reg_literal.
+    it "rejects a candidate's reg literal as that rewrite's outcome, and goes on to the next" do
+      ready
+
+      outcome = rewrite_check(rewrites(rewrite("SELECT o.note, o.status FROM public.orders o " \
+                                               "WHERE o.id = 'public.orders'::regclass::oid"),
+                                       rewrite(same)))
+
+      expect(lines(outcome).first(2)).to eq(
+        [outcome_line(1, "rejected", "unsupported_reg_literal"), outcome_line(2, "accepted", nil, "rewrite_1")]
+      )
+    end
+
     it "rejects a rewrite with an unmet assumption (assumption-check), after planning it and before any timed run" do
       ready
 

@@ -268,6 +268,34 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(rows(sql, result.sets["worst_case"]).size).to eq(6000)
     end
 
+    # 20261008-36: a statistics entry stored before column_types existed has
+    # no types to match a cast against, so a cast placeholder keeps its slow
+    # value and a plain one still picks.
+    it "keeps a cast placeholder slow, and picks a plain one, from an entry with no column_types" do
+      sql = redact("SELECT r.id FROM public.readings r WHERE r.k = '5'::integer AND r.kb = 9")
+      Quaack::Enclave::PlannerStatistics.run(store:, relations:, connection: conn)
+      old = store.read(Quaack::Enclave::PlannerStatistics::ENTRY)
+      old["tables"].each { it.delete("column_types") }
+      store.write(Quaack::Enclave::PlannerStatistics::ENTRY, old)
+
+      result = described_class.run(store:, sql:)
+
+      expect(sql).to include("r.k = $1::int AND r.kb = $2")
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "unsupported_shape")
+      expect(values(result, "worst_case")["$2"]).to eq(pg_stats("readings", "kb", "most_common_vals").first)
+    end
+
+    # 20261008-36: qualify writes a type that isn't pg_catalog's with its
+    # schema, so a bare cast is always pg_catalog's, and one to another
+    # schema's type of the same name isn't the column's type.
+    it "keeps a cast to another schema's type of the column's type's name slow" do
+      conn.exec("CREATE SCHEMA other; " \
+                "CREATE DOMAIN other.int4 AS integer")
+      _, result = literal_sets("SELECT r.id FROM public.readings r WHERE r.k = '5'::other.int4")
+
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "unsupported_shape")
+    end
+
     it "keeps a cast clock-reading literal slow, since clock-anchor anchors it" do
       _, result = literal_sets("SELECT o.id FROM public.orders o WHERE o.created_at >= 'today'::timestamptz")
 

@@ -48,6 +48,59 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     accepted
   end
 
+  # A reg type's value is read through the catalog while Postgres parses the
+  # DDL, so whether it builds would say whether a relation exists (20261008-35).
+  describe "a reg type's value" do
+    [
+      "CREATE INDEX ON public.orders (id) WHERE customer_id = 'hid.t'::regclass",
+      "CREATE INDEX ON public.orders (id) WHERE customer_id = 'hid.t'::text::regclass",
+      "CREATE INDEX ON public.orders ((CAST('hid.t' AS regtype))) WHERE true",
+      "CREATE INDEX ON public.orders (id) WHERE customer_id = regclass('hid.t'::text)::oid::int"
+    ].each do |sql|
+      it "is refused as unsupported_reg_literal, hidden or not: #{sql[/WHERE.*|\(\(.*/]}" do
+        missing = refusal_of(sql)
+        conn.exec("CREATE SCHEMA hid; CREATE TABLE hid.t (id int)")
+        expect(refusal_of(sql)).to eq(missing).and start_with("unsupported_reg_literal: ")
+      end
+    end
+
+    it "is refused from a function that looks up a name" do
+      expect { check("CREATE INDEX ON public.orders (id) WHERE to_regclass('hid.t') IS NULL") }
+        .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("name_lookup_function") }
+    end
+
+    [
+      "regclassin('hid.t'::cstring) IS NULL",
+      "pg_catalog.regtypein('hid.t'::cstring) IS NULL",
+      "satisfies_hash_partition(16384, 2, 0, id)",
+      "to_tsvector(16384, status) IS NULL"
+    ].each do |predicate|
+      it "refuses #{predicate[/\w+/]} in a predicate and as a key" do
+        ["(id) WHERE #{predicate}", "((#{predicate.sub(" IS NULL", "")}))"].each do |tail|
+          expect { check("CREATE INDEX ON public.orders #{tail}") }
+            .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("name_lookup_function") }
+        end
+      end
+    end
+
+    it "is refused when a string literal is read as one" do
+      expect { check("CREATE INDEX ON public.orders (id) WHERE ts_lexize('hid.t', 'a') IS NULL") }
+        .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("unsupported_reg_literal") }
+    end
+
+    it "doesn't refuse an ordinary literal" do
+      expect(check("CREATE INDEX ON public.orders (id) WHERE status = 'open' AND total_cents > 5").sql)
+        .to include("status = 'open'")
+    end
+
+    def refusal_of(sql)
+      check(sql)
+      nil
+    rescue described_class::Error => e
+      e.message
+    end
+  end
+
   describe "an acceptable statement" do
     it "comes back without its name, deparsed, with its parse and table" do
       accepted = builds("CREATE INDEX orders_status_created_idx ON public.orders (status, created_at DESC NULLS LAST)")
@@ -329,6 +382,9 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
       "unsupported_construct" => ["CREATE INDEX ON public.orders ((xmlelement(name x, status)))", nil],
       "volatile_function" => ["CREATE INDEX ON public.orders ((random()))", nil],
       "bad_search_path" => ["CREATE INDEX ON public.orders ((lower(status)))", { "search_path" => "public," }],
+      "unsupported_reg_literal" => ["CREATE INDEX ON public.orders (id) WHERE customer_id = 't'::regclass", nil],
+      "name_lookup_function" => ["CREATE INDEX ON public.orders (id) WHERE to_regclass('t') IS NULL", nil],
+      "untyped_literal" => ["CREATE INDEX ON public.orders (id) WHERE nosuch_column = 'x'", nil],
       "deparse_mismatch" => ["CREATE INDEX ON public.orders (status) WHERE 't'::boolean", nil]
     }.then do |samples|
       it "lists every rule the check refuses with, each of which it can refuse with" do
@@ -353,7 +409,9 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
   # probe is a tree with no text to parse.
   describe "RULES against the source of every check it takes rules from" do
     lib = File.expand_path("../lib/quaack/enclave", __dir__)
-    files = %w[index_ddl_check supported_sql volatility_check deparse].to_h { [it, File.read("#{lib}/#{it}.rb")] }
+    names = %w[index_ddl_check supported_sql volatility_check deparse
+               rewrite_candidate_check/reg_values rewrite_candidate_check/reg_types]
+    files = names.to_h { [it, File.read("#{lib}/#{it}.rb")] }
     unreachable = ["parse_error"]
     scan = lambda do |source|
       source.scan(/Error\.new\(\s*"([a-z_]+)"/).flatten + source.scan(/@rule = "([a-z_]+)"/).flatten
@@ -365,11 +423,13 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
         "index_ddl_check" => include("unparsable", "unknown_relation"),
         "supported_sql" => ["unsupported_construct"],
         "volatility_check" => include("volatile_function", "bad_search_path"),
-        "deparse" => ["deparse_mismatch"]
+        "deparse" => ["deparse_mismatch"],
+        "rewrite_candidate_check/reg_values" => include("unsupported_reg_literal", "name_lookup_function"),
+        "rewrite_candidate_check/reg_types" => include("untyped_literal")
       )
     end
 
-    it "has every rule the four files raise with, bar the one the check can't reach" do
+    it "has every rule its files raise with, bar the one the check can't reach" do
       raised = files.values.flat_map(&scan).uniq - unreachable
 
       expect(described_class::RULES - option_rules).to match_array(raised)

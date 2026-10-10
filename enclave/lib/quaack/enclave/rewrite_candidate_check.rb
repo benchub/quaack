@@ -91,12 +91,15 @@ module Quaack
     # 8. unsupported_reg_literal or untyped_literal (see RegTypes): with
     #    each string literal a $n of no type, the candidate is prepared,
     #    which evaluates nothing, and a literal Postgres would read as a
-    #    reg type from where it is, such as pg_relation_filenode('s.t'),
-    #    is refused. One that doesn't prepare is refused as untyped_literal.
+    #    reg type from where it is, such as to_tsvector('english', body),
+    #    is refused. One Postgres can't type, as in concat('a', name),
+    #    is bound as text, and one that still doesn't prepare is refused
+    #    as untyped_literal.
     #
     # What it doesn't catch, tracked in 20260923-35: a STABLE function
-    # that reads tables outside the original's set, such as table_to_xml
-    # or a STABLE SQL function, is accepted. The rows it reads stay in the
+    # that reads tables outside the original's set, such as the
+    # original's own table_to_xml($1::regclass, ...) call, or a STABLE
+    # SQL function, is accepted. The rows it reads stay in the
     # enclave. The check also trusts provolatile, so a function mislabeled
     # STABLE isn't caught.
     #

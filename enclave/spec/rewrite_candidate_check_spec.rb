@@ -475,7 +475,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     reg_message = "a reg type's value can come only from the original's $n in v1"
 
     {
-      "a function's regclass argument" => "SELECT pg_relation_filenode('X') FROM orders",
+      "a function's regdictionary argument" => "SELECT ts_lexize('X', status) FROM orders",
       "COALESCE with a $n" => "SELECT COALESCE($1::regclass, 'X') FROM orders",
       "CASE with a $n" => "SELECT CASE WHEN id > 0 THEN $1::regclass ELSE 'X' END FROM orders",
       "GREATEST with a $n" => "SELECT GREATEST($1::regclass, 'X') FROM orders",
@@ -509,11 +509,206 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       end
     end
 
-    it "refuses a string literal whose type Postgres can't work out the same way whatever it holds" do
-      expect(same_outcome("SELECT id FROM orders WHERE 'X' IS NULL")).to eq(
+    it "refuses a string literal that doesn't prepare the same way whatever it holds" do
+      expect(same_outcome("SELECT id FROM orders WHERE nosuch_sentinel = 'X'")).to eq(
         ["untyped_literal", "untyped_literal: the candidate doesn't prepare with its string literals as parameters",
          nil]
       )
+    end
+
+    # 20261008-39: a literal in an "any" argument has no type as a $n, but
+    # Postgres reads it as text there, so it's bound as text, and a reg
+    # value elsewhere is still found.
+    [
+      "SELECT concat('a', status) FROM orders",
+      "SELECT json_build_object('a', id, 'b', status) FROM orders",
+      "SELECT id FROM orders WHERE 'X' IS NULL",
+      "SELECT format('%s-%s', 'a', id) FROM orders WHERE coalesce(status, 'x') <> 'y'",
+      "SELECT jsonb_build_object('k', 1, 'n', 'x') FROM orders WHERE status = 'paid'"
+    ].each do |sql|
+      it "accepts #{sql}" do
+        expect(check(sql).sql).to include("FROM public.orders")
+      end
+    end
+
+    it "still refuses a reg value beside an \"any\" argument, the same way whatever it names" do
+      expect(same_outcome("SELECT concat('a', status), ts_lexize('X', 'a') FROM orders")).to eq(
+        ["unsupported_reg_literal", "unsupported_reg_literal: #{reg_message}", nil]
+      )
+    end
+
+    it "doesn't bind the original's own untyped $n as text" do
+      one = described_class::Original.new(relations:, placeholders: 1)
+
+      sql = "SELECT concat($1, id), concat('a', id) FROM orders"
+
+      expect { check(sql, original: one) }.to rejected("untyped_literal")
+    end
+
+    # The catalog functions that give back what an object is, or how it's
+    # used, from its oid. A literal integer is an oid, so a call with one
+    # shows whether the object exists on the racetrack.
+    {
+      "pg_get_indexdef" => "pg_get_indexdef(16384)",
+      "pg_get_constraintdef" => "pg_get_constraintdef(16384)",
+      "pg_get_triggerdef" => "pg_get_triggerdef(16384)",
+      "pg_get_ruledef" => "pg_get_ruledef(16384)",
+      "pg_get_functiondef" => "pg_get_functiondef(16384)",
+      "pg_get_viewdef" => "pg_get_viewdef(16384)",
+      "pg_get_userbyid" => "pg_get_userbyid(16384)",
+      "pg_get_expr" => "pg_get_expr('x', 16384)",
+      "pg_describe_object" => "pg_describe_object(1259, 16384, 0)",
+      "pg_identify_object" => "pg_identify_object_as_address(1259, 16384, 0)",
+      "pg_relation_filenode" => "pg_relation_filenode(16384)",
+      "pg_relation_filepath" => "pg_relation_filepath(16384)",
+      "pg_table_is_visible" => "pg_table_is_visible(16384)",
+      "pg_type_is_visible" => "pg_type_is_visible(16384)",
+      "format_type" => "format_type(16384, NULL)",
+      "col_description" => "col_description(16384, 1)",
+      "pg_basetype" => "pg_basetype(16384)",
+      "pg_stat_get_numscans" => "pg_stat_get_numscans(16384)",
+      "pg_stat_get_live_tuples" => "pg_stat_get_live_tuples(16384)",
+      "table_to_xml" => "table_to_xml(16384, true, false, '')",
+      "pg_catalog's spelling" => "pg_catalog.pg_get_indexdef(16384)"
+    }.each do |name, call|
+      it "refuses a call to #{name} with an oid" do
+        expect { check("SELECT id FROM orders WHERE #{call} IS NULL") }.to raise_error(described_class::Error) { |e|
+          expect([e.rule, e.cause]).to eq(["name_lookup_function", nil])
+          expect(e.message).to match(/\Aname_lookup_function: \S+ looks up a name, and the original doesn't make/)
+        }
+      end
+    end
+
+    # The reg types' input functions look a name up from cstring text, and
+    # are stable, so only their names stop them.
+    (Quaack::Enclave::RewriteCandidateCheck::RegValues::TYPES + %w[regrole]).uniq.each do |type|
+      {
+        "bare" => "#{type}in('X'::cstring)",
+        "in pg_catalog" => "pg_catalog.#{type}in('X'::cstring)",
+        "as recv" => "#{type}recv('X'::internal)"
+      }.each do |spelling, call|
+        it "refuses #{type}'s input function #{spelling}, the same way whatever it names" do
+          expect(same_outcome("SELECT id FROM orders WHERE #{call} IS NULL")).to eq(
+            ["name_lookup_function",
+             "name_lookup_function: #{call[/\w+(?=\()/]} looks up a name, and the original doesn't make the same call",
+             nil]
+          )
+        end
+      end
+    end
+
+    # Each of these answers, or raises, differently for an oid that names
+    # an object and one that doesn't.
+    {
+      "satisfies_hash_partition" => "satisfies_hash_partition(16384, 2, 0, id)",
+      "acldefault" => "acldefault('r', 10) IS NULL OR acldefault('r', 16384)",
+      "makeaclitem" => "makeaclitem(16384, 10, 'SELECT', false)",
+      "fmgr_sql_validator" => "fmgr_sql_validator(16384)",
+      "fmgr_internal_validator" => "fmgr_internal_validator(16384)",
+      "fmgr_c_validator" => "fmgr_c_validator(16384)",
+      "postgresql_fdw_validator" => "postgresql_fdw_validator('{}', 16384)"
+    }.each do |name, call|
+      it "refuses a call to #{name} with an oid" do
+        expect { check("SELECT id FROM orders WHERE #{call} IS NULL") }.to raise_error(described_class::Error) { |e|
+          expect([e.rule, e.cause]).to eq(["name_lookup_function", nil])
+        }
+      end
+    end
+
+    # A text search function reads an integer where it wants a regconfig or
+    # regdictionary as an oid, and raises "cache lookup failed" for one that
+    # names nothing.
+    {
+      "to_tsvector" => "to_tsvector(16384, status)",
+      "an oid cast" => "to_tsvector(16384::oid, status)",
+      "an int cast" => "to_tsvector(CAST(16384 AS int), status)",
+      "an integer sum" => "to_tsvector(16000 + 384, status)",
+      "to_tsquery" => "to_tsquery(16384, 'a')",
+      "plainto_tsquery" => "plainto_tsquery(16384, 'a')",
+      "phraseto_tsquery" => "phraseto_tsquery(16384, 'a')",
+      "websearch_to_tsquery" => "websearch_to_tsquery(16384, 'a')",
+      "ts_lexize" => "ts_lexize(16384, 'a')",
+      "ts_debug" => "ts_debug(16384, 'a')",
+      "ts_headline" => "ts_headline(16384, status, to_tsquery('a'))",
+      "json_to_tsvector" => "json_to_tsvector(16384, '[]'::json, '\"all\"')",
+      "pg_catalog's spelling" => "pg_catalog.to_tsvector(16384, status)"
+    }.each do |name, call|
+      it "refuses #{name} with an integer where the text search object goes" do
+        expect { check("SELECT #{call} FROM orders") }.to raise_error(described_class::Error) { |e|
+          expect([e.rule, e.cause]).to eq(["name_lookup_function", nil])
+        }
+      end
+    end
+
+    it "treats the text search functions as it did before for the ordinary forms" do
+      ts = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT to_tsvector($1::regconfig, status) FROM public.orders"
+      )
+
+      expect(check("SELECT to_tsvector($1::regconfig, status) FROM orders", original: ts).sql)
+        .to eq("SELECT to_tsvector($1::regconfig, status) FROM public.orders")
+      expect(check("SELECT to_tsvector($1::regconfig, status || 'x'), to_tsvector(status) FROM orders",
+                   original: ts).sql).to include("to_tsvector($1::regconfig, status OPERATOR(pg_catalog.||) 'x')")
+      expect { check("SELECT to_tsvector('simple', status) FROM orders") }.to rejected("unsupported_reg_literal")
+      expect { check("SELECT to_tsvector(16384::regconfig, status) FROM orders") }
+        .to rejected("unsupported_reg_literal")
+      expect { check("SELECT to_tsvector('simple'::regconfig, status) FROM orders") }
+        .to rejected("unsupported_reg_literal")
+    end
+
+    # A function added in a later Postgres, or missed, fails here until it's
+    # listed in RegValues or reviewed as harmless: one that says nothing
+    # about a catalog object from an oid or a name, such as a planner's
+    # selectivity estimator, whose first argument is the internal type SQL
+    # can't supply, or a function that makes a value from its arguments.
+    # A text search function's integer config is RegValues::TS_CONFIG's.
+    it "names every non-volatile pg_catalog function with an oid or reg type argument or result, or reviews it" do
+      reviewed = /(sel|joinsel|_consistent|_distance)\z |\A(nameconcatoid|int8|pg_typeof|get_current_ts_config)\z/x
+      found = conn.exec(<<~SQL).column_values(0)
+        SELECT DISTINCT p.proname FROM pg_catalog.pg_proc p
+        WHERE p.pronamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace
+          AND p.prokind OPERATOR(pg_catalog.=) 'f' AND p.provolatile OPERATOR(pg_catalog.<>) 'v'
+          AND p.prorettype OPERATOR(pg_catalog.=) ANY (
+            ARRAY['regclass','regtype','regproc','regprocedure','regoper','regoperator','regnamespace',
+                  'regrole','regconfig','regdictionary','regcollation']::pg_catalog.regtype[]::pg_catalog.oid[])
+        ORDER BY 1
+      SQL
+      values = Quaack::Enclave::RewriteCandidateCheck::RegValues
+      unnamed = found.reject { values.lookup?(it) || values::TYPES.include?(it) || reviewed.match?(it) }
+
+      expect(unnamed).to eq([])
+      expect(found).to include("regclassin", "regtyperecv", "to_regclass")
+    end
+
+    it "names every non-volatile pg_catalog function with an oid or reg type argument, or reviews it" do
+      reviewed = /(sel|joinsel|_consistent|_distance)\z |\A(nameconcatoid|int8|pg_typeof|get_current_ts_config)\z/x
+      found = conn.exec(<<~SQL).column_values(0)
+        SELECT DISTINCT p.proname FROM pg_catalog.pg_proc p
+        WHERE p.pronamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace
+          AND p.prokind OPERATOR(pg_catalog.=) 'f' AND p.provolatile OPERATOR(pg_catalog.<>) 'v'
+          AND p.proargtypes::pg_catalog.oid[] OPERATOR(pg_catalog.&&)
+              ARRAY['oid','regclass','regtype','regproc','regprocedure','regoper','regoperator','regnamespace',
+                    'regrole','regconfig','regdictionary','regcollation']::pg_catalog.regtype[]::pg_catalog.oid[]
+          AND p.proname !~ '(in|out|send|recv|cmp|larger|smaller)$'
+          AND p.proname !~ '^(oid(eq|ne|lt|le|gt|ge)|hash|bt|btoid)'
+          AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_operator o WHERE o.oprcode OPERATOR(pg_catalog.=) p.oid)
+        ORDER BY 1
+      SQL
+      values = Quaack::Enclave::RewriteCandidateCheck::RegValues
+      unnamed = found.reject { values.lookup?(it) || values::TS_CONFIG.include?(it) || reviewed.match?(it) }
+
+      expect(conn.exec("SHOW server_version_num").getvalue(0, 0)).to start_with("18")
+      expect(unnamed).to eq([])
+      expect(found).to include("pg_get_indexdef", "pg_relation_filenode", "pg_stat_get_numscans")
+    end
+
+    it "accepts an oid function the original makes, as the original makes it" do
+      original = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT pg_get_indexdef($1::regclass) FROM public.orders"
+      )
+
+      expect(check("SELECT pg_get_indexdef($1::regclass) FROM orders", original:).sql)
+        .to eq("SELECT pg_get_indexdef($1::regclass) FROM public.orders")
     end
 
     it "accepts a name lookup the original makes, as the original makes it" do

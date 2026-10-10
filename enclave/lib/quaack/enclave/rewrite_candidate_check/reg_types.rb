@@ -12,12 +12,16 @@ module Quaack
       # prepared, which evaluates nothing, and it's refused if any comes
       # back as a reg type, an array of one, or a domain over either, as
       # pg_relation_filenode('s.t') or COALESCE($1::regclass, 's.t') would.
-      # The original's $n get its types. If it doesn't prepare, such as
-      # when a literal's type can't be worked out, it's refused with one
+      # The original's $n get its types. A literal whose $n Postgres can't
+      # type, as in an "any" argument (concat('a', name), json_build_object),
+      # reads as text there, so it's declared text and tried again
+      # (20261008-39). If it still doesn't prepare, it's refused with one
       # fixed rule.
       module RegTypes
         STATEMENT = "quaack_reg_types"
         TEXT_OID = 25
+        # SQLSTATE indeterminate_datatype.
+        INDETERMINATE = "42P18"
 
         # Whether any of the types, through domains and array elements, is
         # a reg type.
@@ -44,9 +48,19 @@ module Quaack
           tree, count = literals_as_params(parse.tree, original.placeholders)
           return if count.zero?
 
-          types = prepare(connection, PgQuery.deparse(tree), declared(parse.tree, original, count))
+          types = typed(connection, PgQuery.deparse(tree), declared(parse.tree, original, count), original.placeholders)
           raise Error.new("untyped_literal", UNTYPED) unless types
           raise Error.new("unsupported_reg_literal", RegValues::REG_DETAIL) if reg?(connection, types.last(count))
+        end
+
+        # IndexDdlCheck's: RegValues' parse checks, with no original to make
+        # the same call, then this check on probe, a SELECT of the index's
+        # key expressions and predicate, FROM the index's table so a column
+        # has its type. The DDL has no $n.
+        def check_index!(probe, relation, connection)
+          RegValues.syntactic!(probe, nil)
+          probe.tree.stmts.first.stmt.select_stmt.from_clause << PgQuery::Node.from(relation)
+          check!(probe, Original.new(relations: [], placeholders: 0), connection)
         end
 
         def reg?(connection, types)
@@ -66,14 +80,41 @@ module Quaack
           own + Array.new(count, 0)
         end
 
-        # The parameter types, or nil if it doesn't prepare. Inside a
-        # transaction, a savepoint keeps a failure from ending it.
+        # The parameter types, or nil if it doesn't prepare. A literal whose
+        # $n Postgres can't type, as in an "any" argument such as
+        # concat('a', name), where the literal itself reads as text, is
+        # declared text and tried again. The original's $n are never
+        # declared this way, so one with no known type still fails.
+        def typed(connection, sql, types, own)
+          types = types.dup
+          types.size.times do
+            found = prepare(connection, sql, types)
+            return found unless found.is_a?(PG::Error)
+
+            number = untyped_number(found)
+            return nil unless number&.between?(own + 1, types.size)
+
+            types[number - 1] = TEXT_OID
+          end
+          nil
+        end
+
+        # The $n a "could not determine data type" error names, or nil for
+        # any other error.
+        def untyped_number(error)
+          return nil unless error.result&.error_field(PG::PG_DIAG_SQLSTATE) == INDETERMINATE
+
+          error.message[/\$(\d+)/, 1]&.then { Integer(it, 10) }
+        end
+
+        # The parameter types, or the PG::Error if it doesn't prepare. Inside
+        # a transaction, a savepoint keeps a failure from ending it.
         def prepare(connection, sql, types)
           saved = connection.transaction_status == PG::PQTRANS_INTRANS
           connection.exec("SAVEPOINT #{STATEMENT}") if saved
-          described(connection, sql, types).tap do |found|
-            connection.exec("#{found ? "RELEASE" : "ROLLBACK TO"} SAVEPOINT #{STATEMENT}") if saved
-          end
+          found = described(connection, sql, types)
+          connection.exec("#{found.is_a?(PG::Error) ? "ROLLBACK TO" : "RELEASE"} SAVEPOINT #{STATEMENT}") if saved
+          found
         end
 
         def described(connection, sql, types)
@@ -84,8 +125,8 @@ module Quaack
           ensure
             connection.exec("DEALLOCATE #{STATEMENT}")
           end
-        rescue PG::Error
-          nil
+        rescue PG::Error => e
+          e
         end
 
         # A copy of the tree with each string literal a $n after the
