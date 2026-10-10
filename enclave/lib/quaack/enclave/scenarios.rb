@@ -191,7 +191,7 @@ module Quaack
         # scenario's first fixture, over every scenario. spills holds, by
         # scenario, the last build's further fixtures (see Parts): rows the
         # first can't hold beside its own.
-        attr_reader :atoms, :pools, :parse, :dropped, :spills, :schema
+        attr_reader :atoms, :pools, :parse, :dropped, :spills
 
         UNIQUE = FreeValues::UNIQUE
 

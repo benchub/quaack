@@ -10,8 +10,9 @@ RSpec.describe Quaack::Driver::Report do
 
   # What ERB's escaping makes of text with an apostrophe in it.
   let(:unproven) do
-    "Read it with care: every test QUAACK ran passed, but the test data never made some conditions in " \
-      "the part it changed both true and false, so those conditions are unproven."
+    "Read it with care: every test QUAACK ran passed, but the test data never made some " \
+      "conditions of the query both true and false, so the tests cannot show whether those parts behave the " \
+      "same in the rewrite."
   end
 
   def esc(text) = text.gsub("'", "&#39;")
@@ -524,8 +525,8 @@ RSpec.describe Quaack::Driver::Report do
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: transform " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat the original " \
          "query and is ranked below.</span> <span class=\"warn\">Read it with care: every test QUAACK ran " \
-         "passed, but the test data never made some conditions in the part it changed both true and false, so " \
-         "those conditions are unproven.</span>",
+         "passed, but the test data never made some conditions of the query both true and false, so the " \
+         "tests cannot show whether those parts behave the same in the rewrite.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM (its " \
          "model wasn&#39;t recorded).</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
@@ -537,9 +538,8 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     describe "a warning inside a rewrite's collapsed section" do
-      def warning(atoms: [], empirical: nil, covered: nil, shared: nil)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical, "covered" => covered,
-                                         "shared_atoms" => shared)
+      def warning(atoms: [], empirical: nil, covered: nil)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical, "covered" => covered)
         summary = section(render(payload), "queries")[%r{<h3>Rewrite Vivid Cove</h3>.*?</summary>}m]
         summary[%r{<span class="warn">(.*?)</span>}, 1]
       end
@@ -554,7 +554,8 @@ RSpec.describe Quaack::Driver::Report do
         expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
         expect(warning(atoms: ["a < $1"], empirical: assumed))
           .to eq("Read it with care: it relies on what your data holds today. The test data also never " \
-                 "made some conditions in the part it changed both true and false, so those are unproven.")
+                 "made some conditions of the query both true and false, so the tests cannot show whether those " \
+                 "parts behave the same in the rewrite.")
       end
 
       it "flags untested conditions only while a later test left some of them unchecked" do
@@ -631,8 +632,8 @@ RSpec.describe Quaack::Driver::Report do
 
     describe "the conditions no test ever exercised (vacuity-guard)" do
       let(:lead) do
-        esc("These conditions from the original query are in a part the rewrite changed, and QUAACK's tests never " \
-            "made them both true and false, so they can't show the rewrite handles them the same way:")
+        esc("QUAACK's tests never made these conditions from the original query both true and false, so they can't " \
+            "show the rewrite handles them the same way:")
       end
 
       def conditions(atoms, covered)
@@ -656,39 +657,11 @@ RSpec.describe Quaack::Driver::Report do
       it "shows nothing when the LLM's test data checked them all afterwards" do
         conditions(["a < $1"], ["a < $1"])
         expect(queries).not_to include('class="untested"')
-        expect(queries).not_to include("never made them both true and false")
+        expect(queries).not_to include("never made these conditions")
       end
 
       it "never lists a value that isn't a condition's SQL, such as an atom's index" do
         out = conditions([0, "a < $1", { "shape" => "b = $2" }, 13], nil)
-        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
-      end
-    end
-
-    describe "a rewrite that left the untested conditions as the original had them" do
-      def warning(atoms, shared)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "covered" => nil, "shared_atoms" => shared)
-        summary = section(render(payload), "queries")[%r{<h3>Rewrite Vivid Cove</h3>.*?</summary>}m]
-        summary[%r{<span class="warn">(.*?)</span>}, 1]
-      end
-
-      it "doesn't warn when every untested condition is one it kept, since they can't tell the two apart" do
-        expect(warning(["a < $1", "t.b IS NULL"], ["t.b IS NULL", "a < $1"])).to be_nil
-      end
-
-      it "warns when one untested condition lies in a part it changed" do
-        expect(warning(["a < $1", "t.b IS NULL"], ["a < $1"])).to eq(unproven)
-      end
-
-      it "warns about every untested condition when none is shared, and when the payload doesn't say" do
-        expect(warning(["a < $1"], [])).to eq(unproven)
-        expect(warning(["a < $1"], nil)).to eq(unproven)
-      end
-
-      it "lists only the changed conditions, and ignores a shared value that isn't one of the untested" do
-        payload["rewrites"].first.merge!("untested_atoms" => ["a < $1", "t.b IS NULL"], "covered" => nil,
-                                         "shared_atoms" => ["t.b IS NULL", "c = $9"])
-        out = section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
         expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
       end
     end

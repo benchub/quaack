@@ -54,7 +54,7 @@ module Quaack
       # rule S1 failed to load with, and the original's row count on S1, each
       # nil when it doesn't apply (and both nil on a refusal).
       Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle, :loads,
-                           :s1_load_rule, :s1_rows, :shared_atoms)
+                           :s1_load_rule, :s1_rows)
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
@@ -64,47 +64,22 @@ module Quaack
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }
-        tested(guard, builder, results, runner.loads, candidates)
+        tested(guard, builder, results, runner.loads)
       rescue Scenarios::Error => e
         refused(candidates, e.rule, cycle: e.cycle, loads: runner.loads)
       end
 
       # The report of candidates tested on the guard's scenarios.
-      def tested(guard, builder, results, loads, candidates)
+      def tested(guard, builder, results, loads)
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
                    dropped: builder.dropped, refused: nil, cycle: nil, loads:, s1_load_rule: guard.s1_load_rule,
-                   s1_rows: guard.s1_rows, shared_atoms: candidates.map { shared(guard.untested, builder, it) })
+                   s1_rows: guard.s1_rows)
       end
 
       def refused(candidates, rule, cycle: nil, loads: 0)
         results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
         Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule,
-                   cycle: (cycle if rule == :fk_cycle), loads:, s1_load_rule: nil, s1_rows: nil,
-                   shared_atoms: candidates.map { [] })
-      end
-
-      # The untested atoms' shapes that a candidate holds as atoms too: the
-      # parts of the original it left as they were. A shape numbers its
-      # placeholders by position in its own query, so a rewrite that drops
-      # or reorders atoms renumbers the rest; shapes are compared without
-      # the numbers. A
-      # candidate that can't be read as atoms (a table the original lacks,
-      # say) shares none, so every untested atom counts as changed.
-      def shared(untested, builder, candidate)
-        kept = shapes(builder, candidate).to_set { unnumbered(it) }
-        untested.select { kept.include?(unnumbered(it)) }
-      end
-
-      # The redacted shapes of a candidate's atoms, read against the
-      # original's schema, or none if it can't be read that way.
-      def shapes(builder, candidate)
-        PredicateAtoms.extract(PgQuery.parse(candidate), column_names: builder.schema.column_names).map(&:shape)
-      rescue KeyError, SupportedSql::Error, PgQuery::ParseError
-        []
-      end
-
-      def unnumbered(shape)
-        shape.gsub(/\$\d+/, "$")
+                   cycle: (cycle if rule == :fk_cycle), loads:, s1_load_rule: nil, s1_rows: nil)
       end
 
       # A scenario's further fixtures (spills, see Scenarios::Parts) run

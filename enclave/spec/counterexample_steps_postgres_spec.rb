@@ -158,9 +158,6 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false,
                                               "s1_load_rule" => "fixture_load_failed", "s1_rows" => nil)
       expect(stored.read("rewrite_tested_1")).to include("s1_load_rule" => "fixture_load_failed", "s1_rows" => nil)
-      tested = stored.read("rewrite_tested_1")
-      expect(tested["shared_atoms"]).to eq(tested["untested"])
-      expect(tested["shared_atoms"]).not_to be_empty
       expect_no_leaks(sentinels, outcome)
     end
 
@@ -238,7 +235,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                       "scenario" => nil, "rule" => "complex_check" }, { "type" => "done" }])
       expect(stored.read("rewrite_tested_1"))
         .to eq("passed" => false, "scenario" => nil, "rule" => "complex_check", "refused" => true,
-               "untested" => [], "untested_atoms" => [], "shared_atoms" => [])
+               "untested" => [], "untested_atoms" => [])
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
       expect_no_leaks(sentinels, outcome)
     end

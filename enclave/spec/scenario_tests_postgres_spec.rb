@@ -66,34 +66,6 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
     expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[false, :fixture_load_failed]])
   end
 
-  context "when the guard leaves atoms untested" do
-    before do
-      conn.exec(<<~SQL)
-        CREATE FUNCTION fx.refuse() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'no'; END $$;
-        CREATE TRIGGER refuse BEFORE INSERT ON fx.orders FOR EACH ROW EXECUTE FUNCTION fx.refuse();
-      SQL
-    end
-
-    it "reports, per candidate, which untested atoms it keeps exactly as the original has them" do
-      report = run("SELECT o.id FROM fx.orders o WHERE o.status = 'SENTINEL_49' AND o.qty IS DISTINCT FROM 5",
-                   "SELECT o.id FROM fx.orders o WHERE o.status = 'OTHER' AND o.qty <> 5",
-                   "SELECT o.id FROM fx.orders o WHERE o.status LIKE 'SENTINEL_49%' AND o.qty > 5")
-      expect(report.shared_atoms).to eq([["o.status = $1"], ["o.status = $1", "o.qty <> $2"], []])
-    end
-
-    it "still finds an atom a candidate kept when dropping or reordering others renumbers its placeholders" do
-      report = run("SELECT o.id FROM fx.orders o WHERE o.qty <> 5",
-                   "SELECT o.id FROM fx.orders o WHERE o.qty <> 5 AND o.status = 'SENTINEL_49'")
-      expect(report.shared_atoms).to eq([["o.qty <> $2"], ["o.status = $1", "o.qty <> $2"]])
-    end
-
-    it "shares nothing for a candidate whose text it can't read as atoms, and keeps the sentinel out" do
-      report = run("SELECT o.id FROM fx.nowhere o WHERE o.status = 'SENTINEL_49'")
-      expect(report.shared_atoms).to eq([[]])
-      expect(report.to_h.to_s).not_to include("SENTINEL_49")
-    end
-  end
-
   it "reports nothing but shapes, rules, and scenario names, though the fixture holds the sentinel" do
     builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(original))
     expect(builder.build[:s1].flat_map(&:values)).to include("SENTINEL_49")
