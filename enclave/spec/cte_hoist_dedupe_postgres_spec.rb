@@ -307,6 +307,20 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
     end
   end
 
+  # 20261003-44: a bare name that reads an outer column in the original
+  # reads a FROM item's whole row once the body stands alone, which prepares.
+  it "refuses a CTE whose bare name is an outer column in context, and a whole row alone" do
+    correlated = "SELECT name.user_id FROM public.user_account_associations name WHERE name IS NULL"
+    sql = "SELECT users.id FROM public.users WHERE users.id IN (WITH a AS (#{correlated}) SELECT user_id FROM a) " \
+          "AND users.id IN (WITH a AS (#{correlated}) SELECT user_id FROM a)"
+    original = redacted(sql)
+
+    expect(rows(original.sql, original.placeholder_map)).to eq([%w[3]])
+    expect(catalog.self_contained?(correlated)).to be(true)
+    rewritten(sql).each { expect(rows(it, original.placeholder_map)).to eq([%w[3]]) }
+    expect(rewritten(sql)).to eq([])
+  end
+
   it "merges a CTE with the same shape as a correlated one but no outside name (control)" do
     sql = "SELECT users.id FROM public.users WHERE users.id IN " \
           "(WITH a AS (SELECT uaa.user_id FROM public.user_account_associations uaa WHERE uaa.user_id = uaa.id) " \

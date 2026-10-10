@@ -357,6 +357,23 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
     )
   end
 
+  # 20261003-44: a bare name in the conjunct's subquery that reads an outer
+  # column reads a different one in the arms, though the text matches and the
+  # subquery prepares alone.
+  it "refuses a conjunct whose subquery has a bare name that is a FROM item's, read as a column in context" do
+    conn.exec("CREATE TABLE public.tags (id int PRIMARY KEY, tag int, other int); " \
+              "INSERT INTO public.tags VALUES (1, NULL, 5), (2, 7, NULL)")
+    test = "g.id IN (SELECT tag.user_id FROM public.user_account_associations tag WHERE tag IS NULL)"
+    arms = ->(extra) { "SELECT g.id, g.other AS tag FROM public.tags g WHERE #{test}#{extra}" }
+    sql = "SELECT q.id FROM (#{arms.call("")} UNION #{arms.call(" AND g.id > 0")}) q WHERE #{test.sub("g.id", "q.id")}"
+    original = redacted(sql)
+
+    expect(rows(original.sql, original.placeholder_map)).to eq([])
+    expect(conn.exec(arms.call("")).values).to eq([%w[1 5]])
+    rewritten(sql).each { expect(rows(it, original.placeholder_map)).to eq([]) }
+    expect(rewritten(sql)).to eq([])
+  end
+
   it "refuses a column whose type or collation differs between arms" do
     expect_refusals(
       [["public.big_users users", "public.users", "u.id > 1"],

@@ -24,16 +24,8 @@ module Quaack
           def captured?(from, others, link)
             sub = link.subselect.select_stmt
             [from.to_a + others + [link.testexpr], sub.from_clause.to_a + [sub.where_clause].compact]
-              .any? { names_a_from_item?(it) }
+              .any? { Tree.bare_from_item_name?(it) }
           end
-
-          def names_a_from_item?(nodes)
-            names = Tree.find(nodes, PgQuery::RangeVar).map(&:relname) +
-                    Tree.find(nodes, PgQuery::Alias).map(&:aliasname)
-            Tree.find(nodes, PgQuery::ColumnRef).any? { |ref| names.include?(bare(ref)) }
-          end
-
-          def bare(ref) = (ref.fields.first.string.sval if ref.fields.size == 1 && ref.fields.first.node == :string)
         end
       end
     end
