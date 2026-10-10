@@ -6,6 +6,7 @@ require_relative "../deparse"
 require_relative "implied_predicate_removal/containers"
 require_relative "implied_predicate_removal/expressions"
 require_relative "shared_scan_cte/copies"
+require_relative "shared_scan_cte/grouping"
 require_relative "tree"
 
 module Quaack
@@ -57,11 +58,14 @@ module Quaack
       # a copy's whole row, other than as a copy.* in the select list. Last,
       # Postgres must be able to prepare the rewrite. It can't when the
       # query names a copy's system column, such as ctid, or a column as
-      # schema.table.column, or when GROUP BY relied on the table's primary
-      # key. It states no assumptions.
+      # schema.table.column. A GROUP BY that names a copy's whole primary
+      # key, and leaves the copy's other columns to the select list, HAVING,
+      # or ORDER BY, gets those columns added (see Grouping), since the CTE
+      # has no key. It states no assumptions.
       class SharedScanCte
         include ImpliedPredicateRemoval::Expressions
         include Copies
+        include Grouping
 
         PREFIX = "quaack_scan_of_"
         # Each copy's alias becomes this when its conjuncts are compared.
@@ -96,9 +100,16 @@ module Quaack
           return if volatile?(catalog, cte)
 
           share!(top, copies, shared, cte, literals)
-          Rewrite.new(tree:, assumptions: []) if catalog.self_contained?(Deparse.faithfully(tree))
+          Rewrite.new(tree:, assumptions: []) if prepares?(tree, top, copies, table, catalog)
         rescue Deparse::Error
           nil
+        end
+
+        # Adds what a GROUP BY that relied on a key needs, then asks whether
+        # Postgres can prepare the rewrite.
+        def prepares?(tree, top, copies, table, catalog)
+          group_by_columns!(top, copies, table, catalog)
+          catalog.self_contained?(Deparse.faithfully(tree))
         end
 
         def volatile?(catalog, cte) = catalog.calls_volatile?(Deparse.statement(cte.ctequery.select_stmt))

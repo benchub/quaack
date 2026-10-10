@@ -30,6 +30,27 @@ module Quaack
             ORDER BY i.indexrelid, u.n
           SQL
 
+          # A table's primary key, which Postgres lets a GROUP BY stand in for
+          # the table's other columns: [] unless it's there, and nothing
+          # inheritance children can repeat (a partitioned table's is unique
+          # across its partitions) or a deferred check can break.
+          PRIMARY_KEY = <<~SQL.freeze
+            SELECT a.attname
+            FROM pg_catalog.pg_constraint c
+            JOIN pg_catalog.pg_class r ON r.oid #{EQ} c.conrelid
+            CROSS JOIN LATERAL pg_catalog.unnest(c.conkey) WITH ORDINALITY AS u(k, n)
+            JOIN pg_catalog.pg_attribute a ON a.attrelid #{EQ} c.conrelid AND a.attnum #{EQ} u.k
+            WHERE c.conrelid #{EQ} #{AssumptionCheck::RELATION} AND c.contype #{EQ} 'p' AND NOT c.condeferrable
+              AND (r.relkind #{EQ} 'p'
+                   OR NOT EXISTS (SELECT FROM pg_catalog.pg_inherits i WHERE i.inhparent #{EQ} c.conrelid))
+            ORDER BY u.n
+          SQL
+
+          def primary_key(schema, table)
+            (@primary_keys ||= {})[[schema, table]] ||=
+              @connection.exec_params(PRIMARY_KEY, [schema, table]).column_values(0)
+          end
+
           def keys(schema, table)
             (@keys ||= {})[[schema, table]] ||=
               @connection.exec_params(KEYS, [schema, table]).values.chunk_while { |a, b| a.first == b.first }

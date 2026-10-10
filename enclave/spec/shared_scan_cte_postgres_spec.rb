@@ -34,7 +34,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
         (6, NULL, 2, NULL, 1),
         (7, 1, NULL, 'submitted', NULL),
         (8, 2, 2, 'submitted', 4),
-        (9, 1, 99, 'submitted', 1);
+        (9, 1, 99, 'submitted', 1),
+        (10, 2, 2, 'SUBMITTED', 3);
       INSERT INTO public.users VALUES (1, 'a'), (2, 'b'), (3, NULL);
     SQL
   end
@@ -423,6 +424,103 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     end
   end
 
+  describe "with a GROUP BY that relies on the primary key" do
+    let(:from) do
+      "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
+        "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2)"
+    end
+    let(:cte) do
+      "WITH quaack_scan_of_submissions AS MATERIALIZED (SELECT * FROM public.submissions " \
+        "WHERE submissions.course_id IN ($1, $2)) "
+    end
+    let(:shared_from) do
+      "FROM quaack_scan_of_submissions s JOIN quaack_scan_of_submissions a ON a.id = s.assessor_asset_id"
+    end
+
+    it "groups by the columns the query reads that the key stood in for, in the select list, HAVING, and ORDER BY" do
+      expect_rewrites(
+        "SELECT s.id, s.user_id, count(*) #{from} GROUP BY s.id HAVING s.workflow_state <> 'x' ORDER BY s.course_id",
+        "#{cte}SELECT s.id, s.user_id, count(*) #{shared_from} GROUP BY s.id, s.user_id, s.workflow_state, " \
+        "s.course_id HAVING s.workflow_state <> $5 ORDER BY s.course_id"
+      )
+    end
+
+    it "groups by every column of a copy listed as copy.*, and by a column a subquery reads" do
+      expect_rewrites(
+        "SELECT s.*, (SELECT max(u.id) FROM public.users u WHERE u.id = a.user_id) AS m, count(a.id) #{from} " \
+        "GROUP BY s.id, a.id",
+        "#{cte}SELECT s.*, (SELECT max(u.id) FROM public.users u WHERE u.id = a.user_id) AS m, count(a.id) " \
+        "#{shared_from} GROUP BY s.id, a.id, s.course_id, s.user_id, s.workflow_state, s.assessor_asset_id, " \
+        "a.user_id"
+      )
+    end
+
+    it "does the same for every copy whose key is grouped" do
+      expect_rewrites(
+        "SELECT s.id, s.user_id, a.id, a.user_id #{from} GROUP BY s.id, a.id",
+        "#{cte}SELECT s.id, s.user_id, a.id, a.user_id #{shared_from} GROUP BY s.id, a.id, s.user_id, a.user_id"
+      )
+    end
+
+    it "leaves a GROUP BY that doesn't hold the whole key alone, as a column expression's own is" do
+      expect_rewrites(
+        "SELECT lower(s.workflow_state), count(*) #{from} GROUP BY lower(s.workflow_state)",
+        "#{cte}SELECT lower(s.workflow_state), count(*) #{shared_from} GROUP BY lower(s.workflow_state)"
+      )
+      # Adding the column the expression reads would split its groups.
+      sql = "SELECT lower(s.workflow_state), count(*) #{from} GROUP BY lower(s.workflow_state)"
+      wrong = "#{cte}SELECT lower(s.workflow_state), count(*) #{shared_from} GROUP BY lower(s.workflow_state), " \
+              "s.workflow_state"
+      expect(rows(wrong, redacted(sql).placeholder_map)).not_to eq(runs(sql))
+    end
+
+    # SupportedSql refuses grouping sets before any rule runs, so this asks the step itself.
+    it "adds nothing to grouping sets" do
+      top = PgQuery.parse(
+        "SELECT s.id, s.user_id, s.workflow_state, count(*) #{from} GROUP BY s.id, ROLLUP (s.user_id)"
+      ).tree.stmts.first.stmt.select_stmt
+      copies = Quaack::Enclave::RewriteRules::Tree.from_items(top.from_clause)
+      before = top.group_clause.map { PgQuery::Node.encode(it) }
+
+      rule.send(:group_by_columns!, top, copies, %w[public submissions true], catalog)
+      expect(top.group_clause.map { PgQuery::Node.encode(it) }).to eq(before)
+    end
+
+    it "groups by a composite key's other columns only when the whole key is grouped" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.pairs (x int, y int, v text, PRIMARY KEY (x, y));
+        INSERT INTO public.pairs VALUES (1, 1, 'a'), (1, 2, 'A'), (2, 1, NULL), (2, 2, 'a'), (3, 1, 'c');
+      SQL
+      pairs = "FROM public.pairs p JOIN public.pairs q ON q.x = p.y WHERE p.x IN (1, 2) AND q.x IN (1, 2)"
+      expect_rewrites(
+        "SELECT p.x, p.y, p.v, count(*) #{pairs} GROUP BY p.x, p.y",
+        "WITH quaack_scan_of_pairs AS MATERIALIZED (SELECT * FROM public.pairs WHERE pairs.x IN ($1, $2)) " \
+        "SELECT p.x, p.y, p.v, count(*) FROM quaack_scan_of_pairs p JOIN quaack_scan_of_pairs q ON q.x = p.y " \
+        "GROUP BY p.x, p.y, p.v"
+      )
+      # With part of the key grouped, a column an expression reads must stay out, as it would split the groups.
+      sql = "SELECT p.x, lower(p.v), count(*) #{pairs} GROUP BY p.x, lower(p.v)"
+      expect_rewrites(
+        sql,
+        "WITH quaack_scan_of_pairs AS MATERIALIZED (SELECT * FROM public.pairs WHERE pairs.x IN ($1, $2)) " \
+        "SELECT p.x, lower(p.v), count(*) FROM quaack_scan_of_pairs p JOIN quaack_scan_of_pairs q ON q.x = p.y " \
+        "GROUP BY p.x, lower(p.v)"
+      )
+    end
+
+    it "refuses when inheritance children can repeat the key" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.kids (id int PRIMARY KEY, v text);
+        CREATE TABLE public.kids_child () INHERITS (public.kids);
+        INSERT INTO public.kids VALUES (1, 'a'), (2, 'b');
+        INSERT INTO public.kids_child VALUES (1, 'c'), (2, 'b');
+      SQL
+      kids = "FROM public.kids k JOIN public.kids j ON j.id = k.id WHERE k.id IN (1, 2) AND j.id IN (1, 2)"
+      expect_refusals("SELECT k.id, k.v, count(*) #{kids} GROUP BY k.id" =>
+                        "SELECT k.id, k.v, count(*) #{kids} GROUP BY k.id, k.v")
+    end
+  end
+
   it "needs two copies in the top-level FROM" do
     expect_refusals(
       "SELECT s.id FROM public.submissions s WHERE s.course_id IN (1, 2) " \
@@ -451,7 +549,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     )
   end
 
-  it "refuses a set operation, an unnamed FROM item, and a rewrite that won't prepare", :aggregate_failures do
+  it "refuses a set operation and an unnamed FROM item", :aggregate_failures do
     from = "FROM public.submissions s JOIN public.submissions a ON a.id = s.assessor_asset_id " \
            "WHERE s.course_id IN (1, 2) AND a.course_id IN (1, 2)"
     expect_refusals(
@@ -463,9 +561,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
       "SELECT s.id FROM (public.submissions s JOIN public.users u ON u.id = s.user_id " \
       "AND s.course_id IN (1, 2)) AS j CROSS JOIN #{from.delete_prefix("FROM ")}" =>
         "SELECT s.id FROM (public.submissions x JOIN public.users u ON u.id = x.user_id " \
-        "AND x.course_id IN (1, 2)) CROSS JOIN #{from.delete_prefix("FROM ")}",
-      "SELECT s.id, s.user_id, count(*) #{from} GROUP BY s.id" =>
-        "SELECT s.id, s.user_id, count(*) #{from} GROUP BY s.id, s.user_id"
+        "AND x.course_id IN (1, 2)) CROSS JOIN #{from.delete_prefix("FROM ")}"
     )
   end
 
