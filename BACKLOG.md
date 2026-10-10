@@ -1209,18 +1209,6 @@ From the review of 20261009-52 (minor).
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-62. Winner summary: tune the cap and prompt with real calls, and close the guard's small gaps.
-
-From the review of 20261009-59 (minor).
-- The prompt now asks for under 600 characters and the cap is 800, but the new wording was never tried with a real model (three real calls were spent on the first wording, all 652 to 729 characters). Make three to five real calls on the synthetic fixture with the one configured provider, then set the cap and the prompt line from what comes back, and show the user the answers. A model that ignores the soft target and writes about 850 characters is refused silently.
-- The dotted-name rule refuses any dotted name that isn't verbatim in the JSON sent, such as `public.orders.status`, or `orders.id` when the SQL uses an alias, so one such answer drops the whole summary. Also accept a token whose parts each appear in the input.
-- Smaller gaps, each rendered as inert escaped text: also refuse U+2028, U+2029, U+3164, U+2800 and U+FE0F; `vbscript:`, `mailto:`, `file:`, `ftp:`, `about:` and spaced `JaVaScRiPt :`; widen the dotted rule's last label to Unicode letters (`\p{L}`); add a word boundary to the "token appears in the input" test (`example.co` passes when the input has `example.company`); pin the cap at 801 as well as 700.
-
-- **Depends on:** 20261009-59.
-- **Came from:** The review of 20261009-59, 2026-10-09 (minor).
-- **Design:** report, Several LLM providers.
-- **Status:** todo
-
 ### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom.
 
 From the second review of 20261009-40 (minor). `AtomPosition` skips constant atoms (`constant?` in `Analysis#clause`), so `WHERE a = $1` -> `WHERE a = $1 AND false` (or `AND NULL::boolean`) leaves `a = $1` unchanged and the added constant is never seen as new material. It's unrealistic (`1 = 0` parses as an A_Expr and is caught), but it is the same hole the fix closed, through a bare constant. Count a constant in the rewrite that the original lacks as a new atom (or skip constants only on the original's side), add the probes, and say in DESIGN.md's known-gaps list what is taken on trust. Enclave change: unreleased list.
@@ -1228,4 +1216,17 @@ From the second review of 20261009-40 (minor). `AtomPosition` skips constant ato
 - **Depends on:** 20261009-40.
 - **Came from:** The second review of 20261009-40, 2026-10-09 (minor).
 - **Design:** rewrite-test, counterexamples.
+- **Status:** todo
+
+### 20261009-64. Winner summary: pin the "points that matter most" prompt line, and watch two guard edges.
+
+From the review of 20261009-62 (minor).
+- No spec pins the prompt line "pick the two or three points that matter most": deleting it leaves all 71 examples green. Pin it.
+- The scheme rule also refuses honest prose such as "Notes about: the plan", "the file: scan" or "reads data: 935 blocks". Unlikely in a block-count summary; if it ever trips on real answers, require a non-space after the colon for the plain schemes and keep the spaced `JaVaScRiPt :` case.
+- IPv4 and IPv6 literals pass the host rule (inert text, as before). A column named by its table (`orders.name`) is accepted by the whole-word rule. Both are inert; decide whether to refuse bare IP literals.
+- Answer-2 of the first round said the winner's Index Scan "filters rows as it reads them", which the plan doesn't show: the prompt's "say only what the plans show" didn't stop an inference. Watch for it; consider a line in the prompt against describing a step's behavior beyond its node type, table, index, rows and blocks.
+
+- **Depends on:** 20261009-62.
+- **Came from:** The review of 20261009-62, 2026-10-09 (minor).
+- **Design:** report, Several LLM providers.
 - **Status:** todo
