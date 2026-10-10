@@ -49,7 +49,7 @@ module Quaack
 
         Write three or four plain sentences, each short and making one point. The whole summary must stay under 500 characters, so pick the two or three points that matter most. Say what the winner does differently from the original, using the plans' steps, tables, and indexes, the rewrite's rules and SQL when there is a rewrite, and the new indexes' definitions when there are any. Say how many blocks each read on the slow values, which are the values from the engineer's slow plan, and say whether the winner held up on the other sets of values.
 
-        Say only what the plans and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, statistics, or data distribution, so leave those out unless a number in the payload says so. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that.
+        Say only what the plans and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, statistics, or data distribution, so leave those out unless a number in the payload says so. Describe a plan step only by its node type, table, index, rows, and blocks. Don't say how a step works or what it does beyond those, such as when it filters, or in what order it reads. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that.
 
         Call a rewrite by the name in the payload's rewrite name, if it has one. Refer to an index by its definition, never by a name you make up. Don't mention any other rewrite or index.
 
@@ -62,9 +62,23 @@ module Quaack
       # the report never shows (a rewrite's number, a candidate's label, a
       # built index's name), plus javascript: and data: as text, an @
       # address, and a format character (zero-width, bidi override).
+      #
+      # javascript: and vbscript: are refused with any space or none before the
+      # colon. The plain schemes (data, mailto, file, ftp, about) are refused
+      # only when a non-space follows the colon, so prose such as "reads data:
+      # 935 blocks" stays. A bare IPv4 or IPv6 literal is refused too: it's
+      # inert text, but a block-count summary never needs one, and it looks
+      # like a host. A time or ratio such as 3:2 isn't an IPv6 literal.
+      IP_LITERAL = Regexp.union(
+        /(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?![\w.])/,
+        /(?<![\w:])(?:\h{1,4}:){3,7}\h{1,4}(?![\w:])/,
+        /(?<![\w:])(?:\h{1,4}:){0,6}\h{1,4}::(?:\h{1,4}(?![\w:])|(?!\w))/,
+        /(?<![\w:])::\h{1,4}(?![\w:])/
+      )
       REFUSED = [
         %r{<\s*[A-Za-z/!?]}, /&#?\w+;/, /https?:|www\.|\w+\.(?:com|org|net|io|dev)\b/i,
-        /\b(?:javascript|data|vbscript|mailto|file|ftp|about)\s*:/i, /\w@\w/,
+        /\b(?:javascript|vbscript)\s*:/i, /\b(?:data|mailto|file|ftp|about)\s*:(?=\S)/i, /\w@\w/,
+        IP_LITERAL,
         /\p{Cf}|[\u2028\u2029\u3164\u2800\uFE0F]/, /\]\(|```|\*\*|__/,
         /\A\s*(?:[#>*]|-\s|\d+[.)]\s)/, /\n\s*(?:[#>*]|-\s|\d+[.)]\s)/, /\b(?:rewrite_\d|original:|quaack_)/i
       ].freeze
