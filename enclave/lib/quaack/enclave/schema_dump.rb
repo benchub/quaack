@@ -151,6 +151,10 @@ module Quaack
       # 2 MiB on Linux, shared with the environment).
       MAX_EXCLUDE_BYTES = 262_144
 
+      # With no namespace to dump, pg_dump's own default is every schema, so
+      # the full dump excludes them all (the * is its pattern, not a shell's).
+      NO_SCHEMAS = "--exclude-schema=*"
+
       VERSION = /\Apg_dump \(PostgreSQL\) (\d+)/
       MISSING = "pg_dump couldn't be run, or didn't say its version"
 
@@ -194,7 +198,8 @@ module Quaack
       def selections(namespaces, excluded, extensions, max_exclude)
         excludes = excluded.map { "--exclude-table=#{pattern(*it)}" }
         Checks.exclusions_fit!(excludes, max_exclude)
-        namespaces.map { "--schema=#{pattern(it)}" } + excludes + extensions.map { "--extension=#{pattern(it)}" }
+        schemas = namespaces.empty? ? [NO_SCHEMAS] : namespaces.map { "--schema=#{pattern(it)}" }
+        schemas + excludes + extensions.map { "--extension=#{pattern(it)}" }
       end
 
       # pg_catalog, information_schema, or any other pg_ schema, such as

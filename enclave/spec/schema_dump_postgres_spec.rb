@@ -214,6 +214,33 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     end
   end
 
+  # 20261008-52: a query that reads no table, in a database with no public
+  # schema, left the full dump with no --schema flag, so pg_dump dumped
+  # every schema.
+  describe "the full dump of a query that names no schema at all" do
+    before { conn.exec("DROP SCHEMA public CASCADE") }
+
+    it "holds none of the database's schemas" do
+      result = run([])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(result.namespaces).to eq([])
+      expect(store.read("schema_dump")["namespaces"]).to eq([])
+      expect(created_tables(ddl)).to eq([])
+      expect(ddl).not_to match(/^CREATE SCHEMA/)
+    end
+
+    it "holds none of them with an extension in a system schema, and still creates that extension" do
+      conn.exec("CREATE EXTENSION plperl")
+      run([])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(created_tables(ddl)).to eq([])
+      expect(ddl).not_to match(/^CREATE SCHEMA/)
+      expect(ddl).to include("CREATE EXTENSION IF NOT EXISTS plperl WITH SCHEMA pg_catalog;")
+    end
+  end
+
   # 20261001-10: objects in the dumped schemas can depend on objects in
   # schemas nothing else dumps, such as a production's dba schema, and arena
   # can't load them without those. pg_depend says which, so the full dump
