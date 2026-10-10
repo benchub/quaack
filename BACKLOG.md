@@ -1205,19 +1205,7 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Decided by the user (2026-10-09):** the caution should warn only about untested atoms in the part the rewrite changed. That's task 20261009-40. This task builds the diagnostic (why an atom stayed vacuous) first; the cause of the untested atoms in the user's run is still unknown and waits on that diagnostic.
 - **Status:** in progress (diagnostic)
 
-### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections.
-
-The user, 2026-10-09: the collapsible sections in "The queries" keep their "Collapse" bar on screen while open, and the user likes it. Give the same treatment, in a pale rose color, to:
-- the "Measured, and not ranked" section (`details.not-ranked`, today a plain `<details>` with a "Show the N things QUAACK tried that didn't pan out" summary), and
-- the sections inside "Index ideas that went nowhere" (`#index-ideas`). Today they're plain `<h3>` blocks ("The rewrites", "Indexes the planner wouldn't use", "Indexes QUAACK thought of that you already have"); make each a `<details>` of its own.
-
-Reuse the `details.query` rules (a left stripe, a `position: sticky` summary bar with "▼ Expand" and "▲ Collapse" on its right, the `:target` rule that opens a section a link points at, `scroll-margin-top`) through a shared class, not a copy of the CSS. Add `--rose-bg`, `--rose-edge`, and `--rose-accent` to the report's color variables, with values for the light and dark themes (the report's spec rejects color literals elsewhere and checks that every variable has a dark value), and check contrast. Decide whether the new sections start open or closed: keep "Measured, and not ranked" closed, and tell the user what you chose for the index-ideas sections. Check that every link into these sections (the caveat links, table links) still lands on a visible section, and update DESIGN.md's paragraph on the query sections to cover them. Test that each new section has the class, the sticky summary, and the rose variables, and that a `:target` link opens it.
-
-- **Depends on:** None. Touches the same CSS as 20261009-26 (verdict colors); build after it lands.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Open questions:** Whether the index-ideas sections start open or closed.
-- **Status:** todo
+### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-35. Ranking: set each kind's heading apart from its rows.
 
@@ -1320,4 +1308,13 @@ Update the specs that quote the old hover text and column headers, with a test f
 - **Depends on:** None.
 - **Came from:** The review of 20261009-41, 2026-10-09 (minor).
 - **Design:** report, burndown.
+- **Status:** todo
+
+### 20261009-44. Rose folds: an untested margin rule.
+
+From the review of 20261009-34 (minor). `details.fold > ul { margin-top: 0.5rem }` has no spec: removing `> ul` from the rule leaves every spec green. It only spaces the rewrites list in the nothing-won report. Add a spec that fails without it, or drop the selector if nothing needs it.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-34, 2026-10-09 (minor).
+- **Design:** report.
 - **Status:** todo
