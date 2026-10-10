@@ -179,7 +179,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "puts the verdict first, then the queries, the ranking, the indexes, who proposed what, and the burndown" do
       ids = html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten
-      expect(ids).to eq(%w[summary queries ranking explanation indexes accountability burndown])
+      expect(ids).to eq(%w[summary queries ranking timeouts explanation indexes accountability burndown])
     end
 
     it "calls each rewrite by its name, never its number, in a winning report and a negative one" do
@@ -405,7 +405,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "gives each caveat a short ⚠ line that links to its detail, and none when there's nothing to say" do
       expect(verdict(html)).to include('<li class="warn">&#9888; 2 measurement runs of candidates timed out, ' \
-                                       'and QUAACK dropped those candidates. <a href="#ranking">Details</a></li>')
+                                       'and QUAACK dropped those candidates. <a href="#timeouts">Details</a></li>')
       payload["timed_out_count"] = 0
       expect(verdict(render(payload))).not_to include("&#9888; 2")
       expect(verdict(render(payload))).not_to include("verdict-caveats")
@@ -438,14 +438,19 @@ RSpec.describe Quaack::Driver::Report do
     # for them goes in then. Until then only the target's existence is asserted.
     describe "the caveat links" do
       let(:caveat_payload) do
-        payload.merge("timed_out_count" => 2, "infinite_sets" => ["slow"],
+        payload.merge("timed_out_count" => 2, "infinite_sets" => %w[slow typical],
+                      "labels" => payload["labels"] + [timed_out_label],
                       "hidden_statistics" => { "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 })
       end
       let(:out) { render(caveat_payload) }
+      let(:timed_out_label) do
+        { "label" => "rewrite_1:top:2", "search" => "rewrite_1", "indexes" => ["quaack_a"], "timed_out" => true,
+          "measurements" => { "slow" => { "timed_out" => true }, "typical" => m(100, 100) }, "verdicts" => nil }
+      end
       # [caveat text fragment, subject the target must mention (nil: known gap, see above)]
       let(:caveats) do
-        [["measurement runs of candidates timed out", nil],
-         ["timed out on the slow values", nil],
+        [["measurement runs of candidates timed out", "Rewrite Vivid Cove with a new index"],
+         ["timed out on the slow and typical values", "Any candidate that finished there counts as better"],
          ["couldn&#39;t see the statistics", "orders_lower_idx"]]
       end
 
@@ -459,6 +464,22 @@ RSpec.describe Quaack::Driver::Report do
           expect(body).not_to be_nil
           expect(body).to include(subject) if subject
         end
+      end
+
+      it "explains the timed-out runs in a section of their own, from the payload's labels and sets" do
+        sec = section(out, "timeouts")
+        expect(sec).to include("<h2>", "Rewrite Vivid Cove with a new index", "timed out on the slow values",
+                               "dropped", "aren't ranked", "didn't measure them to the end",
+                               "The original query timed out on the slow and typical values",
+                               "Any candidate that finished there counts as better")
+        expect(sec).not_to include("timed out on the typical values.</li>")
+        caveat_payload["labels"].last["label"] = "<b>x</b>"
+        expect(section(render(caveat_payload), "timeouts")).to include("&lt;b&gt;x&lt;/b&gt;")
+      end
+
+      it "leaves the section out when nothing timed out" do
+        expect(render(caveat_payload.merge("timed_out_count" => 0, "infinite_sets" => [])))
+          .not_to include('id="timeouts"')
       end
 
       it "explains the hidden statistics in the indexes section, from the payload's names and count only" do
@@ -1603,7 +1624,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "comes after the ranking, and only when nothing was ranked" do
       expect(negative_html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten)
-        .to eq(%w[summary queries ranking negative-result indexes accountability burndown])
+        .to eq(%w[summary queries ranking timeouts negative-result indexes accountability burndown])
       expect(html).not_to include("negative-result")
     end
 
@@ -1712,7 +1733,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "lists them in their own section, after the explanation, with no rewrites' fates" do
       expect(winning.scan(/<section id="([a-z-]+)"[^>]*>/).flatten)
-        .to eq(%w[summary queries ranking explanation index-ideas indexes accountability burndown])
+        .to eq(%w[summary queries ranking timeouts explanation index-ideas indexes accountability burndown])
       expect(ideas).to include("<h2>Index ideas that went nowhere</h2>")
       expect(winning).not_to include("negative-result")
       expect(winning).not_to include("negative-rewrites")

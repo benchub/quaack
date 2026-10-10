@@ -115,13 +115,22 @@ module Quaack
           [reason, hover]
         end
 
+        # The timeouts section's rows: each label a measurement run of timed
+        # out, as [what it was, the sets it timed out on, in words].
+        def timed_out_runs
+          labels.select { it["timed_out"] }.map do |entry|
+            sets = (entry["measurements"] || {}).select { |_, counts| counts&.dig("timed_out") }.keys
+            [describe(entry["label"]), sets.map { Words.set(it) }]
+          end
+        end
+
         # Short caveats, as [sentence, link target].
         def caveats
           runs = ["#{Words.count(timed_out_count, "measurement run")} of candidates timed out, and QUAACK dropped " \
-                  "those candidates.", "ranking"]
+                  "those candidates.", "timeouts"]
           original = ["#{Candidates::ORIGINAL.capitalize} timed out on the " \
                       "#{list(infinite_sets.map { Words.set(it) })} values, so any candidate that finished there " \
-                      "counts as better.", "ranking"]
+                      "counts as better.", "timeouts"]
           [*([runs] if timed_out_count.positive?), *([original] unless infinite_sets.empty?),
            *([[hidden_statistics, "indexes"]] if hidden_statistics)]
         end

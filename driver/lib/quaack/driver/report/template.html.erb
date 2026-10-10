@@ -198,6 +198,23 @@
 <% end %>
 <% end %>
 </section>
+<% if timed_out_count.positive? || !infinite_sets.empty? %>
+<section id="timeouts"><h2>Runs that timed out</h2>
+<% if timed_out_count.positive? %>
+<h3>Candidates</h3>
+<p><%= h Words.count(timed_out_count, "measurement run") %> of candidates timed out. QUAACK dropped those candidates, so they aren't ranked, and it didn't measure them to the end.</p>
+<% unless timed_out_runs.empty? %>
+<ul>
+<% timed_out_runs.each do |what, sets| %><li><%= h what %><%= h(" timed out on the #{list(sets)} values") unless sets.empty? %>.</li>
+<% end %></ul>
+<% end %>
+<% end %>
+<% unless infinite_sets.empty? %>
+<h3>The original query</h3>
+<p><%= h Candidates::ORIGINAL.capitalize %> timed out on the <%= h list(infinite_sets.map { Words.set(it) }) %> values, so QUAACK has no block count for it there. Any candidate that finished there counts as better.</p>
+<% end %>
+</section>
+<% end %>
 <% if winner %>
 <section id="explanation"><h2>Why the winner reads fewer blocks</h2>
 <p><%= h describe(winner["label"]) %> <%= h compared %> <%= h CACHE %></p>
