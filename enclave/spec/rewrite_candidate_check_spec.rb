@@ -650,17 +650,26 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     # The fix round of 20261008-32: the original's qualified query writes
     # its user names with their schema, and the LLM may write them bare.
     it "gives a bare name the schema the original writes it with" do
-      conn.exec(<<~SQL)
-        CREATE FUNCTION public.sim(text, text) RETURNS real LANGUAGE sql IMMUTABLE AS $$SELECT 1::real$$;
-        CREATE FUNCTION public.close_to(text, text) RETURNS bool LANGUAGE sql IMMUTABLE AS $$SELECT true$$;
-        CREATE OPERATOR public.%% (LEFTARG = text, RIGHTARG = text, FUNCTION = public.close_to);
-      SQL
+      conn.exec("CREATE EXTENSION pg_trgm WITH SCHEMA public")
       trgm = described_class::Original.new(
         relations:, placeholders: 1,
-        sql: "SELECT public.sim(status, $1) FROM public.orders WHERE status OPERATOR(public.%%) $1"
+        sql: "SELECT public.similarity(status, $1) FROM public.orders WHERE status OPERATOR(public.%) $1"
       )
-      expect(outcome("SELECT sim(status, $1) FROM orders WHERE status %% $1", original: trgm))
-        .to eq("SELECT public.sim(status, $1) FROM public.orders WHERE status OPERATOR(public.%%) $1")
+      expect(outcome("SELECT similarity(status, $1) FROM orders WHERE status % $1", original: trgm))
+        .to eq("SELECT public.similarity(status, $1) FROM public.orders WHERE status OPERATOR(public.%) $1")
+    end
+
+    # 20261008-41: a name's kind is part of its key. The original's type
+    # public.hstore gives no schema to a bare function hstore(...), which
+    # is a new name and goes to pg_catalog.
+    it "keeps a name's kind apart: the original's type gives a bare function of that name no schema" do
+      typed = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT $1::public.hstore FROM public.orders"
+      )
+      expect(outcome("SELECT hstore(status) FROM orders", original: typed))
+        .to eq("SELECT pg_catalog.hstore(status) FROM public.orders")
+      expect(outcome("SELECT $1::hstore FROM orders", original: typed))
+        .to eq("SELECT $1::public.hstore FROM public.orders")
     end
 
     it "refuses a bare name the original writes with more than one schema" do
