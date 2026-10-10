@@ -1247,6 +1247,8 @@ Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexam
 
 ### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle. Done, see BACKLOG-COMPLETE.md.
 
+### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
+
 ### 20261009-43. Funnel rectangle: minor findings from 20261009-41.
 
 - The unrecorded-first-band spec asserts the band is at least `WIDTH / 4` (80), but `UNKNOWN` is 96 (0.3 of `WIDTH`), and DESIGN.md says "about a third". Tighten the bound to what `UNKNOWN` is meant to be, and make DESIGN.md and the code agree on the number.
