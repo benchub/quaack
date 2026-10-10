@@ -146,7 +146,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     replies["rewrite-rules"] = []
     run
 
-    expect(closing("rewrite-rules")).to eq(["QUAACK's rules made 3 rewrites, 2 kept", "No rule applied"])
+    expect(closing("rewrite-rules")).to eq(["The transform rules made 3 rewrites, 2 kept", "No rule applied"])
   end
 
   it "says how many rewrites llm-rewrites gave, and how many of the operator's operator-rewrites checked and kept" do
@@ -509,8 +509,8 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(closing("rewrite-rules"))
-        .to eq(["QUAACK's rules made 2 rewrites, 1 kept, with key_in_self_join",
-                "QUAACK's rules made 2 rewrites, 1 kept, with shared_scan_cte, key_in_self_join, and or_to_union"])
+        .to eq(["The transform rules made 2 rewrites, 1 kept, with key_in_self_join",
+                "The transform rules made 2 rewrites, 1 kept, with shared_scan_cte, key_in_self_join, and or_to_union"])
     end
 
     it "says how much each measuring step did" do
@@ -590,7 +590,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect([closing("index-search"), closing("arena-setup"), closing("rewrite-rules")])
-        .to eq([["Searched for indexes"], ["Set up the arena"], ["QUAACK's rules made 1 rewrite, 1 kept"]])
+        .to eq([["Searched for indexes"], ["Set up the arena"], ["The transform rules made 1 rewrite, 1 kept"]])
       expect(stderr.string).not_to include(PROGRESS_SENTINEL)
     end
   end
@@ -640,7 +640,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       steps = %w[llm-index-ideas rewrite-rules llm-rewrites operator-rewrites plan-pruning rewrite-correctness
                  rewrite-index-ideas index-build]
       expect(steps.map { closing(it) })
-        .to eq([["Got 1 index idea from the LLM, 1 of them new"], ["QUAACK's rules made 1 rewrite, 1 kept"],
+        .to eq([["Got 1 index idea from the LLM, 1 of them new"], ["The transform rules made 1 rewrite, 1 kept"],
                 ["Got 1 rewrite from the LLM, 1 kept"], ["Checked your 1 rewrite, 1 kept"],
                 ["Searched for indexes for 1 rewrite"], ["Tested 1 rewrite, 1 passed"],
                 ["Asked for index ideas for 1 rewrite"], ["Built 1 index"]])

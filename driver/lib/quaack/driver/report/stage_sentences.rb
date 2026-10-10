@@ -17,7 +17,7 @@ module Quaack
           "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
           "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
                           "dropping, up to three.",
-          "rewrite-rules" => "QUAACK's own rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
+          "rewrite-rules" => "The transform rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
           "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
                             "its checks or go over the limit of five.",
           "operator-rewrites" => "QUAACK asks the LLM what each rewrite you wrote assumes, checks those assumptions " \

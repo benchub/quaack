@@ -1830,7 +1830,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
         .to eq(["Source", "Proposed", "Not kept", "Same plan as the original", "Wrong results",
                 "Not better", "Ranked", "Stopped for another reason"])
-      expect(rows(accountable, "rewrites").keys).to eq([esc("QUAACK's own rules"), "The LLM", "You"])
+      expect(rows(accountable, "rewrites").keys).to eq(["Transform rules", "The LLM", "You"])
     end
 
     # Task 20261004-69: the burndown's "refused on arrival" is only
@@ -1839,7 +1839,7 @@ RSpec.describe Quaack::Driver::Report do
     it "says what the not kept column counts: every rewrite dropped before it was stored" do
       expect(accountable).to include(
         "A rewrite not kept is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, " \
-        "ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the " \
+        "ten from the transform rules), assumed something QUAACK can't check or your data doesn't hold, failed the " \
         "checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, " \
         "or, for one of QUAACK's own, repeated another."
       )
@@ -1848,7 +1848,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "counts each source's rewrites by what became of them" do
       counted = rows(accountable, "rewrites")
-      expect(counted[esc("QUAACK's own rules")]).to eq(%w[3 2 0 0 0 1 0])
+      expect(counted["Transform rules"]).to eq(%w[3 2 0 0 0 1 0])
       expect(counted["The LLM"]).to eq(%w[8 2 1 3 1 0 1])
     end
 
@@ -1866,8 +1866,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says not recorded, never zero, for proposals and refusals the burndown doesn't count" do
       expect(rows(accountable, "rewrites")["You"].first(2)).to eq(["not recorded", "not recorded"])
-      expect(rows(html, "rewrites")[esc("QUAACK's own rules")]).to eq(["not recorded", "not recorded", "0", "0",
-                                                                       "0", "1", "0"])
+      expect(rows(html, "rewrites")["Transform rules"]).to eq(["not recorded", "not recorded", "0", "0",
+                                                               "0", "1", "0"])
       expect(html).to include("&ldquo;Not recorded&rdquo; means this run didn't count it. It doesn't mean none.")
     end
 
@@ -2455,7 +2455,7 @@ RSpec.describe Quaack::Driver::Report do
         "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
         "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
                         "dropping, up to three.",
-        "rewrite-rules" => "QUAACK's own rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
+        "rewrite-rules" => "The transform rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
         "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
                           "its checks or go over the limit of five.",
         "operator-rewrites" => "QUAACK asks the LLM what each rewrite you wrote assumes, checks those assumptions " \

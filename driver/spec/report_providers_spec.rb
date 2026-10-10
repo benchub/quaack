@@ -163,7 +163,7 @@ RSpec.describe Quaack::Driver::Report do
   describe "who proposed what" do
     it "splits the LLM's rewrites row into a row per provider, under the LLM total" do
       counted = rows("accountability-rewrites")
-      expect(counted.keys).to eq([esc("QUAACK's own rules"), "The LLM", "The LLM: groq", "The LLM: opus",
+      expect(counted.keys).to eq(["Transform rules", "The LLM", "The LLM: groq", "The LLM: opus",
                                   "The LLM: not recorded", "You"])
       expect(counted["The LLM"]).to eq(%w[5 2 1 0 1 1 0])
       expect(counted["The LLM: groq"]).to eq(%w[3 2 0 0 1 0 0])
@@ -312,7 +312,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "names it, and splits no table by provider" do
       expect(summary(1)).to include("suggested by the LLM (anthropic, <code>claude-opus-5-5</code>).")
-      expect(rows("accountability-rewrites").keys).to eq([esc("QUAACK's own rules"), "The LLM", "You"])
+      expect(rows("accountability-rewrites").keys).to eq(["Transform rules", "The LLM", "You"])
       expect(rows("accountability-indexes").keys).not_to include(a_string_starting_with("The LLM:"))
       expect(header("llm-calls")).to eq(["What it was for", "anthropic"])
       expect(rows("llm-providers").keys).to eq(["anthropic"])

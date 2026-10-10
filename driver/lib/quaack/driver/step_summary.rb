@@ -63,7 +63,7 @@ module Quaack
         return "No rule applied" if outcomes.empty?
 
         names = CountedSummary.fired(reply)
-        made = "QUAACK's rules made #{count(outcomes.size, "rewrite")}, #{kept(outcomes)} kept"
+        made = "The transform rules made #{count(outcomes.size, "rewrite")}, #{kept(outcomes)} kept"
         names.empty? ? made : "#{made}, with #{CountedSummary.listed(names)}"
       end
 
