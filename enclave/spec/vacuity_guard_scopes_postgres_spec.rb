@@ -31,4 +31,26 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
           "UNION ALL SELECT fx.assignments.id FROM fx.assignments WHERE fx.assignments.workflow_state <> 'deleted')"
     expect(untested(sql)).to eq([])
   end
+
+  # The hit passes every branch, so a near miss that fails one atom of one
+  # branch still passes the others. A masking near miss fails an atom in
+  # each other branch too.
+  it "tests an atom of one UNION ALL branch that the other branch would let through" do
+    sql = "SELECT count(*) FROM fx.assignments WHERE fx.assignments.id IN (" \
+          "SELECT fx.assignments.id FROM fx.assignments WHERE fx.assignments.context_type = 'Course' " \
+          "UNION ALL SELECT fx.assignments.id FROM fx.assignments WHERE fx.assignments.workflow_state <> 'deleted')"
+    expect(untested(sql)).to eq([])
+  end
+
+  it "tests each arm of an OR, failing the other arm with it" do
+    sql = "SELECT count(*) FROM fx.assignments WHERE fx.assignments.context_type = 'Course' " \
+          "OR fx.assignments.workflow_state <> 'deleted'"
+    expect(untested(sql)).to eq([])
+  end
+
+  it "reads a NOT arm of an OR as failed when its atom holds" do
+    sql = "SELECT count(*) FROM fx.assignments WHERE fx.assignments.context_type = 'Course' " \
+          "AND (fx.assignments.muted IS NULL OR NOT fx.assignments.muted)"
+    expect(untested(sql)).to eq([])
+  end
 end

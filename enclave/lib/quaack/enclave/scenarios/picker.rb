@@ -33,11 +33,13 @@ module Quaack
         def satisfiable(atoms) = atoms.reject { |i| @pools[i].satisfying.empty? }
 
         # pick for a group: its near miss counts only when it's one of the atoms.
+        # A masking near miss (see Branches) fails its also atoms too.
         def pick_for(atoms, columns, group)
-          pick(atoms, columns, (group.near if atoms.include?(group.near)), group.mode, group.shift)
+          nears = [group.near, *group.also] & atoms
+          pick(atoms, columns, (nears unless nears.empty?), group.mode, group.shift)
         end
 
-        # :skip when a near miss has no value. With no value that fits every
+        # near is the atoms the value fails, or nil. :skip when a near miss has no value. With no value that fits every
         # atom, it takes the first that passes the CHECKs, or :skip when none
         # does, rather than load a row that breaks a CHECK. shift takes the
         # value after that many others that fit, or the first when there are
@@ -59,7 +61,8 @@ module Quaack
           found = first_fitting(candidates, atoms, columns, near, shift)
           return found if found.size > shift || near.nil?
 
-          first_fitting(candidates, atoms.select { |i| @scopes[i] == @scopes[near] }, columns, near, shift)
+          scopes = near.map { @scopes[it] }
+          first_fitting(candidates, atoms.select { |i| scopes.include?(@scopes[i]) }, columns, near, shift)
         end
 
         def first_fitting(candidates, atoms, columns, near, shift)
@@ -73,7 +76,7 @@ module Quaack
         end
 
         def candidates(atoms, near)
-          return rotated(@pools[near].failing, near) if near
+          return near.flat_map { |i| rotated(@pools[i].failing, i) } if near
 
           atoms.flat_map { |i| rotated(@pools[i].satisfying, i) }
         end
@@ -92,7 +95,7 @@ module Quaack
         end
 
         def fits?(atoms, columns, near, value)
-          atoms.all? { |i| @probes[i].call(value) == (i == near ? "f" : "t") } && allowed?(columns, value)
+          atoms.all? { |i| @probes[i].call(value) == (near&.include?(i) ? "f" : "t") } && allowed?(columns, value)
         end
 
         def allowed?(columns, value) = columns.all? { |t, col| @checks.allows?(t, col, value) }
