@@ -85,4 +85,63 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     sql = "SELECT * FROM fx.posts WHERE fx.posts.score > 5 ORDER BY fx.posts.id LIMIT 20 OFFSET 40"
     expect(untested(sql)).to eq(["fx.posts.score > $1"])
   end
+
+  # 20261010-26: the comparisons fixture-compare runs for the guard, each
+  # as [fixture rows, loosened query, inserts].
+  def comparisons
+    calls = []
+    allow(Quaack::Enclave::ResultComparison).to receive(:compare_in_load_orders)
+      .and_wrap_original do |original, runner, rows, **kw|
+        calls << [rows, kw[:candidate], kw[:inserts]]
+        original.call(runner, rows, **kw)
+      end
+    calls
+  end
+
+  # The original returns nothing on the fixture, so neither query can
+  # return a row any load order puts in a different place.
+  it "runs no comparison when the OFFSET is past the original's rows" do
+    calls = comparisons
+    sql = "SELECT * FROM fx.posts WHERE fx.posts.score > 5 ORDER BY fx.posts.id LIMIT 20 OFFSET 40"
+    expect(untested(sql)).to eq(["fx.posts.score > $1"])
+    expect(calls).to eq([])
+  end
+
+  # A retry that rebuilds the same fixture can't change a comparison
+  # that showed no mismatch, so none runs twice.
+  it "compares an atom on the same fixture once across retries" do
+    calls = comparisons
+    sql = "SELECT * FROM fx.users WHERE fx.users.id > 0 AND fx.users.id > -5 " \
+          "ORDER BY fx.users.created_at FETCH FIRST 1 ROWS WITH TIES"
+    expect(untested(sql)).to eq(["fx.users.id > $1", "fx.users.id > $2"])
+    expect(calls).not_to be_empty
+    expect(calls.size).to eq(calls.uniq.size)
+  end
+
+  # email needs a comparison to count as tested (see the unordered
+  # LIMIT 1 above); state changes the rows. Past the cap, it stays untested.
+  describe "the cap on comparisons per query" do
+    let(:sql) { "SELECT * FROM fx.users WHERE fx.users.email = 'x' AND fx.users.state = 'a' LIMIT 1" }
+
+    it "tests both atoms under the cap" do
+      calls = comparisons
+      expect(untested(sql)).to eq([])
+      expect(calls.size).to be_between(1, described_class::MAX_COMPARISONS)
+    end
+
+    it "leaves the atoms past the cap untested" do
+      stub_const("#{described_class}::MAX_COMPARISONS", 0)
+      calls = comparisons
+      expect(untested(sql)).to eq(["fx.users.email = $1"])
+      expect(calls.size).to eq(0)
+    end
+
+    it "counts every fixture and retry of the query against the cap" do
+      stub_const("#{described_class}::MAX_COMPARISONS", 3)
+      calls = comparisons
+      untested("SELECT * FROM fx.users WHERE fx.users.id > 0 AND fx.users.id > -5 " \
+               "ORDER BY fx.users.created_at FETCH FIRST 1 ROWS WITH TIES")
+      expect(calls.size).to eq(3)
+    end
+  end
 end
