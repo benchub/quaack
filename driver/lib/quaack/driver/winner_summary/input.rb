@@ -75,10 +75,10 @@ module Quaack
           label = Array(payload["top"]).first.then { it["label"] if it.is_a?(Hash) }
           return unless label.is_a?(String)
 
-          { "original" => { "sql" => sql(payload["original_sql"]), "plan" => nodes(payload["original_plan"]),
-                            "plan_source" => ORIGINAL_PLAN },
+          { "original" => { "sql" => (original = sql(payload["original_sql"])),
+                            "plan" => nodes(payload["original_plan"]), "plan_source" => ORIGINAL_PLAN },
             "winner" => (winner = winner_part(label, payload)), "blocks_read" => blocks(label, payload),
-            "repeated_conditions" => Repeats.of(payload["original_sql"], winner.dig("rewrite", "sql")) }
+            "repeated_conditions" => Repeats.of(original, winner.dig("rewrite", "sql")) }
         end
 
         def measured(label, payload) = Array(payload["labels"]).find { it["label"] == label } || {}

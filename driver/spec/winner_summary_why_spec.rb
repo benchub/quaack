@@ -246,21 +246,24 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     # Synthetic originals whose OR arms or UNION branches repeat a condition.
     repeated = {
       "or_to_union" => ["SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id WHERE " \
-                        "(o.tenant_id = $1 AND o.state = $2) OR (o.tenant_id = $1 AND u.region = $3)",
+                        "(o.tenant_id = $1 AND o.state = $2) OR (o.tenant_id = $3 AND u.region = $4)",
                         "SELECT o.id FROM public.orders o WHERE o.tenant_id = $1 AND o.state = $2 UNION " \
                         "SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id " \
-                        "WHERE o.tenant_id = $1 AND u.region = $3",
-                        { "condition" => "tenant_id = $1", "repeated_across" => "OR arms", "in_original" => 2,
+                        "WHERE o.tenant_id = $3 AND u.region = $4",
+                        { "condition" => "tenant_id = $", "repeated_across" => "OR arms", "in_original" => 2,
                           "in_winner" => 2 }],
       "existence_in_flip" => ["SELECT 1 FROM public.orders WHERE user_id IN (SELECT id FROM public.users u " \
-                              "WHERE (u.region = $1 AND u.active) OR (u.region = $1 AND u.vip)) LIMIT 1",
+                              "WHERE (u.region = $1 AND u.active) OR (u.region = $2 AND u.vip)) LIMIT $3",
                               "SELECT 1 FROM public.users u WHERE u.region = $1 AND (u.active OR u.vip) AND " \
                               "EXISTS (SELECT 1 FROM public.orders o WHERE o.user_id = u.id) LIMIT 1",
-                              { "condition" => "region = $1", "repeated_across" => "OR arms", "in_original" => 2,
+                              { "condition" => "region = $", "repeated_across" => "OR arms", "in_original" => 2,
                                 "in_winner" => 1 }],
-      "union_outer_filter_removal" => [WinnerSummaryWhy::FAMILIES["union_outer_filter_removal"][:original],
-                                       WinnerSummaryWhy::FAMILIES["union_outer_filter_removal"][:winner],
-                                       { "condition" => "state = $1", "repeated_across" => "UNION branches",
+      "union_outer_filter_removal" => ["SELECT id FROM (SELECT id, state FROM public.orders WHERE state = $1 " \
+                                       "UNION SELECT id, state FROM public.archived WHERE state = $2) s " \
+                                       "WHERE s.state = $3",
+                                       "SELECT id FROM (SELECT id, state FROM public.orders WHERE state = $1 " \
+                                       "UNION SELECT id, state FROM public.archived WHERE state = $2) s",
+                                       { "condition" => "state = $", "repeated_across" => "UNION branches",
                                          "in_original" => 3, "in_winner" => 2 }]
     }
 
@@ -286,8 +289,14 @@ RSpec.describe Quaack::Driver::WinnerSummary do
 
     it "refuses an answer that gives a rule for every query" do
       ["Always split an OR into a UNION.", "You should never write an OR across tables.",
-       "All queries should use UNION, not OR.", "Every query with an OR gains from this."].each do |text|
+       "All queries should use UNION, not OR.", "Every query with an OR gains from this.",
+       "Never use an OR across tables.", "Developers should always prefer UNION.",
+       "Always, an OR across tables is slower.", "You must never forget the UNION form."].each do |text|
         expect(run(text, base)).to have_attributes(outcome: "rejected"), text
+      end
+      ["The winner never scans public.orders whole and reads 40 blocks.",
+       "The original always read 9,000 blocks on the slow values."].each do |text|
+        expect(run(text, base)).to have_attributes(outcome: "used"), text
       end
       expect(run("The original OR read two tables, so a UNION let each arm use an Index Scan.", base))
         .to have_attributes(outcome: "used")

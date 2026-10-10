@@ -101,25 +101,39 @@ module Quaack
           return unless CONDITIONS.include?(node.node)
 
           copy = PgQuery::Node.decode(PgQuery::Node.encode(node))
-          return unless strip(copy)
+          return unless strip(copy, cut: !columns_equal?(copy))
 
-          text = PgQuery.deparse_expr(copy)
+          text = PgQuery.deparse_expr(copy).gsub(/\$1(?!\d)/, "$")
           text if text.size <= LONGEST
         rescue PgQuery::ParseError
           nil
         end
 
-        # Cuts each column reference in message to its column name, and
-        # whether message holds no literal.
-        def strip(message)
+        # A join equality such as a.id = b.a_id keeps its qualifiers, since
+        # cut to id = a_id it would lose which tables it joins.
+        def columns_equal?(node)
+          node.node == :a_expr && [node.a_expr.lexpr, node.a_expr.rexpr].all? { it&.node == :column_ref }
+        end
+
+        # Makes every placeholder the same, so $1 and $3 in two arms match as
+        # one shape (QUAACK gives each literal its own placeholder, so equal
+        # shapes may hold different values), cuts each column reference to its
+        # column name unless cut is false, and says whether message holds no
+        # literal.
+        def strip(message, cut: true)
           return false if message.is_a?(PgQuery::A_Const)
 
-          cut(message) if message.is_a?(PgQuery::ColumnRef)
+          normalize(message, cut)
           message.class.descriptor.all? do |field|
             value = message[field.name]
             values = field.label == :repeated ? value.to_a : [value]
-            values.all? { !it.class.respond_to?(:descriptor) || strip(it) }
+            values.all? { !it.class.respond_to?(:descriptor) || strip(it, cut:) }
           end
+        end
+
+        def normalize(message, cut)
+          message.number = 1 if message.is_a?(PgQuery::ParamRef)
+          cut(message) if cut && message.is_a?(PgQuery::ColumnRef)
         end
 
         def cut(column_ref)
