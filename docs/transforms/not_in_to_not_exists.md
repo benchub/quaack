@@ -2,7 +2,7 @@
 
 A NOT IN subquery whose tested columns and selected columns are all not null becomes a NOT EXISTS correlated on each pair.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 

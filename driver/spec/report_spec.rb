@@ -1622,6 +1622,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(bug_html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten.first(2)).to eq(%w[quaack-bugs summary])
       expect(bug_section).to include("<h2>QUAACK bug: a rule made a wrong rewrite</h2>")
       expect(bug_section).to include("a rule has a bug")
+      expect(bug_section).to include(esc(
+        "<p>The transform rules are meant to be sound: a rewrite one makes should return the same rows as the " \
+        "original query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped " \
+        "these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>"
+      ))
+      expect(bug_section).not_to include("mechanical")
     end
 
     it "names each rewrite, the rules that made it, and the test that proved it wrong" do
@@ -1848,7 +1854,7 @@ RSpec.describe Quaack::Driver::Report do
         "A rewrite not kept is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, " \
         "ten from the transform rules), assumed something QUAACK can't check or your data doesn't hold, failed the " \
         "checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, " \
-        "or, for one of QUAACK's own, repeated another."
+        "or, from a transform rule, repeated another."
       )
       expect(accountable).not_to include("refused on arrival")
     end
@@ -2307,7 +2313,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "shows what each rule made" do
-      expect(rewrite_table).to include(row("Transform rule rewrites", 0, "by the rule key_in_self_join: 2",
+      expect(rewrite_table).to include(row("Transform rule rewrites", 0, "by the transform rule key_in_self_join: 2",
                                            "the same as another idea: 1", 0, 1, "none"))
     end
 
@@ -2949,7 +2955,7 @@ RSpec.describe Quaack::Driver::Report do
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
                      "<ul><li>", '<td class="step" style="padding-left: 0.65rem">', %(<td><code class="sql">), "<td>",
-                     "<td>by the rule ", %(<td><code class="sql">), 'couldn&#39;t describe (<code class="sql">')
+                     "<td>by the transform rule ", %(<td><code class="sql">), 'couldn&#39;t describe (<code class="sql">')
     end
 
     it "prints, escaped, every value a negative report shows" do

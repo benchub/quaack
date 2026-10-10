@@ -2,7 +2,7 @@
 
 A WHERE conjunct on a UNION subquery's columns is removed when every arm's WHERE already applies it to the column it outputs.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 

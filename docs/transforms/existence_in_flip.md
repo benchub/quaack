@@ -2,7 +2,7 @@
 
 An existence check under LIMIT 1 is turned inside out: an uncorrelated IN subquery's table drives, and the rest of the query becomes an EXISTS correlated on the IN's two sides.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 

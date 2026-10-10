@@ -2,7 +2,7 @@
 
 Where a joined parent is filtered to one Rails polymorphic type and id, the child's own column for that type is filtered to the same id.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 
