@@ -352,17 +352,9 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       untested: ["fx.posts.created_at > $1"],
       cause: "SELECT * in a CTE body with an outer filter; the near miss may fail the outer filter too"
     },
-    "keyset pagination" => {
-      untested: ["fx.posts.id > $2"],
-      cause: "the id near miss can't share user_id with a PK pinned elsewhere, or sorts outside the cut"
-    },
     "correlated scalar count" => {
       untested: ["fx.comments.post_id = fx.posts.id"],
       cause: "correlated join atom in a scalar subquery; no comment of another post is built"
-    },
-    "Rails count with where.not" => {
-      untested: ["fx.comments.workflow_state <> $2"],
-      cause: "unclear; plain count(*) with a filter passes, so maybe the pinned post_id = 3 near miss"
     },
     "NOT EXISTS correlated" => {
       untested: ["EXISTS (SELECT $1 FROM fx.comments WHERE fx.comments.post_id = fx.posts.id)",
