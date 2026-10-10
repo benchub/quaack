@@ -1252,15 +1252,6 @@ From the review of 20261009-27 (minor). README.md's verdict section (about lines
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-49. Root `spec/` suite: a one-off failure under load.
-
-Seen 2026-10-09 by the builders of 20261009-39 and 20261009-28, each on its first full `rake` run while other builders and reviewers ran on the host (load 7 to 13): "Spec suites failed: ./spec (exit 1)". Each time the root suite passed alone (332 examples) and a second full run passed everything. Neither builder saw which example failed, because they showed only the last 25 lines. Merged `main` passed a full run at load about 7. A flake that depends on load or on timing is a defect: it makes the per-commit check untrustworthy. Find it: run the root suite repeatedly under artificial CPU load (several `yes > /dev/null` processes, or running two suites at once), keep the whole output of each failing run, and find the example. Likely suspects are a statement timeout or a fixed sleep in a Postgres spec, a Docker container start race, or a spec that depends on wall-clock time. Fix the cause, with a test where it can be had; do not add retries. If it can't be reproduced in a reasonable effort, add the diagnostics (keep each suite's failing output whole in the run log) so the next occurrence is caught.
-
-- **Depends on:** None.
-- **Came from:** The builders of 20261009-39 and 20261009-28, 2026-10-09.
-- **Design:** none (CLAUDE.md Development).
-- **Status:** todo
-
 ### 20261009-50. An egress check on every DDL field of `negative`.
 
 From the review of 20261009-39 (minor, defense in depth). `negative` goes out with no whitelist check, and its `ddl` fields (declined and existing indexes) and the new `covered_by.definition` are produced by the NegativeResult step and checked nowhere on the way out; DESIGN.md says the step is where they're reviewed. Add an egress check that every DDL string in `negative` is in redacted form (no literal other than an MCV value the payload carries), with a sentinel test that the check catches a planted literal. Enclave change: put it on the unreleased list.
