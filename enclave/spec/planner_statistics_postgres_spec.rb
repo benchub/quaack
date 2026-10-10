@@ -212,9 +212,10 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       SQL
       run([table("public", "typed")])
 
-      expect(stored_table("typed")["column_types"])
-        .to eq("a" => "date", "b" => "timestamp", "c" => "timestamptz", "e" => "int8", "f" => "varchar",
-               "g" => "_int8", "j" => "int4")
+      expected = { "a" => "date", "b" => "timestamp", "c" => "timestamptz", "e" => "int8", "f" => "varchar",
+                   "g" => "_int8", "j" => "int4" }
+      expect(stored_table("typed")["column_types"]).to eq(expected)
+      expect(run([table("public", "typed")]).statistics.table(table("public", "typed")).column_types).to eq(expected)
     end
   end
 

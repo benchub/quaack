@@ -11,8 +11,8 @@ RSpec.describe "the statistics input" do
     Quaack::Enclave::ColumnStatistics.new(n_distinct:, null_frac:, correlation:)
   end
 
-  def table(columns, reltuples: 1000.0, name: orders, column_names: columns.keys, indexes: {})
-    Quaack::Enclave::TableStatistics.new(name:, reltuples:, columns:, column_names:, indexes:)
+  def table(columns, reltuples: 1000.0, name: orders, column_names: columns.keys, indexes: {}, **more) # rubocop:disable Metrics/ParameterLists
+    Quaack::Enclave::TableStatistics.new(name:, reltuples:, columns:, column_names:, indexes:, **more)
   end
 
   def index_on(table_name, key)
@@ -446,6 +446,23 @@ RSpec.describe "the statistics input" do
       it "requires non-empty String names" do
         expect { table({}, column_names: ["id", ""]) }.to raise_error(ArgumentError, /column_names/)
         expect { table({}, column_names: [:id]) }.to raise_error(ArgumentError, /column_names/)
+      end
+    end
+
+    describe "column types" do
+      it "maps column names to type names, and is empty when none are given" do
+        names = %w[id code]
+
+        expect(table({}, column_names: names).column_types).to eq({})
+        expect(table({}, column_names: names, column_types: { "code" => "bpchar" }).column_types)
+          .to eq("code" => "bpchar").and be_frozen
+      end
+
+      it "rejects a type for a column that isn't in the list, and a type that isn't a name" do
+        expect { table({}, column_names: %w[id], column_types: { "code" => "bpchar" }) }
+          .to raise_error(ArgumentError, /code/)
+        expect { table({}, column_names: %w[id], column_types: { "id" => :int8 }) }
+          .to raise_error(ArgumentError, /column_types/)
       end
     end
 

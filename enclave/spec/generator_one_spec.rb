@@ -15,8 +15,9 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
   # column_names defaults to the columns that have statistics, plus any
   # extra names given.
-  def table(name, columns = {}, extra: [], reltuples: 1000.0)
-    Quaack::Enclave::TableStatistics.new(name:, reltuples:, columns:, column_names: columns.keys + extra, indexes: {})
+  def table(name, columns = {}, extra: [], reltuples: 1000.0, types: {})
+    Quaack::Enclave::TableStatistics.new(name:, reltuples:, columns:, column_names: columns.keys + extra, indexes: {},
+                                         column_types: types)
   end
 
   def statistics(*tables) = Quaack::Enclave::Statistics.new(tables:)
@@ -695,9 +696,19 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).not_to include("total")
       end
 
-      it "reads each strict form: IS NOT NULL, <>, BETWEEN, IN, = ANY, LIKE, and a join condition" do
+      it "doesn't reduce by IS DISTINCT FROM or IS NOT DISTINCT FROM, which are never null" do
+        ["o.region IS DISTINCT FROM 1", "o.region IS NOT DISTINCT FROM 1"].each do |conjunct|
+          sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+                "WHERE #{conjunct} AND o.total IS NULL"
+
+          expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).not_to include("total"), conjunct
+        end
+      end
+
+      it "reads each strict form: IS NOT NULL, <>, BETWEEN, IN, = ANY, LIKE, a COLLATE, and a join condition" do
         ["o.region IS NOT NULL", "o.region <> 1", "3 < o.region", "o.region BETWEEN 1 AND 2", "o.region IN (1, 2)",
-         "o.region = ANY('{1}')", "o.region LIKE 'a%'", "o.parent_id = c.id"].each do |conjunct|
+         "o.region = ANY('{1}')", "o.region LIKE 'a%'", "o.parent_id = c.id", "o.region COLLATE \"C\" = '1'",
+         "'1' = o.region COLLATE \"C\""].each do |conjunct|
           sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
                 "WHERE #{conjunct} AND o.total IS NULL"
 
@@ -1028,8 +1039,25 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                   [key_column("note", collation: "en-x-icu", opclass: "text_pattern_ops")]])
       end
 
-      it "leaves text_pattern_ops out for a LIKE under C or POSIX, or when a comparison or keyset is the range" do
+      it "keys a char(n) column with bpchar_pattern_ops, the class HypoPG takes for it" do
+        stats = statistics(table(orders, { "a" => column(10) }, extra: %w[code], types: { "code" => "bpchar" }))
+
+        expect(generate("SELECT 1 FROM public.orders WHERE code LIKE 'abc%'", stats).map(&:key))
+          .to eq([[key_column("code")], [key_column("code", opclass: "bpchar_pattern_ops")]])
+      end
+
+      it "keeps text_pattern_ops for varchar and for a column of unknown type" do
+        stats = statistics(table(orders, { "a" => column(10) }, extra: %w[v w], types: { "v" => "varchar" }))
+
+        %w[v w].each do |name|
+          expect(generate("SELECT 1 FROM public.orders WHERE #{name} LIKE 'abc%'", stats).last.key)
+            .to eq([key_column(name, opclass: "text_pattern_ops")])
+        end
+      end
+
+      it "leaves text_pattern_ops out for a LIKE under C, POSIX, or ucs_basic, or under another range" do
         ["note COLLATE \"POSIX\" LIKE 'abc%'", "note COLLATE pg_catalog.\"C\" LIKE 'abc%'",
+         "note COLLATE ucs_basic LIKE 'abc%'", "note COLLATE pg_catalog.\"ucs_basic\" LIKE 'abc%'",
          "note LIKE 'abc%' AND r > $1", "note LIKE 'abc%' AND (r, s) > ($1, $2)"].each do |where|
           expect(keys_of(where).flatten.map(&:opclass)).to all(be_nil), where
         end

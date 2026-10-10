@@ -98,7 +98,7 @@ module Quaack
     #   backslash. A LIKE with ESCAPE doesn't count. A btree only serves that
     #   LIKE under the C collation or text_pattern_ops, so when it's the
     #   range column, there's also a key with it under text_pattern_ops,
-    #   unless the LIKE is under COLLATE "C" or "POSIX". The plain key stays,
+    #   unless the LIKE is under COLLATE "C", "POSIX", or ucs_basic. The plain key stays,
     #   for a database whose collation is C, and index-test finds out which
     #   the planner uses. A column with both an equality and a range
     #   predicate is equality.
@@ -1137,6 +1137,8 @@ module Quaack
 
       # The candidates for one table.
       class TableCandidates
+        BYTEWISE = %w[C POSIX ucs_basic].freeze
+
         def initialize(table, uses, limits)
           @table = table
           @stats = table.stats
@@ -1178,13 +1180,19 @@ module Quaack
 
         # When the range column is a prefix LIKE, a key with it under
         # text_pattern_ops too, since a plain btree serves that LIKE only
-        # under the C collation. Not when the LIKE is under C or POSIX.
+        # under the C collation. Not when the LIKE is under C, POSIX, or ucs_basic,
+        # which compare bytes, so a plain btree serves it.
         def pattern_tails(range)
           like = @uses.prefix_like(@table)
           collation = @uses.collation(@table, like)
-          return [] if like.nil? || range != [like] || %w[C POSIX].include?(collation&.last)
+          return [] if like.nil? || range != [like] || BYTEWISE.include?(collation&.last)
 
-          [[IndexCandidate::KeyColumn.new(name: like, opclass: "text_pattern_ops", collation:)]]
+          [[IndexCandidate::KeyColumn.new(name: like, opclass: pattern_opclass(like), collation:)]]
+        end
+
+        # char(n) has its own class: HypoPG refuses text_pattern_ops there.
+        def pattern_opclass(name)
+          @stats.column_types[name] == "bpchar" ? "bpchar_pattern_ops" : "text_pattern_ops"
         end
 
         def with_group(range_tail, order_tail, range, equality_names)
