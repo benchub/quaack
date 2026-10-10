@@ -790,8 +790,9 @@ In the AST, replace each of these with a schema-qualified call to `quaack.clock_
 - `current_date`
 - `localtimestamp`
 - `localtime`
+- `current_time`
 
-Leave all other stable functions alone.
+Leave all other stable functions alone. `clock_timestamp()` is volatile, so volatility refuses it before this step.
 
 The string literals `'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` read the clock too, where Postgres reads them as a date or timestamp, so they're anchored the same way. Case and surrounding whitespace don't matter, as in Postgres. By clock-anchor each literal is a redact placeholder, so the word comes from the placeholder map, and the placeholder is replaced when it's cast to `date`, `timestamp`, or `timestamptz` (such as `'today'::date` or `timestamp 'now'`, which redact keeps as `$1::date`), or compared with a column whose type, from statistics, is one of those. `'now'` is `quaack.clock_anchor()`, `'today'` is its date, and `'yesterday'` and `'tomorrow'` are that date minus or plus one day, each cast to the target type, so `'today'` as a timestamp is midnight in the session's time zone. `'now'` cast to `time` or `timetz` is anchored too. A real date, such as `'2024-01-01'`, or a longer string such as `'today 12:00'`, is left alone.
 
@@ -1123,7 +1124,7 @@ Arena is a second database on the same server. Set it up like this:
 1. Create it from `template0`. Set `LOCALE_PROVIDER`, `LC_COLLATE`, `LC_CTYPE`, and `ICU_LOCALE` to match inventory. Do this before you load the schema dump.
 2. Load the full schema and the extensions from schema-dump.
 3. Create the `quaack` schema and `clock_anchor()` function, the same way as in the racetrack.
-4. Anchor every column default and domain default that reads the clock, so an insert that leaves such a column out, or writes `DEFAULT`, loads the clock anchor's time, not the wall clock's, which would differ between rounds and from anchored predicates such as `= CURRENT_DATE`. In each default, `now()`, `transaction_timestamp()`, `statement_timestamp()`, `clock_timestamp()`, `current_timestamp`, `current_date`, `current_time`, `localtimestamp`, and `localtime`, with any precision, become `quaack.clock_anchor()` cast to their type, and so does a clock word cast through `text` to a date or time type, as `('today'::text)::date`. `DEFAULT 'now'` without the `text` cast is already a constant, since Postgres reads it once when the table is made. Unsupported in v1: a default that reads the clock some other way, such as `timeofday()` or a user function that calls `now()`, still reads the wall clock.
+4. Anchor every column default and domain default that reads the clock, so an insert that leaves such a column out, or writes `DEFAULT`, loads the clock anchor's time, not the wall clock's, which would differ between rounds and from anchored predicates such as `= CURRENT_DATE`. In each default, `now()`, `transaction_timestamp()`, `statement_timestamp()`, `clock_timestamp()`, `current_timestamp`, `current_date`, `current_time`, `localtimestamp`, and `localtime`, with any precision, become `quaack.clock_anchor()` cast to their type, and so does a clock word cast through `text` to a date or time type, as `('today'::text)::date`. `DEFAULT 'now'` without the `text` cast is already a constant, since Postgres reads it once when the table is made. Unsupported in v1: a default that reads the clock some other way, such as `timeofday()` or a user function that calls `now()`, still reads the wall clock. The same goes for a clock word cast through `text` to a domain over a date type, as `('today'::text)::public.clock_date`, or to an array type, as `('{today}'::text)::date[]`.
 5. Keep all `VALID` constraints.
 6. Disable user triggers only, so FK triggers still fire.
 

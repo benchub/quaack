@@ -33,7 +33,9 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
       "LOCALTIMESTAMP" => "quaack.clock_anchor()::pg_catalog.timestamp",
       "localtimestamp(2)" => "quaack.clock_anchor()::pg_catalog.timestamp(2)",
       "LOCALTIME" => "quaack.clock_anchor()::pg_catalog.time",
-      "localtime(4)" => "quaack.clock_anchor()::pg_catalog.time(4)"
+      "localtime(4)" => "quaack.clock_anchor()::pg_catalog.time(4)",
+      "CURRENT_TIME" => "quaack.clock_anchor()::pg_catalog.timetz",
+      "current_time(3)" => "quaack.clock_anchor()::pg_catalog.timetz(3)"
     }.each do |original, anchored|
       it "turns #{original} into #{anchored}" do
         result = anchor("SELECT #{original} AS x FROM public.orders")
@@ -101,7 +103,8 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
       "statement_timestamp()" => "statement_timestamp", "CURRENT_TIMESTAMP" => "current_timestamp",
       "current_timestamp(2)" => "current_timestamp", "CURRENT_DATE" => "current_date",
       "LOCALTIMESTAMP" => "localtimestamp", "localtimestamp(1)" => "localtimestamp", "LOCALTIME" => "localtime",
-      "localtime(3)" => "localtime", "now()::date" => "now", "CURRENT_DATE::text" => "current_date",
+      "localtime(3)" => "localtime", "CURRENT_TIME" => "current_time", "current_time(2)" => "current_time",
+      "now()::date" => "now", "CURRENT_DATE::text" => "current_date",
       "now() COLLATE \"C\"" => "now", "CASE WHEN true THEN 1 ELSE now() END" => "now",
       "(SELECT now())" => nil
     }.each do |expression, name|
@@ -211,7 +214,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     end
 
     it "leaves every other time function and SQL-value function" do
-      sql = "SELECT CURRENT_TIME, current_time(2), clock_timestamp(), timeofday(), CURRENT_USER, " \
+      sql = "SELECT clock_timestamp(), timeofday(), CURRENT_USER, " \
             "CURRENT_SCHEMA, to_timestamp(0), age(created_at), date_part('year', created_at) FROM public.orders"
       result = anchor(sql)
       expect(result.sql).to eq(deparse(sql))
@@ -271,7 +274,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     [
       "SELECT now(), pg_catalog.now(), transaction_timestamp(), statement_timestamp() FROM public.orders",
       "SELECT CURRENT_TIMESTAMP, current_timestamp(3), CURRENT_DATE + 1, LOCALTIMESTAMP, localtimestamp(2), " \
-      "LOCALTIME, localtime(5)",
+      "LOCALTIME, localtime(5), CURRENT_TIME, current_time(2)",
       "SELECT now()::date, CURRENT_DATE::date, CURRENT_TIMESTAMP::pg_catalog.date, " \
       "CURRENT_TIMESTAMP::pg_catalog.timestamptz(3), localtimestamp(2)::pg_catalog.timestamp(2)",
       "WITH w AS (SELECT now() AS t) SELECT t FROM w WHERE t > (SELECT CURRENT_DATE - 1) ORDER BY LOCALTIME",
