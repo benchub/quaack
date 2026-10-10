@@ -332,6 +332,62 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     expect(refs.filter_map { Quaack::Enclave::RewriteRules::Tree.qualified(it)&.first }.uniq).to eq(%w[j u v])
   end
 
+  describe "with inheritance" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.places (id int, ref int, kind text);
+        CREATE TABLE public.places_child () INHERITS (public.places);
+        INSERT INTO public.places VALUES (1, 2, 'a'), (2, 1, 'a'), (3, NULL, 'a'), (4, 4, 'b'), (2, 3, 'a'), (7, 4, 'a'), (8, 7, 'a');
+        INSERT INTO public.places_child VALUES (1, 4, 'a'), (5, 1, 'a'), (6, 6, 'b'), (4, 1, NULL);
+      SQL
+    end
+
+    let(:only) do
+      "SELECT p.id, q.id FROM ONLY public.places p JOIN ONLY public.places q ON q.id = p.ref " \
+        "WHERE p.kind IN ('a', 'b') AND q.kind IN ('a', 'b')"
+    end
+
+    it "shares copies that read ONLY the table, in a CTE that reads ONLY it, and keeps the child rows out" do
+      expect_rewrites(
+        only,
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM ONLY public.places " \
+        "WHERE places.kind IN ($1, $2)) " \
+        "SELECT p.id, q.id FROM quaack_scan_of_places p JOIN quaack_scan_of_places q ON q.id = p.ref"
+      )
+      expect(runs(only)).not_to eq(runs(only.gsub("ONLY ", "")))
+    end
+
+    it "shares copies that read the children too, and doesn't mix them with the ONLY copies", :aggregate_failures do
+      all = only.gsub("ONLY ", "")
+      expect_rewrites(
+        all,
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM public.places " \
+        "WHERE places.kind IN ($1, $2)) " \
+        "SELECT p.id, q.id FROM quaack_scan_of_places p JOIN quaack_scan_of_places q ON q.id = p.ref"
+      )
+      mixed = "SELECT p.id, q.id FROM ONLY public.places p JOIN public.places q ON q.id = p.ref " \
+              "WHERE p.kind IN ('a', 'b') AND q.kind IN ('a', 'b')"
+      expect(rewritten(mixed)).to eq([])
+      expect(runs(mixed)).not_to eq(runs(only))
+    end
+
+    it "makes a rewrite for each group of one kind of copy" do
+      sql = "SELECT p.id FROM ONLY public.places p, ONLY public.places q, public.places r, public.places s " \
+            "WHERE p.kind = 'a' AND q.kind = 'a' AND r.kind = 'b' AND s.kind = 'b' AND q.id = p.ref " \
+            "AND r.id = q.ref AND s.id = r.ref"
+      expect_rewrites(
+        sql,
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM ONLY public.places WHERE places.kind = $1) " \
+        "SELECT p.id FROM quaack_scan_of_places p, quaack_scan_of_places q, public.places r, public.places s " \
+        "WHERE r.kind = $3 AND s.kind = $4 AND q.id = p.ref AND r.id = q.ref AND s.id = r.ref",
+        "WITH quaack_scan_of_places AS MATERIALIZED (SELECT * FROM public.places WHERE places.kind = $3) " \
+        "SELECT p.id FROM ONLY public.places p, ONLY public.places q, quaack_scan_of_places r, " \
+        "quaack_scan_of_places s WHERE p.kind = $1 AND q.kind = $2 AND q.id = p.ref AND r.id = q.ref " \
+        "AND s.id = r.ref"
+      )
+    end
+  end
+
   it "needs two copies in the top-level FROM" do
     expect_refusals(
       "SELECT s.id FROM public.submissions s WHERE s.course_id IN (1, 2) " \

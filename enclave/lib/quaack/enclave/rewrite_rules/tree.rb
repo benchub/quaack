@@ -115,9 +115,10 @@ module Quaack
         def refname(range) = range.alias ? range.alias.aliasname : range.relname
 
         # Whether range is a schema-qualified table read whole: not a CTE
-        # (which has no schema), not ONLY, and with no column aliases.
-        def plain_table?(range)
-          !range.schemaname.empty? && range.inh && (range.alias.nil? || range.alias.colnames.empty?)
+        # (which has no schema), not ONLY unless only is true, and with no
+        # column aliases.
+        def plain_table?(range, only: false)
+          !range.schemaname.empty? && (only || range.inh) && (range.alias.nil? || range.alias.colnames.empty?)
         end
 
         def same_table?(one, other) = [one.schemaname, one.relname] == [other.schemaname, other.relname]

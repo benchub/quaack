@@ -12,8 +12,9 @@ module Quaack
         module Copies
           private
 
-          # [schema, table] for each table the top-level FROM reads more
-          # than once.
+          # [schema, table, inherit] for each table the top-level FROM reads
+          # more than once, a table read with ONLY apart from the same table
+          # read with its children.
           def tables(top)
             (items(top) || []).select { copy?(it) }.group_by { key(it.table) }.select { _2.size > 1 }.keys
           end
@@ -25,9 +26,9 @@ module Quaack
             items if items.none? { it.name.nil? }
           end
 
-          def copy?(item) = item.table && Tree.plain_table?(item.table)
+          def copy?(item) = item.table && Tree.plain_table?(item.table, only: true)
 
-          def key(range) = [range.schemaname, range.relname]
+          def key(range) = [range.schemaname, range.relname, range.inh]
 
           def taken?(tree, name)
             Tree.find(tree, PgQuery::CommonTableExpr).any? { it.ctename == name }

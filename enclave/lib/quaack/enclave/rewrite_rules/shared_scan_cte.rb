@@ -44,7 +44,9 @@ module Quaack
       #
       # It works only on the top-level FROM, where every FROM item must
       # have a name (a set operation has none), and only on plain tables
-      # (see Tree.plain_table?): a copy elsewhere is left alone. It refuses
+      # (see Tree.plain_table?): a copy elsewhere is left alone. Copies read
+      # with ONLY share a CTE that reads ONLY the table, and never with
+      # copies that read its children too. It refuses
       # a table with a copy on an outer join's nullable side, and a query
       # that already has a CTE of the name, at any depth. A name longer
       # than Postgres keeps, which it would cut short, fails
@@ -89,7 +91,7 @@ module Quaack
           copies, shared = shareable(tree, top, table, literals)
           return unless shared&.any?
 
-          cte = cte(PREFIX + table.last, copies.first.table, shared)
+          cte = cte(PREFIX + table[1], copies.first.table, shared)
           return if volatile?(catalog, cte)
 
           share!(top, copies, shared, cte, literals)
@@ -104,7 +106,7 @@ module Quaack
         # refuses them.
         def shareable(tree, top, table, literals)
           copies = items(top).select { copy?(it) && key(it.table) == table }
-          return if copies.any?(&:nullable) || taken?(tree, PREFIX + table.last) ||
+          return if copies.any?(&:nullable) || taken?(tree, PREFIX + table[1]) ||
                     whole_row?(tree, top, copies.map(&:name))
 
           [copies, shared(copies, places(top), literals)]
@@ -182,6 +184,7 @@ module Quaack
         def point(range, name)
           range.alias ||= PgQuery::Alias.new(aliasname: range.relname)
           range.schemaname = ""
+          range.inh = true
           range.relname = name
         end
       end
