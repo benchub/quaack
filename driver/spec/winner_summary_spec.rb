@@ -66,7 +66,8 @@ RSpec.describe Quaack::Driver::WinnerSummary do
                         "plan_source" => "how Postgres runs the original query now, on the indexes the database has" },
         "winner" => { "is" => "a rewrite of the original query",
                       "rewrite" => { "name" => "Rewrite Steady Lute", "source" => "rule", "rules" => ["in_to_exists"],
-                                     "rule_purposes" => {}, "sql" => payload["rewrites"][0]["sql"] },
+                                     "rule_purposes" => {}, "rule_preconditions" => {},
+                                     "sql" => payload["rewrites"][0]["sql"] },
                       "new_indexes" => ["CREATE INDEX ON public.t USING btree (a, b)"],
                       "plan" => [{ "step" => "Index Scan", "table" => "public.t", "index" => "t_a_idx",
                                    "estimated_rows" => 5, "actual_rows" => 5, "depth" => 0, "blocks" => 30 }],
@@ -74,7 +75,8 @@ RSpec.describe Quaack::Driver::WinnerSummary do
         "blocks_read" => { "slow" => { "winner" => { "blocks" => 30, "timed_out" => false },
                                        "original" => { "blocks" => 1_234, "timed_out" => false } },
                            "typical" => { "winner" => { "blocks" => 190, "timed_out" => false },
-                                          "original" => { "blocks" => 200, "timed_out" => false } } }
+                                          "original" => { "blocks" => 200, "timed_out" => false } } },
+        "repeated_conditions" => []
       )
     end
 
@@ -181,7 +183,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(system).to include("only with the original query as it runs now, on the indexes the database already has")
         .and include("Say only what the SQL, plans, and numbers in the payload show")
         .and include("Don't guess at a cause you can't see")
-        .and include("each short and making one point").and include("under 700 characters")
+        .and include("three to five short sentences").and include("under 700 characters")
         .and include("Name a plan step by a node type that appears in one of the two plans")
         .and include("Quote a plan step's own numbers")
         .and include("never carry one step's row count to another step")

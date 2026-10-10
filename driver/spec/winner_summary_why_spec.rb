@@ -6,9 +6,10 @@ require "quaack/protocol/step_counts"
 require_relative "support/fake_llm"
 require_relative "support/routers"
 
-# The winner summary explains why the winner wins, as a heuristic a
-# developer can reuse (20261010-28): what changed in the query's structure,
-# why that let the planner do less work, and the pattern to look for. The
+# The winner summary explains why the winner wins, as a conditional lesson
+# a developer can reuse (20261010-28, 20261010-37): the precondition in the
+# query or schema, the transformation it allowed, why that helps here, and
+# when it wouldn't. An index-only winner gets a sentence or two. The
 # LLM is faked at the client's edge. Every query, plan, and name here is
 # synthetic.
 # Synthetic fixtures for the spec below.
@@ -223,7 +224,104 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     end
   end
 
+  describe "the node-type check on join and parallel qualifiers" do
+    let(:base) { family_payload("not_in_to_not_exists") }
+
+    # The payload's plan nodes carry the bare node type, not the join type
+    # or the parallel flag, so a summary can't back an Anti, Semi, or
+    # Parallel qualifier and may not use one.
+    it "refuses Anti, Semi, or Parallel on a node type the plans have" do
+      expect(run("The winner runs a Hash Join and reads 300 blocks.", base)).to have_attributes(outcome: "used")
+      ["The winner runs a Hash Anti Join and reads 300 blocks.",
+       "The winner runs a hash semi join and reads 300 blocks.",
+       "The winner runs a Nested Loop Anti Join and reads 300 blocks.",
+       "The winner runs an anti-join on the Hash Join and reads 300 blocks.",
+       "The original ran a Parallel Seq Scan on public.users."].each do |text|
+        expect(run(text, base)).to have_attributes(outcome: "rejected"), text
+      end
+    end
+  end
+
+  describe "repeated conditions" do
+    # Synthetic originals whose OR arms or UNION branches repeat a condition.
+    repeated = {
+      "or_to_union" => ["SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id WHERE " \
+                        "(o.tenant_id = $1 AND o.state = $2) OR (o.tenant_id = $1 AND u.region = $3)",
+                        "SELECT o.id FROM public.orders o WHERE o.tenant_id = $1 AND o.state = $2 UNION " \
+                        "SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id " \
+                        "WHERE o.tenant_id = $1 AND u.region = $3",
+                        { "condition" => "tenant_id = $1", "repeated_across" => "OR arms", "in_original" => 2,
+                          "in_winner" => 2 }],
+      "existence_in_flip" => ["SELECT 1 FROM public.orders WHERE user_id IN (SELECT id FROM public.users u " \
+                              "WHERE (u.region = $1 AND u.active) OR (u.region = $1 AND u.vip)) LIMIT 1",
+                              "SELECT 1 FROM public.users u WHERE u.region = $1 AND (u.active OR u.vip) AND " \
+                              "EXISTS (SELECT 1 FROM public.orders o WHERE o.user_id = u.id) LIMIT 1",
+                              { "condition" => "region = $1", "repeated_across" => "OR arms", "in_original" => 2,
+                                "in_winner" => 1 }],
+      "union_outer_filter_removal" => [WinnerSummaryWhy::FAMILIES["union_outer_filter_removal"][:original],
+                                       WinnerSummaryWhy::FAMILIES["union_outer_filter_removal"][:winner],
+                                       { "condition" => "state = $1", "repeated_across" => "UNION branches",
+                                         "in_original" => 3, "in_winner" => 2 }]
+    }
+
+    repeated.each do |name, (original, winner, fact)|
+      it "carries the #{name} original's repeated condition, and the winner's count, to the LLM" do
+        payload = family_payload(name)
+        payload["original_sql"] = original
+        payload["rewrites"][0]["sql"] = winner
+        run(WinnerSummaryWhy::FAMILIES[name][:good], payload)
+
+        sent = JSON.parse(fake.asks.fetch(0).body[:messages][0][:content][/```json\n(.*)\n```/m, 1])
+        expect(sent["repeated_conditions"]).to eq([fact])
+      end
+    end
+
+    it "carries none for an index-only winner, whose query is unchanged" do
+      expect(described_class::Input.build(family_payload("an index-only win"))["repeated_conditions"]).to eq([])
+    end
+  end
+
+  describe "universal advice" do
+    let(:base) { family_payload("or_to_union") }
+
+    it "refuses an answer that gives a rule for every query" do
+      ["Always split an OR into a UNION.", "You should never write an OR across tables.",
+       "All queries should use UNION, not OR.", "Every query with an OR gains from this."].each do |text|
+        expect(run(text, base)).to have_attributes(outcome: "rejected"), text
+      end
+      expect(run("The original OR read two tables, so a UNION let each arm use an Index Scan.", base))
+        .to have_attributes(outcome: "used")
+    end
+  end
+
+  describe "an index-only winner" do
+    it "keeps a one-sentence answer that names no transformation" do
+      text = "The query filters on state, which the original read with a Seq Scan over 9,000 blocks, so the new " \
+             "index on state and id was all it needed, no rewrite, and the winner read 12 blocks."
+      expect(run(text, family_payload("an index-only win"))).to have_attributes(outcome: "used", text:)
+    end
+
+    it "carries no rule preconditions" do
+      expect(described_class::Input.build(family_payload("an index-only win")).dig("winner", "rewrite")).to be_nil
+    end
+  end
+
   describe "the input" do
+    it "gives each of the rewrite's rules its fixed precondition, and none for a name QUAACK doesn't know" do
+      payload = family_payload("not_in_to_not_exists")
+      payload["rewrites"][0]["rules"] = %w[not_in_to_not_exists not_a_rule]
+      rewrite = described_class::Input.build(payload).dig("winner", "rewrite")
+
+      expect(rewrite["rule_preconditions"]).to eq(
+        "not_in_to_not_exists" => described_class::Input::RULE_PRECONDITIONS["not_in_to_not_exists"]
+      )
+      expect(rewrite["rule_preconditions"]["not_in_to_not_exists"]).to include("not null")
+    end
+
+    it "has a precondition for every one of QUAACK's rules" do
+      expect(described_class::Input::RULE_PRECONDITIONS.keys).to match_array(Quaack::Protocol::StepCounts::RULE_NAMES)
+    end
+
     it "gives each of the rewrite's rules its fixed one-line purpose, and none for a name QUAACK doesn't know" do
       payload = family_payload("or_to_union")
       payload["rewrites"][0]["rules"] = %w[or_to_union not_a_rule]
@@ -244,11 +342,25 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       fake.asks.fetch(0).body[:system]
     end
 
-    it "asks what changed in the query's structure, why that let the planner do less work, and the pattern" do
-      expect(system).to include("what changed in the query's structure")
-        .and include("why that change let the planner do less work")
-        .and include("the pattern a developer could look for in their own queries")
+    it "asks for the precondition, the transformation it allowed, why it helps, and when it wouldn't" do
+      expect(system).to include("First, the precondition")
+        .and include("rule_preconditions")
+        .and include("Second, name the transformation that precondition allowed")
         .and include("rule_purposes")
+        .and include("why it helps in this situation, grounded in a difference between the two plans")
+        .and include("the condition under which the same change would help, and when it would not")
+    end
+
+    it "asks for a conditional lesson, never universal advice, and a length that follows the situation" do
+      expect(system).to include("The lesson is conditional")
+        .and include("Don't write always, never, all queries, or every query")
+        .and include("prefer one form over another without the condition")
+        .and include("Let the length follow the situation")
+    end
+
+    it "asks an index-only winner for one or two sentences that name no transformation" do
+      expect(system).to include("there is no transformation to name. In one or two sentences")
+        .and include("that no rewrite was needed")
     end
 
     it "allows a causal claim only when a plan difference in the payload backs it, and keeps the old bans" do
@@ -259,6 +371,12 @@ RSpec.describe Quaack::Driver::WinnerSummary do
         .and include("No markdown")
         .and include("under 700 characters")
       expect(system).not_to include("Describe a plan step only by its node type")
+    end
+
+    it "says to name a duplicated condition the winner pulled out, only from repeated_conditions" do
+      expect(system).to include("repeated_conditions")
+        .and include("name that condition")
+        .and include("Don't say a condition was duplicated unless repeated_conditions lists it")
     end
 
     it "quotes no example of what to write" do
