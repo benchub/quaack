@@ -69,6 +69,20 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
         .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("name_lookup_function") }
     end
 
+    [
+      "regclassin('hid.t'::cstring) IS NULL",
+      "pg_catalog.regtypein('hid.t'::cstring) IS NULL",
+      "satisfies_hash_partition(16384, 2, 0, id)",
+      "to_tsvector(16384, status) IS NULL"
+    ].each do |predicate|
+      it "refuses #{predicate[/\w+/]} in a predicate and as a key" do
+        ["(id) WHERE #{predicate}", "((#{predicate.sub(" IS NULL", "")}))"].each do |tail|
+          expect { check("CREATE INDEX ON public.orders #{tail}") }
+            .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("name_lookup_function") }
+        end
+      end
+    end
+
     it "is refused when a string literal is read as one" do
       expect { check("CREATE INDEX ON public.orders (id) WHERE ts_lexize('hid.t', 'a') IS NULL") }
         .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("unsupported_reg_literal") }

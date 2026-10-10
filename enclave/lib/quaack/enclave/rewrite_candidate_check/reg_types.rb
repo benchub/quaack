@@ -92,7 +92,7 @@ module Quaack
             return found unless found.is_a?(PG::Error)
 
             number = untyped_number(found)
-            return nil unless number&.between?(own + 1, types.size) && types[number - 1].zero?
+            return nil unless number&.between?(own + 1, types.size)
 
             types[number - 1] = TEXT_OID
           end

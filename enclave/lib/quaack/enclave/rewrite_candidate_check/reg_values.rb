@@ -49,7 +49,21 @@ module Quaack
           pg_relation_is_updatable pg_sequence_parameters pg_statistics_obj_is_visible pg_table_is_visible
           pg_tablespace_databases pg_tablespace_location pg_ts_config_is_visible pg_ts_dict_is_visible
           pg_ts_parser_is_visible pg_ts_template_is_visible pg_type_is_visible table_to_xml
-          table_to_xml_and_xmlschema table_to_xmlschema
+          table_to_xml_and_xmlschema table_to_xmlschema satisfies_hash_partition acldefault makeaclitem
+          fmgr_c_validator fmgr_internal_validator fmgr_sql_validator postgresql_fdw_validator
+        ].to_set.freeze
+
+        # Each reg type's input and binary input function, which look a name
+        # up from text and are stable. Written as a call, they're name
+        # lookups.
+        INPUT_FUNCTIONS = TYPES.flat_map { ["#{it}in", "#{it}recv"] }.to_set.freeze
+
+        # The text search functions whose first argument is a regconfig or
+        # regdictionary. Postgres reads an integer there as an oid and
+        # raises "cache lookup failed" for one that names nothing.
+        TS_CONFIG = %w[
+          to_tsvector to_tsquery plainto_tsquery phraseto_tsquery websearch_to_tsquery json_to_tsvector
+          jsonb_to_tsvector ts_debug ts_headline ts_lexize
         ].to_set.freeze
         PRIVILEGE = /\Ahas_[a-z_]+_privilege\z/
         STATS = /\Apg_stat_get_/
@@ -63,11 +77,17 @@ module Quaack
         def syntactic!(parse, original_sql)
           raise Error.new("unsupported_reg_literal", REG_DETAIL) if casts?(parse) || reg_calls?(parse)
 
-          lookup = calls(parse.tree).find { lookup?(name(it)) && !made(original_sql).include?(text(it)) }
+          lookup = unmade_lookup(parse, original_sql)
           return unless lookup
 
           raise Error.new("name_lookup_function",
                           "#{name(lookup)} looks up a name, and the original doesn't make the same call")
+        end
+
+        # The first name lookup the original doesn't make, or nil.
+        def unmade_lookup(parse, original_sql)
+          made = made(original_sql)
+          calls(parse.tree).find { |call| (lookup?(name(call)) || integer_config?(call)) && !made.include?(text(call)) }
         end
 
         def casts?(parse)
@@ -78,8 +98,16 @@ module Quaack
 
         def reg_calls?(parse) = calls(parse.tree).any? { TYPES.include?(name(it)) }
 
+        # Whether a text search call's first argument holds an integer
+        # constant anywhere in it, such as 16384, 16384::regconfig, or
+        # 16000 + 384: an oid for a config or dictionary.
+        def integer_config?(call)
+          TS_CONFIG.include?(name(call)) && walk(call.args.first, PgQuery::A_Const).any? { it.val == :ival }
+        end
+
         def lookup?(name)
-          NAME_LOOKUPS.include?(name) || OID_LOOKUPS.include?(name) || PRIVILEGE.match?(name.to_s) ||
+          NAME_LOOKUPS.include?(name) || OID_LOOKUPS.include?(name) || INPUT_FUNCTIONS.include?(name) ||
+            PRIVILEGE.match?(name.to_s) ||
             STATS.match?(name.to_s)
         end
 
