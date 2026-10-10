@@ -1186,29 +1186,6 @@ From the review of 20261009-50 (minor, defense in depth). The `redacted?` re-che
 - **Design:** What goes out of the enclave.
 - **Status:** todo
 
-### 20261009-60. Pin the Ranking tint values; style links.
-
-From the review of 20261009-45 (minor).
-- The 45 spec checks that the `--sb-*` variables are wired up but not their values: changing a light value to white stays green, so an invisible tint would pass. Add a spec that each `--sb-*` differs from the page, panel and `--head-bg` colors and that heading text keeps at least 4.5:1 on it, in both themes (the cream stripe already has a contrast spec).
-- The template has no `a` rule, so links use the browser's default blue and purple (light) and a teal (dark). Add `a { color: var(--accent) }` and visited/hover states with contrast checks in both themes, and look at it in a browser (headless Firefox works: `/Applications/Firefox.app/Contents/MacOS/firefox --headless --no-remote --profile <fresh dir> --screenshot <png> file:///...`).
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-45, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
-### 20261009-61. Transform rule wording: pin one sentence, and finish the leftovers.
-
-From the review of 20261009-52 (minor).
-- The rule-bug paragraph in the template ("The transform rules are meant to be sound...") isn't pinned: reverting it to the old wording leaves every spec green. Assert it.
-- The 12 pages under `docs/transforms/` say "It's one of QUAACK's mechanical rewrite rules", and a reader following a rule link from the report lands there. Say "transform rule" there, and check each page's wording against what it describes.
-- `report/stages.rb:68` prints "by the rule key_in_self_join" (the funnel and the rewrite table cell), a third wording; the report's "not kept" note says "for one of QUAACK's own, repeated another". Decide whether to change them to "transform rule" too, and pin them.
-
-- **Depends on:** 20261009-52.
-- **Came from:** The review of 20261009-52, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom.
 
 From the second review of 20261009-40 (minor). `AtomPosition` skips constant atoms (`constant?` in `Analysis#clause`), so `WHERE a = $1` -> `WHERE a = $1 AND false` (or `AND NULL::boolean`) leaves `a = $1` unchanged and the added constant is never seen as new material. It's unrealistic (`1 = 0` parses as an A_Expr and is caught), but it is the same hole the fix closed, through a bare constant. Count a constant in the rewrite that the original lacks as a new atom (or skip constants only on the original's side), add the probes, and say in DESIGN.md's known-gaps list what is taken on trust. Enclave change: unreleased list.
@@ -1229,4 +1206,17 @@ From the review of 20261009-62 (minor).
 - **Depends on:** 20261009-62.
 - **Came from:** The review of 20261009-62, 2026-10-09 (minor).
 - **Design:** report, Several LLM providers.
+- **Status:** todo
+
+### 20261009-65. Transform rule docs: pin the wording; raise the tint floor.
+
+From the review of 20261009-60 and -61 (minor).
+- Nothing pins the "transform rules" wording on the 12 `docs/transforms/*.md` pages or README line ~762: reverting a page to "mechanical rewrite rules" stays green. Extend `spec/transform_docs_spec.rb` to assert each page's wording and that the DESIGN.md anchor the pages link to (`#rewrite-rules-mechanical-rules`) resolves to a heading.
+- `spec/transform_docs_spec.rb`'s header comment, DESIGN.md's mermaid label and its heading "rewrite-rules. Mechanical rules." still say "mechanical". Decide whether to rename the heading (and the anchor in the 12 pages) to "transform rules".
+- The Ranking tint distance floor of 15 is lenient: the dark violet tint passes at 15.6 from `--head-bg`. Raise it (to about 20) or, better, require a hue difference, and recheck the six tints.
+- The link spec lists twelve backgrounds but not the three `--sb-*` tints; add them (the lowest ratio, `--accent` on the light violet tint, is 4.78:1, so it passes).
+
+- **Depends on:** 20261009-60, 20261009-61.
+- **Came from:** The review of 20261009-60 and -61, 2026-10-09 (minor).
+- **Design:** report.
 - **Status:** todo
