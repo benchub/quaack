@@ -1127,17 +1127,7 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 - **Design:** none (test infrastructure).
 - **Status:** todo
 
-### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it.
-
-Found by the user in a real report, 2026-10-09. The verdict section showed "⚠ Your role on the production server couldn't see the statistics of this expression index: index_submissions_on_user_and_greatest_dates, so QUAACK's estimates for those may be off. A role that owns the tables can see them." Its Details link jumped to the proposed indexes section (`#indexes`, from `Report::Verdict#caveats`), and that section says nothing about the hidden statistics. DESIGN.md says only that the verdict's caveats name them (the count of extended statistics objects, and the expression indexes by name).
-
-Give the caveat a target that explains it. Decide where: a short note in the indexes section, or a small section of its own, saying which statistics the production role couldn't read (the extended statistics objects by count, each expression index by name), what QUAACK did without them, how the estimates can be off, and what the operator can do (a role that owns the tables). Then point the link there. Add to the report spec a check that every caveat's link target exists on the page and that the target mentions the caveat's subject, so no caveat can link to a section that's silent about it. Check the other caveats (timed-out runs, the original timing out) against the same rule. Update DESIGN.md's statistics bullet to say where the explanation lives.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, statistics.
-- **Open questions:** A note under the indexes table or a section of its own.
-- **Status:** todo
+### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them.
 
