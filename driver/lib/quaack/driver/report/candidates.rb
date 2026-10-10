@@ -32,6 +32,13 @@ module Quaack
           "#{search == "original" ? "The original query" : Words.rewrite(search, run_id)} #{with(measured(label), key)}"
         end
 
+        # describe without the index definitions: the label's name, and only
+        # whether it ran with new indexes.
+        def describe_plainly(label)
+          none = (entry = measured(label)) ? entry["indexes"].empty? : label.to_s.end_with?(":none")
+          "#{describe(label)[/\A.*?(?= with )/]} with #{"no " if none}new indexes"
+        end
+
         # The new indexes a label ran with. Without the label's entry, only
         # whether it had any, which its name says.
         def with(entry, key)

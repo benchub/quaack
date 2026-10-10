@@ -51,7 +51,8 @@ module Quaack
         def candidate_row(kind, entry)
           ours = entry["slow_blocks"]
           theirs = original_measurements.dig("slow", "total_blocks")
-          { plan: PLANS.fetch(kind), detail: describe(entry["label"]), blocks: ours, blocks_text: Format.number(ours),
+          { plan: PLANS.fetch(kind), detail: describe_plainly(entry["label"]), blocks: ours,
+            blocks_text: Format.number(ours),
             delta: kind == "rewrite_same_indexes" ? "0" : added_size(entry["label"]),
             improvement: improvement(ours, theirs) }
         end
