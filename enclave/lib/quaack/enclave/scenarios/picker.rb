@@ -9,12 +9,20 @@ module Quaack
       # pool value, or else CHECK value, that satisfies each atom (or fails
       # the near-miss one) and every CHECK on the slot's columns. variants
       # rotates an atom's pool lists, by atom index.
+      #
+      # scopes gives each atom's scope (see Scenarios.scope): the SELECT,
+      # or set operation branch, it's in. A near miss first tries a value
+      # that satisfies every other atom on the slot. When none does, it
+      # takes one that satisfies only the atoms in its own atom's scope, so
+      # the same test in another scope (o.state <> 'x' in two UNION
+      # branches) can fail with it.
       class Picker
-        def initialize(pools, probes, checks, variants)
+        def initialize(pools, probes, checks, variants, scopes = {})
           @pools = pools
           @probes = probes
           @checks = checks
           @variants = variants
+          @scopes = scopes
           @picks = {}
         end
 
@@ -37,7 +45,7 @@ module Quaack
         def pick(atoms, columns, near, mode, shift = 0)
           @picks[[atoms, columns, near, mode, shift]] ||= begin
             candidates = prefer_boundaries(candidates(atoms, near), atoms, mode) | checked(columns)
-            fitting = candidates.lazy.select { |v| fits?(atoms, columns, near, v) }.first(shift + 1)
+            fitting = fitting(candidates, atoms, columns, near, shift)
             if fitting.size > shift then fitting[shift]
             elsif shift.positive? then pick(atoms, columns, near, mode)
             else fallback(candidates, columns, near)
@@ -46,6 +54,17 @@ module Quaack
         end
 
         private
+
+        def fitting(candidates, atoms, columns, near, shift)
+          found = first_fitting(candidates, atoms, columns, near, shift)
+          return found if found.size > shift || near.nil?
+
+          first_fitting(candidates, atoms.select { |i| @scopes[i] == @scopes[near] }, columns, near, shift)
+        end
+
+        def first_fitting(candidates, atoms, columns, near, shift)
+          candidates.lazy.select { |v| fits?(atoms, columns, near, v) }.first(shift + 1)
+        end
 
         def fallback(candidates, columns, near)
           return :skip if near

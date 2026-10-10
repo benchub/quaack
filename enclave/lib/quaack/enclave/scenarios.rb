@@ -166,6 +166,14 @@ module Quaack
         mode == :boundary_reversed ? values.reverse : values
       end
 
+      SCOPE_STEPS = %w[select_stmt larg rarg].freeze
+
+      # The atom's scope: the path to the SELECT, or set operation branch,
+      # it's in.
+      def scope(atom) = atom.path[0..(atom.path.rindex { SCOPE_STEPS.include?(it) })]
+
+      def scopes(atoms) = atoms.each_index.to_h { [it, scope(atoms[it])] }
+
       # The plain tables a parse names.
       def query_tables(node, found = [])
         if node.is_a?(PgQuery::RangeVar) && !node.schemaname.empty?
@@ -221,7 +229,7 @@ module Quaack
         private
 
         def start(variants)
-          @picker = Picker.new(@pools, probes, @checks, variants)
+          @picker = Picker.new(@pools, probes, @checks, variants, Scenarios.scopes(@atoms))
           @identities = {}
           @built = {}
           @dropped = 0
