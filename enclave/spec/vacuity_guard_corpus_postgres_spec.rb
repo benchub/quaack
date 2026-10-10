@@ -29,7 +29,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       settings jsonb NOT NULL DEFAULT '{}', created_at timestamp NOT NULL);
     CREATE TABLE fx.posts (id bigint PRIMARY KEY, user_id bigint NOT NULL REFERENCES fx.users,
       title text NOT NULL, body text, published boolean NOT NULL DEFAULT false, score integer NOT NULL DEFAULT 0,
-      labels text[] NOT NULL DEFAULT '{}', published_on date, created_at timestamp NOT NULL);
+      labels text[] NOT NULL DEFAULT '{}', published_on date, kind text NOT NULL DEFAULT 'a',
+      created_at timestamp NOT NULL);
     CREATE TABLE fx.comments (id bigint PRIMARY KEY, post_id bigint NOT NULL REFERENCES fx.posts,
       user_id bigint REFERENCES fx.users, body text NOT NULL, workflow_state text NOT NULL,
       created_at timestamp NOT NULL);
@@ -342,6 +343,21 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "WHERE fx.users.id IN (101, 102, 103, 104, 105) AND fx.users.active = true " \
            "AND fx.users.role = 'teacher' AND fx.users.deleted_at IS NULL AND fx.users.name = 'ann'", allowed: {} },
 
+    # One column tested in a join's ON clause and in UNION ALL branches of
+    # an IN subquery (20261010-34). A near miss's sibling passes the ON
+    # clause; it fails another atom of the near miss's branch, so the parent
+    # doesn't pass that branch through it.
+    { name: "count over join, ON and branch test one column",
+      sql: "SELECT count(*) FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id AND fx.posts.kind <> 'c' " \
+           "WHERE fx.users.active = true AND fx.users.id IN (SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.kind <> 'c' AND fx.posts.score > 5 UNION ALL SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.published = true AND fx.posts.kind <> 'c')", allowed: {} },
+    { name: "count over join, ON tests one branch's column, both branches test another",
+      sql: "SELECT count(*) FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id AND fx.posts.kind <> 'c' " \
+           "WHERE fx.users.active = true AND fx.users.id IN (SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.kind <> 'c' AND fx.posts.score > 5 UNION ALL SELECT fx.posts.user_id FROM fx.posts " \
+           "WHERE fx.posts.published = true AND fx.posts.score > 9)", allowed: {} },
+
     # Shapes with an allowed atom.
     { name: "implied lower bound",
       sql: "SELECT * FROM fx.posts WHERE fx.posts.score > 5 AND fx.posts.score > 1",
@@ -355,6 +371,12 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
   # name: the untested set, pinned exactly, and a guess at the cause, which
   # isn't confirmed. Each is to become a backlog task pointing at 20261010-27.
   PENDING = {
+    "count over join, ON tests one branch's column, both branches test another" => {
+      untested: ["fx.posts.score > $6"],
+      cause: "confirmed (20261010-34): score > 9's near miss gets a sibling, since branch 1 tests score too; " \
+             "the sibling fails published, branch 2's other atom, but passes score > 9, so it passes " \
+             "branch 1's kind <> 'c' AND score > 5, and the parent stays in the IN through branch 1"
+    },
     "max with filter" => {
       untested: ["fx.posts.published = $1"],
       cause: "the near miss needs a score above the hit's to change max(); nothing orders it so"

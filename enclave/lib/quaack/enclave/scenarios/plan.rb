@@ -59,9 +59,24 @@ module Quaack
         def siblings(misses)
           misses.filter_map do |miss|
             table = @siblings[miss.near]
-            group(miss.key, [table], copy: 1, also: miss.also) if table
+            group(miss.key, [table], copy: 1, also: miss.also | scope_mate(miss.near, table)) if table
           end
         end
+
+        # One other pooled atom of the near miss's scope on table, on another
+        # column, for the sibling to fail, so the sibling doesn't satisfy the
+        # scope the near miss fails (a branch's score > 5 beside its
+        # kind <> 'c'), which would let the parent through it all the same.
+        def scope_mate(index, table)
+          scopes = Scenarios.scopes(@atoms)
+          mate = @pooled.find do |j|
+            j != index && scopes[j] == scopes[index] && @atoms[j].columns.all? { it.table == table } &&
+              !names(j).intersect?(names(index))
+          end
+          mate ? [mate] : []
+        end
+
+        def names(index) = @atoms[index].columns.map { [it.table, it.name] }
 
         def pooled_near_misses = @pooled.map { |i| group(fresh_key, near: i) }
 
