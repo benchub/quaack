@@ -18,15 +18,16 @@ RSpec.describe PipelineReplay do
 
   # The stages whose "in" isn't what the recorded stages before them left
   # in the pipe, as "name: in N, in the pipe M". Rows are as Report's Stages
-  # gives them. A stage that adds records in 0 and starts from what's there.
-  # summed is for the rewrites' index searches, summed over every rewrite,
-  # where only the rewrites that reached an LLM round carry their pool into it.
-  def burndown_gaps(rows, summed: false)
+  # gives them. Every stage carries what's in the pipe (task 20261010-20).
+  # strict is false for the rewrites' index searches, summed over every
+  # rewrite, where only the rewrites that reached an LLM round carry their
+  # pool into it.
+  def burndown_gaps(rows, strict: false)
     running = 0
     rows.filter_map do |name, record, stage|
       next unless record&.values_at("in", "out")&.all?
 
-      joins = burndown_joins?(record, running, stage, summed:)
+      joins = burndown_joins?(record, running, stage, strict:)
       gap = "#{name}: in #{record["in"]}, in the pipe #{running}" unless joins
       running += record["out"] - record["in"]
       gap
@@ -41,15 +42,12 @@ RSpec.describe PipelineReplay do
     [points[1] - points[0], points[2] - points[3]]
   end
 
-  # Whether the record's in is the width in the pipe. A stage that adds, or
-  # that ran on nothing and sent nothing, has in 0, except the LLM's index
-  # rounds, which carry the pool (task 20261010-20): all of it for one
-  # search, and some of it, never more, summed over the rewrites' searches.
-  def burndown_joins?(record, running, stage, summed:)
+  # Whether the record's in is the width in the pipe. Not strict, an LLM
+  # index round may carry less, never more.
+  def burndown_joins?(record, running, stage, strict:)
     return true if record["in"] == running
-    return summed && record["in"] < running if %w[llm-index-ideas llm-index-refine].include?(stage)
 
-    record["in"].zero? && (!record["added"].to_h.empty? || record["out"].zero?)
+    !strict && %w[llm-index-ideas llm-index-refine].include?(stage) && record["in"] < running
   end
 
   # The runs whose first funnel band was drawn and checked (task 20261009-53),
@@ -96,8 +94,8 @@ RSpec.describe PipelineReplay do
             next unless outcome.report
 
             view = Quaack::Driver::Report::View.new(outcome.report, "run")
-            gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it)) } +
-                   burndown_gaps(view.rewrite_index_rows, summed: true)
+            gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
+                   burndown_gaps(view.rewrite_index_rows)
             expect(gaps).to eq([])
           end
 

@@ -125,9 +125,12 @@ module Quaack
         { in: pool, out: pool, extra: { why => 1 } }
       end
 
+      # index-from-plan carries index-from-query's ideas, so its out is what
+      # index-dedupe takes in (task 20261010-20).
       def generated_record(stage, search, source, generated)
         count = generated.fetch(source)
-        [stage, search, { in: 0, added: { source => count }, out: count }]
+        carried = source == :generator_two ? generated.fetch(:generator_one) : 0
+        [stage, search, { in: carried, added: { source => count }, out: carried + count }]
       end
     end
   end

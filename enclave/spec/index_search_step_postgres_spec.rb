@@ -107,8 +107,9 @@ RSpec.describe "quaacks index-search, against a real server" do
     expect(burndown["stages"].transform_values { it["original"] }).to eq(
       "index-from-query" => { "in" => 0, "added" => { "generator_one" => one }, "dropped" => {}, "set_aside" => 0,
                               "out" => one, "extra" => {} },
-      "index-from-plan" => { "in" => 0, "added" => { "generator_two" => two }, "dropped" => {}, "set_aside" => 0,
-                             "out" => two, "extra" => {} },
+      # Task 20261010-20: index-from-plan carries index-from-query's ideas, so its out is index-dedupe's in.
+      "index-from-plan" => { "in" => one, "added" => { "generator_two" => two }, "dropped" => {}, "set_aside" => 0,
+                             "out" => one + two, "extra" => {} },
       "index-dedupe" => { "in" => one + two, "added" => {}, "dropped" => search.drops.map { it.reason.name }.tally,
                           "set_aside" => search.set_aside.size, "out" => search.proposals.size, "extra" => {} },
       "index-test" => { "in" => entry["results"].size, "added" => {},

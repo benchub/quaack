@@ -79,8 +79,9 @@ RSpec.describe "quaacks plan-pruning, against a real server" do
                rewrite(sorted).merge("assumptions" => [not_null_note]), rewrite(bad_placeholder))
 
       expect(stages["operator-rewrites"]).to eq(
-        "rewrites" => counted(added: { "operator" => 3 }, dropped: { "bad_assumption" => 1, "bad_placeholder" => 1 },
-                              out: 1)
+        # Task 20261010-20: it carries the LLM's rewrite that went on.
+        "rewrites" => counted(in: 1, added: { "operator" => 3 },
+                              dropped: { "bad_assumption" => 1, "bad_placeholder" => 1 }, out: 2)
       )
       expect(stages["llm-rewrites"]["rewrites"]).to include("added" => { "llm" => 1 }, "out" => 1)
       expect(stages["assumption-check"]["rewrites"])
