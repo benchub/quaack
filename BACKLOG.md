@@ -1254,3 +1254,15 @@ From the review of 20261009-48 (minor).
 - **Came from:** The review of 20261009-48, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-55. README samples: four small wording gaps from the review of 20261009-54.
+
+- The Proposed indexes sample lists one index, but the sample run's ranked candidates use two (the INCLUDE one and the plain (account_id, created_at) one); `proposed` takes all ranked labels' indexes. List both, or say the sample is shortened.
+- "Within a kind, the fewest blocks on the slow values ranks first" leaves out the secondary key: `selection.rb` ranks by slow blocks, then by the sum across value sets.
+- "Suggested by the LLM" in the sample is shorter than the real text, "Suggested by the LLM (name, model)" or "(its model wasn't recorded)" (`providers.rb`).
+- "the one the verdict and the next section describe" is loose: the verdict describes the best of each kind, and the winner is the best of all of them.
+
+- **Depends on:** 20261009-54.
+- **Came from:** The review of 20261009-54, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
