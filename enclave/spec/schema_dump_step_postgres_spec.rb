@@ -110,7 +110,9 @@ RSpec.describe "quaacks schema-dump, against a real server" do
     expect(subset["tables"]).to eq([%w[audit vendors], %w[public orders], %w[sales items]])
     expect(created_tables(subset["ddl"])).to eq(%w[audit.vendors public.orders sales.items])
     expect(subset["ddl"]).to include(sentinels.text)
-    expect(File.read(argv).lines.grep(/\A--dbname=/).uniq).to eq(["--dbname=host='#{production.host}'\n"])
+    liveness = "keepalives='1' keepalives_idle='30' keepalives_interval='10' keepalives_count='3' " \
+               "tcp_user_timeout='30000'"
+    expect(File.read(argv).lines.grep(/\A--dbname=/).uniq).to eq(["--dbname=host='#{production.host}' #{liveness}\n"])
     expect_no_leaks(sentinels, outcome)
   end
 

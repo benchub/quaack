@@ -63,7 +63,8 @@ module Quaack
         def dumped(connection, relations, production, extra_schemas)
           Pending.new.tap do |pending|
             Enclave::Inventory::Production.read_only(connection) do
-              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: production, extra_schemas:)
+              conninfo = { **production, **Enclave::Inventory::Production::LIVENESS }
+              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo:, extra_schemas:)
             end
           end
         end

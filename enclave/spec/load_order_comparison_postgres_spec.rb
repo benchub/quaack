@@ -104,6 +104,89 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
   end
 
+  # A load order that puts every row where an earlier run put it is the same
+  # load, so it isn't run again: two rows per table make rotated the same as
+  # reverse, and one row makes both the same as forward. The skip is only
+  # by the loaded order, so every distinct load still runs.
+  describe "skipping a load that repeats an earlier one" do
+    let(:loads) { [] }
+
+    before do
+      allow(runner).to receive(:with_fixture).and_wrap_original do |original, rows, **options, &block|
+        loads << rows.map { [it.table.name, it.values.first] }
+        original.call(rows, **options, &block)
+      end
+    end
+
+    # One table of count rows after another, in id order.
+    def runs(*counts)
+      counts.each_with_index.flat_map do |count, i|
+        rows_of("t#{i}", %w[id], *(1..count).map { [it] })
+      end
+    end
+
+    before do
+      4.times { |i| conn.exec("CREATE TABLE t#{i} (id integer PRIMARY KEY)") }
+    end
+
+    def same(rows) = described_class.compare_in_load_orders(runner, rows, original: "SELECT 1", candidate: "SELECT 1")
+
+    it "runs forward, reverse, and rotated when a run has three rows" do
+      same(runs(1, 3))
+
+      expect(loads.size).to eq(3)
+    end
+
+    it "skips the rotated load when no run has more than two rows, since it's the reverse load" do
+      verdict = same(runs(2, 1, 2))
+
+      expect(verdict.match?).to be(true)
+      expect(loads.size).to eq(2)
+    end
+
+    it "skips the reverse and rotated loads when every run has one row" do
+      same(runs(1, 1, 1))
+
+      expect(loads.size).to eq(1)
+    end
+
+    it "still runs the first load when there are no rows" do
+      same([])
+
+      expect(loads).to eq([[]])
+    end
+
+    # Every row count a run can have, in two or three tables: the loads that
+    # ran are exactly the distinct loads the three orders make, so skipping
+    # never drops a load the orders would have made.
+    it "runs exactly the distinct loads of the three orders, for every mix of small runs" do
+      shapes = (0..4).to_a.repeated_permutation(2).to_a + (1..3).to_a.repeated_permutation(3).to_a
+      shapes.each do |counts|
+        loads.clear
+        rows = runs(*counts)
+        expected = %i[forward reverse rotated].map do |order|
+          described_class.reordered_load(rows, order, runner).map { [it.table.name, it.values.first] }
+        end.uniq
+
+        same(rows)
+
+        expect(loads).to eq(expected), "runs #{counts.inspect} ran #{loads.size} loads, not #{expected.size}"
+      end
+    end
+
+    it "still catches the middle pick of a three-row tie, which only the rotated load catches" do
+      original = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp, id) n FROM items WHERE grp = 1) s " \
+                 "WHERE n = 2"
+      candidate = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp) n FROM items WHERE grp = 1) s " \
+                  "WHERE n = 2"
+
+      verdict = both(original, candidate)
+
+      expect(fields(verdict)).to include(match: false, load_order: :rotated)
+      expect(loads.size).to eq(3)
+    end
+  end
+
   describe "rewrites that match the forward load only by luck" do
     it "catches a subquery that drops its secondary sort key before a LIMIT" do
       original = "SELECT id, grp FROM (SELECT *, row_number() OVER (ORDER BY grp, id) n FROM items) s " \
@@ -257,6 +340,66 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
         rows = rows_of("node", %w[id up root], [1, nil, nil], [2, 1, 1], [3, 2, 1], [4, 1, 1])
 
         expect(described_class.reordered_load(rows, :reverse, runner).map { it.values.first }).to eq(%w[1 4 2 3])
+        expect(fields(both("SELECT id FROM node", "SELECT id FROM node", rows:))).to include(match: true)
+      end
+
+      # emp has a self-reference (boss) and a reference to another table
+      # (dept). Only the first is a self-reference, and the levels and the
+      # reordered loads depend on that.
+      it "reads only the keys that reference the table itself, not its keys to other tables" do
+        conn.exec("CREATE TABLE dept (id integer PRIMARY KEY)")
+        conn.exec("CREATE TABLE emp (id integer PRIMARY KEY, boss integer REFERENCES emp, " \
+                  "dept integer REFERENCES dept)")
+
+        keys = runner.self_references([table("emp"), table("dept"), table("items")])
+
+        expect(keys).to eq(table("emp") => [[%w[boss], %w[id]]], table("dept") => [], table("items") => [])
+      end
+
+      # A composite key, with a row whose key is only partly NULL. MATCH
+      # SIMPLE doesn't check such a row, so it has no parent, and sits at the top.
+      describe "a composite key" do
+        before do
+          conn.exec(<<~SQL)
+            CREATE TABLE part (a integer, b integer, up_a integer, up_b integer, PRIMARY KEY (a, b),
+                               FOREIGN KEY (up_a, up_b) REFERENCES part (a, b))
+          SQL
+        end
+
+        let(:parts) do
+          rows_of("part", %w[a b up_a up_b], [1, 1, nil, nil], [1, 2, 1, 1], [2, 1, 1, 1], [3, 1, 2, 1],
+                  [4, 1, 1, nil])
+        end
+        let(:scan) { "SELECT string_agg(a || '.' || b, ',') FROM part" }
+
+        it "reads the key's columns in order" do
+          expect(runner.self_references([table("part")])).to eq(table("part") => [[%w[up_a up_b], %w[a b]]])
+        end
+
+        it "reorders by the whole key, keeps a row with a NULL part at the top, and loads in every order" do
+          scans = %i[reverse rotated].map do |load_order|
+            runner.with_fixture(described_class.reordered_load(parts, load_order, runner)) { |tx| tx.query(scan).rows }
+          end
+
+          # Top level 1.1 and 4.1 (its key is half NULL), then 1.2 and 2.1, then 3.1.
+          expect(scans).to eq([[["4.1,1.1,2.1,1.2,3.1"]], [["4.1,1.1,2.1,1.2,3.1"]]])
+          expect(fields(both(scan, scan, rows: parts))).to include(match: true, load_order: nil)
+        end
+      end
+
+      # The table's rows come in two runs, with another table's row between.
+      # A row of the second run finds no parent in its own run unless it's
+      # in that run, so it sits at that run's top, and its parent, in the
+      # first run, still loads first.
+      it "loads in every order when the table's rows come in more than one run" do
+        rows = rows_of("node", %w[id up], [1, nil], [2, 1]) + rows_of("parent", %w[id], [7]) +
+               rows_of("node", %w[id up], [3, 2], [4, 3], [5, 1])
+
+        loads = %i[reverse rotated].map do |load_order|
+          described_class.reordered_load(rows, load_order, runner).map { [it.table.name, it.values.first] }
+        end
+
+        expect(loads).to eq([[%w[node 1], %w[node 2], %w[parent 7], %w[node 5], %w[node 3], %w[node 4]]] * 2)
         expect(fields(both("SELECT id FROM node", "SELECT id FROM node", rows:))).to include(match: true)
       end
 

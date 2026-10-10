@@ -29,6 +29,14 @@ module Quaack
         # Far longer than any catalog read takes, and a step that reads
         # production still ends when one hangs.
         STATEMENT_TIMEOUT = "60s"
+        # A host that silently drops packets can lose the server's timeout
+        # error too, and libpq waits for a reply that never comes. TCP
+        # keepalives (30s idle, then 3 probes 10s apart) and a 30s user
+        # timeout on unacknowledged data end such a connection in about a
+        # minute. They apply to the connection and to schema-dump's pg_dump
+        # alike, and win over the operator's PGKEEPALIVES and the like.
+        LIVENESS = { keepalives: 1, keepalives_idle: 30, keepalives_interval: 10, keepalives_count: 3,
+                     tcp_user_timeout: 30_000 }.freeze
         TIMEOUT_SQL = "SELECT pg_catalog.set_config('statement_timeout', $1, true)"
         # Postgres 17 added pg_database.datlocale.
         OLDEST_MAJOR = 17
@@ -84,9 +92,10 @@ module Quaack
           { host: store.read("server"), **(port ? { port: } : {}), **(dbname ? { dbname: } : {}) }
         end
 
-        # A connection with params, its notices dropped (see Connections).
+        # A connection with params and LIVENESS, its notices dropped (see
+        # Connections).
         def connect(params)
-          Connections.register(PG.connect(**params))
+          Connections.register(PG.connect(**params, **LIVENESS))
         rescue PG::Error
           raise Error, "production_connection_failed", cause: nil
         end
