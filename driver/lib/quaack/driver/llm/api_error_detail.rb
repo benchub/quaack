@@ -88,11 +88,10 @@ module Quaack
           /(?<!#{KEY_CHAR})#{body}(?!#{KEY_CHAR})/
         end
 
-        # A character as written, or, if a URL can encode it, its encoding:
-        # a %XX for each byte.
+        # A character as written, or its percent-encoding: a %XX for each
+        # byte. Every character can be encoded, the unreserved ones too, since
+        # a gateway can echo a key with any of its characters encoded.
         def char_pattern(char)
-          return Regexp.escape(char) if char.match?(/[A-Za-z0-9_.~-]/)
-
           encoded = char.bytes.map { |byte| "%#{format("%02X", byte).gsub(/[A-F]/) { "[#{it}#{it.downcase}]" }}" }.join
           "(?:#{Regexp.escape(char)}|#{encoded})"
         end

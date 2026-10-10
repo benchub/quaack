@@ -32,4 +32,50 @@ RSpec.describe Quaack::Driver::LLM::APIErrorDetail do
 
     expect(failures.compact).to eq([])
   end
+
+  # Task 20261008-43: a gateway can echo a key with any of its characters
+  # percent-encoded, the unreserved ones (letters, digits, _ . ~ -) too.
+  describe "a key echoed with unreserved characters percent-encoded" do
+    let(:key) { "sk-SENTINEL.key~value_0123" }
+
+    def encode_all(text, upper: true)
+      text.each_char.map { |char| format(upper ? "%%%02X" : "%%%02x", char.ord) }.join
+    end
+
+    it "scrubs a long key encoded in whole, in either case of hex" do
+      secrets = described_class.secrets(nil, [key])
+
+      [true, false].each do |upper|
+        echoed = "bad key #{encode_all(key, upper:)} given"
+        expect(described_class.scrub(echoed, secrets)).to eq("bad key [key] given")
+      end
+    end
+
+    it "scrubs a long key encoded in part, with the rest as written" do
+      secrets = described_class.secrets(nil, [key])
+      echoed = "bad key sk%2DSENTINEL%2Ekey%7Evalue%5F0123 given"
+
+      expect(described_class.scrub(echoed, secrets)).to eq("bad key [key] given")
+    end
+
+    it "scrubs a short key encoded as a whole token" do
+      secrets = described_class.secrets(nil, ["SHORT-k_1"])
+
+      expect(described_class.scrub("bad SHORT%2Dk%5F1 given", secrets)).to eq("bad [key] given")
+      expect(described_class.scrub("bad %53%48%4f%52%54%2dk%5f%31 given", secrets)).to eq("bad [key] given")
+    end
+
+    it "leaves a short key's encoding inside a longer token alone, as it does the plain key" do
+      secrets = described_class.secrets(nil, ["SHORT-k_1"])
+
+      expect(described_class.scrub("xSHORT%2Dk%5F1", secrets)).to eq("xSHORT%2Dk%5F1")
+    end
+
+    it "catches a planted encoded sentinel: with no secret to scrub, it stays in the text" do
+      echoed = "bad key #{encode_all(key)} given"
+
+      expect(described_class.scrub(echoed, [])).to include(encode_all(key))
+      expect(described_class.scrub(echoed, described_class.secrets(nil, [key]))).not_to include("%")
+    end
+  end
 end
