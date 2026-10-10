@@ -12,6 +12,9 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-50: `NegativeResult` re-checks every DDL string in `negative` is redacted before the payload is built, and the redaction treats a `?` inside `ANY(ARRAY[...])` as already masked (enclave).
 - 20261009-37: `winner-summary` added to `Protocol::Burndown::LLM_STEPS` (protocol; the enclave's behavior is unchanged, but the protocol gem's file differs under the same VERSION).
 - 20261009-40: `untested_unchanged` (enclave `AtomPosition`, `Protocol::UnchangedAtoms`, an egress subset check) sends which untested atoms are in an unchanged part of the rewrite (enclave and protocol).
+- 20261009-57: the redaction re-check reads a jsonb `?` operator correctly (enclave).
+- 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
+- 20261009-63: a constant conjunct in a rewrite counts as new material in `AtomPosition` (enclave).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
 
 
@@ -1168,32 +1171,11 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-57. Redaction re-check: a jsonb `?` operator in a partial index fails the whole negative result.
+### 20261009-57. Redaction re-check: a jsonb `?` operator in a partial index fails the whole negative result. Done, see BACKLOG-COMPLETE.md.
 
-From the review of 20261009-50 (minor). `with_params` turns every lexer `?` token into `$1`, so a real partial index `WHERE data ? 'k'` gets the `#ddl` output `data ? ?`. That doesn't parse, so `redacted?` returns false and `NegativeResult` raises for any run that has such an existing or declined index. It fails closed with nothing leaked, but it costs availability for a realistic jsonb schema. Either refuse it cleanly (a documented `unsupported` outcome that drops only that index's DDL from the negative result, not the whole result) or give the mask a spelling that can't collide with an operator (check `?|` and `?&`, which are separate tokens and unaffected). Test with a partial index using each of `?`, `?|`, `?&`. Enclave change: put it on the unreleased list.
+### 20261009-58. Redaction re-check for the other DDL fields that leave the enclave. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20261009-50.
-- **Came from:** The review of 20261009-50, 2026-10-09 (minor).
-- **Design:** What goes out of the enclave.
-- **Status:** todo
-
-### 20261009-58. Redaction re-check for the other DDL fields that leave the enclave.
-
-From the review of 20261009-50 (minor, defense in depth). The `redacted?` re-check covers only `negative`. The report's `indexes[].ddl` and the LLM payloads' DDL fields (`index_payload`, `index_feedback`, `index_build_progress`) have no such re-check on the way out, only the redaction that produced them. Add the same check to each producer or to a shared helper, with a sentinel test per field (a planted literal is refused; a redacted DDL passes). Enclave change: unreleased list.
-
-- **Depends on:** 20261009-50.
-- **Came from:** The review of 20261009-50, 2026-10-09 (minor).
-- **Design:** What goes out of the enclave.
-- **Status:** todo
-
-### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom.
-
-From the second review of 20261009-40 (minor). `AtomPosition` skips constant atoms (`constant?` in `Analysis#clause`), so `WHERE a = $1` -> `WHERE a = $1 AND false` (or `AND NULL::boolean`) leaves `a = $1` unchanged and the added constant is never seen as new material. It's unrealistic (`1 = 0` parses as an A_Expr and is caught), but it is the same hole the fix closed, through a bare constant. Count a constant in the rewrite that the original lacks as a new atom (or skip constants only on the original's side), add the probes, and say in DESIGN.md's known-gaps list what is taken on trust. Enclave change: unreleased list.
-
-- **Depends on:** 20261009-40.
-- **Came from:** The second review of 20261009-40, 2026-10-09 (minor).
-- **Design:** rewrite-test, counterexamples.
-- **Status:** todo
+### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-64. Winner summary: pin the "points that matter most" prompt line, and watch two guard edges.
 
