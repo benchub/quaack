@@ -43,9 +43,13 @@ module Quaack
       # the WHERE. SELECT * gives the CTE the table's columns, by name and
       # type, so every reference to a copy's column reads the same value.
       #
-      # It works only on the top-level FROM, where every FROM item must
-      # have a name (a set operation has none), and only on plain tables
-      # (see Tree.plain_table?): a copy elsewhere is left alone. Copies read
+      # It works on each SELECT that can have a WITH of its own, the
+      # statement and every subquery and CTE body in it, one scope at a
+      # time (see scopes): the CTE goes in that SELECT's WITH, and a
+      # conjunct that reads an outer query isn't the copy's own, so it stays.
+      # In a scope every FROM item must have a name (a set operation has
+      # none), and only plain tables count (see Tree.plain_table?): a copy
+      # elsewhere is left alone. Copies read
       # with ONLY share a CTE that reads ONLY the table, and never with
       # copies that read its children too. It refuses
       # a table with fewer than two copies off every outer join's nullable
@@ -77,22 +81,23 @@ module Quaack
         def name = "shared_scan_cte"
 
         def description
-          "A table read more than once in the top-level FROM is read once, by a MATERIALIZED CTE of the WHERE and " \
+          "A table read more than once in one FROM is read once, by a MATERIALIZED CTE of the WHERE and " \
             "inner-join ON conjuncts every copy shares."
         end
 
         def rewrites(parse, catalog, literals)
-          top = Tree.select(parse.tree)
-          return [] unless literals && top
+          return [] unless literals && Tree.select(parse.tree)
 
-          tables(top).filter_map { rewrite(parse.tree, it, catalog, literals) }
+          scopes(parse.tree).each_with_index.flat_map do |scope, index|
+            tables(scope).filter_map { rewrite(parse.tree, index, it, catalog, literals) }
+          end
         end
 
         private
 
-        def rewrite(original, table, catalog, literals)
+        def rewrite(original, index, table, catalog, literals)
           tree = Deparse.copy(original)
-          top = Tree.select(tree)
+          top = scopes(tree)[index]
           copies, shared = shareable(tree, top, table, literals)
           return unless shared&.any?
 
@@ -175,7 +180,7 @@ module Quaack
         end
 
         # Takes the shared conjuncts out of every place, points each copy
-        # at the CTE, and puts the CTE first in the top-level WITH.
+        # at the CTE, and puts the CTE first in the scope's WITH.
         def share!(top, copies, shared, cte, literals)
           places(top).each { strip!(it, copies, shared, literals) }
           copies.each { point(it.table, cte.ctename) }
