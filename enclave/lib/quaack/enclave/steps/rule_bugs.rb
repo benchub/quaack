@@ -20,10 +20,9 @@ module Quaack
       # pruned for planning as the original does was never tested: its
       # rewrite_tested_<n> says rule discarded, and it isn't a bug.
       #
-      # A rewrite resting on a denormalized_equal assumption isn't sound by
-      # design: assumption-check found the data holds it, and rewrite-test and counterexamples make up their
-      # own data, which needn't. So their disproof of it isn't a bug. result-comparison's
-      # is, since result-comparison runs on the racetrack's data, which assumption-check checked.
+      # A rewrite resting on a denormalized_equal assumption counts like any
+      # other: rewrite-test and counterexamples keep the copy in their fixtures
+      # (DenormalizedFixture), so a disproof there means the rule is wrong.
       #
       # result-comparison disproves a rewrite only when one of its failing verdicts in
       # result_comparison is a result mismatch, a rule in RewriteFate::MISMATCHES. result-comparison
@@ -55,17 +54,16 @@ module Quaack
           NegativeResult.rewrites(store).filter_map do |rewrite|
             entry = store.read(rewrite)
             made = RewriteSource.fields(entry)
-            step = disproved_by(store, rewrite, verdicts, EmpiricalAssumptions.any?(entry)) if made["source"] == "rule"
+            step = disproved_by(store, rewrite, verdicts) if made["source"] == "rule"
             { "rewrite" => rewrite, "rules" => made["rules"], "step" => step } if step
           end
         end
 
-        # The step that disproved rewrite, or nil. rewrite-test and counterexamples don't count
-        # for a rewrite resting on what the data holds.
-        def disproved_by(store, rewrite, verdicts, empirical)
+        # The step that disproved rewrite, or nil.
+        def disproved_by(store, rewrite, verdicts)
           steps = RewriteFate.steps(store, rewrite.delete_prefix("rewrite_"))
           step = TEST_DISPROOFS[RewriteFate.early(steps, nil)&.fetch("fate")]
-          return step if step && !empirical
+          return step if step
 
           "result-comparison" if verdicts.fetch(rewrite, {}).each_value.any? { mismatch?(it) }
         end

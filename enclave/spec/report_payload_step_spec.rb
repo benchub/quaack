@@ -843,8 +843,8 @@ RSpec.describe "quaacks report-payload" do
         end
       end
 
-      # rewrite-test and counterexamples make up their data, which needn't hold an assumption
-      # assumption-check found the real data holds; result-comparison runs on the racetrack's.
+      # rewrite-test and counterexamples keep the copy in their fixtures (DESIGN.md's rewrite-test),
+      # so their disproof of such a rewrite is a rule bug like any other.
       context "with rule-made rewrites resting on a denormalized_equal assumption, disproved by every check" do
         let(:outcome) do
           assumptions = [{ "kind" => "denormalized_equal", "table" => "public.submissions" }]
@@ -856,8 +856,12 @@ RSpec.describe "quaacks report-payload" do
           end
         end
 
-        it "calls only the result-comparison disproof a bug" do
-          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_4", "rules" => ["polymorphic_key_copy"],
+        it "calls every check's disproof a bug" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "rules" => ["polymorphic_key_copy"],
+                                               "step" => "rewrite-test" },
+                                             { "rewrite" => "rewrite_3", "rules" => ["polymorphic_key_copy"],
+                                               "step" => "counterexamples" },
+                                             { "rewrite" => "rewrite_4", "rules" => ["polymorphic_key_copy"],
                                                "step" => "result-comparison" }])
         end
       end
