@@ -10028,3 +10028,12 @@ The review of 20261001-10 found these minor issues:
 - **Came from:** The review of 20261008-51 and the builder of 20260929-22, 2026-10-08.
 - **Design:** input, schema-dump.
 - **Status:** done. The full dump excludes every schema when none is left; the other items were checked and needed no change.
+
+### 20261010-25. Untested conditions on ordinary queries: `email = $1 LIMIT 1` and a GROUP BY join.
+
+The builder of 20261010-21 found, on `main` before and after that change, that these ordinary queries leave conditions untested: a `WHERE email = $1 LIMIT 1` query leaves `email = $1` untested, and a users/posts join with GROUP BY leaves `fx.users.state = $1` and the join atom untested. ORMs generate both all the time, and this is the kind of "untested" flag that costs confidence. Find why (a LIMIT 1 that hides a near miss? a GROUP BY that hides a changed row?) and fix it without weakening the guard, or document why the atom can't be tested. Also add the small spec 20261010-21's review asked for: two groups under `posts.id IN (1,2,3)` get distinct ids, and S0 to S6 for ordinary pinned-key queries (`users.id IN (1,2,3)`, `posts.id = 5`, an FK chain, self-reference) stay as intended, as a Postgres or unit spec. Also look at why `users.id IN ($1, $2)` stays untested in `posts JOIN users WHERE users.id IN (4,5)`.
+
+- **Depends on:** 20261010-21.
+- **Came from:** The work and review of 20261010-21, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10: a top-level LIMIT/OFFSET condition now counts as tested only after fixture-compare with it removed reports a mismatch; every S1 fixture is checked; rows that fail a condition get their own values in read columns; enum labels join the candidate values; each scenario ranks its own pinned keys. Still untested, correctly: a deep OFFSET and WITH TIES. Minor: 20261010-26.

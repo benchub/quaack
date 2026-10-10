@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-48, 20261008-52, 20261008-53 (items 5, 6): schema dump names, exclusion cap and `unknown_extra_dump_schema` and `dump_exclusions_too_long` rules (protocol), pg_inherits walk, `--exclude-schema=*` when no schema is left, `plan_too_deep` from egress (enclave, protocol and driver). Landed after the 0.1.31 bump.
 - 20261010-19: per-scope near misses in the Picker, and masking near-miss groups for OR arms and UNION branches, placed last in S1 to S5 (enclave).
 - 20261010-21: a pinned join key (an atom such as `id IN (...)` on a key) gives each group its own key value, so near misses stop colliding (enclave).
+- 20261010-25: the vacuity guard runs fixture-compare for a top-level LIMIT/OFFSET condition, checks every S1 fixture, gives near-miss rows their own values in read columns, adds enum labels to the candidate values, and ranks pinned keys per scenario (enclave).
 
 ## How this file works.
 
@@ -908,11 +909,11 @@ Left over from 20261010-21 on the real query shape: `submissions.workflow_state 
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
 
-### 20261010-25. Untested conditions on ordinary queries: `email = $1 LIMIT 1` and a GROUP BY join.
+### 20261010-26. Vacuity guard: cap the fixture-compare runs under a LIMIT/OFFSET.
 
-The builder of 20261010-21 found, on `main` before and after that change, that these ordinary queries leave conditions untested: a `WHERE email = $1 LIMIT 1` query leaves `email = $1` untested, and a users/posts join with GROUP BY leaves `fx.users.state = $1` and the join atom untested. ORMs generate both all the time, and this is the kind of "untested" flag that costs confidence. Find why (a LIMIT 1 that hides a near miss? a GROUP BY that hides a changed row?) and fix it without weakening the guard, or document why the atom can't be tested. Also add the small spec 20261010-21's review asked for: two groups under `posts.id IN (1,2,3)` get distinct ids, and S0 to S6 for ordinary pinned-key queries (`users.id IN (1,2,3)`, `posts.id = 5`, an FK chain, self-reference) stay as intended, as a Postgres or unit spec. Also look at why `users.id IN ($1, $2)` stays untested in `posts JOIN users WHERE users.id IN (4,5)`.
+The review of 20261010-25 found that the guard's new fixture-compare check runs once per atom, with no cap. A paginated ORM-style query (a users/posts join with 8 atoms, `ORDER BY users.id LIMIT 10 OFFSET 40`) took 0.32 s in the guard on `main` and 19.9 s on the branch, with the same result (all 8 untested); the unordered version took 2.4 s. Cost grows with atoms x 4 attempts x S1 fixtures x 3 load orders x the ordered runs, atoms with no mismatch are compared again on every retry, and the only limit is the 10 s per-statement timeout. Counterexample rounds call the same code. It is worst when nothing can be tested: an OFFSET past the fixture's rows. Fixes: skip the comparison when the original's full result has no more rows than the OFFSET; remember atoms that showed no mismatch across retries of the same fixture; cap the comparisons per query. Keep the guard sound and measure before and after.
 
-- **Depends on:** 20261010-21.
-- **Came from:** The work and review of 20261010-21, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
+- **Depends on:** 20261010-25 (landed).
+- **Came from:** The review of 20261010-25, 2026-10-10. Priority: paginated queries are everywhere.
+- **Design:** rewrite-test.
 - **Status:** todo
