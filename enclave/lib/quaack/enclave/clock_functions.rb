@@ -18,10 +18,12 @@ module Quaack
         SVFOP_CURRENT_TIMESTAMP: nil, SVFOP_CURRENT_TIMESTAMP_N: "pg_catalog.timestamptz",
         SVFOP_CURRENT_DATE: "pg_catalog.date",
         SVFOP_LOCALTIMESTAMP: "pg_catalog.timestamp", SVFOP_LOCALTIMESTAMP_N: "pg_catalog.timestamp",
-        SVFOP_LOCALTIME: "pg_catalog.time", SVFOP_LOCALTIME_N: "pg_catalog.time"
+        SVFOP_LOCALTIME: "pg_catalog.time", SVFOP_LOCALTIME_N: "pg_catalog.time",
+        SVFOP_CURRENT_TIME: "pg_catalog.timetz", SVFOP_CURRENT_TIME_N: "pg_catalog.timetz"
       }.freeze
 
-      PRECISION_OPS = %i[SVFOP_CURRENT_TIMESTAMP_N SVFOP_LOCALTIMESTAMP_N SVFOP_LOCALTIME_N].freeze
+      PRECISION_OPS = %i[SVFOP_CURRENT_TIMESTAMP_N SVFOP_LOCALTIMESTAMP_N SVFOP_LOCALTIME_N
+                         SVFOP_CURRENT_TIME_N].freeze
 
       module_function
 

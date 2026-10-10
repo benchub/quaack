@@ -129,7 +129,8 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
       "(created_at > (CURRENT_DATE - 7))" => "(created_at > ((quaack.clock_anchor())::date - 7))",
       "(created_at > LOCALTIMESTAMP(2))" => "(created_at > (quaack.clock_anchor())::timestamp(2) without time zone)",
       "(created_at > CURRENT_TIMESTAMP(3))" => "(created_at > (quaack.clock_anchor())::timestamp(3) with time zone)",
-      "(created_at > pg_catalog.now())" => "(created_at > quaack.clock_anchor())"
+      "(created_at > pg_catalog.now())" => "(created_at > quaack.clock_anchor())",
+      "(created_at > CURRENT_TIME)" => "(created_at > (quaack.clock_anchor())::time with time zone)"
     }.each do |production, racetrack|
       it "matches #{production} with #{racetrack}" do
         expect(same?(with_filter("seq_scan_rare_value", production), with_filter("seq_scan_rare_value", racetrack)))

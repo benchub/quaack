@@ -171,6 +171,9 @@ module Quaack
       def element_targets(element, targets)
         cast = element.type_cast
         return targets if element.a_array_expr || (cast && !cast.type_name.array_bounds.empty?)
+        # A function's result could be an array of any depth, as
+        # array_reverse's is, so what it takes in could be a sub-array too.
+        return [*targets, *targets.map { Element.new(it) }] if element.func_call
 
         targets.map { Element.new(it) }
       end
@@ -192,10 +195,14 @@ module Quaack
         # firm leaves out a polymorphic or other pseudo-type target, which
         # Postgres could resolve to text, so a $n is anchored only where a
         # real date or time type reads it (task 20261006-5). It's also
-        # false where one target's types disagree, as for a function
-        # overloaded as f(text) and f(date): Postgres could resolve the
-        # call to either, so the $n is bound as written, and check refuses
-        # it (task 20261006-17).
+        # false where a target's candidate types disagree on whether they
+        # read the clock (only real date and time types can read it), as for
+        # a function overloaded as f(text) and f(date): Postgres could
+        # resolve the call to either, so the $n is bound as written, and
+        # check refuses it (task 20261006-17). A pseudo type among the
+        # candidates, as f(anyelement) beside f(date), counts as one that
+        # doesn't read it, so that target disagrees too (rare; task
+        # 20261006-27 leaves it refused).
         def reads_clock?(text, targets, firm: false)
           return false unless loose?(text)
           return false if firm && targets.any? { disagree?(text, oids(it)) }

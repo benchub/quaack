@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require "quaack/enclave/run_server"
+require "quaack/enclave/store"
 
 # The checks on `quaacks run-server`'s arguments (DESIGN.md's run-server). Each is
 # refused rather than guessed at.
@@ -58,5 +60,31 @@ RSpec.describe Quaack::Enclave::RunServer do
   # the racetrack.
   it "refuses the same database for the racetrack and arena as run_server_same_database" do
     expect_refused("run_server_same_database", arena_db: "racetrack")
+  end
+
+  # An arena session takes production's TimeZone from inventory, so an
+  # inventory without one isn't one this version wrote (task 20261006-6).
+  describe ".connect" do
+    def connect_error(settings)
+      Dir.mktmpdir do |base|
+        store = Quaack::Enclave::Store.create(base:)
+        store.write("run_server", "host" => "127.0.0.1", "port" => 1, "racetrack_db" => "r", "arena_db" => "a")
+        store.write("inventory", "settings" => settings)
+        described_class.connect(store, :arena)
+      rescue described_class::Error => e
+        e
+      end
+    end
+
+    it "refuses an arena connection as run_from_older_version when the inventory has no TimeZone" do
+      error = connect_error("work_mem" => "4MB")
+
+      expect([error.class, error.rule]).to eq([described_class::Error, "run_from_older_version"])
+    end
+
+    it "refuses a TimeZone that isn't a non-empty string the same way, and never reads it as a connection error" do
+      expect(connect_error("TimeZone" => nil).rule).to eq("run_from_older_version")
+      expect(connect_error("TimeZone" => "").rule).to eq("run_from_older_version")
+    end
   end
 end

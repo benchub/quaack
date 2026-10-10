@@ -33,7 +33,6 @@ module Quaack
     module ClockDefaults
       ANCHOR = ClockFunctions::ANCHOR
       FUNCTIONS = (ClockFunctions::FUNCTIONS + %w[clock_timestamp]).freeze
-      TIME_CASTS = { SVFOP_CURRENT_TIME: "pg_catalog.timetz", SVFOP_CURRENT_TIME_N: "pg_catalog.timetz" }.freeze
       TEXT_TYPES = %w[text varchar bpchar].freeze
 
       SYSTEM_SCHEMAS = <<~SQL
@@ -87,7 +86,7 @@ module Quaack
       def anchored_node(node)
         sql = case node.node
               when :func_call then ANCHOR if clock_call?(node.func_call)
-              when :sqlvalue_function then sql_value(node.sqlvalue_function)
+              when :sqlvalue_function then ClockFunctions.sql_value_anchor(node.sqlvalue_function)
               when :type_cast then return clock_word_cast(node.type_cast)
               end
         expression(sql) if sql
@@ -97,14 +96,6 @@ module Quaack
         names = func.funcname.map { |part| part.string.sval }
         ClockFunctions.plain_call?(func) && FUNCTIONS.include?(names.last) &&
           (names.length == 1 || (names.length == 2 && names.first == "pg_catalog"))
-      end
-
-      def sql_value(svf)
-        cast = TIME_CASTS[svf.op]
-        return ClockFunctions.sql_value_anchor(svf) unless cast
-
-        precision = svf.op == :SVFOP_CURRENT_TIME_N ? "(#{Integer(svf.typmod)})" : ""
-        "#{ANCHOR}::#{cast}#{precision}"
       end
 
       def clock_word_cast(cast)

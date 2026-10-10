@@ -42,6 +42,7 @@ module Quaack
     #   CURRENT_DATE          -> quaack.clock_anchor()::pg_catalog.date
     #   LOCALTIMESTAMP[(p)]   -> quaack.clock_anchor()::pg_catalog.timestamp[(p)]
     #   LOCALTIME[(p)]        -> quaack.clock_anchor()::pg_catalog.time[(p)]
+    #   CURRENT_TIME[(p)]     -> quaack.clock_anchor()::pg_catalog.timetz[(p)]
     #
     # Clock-reading literals ('now', 'today', 'yesterday', 'tomorrow') are
     # anchored too, when placeholder_map, redact's map, holds them and they're
@@ -49,7 +50,7 @@ module Quaack
     # types for that. See ClockLiterals. Their replacements record the
     # placeholder, as $1 or $1::date, so they're shape as well.
     #
-    # Nothing else changes: not CURRENT_TIME, not clock_timestamp() or
+    # Nothing else changes: not clock_timestamp() or
     # timeofday(), which volatility refuses as volatile, and no other function.
     #
     # Which now() is pg_catalog's. The SQL-value functions are keywords, so
