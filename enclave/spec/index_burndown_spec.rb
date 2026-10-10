@@ -71,20 +71,22 @@ RSpec.describe Quaack::Enclave::IndexBurndown, ".record_rank" do
 
     def refined = Quaack::Enclave::Burndown.read(store).dig("stages", "llm-index-refine", "rewrite")
 
+    # Task 20261010-20: both the skip and the round carry the pool llm-index-ideas sent on.
     it "replaces the record that said it didn't run, and adds to its own" do
       store.write("index_generated_rewrite", true)
+      Quaack::Enclave::Burndown.record(store, "llm-index-ideas", :rewrite, in: 5, out: 5)
       tally = Quaack::Enclave::IndexRanking::Tally.new(ranked: 0, combinations: 0, unused_index: 0, explains: 0)
       ranking = Quaack::Enclave::IndexRanking::Ranking.new(top: [], combination: nil, tally:)
       described_class.record_rank(store, :rewrite, entry, [report, ranking])
-      expect(refined["extra"]).to eq("no_ideas_tested" => 1)
+      expect(refined).to include("in" => 5, "out" => 5, "extra" => { "no_ideas_tested" => 1 })
 
       refine
-      expect(refined).to eq("in" => 0, "added" => { "llm" => 1 }, "dropped" => { "unqualified_table" => 1 },
-                            "set_aside" => 0, "out" => 0, "extra" => { "fell_short" => 0 })
+      expect(refined).to eq("in" => 5, "added" => { "llm" => 1 }, "dropped" => { "unqualified_table" => 1 },
+                            "set_aside" => 0, "out" => 5, "extra" => { "fell_short" => 0 })
 
       refine
-      expect(refined).to eq("in" => 0, "added" => { "llm" => 2 }, "dropped" => { "unqualified_table" => 2 },
-                            "set_aside" => 0, "out" => 0, "extra" => { "fell_short" => 0 })
+      expect(refined).to eq("in" => 5, "added" => { "llm" => 2 }, "dropped" => { "unqualified_table" => 2 },
+                            "set_aside" => 0, "out" => 5, "extra" => { "fell_short" => 0 })
     end
 
     it "replaces a record that said none of the LLM's ideas fell short too" do

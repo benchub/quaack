@@ -112,8 +112,9 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
     expect(pruning.keys).not_to include("llm-index-ideas", "llm-index-refine")
     expect(stages["index-rank"]).to eq(pruning["index-rank"])
     expect(stages["index-rank"].keys).to eq(["rewrite_1"])
+    pool = stages["index-test"]["rewrite_1"]["out"]
     expect(stages["llm-index-ideas"]).to eq(
-      "rewrite_1" => { "in" => 0, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => 0,
+      "rewrite_1" => { "in" => pool, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => pool,
                        "extra" => {} }
     )
     expect(stages["llm-index-refine"]["rewrite_1"]["extra"]).to eq("no_ideas_tested" => 1)

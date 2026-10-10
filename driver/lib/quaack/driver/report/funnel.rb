@@ -19,6 +19,8 @@ module Quaack
       # aside narrows, and one that adds (rewrite-rules, llm-rewrites,
       # operator-rewrites) widens. A band's bottom is its top plus what it
       # went on with, less what came in: top + added - dropped - set aside.
+      # A later band that added has a third width, top + added, at its
+      # middle, drawn as a lighter slice on each side (funnel_added).
       # The drawing carries that running width whatever a record's own
       # "in" says, so a count that doesn't join up shows in the table, not
       # as a gap in the funnel. The bands touch, so the funnel reads as one
@@ -89,8 +91,8 @@ module Quaack
           funnel_widths(rows).each_with_index.map do |widths, i|
             at = funnel_top(i)
             case widths
-            in [width, nil] then funnel_unknown(at, [width, UNKNOWN].max, *rows[i].values_at(0, 2), of_rewrite)
-            in [width, :partial] then funnel_partial(at, width, [width, UNKNOWN].max, *rows[i], of_rewrite)
+            in [width, nil, _] then funnel_unknown(at, [width, UNKNOWN].max, *rows[i].values_at(0, 2), of_rewrite)
+            in [width, :partial, _] then funnel_partial(at, width, [width, UNKNOWN].max, *rows[i], of_rewrite)
             else funnel_band(at, widths, *rows[i], of_rewrite)
             end
           end
@@ -103,15 +105,30 @@ module Quaack
         # rectangle). A row with no count is
         # [width, nil], and one with only what came in [width, :partial], at
         # the running width and leaving it be.
+        #
+        # A counted row also has its peak: what came in plus what it added,
+        # its widest point, drawn at the band's middle (funnel_added). The
+        # first row's peak is its out, since its width is what it added.
         def funnel_widths(rows)
           running = 0
           drawn = rows.each_with_index.map do |(_, record, _), i|
             top, bottom, running = funnel_row(running, *funnel_counted(record), first: i.zero?)
-            [top, bottom]
+            [top, bottom, funnel_peak(top, bottom, record, first: i.zero?)]
           end
           largest = drawn.flat_map { it.grep(Integer) }.max.to_i
-          drawn.map { |top, bottom| [funnel_scaled(top, largest), funnel_scaled(bottom, largest)] }
+          drawn.map { |widths| widths.map { funnel_scaled(it, largest) } }
         end
+
+        # A counted row's widest point, in counts: its top plus what it
+        # added, never narrower than its bottom. nil for a row not counted.
+        def funnel_peak(top, bottom, record, first:)
+          return unless bottom.is_a?(Integer)
+          return bottom if first
+
+          [top + funnel_added_count(record), bottom].max
+        end
+
+        def funnel_added_count(record) = record["added"].to_h.values.grep(Integer).reject(&:negative?).sum
 
         # A row's [top, bottom, running width after it], in counts. The
         # first row's top is as wide as its bottom, so it sets the running
@@ -151,9 +168,27 @@ module Quaack
 
         def funnel_band(at, widths, name, record, stage, of_rewrite) # rubocop:disable Metrics/ParameterLists
           color = COLORS.fetch(stage, BLUE)
-          shape = funnel_polygon(at, *widths, %(style="fill: #{color}; stroke: #{color}" fill-opacity="0.85"))
+          top, bottom, peak = widths
+          shape = funnel_polygon(at, top, bottom, %(style="fill: #{color}; stroke: #{color}" fill-opacity="0.85"))
+          added = peak > top
           %(<g class="band">#{funnel_tip(funnel_summary("", stage, of_rewrite))}#{shape}) +
-            %(#{funnel_words(at, name, funnel_label(record, stage))}</g>)
+            (added ? funnel_added(at, widths, color) : "") +
+            %(#{funnel_words(at, name, funnel_label(record, stage, added:))}</g>)
+        end
+
+        # What a stage added, as a lighter slice on each side of its band:
+        # from the band's top corner out to its peak, at the band's middle,
+        # and back to its bottom corner. So a band reads three widths: what
+        # came in at its top, that plus what it added at its middle, and
+        # what went on at its bottom.
+        def funnel_added(at, widths, color)
+          top, bottom, peak = widths.map { it / 2 }
+          [-1, 1].map do |side|
+            corners = [[top, at], [peak, at + (HEIGHT / 2)], [bottom, at + HEIGHT]]
+                      .map { |x, y| "#{((WIDTH / 2) + (side * x)).round(2)},#{y}" }
+            paint = %(style="fill: #{color}; stroke: #{color}" fill-opacity="0.35" stroke-dasharray="3 2")
+            %(<polygon class="added" points="#{corners.join(" ")}" #{paint}/>)
+          end.join
         end
 
         def funnel_unknown(at, width, name, stage, of_rewrite)
@@ -208,8 +243,10 @@ module Quaack
 
         # What's beside a band: its counts, and its drops by reason, cut to
         # fit. The band's <title> and the table have them whole.
-        def funnel_label(record, stage, went_on = "#{Format.number(record["out"])} went on")
+        # With added, it starts with how many the stage added.
+        def funnel_label(record, stage, went_on = "#{Format.number(record["out"])} went on", added: false)
           counts = went_on
+          counts = "#{Format.number(funnel_added_count(record))} added, #{counts}" if added
           counts += ", #{Format.number(record["set_aside"])} held back" if record["set_aside"].to_i.positive?
           dropped = breakdown(record["dropped"].to_h, stage:)
           line = dropped == "none" ? counts : "#{counts} · dropped: #{dropped}"
