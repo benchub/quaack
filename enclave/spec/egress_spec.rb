@@ -247,7 +247,9 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
       ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],
       ["a string where the row count belongs", { s1_rows: EGRESS_SENTINEL }],
-      ["a negative row count", { s1_rows: -1 }]
+      ["a negative row count", { s1_rows: -1 }],
+      ["a row count just above the cap", { s1_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
+      ["a row count of a trillion", { s1_rows: 10**12 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a vacuity diagnostic"

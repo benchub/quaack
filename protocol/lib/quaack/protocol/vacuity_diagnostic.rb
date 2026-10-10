@@ -15,14 +15,22 @@ module Quaack
       LOAD_RULES = %w[fixture_load_failed insert_failed statement_timeout statement_canceled other]
                    .map(&:freeze).freeze
 
-      # As Burndown's: no real count comes near it.
-      MAX_COUNT = 10**12
+      # The most rows s1_rows may hold. S1 is a few dozen made-up rows (one
+      # group of at most one row per table for the hit and each near miss,
+      # see Scenarios::Plan), so the original's result is small, and the
+      # arena's 10 s statement timeout (ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS)
+      # stops a join from running up a count: nothing in the code caps the
+      # rows a query returns, so this is the same as the 2,000,000 elements
+      # the enclave reads from any one input (CLI::Input::MAX_ELEMENTS), the
+      # most it will hold of anything, and enclave/spec/vacuity_row_cap_spec.rb
+      # keeps the two together.
+      MAX_ROWS = 2_000_000
 
       module_function
 
       # Whether fields, as JSON reads them back (String keys), carry a
       # s1_load_rule that's nil or on LOAD_RULES and a s1_rows that's nil or
-      # an Integer from zero up to below MAX_COUNT. Other keys aren't checked.
+      # an Integer from zero up to MAX_ROWS. Other keys aren't checked.
       def valid?(fields)
         return false unless fields.is_a?(Hash)
 
@@ -31,7 +39,7 @@ module Quaack
         (rule.nil? || LOAD_RULES.include?(rule)) && (rows.nil? || count?(rows))
       end
 
-      def count?(count) = count.is_a?(Integer) && count >= 0 && count < MAX_COUNT
+      def count?(count) = count.is_a?(Integer) && count >= 0 && count <= MAX_ROWS
 
       private_class_method :count?
     end
