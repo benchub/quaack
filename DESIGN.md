@@ -1468,7 +1468,7 @@ The report has a light theme and a dark one. Every color is a CSS custom propert
 
 If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed rewrite-test and counterexamples but minimax or result-comparison knocked out. The rewrites' fates say the first and the last.
 
-List each declined or already existing index once, with the searches it came up in: the original's, or a rewrite's. A rewrite's search repeats most of the original's candidates, and a plan prints a partial index's predicate with casts the query's text doesn't have, such as `'deleted'::text` for `'deleted'`. Two candidates are the same index here when they differ only by a cast on a constant or on a bare column.
+List each declined or already existing index once. The tables don't say which searches (the original's or a rewrite's) it came up in. A rewrite's search repeats most of the original's candidates, and a plan prints a partial index's predicate with casts the query's text doesn't have, such as `'deleted'::text` for `'deleted'`. Two candidates are the same index here when they differ only by a cast on a constant or on a bare column.
 
 The report payload carries these two lists whether or not anything beat the original. When something did, the report shows them in a section of their own, "Index ideas that went nowhere," without the rewrites' fates.
 

@@ -1595,15 +1595,14 @@ RSpec.describe Quaack::Driver::Report do
         .to include("QUAACK kept no rewrite to test.")
     end
 
-    it "says which indexes the planner wouldn't use, and why, once each, with the queries they were tried for" do
+    it "says which indexes the planner wouldn't use, and why, once each" do
       table = why[%r{<table id="declined-indexes">.*?</table>}m]
       expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?")}</td>" \
-                               "<td>the original query, rewrite Vivid Cove</td>" \
                                "<td>The planner never chose it.</td></tr>")
       expect(table).to include(esc("<tr><td>#{sq("CREATE INDEX ON public.t USING gin (b)")}</td>" \
-                                   "<td>rewrite Vivid Cove</td><td>HypoPG, which QUAACK uses to try an index " \
+                                   "<td>HypoPG, which QUAACK uses to try an index " \
                                    "without building it, couldn't create it (Postgres error code 0A000).</td></tr>"))
-      expect(table).to include(esc("<tr><td>an index QUAACK couldn't write out</td><td>the original query</td>" \
+      expect(table).to include(esc("<tr><td>an index QUAACK couldn't write out</td>" \
                                    "<td>QUAACK couldn't write its definition.</td></tr>"))
     end
 
@@ -1615,14 +1614,25 @@ RSpec.describe Quaack::Driver::Report do
     it "says a decline's reason wasn't recorded when the payload has none" do
       negative["declined"] = [{ "ddl" => "CREATE INDEX ON public.t USING btree (z)", "reason" => nil,
                                 "sqlstate" => nil, "searches" => ["original"] }]
-      expect(why).to include("<td>the original query</td><td>not recorded</td></tr>")
+      expect(why).to include("<td>not recorded</td></tr>")
     end
 
     it "says which suggested indexes already existed, with the existing index and its size" do
       table = why[%r{<table id="existing-indexes">.*?</table>}m]
       expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (c)")}</td>" \
-                               "<td>the original query, rewrite Smooth Kayak</td><td>#{sq("t_c_d_idx")}</td>" \
+                               "<td>#{sq("t_c_d_idx")}</td>" \
                                '<td class="num">3.0 MB</td></tr>')
+    end
+
+    it "has no Tried for column in either index table, and keeps the other columns" do
+      declined = why[%r{<table id="declined-indexes">.*?</table>}m]
+      existing = why[%r{<table id="existing-indexes">.*?</table>}m]
+      expect(declined).to include('<thead><tr><th scope="col">Index</th><th scope="col">Why not</th></tr></thead>')
+      expect(existing).to include('<thead><tr><th scope="col">Index</th><th scope="col">Your index that covers it' \
+                                  '</th><th scope="col" class="num">Its size</th></tr></thead>')
+      expect(declined + existing).not_to include("Tried for")
+      expect(declined + existing).not_to include("rewrite Vivid Cove")
+      expect(why).not_to include("every query it was tried for")
     end
 
     it "says none when no index was declined or already existed" do
@@ -1654,7 +1664,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(table).not_to be_nil
         expect(table).to eq(section(negative_html, "negative-result")[%r{<table id="#{id}">.*?</table>}m])
       end
-      expect(ideas).to include("<td>the original query, rewrite Smooth Kayak</td><td>#{sq("t_c_d_idx")}</td>")
+      expect(ideas).to include("<td>#{sq("t_c_d_idx")}</td>")
     end
 
     it "makes the declined and existing lists rose folds that start open and that a link opens" do
@@ -2803,7 +2813,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "prints, escaped, every value a negative report shows" do
       expect_escaped(rendered(negative_sentinels),
-                     '<ul id="negative-rewrites"><li>', %(<tr><td><code class="sql">), "</code></td><td>", ", rewrite_",
+                     '<ul id="negative-rewrites"><li>', %(<tr><td><code class="sql">),
                      "(Postgres error code ", %(#{escaped}</td><td>), "<tbody>\n<tr><td>",
                      "</td><td>Made by QUAACK&#39;s own rewrite rules ", %(<td><code class="sql">))
     end

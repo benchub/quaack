@@ -243,11 +243,11 @@
 <% if negative["declined"].empty? %>
 <p>The planner would have used every index QUAACK thought of.</p>
 <% else %>
-<p>QUAACK asked the planner about each of these before building anything. An index is listed once, with every query it was tried for.</p>
-<table id="declined-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Tried for</th><th scope="col">Why not</th></tr></thead>
+<p>QUAACK asked the planner about each of these before building anything. An index is listed once.</p>
+<table id="declined-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Why not</th></tr></thead>
 <tbody>
 <% negative["declined"].each do |d| %>
-<tr><td><%= d["ddl"] ? sql_code(d["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(d) %></td><td><%= h declined(d) %></td></tr>
+<tr><td><%= d["ddl"] ? sql_code(d["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h declined(d) %></td></tr>
 <% end %>
 </tbody></table>
 <% end %>
@@ -258,10 +258,10 @@
 <p>None of the indexes QUAACK thought of already existed.</p>
 <% else %>
 <p>If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.</p>
-<table id="existing-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Tried for</th><th scope="col">Your index that covers it</th><th scope="col" class="num">Its size</th></tr></thead>
+<table id="existing-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Your index that covers it</th><th scope="col" class="num">Its size</th></tr></thead>
 <tbody>
 <% negative["existing"].each do |e| %>
-<tr><td><%= e["ddl"] ? sql_code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(e) %></td><td><%= (by = e.dig("covered_by", "name")) ? sql_code(by) : "" %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
+<tr><td><%= e["ddl"] ? sql_code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= (by = e.dig("covered_by", "name")) ? sql_code(by) : "" %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
 <% end %>
 </tbody></table>
 <% end %>
