@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
 
 
@@ -1201,7 +1202,8 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Came from:** The user, 2026-10-09.
 - **Design:** rewrite-test (vacuity-guard), counterexamples, report.
 - **Decided by the user (2026-10-09):** the caution should warn only about untested atoms in the part the rewrite changed. That's task 20261009-40. This task builds the diagnostic (why an atom stayed vacuous) first; the cause of the untested atoms in the user's run is still unknown and waits on that diagnostic.
-- **Status:** in progress (diagnostic)
+- **Landed so far:** 2026-10-09 (task/20261009-33): the diagnostic only. Each tested rewrite's `rewrite_test` message and `rewrite_tested_<n>` entry now carry `s1_load_rule` (nil, or a rule from `Protocol::VacuityDiagnostic::LOAD_RULES`) and `s1_rows` (the original's row count on S1). Next: a run on a build with it tells whether S1 failed to load or loaded and returned nothing; then fix the cause. The caution's scope is 20261009-40. Minor finding: 20261009-46.
+- **Status:** todo (waits on a run with the diagnostic)
 
 ### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections. Done, see BACKLOG-COMPLETE.md.
 
@@ -1309,4 +1311,13 @@ From the review of 20261009-35 (minor, but the user asked for the kind headings 
 - **Depends on:** None.
 - **Came from:** The review of 20261009-35, 2026-10-09 (minor).
 - **Design:** report.
+- **Status:** todo
+
+### 20261009-46. Vacuity diagnostic: a tighter cap on `s1_rows`.
+
+From the review of 20261009-33 (minor). `Protocol::VacuityDiagnostic` accepts an `s1_rows` up to 10**12, but the value is a row count of the original query on made-up fixtures, bounded by the fixture size. A cap of a few million would carry less. Set it from the fixture limits (what the scenario builder can load) and test that a value above it is refused at egress. Enclave and protocol change: put it on the unreleased list.
+
+- **Depends on:** 20261009-33.
+- **Came from:** The review of 20261009-33, 2026-10-09 (minor).
+- **Design:** rewrite-test.
 - **Status:** todo
