@@ -1198,20 +1198,6 @@ From the review of 20261009-50 (minor, defense in depth). The `redacted?` re-che
 - **Design:** What goes out of the enclave.
 - **Status:** todo
 
-### 20261009-59. Winner summary: tighten the guard and the prompt.
-
-From the review of 20261009-37 (minor).
-- The guard lets a few spoofable things through, rendered as inert escaped text: a bare domain (`evil.example.co`), `javascript:` or `data:` as text, an email address, zero-width characters (U+200B) and bidi overrides (U+202E). Also refuse `\p{Cf}` characters, `javascript:` and `data:`, an `@` address, and any `word.word` that looks like a host.
-- The prompt asks for two to four plain sentences, but the real answer was four long sentences (789 characters), and the 900-character cap leaves little headroom. Ask for short sentences and lower the cap to about 600, or accept the length; judge from more than one real answer (use the synthetic fixture and the one configured provider, a few calls at most) and show the user.
-- The real answer said the Aggregate and Sort "sort the 35,453 ids" when the Append emits 35,453 and the Aggregate output is 32,429. The prompt could ask the model to quote a plan step's own numbers rather than carry one across steps.
-- The spec compares the baseline wording in `ORIGINAL_PLAN` with the constant itself, so flipping the wording survives; assert the literal text.
-- The scratch example `input.json` predates the "if it has any" wording; regenerate it with the deliverables.
-
-- **Depends on:** 20261009-37.
-- **Came from:** The review of 20261009-37, 2026-10-09 (minor).
-- **Design:** report, Several LLM providers.
-- **Status:** todo
-
 ### 20261009-60. Pin the Ranking tint values; style links.
 
 From the review of 20261009-45 (minor).
@@ -1233,4 +1219,16 @@ From the review of 20261009-52 (minor).
 - **Depends on:** 20261009-52.
 - **Came from:** The review of 20261009-52, 2026-10-09 (minor).
 - **Design:** report.
+- **Status:** todo
+
+### 20261009-62. Winner summary: tune the cap and prompt with real calls, and close the guard's small gaps.
+
+From the review of 20261009-59 (minor).
+- The prompt now asks for under 600 characters and the cap is 800, but the new wording was never tried with a real model (three real calls were spent on the first wording, all 652 to 729 characters). Make three to five real calls on the synthetic fixture with the one configured provider, then set the cap and the prompt line from what comes back, and show the user the answers. A model that ignores the soft target and writes about 850 characters is refused silently.
+- The dotted-name rule refuses any dotted name that isn't verbatim in the JSON sent, such as `public.orders.status`, or `orders.id` when the SQL uses an alias, so one such answer drops the whole summary. Also accept a token whose parts each appear in the input.
+- Smaller gaps, each rendered as inert escaped text: also refuse U+2028, U+2029, U+3164, U+2800 and U+FE0F; `vbscript:`, `mailto:`, `file:`, `ftp:`, `about:` and spaced `JaVaScRiPt :`; widen the dotted rule's last label to Unicode letters (`\p{L}`); add a word boundary to the "token appears in the input" test (`example.co` passes when the input has `example.company`); pin the cap at 801 as well as 700.
+
+- **Depends on:** 20261009-59.
+- **Came from:** The review of 20261009-59, 2026-10-09 (minor).
+- **Design:** report, Several LLM providers.
 - **Status:** todo

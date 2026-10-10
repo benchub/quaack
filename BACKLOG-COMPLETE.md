@@ -9326,3 +9326,18 @@ From the review of 20261009-31 (minor). The source line now says "transform rule
 - **Decided by the user (2026-10-09):** change it everywhere: the rule-bug section, the fate list, the candidates table's "who" cell, the row label, README step 4 and its example, and the progress line, so one phrase ("transform rule(s)") is used throughout.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-52; review clean; merged with a README conflict resolved by keeping 56's sample numbers and the new label). "Transform rule(s)" is used in the candidates "who" cell, the fate list and rule-bug section ("made by transform rule X"), the burndown row ("Transform rule rewrites"), the accountability row ("Transform rules"), the stage sentence, the progress lines and summary, README and DESIGN.md. Left: the LLM prompt text (it would change the recorded corpus), docs/transforms pages, code comments, test names. Minor findings: 20261009-61.
+
+### 20261009-59. Winner summary: tighten the guard and the prompt.
+
+From the review of 20261009-37 (minor).
+- The guard lets a few spoofable things through, rendered as inert escaped text: a bare domain (`evil.example.co`), `javascript:` or `data:` as text, an email address, zero-width characters (U+200B) and bidi overrides (U+202E). Also refuse `\p{Cf}` characters, `javascript:` and `data:`, an `@` address, and any `word.word` that looks like a host.
+- The prompt asks for two to four plain sentences, but the real answer was four long sentences (789 characters), and the 900-character cap leaves little headroom. Ask for short sentences and lower the cap to about 600, or accept the length; judge from more than one real answer (use the synthetic fixture and the one configured provider, a few calls at most) and show the user.
+- The real answer said the Aggregate and Sort "sort the 35,453 ids" when the Append emits 35,453 and the Aggregate output is 32,429. The prompt could ask the model to quote a plan step's own numbers rather than carry one across steps.
+- The spec compares the baseline wording in `ORIGINAL_PLAN` with the constant itself, so flipping the wording survives; assert the literal text.
+- The scratch example `input.json` predates the "if it has any" wording; regenerate it with the deliverables.
+
+- **Depends on:** 20261009-37.
+- **Came from:** The review of 20261009-37, 2026-10-09 (minor).
+- **Design:** report, Several LLM providers.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-59; review clean). The guard also refuses format characters (`\p{Cf}`), `javascript:`/`data:` text, `\w@\w` addresses and a dotted host-looking token not present in the JSON sent to the model; the prompt asks for short sentences under 600 characters and for quoting a plan step's own numbers. The cap is 800, not 600: all three real answers (652 to 729 characters) would have been refused at 600, and the new prompt line wasn't tested with real calls (the three calls were spent on the first wording). All three real answers pass. Minor findings: 20261009-62.
