@@ -29,7 +29,30 @@ module Quaack
           pg_extension_update_paths pg_replication_origin_oid ts_parse ts_token_type current_setting
           pg_settings_get_flags
         ].to_set.freeze
+        # pg_catalog's functions, on Postgres 18, that aren't volatile and give
+        # back what a catalog object is, or how it's used, from its oid, which
+        # a literal integer supplies (20261008-39). Whether one answers would
+        # say whether an object exists, or what it holds, on the racetrack.
+        # A spec checks this list and NAME_LOOKUPS against the catalog's own
+        # functions with an oid or reg type argument.
+        OID_LOOKUPS = %w[
+          col_description format_type pg_basetype pg_collation_is_visible pg_column_is_updatable
+          pg_conversion_is_visible pg_describe_object pg_filenode_relation pg_function_is_visible pg_get_acl
+          pg_get_constraintdef pg_get_expr pg_get_function_arg_default pg_get_function_arguments
+          pg_get_function_identity_arguments pg_get_function_result pg_get_function_sqlbody pg_get_functiondef
+          pg_get_indexdef pg_get_partition_constraintdef pg_get_partkeydef pg_get_replica_identity_index
+          pg_get_ruledef pg_get_statisticsobjdef pg_get_statisticsobjdef_columns pg_get_statisticsobjdef_expressions
+          pg_get_triggerdef pg_get_userbyid pg_identify_object pg_identify_object_as_address
+          pg_index_column_has_property pg_index_has_property pg_indexam_has_property pg_indexam_progress_phasename
+          pg_is_other_temp_schema pg_opclass_is_visible pg_operator_is_visible pg_opfamily_is_visible
+          pg_partition_root pg_relation_filenode pg_relation_filepath pg_relation_is_publishable
+          pg_relation_is_updatable pg_sequence_parameters pg_statistics_obj_is_visible pg_table_is_visible
+          pg_tablespace_databases pg_tablespace_location pg_ts_config_is_visible pg_ts_dict_is_visible
+          pg_ts_parser_is_visible pg_ts_template_is_visible pg_type_is_visible table_to_xml
+          table_to_xml_and_xmlschema table_to_xmlschema
+        ].to_set.freeze
         PRIVILEGE = /\Ahas_[a-z_]+_privilege\z/
+        STATS = /\Apg_stat_get_/
 
         module_function
 
@@ -55,7 +78,10 @@ module Quaack
 
         def reg_calls?(parse) = calls(parse.tree).any? { TYPES.include?(name(it)) }
 
-        def lookup?(name) = NAME_LOOKUPS.include?(name) || PRIVILEGE.match?(name.to_s)
+        def lookup?(name)
+          NAME_LOOKUPS.include?(name) || OID_LOOKUPS.include?(name) || PRIVILEGE.match?(name.to_s) ||
+            STATS.match?(name.to_s)
+        end
 
         # The name of a function, bare or in pg_catalog, or nil.
         def name(call) = bare(call.funcname)

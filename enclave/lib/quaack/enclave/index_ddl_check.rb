@@ -107,7 +107,7 @@ module Quaack
     # EXISTS (which needs a name), or comments, as pg_query deparses it;
     # that SQL's parse; and the table, so later steps name each index
     # themselves.
-    module IndexDdlCheck
+    module IndexDdlCheck # rubocop:disable Metrics/ModuleLength
       class Error < StandardError
         attr_reader :rule
 
@@ -234,12 +234,7 @@ module Quaack
       # the predicate as a SELECT over the table, so a column has its type.
       # The DDL has no $n, so the original has no placeholders.
       def reg_values!(stmt, connection)
-        parse = probe(stmt)
-        RewriteCandidateCheck::RegValues.syntactic!(parse, nil)
-        select = parse.tree.stmts.first.stmt.select_stmt
-        select.from_clause << PgQuery::Node.from(stmt.relation)
-        original = RewriteCandidateCheck::Original.new(relations: [], placeholders: 0)
-        RewriteCandidateCheck::RegTypes.check!(parse, original, connection)
+        RewriteCandidateCheck::RegTypes.check_index!(probe(stmt), stmt.relation, connection)
       rescue RewriteCandidateCheck::Error => e
         raise Error.from(e), cause: nil
       end

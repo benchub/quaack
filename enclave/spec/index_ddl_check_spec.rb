@@ -70,7 +70,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
 
     it "is refused when a string literal is read as one" do
-      expect { check("CREATE INDEX ON public.orders (id) WHERE pg_relation_filenode('hid.t') IS NULL") }
+      expect { check("CREATE INDEX ON public.orders (id) WHERE ts_lexize('hid.t', 'a') IS NULL") }
         .to raise_error(described_class::Error) { |e| expect(e.rule).to eq("unsupported_reg_literal") }
     end
 
@@ -370,7 +370,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
       "bad_search_path" => ["CREATE INDEX ON public.orders ((lower(status)))", { "search_path" => "public," }],
       "unsupported_reg_literal" => ["CREATE INDEX ON public.orders (id) WHERE customer_id = 't'::regclass", nil],
       "name_lookup_function" => ["CREATE INDEX ON public.orders (id) WHERE to_regclass('t') IS NULL", nil],
-      "untyped_literal" => ["CREATE INDEX ON public.orders (id) WHERE 'x' IS NOT NULL", nil],
+      "untyped_literal" => ["CREATE INDEX ON public.orders (id) WHERE nosuch_column = 'x'", nil],
       "deparse_mismatch" => ["CREATE INDEX ON public.orders (status) WHERE 't'::boolean", nil]
     }.then do |samples|
       it "lists every rule the check refuses with, each of which it can refuse with" do
