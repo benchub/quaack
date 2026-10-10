@@ -9,12 +9,20 @@ module Quaack
       # pool value, or else CHECK value, that satisfies each atom (or fails
       # the near-miss one) and every CHECK on the slot's columns. variants
       # rotates an atom's pool lists, by atom index.
+      #
+      # scopes gives each atom's scope (see Scenarios.scope): the SELECT,
+      # or set operation branch, it's in. A near miss first tries a value
+      # that satisfies every other atom on the slot. When none does, it
+      # takes one that satisfies only the atoms in its own atom's scope, so
+      # the same test in another scope (o.state <> 'x' in two UNION
+      # branches) can fail with it.
       class Picker
-        def initialize(pools, probes, checks, variants)
+        def initialize(pools, probes, checks, variants, scopes = {})
           @pools = pools
           @probes = probes
           @checks = checks
           @variants = variants
+          @scopes = scopes
           @picks = {}
         end
 
@@ -25,11 +33,13 @@ module Quaack
         def satisfiable(atoms) = atoms.reject { |i| @pools[i].satisfying.empty? }
 
         # pick for a group: its near miss counts only when it's one of the atoms.
+        # A masking near miss (see Branches) fails its also atoms too.
         def pick_for(atoms, columns, group)
-          pick(atoms, columns, (group.near if atoms.include?(group.near)), group.mode, group.shift)
+          nears = [group.near, *group.also] & atoms
+          pick(atoms, columns, (nears unless nears.empty?), group.mode, group.shift)
         end
 
-        # :skip when a near miss has no value. With no value that fits every
+        # near is the atoms the value fails, or nil. :skip when a near miss has no value. With no value that fits every
         # atom, it takes the first that passes the CHECKs, or :skip when none
         # does, rather than load a row that breaks a CHECK. shift takes the
         # value after that many others that fit, or the first when there are
@@ -37,7 +47,7 @@ module Quaack
         def pick(atoms, columns, near, mode, shift = 0)
           @picks[[atoms, columns, near, mode, shift]] ||= begin
             candidates = prefer_boundaries(candidates(atoms, near), atoms, mode) | checked(columns)
-            fitting = candidates.lazy.select { |v| fits?(atoms, columns, near, v) }.first(shift + 1)
+            fitting = fitting(candidates, atoms, columns, near, shift)
             if fitting.size > shift then fitting[shift]
             elsif shift.positive? then pick(atoms, columns, near, mode)
             else fallback(candidates, columns, near)
@@ -47,6 +57,18 @@ module Quaack
 
         private
 
+        def fitting(candidates, atoms, columns, near, shift)
+          found = first_fitting(candidates, atoms, columns, near, shift)
+          return found if found.size > shift || near.nil?
+
+          scopes = near.map { @scopes[it] }
+          first_fitting(candidates, atoms.select { |i| scopes.include?(@scopes[i]) }, columns, near, shift)
+        end
+
+        def first_fitting(candidates, atoms, columns, near, shift)
+          candidates.lazy.select { |v| fits?(atoms, columns, near, v) }.first(shift + 1)
+        end
+
         def fallback(candidates, columns, near)
           return :skip if near
 
@@ -54,7 +76,7 @@ module Quaack
         end
 
         def candidates(atoms, near)
-          return rotated(@pools[near].failing, near) if near
+          return near.flat_map { |i| rotated(@pools[i].failing, i) } if near
 
           atoms.flat_map { |i| rotated(@pools[i].satisfying, i) }
         end
@@ -73,7 +95,7 @@ module Quaack
         end
 
         def fits?(atoms, columns, near, value)
-          atoms.all? { |i| @probes[i].call(value) == (i == near ? "f" : "t") } && allowed?(columns, value)
+          atoms.all? { |i| @probes[i].call(value) == (near&.include?(i) ? "f" : "t") } && allowed?(columns, value)
         end
 
         def allowed?(columns, value) = columns.all? { |t, col| @checks.allows?(t, col, value) }

@@ -6,6 +6,7 @@ require_relative "arena_schema"
 require_relative "predicate_atoms"
 require_relative "table_name"
 require_relative "value_pools"
+require_relative "scenarios/branches"
 require_relative "scenarios/checks"
 require_relative "scenarios/free_values"
 require_relative "scenarios/parts"
@@ -131,7 +132,8 @@ module Quaack
       # set, points one foreign key of the group's row at another group's
       # parent (see Cross). shift moves each pooled column to a later value
       # that fits (see Picker#pick), for a group that collides.
-      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross, :shift) do
+      # also holds the further atoms a masking near miss fails (see Branches).
+      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross, :shift, :also) do
         # The key a column of table takes in this group: the hit's where a
         # cross points it, the split table's own, and a copy's own where its
         # table's unique keys need one (own, see Topology#own_key?).
@@ -141,7 +143,7 @@ module Quaack
           (split == table ? key + SPLIT_KEY : key) + (own ? COPY_KEY * copy : 0)
         end
       end
-      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil, shift: 0 }.freeze
+      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil, shift: 0, also: [].freeze }.freeze
       SPLIT_KEY = 100_000
       COPY_KEY = 200_000
 
@@ -164,6 +166,23 @@ module Quaack
 
         values = ValuePools.boundaries(type)
         mode == :boundary_reversed ? values.reverse : values
+      end
+
+      # The atom's scope: the path to the SELECT, or set operation branch,
+      # it's in. A JOIN's larg and rarg aren't scopes.
+      def scope(atom) = atom.path[0..atom.path.each_index.select { select_step?(atom.path, it) }.last]
+
+      # Whether the path's step at k leads to a SelectStmt.
+      def select_step?(path, step)
+        path[step] == "select_stmt" ||
+          (%w[larg rarg].include?(path[step]) && step.positive? && select_step?(path, step - 1))
+      end
+
+      def scopes(atoms) = atoms.each_index.to_h { [it, scope(atoms[it])] }
+
+      def refuse_user_functions(schema)
+        raise Error, :expression_unique_index if schema.tables.any? { unworkable_index?(schema, it) }
+        raise Error, :exclusion_constraint if schema.tables.any? { |t| schema.constraints(t).unequal_exclusion }
       end
 
       # The plain tables a parse names.
@@ -199,7 +218,7 @@ module Quaack
           @conn = conn
           @parse = parse
           @schema = ArenaSchema.load_closure(conn, Scenarios.query_tables(parse.tree))
-          refuse_user_functions
+          Scenarios.refuse_user_functions(@schema)
           @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
           @pools = ValuePools.build(conn, parse, @atoms, @schema, probes)
           @topology = Topology.new(@schema, @atoms)
@@ -211,7 +230,7 @@ module Quaack
         def build(variants = {})
           start(variants)
           ties = tie_groups
-          Plan.new(@topology, @atoms, @pools.keys).scenarios.to_h do |name, groups|
+          Plan.new(@topology, @atoms, @pools.keys, masked).scenarios.to_h do |name, groups|
             first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
             @spills[name] = rest unless rest.empty?
             [name, first]
@@ -221,17 +240,15 @@ module Quaack
         private
 
         def start(variants)
-          @picker = Picker.new(@pools, probes, @checks, variants)
+          @picker = Picker.new(@pools, probes, @checks, variants, Scenarios.scopes(@atoms))
           @identities = {}
           @built = {}
           @dropped = 0
           @spills = {}
         end
 
-        def refuse_user_functions
-          raise Error, :expression_unique_index if @schema.tables.any? { Scenarios.unworkable_index?(@schema, it) }
-          raise Error, :exclusion_constraint if @schema.tables.any? { |t| @schema.constraints(t).unequal_exclusion }
-        end
+        # The masking near misses' also atoms, by atom (see Branches).
+        def masked = Branches.new(@parse.tree, @atoms, @pools.keys).masked(@topology.order) { build_group(it) }
 
         # The pools and the picker share these, so each asks once per value.
         def probes = @probes ||= ValuePools.probes(@conn, @parse, @atoms, @schema)

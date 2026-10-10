@@ -5,24 +5,31 @@ module Quaack
     module Scenarios
       # Which groups make up each scenario (see Scenarios).
       class Plan
-        def initialize(topology, atoms, pooled)
+        # masked maps an atom to its masking near miss's also atoms.
+        def initialize(topology, atoms, pooled, masked = {})
           @topology = topology
           @atoms = atoms
           @pooled = pooled
+          @masked = masked
           @next_key = 0
         end
 
         def scenarios
           hit = group(fresh_key)
           near = pooled_near_misses
-          s1 = [hit, *near, *join_near_misses]
-          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + fan_outs(hit, near),
-            s4: s1 + orphans, s5: s1 + boundaries, s6: [hit] + many + [empty] }
+          base = [hit, *near, *join_near_misses]
+          extras = { s1: [], s2: [nulls], s3: fan_outs(hit, near), s4: orphans, s5: boundaries }
+          masking = masking_near_misses
+          { s0: [], **extras.transform_values { base + it + masking }, s6: [hit] + many + [empty] }
         end
 
         private
 
         def pooled_near_misses = @pooled.map { |i| group(fresh_key, near: i) }
+
+        # Last in each scenario that holds them, so a unique-key collision
+        # leaves them out before any other group.
+        def masking_near_misses = @masked.map { |i, also| group(fresh_key, near: i, also:) }
 
         def nulls = group(fresh_key, mode: :nulls)
 
