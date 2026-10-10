@@ -32,8 +32,14 @@ module Quaack
       # SQLSTATEs, existing index names (schema) and sizes
       # (ExistingIndexes), and DDL, each existing index's definition
       # included, through CandidateDdlRedaction. Never a
-      # plan or a literal.
+      # plan or a literal. Before call returns, every DDL string is checked
+      # again (verify!, CandidateDdlRedaction#redacted?), and a literal
+      # that isn't an MCV value of its own column fails the step with a
+      # fixed message that names none.
       module NegativeResult
+        # The negative result holds a DDL string that isn't in redacted form.
+        class Error < StandardError; end
+
         SQLSTATE = /\A[0-9A-Z]{5}\z/
 
         # Why index-test declined a candidate: the planner never used it, or the
@@ -42,12 +48,41 @@ module Quaack
 
         module_function
 
-        def call(store)
+        # redaction is the one that makes each DDL; every DDL string that
+        # comes out is then checked by it again (verify!).
+        def call(store, redaction: CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"]))
           searches = ["original", *rewrites(store)].select { store.entry?("index_search_#{it}") }
-          redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           sizes = ExistingIndexes.new(store)
-          { "declined" => once(searches.flat_map { declined(store, it) }, redaction),
-            "existing" => once(searches.flat_map { existing(store, it, sizes, redaction) }, redaction) }
+          verify!({ "declined" => once(searches.flat_map { declined(store, it) }, redaction),
+                    "existing" => once(searches.flat_map { existing(store, it, sizes, redaction) }, redaction) },
+                  redaction)
+        end
+
+        # The check on the way out (20261009-50): negative is returned only
+        # if each DDL string in it, a declined or existing index's ddl and
+        # an existing index's covered_by definition (which may be nil), is
+        # in redacted form by CandidateDdlRedaction#redacted?, the same
+        # rules that mask it. Anything not shaped as call makes it fails
+        # too. Fails closed, never quoting the DDL.
+        def verify!(negative, redaction)
+          raise Error, "a DDL string in this negative result isn't redacted" unless clean?(negative, redaction)
+
+          negative
+        end
+
+        def clean?(negative, redaction)
+          negative.is_a?(Hash) && %w[declined existing].all? do |key|
+            list = negative[key]
+            list.is_a?(Array) && list.all? { |entry| entry.is_a?(Hash) && entry_clean?(entry, redaction) }
+          end
+        end
+
+        def entry_clean?(entry, redaction)
+          covered = entry["covered_by"]
+          return false unless redaction.redacted?(entry["ddl"])
+          return true if covered.nil?
+
+          covered.is_a?(Hash) && (covered["definition"].nil? || redaction.redacted?(covered["definition"]))
         end
 
         # Every stored rewrite_<n>, in number order, up to the first gap, as
