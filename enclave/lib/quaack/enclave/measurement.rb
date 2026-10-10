@@ -3,6 +3,7 @@
 require "json"
 require_relative "index_build"
 require_relative "literal_set"
+require_relative "plain_data"
 require_relative "redaction"
 require_relative "run_discipline"
 
@@ -65,7 +66,8 @@ module Quaack
           run = RunDiscipline.run(connection:, sql:, params:, timeout_ms:)
           return { "timed_out" => true, "ran" => i + 1 } if run.timed_out
 
-          JSON.parse(run.result.getvalue(0, 0))
+          # A deep plan nests past JSON's default limit of 100 (two levels a node).
+          JSON.parse(run.result.getvalue(0, 0), max_nesting: PlainData::MAX_DEPTH)
         end
         summarize(runs, map)
       end

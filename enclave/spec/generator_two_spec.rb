@@ -132,6 +132,26 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([btree("orders", "status")])
     end
 
+    # 20261008-21: the filter is (total_cents > 100) AND (status = <InitPlan 1's
+    # output>). pg_query can't read Postgres's "(InitPlan 1).col1", so the
+    # whole filter was dropped. The output reads as a parameter: a key
+    # column, never a predicate, and nothing of it reaches the candidate.
+    it "keys on a column equal to an InitPlan's output, but never makes it a partial predicate" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (status = (InitPlan 1).col1))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([btree("orders", "status")])
+    end
+
+    it "keeps the rest of a filter that has an InitPlan's output in it, the literals as they were" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (status = 'failed'::text) AND " \
+                                        "(customer_id = (InitPlan 1).col1))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq(
+        [btree("orders", "customer_id, status"),
+         btree("orders", "customer_id, total_cents", " WHERE status = 'failed'::text")]
+      )
+    end
+
     it "makes no partial index on a column with no pg_stats row" do
       no_status = orders_stats.with(columns: orders_stats.columns.except("status"))
       stats = enclave::Statistics.new(tables: [no_status, customers_stats])
@@ -172,8 +192,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     # nulls cover nearly every row, is most likely an MCV spelled another way
     # (1.5 for a numeric printed as 1.50), so its frequency is unknown.
     describe "a literal that isn't an MCV" do
-      def status_stats(freqs, null_frac: 0.0)
-        values = %w[delivered shipped pending cancelled returned].first(freqs.size)
+      def status_stats(freqs, null_frac: 0.0, values: %w[delivered shipped pending cancelled returned][0, freqs.size])
         status = enclave::ColumnStatistics.new(n_distinct: 6, null_frac:, correlation: nil,
                                                most_common_vals: values, most_common_freqs: freqs)
         enclave::Statistics.new(tables: [orders_stats.with(columns: orders_stats.columns.merge("status" => status)),
@@ -193,6 +212,21 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
           .to eq([btree("orders", "status")])
       end
 
+      # 20261008-23: the case the rule exists for, with the spellings it names.
+      it "gets no partial index for 1.5 on a numeric that pg_stats prints as 1.50" do
+        explain = plan("seq_scan_rare_value")
+        explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (status = 1.5))"
+
+        numeric = %w[1.50 2.00]
+        covered = status_stats([0.6, 0.395], values: numeric)
+        uncovered = status_stats([0.6, 0.3], values: numeric)
+
+        expect(described_class.candidates(explain, statistics: covered).map(&:to_ddl))
+          .to eq([btree("orders", "status")])
+        expect(described_class.candidates(explain, statistics: uncovered).map(&:to_ddl))
+          .to include(btree("orders", "total_cents", " WHERE status = 1.5"))
+      end
+
       it "still gets a partial index by the estimate when the MCVs cover less" do
         expect(ddl("seq_scan_rare_value", stats: status_stats([0.98]))).to include(partial)
         expect(ddl("seq_scan_rare_value", stats: status_stats([0.95], null_frac: 0.03))).to include(partial)
@@ -204,6 +238,29 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     # gives them for capture.rb's table: deleted is true in 1% of the rows,
     # and active false in 1%.
     describe "on a boolean column" do
+      # 20261008-23: the sample never held the rare value, so pg_stats lists
+      # only the common one at 1.0. A boolean has two values, which
+      # BOOLEAN_SPELLINGS maps, so the rare one's absence is real, not a
+      # spelling, and a partial is the best case for one.
+      let(:unsampled) do
+        only = lambda do |common|
+          enclave::ColumnStatistics.new(n_distinct: 1, null_frac: 0, correlation: nil,
+                                        most_common_vals: [common], most_common_freqs: [1.0])
+        end
+        table = flags.tables.values.first
+        columns = table.columns.merge("deleted" => only.call("f"), "active" => only.call("t"))
+        enclave::Statistics.new(tables: [table.with(columns:)])
+      end
+
+      it "makes the partial index even when ANALYZE never sampled the rare value" do
+        expect(ddl("seq_scan_boolean", stats: unsampled)).to eq(
+          [btree("flags", "kind, deleted"), btree("flags", "kind", " WHERE deleted")]
+        )
+        expect(ddl("seq_scan_not_boolean", stats: unsampled)).to eq(
+          [btree("flags", "kind, active"), btree("flags", "kind", " WHERE NOT active")]
+        )
+      end
+
       let(:flags) do
         boolean = lambda do |common, rare|
           enclave::ColumnStatistics.new(n_distinct: 2, null_frac: 0, correlation: nil,
@@ -727,7 +784,29 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(expression.sort_key("a LIMIT 1")).to be_nil
       expect(expression.conjuncts("(a = 1) ORDER BY b")).to eq([])
       expect(expression.conjuncts("(a = 1); SELECT 1")).to eq([])
-      expect(expression.conjuncts("(id = (InitPlan 1).col1)")).to eq([])
+    end
+
+    # 20261008-21: Postgres prints an InitPlan's output as "(InitPlan 1).col1",
+    # which isn't SQL. It reads as a parameter, since like one it's a value
+    # the scan's own row can't change, and it never carries a literal.
+    it "reads an InitPlan's output as a parameter" do
+      conjunct = expression.conjuncts("(id = (InitPlan 1).col1)").first
+      expect(expression.equality_sides(conjunct).map(&:node)).to eq(%i[column_ref param_ref])
+      expect(expression.constant?(expression.equality_sides(conjunct).last)).to be(true)
+      expect(expression.literal_text(conjunct)).to be_nil
+      expect(expression.conjuncts("((a = (InitPlan 2).col3) AND (b = (InitPlan 1).col1))").size).to eq(2)
+    end
+
+    it "leaves a string literal that looks like an InitPlan's output as the literal it is" do
+      conjunct = expression.conjuncts("((status = '(InitPlan 1).col1'::text) AND (id = (InitPlan 1).col1))").first
+      expect(expression.literal_text(conjunct)).to eq("(InitPlan 1).col1")
+      expect(expression.conjuncts("(status = '(InitPlan 1).col1'::text)").size).to eq(1)
+    end
+
+    it "gives nothing for an InitPlan reference that isn't one column of one" do
+      expect(expression.conjuncts("(id = (InitPlan 1))")).to eq([])
+      expect(expression.conjuncts("(id = (InitPlan x).col1)")).to eq([])
+      expect(expression.conjuncts("(id = (InitPlan 1).col1 ")).to eq([])
     end
 
     # Task 20260926-56: CanonicalPlan's fingerprint and parse_select share this.

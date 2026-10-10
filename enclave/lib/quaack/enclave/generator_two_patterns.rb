@@ -81,7 +81,8 @@ module Quaack
           return false unless text
 
           column = conjunct.columns.first
-          frequency = column.table.value_frequency(column.name, text) unless unlisted_in_full_mcvs?(column, text)
+          unknown = !boolean?(conjunct) && unlisted_in_full_mcvs?(column, text)
+          frequency = column.table.value_frequency(column.name, text) unless unknown
           at_least?(frequency && (1 - frequency), :most_rows_removed)
         end
 
@@ -97,6 +98,12 @@ module Quaack
           freqs = stats.most_common_freqs
           !freqs.nil? && stats.mcv_frequency(text).nil? && freqs.sum + stats.null_frac >= MCV_COVERAGE
         end
+
+        # A bare boolean column or NOT one, which Postgres prints for
+        # `b = true` and `b = false`. The coverage rule skips these: a boolean
+        # has two values, and ColumnStatistics maps their spellings, so one
+        # ANALYZE never sampled really is rare.
+        def boolean?(conjunct) = !PlanExpression.boolean_value(conjunct.node).nil?
 
         # Index Scan or Bitmap Heap Scan whose Filter and recheck remove many
         # rows: the index in use, found by "Index Name" in

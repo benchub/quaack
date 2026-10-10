@@ -75,6 +75,42 @@ RSpec.describe "quaacks baseline, against a real server" do
     conn&.close
   end
 
+  # 20261008-22: a plan holds each node two JSON levels deep, so one over
+  # about 49 nodes passes JSON's default limit of 100. The arena's plan can
+  # be deeper than the one the operator gave, which intake held to 48.
+  def deep_sql
+    joins = (1..60).map { |i| "JOIN public.orders o#{i} ON o#{i}.id = o#{i - 1}.id + 0" }.join(" ")
+    "SELECT count(*) FROM public.orders o0 #{joins} WHERE o0.note <> $1::text AND $2::text IS NOT NULL"
+  end
+
+  it "measures a query whose plan is deeper than JSON's default nesting limit" do
+    built_run
+    conn = production.connect
+
+    measured = Quaack::Enclave::Measurement.measure(connection: conn, store: stored, sql: deep_sql,
+                                                    combination: nil, timeout_ms: 60_000)
+
+    expect(measured["slow"]).to include("timed_out" => false)
+    expect(measured["slow"]["runs"].size).to eq(3)
+    expect(measured["slow"]["plans"].first.to_s.scan("Node Type").size).to be > 60
+  ensure
+    conn&.close
+  end
+
+  it "confirms a combination for a query whose plan is deeper than JSON's default nesting limit" do
+    built_run
+    conn = production.connect
+    build = stored.read("index_build")
+    bound = Quaack::Enclave::Redaction.binding(deep_sql, stored.read("placeholder_map"))
+    params = Quaack::Enclave::Measurement.params(conn, bound)
+
+    shown = Quaack::Enclave::IndexBuild.show_only(conn, build, "original:top:1", sql: bound.sql, params:)
+
+    expect(shown).to eq(build["combinations"]["original:top:1"])
+  ensure
+    conn&.close
+  end
+
   # Task 20260930-14: the connection's search_path puts public ahead of
   # pg_catalog, and public's comparisons say no (see CatalogShadow).
   # pg_prepared_statements is still read for the parameters' types, and

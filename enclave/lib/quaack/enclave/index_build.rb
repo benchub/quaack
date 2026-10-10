@@ -7,6 +7,7 @@ require_relative "build_connection"
 require_relative "build_order"
 require_relative "index_build_sql"
 require_relative "index_store"
+require_relative "plain_data"
 
 module Quaack
   module Enclave
@@ -141,7 +142,11 @@ module Quaack
       # build's indexes, and a plain EXPLAIN of sql uses none of the rest.
       def confirm(connection, build, visible, sql:, params: [])
         hidden = build["indexes"].keys - visible
-        used = index_names(JSON.parse(connection.exec_params("EXPLAIN (FORMAT JSON) #{sql}", params).getvalue(0, 0)))
+        plan = connection.exec_params("EXPLAIN (FORMAT JSON) #{sql}", params).getvalue(0, 0)
+        # Each plan node nests two levels, so a deep plan passes JSON's
+        # default limit of 100. The server wrote this, so only the stack
+        # bounds it, as it does for the store (see PlainData::MAX_DEPTH).
+        used = index_names(JSON.parse(plan, max_nesting: PlainData::MAX_DEPTH))
         raise Error, "index_build_hidden_index_used" if used.intersect?(hidden)
 
         raise Error, "index_build_wrong_set_hidden" unless valid_names(connection, build) == visible.sort

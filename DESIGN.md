@@ -866,7 +866,7 @@ Use the production plan from input, not a plain `EXPLAIN` from the racetrack. Th
 
 Each problem pattern in the plan points to a potentially-helpful index:
 
-- **Seq Scan whose filter removes most rows:** a btree on the filter's equality columns. If the filter includes a constant predicate that removes most rows on its own, also try a partial index. A predicate's share of the rows comes from the column's MCV frequencies in `pg_stats`, matched by text. Postgres prints `b = true` as `b` and `b = false` as `NOT b`, so those count as equalities too. A literal that isn't an MCV, on a column whose MCVs and nulls cover at least 99% of the rows, gets no partial index. It's most likely a common value spelled another way, such as `1.5` for a numeric that `pg_stats` prints as `1.50`, so its share is unknown.
+- **Seq Scan whose filter removes most rows:** a btree on the filter's equality columns. If the filter includes a constant predicate that removes most rows on its own, also try a partial index. A predicate's share of the rows comes from the column's MCV frequencies in `pg_stats`, matched by text. Postgres prints `b = true` as `b` and `b = false` as `NOT b`, so those count as equalities too. A literal that isn't an MCV, on a column whose MCVs and nulls cover at least 99% of the rows, gets no partial index. It's most likely a common value spelled another way, such as `1.5` for a numeric that `pg_stats` prints as `1.50`, so its share is unknown. A boolean is exempt, since it has only two spellings, which the stats map: `deleted` listed as `f` alone at 1.0, because ANALYZE never sampled a `t`, still gets `WHERE deleted`.
 - **Index Scan or Bitmap Heap Scan with a Filter or Recheck that removes many rows:** extend the index in use with the filtering columns, or add them as `INCLUDE` columns.
 - **Sort, especially an external merge or a Sort under a Limit:** an index whose key has the sort keys after the equality columns, so the scan comes out already sorted.
 - **Nested Loop with an expensive inner side:** an index on the inner table's join key plus its filter columns.
@@ -874,6 +874,8 @@ Each problem pattern in the plan points to a potentially-helpful index:
 - **BitmapAnd or BitmapOr combining several single-column indexes:** one composite index on those columns.
 - **Sort or Hash feeding an aggregate:** an index on the `GROUP BY` keys.
 - **Heap Fetches on an Index Only Scan:** this isn't an index problem, so skip it.
+
+Generator two reads a condition's text with pg_query. Postgres prints an InitPlan's output as `(InitPlan 1).col1`, which isn't SQL, so the generator reads each one as a parameter, found with pg_query's scanner so the same text inside a string literal stays a literal. A column equal to one is a key column and never a partial predicate, as with `$1`. A condition with a `COLLATE` still proposes nothing (see 20261008-21), since a plain key wouldn't serve a comparison in another collation.
 
 ### index-dedupe. Dedupe and filter.
 
