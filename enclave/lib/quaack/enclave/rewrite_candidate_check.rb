@@ -75,7 +75,9 @@ module Quaack
     #    descendant it scans, must be a plain table (relkind r), refused
     #    with Relations' rule for its kind, such as view_relation, since a
     #    view's body can call a volatile function that the volatility
-    #    check, below, never sees. Relations' other refusals apply too:
+    #    check, below, never sees. A descendant that isn't one is refused
+    #    as unknown_relation whatever its kind, naming only the table the
+    #    candidate wrote, since the LLM never saw it (the original's ONLY). Relations' other refusals apply too:
     #    user_function_in_from, the name qualifier's
     #    rules, and deparse_mismatch if the qualified candidate, as pg_query
     #    deparses it, doesn't parse back to the tree it came from (see
@@ -186,7 +188,17 @@ module Quaack
         end
         Accepted.new(sql: result.sql, parse: result.parse)
       rescue Relations::Error => e
+        raise descendant_refusal(e), cause: nil if e.table
+
         raise Error.from(e), cause: nil
+      end
+
+      # One rule for a descendant that isn't a plain table, whatever its
+      # kind, so a candidate that drops the original's ONLY doesn't show
+      # the LLM what kind of descendant it never saw. It names the table
+      # the candidate wrote, never the descendant.
+      def descendant_refusal(error)
+        Error.new("unknown_relation", "dropping ONLY from #{error.table} takes in a relation the original doesn't read")
       end
 
       def volatility!(sql, settings, connection)

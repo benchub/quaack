@@ -80,10 +80,14 @@ module Quaack
     # ErrorFilter sends only the rule out of the enclave.
     module Relations # rubocop:disable Metrics/ModuleLength
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :table
 
-        def initialize(rule, detail)
+        # table is the relation the query named, set only when the refusal
+        # is for one of its inheritance descendants, so a caller that must
+        # not say what kind of descendant it was can say it another way.
+        def initialize(rule, detail, table: nil)
           @rule = rule
+          @table = table
           super("#{rule}: #{detail}")
         end
 
@@ -223,16 +227,16 @@ module Quaack
         refuse!(relkind, "#{table} is") unless relkind == "r"
         [table, *descendants.map do |schema, name, kind|
           descendant = TableName.new(schema:, name:)
-          refuse!(kind, "#{table} has an inheritance descendant, #{descendant}, that is") unless kind == "r"
+          refuse!(kind, "#{table} has an inheritance descendant, #{descendant}, that is", table:) unless kind == "r"
           descendant
         end]
       end
 
       # Refuses a relation of relkind, which isn't r. Every refusal for a
       # relkind comes through here.
-      def refuse!(relkind, subject)
+      def refuse!(relkind, subject, table: nil)
         rule, kind = KINDS.fetch(relkind, OTHER)
-        raise Error.new(rule, "#{subject} #{kind} (relkind #{relkind}), not a plain table")
+        raise Error.new(rule, "#{subject} #{kind} (relkind #{relkind}), not a plain table", table:)
       end
 
       # Every RangeVar in the tree, in tree order.
