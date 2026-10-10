@@ -9467,3 +9467,22 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261003-28; Opus review clean). All five widenings, each with equivalence conditions, a Postgres-backed test against the original on data with NULLs and duplicates, and mutation checks: places() stops at aliased joins by itself; ONLY copies share only with ONLY copies, the CTE reads `FROM ONLY`; copies off every outer join's nullable side share (at least two) while a nullable copy keeps reading the base table; a GROUP BY that groups a copy's whole primary key gets the copy's read columns added (refused for deferrable keys, inheritance, grouping sets); each SELECT that can carry a WITH is a scope (subqueries, sublinks, CTE bodies; set-operation arms are not). `Tree.find_all` added (finds nested matches; only this rule uses it). Not covered: ordinal GROUP BY, copies in set-operation arms, two scopes of one query rewritten in one chain. On the unreleased list. Minor finding: 20261010-1.
+
+### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
+
+- **Dead admin connection (decided 2026-10-09: no reconnect, no change):** should `Server#admin` quietly reconnect when a spec leaves its admin connection dead? Reconnecting hides the `ConnectionLost` hint that a forked child must end with `exit!`.
+- **Driver checker mode (done):** pinning `names_only: true` for the real driver in the static checker needs a named driver-rules constant, or a planted fixture in the driver's tree.
+- **Harness:**
+  - child specs that load the root spec_helper
+  - a repeated memoized backtrace
+  - old image cleanup
+  - moving child specs in-process
+- **Symlinked Ruby:** `File.realpath` in `stdlib_dirs` matters only with a symlinked Ruby (rbenv), and it's untested.
+- **Rake loop:** a rake loop that skips a non-root suite would go unnoticed. Only the root suite is checked, and the Rakefile says so.
+
+- **Depends on:** 20260923-16, -18, -25.
+- **Came from:** Their build and review.
+- **Design:** none (CLAUDE.md Development).
+- **Landed so far:** 2026-10-09 (task/20260926-54; review clean): the driver checker mode constant, the skipped-suite abort in the Rakefile, and the symlinked-Ruby spec. The user decided `Server#admin` stays as is (no reconnect). Only the four harness items remain.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20260926-54b; two reviews, one fix round). Child specs run from their own tmpdir so the root `.rspec` and spec_helper no longer load (the setup is tested on its own); the memoized launch error is re-raised as a copy with a fresh backtrace and the original as its cause; old test images are cleaned by `TestPostgres::OldImages.remove(current, older_than: 7 days, only: nil)` called from `launch` (only the `quaack-test-postgres` repository, never the current tag, never forced, in-use images refused, errors skip cleanup; specs pass `only:` with their own tags). Item 4 (moving child specs in-process) was dropped: it would save about 1.5 s and lose real fork-and-exit coverage. Note from review: a spec file that does real launches uses the production path, so it removes any unused harness image older than 7 days.

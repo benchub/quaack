@@ -241,24 +241,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
-### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
-
-- **Dead admin connection (decided 2026-10-09: no reconnect, no change):** should `Server#admin` quietly reconnect when a spec leaves its admin connection dead? Reconnecting hides the `ConnectionLost` hint that a forked child must end with `exit!`.
-- **Driver checker mode (done):** pinning `names_only: true` for the real driver in the static checker needs a named driver-rules constant, or a planted fixture in the driver's tree.
-- **Harness:**
-  - child specs that load the root spec_helper
-  - a repeated memoized backtrace
-  - old image cleanup
-  - moving child specs in-process
-- **Symlinked Ruby:** `File.realpath` in `stdlib_dirs` matters only with a symlinked Ruby (rbenv), and it's untested.
-- **Rake loop:** a rake loop that skips a non-root suite would go unnoticed. Only the root suite is checked, and the Rakefile says so.
-
-- **Depends on:** 20260923-16, -18, -25.
-- **Came from:** Their build and review.
-- **Design:** none (CLAUDE.md Development).
-- **Landed so far:** 2026-10-09 (task/20260926-54; review clean): the driver checker mode constant, the skipped-suite abort in the Rakefile, and the symlinked-Ruby spec. The user decided `Server#admin` stays as is (no reconnect). Only the four harness items remain.
-- **Status:** todo
-
 ### 20260926-55. Keyset and expression-unique leftovers. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20260926-59. Keyset tie rows are dropped on realistic schemas. Done, see BACKLOG-COMPLETE.md.
