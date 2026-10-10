@@ -521,7 +521,7 @@ RSpec.describe Quaack::Driver::Report do
       blocks = queries.scan(%r{<details class="fold query"[^>]*>\s*<summary>(.*?)</summary>(.*?)</details>}m)
       expect(blocks.map(&:first)).to eq(
         ["<h3>The original query</h3>",
-         "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: made by QUAACK&#39;s own rewrite " \
+         "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: transform " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat the original " \
          "query and is ranked below.</span> <span class=\"warn\">Read it with care: every test QUAACK ran " \
          "passed, but the test data never exercised some of its conditions, so those parts are unproven.</span>",
@@ -694,13 +694,13 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says which of QUAACK's rules made a rule-made rewrite, linked to the rule's page" do
-        expect(source).to eq(esc(%(<span class="source">Where it came from: made by QUAACK's own rewrite rule ) \
+        expect(source).to eq(esc(%(<span class="source">Where it came from: transform rule ) \
                                  "#{link("key_in_self_join")}.</span>"))
       end
 
       it "names every rule of a chained rewrite, in order, each linked" do
         expect(source(rules: %w[or_to_union key_in_self_join]))
-          .to include(esc("made by QUAACK's own rewrite rules #{link("or_to_union")}, then " \
+          .to include(esc("transform rules #{link("or_to_union")}, then " \
                           "#{link("key_in_self_join")}."))
       end
 
@@ -712,8 +712,8 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "names no rule, and leaves no dangling words, when the payload has none" do
-        expect(source(rules: [])).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</span>"))
-        expect(source(rules: nil)).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</span>"))
+        expect(source(rules: [])).to include("Where it came from: transform rules.</span>")
+        expect(source(rules: nil)).to include("Where it came from: transform rules.</span>")
       end
 
       it "says when the LLM suggested it, or it's the operator's own" do
@@ -2946,7 +2946,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(out).to eq(described_class.render(scrub(payload), run_id:, llm_calls: { "s" => 1 }))
       expect(out).not_to match(/[\u0001\u0002]/)
       expect(out).to include("<title>QUAACK report Rx</title>").and include("<h1>QUAACK report Rx</h1>")
-      expect(section(out, "queries")).to include("rewrite rule x.").and(satisfy { !it.include?('class="sql">x') })
+      expect(section(out, "queries")).to include("transform rule x.").and(satisfy { !it.include?('class="sql">x') })
       expect(section(out, "ranking")).to include("a new index on #{sq("public.t (a) WHERE b")}")
       expect(section(out, "explanation"))
         .to include(%(Seq Scan <strong class="mark">differs</strong></td><td>#{sq("")}</td>))
