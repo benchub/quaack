@@ -16,7 +16,8 @@ RSpec.describe Quaack::Enclave::ValuePools do
     conn.exec(<<~SQL)
       CREATE SCHEMA fx; CREATE TABLE fx.customers (id integer PRIMARY KEY, name text NOT NULL);
       CREATE TABLE fx.orders (id integer PRIMARY KEY, customer_id integer REFERENCES fx.customers,
-                           qty integer, status text NOT NULL, placed date NOT NULL, note text);
+                           qty integer, status text NOT NULL, placed date NOT NULL, note text,
+                           shipped boolean NOT NULL, gift boolean);
     SQL
   end
 
@@ -90,6 +91,22 @@ RSpec.describe Quaack::Enclave::ValuePools do
     p = pool("o.note IS NULL")
     expect(p.satisfying).to eq([nil])
     expect(p.failing).to include("")
+  end
+
+  # 20261010-32: IS TRUE and its kin on a plain boolean column get a pool,
+  # so the near miss gets a value that fails them.
+  it "pools a boolean test on a plain boolean column" do
+    expect(pool("o.shipped IS TRUE")).to have_attributes(satisfying: ["t"], failing: ["f"])
+    expect(pool("o.gift IS NOT TRUE")).to have_attributes(satisfying: contain_exactly("f", nil), failing: ["t"])
+    expect(pool("o.gift IS FALSE")).to have_attributes(satisfying: ["f"], failing: contain_exactly("t", nil))
+  end
+
+  it "gives no pool to a boolean test on an expression" do
+    parse = PgQuery.parse("SELECT 1 FROM fx.orders o WHERE (o.qty > 2) IS TRUE")
+    schema = Quaack::Enclave::ArenaSchema.load(conn, [orders, customers])
+    atoms = Quaack::Enclave::PredicateAtoms.extract(parse, column_names: schema.column_names)
+    pooled = described_class.build(conn, parse, atoms, schema).keys.map { atoms[it].operator }
+    expect(pooled).to eq([">"])
   end
 
   it "gives no pool to a join or a two-column atom" do

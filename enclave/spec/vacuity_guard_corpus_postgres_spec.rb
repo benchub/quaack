@@ -59,6 +59,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     { name: "bare boolean", sql: "SELECT * FROM fx.posts WHERE fx.posts.published", allowed: {} },
     { name: "NOT boolean", sql: "SELECT * FROM fx.posts WHERE NOT fx.posts.published", allowed: {} },
     { name: "boolean IS TRUE", sql: "SELECT * FROM fx.users WHERE fx.users.active IS TRUE", allowed: {} },
+    { name: "boolean IS NOT TRUE", sql: "SELECT * FROM fx.users WHERE fx.users.active IS NOT TRUE", allowed: {} },
+    { name: "boolean IS FALSE", sql: "SELECT * FROM fx.posts WHERE fx.posts.published IS FALSE", allowed: {} },
     { name: "enum equality", sql: "SELECT * FROM fx.users WHERE fx.users.role = 'teacher'", allowed: {} },
     { name: "enum IN", sql: "SELECT * FROM fx.users WHERE fx.users.role IN ('teacher', 'admin')", allowed: {} },
     { name: "enum <>", sql: "SELECT * FROM fx.users WHERE fx.users.role <> 'student'", allowed: {} },
@@ -366,10 +368,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       untested: ["EXISTS (SELECT $1 FROM fx.comments WHERE fx.comments.post_id = fx.posts.id)",
                  "fx.comments.post_id = fx.posts.id"],
       cause: "the hit for NOT EXISTS is a post with no comment; scenarios build the comment instead"
-    },
-    "boolean IS TRUE" => {
-      untested: ["fx.users.active IS TRUE"],
-      cause: "IS TRUE (a BooleanTest) seems to get no pool, so no false near miss"
     },
     "full join" => {
       untested: ["fx.posts.user_id = fx.users.id"],

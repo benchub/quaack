@@ -33,6 +33,7 @@ module Quaack
     # enclave. inspect leaves the values out.
     module ValuePools
       KINDS = %i[equality range like in null_test].freeze
+      BOOLEAN_TESTS = ["IS TRUE", "IS NOT TRUE", "IS FALSE", "IS NOT FALSE", "IS UNKNOWN", "IS NOT UNKNOWN"].freeze
 
       Pool = Data.define(:column, :type, :oid, :nullable, :satisfying, :failing, :boundaries) do
         def inspect = "#<data #{self.class} column=#{column.name} values=<redacted>>"
@@ -84,11 +85,18 @@ module Quaack
 
       # A keyset row comparison with a range operator is pooled through its
       # leading column, when every element of its column row is a plain
-      # column of a table.
+      # column of a table. A boolean test (IS TRUE, IS NOT FALSE, ...) on
+      # a plain column of a table is pooled too: its probe sorts t, f, and
+      # NULL, so the near miss gets a value that fails it.
       def pooled?(atom)
         return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
+        return atom.bare && atom.columns.size == 1 && !atom.columns[0].table.nil? if boolean_test?(atom)
 
         atom.kind == :row_comparison && ROW_RANGE.include?(atom.operator) && atom.bare && atom.columns.all?(&:table)
+      end
+
+      def boolean_test?(atom)
+        atom.kind == :other && BOOLEAN_TESTS.include?(atom.operator)
       end
 
       # The probe for a pooled atom (see Probe).

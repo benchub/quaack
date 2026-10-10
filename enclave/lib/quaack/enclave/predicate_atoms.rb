@@ -731,7 +731,7 @@ module Quaack
           if node.a_expr then expression(node.a_expr)
           elsif node.null_test then null_test(node.null_test)
           elsif node.boolean_test then other(BOOLEAN_TESTS.fetch(node.boolean_test.booltesttype),
-                                             [node])
+                                             [node.boolean_test.arg])
           else other(nil, [node])
           end
         end
