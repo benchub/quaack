@@ -1200,7 +1200,8 @@ Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexam
 - **Depends on:** 20261009-33 (its diagnostic; the cause of the untested atoms may change what's left to warn about), 20261009-32.
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, counterexamples, rewrite-test.
-- **Status:** todo
+- **Review finding (2026-10-09, first attempt, not landed):** an attempt to decide "shared" atoms by redacted shape alone (the untested atom's shape also appears among the rewrite's atoms, `$n` read as `$`) was found unsound by an Opus review: the mechanical rules copy atom text verbatim while changing its effect. or_to_union copies every atom into some UNION arm, so the warning could never fire for it, though it changed exactly the logic an untested arm atom guards; key_in_self_join, not_in_to_not_exists and the existence flips keep the predicate text but move it under a new self-join or subquery; an LLM rewrite can reuse an alias for another table. A sound version needs the atom's structural position: the same enclosing SELECT/FROM scope, the same join and table set, not under a new UNION, subquery, or CTE. Until that exists, count every untested atom (the safe default). The attempt's enclave and protocol parts were dropped, not landed.
+- **Status:** todo (needs a design for structural position)
 
 ### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle. Done, see BACKLOG-COMPLETE.md.
 
