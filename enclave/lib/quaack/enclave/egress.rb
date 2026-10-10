@@ -55,6 +55,13 @@ module Quaack
     module Egress
       class Error < StandardError; end
 
+      # A value nested past JSON's limit of 100, which only a plan (the
+      # redacted EXPLAIN of the racetrack or the arena) can be. Its rule is
+      # a fixed word, so the error line says which unsupported case it was.
+      class TooDeep < Error
+        def rule = "plan_too_deep"
+      end
+
       # The whitelist with String names, so Symbol and String keys match the
       # same way without turning arbitrary Strings into Symbols. Each type
       # maps to its own name and its fields, so what goes out as the type is
@@ -110,8 +117,9 @@ module Quaack
         check_step_counts(fields) if type == "step_counts"
         check_rewrite_test(fields) if type == "rewrite_test"
         JSON.generate({ "type" => type, **fields })
-      rescue PlainData::NotPlain, JSON::JSONError
-        raise Error, "a value in this #{type} message can't be written as JSON", cause: nil
+      rescue PlainData::NotPlain, JSON::JSONError => e
+        error = e.is_a?(JSON::NestingError) ? TooDeep : Error
+        raise error, "a value in this #{type} message can't be written as JSON", cause: nil
       end
 
       # A burndown's fields are nested Hashes, which go out as they are, so

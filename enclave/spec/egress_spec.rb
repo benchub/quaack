@@ -3,6 +3,7 @@
 require "json"
 require "timeout"
 require "quaack/enclave/egress"
+require "quaack/enclave/error_filter"
 
 # Stands in for a real production value. It must never show up in what
 # Egress.serialize returns, or in anything it raises.
@@ -605,6 +606,46 @@ RSpec.describe Quaack::Enclave::Egress do
         end
         expect(error.instance_variables).to be_empty
       end
+    end
+  end
+
+  # 20261008-53: a plan nested past JSON's limit (a racetrack plan, which
+  # no step depth-checks) fails with the rule plan_too_deep, not a generic one.
+  describe "a value nested past JSON's limit" do
+    def nested(levels) = levels.times.reduce(EGRESS_SENTINEL) { |v, _| [v] }
+
+    it "raises Egress::Error with the rule plan_too_deep, and the same generic message" do
+      error = begin
+        egress.serialize(type: :error, step: "classify", rule: nested(200))
+      rescue described_class::Error => e
+        e
+      end
+
+      expect(error.rule).to eq("plan_too_deep")
+      expect(error.message).to eq("a value in this error message can't be written as JSON")
+      expect(error.cause).to be_nil
+      expect(error.full_message).not_to include(EGRESS_SENTINEL)
+    end
+
+    it "gives no rule for another value that can't be written, such as a NaN" do
+      error = begin
+        egress.serialize(type: :error, step: "classify", rule: Float::NAN)
+      rescue described_class::Error => e
+        e
+      end
+
+      expect(error.respond_to?(:rule)).to be(false)
+    end
+
+    it "reaches the error line as plan_too_deep" do
+      error = begin
+        egress.serialize(type: :error, step: "classify", rule: nested(200))
+      rescue described_class::Error => e
+        e
+      end
+
+      expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "index-search")))
+        .to eq("type" => "error", "step" => "index-search", "rule" => "plan_too_deep")
     end
   end
 

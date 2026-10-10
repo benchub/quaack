@@ -164,7 +164,7 @@ module Quaack
               words << @sources[i].delete('"').downcase if word?(i)
               i = after
             end
-            words.join(" ")
+            words.join(" ") unless words.empty?
           end
 
           # Whether the token at index is one of a cast's type modifiers.
