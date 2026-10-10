@@ -319,6 +319,19 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
     )
   end
 
+  it "reads no ON of an aliased join, whatever else it refuses" do
+    top = PgQuery.parse(
+      "SELECT 1 FROM public.users u JOIN (public.submissions s JOIN public.submissions a ON a.id = s.id) AS j " \
+      "ON j.id = u.id JOIN public.users v ON v.id = u.id WHERE true"
+    ).tree.stmts.first.stmt.select_stmt
+
+    places = rule.send(:places, top)
+
+    expect(places.size).to eq(3)
+    refs = places.flat_map(&:conditions).flat_map { Quaack::Enclave::RewriteRules::Tree.find(it, PgQuery::ColumnRef) }
+    expect(refs.filter_map { Quaack::Enclave::RewriteRules::Tree.qualified(it)&.first }.uniq).to eq(%w[j u v])
+  end
+
   it "needs two copies in the top-level FROM" do
     expect_refusals(
       "SELECT s.id FROM public.submissions s WHERE s.course_id IN (1, 2) " \

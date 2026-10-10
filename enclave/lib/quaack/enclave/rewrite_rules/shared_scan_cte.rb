@@ -110,10 +110,18 @@ module Quaack
           [copies, shared(copies, places(top), literals)]
         end
 
-        # The WHERE and each inner join's ON.
+        # The WHERE and each inner join's ON, none from inside an aliased
+        # join, whose items the query can't name.
         def places(top)
-          joins = top.from_clause.flat_map { Tree.joins(it) }.select { it.jointype == :JOIN_INNER && it.quals }
+          joins = top.from_clause.flat_map { unaliased_joins(it) }.select { it.jointype == :JOIN_INNER && it.quals }
           [WherePlace.new(top), *joins.map { OnPlace.new(it) }]
+        end
+
+        def unaliased_joins(node)
+          return [] unless node.node == :join_expr && node.join_expr.alias.nil?
+
+          join = node.join_expr
+          [*unaliased_joins(join.larg), *unaliased_joins(join.rarg), join]
         end
 
         # The first copy's conjuncts that every other copy has too, each
