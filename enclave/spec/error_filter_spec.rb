@@ -4,6 +4,7 @@ require "json"
 require "stringio"
 require "tmpdir"
 require "quaack/enclave/error_filter"
+require "quaack/protocol/unreadable_reasons"
 
 # Stands in for a real production value. It must never show up in anything
 # the error filter writes or returns.
@@ -171,6 +172,22 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
       expect(filter.to_egress(error, step: "intake"))
         .to eq(line(step: "intake", rule: "query_unreadable", reason: "permission_denied"))
+    end
+
+    # Task 20261007-64: the filter's list is the protocol gem's, which the
+    # driver shares, so a cause one side knows the other does too.
+    Quaack::Protocol::UnreadableReasons::NAMES.each do |reason|
+      it "sends the protocol's reason #{reason}" do
+        error = FilterFakes::IntakeUnreadableError.new(rule: "plan_unreadable", reason:)
+
+        expect(filter.to_egress(error, step: "intake"))
+          .to eq(line(step: "intake", rule: "plan_unreadable", reason:))
+      end
+    end
+
+    it "shares the protocol gem's list of reasons and rules" do
+      expect(described_class::UNREADABLE_REASONS).to equal(Quaack::Protocol::UnreadableReasons::NAMES)
+      expect(described_class::UNREADABLE_RULES).to equal(Quaack::Protocol::UnreadableReasons::RULES)
     end
 
     it "sends no reason for any rule but intake unreadable refusals" do

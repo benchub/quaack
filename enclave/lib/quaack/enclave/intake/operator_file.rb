@@ -17,7 +17,7 @@ module Quaack
         # The file's bytes, as a binary String. kind, "query" or "plan",
         # names the rules: <kind>_unreadable if the path is missing, a
         # symlink, or anything but a regular file, or can't be read, with a
-        # fixed reason that says which, and <kind>_too_large past MAX_BYTES.
+        # fixed reason that says which (Protocol::UnreadableReasons), and <kind>_too_large past MAX_BYTES.
         #
         # NOFOLLOW refuses a symlink as the path's last part only. A symlink
         # in a parent directory is followed, which the threat model allows:
@@ -51,11 +51,13 @@ module Quaack
         end
 
         def reason(path, error)
-          return "missing" if error.is_a?(Errno::ENOENT) || error.is_a?(Errno::ENOTDIR)
-          return "permission_denied" if error.is_a?(Errno::EACCES) || error.is_a?(Errno::EPERM)
-          return "symlink" if symlink?(path)
-
-          "not_regular_file"
+          case error
+          when Errno::ENOENT, Errno::ENOTDIR then "missing"
+          when Errno::EACCES, Errno::EPERM then "permission_denied"
+          when Errno::ENAMETOOLONG then "name_too_long"
+          when Errno::EIO, IOError then "io_error"
+          else symlink?(path) ? "symlink" : "not_regular_file"
+          end
         end
 
         def symlink?(path)

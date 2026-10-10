@@ -13,6 +13,7 @@ require_relative "protocol/step_counts"
 require_relative "protocol/vacuity_diagnostic"
 require_relative "protocol/unchanged_atoms"
 require_relative "protocol/error_rules"
+require_relative "protocol/unreadable_reasons"
 
 module Quaack
   # The messages the driver and the enclave script exchange. Both sides load

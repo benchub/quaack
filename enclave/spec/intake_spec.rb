@@ -394,6 +394,21 @@ RSpec.describe "quaacks intake" do
       expect_refused("plan_unreadable", intake_with(plan: File.join(query_file, "p.json")), reason: "missing")
     end
 
+    # Task 20261007-64: a name too long for the file system, and a read that
+    # fails in the device (EIO, or Ruby's own IOError), aren't a file that's
+    # "not regular".
+    it "says a name too long for the file system is name_too_long, and a failing read is io_error" do
+      too_long = File.join(dir, "#{INTAKE_SENTINEL}-#{"x" * 300}")
+      expect_refused("query_unreadable", intake_with(query: too_long), too_long, reason: "name_too_long")
+
+      [Errno::EIO, IOError].each do |error|
+        out.truncate(0) && out.rewind
+        allow(File).to receive(:open).and_call_original
+        allow(File).to receive(:open).with(plan_file, anything).and_raise(error)
+        expect_refused("plan_unreadable", intake_with(plan: plan_file), plan_file, reason: "io_error")
+      end
+    end
+
     it "refuses a file it can't read as unreadable" do
       File.chmod(0o000, query_file)
       File.chmod(0o000, plan_file)
