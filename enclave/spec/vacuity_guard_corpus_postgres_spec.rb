@@ -397,14 +397,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     "scalar subquery in WHERE" => {
       untested: ["p2.published = $1"],
       cause: "atom in an uncorrelated scalar subquery; its near miss must move avg() across the hit"
-    },
-    "EXISTS existence check" => {
-      untested: ["fx.users.email = $2"],
-      cause: "SELECT 1 ... LIMIT 1 returns 1 while any row exists; needs a fixture holding near misses only"
-    },
-    "Rails exists?" => {
-      untested: ["fx.memberships.user_id = $2", "fx.memberships.group_name = $3"],
-      cause: "SELECT 1 ... LIMIT 1 returns 1 while any row exists; needs a fixture holding near misses only"
     }
   }.freeze
 
