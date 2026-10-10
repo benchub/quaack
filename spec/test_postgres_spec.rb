@@ -769,6 +769,36 @@ RSpec.describe TestPostgres do
         end
       end
 
+      # Raising the stored error again would keep the first example's
+      # backtrace, with its launch frames, in every later failure.
+      it "gives each later failure its own backtrace, not the first example's launch frames" do
+        source = <<~RUBY
+          #{prelude}
+          RSpec.describe "a broken launch" do
+            2.times do |i|
+              it("example \#{i}") do
+                begin
+                  test_database
+                rescue => e
+                  puts "LAUNCH_FRAMES_\#{i}=\#{e.backtrace.grep(/launch/).size}"
+                  puts "HERE_\#{i}=\#{e.backtrace.grep(/child_spec/).size}"
+                  puts "MESSAGE_\#{i}=\#{e.message.tr(" ", "_")}"
+                  raise
+                end
+              end
+            end
+          end
+        RUBY
+        with_fake_docker('echo "planted port failure" >&2; exit 1') do |env, _log|
+          out, = run_child_spec(source, env: env)
+
+          expect(child_value(out, "LAUNCH_FRAMES_0").to_i).to be > 0, out
+          expect(child_value(out, "LAUNCH_FRAMES_1")).to eq("0"), out
+          expect(child_value(out, "HERE_1").to_i).to be > 0, out
+          expect(child_value(out, "MESSAGE_1")).to eq(child_value(out, "MESSAGE_0")), out
+        end
+      end
+
       it "says what the container logged when Postgres never gets ready" do
         with_fake_docker('echo "127.0.0.1:1"; exit 0') do |env, _log|
           out, status = run_child_spec(source, env: env.merge("QUAACK_TEST_PG_READY_TIMEOUT" => "3"))

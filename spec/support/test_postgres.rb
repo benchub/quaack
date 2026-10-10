@@ -297,9 +297,10 @@ module TestPostgres
 
   # A launch that fails isn't tried again. Every later example gets the same
   # error, rather than another build, another 60-second wait, and another
-  # container.
+  # container. Each one raises a copy with its own backtrace, since raising
+  # the stored error again would show the first example's launch frames.
   def server
-    raise @launch_error if @launch_error
+    raise @launch_error.dup.tap { it.set_backtrace(caller) } if @launch_error
 
     @server ||= launch
   rescue StandardError => e
