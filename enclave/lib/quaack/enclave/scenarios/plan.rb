@@ -17,17 +17,18 @@ module Quaack
         def scenarios
           hit = group(fresh_key)
           near = pooled_near_misses
-          s1 = s1(hit, near)
-          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + fan_outs(hit, near),
-            s4: s1 + orphans, s5: s1 + boundaries, s6: [hit] + many + [empty] }
+          base = [hit, *near, *join_near_misses]
+          extras = { s1: [], s2: [nulls], s3: fan_outs(hit, near), s4: orphans, s5: boundaries }
+          masking = masking_near_misses
+          { s0: [], **extras.transform_values { base + it + masking }, s6: [hit] + many + [empty] }
         end
 
         private
 
         def pooled_near_misses = @pooled.map { |i| group(fresh_key, near: i) }
 
-        def s1(hit, near) = [hit, *near, *join_near_misses, *masking_near_misses]
-
+        # Last in each scenario that holds them, so a unique-key collision
+        # leaves them out before any other group.
         def masking_near_misses = @masked.map { |i, also| group(fresh_key, near: i, also:) }
 
         def nulls = group(fresh_key, mode: :nulls)

@@ -13,8 +13,8 @@ module Quaack
       # group satisfies the atom. A branch or arm with no such atom (a
       # nested OR or UNION) leaves the atom with no masking near miss.
       #
-      #   Branches.new(parse.tree, atoms, pooled).also(i) { |also| buildable?(also) }
-      #   # => [3, 7], or nil when the atom isn't masked or can't be unmasked
+      #   Branches.new(parse.tree, atoms, pooled).masked(topology.order) { |group| build_group(group) }
+      #   # => { 2 => [5], 4 => [1, 7] }: each masked atom's also atoms
       class Branches
         def initialize(tree, atoms, pooled)
           @tree = tree
