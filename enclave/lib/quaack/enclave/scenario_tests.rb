@@ -53,8 +53,12 @@ module Quaack
       # and s1_rows are vacuity-guard's diagnostic (VacuityGuard::Result): the
       # rule S1 failed to load with, and the original's row count on S1, each
       # nil when it doesn't apply (and both nil on a refusal).
-      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle, :loads,
-                           :s1_load_rule, :s1_rows)
+      # untested_paths are the untested atoms' paths into the original's parse
+      # (PredicateAtoms::Atom#path), for AtomPosition; they stay in the enclave.
+      Report = Data.define(:results, :untested, :untested_atoms, :untested_paths, :retries, :dropped, :refused,
+                           :cycle, :loads, :s1_load_rule, :s1_rows) do
+        def initialize(untested_paths: [], **fields) = super
+      end
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
@@ -71,7 +75,8 @@ module Quaack
 
       # The report of candidates tested on the guard's scenarios.
       def tested(guard, builder, results, loads)
-        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
+        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms,
+                   untested_paths: guard.untested_paths, retries: guard.retries,
                    dropped: builder.dropped, refused: nil, cycle: nil, loads:, s1_load_rule: guard.s1_load_rule,
                    s1_rows: guard.s1_rows)
       end

@@ -647,7 +647,7 @@ Next to each rewrite's name, on the line you click, are two lines:
 
   Only a rewrite that returned different results is called wrong. One that was dropped because a test failed, timed out, or never ran is not.
 
-A rewrite may also list **conditions from the original query that QUAACK's made-up rows never made both true and false**, such as `o.status = $1`. A rewrite that changed such a condition could still have passed those tests. The report marks each one the LLM's test data, written afterwards to break the rewrite, did check, and collapses the list when it checked them all. Read the rewrites with unchecked conditions extra carefully.
+A rewrite may also list **conditions from the original query that QUAACK's made-up rows never made both true and false**, such as `o.status = $1`. A rewrite that changed such a condition could still have passed those tests. The report lists only the conditions in a part the rewrite changed: one the rewrite left in the same place, in the same part of the query, is left out, and when QUAACK can't tell, the condition is listed. It marks each one the LLM's test data, written afterwards to break the rewrite, did check, and collapses the list when it checked them all. Read the rewrites with unchecked conditions extra carefully.
 
 ### Ranking.
 

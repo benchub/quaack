@@ -161,6 +161,60 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
+    # Task 20261009-40: which untested atoms the rewrite left unchanged, by
+    # position, as a subset of the shapes already stored under untested.
+    describe "untested_unchanged" do
+      def tested = stored.read("rewrite_tested_1")
+
+      it "lists an untested atom of a rewrite that left it alone, and sends it on no message" do
+        # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
+        ready(same, status_check: "status = 'held'")
+
+        outcome = step("rewrite-test", "--search", "rewrite_1")
+
+        expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => ["o.status = $2"])
+        expect(lines(outcome).first.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows])
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "leaves out an untested atom the rewrite dropped, and one it moved under a subquery" do
+        ready(looser, status_check: "status = 'held'")
+        step("rewrite-test", "--search", "rewrite_1")
+        expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => [])
+
+        subquery = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND " \
+                   "EXISTS (SELECT 1 FROM public.orders p WHERE p.id = o.id AND o.status = $2)"
+        store.write("rewrite_1", store.read("rewrite_1").merge("sql" => subquery, "anchored_sql" => subquery))
+        step("rewrite-test", "--search", "rewrite_1")
+        expect(tested).to include("untested_unchanged" => [])
+      end
+
+      # Two placeholders that bind the same literal make the bound queries
+      # read alike though the rewrite swapped them, so the judgment has to be
+      # made on the unbound SQL.
+      context "with two placeholders bound to one literal" do
+        let(:query) { "SELECT #{select_list} FROM public.orders o WHERE o.note = 'held' AND o.status = 'held'" }
+
+        it "calls an atom changed when the rewrite gave it the other placeholder" do
+          swapped = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $2 AND o.status = $1"
+          ready(swapped, status_check: "status = 'held'")
+
+          step("rewrite-test", "--search", "rewrite_1")
+
+          expect(tested).to include("passed" => true, "untested" => ["o.status = $2"], "untested_unchanged" => [])
+        end
+      end
+
+      it "stores an empty list for a discarded rewrite" do
+        ready(same)
+        store.write("rewrite_pruned_1", "discarded" => true)
+
+        step("rewrite-test", "--search", "rewrite_1")
+
+        expect(tested).to include("rule" => "discarded", "untested_unchanged" => [])
+      end
+    end
+
     # QUAACKS_PROFILE (Profiler) writes code locations to a file on the jump
     # server, never values, and the step prints what it would without it.
     it "writes a profile of code locations only when QUAACKS_PROFILE is set, and prints the same" do
@@ -235,7 +289,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                       "scenario" => nil, "rule" => "complex_check" }, { "type" => "done" }])
       expect(stored.read("rewrite_tested_1"))
         .to eq("passed" => false, "scenario" => nil, "rule" => "complex_check", "refused" => true,
-               "untested" => [], "untested_atoms" => [])
+               "untested" => [], "untested_atoms" => [], "untested_unchanged" => [])
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
       expect_no_leaks(sentinels, outcome)
     end

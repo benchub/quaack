@@ -26,14 +26,16 @@ module Quaack
     # retry.
     #
     # retries counts the rebuilds of each vacuous atom. untested_atoms are
-    # the untested atoms' indexes, for counterexamples.
+    # the untested atoms' indexes, for counterexamples, and untested_paths
+    # their paths into the original's parse, for AtomPosition.
     #
     # Trust boundary: untested holds only the atoms' shapes, which have every
     # literal redacted. scenarios hold real values and stay in the enclave.
     module VacuityGuard
       RETRIES = 3
 
-      Result = Data.define(:untested, :untested_atoms, :retries, :variants, :scenarios, :s1_load_rule, :s1_rows) do
+      Result = Data.define(:untested, :untested_atoms, :untested_paths, :retries, :variants, :scenarios, :s1_load_rule,
+                           :s1_rows) do
         def inspect = "#<data #{self.class} untested=#{untested} retries=#{retries} scenarios=<redacted>>"
 
         alias_method :to_s, :inspect
@@ -61,6 +63,7 @@ module Quaack
 
       def result(builder, untested, state, scenarios)
         Result.new(untested: untested.map { |i| builder.atoms[i].shape }, untested_atoms: untested,
+                   untested_paths: untested.map { |i| builder.atoms[i].path },
                    retries: state[:retries], variants: state[:variants], scenarios:,
                    s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows])
       end

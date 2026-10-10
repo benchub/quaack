@@ -9,6 +9,7 @@ require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/step_counts"
+require "quaack/protocol/unchanged_atoms"
 require "quaack/protocol/vacuity_diagnostic"
 require_relative "plain_data"
 
@@ -152,6 +153,8 @@ module Quaack
       # index_sources must be exactly counts under QUAACK's own source
       # names (see Protocol::IndexSources.valid?), and is needed too. The
       # top, when sent, must carry only kinds from Protocol::CandidateKinds::KINDS.
+      # Each rewrite's untested_unchanged must repeat only shapes of its own
+      # untested_atoms.
       # The report's other fields still go out unchecked.
       def check_report(fields)
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
@@ -159,10 +162,20 @@ module Quaack
         end
 
         check_ranking(fields)
+        check_unchanged_atoms(fields["rewrites"])
         check_suggested_drops(fields["labels"])
         return if !fields.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(fields["hidden_statistics"])
 
         raise Error, "a value in this report message has hidden statistics that aren't index names and a count"
+      end
+
+      # Each rewrite's untested_unchanged, if it has one, must be shapes the
+      # same rewrite's untested_atoms already carries (see
+      # Protocol::UnchangedAtoms.valid?), so it adds no text of its own.
+      def check_unchanged_atoms(rewrites)
+        return if Protocol::UnchangedAtoms.valid?(rewrites)
+
+        raise Error, "a value in this report message has unchanged atoms that aren't among the untested atoms"
       end
 
       # Each label's suggested_drops, if it has one, must pass

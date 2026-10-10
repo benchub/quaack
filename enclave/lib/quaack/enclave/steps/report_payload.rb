@@ -116,7 +116,7 @@ module Quaack
       # each one the schema_subset entry holds. Untested atoms are rewrite-test's redacted shapes.
       # index_sources is counts under Protocol::IndexSources' fixed source
       # names only, which egress checks.
-      module ReportPayload
+      module ReportPayload # rubocop:disable Metrics/ModuleLength
         module_function
 
         def call(store:, **)
@@ -173,16 +173,25 @@ module Quaack
         # indexes counterexamples reads), the shapes of those the
         # counterexample rounds covered, and whether counterexamples had
         # evidence, which only a rewrite that survived counterexamples has.
-        # dropped is how many scenario groups rewrite-test left out because
-        # they collide on a unique key, sent only as a count.
+        # untested_unchanged is those untested shapes rewrite-test found the
+        # rewrite left unchanged (DESIGN.md's unchanged-atoms), only the ones
+        # that are untested shapes. dropped is how many scenario groups
+        # rewrite-test left out because they collide on a unique key, sent
+        # only as a count.
         def checks(store, number)
           survived = NegativeResult.optional(store, "rewrite_survived_#{number}")
           tested = NegativeResult.optional(store, "rewrite_tested_#{number}")
           dropped = tested&.fetch("dropped", nil)
           { "untested_atoms" => tested&.fetch("untested"),
+            "untested_unchanged" => unchanged_shapes(tested),
             "dropped" => (dropped if dropped.is_a?(Integer) && !dropped.negative?),
             "covered" => NegativeResult.optional(store, "rewrite_round_#{number}")&.fetch("covered", nil),
             "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
+        end
+
+        def unchanged_shapes(tested)
+          list = tested&.dig("untested_unchanged")
+          list & tested["untested"] if list.is_a?(Array)
         end
 
         def original_sql(store)
