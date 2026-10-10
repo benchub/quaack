@@ -39,6 +39,22 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(childless_users(sql).size).to eq(1)
   end
 
+  it "builds a user with no post for a RIGHT JOIN's left side, and either side of a FULL JOIN" do
+    [
+      "SELECT fx.users.id FROM fx.posts RIGHT JOIN fx.users ON fx.posts.user_id = fx.users.id",
+      "SELECT fx.users.id FROM fx.posts FULL JOIN fx.users ON fx.posts.user_id = fx.users.id",
+      "SELECT fx.users.id FROM fx.users FULL JOIN fx.posts ON fx.posts.user_id = fx.users.id"
+    ].each { |sql| expect(childless_users(sql).size).to eq(1), sql }
+  end
+
+  it "builds none for a RIGHT JOIN whose optional side is the parent, or a join in a derived table" do
+    [
+      "SELECT fx.posts.id FROM fx.users RIGHT JOIN fx.posts ON fx.posts.user_id = fx.users.id",
+      "SELECT x.id FROM fx.users x LEFT JOIN (SELECT fx.posts.id FROM fx.posts, fx.users " \
+      "WHERE fx.posts.user_id = fx.users.id) d ON true"
+    ].each { |sql| expect(childless_users(sql)).to eq([]), sql }
+  end
+
   it "builds none for an inner join, a LEFT JOIN whose optional side is the parent, or a join in one subquery" do
     [
       "SELECT fx.users.id FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id",
