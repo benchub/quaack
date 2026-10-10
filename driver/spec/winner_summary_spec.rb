@@ -66,7 +66,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
                         "plan_source" => "how Postgres runs the original query now, on the indexes the database has" },
         "winner" => { "is" => "a rewrite of the original query",
                       "rewrite" => { "name" => "Rewrite Steady Lute", "source" => "rule", "rules" => ["in_to_exists"],
-                                     "sql" => payload["rewrites"][0]["sql"] },
+                                     "rule_purposes" => {}, "sql" => payload["rewrites"][0]["sql"] },
                       "new_indexes" => ["CREATE INDEX ON public.t USING btree (a, b)"],
                       "plan" => [{ "step" => "Index Scan", "table" => "public.t", "index" => "t_a_idx",
                                    "estimated_rows" => 5, "actual_rows" => 5, "depth" => 0, "blocks" => 30 }],
@@ -179,11 +179,10 @@ RSpec.describe Quaack::Driver::WinnerSummary do
 
       expect(ask.body[:messages].first[:content]).to include("```json")
       expect(system).to include("only with the original query as it runs now, on the indexes the database already has")
-        .and include("Say only what the plans and numbers in the payload show")
+        .and include("Say only what the SQL, plans, and numbers in the payload show")
         .and include("Don't guess at a cause you can't see")
-        .and include("each short and making one point").and include("under 500 characters")
-        .and include("so pick the two or three points that matter most")
-        .and include("Describe a plan step only by its node type, table, index, rows, and blocks")
+        .and include("each short and making one point").and include("under 700 characters")
+        .and include("Name a plan step by a node type that appears in one of the two plans")
         .and include("Quote a plan step's own numbers")
         .and include("never carry one step's row count to another step")
       expect(ask.body).not_to have_key(:output_config)
@@ -295,11 +294,11 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(run(answer)).to have_attributes(text: nil, outcome: "rejected")
     end
 
-    it "keeps an answer of exactly 800 characters and refuses one of 801" do
+    it "keeps an answer of exactly 1000 characters and refuses one of 1001" do
       pad = ->(size) { "#{good} #{"a" * (size - good.size - 1)}" }
 
-      expect(run(pad.call(800))).to have_attributes(text: pad.call(800), outcome: "used")
-      expect(run(pad.call(801))).to have_attributes(text: nil, outcome: "rejected")
+      expect(run(pad.call(1000))).to have_attributes(text: pad.call(1000), outcome: "used")
+      expect(run(pad.call(1001))).to have_attributes(text: nil, outcome: "rejected")
     end
 
     it "refuses a dotted name only when the input holds it as a whole word, not as the start of a longer one" do
