@@ -70,7 +70,12 @@ module Quaack
     # be at least the server's.
     #
     # Refusals raise Error, with a rule and a message naming only the rule
-    # and shape: secret_in_conninfo, unknown_relation (a relation the
+    # and shape: secret_in_conninfo, unknown_extra_dump_schema (an
+    # extra_dump_schemas name the database lacks, checked before anything
+    # is dumped, and naming none), dump_exclusions_too_long (the schemas
+    # the full dump adds hold so many unneeded relations that its
+    # --exclude-table arguments would pass MAX_EXCLUDE_BYTES),
+    # unknown_relation (a relation the
     # catalog doesn't have), pg_dump_missing (it couldn't be run, or didn't
     # print its version), pg_dump_too_old, dump_object_unreadable (a table
     # the dump needs that the role can't read, checked before pg_dump runs,
@@ -139,18 +144,29 @@ module Quaack
       # hanging it.
       LOCK_WAIT_TIMEOUT = "30s"
 
+      # The most bytes the full dump's --exclude-table arguments can take
+      # together. Each unneeded relation in an added schema is one argument,
+      # and a schema of thousands of tables could bring the command line
+      # near the system's limit (ARG_MAX, 1 MiB on macOS and typically
+      # 2 MiB on Linux, shared with the environment).
+      MAX_EXCLUDE_BYTES = 262_144
+
+      # With no namespace to dump, pg_dump's own default is every schema, so
+      # the full dump excludes them all (the * is its pattern, not a shell's).
+      NO_SCHEMAS = "--exclude-schema=*"
+
       VERSION = /\Apg_dump \(PostgreSQL\) (\d+)/
       MISSING = "pg_dump couldn't be run, or didn't say its version"
 
       module_function
 
       def run(store:, relations:, connection:, conninfo:, pg_dump: ["pg_dump"], # rubocop:disable Metrics/ParameterLists
-              lock_wait_timeout: LOCK_WAIT_TIMEOUT, extra_schemas: [])
-        Checks.no_secrets!(conninfo)
-        Checks.not_sql_ascii!(connection)
+              lock_wait_timeout: LOCK_WAIT_TIMEOUT, extra_schemas: [], max_exclude_bytes: MAX_EXCLUDE_BYTES)
+        Checks.before_dumping!(conninfo, connection, extra_schemas)
         tables = ancestors(relations, connection)
         new_enough!(pg_dump, connection)
-        namespaces, full = full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout, extra_schemas)
+        namespaces, full = full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout, extra_schemas,
+                                     max_exclude_bytes:)
         subset = subset_ddl(pg_dump, conninfo, tables, lock_wait_timeout:)
         store.write("schema_dump", { "namespaces" => namespaces, "ddl" => full })
         store.write("schema_subset", { "tables" => tables.map { [it.schema, it.name] }, "ddl" => subset })
@@ -166,20 +182,24 @@ module Quaack
       # like those. Then come the namespaces of whatever those depend on
       # (Depends), less the relations nothing needs, which --exclude-table
       # leaves out. Every table pg_dump will lock must be readable first.
-      def full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout, extra_schemas = []) # rubocop:disable Metrics/ParameterLists
+      def full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout, extra_schemas = [], # rubocop:disable Metrics/ParameterLists
+                    max_exclude_bytes: MAX_EXCLUDE_BYTES)
         extensions = extensions(connection)
-        whole = (namespaces(tables, connection) + extensions.values + extra_schemas).uniq
-        whole = whole.reject { system_schema?(it) }
+        whole = (namespaces(tables, connection) + extensions.values + extra_schemas).uniq.reject { system_schema?(it) }
         added, excluded = Depends.added(connection, whole)
         namespaces = (whole + added).sort
         Depends.readable!(connection, namespaces, excluded)
-        [namespaces, dump(pg_dump, conninfo, selections(namespaces, excluded, extensions.keys), lock_wait_timeout:)]
+        args = selections(namespaces, excluded, extensions.keys, max_exclude_bytes)
+        [namespaces, dump(pg_dump, conninfo, args, lock_wait_timeout:)]
       end
 
-      # The full dump's --schema, --exclude-table, and --extension arguments.
-      def selections(namespaces, excluded, extensions)
-        namespaces.map { "--schema=#{pattern(it)}" } + excluded.map { "--exclude-table=#{pattern(*it)}" } +
-          extensions.map { "--extension=#{pattern(it)}" }
+      # The full dump's --schema, --exclude-table, and --extension arguments,
+      # refused if the --exclude-table ones take more than max_exclude bytes.
+      def selections(namespaces, excluded, extensions, max_exclude)
+        excludes = excluded.map { "--exclude-table=#{pattern(*it)}" }
+        Checks.exclusions_fit!(excludes, max_exclude)
+        schemas = namespaces.empty? ? [NO_SCHEMAS] : namespaces.map { "--schema=#{pattern(it)}" }
+        schemas + excludes + extensions.map { "--extension=#{pattern(it)}" }
       end
 
       # pg_catalog, information_schema, or any other pg_ schema, such as
@@ -213,6 +233,12 @@ module Quaack
         ENCODING_SQL = "SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database " \
                        "WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
 
+        def before_dumping!(conninfo, connection, extra_schemas)
+          no_secrets!(conninfo)
+          not_sql_ascii!(connection)
+          extra_schemas_exist!(connection, extra_schemas)
+        end
+
         def no_secrets!(conninfo)
           unless conninfo.keys.all? { PLAIN_KEY.match?(it.to_s) }
             raise Error.new("bad_conninfo_key", "a conninfo key must be a plain libpq keyword")
@@ -222,6 +248,29 @@ module Quaack
           end
 
           raise Error.new("secret_in_conninfo", "pg_dump gets its secrets from the operator's own libpq setup")
+        end
+
+        EXTRA_SQL = "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) " \
+                    "ANY (SELECT pg_catalog.json_array_elements_text($1::pg_catalog.json))"
+
+        # Every extra_dump_schemas name must be a schema the database has,
+        # a system schema included. The refusal names none.
+        def extra_schemas_exist!(connection, names)
+          return if names.empty?
+
+          found = connection.exec_params(EXTRA_SQL, [JSON.generate(names)]).column_values(0).map { SchemaDump.utf8(it) }
+          return if (names - found).empty?
+
+          raise Error.new("unknown_extra_dump_schema", "extra_dump_schemas names a schema the database doesn't have")
+        end
+
+        # Refuses when the full dump's --exclude-table arguments take more
+        # than max bytes in all.
+        def exclusions_fit!(excludes, max)
+          return if excludes.sum(&:bytesize) <= max
+
+          raise Error.new("dump_exclusions_too_long", "the dump would leave out #{excludes.size} relations " \
+                                                      "nothing needs, more than its arguments can name")
         end
 
         def not_sql_ascii!(connection)

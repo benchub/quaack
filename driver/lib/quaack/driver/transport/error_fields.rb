@@ -79,7 +79,8 @@ module Quaack
         def tables(tables)
           return unless tables.instance_of?(Array) && TABLES_SIZES.cover?(tables.size)
 
-          tables if tables.all? { shaped(it, FUNCTION) }
+          kept = tables.select { shaped(it, CYCLE_TABLE) }
+          kept unless kept.empty?
         end
 
         def column(column)

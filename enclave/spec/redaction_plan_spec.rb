@@ -22,6 +22,22 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
 
   def masked(text, placeholder_map) = redact(node("Filter" => text), placeholder_map).masked
 
+  # 20261008-53: Cast#type says nil, not "", for a :: with no type after it.
+  describe "Cast#type" do
+    # Expression and Cast are private constants of Redaction.
+    def cast(text)
+      tokens = PgQuery.scan(text).first.tokens.to_a
+      described_class.const_get(:Expression).const_get(:Cast)
+                     .new(tokens, tokens.map { text.byteslice(it.start...it.end) })
+    end
+
+    it "gives nil for a :: followed by no type words, and the lowercase type name otherwise" do
+      expect(cast("x::").type(1)).to be_nil
+      expect(cast("x::\"Bit\" varying").type(1)).to eq("bit varying")
+      expect(cast("x").type(0)).to be_nil
+    end
+  end
+
   describe "literals in quals" do
     it "replaces each literal with the placeholder whose value it matches, whatever its cast" do
       text = "((email = 'a'::text) AND (total_cents > '-5'::integer) AND ((x)::numeric < 1.5) AND (id = 7))"

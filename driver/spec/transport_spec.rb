@@ -1225,7 +1225,7 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     [
-      ["a sentinel table", %w[public.a SENTINEL]],
+      ["only a sentinel table", %w[SENTINEL]],
       ["no tables", []],
       ["more than 64 tables", Array.new(65) { "public.t#{it}" }],
       ["a table that isn't a String", [1]],
@@ -1238,6 +1238,15 @@ RSpec.describe Quaack::Driver::Transport do
         expect(error.message).to eq("quaacks probe failed: dump_object_unreadable (exit 0)")
         expect(error.full_message(highlight: false)).not_to include("SENTINEL")
       end
+    end
+
+    # 20261008-48: a quoted name shows, and one that fails the shape check doesn't cost the others.
+    it "shows quoted tables, and keeps the names that pass the shape check" do
+      tables = ["public.a", "SENTINEL", '"Sales"."Order ""Items"""', "public.café"]
+      error = refusal(%({"type":"error","rule":"dump_object_unreadable","tables":#{JSON.generate(tables)}}))
+
+      expect(error.tables).to eq(["public.a", '"Sales"."Order ""Items"""'])
+      expect(error.full_message(highlight: false)).not_to include("SENTINEL")
     end
 
     it "drops tables on any rule but dump_object_unreadable" do

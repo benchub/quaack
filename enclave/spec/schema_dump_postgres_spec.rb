@@ -214,6 +214,33 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     end
   end
 
+  # 20261008-52: a query that reads no table, in a database with no public
+  # schema, left the full dump with no --schema flag, so pg_dump dumped
+  # every schema.
+  describe "the full dump of a query that names no schema at all" do
+    before { conn.exec("DROP SCHEMA public CASCADE") }
+
+    it "holds none of the database's schemas" do
+      result = run([])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(result.namespaces).to eq([])
+      expect(store.read("schema_dump")["namespaces"]).to eq([])
+      expect(created_tables(ddl)).to eq([])
+      expect(ddl).not_to match(/^CREATE SCHEMA/)
+    end
+
+    it "holds none of them with an extension in a system schema, and still creates that extension" do
+      conn.exec("CREATE EXTENSION plperl")
+      run([])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(created_tables(ddl)).to eq([])
+      expect(ddl).not_to match(/^CREATE SCHEMA/)
+      expect(ddl).to include("CREATE EXTENSION IF NOT EXISTS plperl WITH SCHEMA pg_catalog;")
+    end
+  end
+
   # 20261001-10: objects in the dumped schemas can depend on objects in
   # schemas nothing else dumps, such as a production's dba schema, and arena
   # can't load them without those. pg_depend says which, so the full dump
@@ -287,6 +314,54 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(ddl).to match(/^CREATE FUNCTION deep\.k\(\)/)
     end
 
+    # 20261008-48: pg_depend marks a partition's dependence on its parent
+    # with an auto ('a') dependency. other.part is dumped, and its
+    # CREATE TABLE ... PARTITION OF needs dba.parent, and not dba.secrets.
+    # (A sequence's OWNED BY is auto too, but Postgres makes it share its
+    # table's schema, so it can't cross one.)
+    it "adds the parent table of a dumped partition, in another schema, and loads into arena" do
+      conn.exec(<<~SQL)
+        DROP FUNCTION other.setting_count(); DROP TABLE other.picked;
+        CREATE TABLE dba.parent (id int) PARTITION BY RANGE (id);
+        CREATE TABLE other.part PARTITION OF dba.parent FOR VALUES FROM (0) TO (10);
+      SQL
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[dba other public])
+      expect(created_tables(ddl)).to include("dba.parent", "other.part")
+      expect(created_tables(ddl)).not_to include("dba.secrets")
+
+      admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+      arena = PG.connect(**db.connection_params, dbname: target)
+      expect { Quaack::Enclave::Arena.load_dump(arena, ddl) }.not_to raise_error
+    ensure
+      arena&.close
+    end
+
+    # 20261008-48: the walk follows dependencies from child to parent, so a
+    # partition or inheritance child in a schema outside the dump was missed.
+    it "adds a partition or inheritance child of a dumped table, in another schema, and not the rest of its schema" do
+      conn.exec(<<~SQL)
+        DROP FUNCTION other.setting_count(); DROP TABLE other.picked;
+        CREATE TABLE other.parted (id int) PARTITION BY RANGE (id);
+        CREATE TABLE dba.part PARTITION OF other.parted FOR VALUES FROM (0) TO (10);
+        CREATE TABLE dba.kid () INHERITS (other.lonely);
+        CREATE TABLE dba.grandkid () INHERITS (dba.kid);
+      SQL
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[dba other public])
+      expect(created_tables(ddl)).to include("dba.part", "dba.kid", "dba.grandkid", "other.parted")
+      expect(created_tables(ddl)).not_to include("dba.secrets", "dba.settings")
+      expect(ddl).to include("ATTACH PARTITION dba.part")
+
+      admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+      arena = PG.connect(**db.connection_params, dbname: target)
+      expect { Quaack::Enclave::Arena.load_dump(arena, ddl) }.not_to raise_error
+    ensure
+      arena&.close
+    end
+
     # A dumped table's column uses a domain from a schema the query doesn't
     # name, so the dump needs that schema and the domain, or arena can't
     # create the table.
@@ -349,6 +424,52 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(named?(ddl, "unused_ids") && named?(ddl, "secret_view")).to be(true)
     end
 
+    # 20261008-48: a misspelled name used to fail as pg_dump_failed.
+    it "refuses an extra schema the database doesn't have, before pg_dump runs, naming no schema" do
+      Dir.mktmpdir do |dir|
+        never = fake_pg_dump(dir, "pg_dump (PostgreSQL) 18.0", "echo ran >> '#{dir}/ran'; exit 1")
+
+        expect { run([table("other", "lonely")], extra_schemas: %w[dba dbaa_typo], pg_dump: never) }
+          .to refused("unknown_extra_dump_schema",
+                      "extra_dump_schemas names a schema the database doesn't have") { |error|
+            expect(error.message).not_to include("dbaa_typo")
+          }
+        expect(File.exist?(File.join(dir, "ran"))).to be(false)
+      end
+      nothing_stored
+    end
+
+    it "takes an extra schema that's a system schema or that has an odd name, as it does any other" do
+      conn.exec(%(CREATE SCHEMA "Odd ""Name"""; CREATE TABLE "Odd ""Name""".t (id int)))
+
+      result = run([table("other", "lonely")], extra_schemas: [%(Odd "Name"), "pg_catalog"])
+
+      expect(result.namespaces).to include(%(Odd "Name"))
+    end
+
+    # 20261008-48: --exclude-table adds an argument per unneeded relation, so
+    # the dump refuses rather than run an argument list near ARG_MAX.
+    it "refuses a dump whose --exclude-table arguments would run past the limit, before pg_dump runs" do
+      Dir.mktmpdir do |dir|
+        never = fake_pg_dump(dir, "pg_dump (PostgreSQL) 18.0", "echo ran >> '#{dir}/ran'; exit 1")
+
+        expect { run([table("other", "lonely")], pg_dump: never, max_exclude_bytes: 60) }
+          .to refused("dump_exclusions_too_long",
+                      "the dump would leave out 3 relations nothing needs, more than its arguments can name")
+        expect(File.exist?(File.join(dir, "ran"))).to be(false)
+      end
+      nothing_stored
+    end
+
+    it "dumps when the --exclude-table arguments just fit the limit, and refuses one byte under" do
+      excluded = %w[dba.secrets dba.unused_ids dba.secret_view].map { described_class.pattern(*it.split(".")) }
+      fit = excluded.sum { "--exclude-table=#{it}".bytesize }
+
+      expect { run([table("other", "lonely")], max_exclude_bytes: fit) }.not_to raise_error
+      expect { run([table("other", "lonely")], max_exclude_bytes: fit - 1) }
+        .to raise_error(described_class::Error, /\Adump_exclusions_too_long: /)
+    end
+
     describe "as a role that can't read every table" do
       let(:reader_conn) { PG.connect(**db.connection_params, user: reader, password: TestPostgres::PASSWORD) }
 
@@ -403,6 +524,21 @@ RSpec.describe Quaack::Enclave::SchemaDump do
         expect { dump_as_reader([table("other", "lonely")]) }
           .to refused("dump_object_unreadable", "the role can't read 1 table the dump needs") { |error|
             expect(error.tables).to eq(%w[dba.settings])
+          }
+      end
+
+      # 20261008-48: the name is written as quote_ident does, so the error
+      # filter's shape check passes it.
+      it "names an unreadable table with a mixed-case or odd name in quote_ident form" do
+        conn.exec(<<~SQL)
+          CREATE SCHEMA "Sales";
+          CREATE TABLE "Sales"."Order Items" (id int);
+          GRANT USAGE ON SCHEMA "Sales" TO "#{reader}";
+        SQL
+
+        expect { dump_as_reader([table("Sales", "Order Items")]) }
+          .to refused("dump_object_unreadable", "the role can't read 1 table the dump needs") { |error|
+            expect(error.tables).to eq(['"Sales"."Order Items"'])
           }
       end
 
