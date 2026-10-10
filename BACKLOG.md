@@ -854,3 +854,16 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Came from:** the user, 2026-10-10.
 - **Design:** LLM client.
 - **Status:** todo
+
+### 20261010-20. Index burndown: carry the surviving ideas through the LLM rounds, and show added as its own width.
+
+The user asked, looking at the original query's index burndown: "Ideas from the LLM" shows 5 added, 3 dropped and 2 went on, after the planner stage sent 6 on. It reads as if 6 came in and the output got wider than the input. It isn't: an LLM round's record is `in: 0`, `added: {llm: 5}`, `out: 2` (`Burndown.round_counts` in the enclave), so it counts only its own ideas, and the 6 that went on from index-test aren't in it. The `in + added - dropped - set_aside = out` check holds for that record, but the funnel isn't one flow, so the picture misleads. (The 4 that "Trying indexes together" sends on is a different unit again: combinations.)
+
+1. Carry the pool: give each LLM round `in` equal to the earlier stage's `out` (plus what it holds), so `out` is the whole surviving set (6 + 2 = 8) and the next stage's `in` matches it. Check how index-rank, the second round and the combination stage read these counts so the funnel, the table and the tooltips stay consistent, and what happens to the "held back" ideas.
+2. Draw three widths per layer: what came in, what was added, and what went on (the filtered output), instead of in and out. Or keep two widths but show the added ones as a separate, visibly different slice. The user's idea; they left the visual choice open.
+3. The enclave records the counts, so a change to `in` is an enclave and protocol check (`Protocol::Burndown.adds_up?` still holds). Report-only parts are driver.
+
+- **Depends on:** none.
+- **Came from:** the user, 2026-10-10.
+- **Design:** report, burndown.
+- **Status:** todo
