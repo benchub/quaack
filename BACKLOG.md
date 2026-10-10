@@ -1242,19 +1242,6 @@ From the review of 20261009-43 (minor). The new replay example that checks the f
 - **Design:** report, burndown.
 - **Status:** todo
 
-### 20261009-54. README's report samples: make them tell one story, and describe the Ranking by kind.
-
-From the review of 20261009-48 (minor).
-- The verdict sample table (README about lines 599 to 605) says the best rewrite with new indexes is "Silver Fox" at 4 blocks (+14.8 MB), the original with new indexes is 19 blocks (+11.5 MB), and no rewrite beat the original with the same indexes. The Ranking sample (about 645 to 650) says the 4-block, 14.8 MB candidate is the original with a new index, 19 is the original with a different index, and "Rewrite Silver Fox with no new indexes" is #3 at 31 blocks; the not-ranked sample (about 674) and "Why the winner" (about 705) differ again. Make every sample describe the same run.
-- The verdict sample's last row shows "n/a | n/a" for Index change and Improvement, but the template renders a no-candidate row with the warning spanning those cells (`colspan="3"`), so nothing prints there. Fix the sample.
-- Where the README says the caveat links to "a note in the indexes section", the link target is the whole `#indexes` section (DESIGN.md says the same): reword.
-- The Ranking description (about 640 to 659) shows one flat table with ranks 1 to 3 across all kinds and says "The winner is the first ranked row". The report groups ranks by kind, with a heading row per kind and a stripe, restarting at 1 in each, and ranks the three best of each kind. Update the sample and the text, including the tie rule and the minimax line.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-48, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-55. README samples: four small wording gaps from the review of 20261009-54.
 
 - The Proposed indexes sample lists one index, but the sample run's ranked candidates use two (the INCLUDE one and the plain (account_id, created_at) one); `proposed` takes all ranked labels' indexes. List both, or say the sample is shortened.
@@ -1264,5 +1251,14 @@ From the review of 20261009-48 (minor).
 
 - **Depends on:** 20261009-54.
 - **Came from:** The review of 20261009-54, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-56. README's "Who proposed what" sample contradicts the invented run.
+
+From the second review of 20261009-54 (it predates that task's diff). The sample's Rewrites table (README about lines 748 to 756) shows "QUAACK's own rules" with Ranked 1 and "The LLM" with Ranked 0, but the only rewrite in the invented run is Silver Fox, which the not-ranked sample says the LLM suggested, and which is ranked (rows 1 and 2 of the Ranking sample). Make the accountability tables agree with the run (the LLM row ranked 1, or change who suggested Silver Fox everywhere), with the totals, the indexes table (generators, the LLM, all sources) and the burndown sample consistent too; the verdict's "nothing helps" example line ("built and measured 2 indexes and kept 1 rewrite") is a different scenario, and should be labeled so. Check each number and string against `Accountability` and the template, as the other samples were.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261009-54, 2026-10-09.
 - **Design:** report.
 - **Status:** todo

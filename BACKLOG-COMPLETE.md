@@ -9215,3 +9215,17 @@ From the review of 20261009-27 (minor). README.md's verdict section (about lines
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-48; review clean). README's verdict section rewritten against the template and code (headline colors and the 30% rule, the table's columns, the Plan cell without definitions, Index change and Improvement rules, row order, caveats and their links, the timeouts section), plus the queries' folds, the rose folds, the three burndown tables with the held-back note, and the hidden-statistics note. Minor findings: 20261009-54.
+
+### 20261009-54. README's report samples: make them tell one story, and describe the Ranking by kind.
+
+From the review of 20261009-48 (minor).
+- The verdict sample table (README about lines 599 to 605) says the best rewrite with new indexes is "Silver Fox" at 4 blocks (+14.8 MB), the original with new indexes is 19 blocks (+11.5 MB), and no rewrite beat the original with the same indexes. The Ranking sample (about 645 to 650) says the 4-block, 14.8 MB candidate is the original with a new index, 19 is the original with a different index, and "Rewrite Silver Fox with no new indexes" is #3 at 31 blocks; the not-ranked sample (about 674) and "Why the winner" (about 705) differ again. Make every sample describe the same run.
+- The verdict sample's last row shows "n/a | n/a" for Index change and Improvement, but the template renders a no-candidate row with the warning spanning those cells (`colspan="3"`), so nothing prints there. Fix the sample.
+- Where the README says the caveat links to "a note in the indexes section", the link target is the whole `#indexes` section (DESIGN.md says the same): reword.
+- The Ranking description (about 640 to 659) shows one flat table with ranks 1 to 3 across all kinds and says "The winner is the first ranked row". The report groups ranks by kind, with a heading row per kind and a stripe, restarting at 1 in each, and ranks the three best of each kind. Update the sample and the text, including the tie rule and the minimax line.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-48, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-54; two reviews, one fix round). The README's verdict, Ranking (grouped by kind), not-ranked and "Why the winner" samples describe one invented run (original 509 slow blocks; winner 4 at +14.8 MB), the tie rule is defined as within 5% on slow-value blocks across all kinds before grouping, and the Proposed indexes sample has the template's three columns. Left: 20261009-56 (the accountability sample) and 20261009-55.
