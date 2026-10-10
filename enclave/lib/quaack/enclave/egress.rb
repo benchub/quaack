@@ -192,6 +192,9 @@ module Quaack
         unless Protocol::IndexSources.valid?(fields["index_sources"])
           raise Error, "a value in this report message has index sources that aren't counts by source"
         end
+        unless !fields.key?("indexes") || Protocol::IndexSources.entries_valid?(fields["indexes"])
+          raise Error, "a value in this report message has indexes that aren't definitions, sizes, and sources"
+        end
         return if Protocol::CandidateKinds.valid?(fields.fetch("top", []))
 
         raise Error, "a value in this report message has a top that doesn't carry a kind from the fixed list"

@@ -102,9 +102,10 @@ RSpec.describe Quaack::Driver::Report do
           "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
-                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 } },
+                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 },
+                                     "sources" => %w[generator_one llm] },
                      "quaack_b" => { "ddl" => "CREATE INDEX ON public.t USING btree (a, b)", "size" => 16_384,
-                                     "covered_by" => nil } },
+                                     "covered_by" => nil, "sources" => %w[generator_two] } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
                             "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0,
                             "shared_hit_blocks" => 1_200, "shared_read_blocks" => 34 }],
@@ -1230,7 +1231,8 @@ RSpec.describe Quaack::Driver::Report do
 
       def rows(html = unranked) = html.to_s.scan(%r{<tr>(.*?)</tr>}m).flatten.drop(1)
 
-      def rule = "Made by transform rule key_in_self_join"
+      # The source of rewrite 1 with quaack_b, which generator two proposed.
+      def rule = "Made by transform rule key_in_self_join; indexes: generator two"
 
       # A row of the table: what it was, who proposed it, and why it wasn't ranked.
       def row(what, why, who: rule)
@@ -1247,25 +1249,51 @@ RSpec.describe Quaack::Driver::Report do
         expect(rows).to eq(
           ["<td>Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}</td>" \
            "<td>Made by transform rule " \
-           "key_in_self_join</td><td>Read 7,777 blocks on the slow values, against 1,000 for the original query, " \
-           "which isn&#39;t more than 5% fewer.</td>"]
+           "key_in_self_join; indexes: generator two</td><td>Read 7,777 blocks on the slow values, against " \
+           "1,000 for the original query, which isn&#39;t more than 5% fewer.</td>"]
         )
       end
 
-      it "names the source of a rewrite, and says who thought of the original query's indexes isn't recorded" do
+      def whos = rows.map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
+
+      # Task 20261004-89 item 2.
+      it "names the rewrite's source, then, after 'indexes:', the sources of the new indexes it ran with" do
         payload["rewrites"].first["source"] = "llm"
         payload["excluded"]["original:top:1"] = "footprint_tie"
         payload["top"].pop
-        expect(rows.map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] })
-          .to eq(["Suggested by the LLM", "not recorded"])
-        expect(unranked).to include('<td class="missing">not recorded</td>')
+        payload["excluded"]["rewrite_1:none"] = "below_top_three"
+        expect(whos).to eq(["Suggested by the LLM; indexes: generator two", "Indexes: generator one, the LLM",
+                            "Suggested by the LLM"])
         expect(section(render(payload), "ranking")).to include(
-          "Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index"
+          "Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after " \
+          "\"indexes:\", to who proposed the new indexes it ran with: generator one, which works from " \
+          "the query's text, generator two, which works from its plan, or the LLM. An index that more than " \
+          "one of them proposed lists each. It says not recorded where this run didn't record who proposed " \
+          "the indexes, and for a rewrite whose source this run didn't record, or that's missing from " \
+          "what QUAACK's jump server sent.</p>"
         )
-        expect(section(render(payload), "ranking")).to include(
-          "It also says that for a rewrite whose source this run didn't record, or that's missing from what " \
-          "QUAACK's jump server sent.</p>"
-        )
+      end
+
+      it "lists a source once, in the protocol's order, when several of a label's indexes share it" do
+        payload["labels"][2]["indexes"] = %w[quaack_b quaack_a]
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: generator one, generator two, the LLM"])
+      end
+
+      it "says not recorded for the indexes of a run that recorded no sources, and never says none" do
+        payload["excluded"]["original:top:1"] = "footprint_tie"
+        payload["top"].pop
+        payload["indexes"].each_value { it.delete("sources") }
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: not recorded", "not recorded"])
+        payload["indexes"].each_value { it["sources"] = [] }
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: not recorded", "not recorded"])
+      end
+
+      it "shows only the rewrite's source for a label with no new indexes" do
+        payload["labels"][2]["indexes"] = []
+        expect(whos).to eq(["Made by transform rule key_in_self_join"])
+      end
+
+      it "counts the things tried in its summary" do
         payload["excluded"] = { "rewrite_1:top:1" => "not_better", "rewrite_1:none" => "below_top_three" }
         payload["top"] = [payload["top"].first.merge("label" => "original:top:1")]
         expect(section(render(payload), "ranking"))
@@ -1333,7 +1361,8 @@ RSpec.describe Quaack::Driver::Report do
         payload["labels"] << { "label" => "rewrite_1:top:2", "search" => "rewrite_1", "indexes" => ["quaack_a"],
                                "timed_out" => true, "measurements" => nil, "verdicts" => nil }
         expect(unranked).to include(row("Rewrite Vivid Cove with a new index on #{sq("public.t (created_at)")}",
-                                        "Timed out while QUAACK measured it."))
+                                        "Timed out while QUAACK measured it.",
+                                        who: "#{rule[/\A.*?(?=;)/]}; indexes: generator one, the LLM"))
       end
 
       it "lists a label once, by why it was left out, when one of its sets also timed out" do
@@ -1351,7 +1380,8 @@ RSpec.describe Quaack::Driver::Report do
       it "gives no numbers it doesn't have" do
         payload["labels"].delete_at(2)
         expect(unranked)
-          .to include(row("Rewrite Vivid Cove with new indexes", "Was no better than the original query."))
+          .to include(row("Rewrite Vivid Cove with new indexes", "Was no better than the original query.",
+                          who: "Made by transform rule key_in_self_join"))
       end
 
       it "is left out when everything measured is ranked" do
@@ -1365,7 +1395,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(ranking).to include("Nothing beat the original query, so there is no ranking.")
       expect(ranking.sub(%r{#{opening}.*?</details>}m, "")).not_to include("<tr")
       expect(ranking).to include("<tr><td>The original query with a new index on #{sq("public.t (created_at)")}</td>" \
-                                 '<td class="missing">not recorded</td><td>Read 990 blocks on the ' \
+                                 "<td>Indexes: generator one, the LLM</td><td>Read 990 blocks on the " \
                                  "slow values, against 1,000 for the original query, which isn&#39;t more than " \
                                  "5% fewer.</td></tr>")
     end

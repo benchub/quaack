@@ -197,9 +197,13 @@ module Quaack
 
         # A report's index_sources, top, and labels' suggested_drops, as egress checks.
         def report_counts?(line)
-          Protocol::IndexSources.valid?(line["index_sources"]) &&
+          Protocol::IndexSources.valid?(line["index_sources"]) && indexes?(line) &&
             Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line)
         end
+
+        # A report's indexes, if it has them, must pass
+        # Protocol::IndexSources.entries_valid?, as egress checks.
+        def indexes?(line) = !line.key?("indexes") || Protocol::IndexSources.entries_valid?(line["indexes"])
 
         # A report's hidden_statistics, if it has one, must pass
         # Protocol::HiddenStatistics.valid?, as egress checks.
