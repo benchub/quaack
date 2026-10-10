@@ -119,9 +119,7 @@ module Quaack
         # the copy's key, and a self-reference follows its row. The table's
         # foreign keys to other tables still point at the row's parents, so
         # the parents get a second child.
-        def own_key?(table, name)
-          keyed?(table, name) && own_slots(table).include?(slot(table, name))
-        end
+        def own_key?(table, name) = keyed?(table, name) && own_slots(table).include?(slot(table, name))
 
         private
 
