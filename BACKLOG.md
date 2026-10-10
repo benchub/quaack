@@ -1193,26 +1193,6 @@ Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexam
 
 ### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-43. Funnel rectangle: minor findings from 20261009-41.
-
-- The unrecorded-first-band spec asserts the band is at least `WIDTH / 4` (80), but `UNKNOWN` is 96 (0.3 of `WIDTH`), and DESIGN.md says "about a third". Tighten the bound to what `UNKNOWN` is meant to be, and make DESIGN.md and the code agree on the number.
-- `funnel.rb`'s header comment and `funnel_widths` still say the running width "starts at zero", which the first row now resets. Reword them.
-- The recorded-run join-up check (`burndown_gaps` in `spec/pipeline_replay_spec.rb`) works on counts, not drawn geometry, so no recorded run checks that the first band is a rectangle. Add a check over the recorded runs' funnels, if it's cheap.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-41, 2026-10-09 (minor).
-- **Design:** report, burndown.
-- **Status:** todo
-
-### 20261009-44. Rose folds: an untested margin rule.
-
-From the review of 20261009-34 (minor). `details.fold > ul { margin-top: 0.5rem }` has no spec: removing `> ul` from the rule leaves every spec green. It only spaces the rewrites list in the nothing-won report. Add a spec that fails without it, or drop the selector if nothing needs it.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-34, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-45. Ranking headings: make the tint visible, and look at it in a browser.
 
 From the review of 20261009-35 (minor, but the user asked for the kind headings to be set apart, so check the result by eye).
@@ -1234,15 +1214,6 @@ From the review of 20261009-33 (minor). `Protocol::VacuityDiagnostic` accepts an
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261009-47. Progress line: "set aside untested" should say "held back untested".
-
-From the review of 20261009-42 (minor). `driver/lib/quaack/driver/step_summary.rb:56` still prints "N set aside untested" in a progress line, while the report now calls it "held back". Reword the progress line to match, with its spec. Also, the no-sentence hover spec in `driver/spec/report_spec.rb` stubs `StageSentences.for` to return nil; it could pass an unlisted stage name instead (the code uses `COLORS.fetch(stage, BLUE)`), which removes the stub.
-
-- **Depends on:** 20261009-42.
-- **Came from:** The review of 20261009-42, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-48. README: the verdict section's example still shows an index definition.
 
 From the review of 20261009-27 (minor). README.md's verdict section (about lines 588 to 596) shows a blockquote with an index definition ("the original query with a new index on public.events (account_id, created_at) INCLUDE (kind)"), and it was already out of step with DESIGN.md's verdict table before 20261009-27. Bring the whole section in line with the verdict as it is now: the colored section, the table's columns (Plan, Blocks read, Index change, Improvement), the Plan cell without definitions, the caveat lines. Check each claim against the template.
@@ -1261,18 +1232,6 @@ From the review of 20261009-39 (minor, defense in depth). `negative` goes out wi
 - **Design:** What goes out of the enclave, trust boundary.
 - **Status:** todo
 
-### 20261009-51. Caveat-link check: cover every caveat, and the note's other cases.
-
-From the review of 20261009-28 (minors).
-- The caveat-link spec hard-codes three fragments and a fixed payload (`items.size == caveats.size` guards the count). A new caveat triggered only by other payload fields would go unchecked. Iterate over `Verdict#caveats` with a payload that turns on every condition, or build the payload from the list of conditions, so a new caveat can't skip the check.
-- The two timed-out caveats carry a `nil` subject, so the check asserts only that the target exists; 20261009-29 replaces that.
-- No spec covers the hidden-statistics note with extended statistics objects only, or with both objects and indexes (the reviewer's probe showed it renders; pin it).
-
-- **Depends on:** 20261009-28.
-- **Came from:** The review of 20261009-28, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-52. Use "transform rule" everywhere the report names where a rewrite came from.
 
 From the review of 20261009-31 (minor). The source line now says "transform rule X", but the same rewrite is still "made by QUAACK's own rewrite rule X" in the rule-bug section, the fate list, and the candidates table's "who" cell (all from `Rewrites::RULES`), and the "Rewrites from QUAACK's own rules" row in `words.rb`. A reader sees two phrasings for one thing. Change the candidates "who" cell and the row label to "Transform rule(s) X" (the reviewer's suggestion; the full-sentence uses in the fate list and the rule-bug section read fine and can stay unless the user wants them changed), update README's step 4 and its rule-bug example to match, and the specs that pin the old text. Ask the user whether the progress line ("Applying QUAACK's own rewrite rules to the query") should change too.
@@ -1281,4 +1240,13 @@ From the review of 20261009-31 (minor). The source line now says "transform rule
 - **Came from:** The review of 20261009-31, 2026-10-09 (minor).
 - **Design:** report.
 - **Open questions:** Whether the full-sentence uses and the progress line should change too.
+- **Status:** todo
+
+### 20261009-53. Replay funnel example: say why a recorded run is skipped.
+
+From the review of 20261009-43 (minor). The new replay example that checks the first band is a rectangle does `next unless outcome.report`, a silent skip for the one recorded run that ended in an error and so has no report. Make the skip explicit: assert the run's outcome is an error for every skipped run, and that at least six runs were checked, so the example can't pass vacuously if the replays change.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-43, 2026-10-09 (minor).
+- **Design:** report, burndown.
 - **Status:** todo

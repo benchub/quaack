@@ -9160,3 +9160,48 @@ Seen 2026-10-09 by the builders of 20261009-39 and 20261009-28, each on its firs
 - **Design:** none (CLAUDE.md Development).
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-49; review clean, reproduced). The flake was in `spec/e2e_run_spec.rb` case 036: it found its run home by globbing `quaack-e2e-036-*` in the shared system tmp and `rm_rf`'d every match, so two checkouts running it at once (builders and reviewers share this host) deleted each other's live run home (a `store_error` at schema-dump, or a count of 2 where 1 was expected). The case now makes its own `Dir.mktmpdir` and points `TMPDIR` at it, with a spec that plants a foreign directory and asserts it survives. Docker container cleanup was checked: it only removes containers whose owner pid is dead, so it isn't a second cause.
+
+### 20261009-43. Funnel rectangle: minor findings from 20261009-41.
+
+- The unrecorded-first-band spec asserts the band is at least `WIDTH / 4` (80), but `UNKNOWN` is 96 (0.3 of `WIDTH`), and DESIGN.md says "about a third". Tighten the bound to what `UNKNOWN` is meant to be, and make DESIGN.md and the code agree on the number.
+- `funnel.rb`'s header comment and `funnel_widths` still say the running width "starts at zero", which the first row now resets. Reword them.
+- The recorded-run join-up check (`burndown_gaps` in `spec/pipeline_replay_spec.rb`) works on counts, not drawn geometry, so no recorded run checks that the first band is a rectangle. Add a check over the recorded runs' funnels, if it's cheap.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-41, 2026-10-09 (minor).
+- **Design:** report, burndown.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-43; review clean). The unrecorded band's exact width (0.3, `UNKNOWN`) is asserted and DESIGN.md says 0.3, `funnel.rb`'s comments are reworded, and a replay example checks the first band is a rectangle for each recorded run with a report.
+
+### 20261009-44. Rose folds: an untested margin rule.
+
+From the review of 20261009-34 (minor). `details.fold > ul { margin-top: 0.5rem }` has no spec: removing `> ul` from the rule leaves every spec green. It only spaces the rewrites list in the nothing-won report. Add a spec that fails without it, or drop the selector if nothing needs it.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-34, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-43 branch; review clean). A spec pins the rewrites list's margin rule and its place in the fold.
+
+### 20261009-47. Progress line: "set aside untested" should say "held back untested".
+
+From the review of 20261009-42 (minor). `driver/lib/quaack/driver/step_summary.rb:56` still prints "N set aside untested" in a progress line, while the report now calls it "held back". Reword the progress line to match, with its spec. Also, the no-sentence hover spec in `driver/spec/report_spec.rb` stubs `StageSentences.for` to return nil; it could pass an unlisted stage name instead (the code uses `COLORS.fetch(stage, BLUE)`), which removes the stub.
+
+- **Depends on:** 20261009-42.
+- **Came from:** The review of 20261009-42, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-43 branch; review clean). The progress line says "held back untested"; the no-sentence hover spec uses an unlisted stage name, no stub.
+
+### 20261009-51. Caveat-link check: cover every caveat, and the note's other cases.
+
+From the review of 20261009-28 (minors).
+- The caveat-link spec hard-codes three fragments and a fixed payload (`items.size == caveats.size` guards the count). A new caveat triggered only by other payload fields would go unchecked. Iterate over `Verdict#caveats` with a payload that turns on every condition, or build the payload from the list of conditions, so a new caveat can't skip the check.
+- The two timed-out caveats carry a `nil` subject, so the check asserts only that the target exists; 20261009-29 replaces that.
+- No spec covers the hidden-statistics note with extended statistics objects only, or with both objects and indexes (the reviewer's probe showed it renders; pin it).
+
+- **Depends on:** 20261009-28.
+- **Came from:** The review of 20261009-28, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-43 branch; review clean). The caveat-link spec iterates over every caveat `Verdict#caveats` returns for an all-on payload (`list.size >= 3`, rendered items equal the list); the note's extended-only and mixed cases are pinned.
