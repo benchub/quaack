@@ -136,6 +136,7 @@ module Quaack
         name = TableName.new(schema: table["schema"], name: table["name"])
         TableStatistics.new(
           name:, reltuples: table["reltuples"], column_names: table["column_names"],
+          column_types: table["column_types"] || {},
           columns: table["columns"].transform_values { column_statistics(it) },
           indexes: table["indexes"].to_h do |index|
             [index["name"],

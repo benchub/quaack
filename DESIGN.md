@@ -852,11 +852,11 @@ For each table in the query, including the tables of every subquery and CTE body
 2. Rank the equality columns by selectivity using `pg_stats`. Watch out: a negative `n_distinct` means it's a fraction of the row count. Convert it by taking the absolute value times `reltuples`, then discount by `null_frac`.
 3. Build the index key in this order:
    - Equality columns, most selective first.
-   - At most one range column. A keyset row comparison, `(created_at, id) < ($1, $2)`, takes its place with all of its columns, in order. A prefix `LIKE 'abc%'` can be the range column too. A plain btree serves it only under the C collation, so it also gets a key with that column under `text_pattern_ops`, unless the `LIKE` is under `COLLATE "C"`.
+   - At most one range column. A keyset row comparison, `(created_at, id) < ($1, $2)`, takes its place with all of its columns, in order. A prefix `LIKE 'abc%'` can be the range column too. A plain btree serves it only under the C collation, so it also gets a key with that column under `text_pattern_ops`, unless the `LIKE` is under `COLLATE "C"`, `"POSIX"`, or `ucs_basic`, which compare bytes. The key's operator class is `bpchar_pattern_ops` for a `char(n)` column, since HypoPG refuses `text_pattern_ops` there.
    - The `ORDER BY` columns, but only if they come after the equality columns and their sort directions match. That lets the planner drop the sort.
    - As a separate key, the `GROUP BY` columns after the equality columns, when every `GROUP BY` item is a plain column of the table. The scan then comes out grouped.
 4. Cap the key at three or four columns.
-5. Add the rest of the select-list and `GROUP BY` columns as `INCLUDE` columns, but only when that makes the index covering: every column the query reads from the table is then in the key or `INCLUDE`, so an index-only scan becomes possible. Emit the bare key too, so ranking can compare them. When the `INCLUDE` wouldn't cover, emit only the bare key, since the heap visit happens anyway.
+5. Add the rest of the select-list and `GROUP BY` columns as `INCLUDE` columns, but only when that makes the index covering: every column the query reads from the table is then in the key or `INCLUDE` (a whole-row reference such as `SELECT o` or `to_jsonb(o)` reads every column), so an index-only scan becomes possible. Emit the bare key too, so ranking can compare them. When the `INCLUDE` wouldn't cover, emit only the bare key, since the heap visit happens anyway.
 6. Also emit every leading prefix of the key as a separate candidate.
 7. If the range column's `pg_stats` correlation is close to 1 or -1 and the table is large, also emit a BRIN candidate on that column.
 

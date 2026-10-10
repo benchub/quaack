@@ -44,14 +44,16 @@ module Quaack
     # indexes by name. No column name can appear twice. An index maps to nil
     # when IndexCandidate.from_indexdef couldn't represent it. Primary keys and
     # other unique indexes are candidates with unique: true. A negative
-    # reltuples means the table has never been analyzed.
-    TableStatistics = Data.define(:name, :reltuples, :columns, :column_names, :indexes) do
-      def initialize(name:, reltuples:, columns:, column_names:, indexes:)
+    # reltuples means the table has never been analyzed. column_types maps
+    # a column to its pg_catalog type's name, such as bpchar, for the
+    # columns whose type is known (see PlannerStatistics); it defaults to {}.
+    TableStatistics = Data.define(:name, :reltuples, :columns, :column_names, :indexes, :column_types) do
+      def initialize(name:, reltuples:, columns:, column_names:, indexes:, column_types: {}) # rubocop:disable Metrics/ParameterLists
         raise ArgumentError, "name must be a TableName" unless name.is_a?(TableName)
 
         column_names = names_of(column_names)
         super(name:, reltuples: finite(reltuples), columns: column_map(columns, column_names),
-              column_names:, indexes: index_map(indexes, name))
+              column_names:, indexes: index_map(indexes, name), column_types: type_map(column_types, column_names))
       end
 
       # Raises KeyError if the table has no statistics for the column.
@@ -187,6 +189,16 @@ module Quaack
         raise ArgumentError, "statistics for columns not in column_names: #{unknown.join(", ")}" if unknown.any?
 
         columns.dup.freeze
+      end
+
+      def type_map(types, column_names)
+        valid = types.is_a?(Hash) && types.all? { |k, v| k.is_a?(String) && v.is_a?(String) && !v.empty? }
+        raise ArgumentError, "column_types must map column names to type names" unless valid
+
+        unknown = types.keys - column_names
+        raise ArgumentError, "types for columns not in column_names: #{unknown.join(", ")}" if unknown.any?
+
+        types.dup.freeze
       end
 
       def index_map(indexes, table)

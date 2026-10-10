@@ -15,8 +15,9 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
   # column_names defaults to the columns that have statistics, plus any
   # extra names given.
-  def table(name, columns = {}, extra: [], reltuples: 1000.0)
-    Quaack::Enclave::TableStatistics.new(name:, reltuples:, columns:, column_names: columns.keys + extra, indexes: {})
+  def table(name, columns = {}, extra: [], reltuples: 1000.0, types: {})
+    Quaack::Enclave::TableStatistics.new(name:, reltuples:, columns:, column_names: columns.keys + extra, indexes: {},
+                                         column_types: types)
   end
 
   def statistics(*tables) = Quaack::Enclave::Statistics.new(tables:)
@@ -617,6 +618,43 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                                                   ["orders", %w[customer_id parent_id], []], ["orders", %w[id], []]])
       end
 
+      describe "through a derived table's columns" do
+        let(:from) do
+          "FROM public.orders o LEFT JOIN public.customers c ON c.id = o.customer_id " \
+            "LEFT JOIN (SELECT customer_id AS k, total FROM public.orders) s ON s.k = c.id"
+        end
+
+        def customers_keys(sql) = keys(generate(sql, stats)).select { |table, _, _| table == "customers" }
+
+        it "makes a LEFT JOIN to the subquery inner, which rejects the nulls of c through its ON" do
+          expect(customers_keys("SELECT 1 #{from} WHERE s.total > 5 AND c.name IS NULL"))
+            .to eq([["customers", %w[name], []], ["customers", %w[name id], []]])
+        end
+
+        it "doesn't reduce when no strict conjunct names the subquery's columns" do
+          expect(customers_keys("SELECT 1 #{from} WHERE c.name IS NULL")).to eq([["customers", %w[id], []]])
+          expect(customers_keys("SELECT 1 #{from} WHERE coalesce(s.total, 0) > 5 AND c.name IS NULL"))
+            .to eq([["customers", %w[id], []]])
+          expect(customers_keys("SELECT 1 #{from} WHERE s.total IS NULL AND c.name IS NULL"))
+            .to eq([["customers", %w[id], []]])
+        end
+
+        it "reduces only through the subquery's own alias, not another qualifier" do
+          sql = "SELECT 1 FROM public.orders o LEFT JOIN public.customers c ON c.id = o.customer_id " \
+                "LEFT JOIN (SELECT customer_id AS k FROM public.orders) s ON s.k = c.id " \
+                "WHERE x.total > 5 AND c.name IS NULL"
+
+          expect(customers_keys(sql)).to eq([["customers", %w[id], []]])
+        end
+
+        it "reads USING over a subquery without failing" do
+          sql = "SELECT 1 FROM public.customers c JOIN (SELECT id FROM public.orders) s USING (id) WHERE c.name = 'x'"
+
+          expect(customers_keys(sql)).to eq([["customers", %w[id], []], ["customers", %w[id name], []],
+                                             ["customers", %w[name], []]])
+        end
+      end
+
       it "doesn't reduce an outer join by its own ON, an IS NULL, or a conjunct that isn't plainly strict" do
         sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id AND o.status = 1 " \
               "WHERE coalesce(o.region, 0) = 0 AND o.parent_id IS NULL AND o.total IS NULL"
@@ -658,9 +696,19 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).not_to include("total")
       end
 
-      it "reads each strict form: IS NOT NULL, <>, BETWEEN, IN, = ANY, LIKE, and a join condition" do
+      it "doesn't reduce by IS DISTINCT FROM or IS NOT DISTINCT FROM, which are never null" do
+        ["o.region IS DISTINCT FROM 1", "o.region IS NOT DISTINCT FROM 1"].each do |conjunct|
+          sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
+                "WHERE #{conjunct} AND o.total IS NULL"
+
+          expect(keys(generate(sql, stats)).flat_map { |_, key, _| key }).not_to include("total"), conjunct
+        end
+      end
+
+      it "reads each strict form: IS NOT NULL, <>, BETWEEN, IN, = ANY, LIKE, a COLLATE, and a join condition" do
         ["o.region IS NOT NULL", "o.region <> 1", "3 < o.region", "o.region BETWEEN 1 AND 2", "o.region IN (1, 2)",
-         "o.region = ANY('{1}')", "o.region LIKE 'a%'", "o.parent_id = c.id"].each do |conjunct|
+         "o.region = ANY('{1}')", "o.region LIKE 'a%'", "o.parent_id = c.id", "o.region COLLATE \"C\" = '1'",
+         "'1' = o.region COLLATE \"C\""].each do |conjunct|
           sql = "SELECT 1 FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
                 "WHERE #{conjunct} AND o.total IS NULL"
 
@@ -789,6 +837,36 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(keys(generate(sql, stats)))
         .to eq([["orders", %w[status], %w[id]], ["orders", %w[status id], []], ["orders", %w[status], []],
                 ["customers", %w[id], %w[name]], ["customers", %w[id], []]])
+    end
+
+    it "reads a whole-row reference as every column of its table" do
+      expected = [["orders", %w[status], %w[id total]], ["orders", %w[status id total], []], ["orders", %w[status], []]]
+
+      expect(keys(generate("SELECT o, total FROM public.orders o WHERE status = 1", stats))).to eq(expected)
+      expect(keys(generate("SELECT to_jsonb(o), total FROM public.orders o WHERE status = 1", stats))).to eq(expected)
+    end
+
+    it "counts a whole-row reference outside the select list as a read" do
+      sql = "SELECT total FROM public.orders o WHERE status = 1 AND o IS NOT NULL"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], []]])
+    end
+
+    it "reads a whole-row reference to one table and not the other" do
+      sql = "SELECT c, o.id FROM public.orders o JOIN public.customers c ON c.id = o.status"
+
+      expect(keys(generate(sql, stats)))
+        .to eq([["orders", %w[status], %w[id]], ["orders", %w[status id], []], ["orders", %w[status], []],
+                ["customers", %w[id], %w[name]], ["customers", %w[id], []]])
+    end
+
+    it "reads a name that is a column as the column, not a whole row" do
+      stats = statistics(table(orders, { "status" => column(6) }, extra: %w[id total orders]))
+      sql = "SELECT orders, total FROM public.orders WHERE status = 1"
+
+      expect(keys(generate(sql, stats)))
+        .to eq([["orders", %w[status], %w[orders total]], ["orders", %w[status orders total], []],
+                ["orders", %w[status], []]])
     end
 
     it "reads columns inside expressions, in query order, once each" do
@@ -961,8 +1039,25 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                   [key_column("note", collation: "en-x-icu", opclass: "text_pattern_ops")]])
       end
 
-      it "leaves text_pattern_ops out for a LIKE under C or POSIX, or when a comparison or keyset is the range" do
+      it "keys a char(n) column with bpchar_pattern_ops, the class HypoPG takes for it" do
+        stats = statistics(table(orders, { "a" => column(10) }, extra: %w[code], types: { "code" => "bpchar" }))
+
+        expect(generate("SELECT 1 FROM public.orders WHERE code LIKE 'abc%'", stats).map(&:key))
+          .to eq([[key_column("code")], [key_column("code", opclass: "bpchar_pattern_ops")]])
+      end
+
+      it "keeps text_pattern_ops for varchar and for a column of unknown type" do
+        stats = statistics(table(orders, { "a" => column(10) }, extra: %w[v w], types: { "v" => "varchar" }))
+
+        %w[v w].each do |name|
+          expect(generate("SELECT 1 FROM public.orders WHERE #{name} LIKE 'abc%'", stats).last.key)
+            .to eq([key_column(name, opclass: "text_pattern_ops")])
+        end
+      end
+
+      it "leaves text_pattern_ops out for a LIKE under C, POSIX, or ucs_basic, or under another range" do
         ["note COLLATE \"POSIX\" LIKE 'abc%'", "note COLLATE pg_catalog.\"C\" LIKE 'abc%'",
+         "note COLLATE ucs_basic LIKE 'abc%'", "note COLLATE pg_catalog.\"ucs_basic\" LIKE 'abc%'",
          "note LIKE 'abc%' AND r > $1", "note LIKE 'abc%' AND (r, s) > ($1, $2)"].each do |where|
           expect(keys_of(where).flatten.map(&:opclass)).to all(be_nil), where
         end
@@ -1493,6 +1588,16 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       sql = "SELECT id, '#{sentinel}' AS x FROM public.orders WHERE status = '#{sentinel}' " \
             "AND note LIKE '#{sentinel}%' AND created_at BETWEEN '#{sentinel}' AND '#{sentinel}' " \
             "AND id IN ('#{sentinel}') ORDER BY created_at"
+      result = generate(sql, stats)
+
+      expect(result.size).to be >= 3
+      expect(leaks?(result)).to be(false)
+    end
+
+    it "never puts a literal into a candidate from a whole-row reference or a derived table" do
+      sql = "SELECT to_jsonb(o), '#{sentinel}' FROM public.orders o " \
+            "LEFT JOIN (SELECT id AS k, note FROM public.orders WHERE note = '#{sentinel}') s ON s.k = o.id " \
+            "WHERE s.note = '#{sentinel}' AND o.status = '#{sentinel}'"
       result = generate(sql, stats)
 
       expect(result.size).to be >= 3
