@@ -52,20 +52,31 @@ module Quaack
       # order, after the rows. One INSERT can hold many rows, and reordering
       # them would mean rewriting it.
       #
+      # A load order that puts every row where an earlier run put it is the
+      # same load, so it's skipped: with every run at most two rows long,
+      # rotated is reverse, and with one row, both are forward.
+      #
       # It's a match only if every run matches. Otherwise it's the first
       # run's verdict that isn't a match, with load_order set to that run's
       # load order. That includes an unsupported_order refusal: if any run
       # refuses, the whole comparison does, and later runs don't run.
       def compare_in_load_orders(runner, rows, original:, candidate:, inserts: [])
         verdict = nil
-        LOAD_ORDERS.each do |load_order|
-          positions = load_positions(rows, load_order, runner)
+        distinct_loads(rows, runner).each do |load_order, positions|
           verdict = load_order_run(runner, positions.map { rows[it] }, inserts, load_order, positions) do |tx|
             compare(tx, original:, candidate:)
           end
           return verdict.with(load_order:) unless verdict.match?
         end
         verdict
+      end
+
+      # Each load order, with its positions, that places the rows
+      # differently from an earlier one. Lazy: a later order's positions
+      # (which may read the arena's foreign keys) aren't worked out if an
+      # earlier run ends the comparison.
+      def distinct_loads(rows, runner)
+        LOAD_ORDERS.lazy.map { [it, load_positions(rows, it, runner)] }.uniq(&:last)
       end
 
       # rows reordered for load_order. runner reads the self-referencing
