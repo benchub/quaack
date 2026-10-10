@@ -137,7 +137,8 @@ RSpec.describe Quaack::Driver::Report do
 
       it "uses only variables that :root defines" do
         used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
-        folds = %w[--fold-bg --fold-edge --fold-accent --stripe] # set per fold color by details.query and details.rose, per kind by tr.stripe-*
+        # Set per fold color by details.query and details.rose, and per kind by tr.stripe-*.
+        folds = %w[--fold-bg --fold-edge --fold-accent --stripe]
         expect(used - names - folds).to eq([])
         expect(style.scan(/^  details\.(?:query|rose) \{ --fold-bg: var/).size).to eq(2)
         expect(names).to include("--rose-bg", "--rose-edge", "--rose-accent")
@@ -245,6 +246,29 @@ RSpec.describe Quaack::Driver::Report do
         out = render(payload)
         expect(summary_open(out)).to eq('<section id="summary" class="minor">')
         expect(css(out, "minor")).to include("var(--minor-bg)", "var(--minor-edge)")
+      end
+
+      it "keeps the cream stripe at 3:1 or better against the cream background and the page, in both themes" do
+        style = html[%r{<style>(.*?)</style>}m, 1]
+        dark = style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1]
+        light = style[/^  :root \{(.*?)^  \}/m, 1]
+        lum = lambda do |short|
+          hex = short.length == 4 ? short.chars.drop(1).map { |c| c * 2 }.join : short.delete("#")
+          r, g, b = hex.scan(/\h\h/).map do |c|
+            c = c.hex / 255.0
+            c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055)**2.4
+          end
+          (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
+        end
+        ratio = lambda do |a, b|
+          hi, lo = [lum.call(a), lum.call(b)].sort.reverse
+          (hi + 0.05) / (lo + 0.05)
+        end
+        [light, dark].each do |theme|
+          v = theme.scan(/(--[a-z-]+): (#\h{3,6})/).to_h
+          expect(ratio.call(v["--minor-edge"], v["--minor-bg"])).to be >= 3.0
+          expect(ratio.call(v["--minor-edge"], v["--bg"])).to be >= 3.0
+        end
       end
 
       it "stays blue when QUAACK found nothing" do
@@ -894,12 +918,12 @@ RSpec.describe Quaack::Driver::Report do
       ]
       rows = ranking.scan(/<tr class="(kind|rank) (stripe-\w+)">/)
       expect(rows.map(&:first)).to eq(%w[kind rank rank kind rank kind rank])
-      expect(rows.map(&:last)).to eq(%w[stripe-rewrite_new_indexes] * 3 + %w[stripe-rewrite_same_indexes] * 2 +
-                                     %w[stripe-original_new_indexes] * 2)
+      expect(rows.map(&:last)).to eq((%w[stripe-rewrite_new_indexes] * 3) + (%w[stripe-rewrite_same_indexes] * 2) +
+                                     (%w[stripe-original_new_indexes] * 2))
       table = ranking[%r{<table>.*?</table>}m]
       expect(table.scan("<tr class=\"kind ").size).to eq(3)
       expect(table.scan("<tr class=\"rank ").size).to eq(4)
-      expect(ranking.scan(%r{<tr class="kind [^"]*"><th scope="rowgroup" colspan="5">}).size).to eq(3)
+      expect(ranking.scan(/<tr class="kind [^"]*"><th scope="rowgroup" colspan="5">/).size).to eq(3)
       style = html[%r{<style>(.*?)</style>}m, 1]
       expect(style[/tr\.kind > th \{[^}]*\}/]).to include("font-weight: 700", "background: var(--head-bg)")
       expect(style).to match(/tr\.rank > td:first-child \{[^}]*padding-left: 1\.5rem/)
