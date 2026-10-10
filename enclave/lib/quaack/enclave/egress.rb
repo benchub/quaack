@@ -143,7 +143,7 @@ module Quaack
       end
 
       # A rewrite_test message's s1_load_rule must be nil or a rule from the
-      # fixed list and its s1_rows nil or a count (see
+      # fixed list and its s1_rows and s1_nonzero_rows each nil or a count (see
       # Protocol::VacuityDiagnostic.valid?), so no error message or value
       # rides out in them.
       def check_rewrite_test(fields)

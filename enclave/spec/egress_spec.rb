@@ -237,11 +237,12 @@ RSpec.describe Quaack::Enclave::Egress do
   describe "a rewrite_test message" do
     it "sends the S1 load rule and row count, and drops other fields" do
       out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: nil, rule: nil,
-                             s1_load_rule: "fixture_load_failed", s1_rows: 3, sql: EGRESS_SENTINEL)
+                             s1_load_rule: "fixture_load_failed", s1_rows: 3, s1_nonzero_rows: 0,
+                             sql: EGRESS_SENTINEL)
 
       expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => true,
                                     "scenario" => nil, "rule" => nil, "s1_load_rule" => "fixture_load_failed",
-                                    "s1_rows" => 3)
+                                    "s1_rows" => 3, "s1_nonzero_rows" => 0)
     end
 
     [
@@ -250,7 +251,9 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a string where the row count belongs", { s1_rows: EGRESS_SENTINEL }],
       ["a negative row count", { s1_rows: -1 }],
       ["a row count just above the cap", { s1_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
-      ["a row count of a trillion", { s1_rows: 10**12 }]
+      ["a row count of a trillion", { s1_rows: 10**12 }],
+      ["a string where the nonzero row count belongs", { s1_nonzero_rows: EGRESS_SENTINEL }],
+      ["a nonzero row count just above the cap", { s1_nonzero_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a vacuity diagnostic"

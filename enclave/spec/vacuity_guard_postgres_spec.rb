@@ -48,6 +48,39 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.s1_rows).to be_positive
   end
 
+  # 20261010-22: s1_rows is 1 for any aggregate, so s1_nonzero_rows counts
+  # the rows of the original's S1 result with a value that's neither NULL nor
+  # a numeric zero: 0 means S1 matched nothing, whatever the aggregate.
+  [["count(*)", "count(*)"], ["sum()", "sum(o.qty)"], ["max()", "max(o.qty)"]].each do |name, agg|
+    it "records #{name} on S1 as one nonzero row when the hit matches, and zero when nothing can" do
+      hit = "SELECT #{agg} FROM fx.orders o WHERE o.status = 'open' AND o.qty > 2"
+      miss = "SELECT #{agg} FROM fx.orders o WHERE o.status = 'open' AND o.id IS NULL"
+
+      expect(guard(hit).last).to have_attributes(s1_rows: 1, s1_nonzero_rows: 1)
+      expect(guard(miss).last).to have_attributes(s1_rows: 1, s1_nonzero_rows: 0)
+    end
+  end
+
+  it "records a non-aggregate's nonzero rows as its row count" do
+    _, result = guard("SELECT o.id, o.status FROM fx.orders o WHERE o.status = 'open' AND o.qty > 2")
+
+    expect(result.s1_nonzero_rows).to eq(result.s1_rows)
+    expect(result.s1_nonzero_rows).to be_positive
+  end
+
+  it "counts as nonzero only rows with a value that's neither NULL nor a numeric zero" do
+    rows = [["0"], [nil], ["0.00", nil], ["-0"], [0], ["7"], [nil, "0", "x"], ["00.5"]]
+    expect(described_class.nonzero_rows(rows)).to eq(3)
+  end
+
+  it "gives a bare count for rows of data, never a value from them" do
+    count = described_class.nonzero_rows([["SENTINEL_9c"], ["0"], ["SENTINEL_9c", nil]])
+    expect(count).to eq(2)
+    expect(Quaack::Protocol::VacuityDiagnostic.valid?({ "s1_nonzero_rows" => count })).to be(true)
+    expect(Quaack::Enclave::Egress.serialize(type: :rewrite_test, rewrite: "rewrite_1", passed: true,
+                                             s1_nonzero_rows: count)).not_to include("SENTINEL_9c")
+  end
+
   it "records the rule S1 failed to load with, and no row count, never the error's message" do
     conn.exec(<<~SQL)
       CREATE TABLE fx.gated (id integer PRIMARY KEY, label text NOT NULL);
@@ -60,6 +93,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.untested.size).to eq(2)
     expect(result.s1_load_rule).to eq(:fixture_load_failed)
     expect(result.s1_rows).to be_nil
+    expect(result.s1_nonzero_rows).to be_nil
     expect(result.inspect).not_to include("SENTINEL_9c")
   end
 
@@ -127,6 +161,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     result = guard_with(faked_runner([nil, nil, nil, nil], rows: [4, 4, 7, 9]))
 
     expect(result.s1_rows).to eq(9)
+    expect(result.s1_nonzero_rows).to eq(8)
   end
 
   it "records the later count when the first attempt loaded, an intermediate one failed, and the last loaded" do
