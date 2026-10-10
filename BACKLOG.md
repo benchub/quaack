@@ -8,6 +8,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
 - 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
+- 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
+- 20261009-50: `NegativeResult` re-checks every DDL string in `negative` is redacted before the payload is built, and the redaction treats a `?` inside `ANY(ARRAY[...])` as already masked (enclave).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
 
 
@@ -1207,24 +1209,6 @@ From the review of 20261009-35 (minor, but the user asked for the kind headings 
 - **Design:** report.
 - **Status:** todo
 
-### 20261009-46. Vacuity diagnostic: a tighter cap on `s1_rows`.
-
-From the review of 20261009-33 (minor). `Protocol::VacuityDiagnostic` accepts an `s1_rows` up to 10**12, but the value is a row count of the original query on made-up fixtures, bounded by the fixture size. A cap of a few million would carry less. Set it from the fixture limits (what the scenario builder can load) and test that a value above it is refused at egress. Enclave and protocol change: put it on the unreleased list.
-
-- **Depends on:** 20261009-33.
-- **Came from:** The review of 20261009-33, 2026-10-09 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261009-50. An egress check on every DDL field of `negative`.
-
-From the review of 20261009-39 (minor, defense in depth). `negative` goes out with no whitelist check, and its `ddl` fields (declined and existing indexes) and the new `covered_by.definition` are produced by the NegativeResult step and checked nowhere on the way out; DESIGN.md says the step is where they're reviewed. Add an egress check that every DDL string in `negative` is in redacted form (no literal other than an MCV value the payload carries), with a sentinel test that the check catches a planted literal. Enclave change: put it on the unreleased list.
-
-- **Depends on:** 20261009-39.
-- **Came from:** The review of 20261009-39, 2026-10-09 (minor).
-- **Design:** What goes out of the enclave, trust boundary.
-- **Status:** todo
-
 ### 20261009-52. Use "transform rule" everywhere the report names where a rewrite came from.
 
 From the review of 20261009-31 (minor). The source line now says "transform rule X", but the same rewrite is still "made by QUAACK's own rewrite rule X" in the rule-bug section, the fate list, and the candidates table's "who" cell (all from `Rewrites::RULES`), and the "Rewrites from QUAACK's own rules" row in `words.rb`. A reader sees two phrasings for one thing. Change the candidates "who" cell and the row label to "Transform rule(s) X" (the reviewer's suggestion; the full-sentence uses in the fate list and the rule-bug section read fine and can stay unless the user wants them changed), update README's step 4 and its rule-bug example to match, and the specs that pin the old text. Ask the user whether the progress line ("Applying QUAACK's own rewrite rules to the query") should change too.
@@ -1245,3 +1229,20 @@ From the review of 20261009-43 (minor). The new replay example that checks the f
 - **Design:** report, burndown.
 - **Status:** todo
 
+### 20261009-57. Redaction re-check: a jsonb `?` operator in a partial index fails the whole negative result.
+
+From the review of 20261009-50 (minor). `with_params` turns every lexer `?` token into `$1`, so a real partial index `WHERE data ? 'k'` gets the `#ddl` output `data ? ?`. That doesn't parse, so `redacted?` returns false and `NegativeResult` raises for any run that has such an existing or declined index. It fails closed with nothing leaked, but it costs availability for a realistic jsonb schema. Either refuse it cleanly (a documented `unsupported` outcome that drops only that index's DDL from the negative result, not the whole result) or give the mask a spelling that can't collide with an operator (check `?|` and `?&`, which are separate tokens and unaffected). Test with a partial index using each of `?`, `?|`, `?&`. Enclave change: put it on the unreleased list.
+
+- **Depends on:** 20261009-50.
+- **Came from:** The review of 20261009-50, 2026-10-09 (minor).
+- **Design:** What goes out of the enclave.
+- **Status:** todo
+
+### 20261009-58. Redaction re-check for the other DDL fields that leave the enclave.
+
+From the review of 20261009-50 (minor, defense in depth). The `redacted?` re-check covers only `negative`. The report's `indexes[].ddl` and the LLM payloads' DDL fields (`index_payload`, `index_feedback`, `index_build_progress`) have no such re-check on the way out, only the redaction that produced them. Add the same check to each producer or to a shared helper, with a sentinel test per field (a planted literal is refused; a redacted DDL passes). Enclave change: unreleased list.
+
+- **Depends on:** 20261009-50.
+- **Came from:** The review of 20261009-50, 2026-10-09 (minor).
+- **Design:** What goes out of the enclave.
+- **Status:** todo

@@ -9252,3 +9252,23 @@ From the second review of 20261009-54 (it predates that task's diff). The sample
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-55 branch; review clean). The accountability Rewrites sample agrees with the run: rules 2 proposed (1 not kept, 1 same plan, 0 ranked), the LLM 3 proposed (1 same plan, 1 wrong results, 1 ranked: Silver Fox), you 1 (not better); the "nothing helps" line is labeled as a different run.
+
+### 20261009-46. Vacuity diagnostic: a tighter cap on `s1_rows`.
+
+From the review of 20261009-33 (minor). `Protocol::VacuityDiagnostic` accepts an `s1_rows` up to 10**12, but the value is a row count of the original query on made-up fixtures, bounded by the fixture size. A cap of a few million would carry less. Set it from the fixture limits (what the scenario builder can load) and test that a value above it is refused at egress. Enclave and protocol change: put it on the unreleased list.
+
+- **Depends on:** 20261009-33.
+- **Came from:** The review of 20261009-33, 2026-10-09 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-46; Opus review clean). `Protocol::VacuityDiagnostic::MAX_ROWS` is 2,000,000 inclusive, tied to `CLI::Input::MAX_ELEMENTS` with a spec keeping them equal; nothing in the code caps a query's rows, so the number is a judgment call (the fixture size and the arena's 10 s statement timeout are the real limits). On the unreleased list.
+
+### 20261009-50. An egress check on every DDL field of `negative`.
+
+From the review of 20261009-39 (minor, defense in depth). `negative` goes out with no whitelist check, and its `ddl` fields (declined and existing indexes) and the new `covered_by.definition` are produced by the NegativeResult step and checked nowhere on the way out; DESIGN.md says the step is where they're reviewed. Add an egress check that every DDL string in `negative` is in redacted form (no literal other than an MCV value the payload carries), with a sentinel test that the check catches a planted literal. Enclave change: put it on the unreleased list.
+
+- **Depends on:** 20261009-39.
+- **Came from:** The review of 20261009-39, 2026-10-09 (minor).
+- **Design:** What goes out of the enclave, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-46 branch; Opus review clean). `CandidateDdlRedaction#redacted?` re-parses a DDL string, redacts it again and passes only if nothing changes; `NegativeResult.call` ends with `verify!` over every declined `ddl`, existing `ddl` and `covered_by.definition`, failing closed with a fixed message. The check lives in the step, not in `Egress.serialize` (the egress function has no common-value statistics); DESIGN.md says so. On the unreleased list. Follow-ups: 20261009-57, 20261009-58.
