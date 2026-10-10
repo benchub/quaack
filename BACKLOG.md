@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-25: the vacuity guard runs fixture-compare for a top-level LIMIT/OFFSET condition, checks every S1 fixture, gives near-miss rows their own values in read columns, adds enum labels to the candidate values, and ranks pinned keys per scenario (enclave).
 - 20261010-26: the vacuity guard skips fixture-compare on an empty cut result, remembers no-mismatch comparisons, and caps them at 32 per run (enclave).
 - 20261010-24: sibling rows for near misses on a column that another scope also tests (enclave).
+- 20261010-30: groups with a parent and no child where an outer join or a correlated subquery makes the child optional (enclave).
 
 ## How this file works.
 
@@ -920,20 +921,6 @@ Move the grouping there: wrap each kind's heading and its numbered entries in on
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-30. Untested conditions: outer and anti joins need unmatched rows.
-
-From the corpus (20261010-27, `PENDING` in `enclave/spec/vacuity_guard_corpus_postgres_spec.rb`). These shapes leave non-redundant atoms untested, and look like one family: scenarios never build the unmatched row an outer or anti join needs.
-- NOT EXISTS (correlated): `EXISTS (SELECT $1 FROM comments WHERE comments.post_id = posts.id)` and `comments.post_id = posts.id`; the hit should be a post with no comment, and the scenarios build the comment instead.
-- FULL JOIN: `posts.user_id = users.id`; the ON atom needs unmatched rows on a side.
-- LEFT JOIN anti-join (`... IS NULL`): `posts.user_id = users.id`; needs a post belonging to another user.
-- Rails `left_joins ... where nil`: `comments.post_id = posts.id` and `posts.published = $1`; the hit needs a post with no comment.
-- Correlated scalar count: `comments.post_id = posts.id`; no comment for another post is built.
-Fix the family with a general mechanism (a group with an unmatched parent or child on one side of the join), keep the guard sound and the caps, and flip each shape from `PENDING` to `SHAPES` in the corpus.
-
-- **Depends on:** 20261010-27 (landed); build after 20261010-24 (same scenario code).
-- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
 
 ### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
 
@@ -979,5 +966,19 @@ The review of 20261010-24 found these minor issues:
 
 - **Depends on:** 20261010-24 (landed).
 - **Came from:** The review of 20261010-24, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-35. Unmatched groups: LATERAL, effectively-inner LEFT JOINs, and the correlated aggregate threshold.
+
+From the review of 20261010-30:
+1. **LATERAL** (`LEFT JOIN LATERAL (SELECT ... FROM orders o WHERE o.user_id = u.id) s ON true`) gets no unmatched group: the innermost step is join_expr/rarg, not quals or sub_link. Conservative, not unsound. Add the group and move a corpus shape out of PENDING.
+2. **A LEFT JOIN that WHERE makes inner** (`WHERE o.status = 'x'` on the optional side) still gets unmatched groups. They cost rows and can't change a verdict. Skip them when the WHERE rejects NULLs on the optional side, measure, and keep the soundness rule.
+3. **The correlated scalar count** (`(SELECT count(*) FROM comments WHERE comments.post_id = posts.id) > 2`) stays untested: loosening its join atom only matters once more than 2 comments exist in total, and S1 builds 1. Build a group with enough children to cross the threshold (read it from the atom), and move the shape out of PENDING.
+4. A correlated self-reference under another alias is treated as not correlated (compares table names, not aliases); rare.
+5. No composite-FK case was run.
+
+- **Depends on:** 20261010-30 (landed).
+- **Came from:** The review and build of 20261010-30, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo

@@ -10075,3 +10075,18 @@ Left over from 20261010-21 on the real query shape: `submissions.workflow_state 
 - **Came from:** The work on 20261010-21, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10 (`Scenarios::Siblings`): a near miss on a column that another scope also tests gets a sibling row (an extra row of the table under the same parent that passes the atom), after the masking near misses in S1 to S5. On the synthetic real shape the untested atoms are now only the five truly redundant ones. S6 row ids shift because unique values are numbered across the build; nothing else changes. Minors: 20261010-34.
+
+### 20261010-30. Untested conditions: outer and anti joins need unmatched rows.
+
+From the corpus (20261010-27, `PENDING` in `enclave/spec/vacuity_guard_corpus_postgres_spec.rb`). These shapes leave non-redundant atoms untested, and look like one family: scenarios never build the unmatched row an outer or anti join needs.
+- NOT EXISTS (correlated): `EXISTS (SELECT $1 FROM comments WHERE comments.post_id = posts.id)` and `comments.post_id = posts.id`; the hit should be a post with no comment, and the scenarios build the comment instead.
+- FULL JOIN: `posts.user_id = users.id`; the ON atom needs unmatched rows on a side.
+- LEFT JOIN anti-join (`... IS NULL`): `posts.user_id = users.id`; needs a post belonging to another user.
+- Rails `left_joins ... where nil`: `comments.post_id = posts.id` and `posts.published = $1`; the hit needs a post with no comment.
+- Correlated scalar count: `comments.post_id = posts.id`; no comment for another post is built.
+Fix the family with a general mechanism (a group with an unmatched parent or child on one side of the join), keep the guard sound and the caps, and flip each shape from `PENDING` to `SHAPES` in the corpus.
+
+- **Depends on:** 20261010-27 (landed); build after 20261010-24 (same scenario code).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10 (`Scenarios::Unmatched`): groups with a parent and no child where an outer join or a correlated subquery makes the child optional, last in S1 to S5. NOT EXISTS, FULL JOIN, LEFT JOIN anti-join and Rails left_joins-where-nil moved from PENDING to the corpus. Correlated scalar count stays pending (needs more than 2 comments; S1 builds 1). Minors: 20261010-35.
