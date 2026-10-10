@@ -10066,3 +10066,12 @@ The review of 20261010-25 found that the guard's new fixture-compare check runs 
 - **Came from:** The review of 20261010-25, 2026-10-10. Priority: paginated queries are everywhere.
 - **Design:** rewrite-test.
 - **Status:** done. Landed 2026-10-10: skip the comparison when the original returns no rows on the cut, remember no-mismatch comparisons, cap at 32 per guard run (`VacuityGuard::MAX_COMPARISONS`, a builder-picked number). The reviewer measured the paginated 8-atom join at 22.6 s on main and 0.7 s after; results unchanged. Counterexample rounds get the skip but not the memo or cap.
+
+### 20261010-24. Untested conditions: a near miss that needs two child rows under one parent.
+
+Left over from 20261010-21 on the real query shape: `submissions.workflow_state <> $3` (the ON condition of the subquery's first branch) stays untested. Testing it needs an assignment outside the `id IN` list with two submissions: a deleted one linked to a content participation, and a non-deleted one the outer query counts. No scenario group builds two child rows under one parent. Add such a group (a second child of the same parent, one failing the atom and one passing it, with its own children as needed), keep the guard sound and the caps, and measure group count and run time on the real shape and ordinary queries.
+
+- **Depends on:** 20261010-21 (landed).
+- **Came from:** The work on 20261010-21, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10 (`Scenarios::Siblings`): a near miss on a column that another scope also tests gets a sibling row (an extra row of the table under the same parent that passes the atom), after the masking near misses in S1 to S5. On the synthetic real shape the untested atoms are now only the five truly redundant ones. S6 row ids shift because unique values are numbered across the build; nothing else changes. Minors: 20261010-34.

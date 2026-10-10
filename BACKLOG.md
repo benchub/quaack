@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-21: a pinned join key (an atom such as `id IN (...)` on a key) gives each group its own key value, so near misses stop colliding (enclave).
 - 20261010-25: the vacuity guard runs fixture-compare for a top-level LIMIT/OFFSET condition, checks every S1 fixture, gives near-miss rows their own values in read columns, adds enum labels to the candidate values, and ranks pinned keys per scenario (enclave).
 - 20261010-26: the vacuity guard skips fixture-compare on an empty cut result, remembers no-mismatch comparisons, and caps them at 32 per run (enclave).
+- 20261010-24: sibling rows for near misses on a column that another scope also tests (enclave).
 
 ## How this file works.
 
@@ -890,15 +891,6 @@ Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... 
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
 
-### 20261010-24. Untested conditions: a near miss that needs two child rows under one parent.
-
-Left over from 20261010-21 on the real query shape: `submissions.workflow_state <> $3` (the ON condition of the subquery's first branch) stays untested. Testing it needs an assignment outside the `id IN` list with two submissions: a deleted one linked to a content participation, and a non-deleted one the outer query counts. No scenario group builds two child rows under one parent. Add such a group (a second child of the same parent, one failing the atom and one passing it, with its own children as needed), keep the guard sound and the caps, and measure group count and run time on the real shape and ordinary queries.
-
-- **Depends on:** 20261010-21 (landed).
-- **Came from:** The work on 20261010-21, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
 
 ### 20261010-28. Winner summary: explain why the winner wins, as a heuristic a developer can reuse.
 
@@ -977,4 +969,15 @@ From 20261010-27: with `PinnedKeys`' rank forced to 0, the corpus stays green ev
 - **Depends on:** 20261010-27 (landed).
 - **Came from:** the work on 20261010-27, 2026-10-10.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261010-34. Siblings: minors from 20261010-24.
+
+The review of 20261010-24 found these minor issues:
+1. **No test covers the parent check in `Scenarios::Siblings`.** Removing `&& @topology.parents(...).any?` leaves every spec green. Add a negative spec: an atom on a root table, tested in two scopes, gets no sibling.
+2. **Siblings are built where they can't help.** A `count(*)` over a users/posts join with `posts.kind <> 'c'` in both the ON clause and a UNION ALL subquery grows S1 from 14 to 17 rows, but its untested atoms (`kind <> $3`, `score > $4`, the IN subquery) are the same as on `main`. Not a regression; add the shape to the corpus's `PENDING` list (20261010-27) and find why its atoms stay untested.
+
+- **Depends on:** 20261010-24 (landed).
+- **Came from:** The review of 20261010-24, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
 - **Status:** todo
