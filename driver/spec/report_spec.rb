@@ -431,6 +431,50 @@ RSpec.describe Quaack::Driver::Report do
         expect(verdict(render(payload.compact))).not_to include("couldn&#39;t see")
       end
     end
+
+    # Task 20261009-28. Each caveat's link must land on a section that talks about it.
+    # The two timed-out caveats still land on the ranking section, which is silent about
+    # them: task 20261009-29 gives them a section of their own, and the subject check
+    # for them goes in then. Until then only the target's existence is asserted.
+    describe "the caveat links" do
+      let(:caveat_payload) do
+        payload.merge("timed_out_count" => 2, "infinite_sets" => ["slow"],
+                      "hidden_statistics" => { "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 })
+      end
+      let(:out) { render(caveat_payload) }
+      # [caveat text fragment, subject the target must mention (nil: known gap, see above)]
+      let(:caveats) do
+        [["measurement runs of candidates timed out", nil],
+         ["timed out on the slow values", nil],
+         ["couldn&#39;t see the statistics", "orders_lower_idx"]]
+      end
+
+      it "lands every caveat on a section that exists, and the statistics one on a section that names its subject" do
+        items = verdict(out).scan(%r{<li class="warn">(.*?)</li>}m).flatten
+        expect(items.size).to eq(caveats.size)
+        caveats.each do |fragment, subject|
+          item = items.find { it.include?(fragment) } or raise "no caveat mentions #{fragment}"
+          target = item[/href="#([^"]+)"/, 1]
+          body = out[%r{<section id="#{Regexp.escape(target)}"[^>]*>.*?</section>}m]
+          expect(body).not_to be_nil
+          expect(body).to include(subject) if subject
+        end
+      end
+
+      it "explains the hidden statistics in the indexes section, from the payload's names and count only" do
+        note = section(out, "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
+        expect(note).to include("2 extended statistics objects", sq("orders_lower_idx"), "LLM&#39;s index ideas",
+                                "can&#39;t read its columns", "let QUAACK read these statistics", "owns the tables")
+        expect(note).not_to include("estimate", "run server", "copy", "real reads", "which ideas to try")
+        caveat_payload["hidden_statistics"] = { "indexes" => ["<b>x</b>"], "extended_statistics" => 0 }
+        note = section(render(caveat_payload), "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
+        expect(note).to include("&lt;b&gt;x&lt;/b&gt;")
+        expect(note).not_to include("<b>x")
+        expect(note).not_to include("extended statistics object")
+        caveat_payload["hidden_statistics"] = { "indexes" => [], "extended_statistics" => 0 }
+        expect(section(render(caveat_payload), "indexes")).not_to include("hidden-statistics")
+      end
+    end
   end
 
   describe "the queries" do
