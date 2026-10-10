@@ -18,13 +18,19 @@ module Quaack
     module BooleanFold
       module_function
 
-      # The node with every such comparison folded. It changes the node in
-      # place, and may return another one. The holder lets NodeRewrite swap
-      # the node itself.
+      # The node with every such comparison folded, and every double NOT
+      # collapsed (NOT (f = false) is NOT NOT f, which is f). A fold can
+      # make another one possible, as in (f = true) = true, so it repeats
+      # until a pass changes nothing, which makes folding idempotent. It
+      # changes the node in place, and may return another one. The holder
+      # lets NodeRewrite swap the node itself.
       def fold(node)
         holder = PgQuery::SelectStmt.new(where_clause: node)
-        NodeRewrite.each(holder) { |child| folded(child) }
-        holder.where_clause
+        loop do
+          before = PgQuery::Node.encode(holder.where_clause)
+          NodeRewrite.each(holder) { |child| folded(child) }
+          return holder.where_clause if PgQuery::Node.encode(holder.where_clause) == before
+        end
       end
 
       # What equality each operator tests: = true, <> false.
@@ -32,6 +38,8 @@ module Quaack
 
       # The bare test for one comparison, or nil.
       def folded(node)
+        return double_not(node) if node.node == :bool_expr
+
         equal = operator(node.a_expr)
         return if equal.nil?
 
@@ -41,10 +49,24 @@ module Quaack
         value.a_const.boolval.boolval == equal ? column : negated(column)
       end
 
+      # NOT NOT x is x, in three-valued logic too. Any other boolean
+      # expression is left alone, and its children walked.
+      def double_not(node)
+        arg = not_arg(node.bool_expr)
+        not_arg(arg.bool_expr) if arg
+      end
+
+      # The one argument of a NOT, or nil for anything else.
+      def not_arg(expr)
+        expr.args.first if expr&.boolop == :NOT_EXPR && expr.args.size == 1
+      end
+
       # true for =, false for <>, nil for anything else.
       def operator(expr)
-        return unless expr&.kind == :AEXPR_OP && expr.name.size == 1
+        return unless expr&.kind == :AEXPR_OP
 
+        # An operator written with its schema, OPERATOR(pg_catalog.=), has
+        # the schema first, so it never matches.
         OPERATORS[expr.name.first.string&.sval]
       end
 
