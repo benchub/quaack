@@ -33,7 +33,7 @@ module Quaack
 
         # Each source of rewrites: its row's name, and the stage that
         # counts what it proposed.
-        REWRITE_SOURCES = { "rule" => ["QUAACK's own rules", "rewrite-rules"], "llm" => ["The LLM", "llm-rewrites"],
+        REWRITE_SOURCES = { "rule" => ["Transform rules", "rewrite-rules"], "llm" => ["The LLM", "llm-rewrites"],
                             "operator" => %w[You operator-rewrites] }.freeze
 
         # The outcome column a fate counts in. Any other fate is the last.

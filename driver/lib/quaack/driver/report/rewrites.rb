@@ -11,7 +11,7 @@ module Quaack
       # nothing, and its sentence says so instead.
       module Rewrites
         SOURCES = { "llm" => "suggested by the LLM", "operator" => "your own rewrite" }.freeze
-        RULES = "made by QUAACK's own rewrite"
+        RULES = "made by transform"
 
         DIFFERENT = "It returned different results from the original query on"
         UNCOMPARED = "ended without comparing results%<why>s, so QUAACK dropped it. That says nothing about " \
