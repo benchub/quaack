@@ -17,6 +17,10 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
       CREATE SCHEMA fx;
       CREATE TABLE fx.assignments (id bigint PRIMARY KEY, type text NOT NULL, workflow_state text NOT NULL,
         context_type text NOT NULL, context_id bigint NOT NULL, muted boolean);
+      CREATE TABLE fx.submissions (id bigint PRIMARY KEY, assignment_id bigint NOT NULL REFERENCES fx.assignments,
+        user_id bigint NOT NULL, workflow_state text NOT NULL, cached_due_date timestamp);
+      CREATE TABLE fx.content_participations (id bigint PRIMARY KEY, content_type text NOT NULL,
+        content_id bigint NOT NULL, user_id bigint NOT NULL, workflow_state text NOT NULL);
     SQL
   end
 
@@ -52,5 +56,40 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     sql = "SELECT count(*) FROM fx.assignments WHERE fx.assignments.context_type = 'Course' " \
           "AND (fx.assignments.muted IS NULL OR NOT fx.assignments.muted)"
     expect(untested(sql)).to eq([])
+  end
+
+  def ids(count, base) = (1..count).map { base + it }.join(", ")
+
+  def branch(extra)
+    "fx.assignments.type = 'Assignment' AND fx.assignments.workflow_state <> 'deleted' " \
+      "AND fx.assignments.context_type = 'Course' " \
+      "AND fx.assignments.context_id IN (#{ids(21, 100)}) #{extra}"
+  end
+
+  # The shape of a real count query: an IN subquery whose two UNION ALL
+  # branches repeat four tests on assignments. Each branch's own copies of
+  # those tests, and the subquery as a whole, are tested.
+  it "tests the repeated branch atoms of a UNION ALL subquery under a count" do
+    sub = "SELECT fx.assignments.id FROM fx.assignments JOIN fx.submissions " \
+          "ON fx.submissions.assignment_id = fx.assignments.id AND fx.submissions.workflow_state <> 'deleted' " \
+          "JOIN fx.content_participations ON fx.content_participations.content_type = 'Submission' " \
+          "AND fx.content_participations.content_id = fx.submissions.id WHERE " \
+          "#{branch("AND (fx.assignments.muted IS NULL OR NOT fx.assignments.muted)")} " \
+          "AND fx.content_participations.user_id = 7 AND fx.content_participations.workflow_state = 'unread' " \
+          "UNION ALL SELECT fx.assignments.id FROM fx.assignments " \
+          "WHERE #{branch("AND fx.assignments.id IN (#{ids(12, 500)})")}"
+    sql = "SELECT count(*) FROM fx.assignments JOIN fx.submissions " \
+          "ON fx.submissions.assignment_id = fx.assignments.id AND fx.submissions.workflow_state <> 'deleted' " \
+          "WHERE fx.assignments.type = 'Assignment' " \
+          "AND fx.assignments.id IN (#{sub}) AND fx.submissions.user_id = 7 " \
+          "AND fx.submissions.workflow_state <> 'deleted' " \
+          "AND fx.submissions.cached_due_date BETWEEN '2026-01-01' AND '2026-02-01'"
+    tested = [
+      "fx.assignments.workflow_state <> $6", "fx.assignments.context_type = $7",
+      "fx.assignments.workflow_state <> $32", "fx.assignments.context_type = $33"
+    ]
+    found = untested(sql)
+    expect(found & tested).to eq([])
+    expect(found.grep(/\Afx\.assignments\.id IN \(SELECT/)).to eq([])
   end
 end
