@@ -651,7 +651,7 @@ A rewrite may also list **conditions from the original query that QUAACK's made-
 
 ### Ranking.
 
-QUAACK ranks the three best candidates of each kind of change: a rewrite with new indexes, a rewrite with no new indexes, and the original query with new indexes. The table has a heading row for each kind that has any ranked candidate, in that order, with a colored stripe on its left that the kind's rows share. Rank restarts at 1 under each heading.
+QUAACK ranks the three best candidates of each kind of change: a rewrite with new indexes, a rewrite with no new indexes, and the original query with new indexes. The table has a heading row for each kind that has any ranked candidate, in that order. Rank restarts at 1 under each heading. Below the table, each kind's heading and its numbered entries sit together in a tinted block with a colored stripe on its left.
 
 | # | Candidate | Blocks read, slow values | Blocks read, all values | Size of its new indexes |
 | --- | --- | ---: | ---: | ---: |
