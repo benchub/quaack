@@ -297,9 +297,10 @@ module TestPostgres
 
   # A launch that fails isn't tried again. Every later example gets the same
   # error, rather than another build, another 60-second wait, and another
-  # container.
+  # container. Each one raises a copy with its own backtrace, since raising
+  # the stored error again would show the first example's launch frames.
   def server
-    raise @launch_error if @launch_error
+    raise(@launch_error.dup.tap { it.set_backtrace(caller) }, cause: @launch_error) if @launch_error
 
     @server ||= launch
   rescue StandardError => e
@@ -311,12 +312,10 @@ module TestPostgres
     check_docker
     remove_stale_containers
     build_image
+    OldImages.remove(image_tag)
     id = start_container
     remove_at_exit(id)
-    started = Server.new(id)
-    started.wait_until_ready
-    started.build_templates
-    started
+    Server.new(id).tap(&:wait_until_ready).tap(&:build_templates)
   end
 
   # Registered as soon as the container exists, so it's removed even if
@@ -368,3 +367,4 @@ module TestPostgres
 end
 
 require_relative "test_pgbouncer"
+require_relative "test_postgres_images"
