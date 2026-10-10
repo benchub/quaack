@@ -18,8 +18,19 @@ module Quaack
       # expression could overflow on them (price * qty), and the row
       # wouldn't load. A nullable column whose type
       # has no such value is left NULL when Nulls allows it.
+      #
+      # A column the query aggregates with max(), min(), sum(), or avg()
+      # (see Reads#aggregate) needs a near miss whose value differs from
+      # the hit's in the right direction, or loosening the near miss's atom
+      # can't change the aggregate (20261010-36). So a near miss's value of
+      # its own (apart) applies there even over a DEFAULT, and for a column
+      # only min() reads, every other group takes a large value of its own
+      # (MIN_APART), so the near miss's smaller one shows. Where a CHECK or
+      # the type rejects that value, the column keeps its default or typical
+      # value, and vacuity-guard catches an atom left untested.
       class FreeValues
         UNIQUE = Object.new.freeze
+        MIN_APART = 999_999
 
         def initialize(schema, topology, checks, values, reads, &constrained)
           @schema = schema
@@ -37,7 +48,9 @@ module Quaack
         # fits, in place of the typical one.
         def value(table, col, mode, apart: nil)
           return unique_value(table, col) if varying(table).include?(col.name)
-          return :omit if col.default
+
+          apart = aggregate_apart(table, col, apart)
+          return default_value(table, col, apart) if col.default
 
           plain_value(table, col, mode, apart)
         end
@@ -72,6 +85,21 @@ module Quaack
         end
 
         def null?(table, col) = @nulls.allowed?(table, col)
+
+        def aggregate_apart(table, col, apart)
+          return apart if apart || @reads.aggregate(table, col.name) != :min
+
+          MIN_APART
+        end
+
+        # A defaulted column keeps its default, but an aggregated one takes
+        # its value of its own where its CHECKs allow it.
+        def default_value(table, col, apart)
+          return :omit unless @reads.aggregate(table, col.name)
+
+          value = apart_value(table, col, apart)
+          value && @checks.allows?(table, col, value) ? value : :omit
+        end
 
         def generation_input?(table, col) = @schema.constraints(table).generation_inputs.include?(col.name)
 

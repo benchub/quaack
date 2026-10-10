@@ -18,12 +18,23 @@ module Quaack
         # of its column row is a plain column of a table. A boolean test (IS
         # TRUE, IS NOT FALSE, ...) on a plain column of a table is pooled
         # too: the probe sorts t, f, and NULL, so the near miss gets a value
-        # that fails it (20261010-32). A bare boolean column isn't pooled.
+        # that fails it (20261010-32). A bare boolean column is pooled only
+        # inside an aggregate's FILTER, where its default (false) would
+        # leave every group out of the aggregate, so loosening any other
+        # atom could change nothing (20261010-36). Elsewhere it isn't: a
+        # NOT arm of an OR (muted IS NULL OR NOT muted) relies on the
+        # default, which Branches masks around.
         def call(atom)
           return one_column?(atom) if KINDS.include?(atom.kind)
           return atom.bare && one_column?(atom) if boolean_test?(atom)
+          return one_column?(atom) if filter_column?(atom)
 
           keyset?(atom)
+        end
+
+        # A bare column inside an aggregate's FILTER.
+        def filter_column?(atom)
+          atom.kind == :other && atom.operator.nil? && atom.bare && atom.path.include?("agg_filter")
         end
 
         def keyset?(atom)
