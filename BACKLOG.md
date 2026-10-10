@@ -1292,16 +1292,7 @@ Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexam
 - **Design:** report, counterexamples, rewrite-test.
 - **Status:** todo
 
-### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle.
-
-The user, 2026-10-09. Each funnel (`Report::Funnel`) starts its first band at zero width, so a first stage that adds items draws as a triangle widening downward. Make the topmost band a rectangle: its top as wide as its bottom. Every later band still starts exactly as wide as the band before it ended, and a stage that adds items below the first still widens.
-
-Where the rule lives: the comment at the top of `driver/lib/quaack/driver/report/funnel.rb` ("The first band starts at zero"), `funnel_widths` (the running width in counts "starts at zero"), and DESIGN.md's funnel paragraph ("The first band starts at zero width, and every band starts exactly as wide as the band before it ended"). Change all three. A funnel whose first stage added nothing (an `in` of zero and an `out` of zero) keeps zero width, so check that case and an unrecorded first stage (grey, striped, at least a third of the full width; make sure it stays a rectangle too). The spec over recorded runs that checks the bands join up must still pass; the first band's top now equals its bottom, so extend it to assert that, and add a test per case (first stage adds items, first stage adds nothing, first stage not recorded). The table's counts and the tooltips don't change. Show the user a screenshot of one funnel before and after.
-
-- **Depends on:** None. Edits the report, not the CSS other tasks change.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, burndown.
-- **Status:** todo
+### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers.
 
@@ -1318,4 +1309,15 @@ Update the specs that quote the old hover text and column headers, with a test f
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, burndown.
 - **Open questions:** What to call "set aside"; whether the "Also counted" counts should stay in the hover for stages with no sentence.
+- **Status:** todo
+
+### 20261009-43. Funnel rectangle: minor findings from 20261009-41.
+
+- The unrecorded-first-band spec asserts the band is at least `WIDTH / 4` (80), but `UNKNOWN` is 96 (0.3 of `WIDTH`), and DESIGN.md says "about a third". Tighten the bound to what `UNKNOWN` is meant to be, and make DESIGN.md and the code agree on the number.
+- `funnel.rb`'s header comment and `funnel_widths` still say the running width "starts at zero", which the first row now resets. Reword them.
+- The recorded-run join-up check (`burndown_gaps` in `spec/pipeline_replay_spec.rb`) works on counts, not drawn geometry, so no recorded run checks that the first band is a rectangle. Add a check over the recorded runs' funnels, if it's cheap.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-41, 2026-10-09 (minor).
+- **Design:** report, burndown.
 - **Status:** todo

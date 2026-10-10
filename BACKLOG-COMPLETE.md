@@ -8992,3 +8992,15 @@ The user, 2026-10-09: "I thought I saw you'd implemented a dark mode, but I don'
 - **Open questions:** Does the user's system or browser prefer dark? Which `quaack` version made the report? Do they want a manual theme choice?
 - **Status:** dropped
 - **Dropped:** 2026-10-09, by the user. The dark theme shows when the system setting is dark; the user's report was fine, and they didn't ask for a manual theme choice.
+
+### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle.
+
+The user, 2026-10-09. Each funnel (`Report::Funnel`) starts its first band at zero width, so a first stage that adds items draws as a triangle widening downward. Make the topmost band a rectangle: its top as wide as its bottom. Every later band still starts exactly as wide as the band before it ended, and a stage that adds items below the first still widens.
+
+Where the rule lives: the comment at the top of `driver/lib/quaack/driver/report/funnel.rb` ("The first band starts at zero"), `funnel_widths` (the running width in counts "starts at zero"), and DESIGN.md's funnel paragraph ("The first band starts at zero width, and every band starts exactly as wide as the band before it ended"). Change all three. A funnel whose first stage added nothing (an `in` of zero and an `out` of zero) keeps zero width, so check that case and an unrecorded first stage (grey, striped, at least a third of the full width; make sure it stays a rectangle too). The spec over recorded runs that checks the bands join up must still pass; the first band's top now equals its bottom, so extend it to assert that, and add a test per case (first stage adds items, first stage adds nothing, first stage not recorded). The table's counts and the tooltips don't change. Show the user a screenshot of one funnel before and after.
+
+- **Depends on:** None. Edits the report, not the CSS other tasks change.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report, burndown.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-41; review clean). `funnel_widths` sets the first band's top equal to its bottom (`funnel_row`), later bands unchanged; a first stage that adds nothing stays zero wide; an unrecorded first band is a grey rectangle at the minimum width. DESIGN.md updated. The builder gave corner coordinates, not a screenshot. Minor findings: 20261009-43.
