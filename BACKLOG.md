@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-30: groups with a parent and no child where an outer join or a correlated subquery makes the child optional (enclave).
 - 20261010-32: a boolean test on a plain column gets a value pool, and a spill fixture skips a parent the group already brings (enclave).
 - 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
+- 20261010-34: `Plan#scope_mate`, a sibling fails one other pooled atom of the near miss's scope on the same table (enclave).
 
 ## How this file works.
 
@@ -906,25 +907,7 @@ From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `u
 - **Status:** todo
 
 
-### 20261010-33. Corpus: the pinned-key rank mutation stays green.
 
-From 20261010-27: with `PinnedKeys`' rank forced to 0, the corpus stays green even with its five pinned-key shapes; only the count-query example in `vacuity_guard_scopes_postgres_spec.rb` catches it. Add corpus shapes that fail when the rank is forced to 0 (an `IN` list of three or four values on a parent key with several groups that each need their own value), and mutation-check them.
-
-- **Depends on:** 20261010-27 (landed).
-- **Came from:** the work on 20261010-27, 2026-10-10.
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261010-34. Siblings: minors from 20261010-24.
-
-The review of 20261010-24 found these minor issues:
-1. **No test covers the parent check in `Scenarios::Siblings`.** Removing `&& @topology.parents(...).any?` leaves every spec green. Add a negative spec: an atom on a root table, tested in two scopes, gets no sibling.
-2. **Siblings are built where they can't help.** A `count(*)` over a users/posts join with `posts.kind <> 'c'` in both the ON clause and a UNION ALL subquery grows S1 from 14 to 17 rows, but its untested atoms (`kind <> $3`, `score > $4`, the IN subquery) are the same as on `main`. Not a regression; add the shape to the corpus's `PENDING` list (20261010-27) and find why its atoms stay untested.
-
-- **Depends on:** 20261010-24 (landed).
-- **Came from:** The review of 20261010-24, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
 
 ### 20261010-35. Unmatched groups: LATERAL, effectively-inner LEFT JOINs, and the correlated aggregate threshold.
 

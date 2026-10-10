@@ -10151,3 +10151,23 @@ Start with the FILTER and `max()` cases (common in reports). Keep the guard soun
 - **Came from:** The work on 20261010-32, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done for FILTER and aggregated columns. Landed 2026-10-10: a bare boolean inside an aggregate FILTER gets a pool (and the probe evaluates a bare column); a near miss takes a distinguishing value of an aggregated column (max/min/sum/avg) even over a DEFAULT when CHECKs allow it, and a min-only column takes `MIN_APART` elsewhere. Not done (CTE, scalar subquery, second column tie): 20261010-39. Minors: 20261010-38.
+
+### 20261010-33. Corpus: the pinned-key rank mutation stays green.
+
+From 20261010-27: with `PinnedKeys`' rank forced to 0, the corpus stays green even with its five pinned-key shapes; only the count-query example in `vacuity_guard_scopes_postgres_spec.rb` catches it. Add corpus shapes that fail when the rank is forced to 0 (an `IN` list of three or four values on a parent key with several groups that each need their own value), and mutation-check them.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the work on 20261010-27, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** done. Landed 2026-10-10 (tests): two examples in `scenarios_pinned_keys_postgres_spec.rb` catch the rank mutation (S1 five groups under `users.id IN (101..105)`, S6 copies under `posts.id IN (201..204)`); corpus shapes added as regression coverage; the older count-query example no longer catches it.
+
+### 20261010-34. Siblings: minors from 20261010-24.
+
+The review of 20261010-24 found these minor issues:
+1. **No test covers the parent check in `Scenarios::Siblings`.** Removing `&& @topology.parents(...).any?` leaves every spec green. Add a negative spec: an atom on a root table, tested in two scopes, gets no sibling.
+2. **Siblings are built where they can't help.** A `count(*)` over a users/posts join with `posts.kind <> 'c'` in both the ON clause and a UNION ALL subquery grows S1 from 14 to 17 rows, but its untested atoms (`kind <> $3`, `score > $4`, the IN subquery) are the same as on `main`. Not a regression; add the shape to the corpus's `PENDING` list (20261010-27) and find why its atoms stay untested.
+
+- **Depends on:** 20261010-24 (landed).
+- **Came from:** The review of 20261010-24, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10: negative spec for the sibling parent check; `Plan#scope_mate` makes a sibling fail one other pooled atom of the near miss's scope on the same table, which fixes the users/posts count shape. Harder variants: 20261010-39.
