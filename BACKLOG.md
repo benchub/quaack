@@ -1307,3 +1307,12 @@ From the review of 20261009-27 (minor). README.md's verdict section (about lines
 - **Came from:** The review of 20261009-27, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo
+
+### 20261009-49. Root `spec/` suite: a one-off failure under load.
+
+Seen 2026-10-09 by the builders of 20261009-39 and 20261009-28, each on its first full `rake` run while other builders and reviewers ran on the host (load 7 to 13): "Spec suites failed: ./spec (exit 1)". Each time the root suite passed alone (332 examples) and a second full run passed everything. Neither builder saw which example failed, because they showed only the last 25 lines. Merged `main` passed a full run at load about 7. A flake that depends on load or on timing is a defect: it makes the per-commit check untrustworthy. Find it: run the root suite repeatedly under artificial CPU load (several `yes > /dev/null` processes, or running two suites at once), keep the whole output of each failing run, and find the example. Likely suspects are a statement timeout or a fixed sleep in a Postgres spec, a Docker container start race, or a spec that depends on wall-clock time. Fix the cause, with a test where it can be had; do not add retries. If it can't be reproduced in a reasonable effort, add the diagnostics (keep each suite's failing output whole in the run log) so the next occurrence is caught.
+
+- **Depends on:** None.
+- **Came from:** The builders of 20261009-39 and 20261009-28, 2026-10-09.
+- **Design:** none (CLAUDE.md Development).
+- **Status:** todo
