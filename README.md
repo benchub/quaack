@@ -613,7 +613,7 @@ Each `$1`, `$2`, and so on stands for a value from the original query. Put your 
 
 Next to each rewrite's name, on the line you click, are two lines:
 
-- **Where it came from:** `made by QUAACK's own rewrite rule key_in_self_join` for one of QUAACK's own rules (two rules applied in a row are both named, in order), `suggested by the LLM`, or `your own rewrite`. Each rule's name links to its page in [docs/transforms](docs/transforms), which says what the rule does and shows an example. Every rewrite goes through the same tests, whatever its source.
+- **Where it came from:** `transform rule key_in_self_join` for one of QUAACK's own rules (two rules applied in a row are both named, in order), `suggested by the LLM`, or `your own rewrite`. Each rule's name links to its page in [docs/transforms](docs/transforms), which says what the rule does and shows an example. Every rewrite goes through the same tests, whatever its source.
 - **What became of it,** as a sentence. For example:
   - "It beat the original query and is ranked below."
   - "Postgres plans it exactly as it plans the original query, so it can't run any differently. QUAACK didn't test it further."

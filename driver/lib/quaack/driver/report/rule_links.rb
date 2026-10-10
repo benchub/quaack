@@ -13,7 +13,7 @@ module Quaack
       # linked to its page in docs/transforms (DESIGN.md's rewrite-rules):
       #
       #   source_html("source" => "rule", "rules" => ["key_in_self_join"])
-      #   # => %(made by QUAACK&#39;s own rewrite rule <a href=".../key_in_self_join.md">key_in_self_join</a>)
+      #   # => %(transform rule <a href=".../key_in_self_join.md">key_in_self_join</a>)
       #
       # Trust boundary. A name links only if it's on
       # Protocol::StepCounts::RULE_NAMES, and the URL is built from the
@@ -27,11 +27,15 @@ module Quaack
         def source_html(entry)
           return llm_source_html(entry) if entry["source"] == "llm"
 
-          rules = Array(entry["rules"])
-          return Format.h(source(entry) || Words::MISSING) unless entry["source"] == "rule" && rules.any?
+          return Format.h(source(entry) || Words::MISSING) unless entry["source"] == "rule"
 
-          Format.h("#{Rewrites::RULES} #{rules.size == 1 ? "rule" : "rules"} ") +
-            rules.map { rule_link(it) }.join(", then ")
+          rules_html(Array(entry["rules"]))
+        end
+
+        def rules_html(rules)
+          return "transform rules" if rules.empty?
+
+          "transform #{rules.size == 1 ? "rule" : "rules"} #{rules.map { rule_link(it) }.join(", then ")}"
         end
 
         # A rule's name, escaped, and linked to its page, in a new tab, if
