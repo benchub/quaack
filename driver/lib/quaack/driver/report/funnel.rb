@@ -12,7 +12,8 @@ module Quaack
       # funnel above it, one band per row, in the table's order.
       #
       # The width is what's in the pipe, on one scale per funnel: its
-      # widest point is WIDTH. The first band starts at zero. Every band
+      # widest point is WIDTH. The first band is a rectangle, as wide at its
+      # top as at its bottom (zero wide if its stage added nothing). Every band
       # starts as wide as the one before it ended, so a stage that adds
       # nothing and drops nothing keeps its width, one that drops or sets
       # aside narrows, and one that adds (rewrite-rules, llm-rewrites,
@@ -95,19 +96,28 @@ module Quaack
 
         # Each row's [top, bottom] widths, on the scale of the widest point.
         # The running width, in counts, starts at zero, and a row with both
-        # counts moves it by out - in. A row with no count is [width, nil],
-        # and one with only what came in [width, :partial], at the running
-        # width and leaving it be.
+        # counts moves it by out - in, except the first row, whose top is as
+        # wide as its bottom (a rectangle). A row with no count is
+        # [width, nil], and one with only what came in [width, :partial], at
+        # the running width and leaving it be.
         def funnel_widths(rows)
           running = 0
-          drawn = rows.map do |_, record, _|
-            inn, out = funnel_counted(record)
-            top = running
-            running = [running + out - inn, 0].max if out
-            [top, funnel_bottom(inn, out, running)]
+          drawn = rows.each_with_index.map do |(_, record, _), i|
+            top, bottom, running = funnel_row(running, *funnel_counted(record), first: i.zero?)
+            [top, bottom]
           end
           largest = drawn.flat_map { it.grep(Integer) }.max.to_i
           drawn.map { |top, bottom| [funnel_scaled(top, largest), funnel_scaled(bottom, largest)] }
+        end
+
+        # A row's [top, bottom, running width after it], in counts. The
+        # first row's top is as wide as its bottom, so it sets the running
+        # width to its out; later rows move it by out - in.
+        def funnel_row(running, inn, out, first:)
+          return [running, funnel_bottom(inn, out, running), running] unless out
+
+          after = first ? out : [running + out - inn, 0].max
+          [first ? after : running, after, after]
         end
 
         # A row's bottom, in counts: where the running width ended up, or

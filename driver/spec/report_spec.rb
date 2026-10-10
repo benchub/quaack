@@ -2298,7 +2298,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "sizes every band on one scale, the funnel's largest count, narrowing within a band by what it dropped" do
       rewrite = bands(funnel("rewrite")).map { widths(it) }
-      expected = [[0, 2], [2, 6], [6, 8], [8, 7], [7, 5], [5, 4], [4, 3], [3, 3], [3, 2]]
+      expected = [[2, 2], [2, 6], [6, 8], [8, 7], [7, 5], [5, 4], [4, 3], [3, 3], [3, 2]]
       expect(rewrite).to eq(expected.map { |inn, out| [width(inn, 8), width(out, 8)] })
       expect(rewrite[3][0]).to eq(Quaack::Driver::Report::Funnel::WIDTH)
       expect(rewrite[4][1]).to be < rewrite[4][0]
@@ -2323,7 +2323,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(unknown).to all(include('<path class="hatch" d="M'))
       expect(index.values_at(0, 1, 2, 6).join).not_to include('class="hatch"')
       expect(index.map { widths(it) }.values_at(0, 1, 2, 6))
-        .to eq([[0, 4], [4, 6], [6, 3], [3, 1]].map { |inn, out| [width(inn, 6), width(out, 6)] })
+        .to eq([[4, 4], [4, 6], [6, 3], [3, 1]].map { |inn, out| [width(inn, 6), width(out, 6)] })
       expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
     end
 
@@ -2387,7 +2387,7 @@ RSpec.describe Quaack::Driver::Report do
     it "takes the scale's largest count from what went on, too" do
       stages["operator-rewrites"] = { "rewrites" => rec(6, 9, added: { "operator" => 3 }) }
       rewrite = bands(funnel("rewrite")).map { widths(it) }
-      expected = [[0, 2], [2, 6], [6, 9], [9, 8], [8, 6], [6, 5], [5, 4], [4, 4], [4, 3]]
+      expected = [[2, 2], [2, 6], [6, 9], [9, 8], [8, 6], [6, 5], [5, 4], [4, 4], [4, 3]]
       expect(rewrite).to eq(expected.map { |inn, out| [width(inn, 9), width(out, 9)] })
       expect(rewrite[2][1]).to eq(Quaack::Driver::Report::Funnel::WIDTH)
     end
@@ -2473,6 +2473,28 @@ RSpec.describe Quaack::Driver::Report do
       stages["assumption-check"]["rewrites"]["in"] = 4
       rewrite = bands(funnel("rewrite")).map { widths(it) }
       expect(rewrite.each_cons(2).map { |above, below| below.first - above.last }).to all(eq(0.0))
+    end
+
+    it "draws the first band as a rectangle when its stage adds items, and every later band joins the one above" do
+      %w[index rewrite rewrite-index].each do |id|
+        first, *rest = bands(funnel(id)).map { widths(it) }
+        expect(first.first.positive?).to be(true)
+        expect(first.first).to eq(first.last)
+        expect(rest.first.first).to eq(first.last) if rest.any?
+      end
+      expect(widths(bands(funnel("index"))[1])).to eq([width(4, 6), width(6, 6)])
+    end
+
+    it "keeps a first band that added nothing at zero width" do
+      stages["index-from-query"] = { "original" => rec(0, 0) }
+      expect(widths(bands(funnel("index")).first)).to eq([0, 0])
+    end
+
+    it "draws a first band the run didn't record as a rectangle at least a third of the full width" do
+      stages.delete("index-from-query")
+      first = widths(bands(funnel("index")).first)
+      expect(first).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
+      expect(first.first).to be >= Quaack::Driver::Report::Funnel::WIDTH / 4
     end
 
     it "says the whole of a stage's added, dropped, set aside, and extra counts in its tooltip" do
