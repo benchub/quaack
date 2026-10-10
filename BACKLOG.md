@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-40: `untested_unchanged` (enclave `AtomPosition`, `Protocol::UnchangedAtoms`, an egress subset check) sends which untested atoms are in an unchanged part of the rewrite (enclave and protocol).
 - 20261009-57: the redaction re-check reads a jsonb `?` operator correctly (enclave).
 - 20261003-28: `shared_scan_cte` widenings: copies in subqueries and CTE bodies, a nullable copy, GROUP BY on the primary key, ONLY, aliased joins (enclave).
+- 20261004-9: rewrite-test and counterexamples disproofs of a `denormalized_equal` rewrite are reported as rule bugs (enclave; no new fields).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
 - 20261009-63: a constant conjunct in a rewrite counts as new material in `AtomPosition` (enclave).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
@@ -374,16 +375,7 @@ The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-9. Report `polymorphic_key_copy` disproofs in rewrite-test and counterexamples as rule bugs.
-
-`rule_bugs.rb:58` still skips every rewrite-test or counterexamples disproof of a rewrite that rests on `denormalized_equal`. That made sense before 20261002-15's fix round, when fixtures didn't keep the copy. Now they do, so a wrong rule, such as one copying the wrong constant, gets disproved but isn't reported as a QUAACK bug. Remove the exemption, with a test showing that a broken rule's disproof shows up in the rule bugs.
-
-Also, a twin that drops the type filter is caught only if counterexamples' LLM writes a row of another class with the copy set. Consider making rewrite-test's fixtures add such a row themselves.
-
-- **Depends on:** 20261002-15.
-- **Came from:** The second review of 20261002-15.
-- **Design:** rewrite-test, counterexamples and report.
-- **Status:** todo
+### 20261004-9. Report `polymorphic_key_copy` disproofs in rewrite-test and counterexamples as rule bugs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
@@ -1164,4 +1156,13 @@ From the review of 20261003-28 (minor). The `ref.fields.size == 2` check in `Gro
 - **Depends on:** 20261003-28.
 - **Came from:** The review of 20261003-28, 2026-10-10 (minor).
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261010-2. rewrite-test fixtures: a row of another class with the copy set.
+
+From 20261004-9's second paragraph and its review (a "Consider", left out of that task). `polymorphic_key_copy` rewrites a join through a denormalized copy (a column that holds a parent's id for rows of one class). The fixtures keep the copy equal for rows of the class, but nothing adds a row of ANOTHER class with the copy column set, so a twin of the rule that drops the type filter would pass rewrite-test. Make the fixture builder add such a row (a row of another class whose copy column is set, and one with no parent) when the schema has a polymorphic copy, test with a hand-written twin that drops the type filter (it must be disproved) and the real rule (it must pass), keep every row valid under the schema's constraints, and update DESIGN.md. A reviewer noted the fixture UPDATE that restores the copy also fires user triggers on the child table, which could change other columns (an unusual setup): check and note it. Enclave change: unreleased list.
+
+- **Depends on:** 20261004-9.
+- **Came from:** 20261004-9's entry and its review, 2026-10-10.
+- **Design:** rewrite-test.
 - **Status:** todo

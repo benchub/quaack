@@ -9486,3 +9486,15 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 - **Landed so far:** 2026-10-09 (task/20260926-54; review clean): the driver checker mode constant, the skipped-suite abort in the Rakefile, and the symlinked-Ruby spec. The user decided `Server#admin` stays as is (no reconnect). Only the four harness items remain.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20260926-54b; two reviews, one fix round). Child specs run from their own tmpdir so the root `.rspec` and spec_helper no longer load (the setup is tested on its own); the memoized launch error is re-raised as a copy with a fresh backtrace and the original as its cause; old test images are cleaned by `TestPostgres::OldImages.remove(current, older_than: 7 days, only: nil)` called from `launch` (only the `quaack-test-postgres` repository, never the current tag, never forced, in-use images refused, errors skip cleanup; specs pass `only:` with their own tags). Item 4 (moving child specs in-process) was dropped: it would save about 1.5 s and lose real fork-and-exit coverage. Note from review: a spec file that does real launches uses the production path, so it removes any unused harness image older than 7 days.
+
+### 20261004-9. Report `polymorphic_key_copy` disproofs in rewrite-test and counterexamples as rule bugs.
+
+`rule_bugs.rb:58` still skips every rewrite-test or counterexamples disproof of a rewrite that rests on `denormalized_equal`. That made sense before 20261002-15's fix round, when fixtures didn't keep the copy. Now they do, so a wrong rule, such as one copying the wrong constant, gets disproved but isn't reported as a QUAACK bug. Remove the exemption, with a test showing that a broken rule's disproof shows up in the rule bugs.
+
+Also, a twin that drops the type filter is caught only if counterexamples' LLM writes a row of another class with the copy set. Consider making rewrite-test's fixtures add such a row themselves.
+
+- **Depends on:** 20261002-15.
+- **Came from:** The second review of 20261002-15.
+- **Design:** rewrite-test, counterexamples and report.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-9; Opus review clean). `rule_bugs.rb` no longer exempts a rewrite resting on `denormalized_equal`; the reviewer confirmed the fixtures keep the copy equal (`DenormalizedFixture::Runner` runs after all generated and LLM rows load and overwrites a wrong copy with the same predicate assumption-check used), so a rewrite-test or counterexamples mismatch is a rule bug. `EmpiricalAssumptions.any?` removed. On the unreleased list. The task's optional second paragraph (a fixture row of another class with the copy set, to catch a twin that drops the type filter) is 20261010-2.
