@@ -533,20 +533,7 @@ The second review of 20261008-31 found these:
 - **Design:** What goes into the enclave.
 - **Status:** todo
 
-### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name.
-
-The review of 20261008-32 found these minor issues:
-
-1. **Keyword operators can resolve to a user overload.** `LIKE`, `IN`, `IS DISTINCT FROM`, and `NULLIF` stay unpinned and resolve through the search path. A user overload in a role-named schema could be picked, or its existence shown. Pin them, for example by rewriting `x LIKE y` to `x OPERATOR(pg_catalog.~~) y`, or list them as unsupported in v1 in DESIGN.md.
-2. **A pinned name that doesn't exist gives a vague failure.** It fails later as `failed_to_plan`, not with a clean refusal. That doesn't leak, but the failure is less clear than it could be.
-
-3. **Kind separation isn't tested, from the second review.** The `k == kind` match in `Names` has no test. Removing it keeps every test green. Add a test where the original uses the type `public.hstore` and the candidate calls a bare `hstore(...)`.
-4. **The fix test uses stand-ins.** It could use real pg_trgm `similarity()` and `%`, since the test image has the extension.
-
-- **Depends on:** 20261008-32.
-- **Came from:** The review of 20261008-32, 2026-10-08.
-- **Design:** What goes into the enclave.
-- **Status:** todo
+### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-42. Hidden statistics: minors from 20261008-34.
 
@@ -560,18 +547,9 @@ The review of 20261008-34 found these minor issues:
 - **Design:** statistics, report.
 - **Status:** todo
 
-### 20261008-43. Error-detail scrub misses keys that encode unreserved characters.
-
-The review of 20261001-5 found this gap. It was already on main. `APIErrorDetail`'s `char_pattern` never treats `A-Za-z0-9_.~-` as encodable, so a key echoed with one of those characters percent-encoded, such as `sk%2D...`, passes through unscrubbed. Now that the JSON fallback lets more of the raw body into the detail, the gap has a little more exposure. Match `%XX` for every character of a secret, and add a sentinel test.
-
-- **Depends on:** 20261001-5.
-- **Came from:** The review of 20261001-5, 2026-10-08.
-- **Design:** LLM client.
-- **Status:** todo
-
 ### 20261008-44. Qualifying overloaded names: keyword forms (part 2 of 20261007-21).
 
-Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, and USING and NATURAL joins have no qualified spelling. When several schemas on the path define the operator they use, rewrite each one into an equivalent explicit form that can be qualified, or refuse it cleanly, and list it as unsupported in v1. See also 20261008-41 item 1.
+Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, and USING and NATURAL joins have no qualified spelling. When several schemas on the path define the operator they use, rewrite each one into an equivalent explicit form that can be qualified, or refuse it cleanly, and list it as unsupported in v1. This also covers item 1 of 20261008-41 (keyword operators LIKE, IN, IS DISTINCT FROM, NULLIF resolving through the search path).
 
 - **Depends on:** 20261007-21.
 - **Came from:** The split of 20261007-21, 2026-10-08.
