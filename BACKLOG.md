@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-24: sibling rows for near misses on a column that another scope also tests (enclave).
 - 20261010-30: groups with a parent and no child where an outer join or a correlated subquery makes the child optional (enclave).
 - 20261010-32: a boolean test on a plain column gets a value pool, and a spill fixture skips a parent the group already brings (enclave).
+- 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
 
 ## How this file works.
 
@@ -939,20 +940,6 @@ From the review of 20261010-30:
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
 
-### 20261010-36. Untested conditions: aggregate FILTER, max() with a filter, CTE, scalar subquery, second column tie.
-
-What 20261010-32 didn't finish, with causes where the builder confirmed them (shapes are still in the corpus's `PENDING`):
-- **Aggregate FILTER** (`count(*) FILTER (WHERE published)`): `posts.score > $1` untested. The bare `published` inside the FILTER has no pool, so the hit and the near miss both take its default false and the FILTER counts neither. The builder pooled bare boolean columns, which fixed it but broke three `vacuity_guard_scopes_postgres_spec` examples (the NOT arm of `muted IS NULL OR NOT muted`, and the UNION ALL count shapes): a NOT arm's masking needs its own handling. Reverted.
-- **`max()` with a filter**: `posts.published = $1` untested. `score` has a DEFAULT, so both rows read 0 and max() can't change. The near miss needs a score above the hit's.
-- **CTE with an outer filter** (`posts.created_at > $1`): the near miss may fail the outer filter too. Unconfirmed.
-- **Scalar subquery in WHERE** (`p2.published = $1`): the near miss must move avg() across the hit's score. Unconfirmed.
-- **A second column-to-column tie between the same two tables** (`comments.user_id = posts.user_id`): no row joins on one and not the other. Unconfirmed.
-Start with the FILTER and `max()` cases (common in reports). Keep the guard sound.
-
-- **Depends on:** 20261010-32 (landed).
-- **Came from:** The work on 20261010-32, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
 
 ### 20261010-37. Winner summary: push the duplicated-constraint angle, and tighten the node check.
 
@@ -961,4 +948,41 @@ From the live run and review of 20261010-28. (1) A live synthetic `or_to_union` 
 - **Depends on:** 20261010-28 (landed).
 - **Came from:** The live run and review of 20261010-28, 2026-10-10.
 - **Design:** report.
+- **Status:** todo
+
+### 20261010-38. Aggregated columns: untested CHECK guard and the `MIN_APART` wrap.
+
+From the review of 20261010-36:
+1. **The CHECK guard in `Scenarios::FreeValues#default_value` has no test.** Replacing `value && @checks.allows?(table, col, value) ? value : :omit` with `value || :omit` leaves every focused spec green. Add a spec: a defaulted, aggregated column whose CHECK rejects the near miss's own value; the scenario must load and the atom be reported untested; red when the guard is dropped.
+2. **`MIN_APART` (999_999) wraps negative on narrow numeric types** (`Literals.numeric` wraps above the type's maximum: smallint becomes -16989, `numeric(5,2)` goes negative), so a min() near miss silently stays untested. Clamp the value to the type's maximum, or skip the wrap for it; test with a smallint column.
+3. A column read by both min() and max() gets only the max treatment; under `MIN_APART` a min-only column in a boundary group loses its boundary values (builder's known gaps).
+
+- **Depends on:** 20261010-36 (landed).
+- **Came from:** The review and build of 20261010-36, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34.
+
+Still in the corpus's `PENDING`, causes unconfirmed unless noted:
+- CTE with an outer filter (`posts.created_at > $1`); scalar subquery in WHERE (`p2.published = $1`: the near miss must move avg() across the hit's score); a second column-to-column tie between the same two tables (`comments.user_id = posts.user_id`).
+- A sibling that must fail every other scope the parent could pass through (20261010-34 fixed one level with `Plan#scope_mate`): a variant whose second UNION branch is `published = true AND score > 9` still leaves `score > $6` untested because the sibling fails `published` but passes `score > 9`, which satisfies branch 1.
+- `SELECT count(*) FROM posts JOIN comments ... WHERE posts.id IN (SELECT posts.id FROM posts WHERE published AND title <> 'draft' AND user_id IN (...) AND id IN (501..504)) AND comments.user_id = 7` leaves `published`, `title` and the `id IN` untested.
+- A count over an IN subquery whose second UNION ALL branch pins `posts.id IN (11..14)` leaves that branch's `score`, `title` and `id IN` untested.
+- A manager self-join with both `m.id IN` and `e.id IN` lists gives an S1 that returns no rows; three atoms untested.
+- A `HAVING count(*) > 1` query with a pinned `users.id IN` list leaves three atoms untested.
+Add each to the corpus (`PENDING` with the shape and atoms), confirm each cause, fix what is cheap or clear and file the rest.
+
+- **Depends on:** 20261010-36 and 20261010-34 (landed).
+- **Came from:** The work on 20261010-36, -33 and -34, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-40. Scenarios: copies' child rows don't follow their copy's parent (possible fixture bug).
+
+Found while building 20261010-33: in S6, with copies of posts under `posts.id IN (201..204)`, all three copied comments point at post 202, not at their own copy's post. If real, a copy's children attach to the wrong parent, so what S6 tests differs from what its description says (it can hide or invent differences between a rewrite and the original). Reproduce on the corpus schema, find whether it is by design (copies of one table's row share a parent) or a bug, and fix or document it with a test.
+
+- **Depends on:** 20261010-33 (landed).
+- **Came from:** The work on 20261010-33, 2026-10-10.
+- **Design:** scenarios.
 - **Status:** todo

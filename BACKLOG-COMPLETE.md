@@ -10136,3 +10136,18 @@ Design to settle, then build:
 - **Came from:** The user, 2026-10-10.
 - **Design:** report.
 - **Status:** done. Landed 2026-10-10 (driver only): the prompt asks for what changed in the query's structure, why that let the planner do less work (only when a plan difference backs it), and a reusable pattern; `Input::RULE_PURPOSES` gives each of the 12 rules a fixed one-line purpose; the guard refuses a summary naming a plan node type that neither plan has; the cap rose from 800 to 1000 characters (prompt asks under 700). One live synthetic run read well but missed the duplicated-constraint angle: 20261010-37.
+
+### 20261010-36. Untested conditions: aggregate FILTER, max() with a filter, CTE, scalar subquery, second column tie.
+
+What 20261010-32 didn't finish, with causes where the builder confirmed them (shapes are still in the corpus's `PENDING`):
+- **Aggregate FILTER** (`count(*) FILTER (WHERE published)`): `posts.score > $1` untested. The bare `published` inside the FILTER has no pool, so the hit and the near miss both take its default false and the FILTER counts neither. The builder pooled bare boolean columns, which fixed it but broke three `vacuity_guard_scopes_postgres_spec` examples (the NOT arm of `muted IS NULL OR NOT muted`, and the UNION ALL count shapes): a NOT arm's masking needs its own handling. Reverted.
+- **`max()` with a filter**: `posts.published = $1` untested. `score` has a DEFAULT, so both rows read 0 and max() can't change. The near miss needs a score above the hit's.
+- **CTE with an outer filter** (`posts.created_at > $1`): the near miss may fail the outer filter too. Unconfirmed.
+- **Scalar subquery in WHERE** (`p2.published = $1`): the near miss must move avg() across the hit's score. Unconfirmed.
+- **A second column-to-column tie between the same two tables** (`comments.user_id = posts.user_id`): no row joins on one and not the other. Unconfirmed.
+Start with the FILTER and `max()` cases (common in reports). Keep the guard sound.
+
+- **Depends on:** 20261010-32 (landed).
+- **Came from:** The work on 20261010-32, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done for FILTER and aggregated columns. Landed 2026-10-10: a bare boolean inside an aggregate FILTER gets a pool (and the probe evaluates a bare column); a near miss takes a distinguishing value of an aggregated column (max/min/sum/avg) even over a DEFAULT when CHECKs allow it, and a min-only column takes `MIN_APART` elsewhere. Not done (CTE, scalar subquery, second column tie): 20261010-39. Minors: 20261010-38.
