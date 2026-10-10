@@ -2,7 +2,7 @@
 
 An IN subquery that reads the outer table again by a unique, not-null key becomes that table's own predicates, and an EXISTS on what's left of the subquery.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 

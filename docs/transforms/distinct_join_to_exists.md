@@ -2,7 +2,7 @@
 
 A SELECT DISTINCT over a join that reads only one table, with a unique, not-null key of that table among its columns, becomes that table alone with an EXISTS on the other tables, and no DISTINCT.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 

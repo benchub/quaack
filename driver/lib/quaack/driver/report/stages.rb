@@ -65,7 +65,7 @@ module Quaack
           counted.map { |name, n| "#{counted_as(name, rules, stage)}: #{Format.number(n)}" }.join("; ")
         end
 
-        def counted_as(name, rule, stage) = rule ? "by the rule #{name}" : counted(name, stage)
+        def counted_as(name, rule, stage) = rule ? "by the transform rule #{name}" : counted(name, stage)
 
         # A name in words. rewrite-test drops a rewrite it never tested by
         # the rule of the refusal or the failure, said as the rewrite's fate

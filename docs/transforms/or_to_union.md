@@ -2,7 +2,7 @@
 
 An OR whose arms read different tables or subqueries becomes a UNION of one query per arm, which the rest of the query reads in place of its tables.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 

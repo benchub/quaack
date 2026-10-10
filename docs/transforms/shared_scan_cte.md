@@ -2,7 +2,7 @@
 
 A table read more than once in the top-level FROM is read once, by a MATERIALIZED CTE of the WHERE and inner-join ON conjuncts every copy shares.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 
