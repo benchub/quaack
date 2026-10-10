@@ -42,6 +42,21 @@ RSpec.describe Quaack::Enclave::Scenarios::Branches do
     expect(also(union, columns, 1) { false }).to be_nil
   end
 
+  # 20261010-23: a value can satisfy at most one of a.t = 1 .. a.t = 4, so
+  # a partial choice that leaves two of them to satisfy never builds.
+  it "looks ahead when no partial choice builds, as with four equality arms on one column" do
+    sql = "SELECT 1 FROM fx.a WHERE a.t = '1' OR a.t = '2' OR a.t = '3' OR a.t = '4' OR a.w = 'z'"
+    fits = ->(chosen) { ([0, 1, 2, 3] - [0] - chosen).size <= 1 }
+    expect(also(sql, columns, 0, &fits)).to eq([1, 2, 3, 4])
+    expect(also(sql, columns, 0) { |chosen| chosen.size == 4 }).to eq([1, 2, 3, 4])
+    expect(also(sql, columns, 0) { |chosen| chosen.size == 4 && chosen != [1, 2, 3, 4] }).to be_nil
+  end
+
+  it "keeps the one-arm-at-a-time choice when it finds one" do
+    sql = "SELECT 1 FROM fx.a WHERE a.t = 'x' OR (a.w <> 'd' AND a.m) OR (a.id = 5 AND a.id <> 6)"
+    expect(also(sql, columns, 0) { |chosen| chosen != [1, 3] }).to eq([1, 4])
+  end
+
   it "needs nothing more for a NOT arm, and gives up on an arm with no ANDed atom" do
     expect(also("SELECT 1 FROM fx.a WHERE a.t = 'x' OR NOT a.m", columns, 0)).to be_nil
     expect(also("SELECT 1 FROM fx.a WHERE a.t = 'x' OR (a.w = 'd' OR a.m)", columns, 0)).to be_nil

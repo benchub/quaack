@@ -129,6 +129,9 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     { name: "left join with ON filter",
       sql: "SELECT fx.users.id, fx.posts.id FROM fx.users LEFT JOIN fx.posts " \
            "ON fx.posts.user_id = fx.users.id AND fx.posts.published = true", allowed: {} },
+    { name: "OR of four equality arms on one column and another arm",
+      sql: "SELECT * FROM fx.posts WHERE fx.posts.score = 1 OR fx.posts.score = 2 OR fx.posts.score = 3 " \
+           "OR fx.posts.score = 4 OR fx.posts.title = 'z'", allowed: {} },
     { name: "left join made inner by WHERE",
       sql: "SELECT fx.users.id, fx.posts.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
            "WHERE fx.posts.kind = 'x' AND fx.users.active = true", allowed: {} },
