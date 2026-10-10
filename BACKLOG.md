@@ -911,17 +911,6 @@ Design to settle, then build:
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-29. Ranking: put the kind tint and stripe on the subsections below "Measured, and not ranked", not on the table.
-
-The user, 2026-10-10. 20261009-35 gave the Ranking section's three kinds (a rewrite with new indexes, a rewrite with no new indexes, the original with new indexes) a tinted background and a strong left color stripe, but on the rows of the ranking table (`tr.kind.stripe-<kind>` and the ranked rows). The user meant the subsections further down the Ranking section: the h3 kind heading (such as "A rewrite of the original query, with new indexes") and the numbered h3 entries under it ("1. Rewrite Blue Sunbeam with a new index on ..."), which follow the "Measured, and not ranked" h3. Everything else looks good to them.
-
-Move the grouping there: wrap each kind's heading and its numbered entries in one block with that kind's tint (`--head-bg` or the kind's own variable) and a strong left stripe in the kind's color, using the same three colors and dark-theme values as before (`--st-teal`, `--st-violet`, `--st-brown`). Since they said "move", take the tint and stripe off the table rows, and leave the table's rowgroup headings and numbering as plain structure; say so in the report of the work so the user can ask for them back. Keep the heading levels and the order so screen readers and the contents links still work, keep the caveat and link targets (#ranking and its subsections) intact, check contrast in both themes, update DESIGN.md's ranking bullet and the README sample if it shows the table, and show the user a screenshot of both themes (headless Firefox works).
-
-- **Depends on:** 20261009-35 (landed).
-- **Came from:** The user, 2026-10-10.
-- **Design:** report.
-- **Status:** todo
-
 
 ### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
 

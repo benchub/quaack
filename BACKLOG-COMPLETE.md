@@ -10108,3 +10108,14 @@ Find each cause, fix it without weakening the guard, and flip the shapes in the 
 - **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done as far as it went. Landed 2026-10-10: boolean `IS TRUE`/`IS NOT TRUE`/`IS FALSE` get a value pool; the spill fixture no longer copies a parent the near miss already brings (fixes Rails `count` with `where.not` and keyset pagination). Not done, moved to 20261010-36: aggregate FILTER, `max()` with a filter, CTE with an outer filter, scalar subquery in WHERE, the second column-to-column tie.
+
+### 20261010-29. Ranking: put the kind tint and stripe on the subsections below "Measured, and not ranked", not on the table.
+
+The user, 2026-10-10. 20261009-35 gave the Ranking section's three kinds (a rewrite with new indexes, a rewrite with no new indexes, the original with new indexes) a tinted background and a strong left color stripe, but on the rows of the ranking table (`tr.kind.stripe-<kind>` and the ranked rows). The user meant the subsections further down the Ranking section: the h3 kind heading (such as "A rewrite of the original query, with new indexes") and the numbered h3 entries under it ("1. Rewrite Blue Sunbeam with a new index on ..."), which follow the "Measured, and not ranked" h3. Everything else looks good to them.
+
+Move the grouping there: wrap each kind's heading and its numbered entries in one block with that kind's tint (`--head-bg` or the kind's own variable) and a strong left stripe in the kind's color, using the same three colors and dark-theme values as before (`--st-teal`, `--st-violet`, `--st-brown`). Since they said "move", take the tint and stripe off the table rows, and leave the table's rowgroup headings and numbering as plain structure; say so in the report of the work so the user can ask for them back. Keep the heading levels and the order so screen readers and the contents links still work, keep the caveat and link targets (#ranking and its subsections) intact, check contrast in both themes, update DESIGN.md's ranking bullet and the README sample if it shows the table, and show the user a screenshot of both themes (headless Firefox works).
+
+- **Depends on:** 20261009-35 (landed).
+- **Came from:** The user, 2026-10-10.
+- **Design:** report.
+- **Status:** done. Landed 2026-10-10: each kind's h3 heading and numbered entries sit in `div.kind-group.stripe-KIND` with the tint and a 5px left stripe; the ranking table is plain (stripe classes and row CSS removed). Contrast spec also checks links on the tints. Screenshots checked in both themes.
