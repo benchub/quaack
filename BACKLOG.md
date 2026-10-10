@@ -25,6 +25,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-4 and 20261008-5: `not_in_to_not_exists` takes a NOT IN (and a one-column `<> ALL` with a pg_catalog negator proof) in any position of a plain SELECT, with the not-null proofs, and refuses a grouping-set GROUP BY (enclave).
 - 20261008-22: live EXPLAIN JSON in `IndexBuild.confirm` and `Measurement.measure_set` is parsed with the store's depth bound (3000) instead of JSON's default 100 (enclave).
 - 20261008-7, 20261008-8, 20261008-9: `or_to_union` takes a GROUP BY and HAVING (plain grouped columns, aggregates only if the catalog says every function of that name is one), outer joins (LEFT, RIGHT, FULL; no NATURAL, USING or a join alias), and a bare `*` expanded from the catalog (enclave).
+- 20261008-24 (items 3 and 4) and 20261008-25: index-from-query reduces joins through a FROM subquery's columns, counts a whole-row reference as reading every column, and keys a `char(n)` pattern idea with `bpchar_pattern_ops` (enclave).
 - 20261008-21 (InitPlan half): `(InitPlan n).colm` in a plan condition is read as a parameter by index-from-plan (enclave). 20261008-23: a bare boolean or NOT boolean skips the MCV coverage rule (enclave).
 - 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
@@ -450,23 +451,10 @@ The builder of 20260923-21 left these items out:
 - **Depends on:** 20260923-21.
 - **Came from:** The builder of 20260923-21, 2026-10-08.
 - **Design:** index-from-query.
+- **Landed so far:** items 3 and 4, 2026-10-10 (task/20261008-24; review clean). Item 3: a FROM subquery with an alias is a member of the join's sides, so a strict conjunct on a column qualified by that alias (a bare column or a COLLATE-wrapped one under a plain operator) counts as rejecting the subquery and reduction cascades through its ON equality (`coalesce`, `IS NULL`, `IS DISTINCT FROM`, OR with another condition, NOT and function calls don't reduce); unqualified subquery columns aren't tracked. Item 4: a whole-row reference (`SELECT o`, `to_jsonb(o)`, `o IS NOT NULL`, GROUP BY o, ORDER BY o) reads every column of that table; a bare name that is a column of a table in the query still reads as the column. On the unreleased list. Still open: item 1 (incremental sort: large, its own task) and item 2 (INCLUDE beyond the select list and GROUP BY: DESIGN.md limits INCLUDE on purpose, so it needs the user's call). Minor finding: 20261010-14.
 - **Status:** todo
 
-### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21.
-
-The review of 20260923-21 found these minor issues:
-
-1. **`IS DISTINCT FROM` has no test.** Adding `AEXPR_DISTINCT` to `Strict::KINDS` keeps every test green. Add it to the "isn't plainly strict" test.
-2. **A column under COLLATE has no test.** Dropping the `collate_clause` arm of `Strict.bare` keeps every test green.
-3. **The pattern key's opclass is wrong for `char(n)`.** A prefix LIKE on a `char(n)` column gets a `text_pattern_ops` key, which HypoPG refuses. The column needs `bpchar_pattern_ops`. The refusal is recorded and costs only a wasted candidate, but the useful key is missed.
-4. **The skip rule and its docs don't match.**
-   - Under `COLLATE "ucs_basic"`, a prefix LIKE still gets a `text_pattern_ops` key, though a plain btree already serves it.
-   - DESIGN.md says the extra key is skipped only under `COLLATE "C"`, but the code also skips it under POSIX.
-
-- **Depends on:** 20260923-21.
-- **Came from:** The review of 20260923-21, 2026-10-08.
-- **Design:** index-from-query.
-- **Status:** todo
+### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-26. NATURAL JOIN marker: minors from 20260923-30.
 
@@ -1040,4 +1028,13 @@ From the review of 20261008-22 (minor).
 - **Depends on:** 20261008-22.
 - **Came from:** The review of 20261008-22, 2026-10-10 (minor).
 - **Design:** index-from-plan, measurement.
+- **Status:** todo
+
+### 20261010-14. `TableStatistics#type_map`: an empty type string isn't tested.
+
+From the review of 20261008-24 and -25 (minor). Removing the `!v.empty?` check from `TableStatistics#type_map` leaves every spec green. It doesn't affect soundness (the value is only compared with `"bpchar"`), but add `column_types: { "id" => "" }` to the "rejects a type for a column that isn't in the list, and a type that isn't a name" example in `statistics_spec.rb`, and confirm it goes red without the check.
+
+- **Depends on:** 20261008-25.
+- **Came from:** The review of 20261008-24 and -25, 2026-10-10 (minor).
+- **Design:** index-from-query.
 - **Status:** todo

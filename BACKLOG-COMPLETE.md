@@ -9811,3 +9811,20 @@ One of 20261007-47's extensions, each its own task by the user's decision (2026-
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261008-7 branch; Opus review clean). A bare `*` or `name.*` expands to every FROM table's columns from the catalog in FROM order (dropped and system columns excluded, duplicate output names kept); refused when a column type can't be UNIONed (json), with GROUP BY, and with `JOIN ... USING` (the merged column would repeat and move). On the unreleased list.
+
+### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21.
+
+The review of 20260923-21 found these minor issues:
+
+1. **`IS DISTINCT FROM` has no test.** Adding `AEXPR_DISTINCT` to `Strict::KINDS` keeps every test green. Add it to the "isn't plainly strict" test.
+2. **A column under COLLATE has no test.** Dropping the `collate_clause` arm of `Strict.bare` keeps every test green.
+3. **The pattern key's opclass is wrong for `char(n)`.** A prefix LIKE on a `char(n)` column gets a `text_pattern_ops` key, which HypoPG refuses. The column needs `bpchar_pattern_ops`. The refusal is recorded and costs only a wasted candidate, but the useful key is missed.
+4. **The skip rule and its docs don't match.**
+   - Under `COLLATE "ucs_basic"`, a prefix LIKE still gets a `text_pattern_ops` key, though a plain btree already serves it.
+   - DESIGN.md says the extra key is skipped only under `COLLATE "C"`, but the code also skips it under POSIX.
+
+- **Depends on:** 20260923-21.
+- **Came from:** The review of 20260923-21, 2026-10-08.
+- **Design:** index-from-query.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-24 branch; review clean). Tests for `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` not reducing and for a COLLATE-wrapped column; a `char(n)` column's pattern idea uses `bpchar_pattern_ops` (confirmed in real HypoPG: `text_pattern_ops` is refused on `char(n)`; `varchar` takes `text_pattern_ops`) via a new optional `column_types:` on `TableStatistics` (stays inside the enclave; chosen from a fixed pair, never from the type string); the pattern key is skipped under C, POSIX and `ucs_basic` collations; DESIGN.md matches. On the unreleased list.
