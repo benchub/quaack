@@ -46,7 +46,18 @@ RSpec.describe PipelineReplay do
     record["in"].zero? && (!record["added"].to_h.empty? || record["out"].zero?)
   end
 
+  # The runs whose first funnel band was drawn and checked (task 20261009-53),
+  # so the check after the last run can see the example didn't skip most of them.
+  rectangle_runs = []
+
   replays do
+    # Only when every run was asked for: a filtered run checks fewer.
+    after(:context) do
+      next unless RSpec.configuration.filter_manager.inclusions.empty?
+
+      expect(rectangle_runs.size).to be >= 6
+    end
+
     PromptPack::QUERIES.each do |query|
       described_class.selected_variants(query.name, full: FullReplay.on?).each do |variant|
         context "#{query.name}, replaying #{variant}" do
@@ -85,8 +96,13 @@ RSpec.describe PipelineReplay do
 
           # Task 20261009-43: the first band of each funnel is a rectangle.
           it "draws the first band of each burndown funnel as wide at its top as at its bottom" do
-            next unless outcome.report
+            # A run that ended in an error has no report to draw. Say that is why it is skipped.
+            unless outcome.report
+              expect(outcome.error).not_to be_nil
+              next
+            end
 
+            rectangle_runs << [query.name, variant]
             view = Quaack::Driver::Report::View.new(outcome.report, "run")
             %i[index_rows rewrite_rows rewrite_index_rows].each do |rows|
               top, bottom = first_band_widths(view, view.public_send(rows))
