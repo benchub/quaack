@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "../rewrite_entry"
 require_relative "../arena_runner"
+require_relative "../atom_position"
 require_relative "../counterexamples"
 require_relative "../denormalized_fixture"
 require_relative "../redaction"
@@ -103,7 +104,8 @@ module Quaack
           end
 
           def discarded
-            { "passed" => false, "scenario" => nil, "rule" => "discarded", "untested" => [], "untested_atoms" => [] }
+            { "passed" => false, "scenario" => nil, "rule" => "discarded", "untested" => [], "untested_atoms" => [],
+              "untested_unchanged" => [] }
           end
 
           # The result, once its burndown is recorded (RewriteBurndown.record_test).
@@ -128,9 +130,19 @@ module Quaack
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
             report = ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search))
-            outcome(report).tap { RewriteBurndown.record_test(store, search, it, report) }
+            result = outcome(report, unchanged(store, search, report))
+            result.tap { RewriteBurndown.record_test(store, search, it, report) }
           ensure
             connection&.close
+          end
+
+          # The redacted shapes of the untested atoms the rewrite left
+          # unchanged (AtomPosition), judged on the unbound SQL so a
+          # placeholder's number counts. A shape counts only if every untested
+          # atom with that shape is unchanged. Always a subset of untested.
+          def unchanged(store, search, report)
+            AtomPosition.unchanged_shapes(store.read("anchored_query"), RewriteEntry.run_sql(store.read(search)),
+                                          report.untested, report.untested_paths)
           end
 
           # What a tested (not refused) report adds: the dropped count and
@@ -140,12 +152,13 @@ module Quaack
             { "dropped" => report.dropped, "s1_load_rule" => report.s1_load_rule&.to_s, "s1_rows" => report.s1_rows }
           end
 
-          def outcome(report)
+          def outcome(report, unchanged = [])
             result = report.results.first
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
               **(report.refused ? { "refused" => true } : diagnostic(report)),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
-              "untested" => report.untested, "untested_atoms" => report.untested_atoms }
+              "untested" => report.untested, "untested_atoms" => report.untested_atoms,
+              "untested_unchanged" => unchanged }
           end
         end
 

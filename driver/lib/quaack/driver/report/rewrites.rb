@@ -121,8 +121,9 @@ module Quaack
           "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
-        UNTESTED = "QUAACK's tests never made these conditions from the original query both true and false, so " \
-                   "they can't show the rewrite handles them the same way:"
+        UNTESTED = "QUAACK's tests never made these conditions from the original query both true and false, " \
+                   "and they are in a part the rewrite changed, so they can't show the rewrite handles them the " \
+                   "same way:"
 
         # The conditions of the original query that rewrite-test's made-up rows never
         # exercised (vacuity-guard), by their redacted shapes. Anything else
@@ -132,8 +133,16 @@ module Quaack
         # Those a counterexample round's rows exercised afterwards.
         def checked_later(entry) = atoms(entry) & Array(entry["covered"]).grep(String)
 
-        # Those no test exercised.
-        def unchecked_atoms(entry) = atoms(entry) - checked_later(entry)
+        # Those the rewrite left unchanged by position (DESIGN.md's
+        # unchanged-atoms), as the enclave found. A missing or malformed
+        # list counts none. A shape that isn't an untested one takes nothing off.
+        def unchanged_atoms(entry)
+          list = entry["untested_unchanged"]
+          list.is_a?(Array) ? list.grep(String) : []
+        end
+
+        # Those no test exercised, in a part the rewrite changed.
+        def unchecked_atoms(entry) = atoms(entry) - checked_later(entry) - unchanged_atoms(entry)
 
         # How many of rewrite-test's scenario groups it left out because
         # their rows would collide on a unique key, or nil for none.

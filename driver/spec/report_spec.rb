@@ -11,8 +11,8 @@ RSpec.describe Quaack::Driver::Report do
   # What ERB's escaping makes of text with an apostrophe in it.
   let(:unproven) do
     "Read it with care: every test QUAACK ran passed, but the test data never made some " \
-      "conditions of the query both true and false, so the tests cannot show whether those parts behave the " \
-      "same in the rewrite."
+      "conditions in a part the rewrite changed both true and false, so the tests cannot show whether those " \
+      "parts behave the same in the rewrite."
   end
 
   def esc(text) = text.gsub("'", "&#39;")
@@ -567,8 +567,8 @@ RSpec.describe Quaack::Driver::Report do
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: transform " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat the original " \
          "query and is ranked below.</span> <span class=\"warn\">Read it with care: every test QUAACK ran " \
-         "passed, but the test data never made some conditions of the query both true and false, so the " \
-         "tests cannot show whether those parts behave the same in the rewrite.</span>",
+         "passed, but the test data never made some conditions in a part the rewrite changed both true and " \
+         "false, so the tests cannot show whether those parts behave the same in the rewrite.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM (its " \
          "model wasn&#39;t recorded).</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
@@ -580,8 +580,9 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     describe "a warning inside a rewrite's collapsed section" do
-      def warning(atoms: [], empirical: nil, covered: nil)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical, "covered" => covered)
+      def warning(atoms: [], empirical: nil, covered: nil, unchanged: nil)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical, "covered" => covered,
+                                         "untested_unchanged" => unchanged)
         summary = section(render(payload), "queries")[%r{<h3>Rewrite Vivid Cove</h3>.*?</summary>}m]
         summary[%r{<span class="warn">(.*?)</span>}, 1]
       end
@@ -596,8 +597,8 @@ RSpec.describe Quaack::Driver::Report do
         expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
         expect(warning(atoms: ["a < $1"], empirical: assumed))
           .to eq("Read it with care: it relies on what your data holds today. The test data also never " \
-                 "made some conditions of the query both true and false, so the tests cannot show whether those " \
-                 "parts behave the same in the rewrite.")
+                 "made some conditions in a part the rewrite changed both true and false, so the tests cannot " \
+                 "show whether those parts behave the same in the rewrite.")
       end
 
       it "flags untested conditions only while a later test left some of them unchecked" do
@@ -606,6 +607,21 @@ RSpec.describe Quaack::Driver::Report do
         expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["t.b IS NULL", "a < $1"])).to be_nil
         expect(warning(atoms: ["a < $1"], empirical: assumed, covered: ["a < $1"]))
           .to eq("Read it with care: it relies on what your data holds today.")
+      end
+
+      # Task 20261009-40: an untested condition in a part the rewrite left alone says nothing about it.
+      it "flags untested conditions only while some sit in a part the rewrite changed" do
+        expect(warning(atoms: ["a < $1", "t.b IS NULL"], unchanged: ["t.b IS NULL"])).to eq(unproven)
+        expect(warning(atoms: ["a < $1", "t.b IS NULL"], unchanged: ["t.b IS NULL", "a < $1"])).to be_nil
+        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["a < $1"], unchanged: ["t.b IS NULL"])).to be_nil
+        expect(warning(atoms: ["a < $1"], empirical: assumed, unchanged: ["a < $1"]))
+          .to eq("Read it with care: it relies on what your data holds today.")
+      end
+
+      it "counts every untested condition when the unchanged list is missing, empty, or names other shapes" do
+        [nil, [], ["other = $9"], "a < $1", [3]].each do |unchanged|
+          expect(warning(atoms: ["a < $1"], unchanged:)).to eq(unproven), unchanged.inspect
+        end
       end
 
       it "flags nothing when the section holds neither warning" do
@@ -674,12 +690,13 @@ RSpec.describe Quaack::Driver::Report do
 
     describe "the conditions no test ever exercised (vacuity-guard)" do
       let(:lead) do
-        esc("QUAACK's tests never made these conditions from the original query both true and false, so they can't " \
-            "show the rewrite handles them the same way:")
+        esc("QUAACK's tests never made these conditions from the original query both true and false, and they " \
+            "are in a part the rewrite changed, so they can't show the rewrite handles them the same way:")
       end
 
-      def conditions(atoms, covered)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "covered" => covered)
+      def conditions(atoms, covered, unchanged = nil)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "covered" => covered,
+                                         "untested_unchanged" => unchanged)
         section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
       end
 
@@ -694,6 +711,19 @@ RSpec.describe Quaack::Driver::Report do
         out = conditions(["a < $1", "t.b IS NULL"], ["t.b IS NULL"])
         expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
         expect(out).not_to include("checked later")
+      end
+
+      it "leaves out those in a part the rewrite didn't change, and says nothing when that's all of them" do
+        out = conditions(["a < $1", "t.b IS NULL"], nil, ["t.b IS NULL"])
+        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
+
+        conditions(["a < $1", "t.b IS NULL"], ["a < $1"], ["t.b IS NULL"])
+        expect(queries).not_to include('class="untested"')
+      end
+
+      it "lists every untested condition when the unchanged list names none of them" do
+        out = conditions(["a < $1", "t.b IS NULL"], nil, ["c = $3", 7])
+        expect(out.scan(%r{<li>.*?</li>}).size).to eq(2)
       end
 
       it "shows nothing when the LLM's test data checked them all afterwards" do

@@ -39,11 +39,11 @@ module Quaack
 
         def data_caution(entry) = empirical(entry) ? ["it relies on what your data holds today."] : []
 
-        UNPROVEN_FIRST = "every test QUAACK ran passed, but the test data never made some conditions of the " \
-                         "query both true and false, so the tests cannot show whether those parts behave the " \
-                         "same in the rewrite."
-        UNPROVEN_AFTER = "The test data also never made some conditions of the query both true and false, so " \
-                         "the tests cannot show whether those parts behave the same in the rewrite."
+        UNPROVEN_FIRST = "every test QUAACK ran passed, but the test data never made some conditions in a part " \
+                         "the rewrite changed both true and false, so the tests cannot show whether those " \
+                         "parts behave the same in the rewrite."
+        UNPROVEN_AFTER = "The test data also never made some conditions in a part the rewrite changed both true " \
+                         "and false, so the tests cannot show whether those parts behave the same in the rewrite."
 
         # The summary's warning about a rewrite's pairing, when it wasn't
         # met or couldn't be checked, or nil.

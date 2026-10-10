@@ -171,7 +171,9 @@ module Quaack
       # refusal, the cycle's table names, each a relation of the run's
       # schema subset), its plan's node shapes, its
       # untested atoms (rewrite-test's redacted shapes), the shapes of those
-      # the counterexample rounds covered, and its counterexamples
+      # the counterexample rounds covered, untested_unchanged (the shapes of
+      # those it left unchanged, DESIGN.md's unchanged-atoms, each one of its
+      # untested atoms), and its counterexamples
       # evidence. indexes is each built index's DDL through
       # CandidateDdlRedaction with its size and catalog coverage, each
       # existing index as its name and size in bytes. negative is the negative-result
@@ -195,8 +197,9 @@ module Quaack
       # The plans, original_plan and each rewrite's plan, are checked on
       # the way out: the egress function sends a report only if each passes
       # Protocol::PlanNodes.valid?, so every node has exactly the fields
-      # above, each of its type, and only if index_sources passes
-      # Protocol::IndexSources.valid?. The rest go out unchecked, so the enclave's
+      # above, each of its type, only if index_sources passes
+      # Protocol::IndexSources.valid?, and only if each rewrite's
+      # untested_unchanged passes Protocol::UnchangedAtoms.valid?. The rest go out unchecked, so the enclave's
       # ReportPayload step is where they're reviewed. Sources, rule names, fates, scenarios, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
       # one only if it's on their own lists, never what a store entry holds

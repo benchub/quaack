@@ -424,6 +424,41 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261009-40: a rewrite's untested_unchanged repeats shapes of its
+    # untested_atoms and nothing else (Protocol::UnchangedAtoms.valid?).
+    describe "a rewrite's untested_unchanged" do
+      let(:atoms) { ["o.status = $1", "o.qty > $2"] }
+
+      def report_with(entry)
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil }.merge(entry)
+        { type: :report, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
+      end
+
+      it "sends shapes that are among the rewrite's untested atoms as they are, and a rewrite without it" do
+        sent = parsed(report_with("untested_atoms" => atoms, "untested_unchanged" => ["o.qty > $2"]))
+
+        expect(sent["rewrites"].first).to include("untested_unchanged" => ["o.qty > $2"])
+        expect(parsed(report_with("untested_atoms" => atoms))["rewrites"].first).not_to have_key("untested_unchanged")
+      end
+
+      [
+        ["a shape that isn't among the untested atoms", { "untested_unchanged" => [EGRESS_SENTINEL] }],
+        ["a planted shape beside a real one", { "untested_unchanged" => ["o.qty > $2", EGRESS_SENTINEL] }],
+        ["a String in place of the list", { "untested_unchanged" => EGRESS_SENTINEL }],
+        ["a nested value", { "untested_unchanged" => [{ "v" => EGRESS_SENTINEL }] }],
+        ["shapes under a Symbol key", { untested_unchanged: [EGRESS_SENTINEL] }]
+      ].each do |what, planted|
+        it "refuses one with #{what}, without quoting it" do
+          refusal = "a value in this report message has unchanged atoms that aren't among the untested atoms"
+          expect { egress.serialize(report_with({ "untested_atoms" => atoms }.merge(planted))) }
+            .to raise_error(described_class::Error, refusal) { |e|
+                  expect(e.message).not_to include(EGRESS_SENTINEL)
+                  expect(e.cause).to be_nil
+                }
+        end
+      end
+    end
+
     it "refuses index_sources whose source is a Symbol, as JSON would write it, without quoting it" do
       planted = index_sources.except("llm").merge(EGRESS_SENTINEL.to_sym => index_sources["llm"])
       expect { egress.serialize(type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources: planted) }

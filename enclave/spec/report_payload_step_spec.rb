@@ -101,7 +101,8 @@ RSpec.describe "quaacks report-payload" do
     # their indexes into the original's atoms, for counterexamples.
     store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil,
                                     "untested" => ["o.note = $2", "o.created_at > (now() - $1)"],
-                                    "untested_atoms" => [0, 3], "dropped" => 2)
+                                    "untested_atoms" => [0, 3], "dropped" => 2,
+                                    "untested_unchanged" => ["o.created_at > (now() - $1)"])
     store.write("rewrite_round_1", "round" => 3, "evidence" => true, "rule" => nil, "covered" => ["o.note = $2"])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
@@ -315,7 +316,7 @@ RSpec.describe "quaacks report-payload" do
       expect(rewrite(1)).to include(
         "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
         "untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"], "covered" => ["o.note = $2"],
-        "evidence" => false, "dropped" => 2
+        "untested_unchanged" => ["o.created_at > (now() - $1)"], "evidence" => false, "dropped" => 2
       )
       expect(rewrite(1)["plan"]).to eq(
         [{ "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 5, "actual_rows" => 5,
@@ -324,6 +325,35 @@ RSpec.describe "quaacks report-payload" do
            "est_rows" => 5, "actual_rows" => 5, "selectivity" => 0.005, "depth" => 1, "shared_hit_blocks" => nil,
            "shared_read_blocks" => nil }]
       )
+    end
+
+    # Task 20261009-40: untested_unchanged leaves only as shapes among the
+    # entry's untested ones, whatever else the stored entry holds.
+    context "with an untested_unchanged in rewrite_tested_<n> that holds more than its untested shapes" do
+      let(:outcome) do
+        payload_of do |store|
+          planted = ["o.note = $2", "#{sentinel} = $9", { "v" => sentinel }]
+          store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("untested_unchanged" => planted))
+        end
+      end
+
+      it "sends only the shapes that are untested ones, and nothing of what else it held" do
+        expect(rewrite(1)["untested_unchanged"]).to eq(["o.note = $2"])
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    context "with an untested_unchanged in rewrite_tested_<n> that isn't a list" do
+      let(:outcome) do
+        payload_of do |store|
+          store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("untested_unchanged" => sentinel))
+        end
+      end
+
+      it "sends none" do
+        expect(rewrite(1)["untested_unchanged"]).to be_nil
+        expect_no_leaks(sentinels, outcome)
+      end
     end
 
     # Task 20260926-42: only a count leaves, never what else the entry holds.
@@ -371,7 +401,8 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "covered" => nil, "evidence" => nil, "dropped" => nil)
+                                 "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
+                                 "evidence" => nil, "dropped" => nil)
       end
     end
   end

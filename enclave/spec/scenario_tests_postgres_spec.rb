@@ -63,6 +63,9 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
     report = run("SELECT o.id FROM fx.orders o WHERE o.qty <> 5 AND o.status = 'SENTINEL_49'")
     expect(report.untested).to eq(["o.status = $1", "o.qty <> $2"])
     expect(report.untested_atoms).to eq([0, 1])
+    # Each untested atom's path into the original's parse, for AtomPosition.
+    where = %w[stmts 0 stmt select_stmt where_clause bool_expr args].map { it.match?(/\A\d+\z/) ? it.to_i : it }
+    expect(report.untested_paths).to eq([where + [0], where + [1]])
     expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[false, :fixture_load_failed]])
   end
 
