@@ -86,6 +86,27 @@ RSpec.describe "qualifying names other than relations" do
         .to eq("SELECT seven(1) FROM public.orders")
     end
 
+    # Task 20261008-46: pg_catalog's abs(int) wins, and public's copy of it
+    # folds to the same constant, so the plans can't tell them apart.
+    # pg_catalog is probed too, so two matches leave the call bare.
+    it "stays bare when another schema's overload plans as pg_catalog's winner does" do
+      conn.exec("CREATE FUNCTION public.abs(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT abs($1)'")
+      expect(qualified("SELECT abs(-1) FROM orders")).to eq("SELECT abs(-1) FROM public.orders")
+    end
+
+    # Task 20261008-46: public's boom(0) raises while the planner folds it, so
+    # that probe errors where the baseline (sales') plans. The error is
+    # swallowed, doesn't match, and leaves the connection usable.
+    it "drops a probe that errors while the baseline plans, and names the schema that matches" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.boom(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT 1 / $1';
+        CREATE FUNCTION sales.boom(int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT $1';
+      SQL
+      expect(qualified("SELECT boom(0) FROM orders", { "search_path" => "sales, public" }))
+        .to eq("SELECT sales.boom(0) FROM public.orders")
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+
     # Task 20261007-21: on a connection with no transaction open, the plans
     # run in a read-only one of their own, with the production timeout.
     it "plans in a read-only transaction with the production timeout when none is open" do

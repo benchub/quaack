@@ -44,11 +44,13 @@ module Quaack
           end
         end
 
-        # The one schema other than pg_catalog whose plan, as the block
-        # gives it, matches, or nil.
+        # The one schema whose plan, as the block gives it, matches, unless
+        # that's pg_catalog, or nil. pg_catalog is probed too: if its
+        # overload plans as the original does as well (both fold to the same
+        # constant), which one won can't be told, so the call stays bare.
         def pick(schemas, baseline)
-          matches = (schemas - ["pg_catalog"]).select { yield(it) == baseline }
-          matches.first if matches.size == 1
+          matches = schemas.select { yield(it) == baseline }
+          matches.first if matches.size == 1 && matches.first != "pg_catalog"
         end
 
         def probe(tree, list, schema, path, connection)
