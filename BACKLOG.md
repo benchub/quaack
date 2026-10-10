@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261008-48, 20261008-52, 20261008-53 (items 5, 6): schema dump names, exclusion cap and `unknown_extra_dump_schema` and `dump_exclusions_too_long` rules (protocol), pg_inherits walk, `--exclude-schema=*` when no schema is left, `plan_too_deep` from egress (enclave, protocol and driver). Landed after the 0.1.31 bump.
+- 20261010-19: per-scope near misses in the Picker, and masking near-miss groups for OR arms and UNION branches, placed last in S1 to S5 (enclave).
 
 ## How this file works.
 
@@ -886,4 +887,13 @@ Build it properly: give more groups their own value of a key the query pins (a l
 - **Depends on:** 20261010-19.
 - **Came from:** The work on 20261010-19, 2026-10-10.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261010-23. Untested conditions: an OR of four or more equality arms on one column plus another arm.
+
+Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... OR fx.users.age = 4 OR fx.users.state = 'z'` leaves every atom untested. Two or three arms on one column work. The cause isn't found; likely the pool or the `also` selection finds no value that fails all the arms. ORMs usually emit `IN` here, so it's rare. Find the cause, fix it without weakening the guard, and test it.
+
+- **Depends on:** 20261010-19.
+- **Came from:** The review of 20261010-19, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
 - **Status:** todo
