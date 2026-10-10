@@ -16,7 +16,7 @@ module Quaack
       #
       #   NegativeResult.call(store)
       #   # => { "declined" => [{ "ddl", "reason", "sqlstate", "searches" }],
-      #   #      "existing" => [{ "ddl", "covered_by" => { "name", "size_bytes" }, "searches" }] }
+      #   #      "existing" => [{ "ddl", "covered_by" => { "name", "size_bytes", "definition" }, "searches" }] }
       #
       # Each index is sent once, with the searches it came up in (original,
       # rewrite_<n>), in the order they ran. A rewrite's search repeats most
@@ -30,7 +30,8 @@ module Quaack
       # Trust boundary. Search names, the reasons unused, hypopg_refused, and
       # unrenderable (REASONS; any other stored rule goes out as nil),
       # SQLSTATEs, existing index names (schema) and sizes
-      # (ExistingIndexes), and DDL through CandidateDdlRedaction. Never a
+      # (ExistingIndexes), and DDL, each existing index's definition
+      # included, through CandidateDdlRedaction. Never a
       # plan or a literal.
       module NegativeResult
         SQLSTATE = /\A[0-9A-Z]{5}\z/
@@ -46,7 +47,7 @@ module Quaack
           redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           sizes = ExistingIndexes.new(store)
           { "declined" => once(searches.flat_map { declined(store, it) }, redaction),
-            "existing" => once(searches.flat_map { existing(store, it, sizes) }, redaction) }
+            "existing" => once(searches.flat_map { existing(store, it, sizes, redaction) }, redaction) }
         end
 
         # Every stored rewrite_<n>, in number order, up to the first gap, as
@@ -88,13 +89,21 @@ module Quaack
           result["plans"].values.any? { it["used"] } || set_aside.include?(IndexStore.candidate(result["candidate"]))
         end
 
-        def existing(store, search, sizes)
+        def existing(store, search, sizes, redaction)
           store.read("index_search_#{search}").dig("dedupe", "drops").to_a.filter_map do |drop|
             next unless drop["reason"] == "covered_by_existing"
 
             candidate = IndexStore.candidate(drop["candidate"])
-            [candidate, search, { "covered_by" => sizes.named(candidate.table, drop["covered_by"]["existing"]) }]
+            by = sizes.named(candidate.table, drop["covered_by"]["existing"])
+            [candidate, search, { "covered_by" => by.merge("definition" => definition(drop["covered_by"], redaction)) }]
           end
+        end
+
+        # The existing index's definition, through the same redaction as the
+        # candidate's DDL, so a partial index's predicate holds no literal.
+        # nil if the stored drop has none.
+        def definition(covered, redaction)
+          redaction.ddl(IndexStore.candidate(covered["definition"])) if covered["definition"]
         end
       end
     end

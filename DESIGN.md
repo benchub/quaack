@@ -1470,6 +1470,8 @@ If nothing beats the original, explain why. Include which rewrites were disprove
 
 List each declined or already existing index once. The tables don't say which searches (the original's or a rewrite's) it came up in. A rewrite's search repeats most of the original's candidates, and a plan prints a partial index's predicate with casts the query's text doesn't have, such as `'deleted'::text` for `'deleted'`. Two candidates are the same index here when they differ only by a cast on a constant or on a bare column.
 
+An already-existing index's row shows the existing index's name, its size, and its definition (`covered_by` in the payload's `negative.existing`: `name`, `size_bytes`, `definition`), so the reader sees why it covers the idea. The driver holds no existing index's definition (the LLM payloads' schema never reaches the report), so the enclave sends it, from index-dedupe's stored drop. The definition goes through `CandidateDdlRedaction` like the candidate's own DDL, so a partial index's predicate holds no literal beyond a low-cardinality column's MCV value that the payload's stats already carry. It's schema over a customer's columns, never row data, and it goes out unchecked like the rest of `negative`, so the enclave's NegativeResult step is where it's reviewed. An index with no stored definition shows its name alone.
+
 The report payload carries these two lists whether or not anything beat the original. When something did, the report shows them in a section of their own, "Index ideas that went nowhere," without the rewrites' fates.
 
 ### burndown. Burndown.

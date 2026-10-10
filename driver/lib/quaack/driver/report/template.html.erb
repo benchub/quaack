@@ -261,7 +261,7 @@
 <table id="existing-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Your index that covers it</th><th scope="col" class="num">Its size</th></tr></thead>
 <tbody>
 <% negative["existing"].each do |e| %>
-<tr><td><%= e["ddl"] ? sql_code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= (by = e.dig("covered_by", "name")) ? sql_code(by) : "" %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
+<tr><td><%= e["ddl"] ? sql_code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= (by = e.dig("covered_by", "name")) ? sql_code(by) : "" %><% if (def_ = e.dig("covered_by", "definition")) %><br><%= sql_code(def_) %><% end %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
 <% end %>
 </tbody></table>
 <% end %>

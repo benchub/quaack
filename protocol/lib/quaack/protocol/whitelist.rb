@@ -177,7 +177,8 @@ module Quaack
       # existing index as its name and size in bytes. negative is the negative-result
       # negative result: each declined or already existing index once, as
       # redacted DDL, with a reason, a SQLSTATE, the existing index's name
-      # and size, and the searches it came up in. burndown is the burndown
+      # and size and its definition (through CandidateDdlRedaction), and the
+      # searches it came up in. burndown is the burndown
       # burndown's stages and totals, as the burndown message carries
       # them. rule_bugs is the rule-made rewrites a test disproved
       # (DESIGN.md's rewrite-rules): each one's entry name, rule names, and the step that
