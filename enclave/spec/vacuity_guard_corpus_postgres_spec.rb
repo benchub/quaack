@@ -129,6 +129,20 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     { name: "left join with ON filter",
       sql: "SELECT fx.users.id, fx.posts.id FROM fx.users LEFT JOIN fx.posts " \
            "ON fx.posts.user_id = fx.users.id AND fx.posts.published = true", allowed: {} },
+    { name: "left join made inner by WHERE",
+      sql: "SELECT fx.users.id, fx.posts.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
+           "WHERE fx.posts.kind = 'x' AND fx.users.active = true", allowed: {} },
+    { name: "LATERAL anti join",
+      sql: "SELECT fx.users.id FROM fx.users LEFT JOIN LATERAL (SELECT o.id FROM fx.posts o " \
+           "WHERE o.user_id = fx.users.id) s ON true WHERE s.id IS NULL", allowed: {} },
+    { name: "LATERAL latest per parent",
+      sql: "SELECT fx.users.id, s.id FROM fx.users LEFT JOIN LATERAL (SELECT o.id FROM fx.posts o " \
+           "WHERE o.user_id = fx.users.id ORDER BY o.created_at DESC LIMIT 1) s ON true", allowed: {} },
+    { name: "self-reference NOT EXISTS under another alias",
+      sql: "SELECT u.id FROM fx.users u WHERE NOT EXISTS (SELECT 1 FROM fx.users e WHERE e.manager_id = u.id)",
+      allowed: {} },
+    { name: "self-reference LEFT JOIN",
+      sql: "SELECT u.id, e.id FROM fx.users u LEFT JOIN fx.users e ON e.manager_id = u.id", allowed: {} },
     { name: "right join",
       sql: "SELECT fx.users.id, fx.posts.id FROM fx.posts RIGHT JOIN fx.users ON fx.users.id = fx.posts.user_id " \
            "WHERE fx.users.role = 'admin'", allowed: {} },
@@ -388,11 +402,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     "CTE with outer filter" => {
       untested: ["fx.posts.created_at > $1"],
       cause: "SELECT * in a CTE body with an outer filter; the near miss may fail the outer filter too"
-    },
-    "correlated scalar count" => {
-      untested: ["fx.comments.post_id = fx.posts.id"],
-      cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
-             "once more than 2 comments exist in all, and S1 builds 1"
     },
     "scalar subquery in WHERE" => {
       untested: ["p2.published = $1"],
