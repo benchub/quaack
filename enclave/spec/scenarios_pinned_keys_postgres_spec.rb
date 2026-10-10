@@ -14,7 +14,8 @@ RSpec.describe Quaack::Enclave::Scenarios do
   before do
     conn.exec(<<~SQL)
       CREATE SCHEMA fx;
-      CREATE TABLE fx.users (id bigint PRIMARY KEY, state text NOT NULL);
+      CREATE TABLE fx.users (id bigint PRIMARY KEY, state text NOT NULL, active boolean NOT NULL DEFAULT true,
+        role text NOT NULL DEFAULT 'student', name text NOT NULL DEFAULT '');
       CREATE TABLE fx.posts (id bigint PRIMARY KEY, user_id bigint NOT NULL REFERENCES fx.users,
         parent_id bigint REFERENCES fx.posts);
       CREATE TABLE fx.comments (id bigint PRIMARY KEY, post_id bigint NOT NULL REFERENCES fx.posts);
@@ -33,6 +34,28 @@ RSpec.describe Quaack::Enclave::Scenarios do
     s1 = ids(scenarios[:s1], "posts")
     expect(s1.size).to eq(2)
     expect(s1 - [1, 2, 3]).not_to be_empty
+  end
+
+  # The list's values lie outside the generated keys, so every group that
+  # passes the list takes a list value by rank (20261010-33). Without the
+  # rank they collide, and Retries' few shifts can't part five groups, so
+  # some spill to a fixture of their own.
+  it "holds the hit and four near misses under users.id IN (101, ..., 105) in S1's first fixture" do
+    sql = "SELECT fx.posts.id FROM fx.posts JOIN fx.users ON fx.users.id = fx.posts.user_id " \
+          "WHERE fx.users.id IN (101, 102, 103, 104, 105) AND fx.users.state = 'a' AND fx.users.active = true " \
+          "AND fx.users.role = 'teacher' AND fx.users.name = 'ann'"
+    builder = described_class::Builder.new(conn, PgQuery.parse(sql))
+    s1 = builder.build[:s1]
+    expect(builder.spills[:s1]).to be_nil
+    expect(ids(s1, "users") & [101, 102, 103, 104, 105]).to contain_exactly(101, 102, 103, 104, 105)
+  end
+
+  # S6's copies of the hit each take a list value of their own: a copy's
+  # key differs from its group's (Group#key_for), and the rank goes by it.
+  it "gives each of S6's copies under posts.id IN (201, 202, 203, 204) a post id of its own" do
+    sql = "SELECT fx.comments.id FROM fx.comments JOIN fx.posts ON fx.posts.id = fx.comments.post_id " \
+          "WHERE fx.posts.id IN (201, 202, 203, 204)"
+    expect(ids(build(sql)[:s6], "posts")).to contain_exactly(201, 202, 203, 204)
   end
 
   {

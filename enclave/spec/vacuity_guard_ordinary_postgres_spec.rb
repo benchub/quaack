@@ -118,10 +118,14 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(calls.size).to eq(calls.uniq.size)
   end
 
-  # email needs a comparison to count as tested (see the unordered
-  # LIMIT 1 above); state changes the rows. Past the cap, it stays untested.
+  # email needs a comparison to count as tested: its near miss ties the
+  # hit on state, so only a load order shows it (an unordered LIMIT 1 gets
+  # the near misses alone instead, 20261010-31); state changes the rows.
+  # Past the cap, email stays untested.
   describe "the cap on comparisons per query" do
-    let(:sql) { "SELECT * FROM fx.users WHERE fx.users.email = 'x' AND fx.users.state = 'a' LIMIT 1" }
+    let(:sql) do
+      "SELECT * FROM fx.users WHERE fx.users.email = 'x' AND fx.users.state = 'a' ORDER BY fx.users.state LIMIT 1"
+    end
 
     it "tests both atoms under the cap" do
       calls = comparisons

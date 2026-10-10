@@ -10136,3 +10136,47 @@ Design to settle, then build:
 - **Came from:** The user, 2026-10-10.
 - **Design:** report.
 - **Status:** done. Landed 2026-10-10 (driver only): the prompt asks for what changed in the query's structure, why that let the planner do less work (only when a plan difference backs it), and a reusable pattern; `Input::RULE_PURPOSES` gives each of the 12 rules a fixed one-line purpose; the guard refuses a summary naming a plan node type that neither plan has; the cap rose from 800 to 1000 characters (prompt asks under 700). One live synthetic run read well but missed the duplicated-constraint angle: 20261010-37.
+
+### 20261010-36. Untested conditions: aggregate FILTER, max() with a filter, CTE, scalar subquery, second column tie.
+
+What 20261010-32 didn't finish, with causes where the builder confirmed them (shapes are still in the corpus's `PENDING`):
+- **Aggregate FILTER** (`count(*) FILTER (WHERE published)`): `posts.score > $1` untested. The bare `published` inside the FILTER has no pool, so the hit and the near miss both take its default false and the FILTER counts neither. The builder pooled bare boolean columns, which fixed it but broke three `vacuity_guard_scopes_postgres_spec` examples (the NOT arm of `muted IS NULL OR NOT muted`, and the UNION ALL count shapes): a NOT arm's masking needs its own handling. Reverted.
+- **`max()` with a filter**: `posts.published = $1` untested. `score` has a DEFAULT, so both rows read 0 and max() can't change. The near miss needs a score above the hit's.
+- **CTE with an outer filter** (`posts.created_at > $1`): the near miss may fail the outer filter too. Unconfirmed.
+- **Scalar subquery in WHERE** (`p2.published = $1`): the near miss must move avg() across the hit's score. Unconfirmed.
+- **A second column-to-column tie between the same two tables** (`comments.user_id = posts.user_id`): no row joins on one and not the other. Unconfirmed.
+Start with the FILTER and `max()` cases (common in reports). Keep the guard sound.
+
+- **Depends on:** 20261010-32 (landed).
+- **Came from:** The work on 20261010-32, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done for FILTER and aggregated columns. Landed 2026-10-10: a bare boolean inside an aggregate FILTER gets a pool (and the probe evaluates a bare column); a near miss takes a distinguishing value of an aggregated column (max/min/sum/avg) even over a DEFAULT when CHECKs allow it, and a min-only column takes `MIN_APART` elsewhere. Not done (CTE, scalar subquery, second column tie): 20261010-39. Minors: 20261010-38.
+
+### 20261010-33. Corpus: the pinned-key rank mutation stays green.
+
+From 20261010-27: with `PinnedKeys`' rank forced to 0, the corpus stays green even with its five pinned-key shapes; only the count-query example in `vacuity_guard_scopes_postgres_spec.rb` catches it. Add corpus shapes that fail when the rank is forced to 0 (an `IN` list of three or four values on a parent key with several groups that each need their own value), and mutation-check them.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the work on 20261010-27, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** done. Landed 2026-10-10 (tests): two examples in `scenarios_pinned_keys_postgres_spec.rb` catch the rank mutation (S1 five groups under `users.id IN (101..105)`, S6 copies under `posts.id IN (201..204)`); corpus shapes added as regression coverage; the older count-query example no longer catches it.
+
+### 20261010-34. Siblings: minors from 20261010-24.
+
+The review of 20261010-24 found these minor issues:
+1. **No test covers the parent check in `Scenarios::Siblings`.** Removing `&& @topology.parents(...).any?` leaves every spec green. Add a negative spec: an atom on a root table, tested in two scopes, gets no sibling.
+2. **Siblings are built where they can't help.** A `count(*)` over a users/posts join with `posts.kind <> 'c'` in both the ON clause and a UNION ALL subquery grows S1 from 14 to 17 rows, but its untested atoms (`kind <> $3`, `score > $4`, the IN subquery) are the same as on `main`. Not a regression; add the shape to the corpus's `PENDING` list (20261010-27) and find why its atoms stay untested.
+
+- **Depends on:** 20261010-24 (landed).
+- **Came from:** The review of 20261010-24, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10: negative spec for the sibling parent check; `Plan#scope_mate` makes a sibling fail one other pooled atom of the near miss's scope on the same table, which fixes the users/posts count shape. Harder variants: 20261010-39.
+
+### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
+
+From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `users.email = $2` untested, and Rails `exists?` leaves `memberships.user_id = $2` and `memberships.group_name = $3` untested. The result is 1 row whenever any row exists, so a near miss only shows when a fixture holds only near misses (no hit). Add a fixture shape that holds only near misses for a query whose result can't change otherwise, keep the guard sound, and flip the shapes in the corpus.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10: when the top-level SELECT has a LIMIT and no ORDER BY, S1 gets one more spill fixture holding only the near misses (no hit), so `SELECT 1 ... LIMIT 1` and Rails `exists?` can show a difference; every spill is already compared by rewrite-test in every load order, so soundness holds. Unsupported in v1: `SELECT EXISTS (...)`, `bool_or`, an OFFSET with no LIMIT. Minor: assert that `dropped` is above 0 for the ORDER BY build in the near-misses-alone spec (a surviving mutant, `counted:` defaulting to false).

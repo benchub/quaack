@@ -17,19 +17,42 @@ module Quaack
           @masked = masked
           @siblings = siblings
           @unmatched = tree ? Unmatched.new(tree, atoms, topology).tables : []
+          @alone = tree ? Plan.uncut_limit?(tree) : false
           @next_key = 0
         end
+
+        # S1's near misses (pooled, join, and masking), for a fixture of
+        # their own with no hit, once scenarios has run; none unless the
+        # query's top level has a LIMIT and no ORDER BY.
+        attr_reader :near_misses_alone
 
         def scenarios
           hit = group(fresh_key)
           near = pooled_near_misses
           base = [hit, *near, *join_near_misses]
           extras = { s1: [], s2: [nulls], s3: fan_outs(hit, near), s4: orphans, s5: boundaries }
-          masking = last_groups(near)
-          { s0: [], **extras.transform_values { base + it + masking }, s6: [hit] + many + [empty] }
+          last = last_groups(near)
+          { s0: [], **extras.transform_values { base + it + last }, s6: [hit] + many + [empty] }
+        end
+
+        # Whether the top-level SELECT has a LIMIT and no ORDER BY. Its
+        # result then holds as many rows as match, up to the LIMIT, whichever
+        # they are: with the hit present, SELECT 1 ... LIMIT 1 returns one
+        # row however many near misses a loosened condition lets through.
+        def self.uncut_limit?(tree)
+          select = tree.stmts.first&.stmt&.select_stmt
+          !!(select&.limit_count && select.sort_clause.empty?)
         end
 
         private
+
+        # The masking near misses, then the near misses' siblings, then the
+        # unmatched groups. Sets near_misses_alone too.
+        def last_groups(near)
+          masking = masking_near_misses
+          @near_misses_alone = @alone ? near + @joins + masking : []
+          masking + siblings(near + masking) + unmatched
+        end
 
         # For each parent an outer or anti join can leave unmatched, a group
         # of the parent's tables alone, with no row of the child: one with
@@ -44,10 +67,6 @@ module Quaack
           end
         end
 
-        # The masking near misses, then the near misses' siblings, then the
-        # unmatched groups.
-        def last_groups(near) = masking_near_misses.then { it + siblings(near + it) } + unmatched
-
         # A near miss whose atom's column is tested in another scope too
         # (s.state <> 'x' in a subquery's branch and outside it) fails both,
         # so its parent's row drops out of the outer query with it. A
@@ -59,9 +78,24 @@ module Quaack
         def siblings(misses)
           misses.filter_map do |miss|
             table = @siblings[miss.near]
-            group(miss.key, [table], copy: 1, also: miss.also) if table
+            group(miss.key, [table], copy: 1, also: miss.also | scope_mate(miss.near, table)) if table
           end
         end
+
+        # One other pooled atom of the near miss's scope on table, on another
+        # column, for the sibling to fail, so the sibling doesn't satisfy the
+        # scope the near miss fails (a branch's score > 5 beside its
+        # kind <> 'c'), which would let the parent through it all the same.
+        def scope_mate(index, table)
+          scopes = Scenarios.scopes(@atoms)
+          mate = @pooled.find do |j|
+            j != index && scopes[j] == scopes[index] && @atoms[j].columns.all? { it.table == table } &&
+              !names(j).intersect?(names(index))
+          end
+          mate ? [mate] : []
+        end
+
+        def names(index) = @atoms[index].columns.map { [it.table, it.name] }
 
         def pooled_near_misses = @pooled.map { |i| group(fresh_key, near: i) }
 
@@ -130,7 +164,7 @@ module Quaack
         end
 
         def join_near_misses
-          @topology.free_joins.map { |i| group(fresh_key, split: @atoms[i].columns[1].table) }
+          @joins = @topology.free_joins.map { |i| group(fresh_key, split: @atoms[i].columns[1].table) }
         end
 
         def orphans

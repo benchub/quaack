@@ -61,7 +61,9 @@ module Quaack
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
     # S3: S1, crosses, and a copy of each table's hit row; S4: S1 and orphans; S5: S1
     # and two boundary groups; S6: hit, a group with two more copies of each
-    # table's row, and empty.
+    # table's row, and empty. Under a top-level LIMIT with no ORDER BY, S1
+    # also gets a further fixture of its near misses alone, with no hit
+    # (see Plan#near_misses_alone).
     #
     # Column values. A pooled atom's column takes the first pool value that
     # satisfies (or for its near miss, fails) the atom and satisfies every
@@ -237,12 +239,8 @@ module Quaack
         def build(variants = {})
           start(variants)
           ties = tie_groups
-          Plan.new(@topology, @atoms, @pools.keys, masked, siblings, @parse.tree).scenarios.to_h do |name, groups|
-            scenario!
-            first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
-            @spills[name] = rest unless rest.empty?
-            [name, first]
-          end
+          plan = Plan.new(@topology, @atoms, @pools.keys, masked, siblings, @parse.tree)
+          plan.scenarios.to_h { |name, groups| scenario!.then { [name, fixtures(name, groups, ties, plan)] } }
         end
 
         private
@@ -251,8 +249,7 @@ module Quaack
           @picker = Picker.new(@pools, probes, @checks, variants, Scenarios.scopes(@atoms))
           @identities = {}
           scenario!
-          @dropped = 0
-          @spills = {}
+          @spills = {}.tap { @dropped = 0 }
         end
 
         # Each scenario ranks its own pinned keys (see PinnedKeys), so a
@@ -270,10 +267,20 @@ module Quaack
         # The pools and the picker share these, so each asks once per value.
         def probes = @probes ||= ValuePools.probes(@conn, @parse, @atoms, @schema)
 
-        def fill(groups, tie_rows)
+        # The scenario's first fixture; the rest go in spills. S1's take
+        # the near misses alone (see Plan#near_misses_alone), built in S1's
+        # turn so their rows are S1's. They aren't counted as dropped: S1's
+        # first fixture holds them already.
+        def fixtures(name, groups, ties, plan)
+          first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
+          rest += fill(plan.near_misses_alone, [], counted: false).reject(&:empty?) if name == :s1
+          first.tap { @spills[name] = rest unless rest.empty? }
+        end
+
+        def fill(groups, tie_rows, counted: true)
           parts = Parts.new(@schema, @conn, @evaluated)
           (groups.filter_map { retries.for(it) } + tie_rows.map { [[it]] }).each { parts.add(it) }
-          @dropped += parts.dropped
+          @dropped += parts.dropped if counted
           parts.in_order(@topology.order)
         end
 
