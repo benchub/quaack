@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-34: `Plan#scope_mate`, a sibling fails one other pooled atom of the near miss's scope on the same table (enclave).
 - 20261010-31: S1 gets a near-misses-only fixture for a top-level LIMIT without ORDER BY (enclave).
 - 20261010-22: `s1_nonzero_rows` in the rewrite_test message, the whitelist and `Protocol::VacuityDiagnostic` (enclave and protocol).
+- 20261010-20: each burndown stage's `in` carries the earlier stage's `out` (index-from-plan, the LLM rounds, the rewrite arrival stages) (enclave).
 
 ## How this file works.
 
@@ -866,19 +867,6 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261010-20. Index burndown: carry the surviving ideas through the LLM rounds, and show added as its own width.
-
-The user asked, looking at the original query's index burndown: "Ideas from the LLM" shows 5 added, 3 dropped and 2 went on, after the planner stage sent 6 on. It reads as if 6 came in and the output got wider than the input. It isn't: an LLM round's record is `in: 0`, `added: {llm: 5}`, `out: 2` (`Burndown.round_counts` in the enclave), so it counts only its own ideas, and the 6 that went on from index-test aren't in it. The `in + added - dropped - set_aside = out` check holds for that record, but the funnel isn't one flow, so the picture misleads. (The 4 that "Trying indexes together" sends on is a different unit again: combinations.)
-
-1. Carry the pool: give each LLM round `in` equal to the earlier stage's `out` (plus what it holds), so `out` is the whole surviving set (6 + 2 = 8) and the next stage's `in` matches it. Check how index-rank, the second round and the combination stage read these counts so the funnel, the table and the tooltips stay consistent, and what happens to the "held back" ideas.
-2. Draw three widths per layer: what came in, what was added, and what went on (the filtered output), instead of in and out. Or keep two widths but show the added ones as a separate, visibly different slice. The user's idea; they left the visual choice open.
-3. The enclave records the counts, so a change to `in` is an enclave and protocol check (`Protocol::Burndown.adds_up?` still holds). Report-only parts are driver.
-
-- **Depends on:** none.
-- **Came from:** the user, 2026-10-10.
-- **Design:** report, burndown.
-- **Status:** todo
-
 
 ### 20261010-23. Untested conditions: an OR of four or more equality arms on one column plus another arm.
 
@@ -992,4 +980,16 @@ Tests: red first for the right reason; mutate (drop the TRUE comparison, count a
 - **Depends on:** 20261010-19 to -36 (landed); do it after the version bump and the user's next run, when the user says to pick up new work.
 - **Came from:** The user, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-44. Burndown: minors from 20261010-20.
+
+1. **index-rank's added slice counts combinations, not ideas.** "Trying indexes together" adds 6 combinations (`added: {combinations: 6}`), which the funnel now draws as a lighter slice on top of the 9 ideas it takes in (widest point 15) and then narrows to 4 that went on. That mixes units, and it is the kind of "output wider than input" picture the user objected to. Leave index-rank out of the added slice, or draw it as a separate kind of mark, and word its label so it doesn't read as added ideas.
+2. **The rewrites' index searches join only loosely.** The replay check (`spec/pipeline_replay_spec.rb`, `burndown_joins?` with `strict: false`) requires only `in < running` on the summed "Index ideas for the rewrites" rows, which can hide a real under-carry. Check each `rewrite_N` search strictly, one at a time, and show why a narrowing happens (a rewrite dropped after its index search keeps its index-test out but has no LLM round).
+3. No focused enclave unit spec for `RewriteBurndown#carried` (nearest earlier stage, falling back past a missing stage); it is covered only through the replay and rewrite step specs.
+4. The two extra synthetic funnel cases (a round that adds more than it keeps, a skipped refine) weren't rendered in headless Firefox.
+
+- **Depends on:** 20261010-20 (landed).
+- **Came from:** The reviews of 20261010-20, 2026-10-10.
+- **Design:** report, burndown.
 - **Status:** todo
