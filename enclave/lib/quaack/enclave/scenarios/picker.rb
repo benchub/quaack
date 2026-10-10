@@ -34,9 +34,17 @@ module Quaack
 
         # pick for a group: its near miss counts only when it's one of the atoms.
         # A masking near miss (see Branches) fails its also atoms too.
-        def pick_for(atoms, columns, group)
+        # rank shifts the pick further (see Builder#rank).
+        def pick_for(atoms, columns, group, rank = 0)
           nears = [group.near, *group.also] & atoms
-          pick(atoms, columns, (nears unless nears.empty?), group.mode, group.shift)
+          pick(atoms, columns, (nears unless nears.empty?), group.mode, group.shift + rank)
+        end
+
+        # Whether value fits the group's pick: it fails the near-miss atoms
+        # among atoms, satisfies the rest, and passes the CHECKs.
+        def fits_for?(atoms, columns, group, value)
+          nears = [group.near, *group.also] & atoms
+          fits?(atoms, columns, (nears unless nears.empty?), value)
         end
 
         # near is the atoms the value fails, or nil. :skip when a near miss has no value. With no value that fits every
