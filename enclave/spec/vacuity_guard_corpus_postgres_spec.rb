@@ -59,6 +59,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     { name: "bare boolean", sql: "SELECT * FROM fx.posts WHERE fx.posts.published", allowed: {} },
     { name: "NOT boolean", sql: "SELECT * FROM fx.posts WHERE NOT fx.posts.published", allowed: {} },
     { name: "boolean IS TRUE", sql: "SELECT * FROM fx.users WHERE fx.users.active IS TRUE", allowed: {} },
+    { name: "boolean IS NOT TRUE", sql: "SELECT * FROM fx.users WHERE fx.users.active IS NOT TRUE", allowed: {} },
+    { name: "boolean IS FALSE", sql: "SELECT * FROM fx.posts WHERE fx.posts.published IS FALSE", allowed: {} },
     { name: "enum equality", sql: "SELECT * FROM fx.users WHERE fx.users.role = 'teacher'", allowed: {} },
     { name: "enum IN", sql: "SELECT * FROM fx.users WHERE fx.users.role IN ('teacher', 'admin')", allowed: {} },
     { name: "enum <>", sql: "SELECT * FROM fx.users WHERE fx.users.role <> 'student'", allowed: {} },
@@ -340,7 +342,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     },
     "aggregate FILTER clause" => {
       untested: ["fx.posts.score > $1"],
-      cause: "the near miss may not satisfy the FILTER's published, so the count is unchanged"
+      cause: "confirmed: the FILTER's bare published has no pool, so hit and near miss both take its " \
+             "default false and the FILTER counts neither; pooling bare booleans breaks NOT-arm-of-OR shapes"
     },
     "comment author and post author join" => {
       untested: ["fx.posts.id = fx.comments.post_id", "fx.comments.user_id = fx.posts.user_id"],
@@ -350,22 +353,10 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       untested: ["fx.posts.created_at > $1"],
       cause: "SELECT * in a CTE body with an outer filter; the near miss may fail the outer filter too"
     },
-    "keyset pagination" => {
-      untested: ["fx.posts.id > $2"],
-      cause: "the id near miss can't share user_id with a PK pinned elsewhere, or sorts outside the cut"
-    },
     "correlated scalar count" => {
       untested: ["fx.comments.post_id = fx.posts.id"],
       cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
              "once more than 2 comments exist in all, and S1 builds 1"
-    },
-    "Rails count with where.not" => {
-      untested: ["fx.comments.workflow_state <> $2"],
-      cause: "unclear; plain count(*) with a filter passes, so maybe the pinned post_id = 3 near miss"
-    },
-    "boolean IS TRUE" => {
-      untested: ["fx.users.active IS TRUE"],
-      cause: "IS TRUE (a BooleanTest) seems to get no pool, so no false near miss"
     },
     "scalar subquery in WHERE" => {
       untested: ["p2.published = $1"],

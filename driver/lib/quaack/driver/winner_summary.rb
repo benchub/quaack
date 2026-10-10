@@ -30,10 +30,34 @@ module Quaack
     class WinnerSummary
       STEP = "winner-summary"
       MAX_TOKENS = 1500
-      # The prompt asks for under 500. Real answers ran 434 to 451 with that
-      # wording (598 to 602 when it asked for 600), so they land at or just
-      # under the ask. The cap leaves room for a longer plan.
-      MAX_CHARS = 800
+      # The prompt asks for under 700, since it now asks for what changed,
+      # why, and the pattern to look for (20261010-28). Real answers landed
+      # at or just under the ask when it asked for 500 or 600, so the cap
+      # leaves room for a longer plan.
+      MAX_CHARS = 1000
+
+      # Postgres's plan node types, as EXPLAIN names them. A summary may name
+      # one only if a plan in the input has it. One of several words is read
+      # in any case, with a space or a hyphen between words; a one-word type
+      # only as EXPLAIN capitalizes it, so the SQL keyword LIMIT or the word
+      # sort isn't read as a step. Longer names are tried first, so an Index
+      # Only Scan isn't read as an Index Scan.
+      NODE_TYPES = [
+        "Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Index Scan", "Bitmap Heap Scan", "Tid Scan",
+        "Tid Range Scan", "Subquery Scan", "Function Scan", "Table Function Scan", "Values Scan", "CTE Scan",
+        "Named Tuplestore Scan", "WorkTable Scan", "Foreign Scan", "Custom Scan", "Sample Scan", "Nested Loop",
+        "Hash Join", "Merge Join", "Hash", "Sort", "Incremental Sort", "Aggregate", "HashAggregate",
+        "GroupAggregate", "MixedAggregate", "Group", "Unique", "Limit", "Append", "Merge Append", "Materialize",
+        "Memoize", "Gather", "Gather Merge", "SetOp", "HashSetOp", "Recursive Union", "BitmapAnd", "BitmapOr",
+        "Result", "ProjectSet", "LockRows", "WindowAgg", "ModifyTable"
+      ].freeze
+      NODE_ALIASES = { "sequential scan" => "seq scan" }.freeze
+      NODE_PATTERN = Regexp.union(
+        (NODE_TYPES + NODE_ALIASES.keys).sort_by { -it.size }.map do |name|
+          words = name.split.map { Regexp.escape(it) }
+          words.size == 1 ? /\b#{words.first}\b/ : /\b#{words.join("[\\s-]+")}\b/i
+        end
+      )
 
       # outcome is used, or why the report goes without: no_winner,
       # failed (the ask failed, with rule), empty, or rejected. entry is the
@@ -47,9 +71,15 @@ module Quaack
 
         The winner is either a rewrite of the original query, or the original query run with new indexes, or a rewrite run with new indexes. Compare the winner only with the original query as it runs now, on the indexes the database already has. Don't compare it with any other candidate.
 
-        Write three or four plain sentences, each short and making one point. The whole summary must stay under 500 characters, so pick the two or three points that matter most. Say what the winner does differently from the original, using the plans' steps, tables, and indexes, the rewrite's rules and SQL when there is a rewrite, and the new indexes' definitions when there are any. Say how many blocks each read on the slow values, which are the values from the engineer's slow plan, and say whether the winner held up on the other sets of values.
+        The engineer wants to know why the winner wins, as a lesson they can apply to their own queries, not a list of plan steps. Write four or five plain sentences, each short and making one point, in this order. The whole summary must stay under 700 characters.
 
-        Say only what the plans and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, statistics, or data distribution, so leave those out unless a number in the payload says so. Describe a plan step only by its node type, table, index, rows, and blocks. Don't say how a step works or what it does beyond those, such as when it filters, or in what order it reads. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that.
+        First, say what changed in the query's structure. Compare the original SQL with the winner's SQL and say what was moved, merged, pulled out, split, removed, or replaced, in terms of the query's own clauses, such as an OR, an IN or NOT IN subquery, an EXISTS, a UNION, a join, or a repeated table. When there is a rewrite, name the rule that made it; each rule's purpose is in rule_purposes, so describe the change in the terms that purpose uses. When the winner is the original query with new indexes, say the query is unchanged and what the new index holds.
+
+        Second, say why that change let the planner do less work. Ground it in a difference between the two plans: a scan or join type that changed, a step that disappeared or appeared, an index the winner's plan uses, or a smaller row or block count at a named step. You may say the change let the planner do something, or that it did so because of the change, only when a difference between the two plans in the payload backs it. Then say how many blocks each read on the slow values, which are the values from the engineer's slow plan, and whether the winner held up on the other sets of values.
+
+        Last, in one sentence, name the pattern a developer could look for in their own queries to spot the same chance, stated in general terms about query structure, without this query's table or column names.
+
+        Say only what the SQL, plans, and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Name a plan step by a node type that appears in one of the two plans, never one that doesn't. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, statistics, or data distribution, so leave those out unless a number in the payload says so. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that instead of giving a reason.
 
         Call a rewrite by the name in the payload's rewrite name, if it has one. Refer to an index by its definition, never by a name you make up. Don't mention any other rewrite or index.
 
@@ -133,7 +163,18 @@ module Quaack
         return false if text.scan(DOTTED).any? { !in_input?(it, sent) }
 
         winner = input.dig("winner", "rewrite", "name")
-        text.scan(REWRITE_NAME).all? { it == winner }
+        text.scan(REWRITE_NAME).all? { it == winner } && named_steps_planned?(text, input)
+      end
+
+      # Whether every plan node type text names is a step of the original's
+      # plan or the winner's.
+      def named_steps_planned?(text, input)
+        planned = [input.dig("original", "plan"), input.dig("winner", "plan")].flat_map { Array(it) }
+                                                                              .filter_map { it["step"]&.downcase }
+        text.scan(NODE_PATTERN).all? do |name|
+          step = name.downcase.gsub(/[\s-]+/, " ")
+          planned.include?(NODE_ALIASES.fetch(step, step))
+        end
       end
 
       # Whether a dotted token is one the input holds as whole words: either

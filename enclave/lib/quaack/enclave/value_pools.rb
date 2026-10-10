@@ -5,6 +5,7 @@ require "pg_query"
 require_relative "arena_schema"
 require_relative "predicate_atoms"
 require_relative "value_pools/category"
+require_relative "value_pools/pooled"
 
 module Quaack
   module Enclave
@@ -32,7 +33,7 @@ module Quaack
     # written. Trust boundary: pools hold real values, so they stay in the
     # enclave. inspect leaves the values out.
     module ValuePools
-      KINDS = %i[equality range like in null_test].freeze
+      KINDS = Pooled::KINDS
 
       Pool = Data.define(:column, :type, :oid, :nullable, :satisfying, :failing, :boundaries) do
         def inspect = "#<data #{self.class} column=#{column.name} values=<redacted>>"
@@ -79,17 +80,7 @@ module Quaack
         end.to_h
       end
 
-      # The row comparison operators whose leading column can decide them.
-      ROW_RANGE = %w[< <= > >=].freeze
-
-      # A keyset row comparison with a range operator is pooled through its
-      # leading column, when every element of its column row is a plain
-      # column of a table.
-      def pooled?(atom)
-        return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
-
-        atom.kind == :row_comparison && ROW_RANGE.include?(atom.operator) && atom.bare && atom.columns.all?(&:table)
-      end
+      def pooled?(atom) = Pooled.call(atom)
 
       # The probe for a pooled atom (see Probe).
       def probe(conn, parse, atom, col) = Probe.new(conn, node(parse, atom), col)

@@ -55,12 +55,15 @@ module Quaack
         end
 
         # The rows here that rows point at by foreign key, and theirs, on up,
-        # less rows themselves.
+        # less rows themselves. A foreign key that a row of rows already
+        # matches is the group's own, so the row here of that key isn't
+        # lifted: a near miss pinned to the hit's parent key brings its own
+        # parent of that key, and both can't share a fixture.
         def parents_of(rows)
           found = []
           queue = rows.dup
           while (row = queue.shift)
-            parents(row).each do |parent|
+            outside_parents(row, rows).each do |parent|
               next if found.include?(parent) || rows.include?(parent)
 
               found << parent
@@ -75,7 +78,14 @@ module Quaack
 
         private
 
-        def parents(row) = @schema.constraints(row.table).foreign_keys.filter_map { parent(row, it) }
+        def outside_parents(row, rows)
+          @schema.constraints(row.table).foreign_keys.filter_map do |key|
+            wanted = values(row, key.columns)
+            next if rows.any? { |r| r.table == key.parent && values(r, key.parent_columns) == wanted }
+
+            parent(row, key)
+          end
+        end
 
         def parent(row, key)
           wanted = values(row, key.columns)
