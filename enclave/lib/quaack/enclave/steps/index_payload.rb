@@ -127,7 +127,7 @@ module Quaack
         end
 
         def candidate(plain, redaction)
-          { "ddl" => redaction.ddl(IndexStore.candidate(plain)), "sources" => plain["sources"] }
+          { "ddl" => redaction.outbound_ddl(IndexStore.candidate(plain)), "sources" => plain["sources"] }
         end
       end
     end

@@ -201,12 +201,12 @@ module Quaack
           ClockAnchoring.restore(store.read("anchored_query"), replacements, added)
         end
 
-        def indexes(store, stats)
-          redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
+        def indexes(store, stats, redaction: nil)
+          redaction ||= CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           sizes = ExistingIndexes.new(store)
           store.read("index_build")["indexes"].transform_values do |built|
             proposed = IndexCandidate.from_ddl(built["ddl"], sources: [:llm])
-            { "ddl" => proposed && redaction.ddl(proposed), "size" => built["size"],
+            { "ddl" => proposed && redaction.outbound_ddl(proposed), "size" => built["size"],
               **coverage(proposed, stats, sizes) }
           end
         end
