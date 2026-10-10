@@ -23,6 +23,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261004-89: each `indexes` entry in the report payload carries `sources` (names from the fixed generator list), checked at egress and in the driver (enclave and protocol).
 - 20261007-58: the equality check follows a column's domain chain and refuses a planted `=` on a domain (enclave).
 - 20261008-4 and 20261008-5: `not_in_to_not_exists` takes a NOT IN (and a one-column `<> ALL` with a pg_catalog negator proof) in any position of a plain SELECT, with the not-null proofs, and refuses a grouping-set GROUP BY (enclave).
+- 20261008-22: live EXPLAIN JSON in `IndexBuild.confirm` and `Measurement.measure_set` is parsed with the store's depth bound (3000) instead of JSON's default 100 (enclave).
+- 20261008-21 (InitPlan half): `(InitPlan n).colm` in a plan condition is read as a parameter by index-from-plan (enclave). 20261008-23: a bare boolean or NOT boolean skips the MCV coverage rule (enclave).
 - 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
 - 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
@@ -449,30 +451,12 @@ Split from 20260923-24, whose builder found both larger than a loose end:
 - **Depends on:** 20260923-24.
 - **Came from:** The builder of 20260923-24, 2026-10-08.
 - **Design:** index-from-plan.
+- **Landed so far:** the InitPlan half, 2026-10-10 (task/20261008-21; Opus review clean): `InitPlanOutput` rewrites each `(InitPlan n).colm` as `$1` using `PgQuery.scan` token spans (the same text inside a string literal, dollar-quoted string, comment or quoted identifier stays as it was; a reference without a column or unscannable text goes through and is refused as before), so a column equal to an InitPlan output becomes a constant equality key column and never a partial predicate. On the unreleased list. Open: the COLLATE half. A real fix needs collation-aware key columns from the plan and a decision on how a `COLLATE` predicate passes through index-dedupe (key columns are plain name strings throughout generator two); today a COLLATE filter proposes nothing, a clean safe refusal. Needs the user's call: do it, or drop it.
 - **Status:** todo
 
-### 20261008-22. Live EXPLAIN JSON parses with JSON's default nesting limit.
+### 20261008-22. Live EXPLAIN JSON parses with JSON's default nesting limit. Done, see BACKLOG-COMPLETE.md.
 
-From the builder of 20260923-24. `enclave/lib/quaack/enclave/index_build.rb:144` and `measurement.rb:68` parse live EXPLAIN JSON with JSON's default `max_nesting` of 100. A plan more than about 49 nodes deep raises `JSON::NestingError` there. `SingleCandidateTest#parse_plan` handles the same case with `max_nesting: false`. Pick a limit that matches the store's (`PlainData::MAX_DEPTH`), and test it with a deep plan from real Postgres.
-
-- **Depends on:** none.
-- **Came from:** The builder of 20260923-24, 2026-10-08.
-- **Design:** index-test and the baseline.
-- **Status:** todo
-
-### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24.
-
-The review of 20260923-24 found these minor issues:
-
-1. **The rarest boolean flags lose their partial.** If ANALYZE never samples the rare value, pg_stats shows `deleted` as `{f}` at 1.0, and `WHERE deleted` gets no partial, though that's the best case for one. The coverage rule is there for values written another way, and booleans can't be, since `boolean_text` maps them. Consider exempting booleans from the rule.
-2. **No test covers the case the rule exists for.** Nothing checks that `n = 1.5` on a numeric that pg_stats prints as `1.50` gets no partial.
-3. **An existing index may not count as covering a candidate.** pg_indexes keeps an existing `WHERE (deleted = true)` as written. Unless index-dedupe normalizes `b = true` to `b`, a matching `WHERE deleted` candidate is tested as new. Check this, and fix it in index-dedupe if needed (see 20260923-36).
-
-- **Depends on:** 20260923-24.
-- **Came from:** The review of 20260923-24, 2026-10-08.
-- **Design:** index-from-plan.
-- **Item 3 done:** 20260923-36 added `BooleanFold`, so an existing `WHERE (deleted = true)` now covers `WHERE deleted`. Items 1 and 2 are still open.
-- **Status:** todo
+### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-24. index-from-query: incremental sort, derived-table reduction, and whole-row reads.
 
@@ -1065,4 +1049,15 @@ From the review of 20261008-4 (minor). When the same NOT IN appears twice in one
 - **Depends on:** 20261008-4.
 - **Came from:** The review of 20261008-4, 2026-10-10 (minor).
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261010-13. Deep EXPLAIN plans: one unbounded parse, and untested refusals.
+
+From the review of 20261008-22 (minor).
+- `single_candidate_test.rb` (`parse_plan`, ~line 269) still parses EXPLAIN JSON with `max_nesting: false`, which is unbounded; it doesn't crash at depth 100, but it's inconsistent with the new `PlainData::MAX_DEPTH` bound and a very deep plan could exhaust the stack before the parse fails. Use the same bound.
+- In `Measurement.measure_set` and `IndexBuild.confirm`, a plan deeper than 3000 raises `JSON::NestingError`. Trace what the callers do with it: it must become a clean refusal (a fixed rule, no message), and add a test for a plan deeper than the bound in each path.
+
+- **Depends on:** 20261008-22.
+- **Came from:** The review of 20261008-22, 2026-10-10 (minor).
+- **Design:** index-from-plan, measurement.
 - **Status:** todo

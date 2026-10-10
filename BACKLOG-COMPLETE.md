@@ -9756,3 +9756,28 @@ One of 20261007-38's extensions, each its own task by the user's decision (2026-
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261008-4 branch; Opus review clean). `x <> ALL (SELECT y ...)` (also `!=`), one column, becomes NOT EXISTS over `=` in every position NOT IN is taken; `Catalog#negated_equality?` requires `=` and `<>` between the columns' exact types to be pg_catalog operators and each other's negators with one shared collation (a domain column is refused); rows, other ALL operators, ANY and `OPERATOR(...)` spellings are refused. On the unreleased list.
+
+### 20261008-22. Live EXPLAIN JSON parses with JSON's default nesting limit.
+
+From the builder of 20260923-24. `enclave/lib/quaack/enclave/index_build.rb:144` and `measurement.rb:68` parse live EXPLAIN JSON with JSON's default `max_nesting` of 100. A plan more than about 49 nodes deep raises `JSON::NestingError` there. `SingleCandidateTest#parse_plan` handles the same case with `max_nesting: false`. Pick a limit that matches the store's (`PlainData::MAX_DEPTH`), and test it with a deep plan from real Postgres.
+
+- **Depends on:** none.
+- **Came from:** The builder of 20260923-24, 2026-10-08.
+- **Design:** index-test and the baseline.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-21; Opus review clean). `IndexBuild.confirm` and `Measurement.measure_set` parse live EXPLAIN JSON with `max_nesting: PlainData::MAX_DEPTH` (3000, the store's bound), so a plan about 49 nodes deep no longer raises `JSON::NestingError`; a 60-join test on real Postgres (joined on `id + 0` so Postgres 18's self-join elimination can't flatten the plan) was red first. On the unreleased list. Minor findings: 20261010-13.
+
+### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24.
+
+The review of 20260923-24 found these minor issues:
+
+1. **The rarest boolean flags lose their partial.** If ANALYZE never samples the rare value, pg_stats shows `deleted` as `{f}` at 1.0, and `WHERE deleted` gets no partial, though that's the best case for one. The coverage rule is there for values written another way, and booleans can't be, since `boolean_text` maps them. Consider exempting booleans from the rule.
+2. **No test covers the case the rule exists for.** Nothing checks that `n = 1.5` on a numeric that pg_stats prints as `1.50` gets no partial.
+3. **An existing index may not count as covering a candidate.** pg_indexes keeps an existing `WHERE (deleted = true)` as written. Unless index-dedupe normalizes `b = true` to `b`, a matching `WHERE deleted` candidate is tested as new. Check this, and fix it in index-dedupe if needed (see 20260923-36).
+
+- **Depends on:** 20260923-24.
+- **Came from:** The review of 20260923-24, 2026-10-08.
+- **Design:** index-from-plan.
+- **Item 3 done:** 20260923-36 added `BooleanFold`, so an existing `WHERE (deleted = true)` now covers `WHERE deleted`. Items 1 and 2 are still open.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-21 branch; Opus review clean). A bare boolean or `NOT` boolean conjunct skips the MCV coverage rule (`boolean?` in `generator_two_patterns.rb`), so `deleted` listed as `{f}` at 1.0 still gets `WHERE deleted`; a test for `status = 1.5` with MCVs printed as `1.50` pins the numeric comparison; item 3 was already done by 20260923-36 (`BooleanFold`). On the unreleased list.
