@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261004-61: the `$n` numbers in untested-condition shapes come from the real redaction (`Redaction.numbers`), so a GROUP BY constant keeps no number and a shared constant gets one (enclave).
 - 20261004-92: `quaacks literals` refuses a rerun (`literals_already_used`) once baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (enclave and protocol).
 - 20261006-6: clock words and defaults: array-element function calls keep the outer targets, an inventory without a TimeZone refuses with `run_from_older_version`, `current_time` is anchored in queries and defaults (enclave).
+- 20261004-89: each `indexes` entry in the report payload carries `sources` (names from the fixed generator list), checked at egress and in the driver (enclave and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
 - 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
@@ -353,19 +354,7 @@ These are minor findings from building and reviewing 20261003-40:
 
 ### 20261004-88. ambiguous_user_schema: minors and the operator's own schema. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells.
-
-From the builder and review of 20261004-80.
-1. Removing `!ran.empty? &&` in `IndexSources.not_better` keeps every spec green, yet 5 of 16 recorded replays have a built index no label ran with; without that guard it would count as "not better" by source but not in "All sources together". Add a label-less built index to the producer spec's fixture.
-2. In the "Measured, and not ranked" table, "Who proposed it" still says "not recorded" for index candidates.
-3. For the generators, "Already existed" and "Planner ignored" still say "not recorded".
-
-- **Depends on:** 20261004-80.
-- **Came from:** The builder and review of 20261004-80.
-- **Design:** report, burndown.
-- **Landed so far:** item 1, 2026-10-08 (task/20261004-89, commit 835eb325; review clean). Items 2 and 3 wait on a user decision, since DESIGN.md keeps both cells "not recorded" on purpose. Item 2 would add a `sources` list to each `indexes` entry in the payload, checked on the way out, and the user would also choose what the cell says for a rewrite with new indexes. Item 3 would record index-dedupe's and index-test's drops by generator in the burndown, which changes its shape.
-- **Decided by the user (2026-10-09):** do items 2 and 3. Item 2: add `sources` to each `indexes` entry and show them in the "Who proposed it" cell. The cell reads the rewrite's source first, then the indexes' sources, such as "QUAACK's rules; indexes: generator one, the LLM" (decided by the user, 2026-10-09); a label with no new indexes shows only the rewrite's source. Item 3: record already existed and planner ignored by generator. Both change the enclave payload, so they go on the unreleased-changes list.
-- **Status:** todo
+### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
 
@@ -1077,4 +1066,15 @@ From the review of 20261004-81 (minor). The scan only matches double-quoted lite
 - **Depends on:** 20261006-6.
 - **Came from:** The review of 20261006-6, 2026-10-10 (minor).
 - **Design:** clock anchoring, arena setup.
+- **Status:** todo
+
+### 20261010-10. Index sources: a faithful store fake, and a mixed-label cell.
+
+From the review of 20261004-89 (minor).
+- The store fake in `enclave/spec/outbound_ddl_spec.rb` has an `entry?` that always returns false, so `IndexSources.sources` finds no searches and every entry's sources are `[]` in that spec. Harmless there (the sources path is covered against a real store in `report_payload_step_spec.rb`), but make the fake faithful (`def entry?(name) = data.key?(name)`).
+- If a label mixes indexes with recorded sources and indexes without, the cell lists only the recorded sources and doesn't say some are unrecorded. Only a payload no single enclave version produces does this, so it's cosmetic; say "and others not recorded" or leave it.
+
+- **Depends on:** 20261004-89.
+- **Came from:** The review of 20261004-89, 2026-10-10 (minor).
+- **Design:** report.
 - **Status:** todo

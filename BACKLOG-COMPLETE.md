@@ -9696,3 +9696,18 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 - **Design:** llm-index-ideas, llm-rewrites.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261006-6 branch; Opus review: no over-share). Item 1: a join alias with a column list keeps every column of every table under it (`listed_join_tables` in `stats_payload.rb`; it only adds whole tables of the query itself, and classify already lets those through). Item 2: a list exactly as long as the table's columns is tested (`>` to `>=` turns it red). On the unreleased list.
+
+### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells.
+
+From the builder and review of 20261004-80.
+1. Removing `!ran.empty? &&` in `IndexSources.not_better` keeps every spec green, yet 5 of 16 recorded replays have a built index no label ran with; without that guard it would count as "not better" by source but not in "All sources together". Add a label-less built index to the producer spec's fixture.
+2. In the "Measured, and not ranked" table, "Who proposed it" still says "not recorded" for index candidates.
+3. For the generators, "Already existed" and "Planner ignored" still say "not recorded".
+
+- **Depends on:** 20261004-80.
+- **Came from:** The builder and review of 20261004-80.
+- **Design:** report, burndown.
+- **Landed so far:** item 1, 2026-10-08 (task/20261004-89, commit 835eb325; review clean). Items 2 and 3 wait on a user decision, since DESIGN.md keeps both cells "not recorded" on purpose. Item 2 would add a `sources` list to each `indexes` entry in the payload, checked on the way out, and the user would also choose what the cell says for a rewrite with new indexes. Item 3 would record index-dedupe's and index-test's drops by generator in the burndown, which changes its shape.
+- **Decided by the user (2026-10-09):** do items 2 and 3. Item 2: add `sources` to each `indexes` entry and show them in the "Who proposed it" cell. The cell reads the rewrite's source first, then the indexes' sources, such as "QUAACK's rules; indexes: generator one, the LLM" (decided by the user, 2026-10-09); a label with no new indexes shows only the rewrite's source. Item 3: record already existed and planner ignored by generator. Both change the enclave payload, so they go on the unreleased-changes list.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-89; Opus review clean). Item 1 landed earlier (835eb325). Item 2: each `indexes` entry gains `sources`, unique names from `Protocol::IndexSources::SOURCES` in that order, checked by `Protocol::IndexSources.entries_valid?` at enclave egress (`check_ranking`) and in the driver's reply check (a missing `sources` from an older enclave is allowed; a stored source such as `:existing` never goes out); the "Who proposed it" cell reads "<rewrite's source>; indexes: generator one, the LLM" (the union across the label's indexes, in protocol order; "; indexes: not recorded" when none is recorded; the original with new indexes reads "Indexes: ..."). Item 3 was already done by 20261003-5 (`index_sources` carries per-source `existed` and `ignored` counts and the generators' cells are filled from them): only DESIGN.md and README were wrong, and now state the five counts. On the unreleased list. Minor findings: 20261010-10.
