@@ -9291,3 +9291,26 @@ If the prototype is good enough, the feature needs: a new LLM step (its own entr
 - **Decided by the user (2026-10-09):** "Just do it. If it's wrong, we can adjust it." Build the feature, not only the prototype, with the labeling and fallback below, and show the user real outputs on a synthetic recorded run so they can adjust it.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-37; Opus review clean). A `winner-summary` LLM step (routed like the others, counted in the LLM tables, outcome in the provenance record without the text) writes a few sentences comparing the winner with the original on the indexes the database already has. The input is allowlist-built from the report payload's shapes (redacted SQL, rule names, redacted index DDL, plan nodes without filters, block counts); the answer passes a guard (length, HTML, URLs, Markdown, control characters, internal labels) and is escaped; it's shown under a label saying an LLM wrote it, not measured. With no provider or any failure the section reads as before. One real call on a synthetic fixture: every number matched the payload, no causal guesses; the answer ran four long sentences (789 characters) against the prompt's two to four short ones. Protocol change on the unreleased list. Minor findings: 20261009-59.
+
+### 20261009-45. Ranking headings: make the tint visible, and look at it in a browser.
+
+From the review of 20261009-35 (minor, but the user asked for the kind headings to be set apart, so check the result by eye).
+- The heading row's tint is `--head-bg` (#f3f5f8 in the light theme), the same as the table's header row and about 1.1:1 against white. In the light theme the heading is set apart by its stripe and bold only, and `th` is bold already, so the `font-weight: 700` spec guards a declaration with no visible effect. Give the kind heading a more visible tint of its stripe's color (a variable per kind, with dark values), or drop the dead declaration.
+- The rank number sits in a right-aligned, no-wrap `td.num`, so its `padding-left: 1.5rem` only widens the column and the number isn't indented. The candidate cell's indent shows. Decide whether the number should move, and fix or drop the padding.
+- Nobody has seen the stripe render: it was checked from the CSS only (a 5px left border on a `border-collapse` table's cells). Render a spec-fixture report in a headless browser (Firefox is installed; its headless screenshot failed with "A copy of Firefox is already open", so try a fresh `--profile` outside the sandbox or another browser) and look at both themes. Report with screenshots to the user.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-35, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-45; review clean, first real renders). Each Ranking kind heading is tinted from its stripe color (`--sb-teal`, `--sb-violet`, `--sb-brown` with dark values; heading text 10.2 to 13:1 on the tint); the dead bold declaration and the dead rank padding are gone. Screenshots (synthetic fixtures) are in the scratchpad: build-20261009-45/{light,dark}{,-after}.png and review-20261009-45/ (verdict colors, funnels, folds, in both themes). The funnels render with touching bands and a rectangular top band. Minor findings: 20261009-60.
+
+### 20261009-53. Replay funnel example: say why a recorded run is skipped.
+
+From the review of 20261009-43 (minor). The new replay example that checks the first band is a rectangle does `next unless outcome.report`, a silent skip for the one recorded run that ended in an error and so has no report. Make the skip explicit: assert the run's outcome is an error for every skipped run, and that at least six runs were checked, so the example can't pass vacuously if the replays change.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-43, 2026-10-09 (minor).
+- **Design:** report, burndown.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-45 branch; review clean). A skipped replay run must have a non-nil `outcome.error`, and an after-hook asserts at least 6 runs were drawn (skipped under an rspec filter).

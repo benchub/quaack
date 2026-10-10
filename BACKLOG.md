@@ -1180,18 +1180,6 @@ Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexam
 
 ### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-45. Ranking headings: make the tint visible, and look at it in a browser.
-
-From the review of 20261009-35 (minor, but the user asked for the kind headings to be set apart, so check the result by eye).
-- The heading row's tint is `--head-bg` (#f3f5f8 in the light theme), the same as the table's header row and about 1.1:1 against white. In the light theme the heading is set apart by its stripe and bold only, and `th` is bold already, so the `font-weight: 700` spec guards a declaration with no visible effect. Give the kind heading a more visible tint of its stripe's color (a variable per kind, with dark values), or drop the dead declaration.
-- The rank number sits in a right-aligned, no-wrap `td.num`, so its `padding-left: 1.5rem` only widens the column and the number isn't indented. The candidate cell's indent shows. Decide whether the number should move, and fix or drop the padding.
-- Nobody has seen the stripe render: it was checked from the CSS only (a 5px left border on a `border-collapse` table's cells). Render a spec-fixture report in a headless browser (Firefox is installed; its headless screenshot failed with "A copy of Firefox is already open", so try a fresh `--profile` outside the sandbox or another browser) and look at both themes. Report with screenshots to the user.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-35, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-52. Use "transform rule" everywhere the report names where a rewrite came from.
 
 From the review of 20261009-31 (minor). The source line now says "transform rule X", but the same rewrite is still "made by QUAACK's own rewrite rule X" in the rule-bug section, the fate list, and the candidates table's "who" cell (all from `Rewrites::RULES`), and the "Rewrites from QUAACK's own rules" row in `words.rb`. A reader sees two phrasings for one thing. Change the candidates "who" cell and the row label to "Transform rule(s) X" (the reviewer's suggestion; the full-sentence uses in the fate list and the rule-bug section read fine and can stay unless the user wants them changed), update README's step 4 and its rule-bug example to match, and the specs that pin the old text. Ask the user whether the progress line ("Applying QUAACK's own rewrite rules to the query") should change too.
@@ -1201,15 +1189,6 @@ From the review of 20261009-31 (minor). The source line now says "transform rule
 - **Design:** report.
 - **Open questions:** Whether the full-sentence uses and the progress line should change too.
 - **Decided by the user (2026-10-09):** change it everywhere: the rule-bug section, the fate list, the candidates table's "who" cell, the row label, README step 4 and its example, and the progress line, so one phrase ("transform rule(s)") is used throughout.
-- **Status:** todo
-
-### 20261009-53. Replay funnel example: say why a recorded run is skipped.
-
-From the review of 20261009-43 (minor). The new replay example that checks the first band is a rectangle does `next unless outcome.report`, a silent skip for the one recorded run that ended in an error and so has no report. Make the skip explicit: assert the run's outcome is an error for every skipped run, and that at least six runs were checked, so the example can't pass vacuously if the replays change.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-43, 2026-10-09 (minor).
-- **Design:** report, burndown.
 - **Status:** todo
 
 ### 20261009-57. Redaction re-check: a jsonb `?` operator in a partial index fails the whole negative result.
@@ -1242,4 +1221,15 @@ From the review of 20261009-37 (minor).
 - **Depends on:** 20261009-37.
 - **Came from:** The review of 20261009-37, 2026-10-09 (minor).
 - **Design:** report, Several LLM providers.
+- **Status:** todo
+
+### 20261009-60. Pin the Ranking tint values; style links.
+
+From the review of 20261009-45 (minor).
+- The 45 spec checks that the `--sb-*` variables are wired up but not their values: changing a light value to white stays green, so an invisible tint would pass. Add a spec that each `--sb-*` differs from the page, panel and `--head-bg` colors and that heading text keeps at least 4.5:1 on it, in both themes (the cream stripe already has a contrast spec).
+- The template has no `a` rule, so links use the browser's default blue and purple (light) and a teal (dark). Add `a { color: var(--accent) }` and visited/hover states with contrast checks in both themes, and look at it in a browser (headless Firefox works: `/Applications/Firefox.app/Contents/MacOS/firefox --headless --no-remote --profile <fresh dir> --screenshot <png> file:///...`).
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-45, 2026-10-09 (minor).
+- **Design:** report.
 - **Status:** todo
