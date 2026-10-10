@@ -600,20 +600,20 @@ The table has a row for each kind of change, and one for the original query as i
 | Best rewrite, with new indexes<br>Rewrite Silver Fox with new indexes | 4 | +14.8 MB | 99% |
 | The original query, with new indexes<br>The original query with new indexes | 19 | +11.5 MB | 96% |
 | The original query, with the same indexes | 509 | 0 | 0% |
-| Best rewrite, with the same indexes | ⚠ No rewrite beat the original without an index | n/a | n/a |
+| Best rewrite, with the same indexes | ⚠ No rewrite beat the original without an index | | |
 
 - **Plan** names the kind of change: "Best rewrite, with new indexes", "Best rewrite, with the same indexes", or "The original query, with new indexes". Under it, in smaller type, is which query it was and whether it runs "with new indexes" or "with no new indexes". The cell never shows an index definition. The ranked candidates' own tables and the proposed indexes show those.
 - **Blocks read (slow values)** is the candidate's blocks on the values from your slow plan.
 - **Index change** is the built size of the candidate's new indexes, less the size of each existing index the report says you could drop because of them, such as "+56.0 MB", or "-12 kB" when the drops outweigh the new indexes. It says "not recorded" when a size is missing, and 0 for the same indexes. QUAACK drops nothing.
 - **Improvement** is the percentage fewer blocks than the original query, worded as in the ranked candidates' tables below, so it says "over 99%" instead of rounding to 100%. When the original query timed out on the slow values, it says so.
 
-Rows with a candidate come first, the biggest improvement on top. The original query as it is comes next, at 0%. A kind with no ranked candidate comes last, with a "⚠" and a short reason, such as "No new index found that the original query could use", "No rewrite survived testing", or "No rewrite beat the original without an index". Hover over the reason for more.
+Rows with a candidate come first, the biggest improvement on top. The original query as it is comes next, at 0%. A kind with no ranked candidate comes last, with a "⚠" and a short reason that spans the Blocks, Index change, and Improvement cells, such as "No new index found that the original query could use", "No rewrite survived testing", or "No rewrite beat the original without an index". Hover over the reason for more.
 
 Under the table, a short "⚠" line warns about each of these, with a **Details** link to the section that explains it:
 
 - Some measurement runs timed out, and QUAACK dropped those candidates. It links to **Runs that timed out**.
 - The original query timed out on some values, so any candidate that finished there counts as better. It links to the same section.
-- Your role on the production server couldn't see some statistics, so QUAACK's estimates for those may be off. It links to a note in the indexes section that says which ones: how many extended statistics objects, and which expression indexes, by name.
+- Your role on the production server couldn't see some statistics, so QUAACK's estimates for those may be off. It links to the **Proposed indexes** section (or **Indexes QUAACK built and measured**, when nothing won), which has a note that says which ones: how many extended statistics objects, and which expression indexes, by name.
 
 **Runs that timed out** appears below the ranking, and only when something timed out. One part lists the candidates whose measurement runs timed out. Another says which values the original query timed out on.
 
@@ -651,27 +651,32 @@ A rewrite may also list **conditions from the original query that QUAACK's made-
 
 ### Ranking.
 
+QUAACK ranks the three best candidates of each kind of change: a rewrite with new indexes, a rewrite with no new indexes, and the original query with new indexes. The table has a heading row for each kind that has any ranked candidate, in that order, with a colored stripe on its left that the kind's rows share. Rank restarts at 1 under each heading.
+
 | # | Candidate | Blocks read, slow values | Blocks read, all values | Size of its new indexes |
 | --- | --- | ---: | ---: | ---: |
 | | The original query (the baseline, not ranked) | 509 | 5,635 | none |
-| 1 | The original query with a new index on public.events (account_id, created_at) INCLUDE (kind) | 4 | 20 | 14.8 MB |
-| 2 | The original query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
-| 3 | Rewrite Silver Fox with no new indexes | 31 | 140 | 0 kB |
+| | **A rewrite of the original query, with new indexes** | | | |
+| 1 | Rewrite Silver Fox with a new index on public.events (account_id, created_at) INCLUDE (kind) | 4 | 20 | 14.8 MB |
+| 2 | Rewrite Silver Fox with a new index on public.events (account_id, created_at) | 11 | 62 | 11.5 MB |
+| | **The original query, with new indexes** | | | |
+| 1 | The original query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
 
-The first row, with no rank, is the original query, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where the original query timed out, "timed out". The winner is the first ranked row. Each **candidate** is the original query, or a rewrite, run with a set of new indexes, and the report names it that way.
+The first row, with no rank, is the original query, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where the original query timed out, "timed out". Each **candidate** is the original query, or a rewrite, run with a set of new indexes or none, and the report names it that way. Within a kind, the fewest blocks on the slow values ranks first. The winner, the one the verdict and the next section describe, is the best candidate of any kind. It's the first row under one of the headings, not necessarily the first row under the first heading. A kind with no ranked candidate has no heading. Here, no rewrite with no new indexes was ranked, so that kind is missing, and the verdict says so.
 
 - **Blocks read, slow values:** blocks read with the values from your slow plan. This is the number you most want down.
 - **Blocks read, all values:** blocks read, added up over the slow, worst-case, and typical values.
-- **Size of its new indexes:** disk space for the candidate's new indexes. When two candidates tie on blocks, the smaller one wins.
+- **Size of its new indexes:** disk space for the candidate's new indexes. It breaks ties. Before candidates are grouped by kind, any two whose slow-value blocks are within 5% of each other tie, whatever their kinds, and the one whose new indexes take more space isn't ranked. (QUAACK takes the candidates from the smallest size up and keeps each one unless it ties one already kept, so a candidate that lost a tie never knocks out another.)
 
-Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks, and *no worse* on every other value set, meaning no more than 5% more blocks.
+Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks than the original query, and *no worse* on every other value set, meaning no more than 5% more blocks.
 
-**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, in a rose box that behaves like the queries' boxes, behind a line such as "Show the 4 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
+**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, in a rose box that behaves like the queries' boxes, behind a line such as "Show the 3 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
 
 | What it was | Who proposed it | Why it didn't make the cut |
 | --- | --- | --- |
 | The original query with a new index on public.events (kind) | not recorded | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
-| Rewrite Silver Fox with a new index on public.events (account_id) | Suggested by the LLM | Beat the original query, but three others of its kind did better. |
+| Rewrite Silver Fox with no new indexes | Suggested by the LLM | Read 503 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
+| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
 
 Who proposed it means who proposed the rewrite. QUAACK doesn't record who thought of each index, so for the original query with new indexes it says not recorded.
 
@@ -694,24 +699,24 @@ Each ranked candidate then gets its own table:
 
 ### Why the winner reads fewer blocks.
 
-> Rewrite Silver Fox with no new indexes read 31 blocks on the slow values, against 509 for the original query (94% fewer).
+> Rewrite Silver Fox with a new index on public.events (account_id, created_at) INCLUDE (kind) read 4 blocks on the slow values, against 509 for the original query (99% fewer). Fewer blocks read means fewer pages pulled through the cache, so less pressure on the memory every other query shares.
 >
 > A step marked “differs”, and shaded, is one the other plan doesn't have in the same place.
 >
 > How Postgres runs the original query now:
 
-| Step | Table | Index | Estimated rows | Actual rows | Share of the table |
-|---|---|---|--:|--:|--:|
-| Sort **DIFFERS** | | | 10 | 10 | |
-| &nbsp;&nbsp;&nbsp;-> Index Scan **DIFFERS** | public.events | events_account_id_idx | 480 | 500 | 0.1% |
+| Step | Table | Index | Estimated rows | Actual rows | Share of the table | Blocks read, with the steps under it |
+|---|---|---|--:|--:|--:|--:|
+| Sort **DIFFERS** | | | 10 | 10 | | 509 |
+| &nbsp;&nbsp;&nbsp;-> Index Scan **DIFFERS** | public.events | events_account_id_idx | 480 | 500 | 0.1% | 509 |
 
-> How it runs rewrite Silver Fox with no new indexes:
+> How it runs rewrite Silver Fox with a new index on public.events (account_id, created_at) INCLUDE (kind), as QUAACK measured it on the slow values:
 
-| Step | Table | Index | Estimated rows | Actual rows | Share of the table |
-|---|---|---|--:|--:|--:|
-| Index Only Scan **DIFFERS** | public.events | events_account_created_idx | 10 | 10 | under 0.1% |
+| Step | Table | Index | Estimated rows | Actual rows | Share of the table | Blocks read, with the steps under it |
+|---|---|---|--:|--:|--:|--:|
+| Index Only Scan **DIFFERS** | public.events | events_account_created_kind_idx | 10 | 10 | under 0.1% | 4 |
 
-This part is generated from the measurements and plans, not written by the LLM. Each plan is a table of its steps, in the style of explain.depesz.com, with each step indented under the one it feeds. The steps one plan has and the other doesn't are shaded and marked "differs". The payload doesn't say how many blocks each step read, so the table doesn't either. A report from an older run, whose plans don't say how deep each step is, shows the steps unindented. The second plan is shown only for a rewrite. When the winner is your own query with new indexes, the report says its plan is not recorded. It's left out when nothing beat the original query.
+This part is generated from the measurements and plans, not written by the LLM. Each plan is a table of its steps, in the style of explain.depesz.com, with each step indented under the one it feeds. The steps one plan has and the other doesn't are shaded and marked "differs". The last column is the blocks the step read, shared hits and reads together, counting the steps under it. A note under the original's plan says why a step that ran many times can show one row next to thousands of blocks. The second plan is the winner's, with its new indexes, as QUAACK measured it on the slow values. A run measured before QUAACK kept that plan says so in words, and shows the winner's rewrite as Postgres expected to run it, with no block counts. A report from an older run, whose plans don't say how deep each step is, shows the steps unindented. It's left out when nothing beat the original query.
 
 ### Why nothing beat the original query.
 
@@ -727,13 +732,14 @@ Each of these three starts open, in a rose box. When something did beat the orig
 
 ### Proposed indexes.
 
-| Index | Built size | Your index that already covers it | Your indexes it would make redundant |
-| --- | ---: | --- | --- |
-| `CREATE INDEX ON public.events USING btree (account_id, created_at) INCLUDE (kind)` | 14.8 MB | none | events_account_id_idx (9.1 MB) |
+| Index | Built size | Your index that already covers it |
+| --- | ---: | --- |
+| `CREATE INDEX ON public.events USING btree (account_id, created_at) INCLUDE (kind)` | 14.8 MB | none |
+| `CREATE INDEX ON public.events USING btree (account_id, created_at)` | 11.5 MB | none |
 
 Only the ranked candidates' indexes are proposed. A second table, **Other indexes QUAACK built and measured,** lists the ones it built that no ranked candidate uses. When nothing beat the original query, nothing is proposed, and the section is one table called **Indexes QUAACK built and measured.** When your role on the production server couldn't read some statistics, a note here, **Statistics QUAACK couldn't see**, says which, that QUAACK went on without them, and that a role that owns the tables lets it read them. The verdict's caveat links to it.
 
-Sizes use the unit that fits: kB, MB, or GB. The **built size** is real: QUAACK built the index on the racetrack. The last two columns name your existing indexes, each with its size: one that already covers the new index, and the ones the new index would make redundant, which you could drop after checking that nothing else needs them.
+Sizes use the unit that fits: kB, MB, or GB. The **built size** is real: QUAACK built the index on the racetrack. The last column names your existing index that already covers the new one, with its size, if there is one. An existing index a new index would make redundant isn't in this table. When a ranked candidate has such indexes, a note under that candidate lists each with its size and scan count, as ones you could drop after checking that nothing else needs them, and the verdict's Index change subtracts their size. In this run there are none, so the winner's Index change is its built size.
 
 To ship an index, build it on production yourself, usually with `CREATE INDEX CONCURRENTLY`, and give it a name.
 
