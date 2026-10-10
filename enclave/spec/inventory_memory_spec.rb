@@ -103,6 +103,16 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
       expect(gone_soon?(sleeper)).to be(true), "sleep #{sleeper} is still running"
     end
 
+    # The shell can write and exit between one drain and the next status
+    # check. Waiting for the exit inside the status check, so the status
+    # is there on the first look, leaves the output in the pipe after the
+    # last drain, and only a final drain after the status finds it.
+    it "reads what the shell wrote before it exited, even when the status shows the exit first" do
+      allow(Process).to(receive(:wait2).and_wrap_original { |original, pid, _flags| original.call(pid, 0) })
+
+      expect(memory.bytes("echo 64GB", "prod-db-3")).to eq(64 * (1024**3))
+    end
+
     # The shell's pid comes from the spawn, not from a pid file, which a
     # shell killed while still starting under load may not have written yet.
     # The sleep writes its own pid file once it's running, so a missing file

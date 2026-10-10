@@ -293,6 +293,23 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
       connection&.close
     end
 
+    # A host that silently drops packets can lose the server's timeout
+    # error too, so libpq would wait forever. TCP keepalives and
+    # tcp_user_timeout end the connection instead, whatever the operator's
+    # own PG environment says.
+    it "sets TCP keepalives and a user timeout, over the operator's own" do
+      env = operator_env("PGKEEPALIVES" => "0", "PGKEEPALIVESIDLE" => "7200")
+
+      connection = with_libpq_env(env) { production_module.connect(host: production.host) }
+
+      expect(connection.conninfo_hash.slice(:keepalives, :keepalives_idle, :keepalives_interval, :keepalives_count,
+                                            :tcp_user_timeout))
+        .to eq(keepalives: "1", keepalives_idle: "30", keepalives_interval: "10", keepalives_count: "3",
+               tcp_user_timeout: "30000")
+    ensure
+      connection&.close
+    end
+
     it "drops the connection's notices, so none reaches stderr" do
       connection = with_libpq_env(operator_env) { production_module.connect(host: production.host) }
 

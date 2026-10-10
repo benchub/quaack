@@ -125,6 +125,7 @@ RSpec.describe Quaack::Enclave::Config do
     "has a run server command on two lines" => %({"run_server_command": "a\\nb"}),
     "has a destroy command that isn't a string" => %({"destroy_command": ["rm"]}),
     "has a blank destroy command" => %({"destroy_command": " "}),
+    "has null PII columns" => %({"pii_columns": null}),
     "has PII columns that aren't a list" => %({"pii_columns": "*.users.email"}),
     "has a PII glob that isn't a string" => %({"pii_columns": [1]}),
     "has a PII glob with two parts" => %({"pii_columns": ["users.email"]}),
