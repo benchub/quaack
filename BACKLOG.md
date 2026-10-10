@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
 - 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
 - 20261009-50: `NegativeResult` re-checks every DDL string in `negative` is redacted before the payload is built, and the redaction treats a `?` inside `ANY(ARRAY[...])` as already masked (enclave).
+- 20261009-37: `winner-summary` added to `Protocol::Burndown::LLM_STEPS` (protocol; the enclave's behavior is unchanged, but the protocol gem's file differs under the same VERSION).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
 
 
@@ -1160,24 +1161,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261009-35. Ranking: set each kind's heading apart from its rows. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-37. Report: an LLM-written "tl;dr" at the top of "Why the winner reads fewer blocks".
-
-The user, 2026-10-09: the section is "honestly not very informative", and it might open with a short LLM-written summary. Their example: "Rewrite Steady Lute removes redundant table scans and transforms an IN to an EXISTS, which allows Postgres to make better use of index scans. Additionally, a new index further improves performance by allowing even tighter selectivity scans on the assignments table." They aren't sure what quality a summary like that would reach.
-
-Two things to settle before this is built, since it departs from what the README promises today ("This part is generated from the measurements and plans, not written by the LLM"):
-- **Quality.** Start with a throwaway prototype, not a feature. From a recorded run (the repo's `spec/fixtures` replays, never a real report), build the input a summary would get and ask each configured provider for a few sentences. Show the user several outputs next to the plans, and judge whether they're correct and useful. The risk is a fluent explanation that's wrong about why a plan is faster; a reader can't tell. Report what the prototype found before building anything else.
-- **What it may see.** Only what the driver already holds outside the enclave and already sends to LLM steps: redacted query shapes (`$n` placeholders), the rewrite's SQL, the rule names that made it, index DDL, plan nodes (type, table, index, row estimates, block counts), and the measured block counts. Never a literal, a value, or a store entry the enclave doesn't send. The input is built from the same payload the report already holds, and a spec plants a sentinel in a value the summary must never carry. Name the data (query shapes, schema names, a customer's table names) and the rules that likely apply in the design note; ask whether Security or Privacy review wants to see the input list.
-
-If the prototype is good enough, the feature needs: a new LLM step (its own entry under `llm_routing.steps`, its pool, its call counted in the provenance record and the burndown's LLM table, with its tokens); a summary labeled in the report as written by an LLM and not measured, with the provider and model named; a fallback when no LLM answers (the section reads as it does today, with no placeholder); a check that the summary names only the rewrite and the indexes the report shows; and the README and DESIGN.md changed to say the section now opens with an LLM summary and the rest is still generated from the measurements.
-
-- **Depends on:** None for the prototype. The feature depends on the prototype's result.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, Several LLM providers.
-- **Decided by the user (2026-10-09):** the summary compares the winner only against the original query without new indexes (the baseline: the original with the same indexes). Not each ranked candidate.
-- **Open questions:** Which provider writes it (the cheapest one that does well in the prototype).
-- **Decided by the user (2026-10-09):** "Just do it. If it's wrong, we can adjust it." Build the feature, not only the prototype, with the labeling and fallback below, and show the user real outputs on a synthetic recorded run so they can adjust it.
-- **Status:** todo
-
 ### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have". Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-40. Caution: warn only about untested atoms in the part the rewrite changed.
@@ -1245,4 +1228,18 @@ From the review of 20261009-50 (minor, defense in depth). The `redacted?` re-che
 - **Depends on:** 20261009-50.
 - **Came from:** The review of 20261009-50, 2026-10-09 (minor).
 - **Design:** What goes out of the enclave.
+- **Status:** todo
+
+### 20261009-59. Winner summary: tighten the guard and the prompt.
+
+From the review of 20261009-37 (minor).
+- The guard lets a few spoofable things through, rendered as inert escaped text: a bare domain (`evil.example.co`), `javascript:` or `data:` as text, an email address, zero-width characters (U+200B) and bidi overrides (U+202E). Also refuse `\p{Cf}` characters, `javascript:` and `data:`, an `@` address, and any `word.word` that looks like a host.
+- The prompt asks for two to four plain sentences, but the real answer was four long sentences (789 characters), and the 900-character cap leaves little headroom. Ask for short sentences and lower the cap to about 600, or accept the length; judge from more than one real answer (use the synthetic fixture and the one configured provider, a few calls at most) and show the user.
+- The real answer said the Aggregate and Sort "sort the 35,453 ids" when the Append emits 35,453 and the Aggregate output is 32,429. The prompt could ask the model to quote a plan step's own numbers rather than carry one across steps.
+- The spec compares the baseline wording in `ORIGINAL_PLAN` with the constant itself, so flipping the wording survives; assert the literal text.
+- The scratch example `input.json` predates the "if it has any" wording; regenerate it with the deliverables.
+
+- **Depends on:** 20261009-37.
+- **Came from:** The review of 20261009-37, 2026-10-09 (minor).
+- **Design:** report, Several LLM providers.
 - **Status:** todo
