@@ -6,55 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261008-35 and 20261008-39: index DDL key expressions and predicates and rewrite candidates refuse reg literals, name lookups, OID probes, reg input functions and integer text search configs; an "any" argument is declared text and prepared again (enclave).
-- 20261008-46: `Resolved.pick` probes pg_catalog too and leaves a call bare when it and another schema plan the same way (enclave).
-- 20261008-38: qualify stores `relation_tablespaces` in the store; run-server compares only those tablespaces; `quaack setup` runs qualify before run-server (enclave and driver).
-- 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
-- 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
-- 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
-- 20261009-50: `NegativeResult` re-checks every DDL string in `negative` is redacted before the payload is built, and the redaction treats a `?` inside `ANY(ARRAY[...])` as already masked (enclave).
-- 20261009-37: `winner-summary` added to `Protocol::Burndown::LLM_STEPS` (protocol; the enclave's behavior is unchanged, but the protocol gem's file differs under the same VERSION).
-- 20261009-40: `untested_unchanged` (enclave `AtomPosition`, `Protocol::UnchangedAtoms`, an egress subset check) sends which untested atoms are in an unchanged part of the rewrite (enclave and protocol).
-- 20261009-57: the redaction re-check reads a jsonb `?` operator correctly (enclave).
-- 20261003-28: `shared_scan_cte` widenings: copies in subqueries and CTE bodies, a nullable copy, GROUP BY on the primary key, ONLY, aliased joins (enclave).
-- 20261004-9: rewrite-test and counterexamples disproofs of a `denormalized_equal` rewrite are reported as rule bugs (enclave; no new fields).
-- 20261003-43: `fk_cycle` table names are built by the enclave from a stored [schema, name] pair and quoted like `quote_ident`; the enclave and driver shape checks accept bare or quoted parts; the counterexamples round's error line carries only the rule (enclave and driver).
-- 20261003-44: `existence_in_flip` scope check includes unaliased function names; ORDER BY positions out of range are refused; the same capture is refused in `cte_hoist_dedupe` and `union_outer_filter_removal` (enclave).
-- 20261004-61: the `$n` numbers in untested-condition shapes come from the real redaction (`Redaction.numbers`), so a GROUP BY constant keeps no number and a shared constant gets one (enclave).
-- 20261004-92: `quaacks literals` refuses a rerun (`literals_already_used`) once baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (enclave and protocol).
-- 20261006-6: clock words and defaults: array-element function calls keep the outer targets, an inventory without a TimeZone refuses with `run_from_older_version`, `current_time` is anchored in queries and defaults (enclave).
-- 20261004-89: each `indexes` entry in the report payload carries `sources` (names from the fixed generator list), checked at egress and in the driver (enclave and protocol).
-- 20261007-58: the equality check follows a column's domain chain and refuses a planted `=` on a domain (enclave).
-- 20261008-4 and 20261008-5: `not_in_to_not_exists` takes a NOT IN (and a one-column `<> ALL` with a pg_catalog negator proof) in any position of a plain SELECT, with the not-null proofs, and refuses a grouping-set GROUP BY (enclave).
-- 20261008-22: live EXPLAIN JSON in `IndexBuild.confirm` and `Measurement.measure_set` is parsed with the store's depth bound (3000) instead of JSON's default 100 (enclave).
-- 20261008-7, 20261008-8, 20261008-9: `or_to_union` takes a GROUP BY and HAVING (plain grouped columns, aggregates only if the catalog says every function of that name is one), outer joins (LEFT, RIGHT, FULL; no NATURAL, USING or a join alias), and a bare `*` expanded from the catalog (enclave).
-- 20261008-24 (items 3 and 4) and 20261008-25: index-from-query reduces joins through a FROM subquery's columns, counts a whole-row reference as reading every column, and keys a `char(n)` pattern idea with `bpchar_pattern_ops` (enclave).
-- 20261008-26: the counterexample payload leaves the `USING (col)` and `NATURAL JOIN` marker shapes out of `untested_atoms` (enclave). 20261008-28: `BooleanFold.fold` repeats to a fixed point and collapses a double NOT (enclave). 20261008-29: a descendant refusal in a candidate is `unknown_relation`, naming only the table the candidate wrote (enclave).
-- 20261008-30: every production connection (and schema-dump's pg_dump) carries TCP keepalives and a 30 s tcp_user_timeout (enclave). 20261008-33: fixture-compare skips a load order whose row positions equal an earlier run's (enclave).
-- 20261008-21 (InitPlan half): `(InitPlan n).colm` in a plan condition is read as a parameter by index-from-plan (enclave). 20261008-23: a bare boolean or NOT boolean skips the MCV coverage rule (enclave).
-- 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
-- 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
-- 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
-- 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
-- 20261004-8: rewrite-test fixtures: a cut foreign key's S3 cross row keeps every table, `Topology#roots` uses `load_parents`, S5 builds the reversed boundary group first (enclave).
-- 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
-- 20261009-63: a constant conjunct in a rewrite counts as new material in `AtomPosition` (enclave).
-- 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+(none. Closed at 0.1.31.)
 
 ## How this file works.
 
