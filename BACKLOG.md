@@ -906,3 +906,12 @@ The review of 20261010-25 found that the guard's new fixture-compare check runs 
 - **Came from:** The review of 20261010-25, 2026-10-10. Priority: paginated queries are everywhere.
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261010-27. Untested conditions: a corpus of realistic query shapes that must have no non-redundant untested atoms.
+
+The user's worry (2026-10-10): the untested-conditions flag could show up for many query shapes we haven't tried. The fixes so far (20261010-19, -21, -25) each came from a shape we happened to examine. Build a broad safety net: a Postgres-backed spec with about 100 realistic shapes (the ordinary SELECTs that apps and ORMs generate: filters of every type, AND/OR/NOT mixes, IN and NOT IN, BETWEEN, LIKE, IS NULL, joins of every kind with 2 to 4 tables, FK chains, self-joins, subqueries (IN, EXISTS, scalar, correlated), UNION and UNION ALL, CTEs, GROUP BY with HAVING, DISTINCT, ORDER BY with LIMIT and OFFSET, aggregates, window functions, enum, boolean, date, jsonb and array columns, unique and composite keys, polymorphic columns, and the Rails shapes the real queries use). For each shape, run the real Scenarios::Builder and VacuityGuard, and list the atoms that stay untested. Each shape carries an explicit allow-list of atoms that are truly redundant or provably untestable, with a one-line reason; the spec fails when any other atom is untested, so a regression or a new shape shows up as a red test. Shapes that fail today go in a separate pending list with the atoms and a guess at the cause, and each becomes a new backlog task pointing here. Keep the spec's runtime reasonable (parallel-safe, one throwaway Postgres).
+
+- **Depends on:** 20261010-25.
+- **Came from:** The user, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
