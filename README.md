@@ -587,17 +587,39 @@ The report says things in words. It never shows QUAACK's internal labels, such a
 
 ### The verdict.
 
-> QUAACK found something better than the original query: the original query with a new index on public.events (account_id, created_at) INCLUDE (kind). It read 4 blocks on the slow values, against 509 for the original query (99% fewer).
+The verdict is a headline and one table, in a colored box. The box's background follows the headline, with a darker stripe of the same color on its left:
 
-Or, when nothing helped:
+- **The verdict: substantial improvements possible** (green) when the best candidate reads at least 30% fewer blocks on the slow values than the original query. Where the original query timed out, any candidate that finished counts.
+- **The verdict: minor improvements possible** (cream) when the best candidate beats the original query by less than that.
+- **The verdict: QUAACK found nothing that could help** (blue) when nothing beat the original query. A line under it says what QUAACK tried, such as "It built and measured 2 indexes and kept 1 rewrite. The sections below say what became of each."
 
-> Nothing QUAACK tried beat the original query. It built and measured 2 indexes and kept 1 rewrite. The sections below say what became of each.
+The table has a row for each kind of change, and one for the original query as it is:
 
-It also says here if any measurement runs timed out, and if the original query itself timed out on some set of values.
+| Plan | Blocks read (slow values) | Index change | Improvement |
+| --- | ---: | ---: | ---: |
+| Best rewrite, with new indexes<br>Rewrite Silver Fox with new indexes | 4 | +14.8 MB | 99% |
+| The original query, with new indexes<br>The original query with new indexes | 19 | +11.5 MB | 96% |
+| The original query, with the same indexes | 509 | 0 | 0% |
+| Best rewrite, with the same indexes | ⚠ No rewrite beat the original without an index | n/a | n/a |
+
+- **Plan** names the kind of change: "Best rewrite, with new indexes", "Best rewrite, with the same indexes", or "The original query, with new indexes". Under it, in smaller type, is which query it was and whether it runs "with new indexes" or "with no new indexes". The cell never shows an index definition. The ranked candidates' own tables and the proposed indexes show those.
+- **Blocks read (slow values)** is the candidate's blocks on the values from your slow plan.
+- **Index change** is the built size of the candidate's new indexes, less the size of each existing index the report says you could drop because of them, such as "+56.0 MB", or "-12 kB" when the drops outweigh the new indexes. It says "not recorded" when a size is missing, and 0 for the same indexes. QUAACK drops nothing.
+- **Improvement** is the percentage fewer blocks than the original query, worded as in the ranked candidates' tables below, so it says "over 99%" instead of rounding to 100%. When the original query timed out on the slow values, it says so.
+
+Rows with a candidate come first, the biggest improvement on top. The original query as it is comes next, at 0%. A kind with no ranked candidate comes last, with a "⚠" and a short reason, such as "No new index found that the original query could use", "No rewrite survived testing", or "No rewrite beat the original without an index". Hover over the reason for more.
+
+Under the table, a short "⚠" line warns about each of these, with a **Details** link to the section that explains it:
+
+- Some measurement runs timed out, and QUAACK dropped those candidates. It links to **Runs that timed out**.
+- The original query timed out on some values, so any candidate that finished there counts as better. It links to the same section.
+- Your role on the production server couldn't see some statistics, so QUAACK's estimates for those may be off. It links to a note in the indexes section that says which ones: how many extended statistics objects, and which expression indexes, by name.
+
+**Runs that timed out** appears below the ranking, and only when something timed out. One part lists the candidates whose measurement runs timed out. Another says which values the original query timed out on.
 
 ### The queries.
 
-The original query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
+The original query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each query sits in a violet box. While one is open, its line stays at the top of the window, with a "Collapse" label on its right ("Expand" when it's closed), so you can close a long query from anywhere in it. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
 
 ```sql
 SELECT id, kind, created_at
@@ -644,7 +666,7 @@ The first row, with no rank, is the original query, so you can see how far each 
 
 Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks, and *no worse* on every other value set, meaning no more than 5% more blocks.
 
-**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, behind a line such as "Show the 4 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
+**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, in a rose box that behaves like the queries' boxes, behind a line such as "Show the 4 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
 
 | What it was | Who proposed it | Why it didn't make the cut |
 | --- | --- | --- |
@@ -699,6 +721,8 @@ This section appears only when no candidate won. It has:
 - **Indexes the planner wouldn't use:** a table of each index QUAACK thought of and the planner never chose, even when trying it cost nothing, and why not.
 - **Indexes QUAACK thought of that you already have:** each one, your index that covers it (its name and its definition, with any partial index's constants hidden), and that index's size. If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.
 
+Each of these three starts open, in a rose box. When something did beat the original query, the last two appear in a section of their own, **Index ideas that went nowhere**, without the rewrites.
+
 "Nothing helps" is a real answer. It often means the query is already as good as its indexes allow, and the fix is in the app: fetch less, or cache it.
 
 ### Proposed indexes.
@@ -707,7 +731,7 @@ This section appears only when no candidate won. It has:
 | --- | ---: | --- | --- |
 | `CREATE INDEX ON public.events USING btree (account_id, created_at) INCLUDE (kind)` | 14.8 MB | none | events_account_id_idx (9.1 MB) |
 
-Only the ranked candidates' indexes are proposed. A second table, **Other indexes QUAACK built and measured,** lists the ones it built that no ranked candidate uses. When nothing beat the original query, nothing is proposed, and the section is one table called **Indexes QUAACK built and measured.**
+Only the ranked candidates' indexes are proposed. A second table, **Other indexes QUAACK built and measured,** lists the ones it built that no ranked candidate uses. When nothing beat the original query, nothing is proposed, and the section is one table called **Indexes QUAACK built and measured.** When your role on the production server couldn't read some statistics, a note here, **Statistics QUAACK couldn't see**, says which, that QUAACK went on without them, and that a role that owns the tables lets it read them. The verdict's caveat links to it.
 
 Sizes use the unit that fits: kB, MB, or GB. The **built size** is real: QUAACK built the index on the racetrack. The last two columns name your existing indexes, each with its size: one that already covers the new index, and the ones the new index would make redundant, which you could drop after checking that nothing else needs them.
 
@@ -733,7 +757,7 @@ Proposed, already existed, and planner ignored or couldn't try count the ideas o
 
 ### Burndown.
 
-The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas for the original query and one for rewrites. Above each table is a funnel: a band per stage, narrowing as ideas drop out, labeled with the stage, how many went on, and why the rest dropped. Hover over a band for what the stage does. A stage that adds ideas, such as the LLM's rewrites, widens instead. A stage the run didn't count is a grey, striped band that says not recorded, never zero. The table under it has the exact numbers. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas were added and from where, how many were dropped and why, how many were held back for a real build, and how many went on. A stage the run didn't count says not recorded.
+The last section shows how much work QUAACK did and where ideas dropped out. It has three tables: index ideas for the original query, rewrites, and index ideas for the rewrites. Above each table is a funnel: a band per stage, narrowing as ideas drop out, labeled with the stage, how many went on, and why the rest dropped. Hover over a band for what the stage does. A stage that adds ideas, such as the LLM's rewrites, widens instead. A stage the run didn't count is a grey, striped band that says not recorded, never zero. The table under it has the exact numbers. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas were added and from where, how many were dropped and why, how many were held back for a real build, and how many went on. A stage the run didn't count says not recorded. A note under each table says what held back means: QUAACK kept the idea instead of dropping it, so it can try building it. That's GIN, GiST, and SP-GiST ideas, which can't be tested without building them, and B-tree ideas on columns with few distinct values that the planner left unused.
 
 In the index table, the LLM's rows count every index it wrote, including the ones QUAACK's checks refused, and the second round's row says why it was skipped when it was. "Trying indexes together" counts the combinations of indexes tried, and drops the ones that left an index unused or weren't the best.
 
