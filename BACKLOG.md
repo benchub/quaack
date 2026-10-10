@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
 - 20261009-50: `NegativeResult` re-checks every DDL string in `negative` is redacted before the payload is built, and the redaction treats a `?` inside `ANY(ARRAY[...])` as already masked (enclave).
 - 20261009-37: `winner-summary` added to `Protocol::Burndown::LLM_STEPS` (protocol; the enclave's behavior is unchanged, but the protocol gem's file differs under the same VERSION).
+- 20261009-40: `untested_unchanged` (enclave `AtomPosition`, `Protocol::UnchangedAtoms`, an egress subset check) sends which untested atoms are in an unchanged part of the rewrite (enclave and protocol).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
 
 
@@ -1163,19 +1164,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have". Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-40. Caution: warn only about untested atoms in the part the rewrite changed.
-
-Decided by the user, 2026-10-09, from 20261009-33's diagnosis. `Report::Cautions#warning` adds "every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven" whenever any atom of the whole query is untested (`unchecked_atoms(entry)`). An atom the rewrite left exactly as the original had it can't tell the two apart, so an untested one says nothing about the rewrite. Warn only when an untested atom lies in a part the rewrite changed.
-
-Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexamples and result-comparison design and the rule-and-LLM rewrites' shapes: for example, an atom counts as changed when its redacted shape doesn't appear unchanged in the rewrite's atoms, or the enclave marks each untested atom as shared with the rewrite or not and sends that one flag per atom (a shape-only boolean; test with a sentinel). An LLM-written rewrite or a rule that restructures the whole WHERE may leave no atom shared; then every untested atom counts, as today. Put the check in the enclave if only it can compare, and put the task on the unreleased list. Do this together with 20261009-32 (the not-better wording), and word the caution so it can't read as "QUAACK didn't test this".
-
-- **Depends on:** 20261009-33 (its diagnostic; the cause of the untested atoms may change what's left to warn about), 20261009-32.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report, counterexamples, rewrite-test.
-- **Review finding (2026-10-09, first attempt, not landed):** an attempt to decide "shared" atoms by redacted shape alone (the untested atom's shape also appears among the rewrite's atoms, `$n` read as `$`) was found unsound by an Opus review: the mechanical rules copy atom text verbatim while changing its effect. or_to_union copies every atom into some UNION arm, so the warning could never fire for it, though it changed exactly the logic an untested arm atom guards; key_in_self_join, not_in_to_not_exists and the existence flips keep the predicate text but move it under a new self-join or subquery; an LLM rewrite can reuse an alias for another table. A sound version needs the atom's structural position: the same enclosing SELECT/FROM scope, the same join and table set, not under a new UNION, subquery, or CTE. Until that exists, count every untested atom (the safe default). The attempt's enclave and protocol parts were dropped, not landed.
-- **Decided by the user (2026-10-09):** design it now: position-aware matching of untested conditions to the part a rewrite changed.
-- **Status:** todo (needs a design for structural position)
-
 ### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
@@ -1231,4 +1219,13 @@ From the review of 20261009-59 (minor).
 - **Depends on:** 20261009-59.
 - **Came from:** The review of 20261009-59, 2026-10-09 (minor).
 - **Design:** report, Several LLM providers.
+- **Status:** todo
+
+### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom.
+
+From the second review of 20261009-40 (minor). `AtomPosition` skips constant atoms (`constant?` in `Analysis#clause`), so `WHERE a = $1` -> `WHERE a = $1 AND false` (or `AND NULL::boolean`) leaves `a = $1` unchanged and the added constant is never seen as new material. It's unrealistic (`1 = 0` parses as an A_Expr and is caught), but it is the same hole the fix closed, through a bare constant. Count a constant in the rewrite that the original lacks as a new atom (or skip constants only on the original's side), add the probes, and say in DESIGN.md's known-gaps list what is taken on trust. Enclave change: unreleased list.
+
+- **Depends on:** 20261009-40.
+- **Came from:** The second review of 20261009-40, 2026-10-09 (minor).
+- **Design:** rewrite-test, counterexamples.
 - **Status:** todo
