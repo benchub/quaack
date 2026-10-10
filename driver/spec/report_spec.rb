@@ -137,7 +137,8 @@ RSpec.describe Quaack::Driver::Report do
 
       it "uses only variables that :root defines" do
         used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
-        folds = %w[--fold-bg --fold-edge --fold-accent] # set per fold color by details.query and details.rose
+        # Set per fold color by details.query and details.rose, and per kind by tr.stripe-*.
+        folds = %w[--fold-bg --fold-edge --fold-accent --stripe]
         expect(used - names - folds).to eq([])
         expect(style.scan(/^  details\.(?:query|rose) \{ --fold-bg: var/).size).to eq(2)
         expect(names).to include("--rose-bg", "--rose-edge", "--rose-accent")
@@ -245,6 +246,29 @@ RSpec.describe Quaack::Driver::Report do
         out = render(payload)
         expect(summary_open(out)).to eq('<section id="summary" class="minor">')
         expect(css(out, "minor")).to include("var(--minor-bg)", "var(--minor-edge)")
+      end
+
+      it "keeps the cream stripe at 3:1 or better against the cream background and the page, in both themes" do
+        style = html[%r{<style>(.*?)</style>}m, 1]
+        dark = style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1]
+        light = style[/^  :root \{(.*?)^  \}/m, 1]
+        lum = lambda do |short|
+          hex = short.length == 4 ? short.chars.drop(1).map { |c| c * 2 }.join : short.delete("#")
+          r, g, b = hex.scan(/\h\h/).map do |c|
+            c = c.hex / 255.0
+            c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055)**2.4
+          end
+          (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
+        end
+        ratio = lambda do |a, b|
+          hi, lo = [lum.call(a), lum.call(b)].sort.reverse
+          (hi + 0.05) / (lo + 0.05)
+        end
+        [light, dark].each do |theme|
+          v = theme.scan(/(--[a-z-]+): (#\h{3,6})/).to_h
+          expect(ratio.call(v["--minor-edge"], v["--minor-bg"])).to be >= 3.0
+          expect(ratio.call(v["--minor-edge"], v["--bg"])).to be >= 3.0
+        end
       end
 
       it "stays blue when QUAACK found nothing" do
@@ -858,7 +882,7 @@ RSpec.describe Quaack::Driver::Report do
     let(:opening) { '<details class="fold rose" id="not-ranked-section">' }
 
     it "ranks the candidates within each kind, each described in words" do
-      expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
+      expect(ranking.scan(%r{<tr class="rank stripe-\w+"><td class="num">(\d)</td><td>(.*?)</td>}))
         .to eq([["1", "Rewrite Vivid Cove with no new indexes"],
                 ["1", "The original query with a new index on #{sq("public.t (created_at)")}"]])
     end
@@ -874,11 +898,39 @@ RSpec.describe Quaack::Driver::Report do
         { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
           "footprint" => 0 }
       ]
-      expect(ranking.scan(/<tr class="(?:kind|rank)">(?:<th[^>]*>|<td class="num">)([^<]*)/))
+      expect(ranking.scan(/<tr class="(?:kind|rank)(?: stripe-\w+)?">(?:<th[^>]*>|<td class="num">)([^<]*)/))
         .to eq([["A rewrite of the original query, with new indexes"], ["1"], ["2"],
                 ["A rewrite of the original query, with no new indexes"], ["1"],
                 ["The original query, with new indexes"], ["1"]])
       expect(ranking.scan(/<article class="candidate"><h3>(\d)\./).flatten).to eq(%w[1 2 1 1])
+    end
+
+    it "sets each kind's heading apart: a heading class, and a stripe class per kind on the heading and its rows" do
+      payload["top"] = [
+        { "label" => "original:top:1", "kind" => "original_new_indexes", "slow_blocks" => 10, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:none", "kind" => "rewrite_same_indexes", "slow_blocks" => 20, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:top:1", "kind" => "rewrite_new_indexes", "slow_blocks" => 30, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
+          "footprint" => 0 }
+      ]
+      rows = ranking.scan(/<tr class="(kind|rank) (stripe-\w+)">/)
+      expect(rows.map(&:first)).to eq(%w[kind rank rank kind rank kind rank])
+      expect(rows.map(&:last)).to eq((%w[stripe-rewrite_new_indexes] * 3) + (%w[stripe-rewrite_same_indexes] * 2) +
+                                     (%w[stripe-original_new_indexes] * 2))
+      table = ranking[%r{<table>.*?</table>}m]
+      expect(table.scan("<tr class=\"kind ").size).to eq(3)
+      expect(table.scan("<tr class=\"rank ").size).to eq(4)
+      expect(ranking.scan(/<tr class="kind [^"]*"><th scope="rowgroup" colspan="5">/).size).to eq(3)
+      style = html[%r{<style>(.*?)</style>}m, 1]
+      expect(style[/tr\.kind > th \{[^}]*\}/]).to include("font-weight: 700", "background: var(--head-bg)")
+      expect(style).to match(/tr\.rank > td:first-child \{[^}]*padding-left: 1\.5rem/)
+      stripes = style.scan(/tr\.stripe-(\w+) \{ --stripe: (var\(--st-[a-z]+\)); \}/)
+      expect(stripes.map(&:first)).to eq(%w[rewrite_new_indexes rewrite_same_indexes original_new_indexes])
+      expect(stripes.map(&:last).uniq.size).to eq(3)
+      expect(style).to include("border-left: 5px solid var(--stripe)")
     end
 
     it "shows each candidate's blocks and index footprint, right-aligned, with separators and a fitting unit" do
@@ -892,7 +944,7 @@ RSpec.describe Quaack::Driver::Report do
       def baseline(html = ranking) = html[%r{<tr class="baseline">.*?</tr>}m]
 
       it "is a row above the ranked ones, with no rank, marked as the baseline, with its own blocks" do
-        expect(ranking.scan(/<tr class="(\w+)"/).flatten).to eq(%w[baseline kind rank kind rank])
+        expect(ranking.scan(/<tr class="(\w+)[ "]/).flatten).to eq(%w[baseline kind rank kind rank])
         expect(baseline).to eq('<tr class="baseline"><td class="num"></td><td>The original query (the baseline, ' \
                                'not ranked)</td><td class="num">1,000</td><td class="num">1,200</td>' \
                                '<td class="num">none</td></tr>')
@@ -2741,7 +2793,7 @@ RSpec.describe Quaack::Driver::Report do
                      %(<article class="rewrite"><details class="fold query" id="#{escaped}">\n<summary><h3>),
                      %(<span class="note">),
                      "<code>SELECT ", "rewrite rules ", '<li><code class="sql">',
-                     '<tr class="rank"><td class="num">1</td><td>',
+                     '<td class="num">1</td><td>',
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
