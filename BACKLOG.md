@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261008-48, 20261008-52, 20261008-53 (items 5, 6): schema dump names, exclusion cap and `unknown_extra_dump_schema` and `dump_exclusions_too_long` rules (protocol), pg_inherits walk, `--exclude-schema=*` when no schema is left, `plan_too_deep` from egress (enclave, protocol and driver). Landed after the 0.1.31 bump.
 - 20261010-19: per-scope near misses in the Picker, and masking near-miss groups for OR arms and UNION branches, placed last in S1 to S5 (enclave).
+- 20261010-21: a pinned join key (an atom such as `id IN (...)` on a key) gives each group its own key value, so near misses stop colliding (enclave).
 
 ## How this file works.
 
@@ -895,5 +896,23 @@ Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... 
 
 - **Depends on:** 20261010-19.
 - **Came from:** The review of 20261010-19, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-24. Untested conditions: a near miss that needs two child rows under one parent.
+
+Left over from 20261010-21 on the real query shape: `submissions.workflow_state <> $3` (the ON condition of the subquery's first branch) stays untested. Testing it needs an assignment outside the `id IN` list with two submissions: a deleted one linked to a content participation, and a non-deleted one the outer query counts. No scenario group builds two child rows under one parent. Add such a group (a second child of the same parent, one failing the atom and one passing it, with its own children as needed), keep the guard sound and the caps, and measure group count and run time on the real shape and ordinary queries.
+
+- **Depends on:** 20261010-21 (landed).
+- **Came from:** The work on 20261010-21, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-25. Untested conditions on ordinary queries: `email = $1 LIMIT 1` and a GROUP BY join.
+
+The builder of 20261010-21 found, on `main` before and after that change, that these ordinary queries leave conditions untested: a `WHERE email = $1 LIMIT 1` query leaves `email = $1` untested, and a users/posts join with GROUP BY leaves `fx.users.state = $1` and the join atom untested. ORMs generate both all the time, and this is the kind of "untested" flag that costs confidence. Find why (a LIMIT 1 that hides a near miss? a GROUP BY that hides a changed row?) and fix it without weakening the guard, or document why the atom can't be tested. Also add the small spec 20261010-21's review asked for: two groups under `posts.id IN (1,2,3)` get distinct ids, and S0 to S6 for ordinary pinned-key queries (`users.id IN (1,2,3)`, `posts.id = 5`, an FK chain, self-reference) stay as intended, as a Postgres or unit spec. Also look at why `users.id IN ($1, $2)` stays untested in `posts JOIN users WHERE users.id IN (4,5)`.
+
+- **Depends on:** 20261010-21.
+- **Came from:** The work and review of 20261010-21, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
