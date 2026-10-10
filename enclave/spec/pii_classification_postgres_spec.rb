@@ -244,7 +244,8 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     # column by the heuristic), the LIKE prefix in customers.email's
     # histogram, the number in orders.total_cents's MCVs and the date in
     # orders.created_at's (many values, not text), and the word in
-    # orders.status's MCVs (low-cardinality).
+    # orders.status's MCVs (low-cardinality). customers.preferences is jsonb,
+    # a structured column: the json sentinel is in its MCVs.
     it "sends none of the planted PII or high-cardinality values, and does send the low-cardinality ones" do
       LeakCheck::Fixture.plant(conn, sentinels)
       customers, orders = %w[customers orders].map { table("public", it) }
@@ -396,7 +397,13 @@ RSpec.describe Quaack::Enclave::PiiClassification do
 
     def outbound_things(res) = res.outbound_statistics["tables"].first
 
-    it "classes them as neither PII nor low-cardinality, and sends their frequencies but not their values" do
+    # Only h, tq, c, and dh have an MCV list, hence a positive n_distinct
+    # that could make them low-cardinality, so only they prove the structured
+    # rule here. For x, tv, r, and mr (ANALYZE gives them no MCV list) this
+    # shows the classes and that nothing is sent. That they're structured and
+    # not merely allowlisted-out is planner_statistics_postgres_spec's
+    # "leaves out every other type".
+    it "classes them as neither PII nor low-cardinality, and sends frequencies, not values" do
       res = things_result
       expect(classes(res, things)).to eq(%w[h x tv tq c r mr dh].to_h { [it, [false, false]] }
                                            .merge("kind" => [false, true]))
