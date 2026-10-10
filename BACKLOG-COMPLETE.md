@@ -9205,3 +9205,13 @@ From the review of 20261009-28 (minors).
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-43 branch; review clean). The caveat-link spec iterates over every caveat `Verdict#caveats` returns for an all-on payload (`list.size >= 3`, rendered items equal the list); the note's extended-only and mixed cases are pinned.
+
+### 20261009-48. README: the verdict section's example still shows an index definition.
+
+From the review of 20261009-27 (minor). README.md's verdict section (about lines 588 to 596) shows a blockquote with an index definition ("the original query with a new index on public.events (account_id, created_at) INCLUDE (kind)"), and it was already out of step with DESIGN.md's verdict table before 20261009-27. Bring the whole section in line with the verdict as it is now: the colored section, the table's columns (Plan, Blocks read, Index change, Improvement), the Plan cell without definitions, the caveat lines. Check each claim against the template.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-27, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-48; review clean). README's verdict section rewritten against the template and code (headline colors and the 30% rule, the table's columns, the Plan cell without definitions, Index change and Improvement rules, row order, caveats and their links, the timeouts section), plus the queries' folds, the rose folds, the three burndown tables with the held-back note, and the hidden-statistics note. Minor findings: 20261009-54.

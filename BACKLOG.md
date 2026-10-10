@@ -1214,15 +1214,6 @@ From the review of 20261009-33 (minor). `Protocol::VacuityDiagnostic` accepts an
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261009-48. README: the verdict section's example still shows an index definition.
-
-From the review of 20261009-27 (minor). README.md's verdict section (about lines 588 to 596) shows a blockquote with an index definition ("the original query with a new index on public.events (account_id, created_at) INCLUDE (kind)"), and it was already out of step with DESIGN.md's verdict table before 20261009-27. Bring the whole section in line with the verdict as it is now: the colored section, the table's columns (Plan, Blocks read, Index change, Improvement), the Plan cell without definitions, the caveat lines. Check each claim against the template.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-27, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-50. An egress check on every DDL field of `negative`.
 
 From the review of 20261009-39 (minor, defense in depth). `negative` goes out with no whitelist check, and its `ddl` fields (declined and existing indexes) and the new `covered_by.definition` are produced by the NegativeResult step and checked nowhere on the way out; DESIGN.md says the step is where they're reviewed. Add an egress check that every DDL string in `negative` is in redacted form (no literal other than an MCV value the payload carries), with a sentinel test that the check catches a planted literal. Enclave change: put it on the unreleased list.
@@ -1249,4 +1240,17 @@ From the review of 20261009-43 (minor). The new replay example that checks the f
 - **Depends on:** None.
 - **Came from:** The review of 20261009-43, 2026-10-09 (minor).
 - **Design:** report, burndown.
+- **Status:** todo
+
+### 20261009-54. README's report samples: make them tell one story, and describe the Ranking by kind.
+
+From the review of 20261009-48 (minor).
+- The verdict sample table (README about lines 599 to 605) says the best rewrite with new indexes is "Silver Fox" at 4 blocks (+14.8 MB), the original with new indexes is 19 blocks (+11.5 MB), and no rewrite beat the original with the same indexes. The Ranking sample (about 645 to 650) says the 4-block, 14.8 MB candidate is the original with a new index, 19 is the original with a different index, and "Rewrite Silver Fox with no new indexes" is #3 at 31 blocks; the not-ranked sample (about 674) and "Why the winner" (about 705) differ again. Make every sample describe the same run.
+- The verdict sample's last row shows "n/a | n/a" for Index change and Improvement, but the template renders a no-candidate row with the warning spanning those cells (`colspan="3"`), so nothing prints there. Fix the sample.
+- Where the README says the caveat links to "a note in the indexes section", the link target is the whole `#indexes` section (DESIGN.md says the same): reword.
+- The Ranking description (about 640 to 659) shows one flat table with ranks 1 to 3 across all kinds and says "The winner is the first ranked row". The report groups ranks by kind, with a heading row per kind and a stripe, restarting at 1 in each, and ranks the three best of each kind. Update the sample and the text, including the tie rule and the minimax line.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-48, 2026-10-09 (minor).
+- **Design:** report.
 - **Status:** todo
