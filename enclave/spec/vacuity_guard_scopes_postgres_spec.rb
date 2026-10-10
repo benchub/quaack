@@ -107,14 +107,13 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
   # collide on the primary key (20261010-21). What stays untested is
   # redundant: submissions.workflow_state <> $1 and <> $68 test the same
   # row the same way, and the three type tests each imply the others
-  # through the subquery. The branch's submissions.workflow_state <> $3 can
-  # be tested only with a second submission for one assignment, which no
-  # group holds.
+  # through the subquery. The branch's submissions.workflow_state <> $3 is
+  # tested by a sibling: a second submission under the masking near miss's
+  # assignment, which the outer query counts (20261010-24).
   it "tests every atom of the count query but the redundant ones" do
     redundant = [
       "fx.submissions.workflow_state <> $1", "fx.submissions.workflow_state <> $68",
-      "fx.assignments.type = $2", "fx.assignments.type = $5", "fx.assignments.type = $31",
-      "fx.submissions.workflow_state <> $3"
+      "fx.assignments.type = $2", "fx.assignments.type = $5", "fx.assignments.type = $31"
     ]
     expect(untested(count_query) - redundant).to eq([])
   end
