@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-26: the vacuity guard skips fixture-compare on an empty cut result, remembers no-mismatch comparisons, and caps them at 32 per run (enclave).
 - 20261010-24: sibling rows for near misses on a column that another scope also tests (enclave).
 - 20261010-30: groups with a parent and no child where an outer join or a correlated subquery makes the child optional (enclave).
+- 20261010-32: a boolean test on a plain column gets a value pool, and a spill fixture skips a parent the group already brings (enclave).
 
 ## How this file works.
 
@@ -931,23 +932,6 @@ From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `u
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
 
-### 20261010-32. Untested conditions: aggregates, CTEs, keyset pagination, boolean IS TRUE.
-
-From the corpus (each shape's guessed cause is in the spec's `PENDING`, none confirmed):
-- `max(score)` with a filter: `posts.published = $1` (the near miss needs a score above the hit's to change max()).
-- Aggregate FILTER clause: `posts.score > $1` (the near miss may fail the FILTER's other atom too).
-- CTE with an outer filter: `posts.created_at > $1`.
-- Keyset pagination (`user_id = 4 AND id > 100 ORDER BY id LIMIT 25`): `posts.id > $2` (pinned key conflict, or outside the cut).
-- Scalar subquery in WHERE: `p2.published = $1` (the near miss must move avg() across the hit's score).
-- Rails `count` with `where.not`: `comments.workflow_state <> $2`.
-- Boolean `IS TRUE`: `users.active IS TRUE` (a BooleanTest seems to get no pool, so there's no false near miss).
-- A second column-to-column tie between the same two tables (comments.user_id = posts.user_id): no row joins on one and not the other.
-Find each cause, fix it without weakening the guard, and flip the shapes in the corpus; split a shape out if it needs its own task. Start with `IS TRUE` and `where.not`, which are the most common in real queries.
-
-- **Depends on:** 20261010-27 (landed).
-- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
 
 ### 20261010-33. Corpus: the pinned-key rank mutation stays green.
 
@@ -980,5 +964,20 @@ From the review of 20261010-30:
 
 - **Depends on:** 20261010-30 (landed).
 - **Came from:** The review and build of 20261010-30, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-36. Untested conditions: aggregate FILTER, max() with a filter, CTE, scalar subquery, second column tie.
+
+What 20261010-32 didn't finish, with causes where the builder confirmed them (shapes are still in the corpus's `PENDING`):
+- **Aggregate FILTER** (`count(*) FILTER (WHERE published)`): `posts.score > $1` untested. The bare `published` inside the FILTER has no pool, so the hit and the near miss both take its default false and the FILTER counts neither. The builder pooled bare boolean columns, which fixed it but broke three `vacuity_guard_scopes_postgres_spec` examples (the NOT arm of `muted IS NULL OR NOT muted`, and the UNION ALL count shapes): a NOT arm's masking needs its own handling. Reverted.
+- **`max()` with a filter**: `posts.published = $1` untested. `score` has a DEFAULT, so both rows read 0 and max() can't change. The near miss needs a score above the hit's.
+- **CTE with an outer filter** (`posts.created_at > $1`): the near miss may fail the outer filter too. Unconfirmed.
+- **Scalar subquery in WHERE** (`p2.published = $1`): the near miss must move avg() across the hit's score. Unconfirmed.
+- **A second column-to-column tie between the same two tables** (`comments.user_id = posts.user_id`): no row joins on one and not the other. Unconfirmed.
+Start with the FILTER and `max()` cases (common in reports). Keep the guard sound.
+
+- **Depends on:** 20261010-32 (landed).
+- **Came from:** The work on 20261010-32, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo

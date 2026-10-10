@@ -10090,3 +10090,21 @@ Fix the family with a general mechanism (a group with an unmatched parent or chi
 - **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10 (`Scenarios::Unmatched`): groups with a parent and no child where an outer join or a correlated subquery makes the child optional, last in S1 to S5. NOT EXISTS, FULL JOIN, LEFT JOIN anti-join and Rails left_joins-where-nil moved from PENDING to the corpus. Correlated scalar count stays pending (needs more than 2 comments; S1 builds 1). Minors: 20261010-35.
+
+### 20261010-32. Untested conditions: aggregates, CTEs, keyset pagination, boolean IS TRUE.
+
+From the corpus (each shape's guessed cause is in the spec's `PENDING`, none confirmed):
+- `max(score)` with a filter: `posts.published = $1` (the near miss needs a score above the hit's to change max()).
+- Aggregate FILTER clause: `posts.score > $1` (the near miss may fail the FILTER's other atom too).
+- CTE with an outer filter: `posts.created_at > $1`.
+- Keyset pagination (`user_id = 4 AND id > 100 ORDER BY id LIMIT 25`): `posts.id > $2` (pinned key conflict, or outside the cut).
+- Scalar subquery in WHERE: `p2.published = $1` (the near miss must move avg() across the hit's score).
+- Rails `count` with `where.not`: `comments.workflow_state <> $2`.
+- Boolean `IS TRUE`: `users.active IS TRUE` (a BooleanTest seems to get no pool, so there's no false near miss).
+- A second column-to-column tie between the same two tables (comments.user_id = posts.user_id): no row joins on one and not the other.
+Find each cause, fix it without weakening the guard, and flip the shapes in the corpus; split a shape out if it needs its own task. Start with `IS TRUE` and `where.not`, which are the most common in real queries.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done as far as it went. Landed 2026-10-10: boolean `IS TRUE`/`IS NOT TRUE`/`IS FALSE` get a value pool; the spill fixture no longer copies a parent the near miss already brings (fixes Rails `count` with `where.not` and keyset pagination). Not done, moved to 20261010-36: aggregate FILTER, `max()` with a filter, CTE with an outer filter, scalar subquery in WHERE, the second column-to-column tie.
