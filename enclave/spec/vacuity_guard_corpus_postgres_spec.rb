@@ -340,10 +340,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       untested: ["fx.posts.published = $1"],
       cause: "the near miss needs a score above the hit's to change max(); nothing orders it so"
     },
-    "aggregate FILTER clause" => {
-      untested: ["fx.posts.score > $1"],
-      cause: "the near miss may not satisfy the FILTER's published, so the count is unchanged"
-    },
     "comment author and post author join" => {
       untested: ["fx.posts.id = fx.comments.post_id", "fx.comments.user_id = fx.posts.user_id"],
       cause: "a second column-to-column tie between the tables; no row joins on one and not the other"

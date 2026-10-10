@@ -101,6 +101,12 @@ RSpec.describe Quaack::Enclave::ValuePools do
     expect(pool("o.gift IS FALSE")).to have_attributes(satisfying: ["f"], failing: contain_exactly("t", nil))
   end
 
+  # A bare boolean column as a test (WHERE o.shipped, FILTER (WHERE
+  # o.shipped)) gets a pool too, so the hit sets it true.
+  it "pools a bare boolean column" do
+    expect(pool("o.shipped")).to have_attributes(satisfying: ["t"], failing: ["f"])
+  end
+
   it "gives no pool to a boolean test on an expression" do
     parse = PgQuery.parse("SELECT 1 FROM fx.orders o WHERE (o.qty > 2) IS TRUE")
     schema = Quaack::Enclave::ArenaSchema.load(conn, [orders, customers])

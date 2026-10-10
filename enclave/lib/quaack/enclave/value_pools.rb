@@ -86,8 +86,9 @@ module Quaack
       # A keyset row comparison with a range operator is pooled through its
       # leading column, when every element of its column row is a plain
       # column of a table. A boolean test (IS TRUE, IS NOT FALSE, ...) on
-      # a plain column of a table is pooled too: its probe sorts t, f, and
-      # NULL, so the near miss gets a value that fails it.
+      # a plain column of a table, and a bare boolean column as a test, are
+      # pooled too: the probe sorts t, f, and NULL, so the hit gets a value
+      # that satisfies it and the near miss one that fails it.
       def pooled?(atom)
         return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
         return atom.bare && atom.columns.size == 1 && !atom.columns[0].table.nil? if boolean_test?(atom)
@@ -96,7 +97,7 @@ module Quaack
       end
 
       def boolean_test?(atom)
-        atom.kind == :other && BOOLEAN_TESTS.include?(atom.operator)
+        atom.kind == :other && (atom.operator.nil? || BOOLEAN_TESTS.include?(atom.operator))
       end
 
       # The probe for a pooled atom (see Probe).
@@ -190,7 +191,8 @@ module Quaack
         def initialize(conn, node, col)
           @conn = conn
           @col = col
-          copy = Sides.copy(node)
+          # A bare boolean column is the whole test, so it's $1 itself.
+          copy = Sides.column_node?(node) ? Sides.param : Sides.copy(node)
           Sides.replace_columns(copy)
           @sql = Sides.select_of(copy)
         end
