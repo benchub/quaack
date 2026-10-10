@@ -6,6 +6,7 @@ require_relative "deparse"
 require_relative "predicate_atoms"
 require_relative "result_comparison"
 require_relative "scenarios"
+require_relative "vacuity_guard/compared"
 
 module Quaack
   module Enclave
@@ -35,6 +36,11 @@ module Quaack
     module VacuityGuard
       RETRIES = 3
 
+      # The most fixture-compare runs one guard run makes (Compared).
+      # Past it, an atom equal rows leave vacuous stays vacuous, so it's
+      # retried and ends untested: the cap never counts an atom tested.
+      MAX_COMPARISONS = 32
+
       Result = Data.define(:untested, :untested_atoms, :untested_paths, :retries, :variants, :scenarios, :s1_load_rule,
                            :s1_rows) do
         def inspect = "#<data #{self.class} untested=#{untested} retries=#{retries} scenarios=<redacted>>"
@@ -46,16 +52,22 @@ module Quaack
 
       def run(runner, builder, sql)
         loosened, unreplaceable = loosened_queries(builder)
-        state = { exercised: [], variants: {}, retries: 0, s1_load_rule: nil, s1_rows: nil }
+        state = new_state
         (0..RETRIES).each do |attempt|
           scenarios = builder.build(state[:variants])
-          fixtures = [scenarios[:s1], *builder.spills.fetch(:s1, [])]
-          vacuous = vacuous_atoms(runner, fixtures, sql, loosened, state)
+          vacuous = vacuous_atoms(runner, s1_fixtures(builder, scenarios), sql, loosened, state)
           done = vacuous.empty? || attempt == RETRIES
           return result(builder, (vacuous + unreplaceable).sort, state, scenarios) if done
 
           retry_atoms(state, vacuous, attempt + 1)
         end
+      end
+
+      def s1_fixtures(builder, scenarios) = [scenarios[:s1], *builder.spills.fetch(:s1, [])]
+
+      def new_state
+        { exercised: [], variants: {}, retries: 0, s1_load_rule: nil, s1_rows: nil,
+          compared: Compared.new(MAX_COMPARISONS) }
       end
 
       def retry_atoms(state, vacuous, step)
@@ -81,13 +93,14 @@ module Quaack
         first, *rest = fixtures
         state[:exercised] += loaded_exercised_atoms(runner, first, sql, loosened.slice(*pending), state)
         rest.each do |rows|
-          state[:exercised] += spill_exercised_atoms(runner, rows, sql, loosened, pending - state[:exercised])
+          left = loosened.slice(*(pending - state[:exercised]))
+          state[:exercised] += spill_exercised_atoms(runner, rows, sql, left, state)
         end
         pending - state[:exercised]
       end
 
-      def spill_exercised_atoms(runner, rows, sql, loosened, left)
-        left.empty? ? [] : exercised_atoms(runner, rows, sql, loosened.slice(*left))
+      def spill_exercised_atoms(runner, rows, sql, loosened, state)
+        loosened.empty? ? [] : exercised_atoms(runner, rows, sql, loosened, compared: state[:compared])
       rescue ArenaRunner::Error => e
         raise unless LOAD_STEPS.include?(e.step)
 
@@ -100,7 +113,7 @@ module Quaack
       # failed with, or the original's row count once it loaded.
       def loaded_exercised_atoms(runner, rows, sql, loosened, state)
         state[:s1_load_rule] = nil
-        exercised_atoms(runner, rows, sql, loosened) { state[:s1_rows] = it }
+        exercised_atoms(runner, rows, sql, loosened, compared: state[:compared]) { state[:s1_rows] = it }
       rescue ArenaRunner::Error => e
         raise unless LOAD_STEPS.include?(e.step)
 
@@ -140,33 +153,38 @@ module Quaack
       # would catch a rewrite that dropped it. A refusal compares nothing,
       # so it isn't one, and nor is a comparison that fails to run (a
       # reordered load that won't load, say).
-      def exercised_atoms(runner, rows, sql, loosened, inserts: [], &)
-        changed = changed_atoms(runner, rows, sql, loosened, inserts, &)
-        return changed unless top_level_cut?(sql)
+      #
+      # When the original returns no rows here, its full result has no more
+      # rows than the OFFSET (or there's nothing to cut), and a loosened
+      # query that returns none either has no row a load order could move.
+      # Row counts don't depend on load order, so no comparison can be a
+      # mismatch, and none is run.
+      #
+      # compared is the guard run's Compared, which skips a comparison
+      # already made with no mismatch and any past MAX_COMPARISONS.
+      # counterexample-compare passes none, so it gets no cap.
+      def exercised_atoms(runner, rows, sql, loosened, inserts: [], compared: Compared.new, &) # rubocop:disable Metrics/ParameterLists
+        changed, empty = changed_atoms(runner, rows, sql, loosened, inserts, &)
+        return changed if empty || !top_level_cut?(sql)
 
-        changed + loosened.except(*changed).select { |_, query| mismatch?(runner, rows, sql, query, inserts) }.keys
+        vacuous = loosened.except(*changed)
+        changed + vacuous.select { |_, query| compared.mismatch?(runner, rows, sql, query, inserts) }.keys
       end
 
-      # The atoms whose loosened query returns other rows.
+      # The atoms whose loosened query returns other rows, and whether the
+      # original returned none.
       def changed_atoms(runner, rows, sql, loosened, inserts)
         runner.with_fixture(rows, inserts:) do |tx|
           result = tx.query(sql)
           yield result.rows.size if block_given?
           base = multiset(result)
-          loosened.reject { |_, query| multiset(tx.query(query)) == base }.keys
+          [loosened.reject { |_, query| multiset(tx.query(query)) == base }.keys, base.empty?]
         end
       end
 
       def top_level_cut?(sql)
         select = PgQuery.parse(sql).tree.stmts.first&.stmt&.select_stmt
         !!(select && (select.limit_count || select.limit_offset))
-      end
-
-      def mismatch?(runner, rows, sql, query, inserts)
-        verdict = ResultComparison.compare_in_load_orders(runner, rows, original: sql, candidate: query, inserts:)
-        ResultComparator::MISMATCHES.include?(verdict.rule)
-      rescue ArenaRunner::Error
-        false
       end
 
       def multiset(result) = result.rows.map { |row| row.map { |v| v.nil? ? [0, ""] : [1, v] } }.sort
