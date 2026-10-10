@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "rewrite"
 require_relative "tree"
 require_relative "or_to_union/arms"
+require_relative "or_to_union/grouping"
 require_relative "or_to_union/reads"
 require_relative "or_to_union/union"
 
@@ -43,15 +44,25 @@ module Quaack
       # in the select list both stay, and the order and the limit apply to
       # the whole UNION. Output columns keep their names.
       #
+      # An outer join changes nothing in that argument. The WHERE filters
+      # the join's output, null-extended rows included, so the rows that
+      # pass it are still those that pass with one arm or with another; the
+      # ON clauses stay in every branch as written. A null-extended row has
+      # NULL in the nullable side's key, and UNION merges NULLs, but two
+      # rows of the join never share a key of every table: a row of the
+      # join is its tables' rows, or NULLs where a side was extended, so
+      # equal keys everywhere make equal rows.
+      #
       # It gives one rewrite per OR it can split, each splitting only that
       # OR, and each stating a key of every FROM table unique and not null.
       #
       # It's conservative. It fires only when all of this holds, and
       # otherwise gives nothing:
       #
-      # - The query is one SELECT, with no GROUP BY, HAVING, window
-      #   function, WINDOW, DISTINCT ON, locking clause, WITH, or INTO. An
-      #   aggregate with no GROUP BY is fine, and so is a plain DISTINCT.
+      # - The query is one SELECT, with no window function, WINDOW,
+      #   DISTINCT ON, locking clause, WITH, or INTO. An aggregate is fine,
+      #   and so is a plain DISTINCT, GROUP BY, and HAVING, when
+      #   Grouping takes them.
       # - The OR is one of the conditions its WHERE ANDs together, and its
       #   arms read different tables or subqueries, and none can raise on
       #   some rows (see Arms).
@@ -85,7 +96,7 @@ module Quaack
 
         def rewrites(parse, catalog, _literals = nil)
           select = Tree.select(parse.tree)
-          reads = Reads.of(select, catalog) if select && plain?(select) && movable?(select)
+          reads = Reads.of(select, catalog) if select && plain?(select) && movable?(select, catalog)
           return [] unless reads
 
           Arms.splittable(select, catalog).map do |index|
@@ -98,16 +109,16 @@ module Quaack
         # A set operation needs no check here: it has no FROM of its own,
         # which Reads refuses.
         def plain?(select)
-          [select.with_clause, select.into_clause, select.having_clause].none? &&
-            [select.group_clause, select.window_clause, select.locking_clause].all?(&:empty?) &&
+          [select.with_clause, select.into_clause].none? &&
+            [select.window_clause, select.locking_clause].all?(&:empty?) &&
             select.distinct_clause.all? { it.node.nil? }
         end
 
         # Whether what's outside the WHERE can read the UNION instead.
-        def movable?(select)
+        def movable?(select, catalog)
           outside = Reads.outside(select)
           Tree.find(outside, PgQuery::SubLink).empty? && Tree.find(outside, PgQuery::FuncCall).none?(&:over) &&
-            select.target_list.all? { named?(it.res_target) }
+            select.target_list.all? { named?(it.res_target) } && Grouping.valid?(select, catalog)
         end
 
         def named?(target)

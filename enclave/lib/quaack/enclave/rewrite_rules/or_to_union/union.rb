@@ -19,10 +19,10 @@ module Quaack
         #
         # A branch is the query's FROM and WHERE with one group's arms, ORed
         # in their order, in the OR's place, selecting reads.columns, each under an alias of its own.
-        # It has no DISTINCT, ORDER BY, LIMIT, or OFFSET: those stay
+        # It has no DISTINCT, GROUP BY, HAVING, ORDER BY, LIMIT, or OFFSET: those stay
         # outside. Outside, each column is renamed to the UNION's, each
-        # name.* becomes the table's columns, and a select-list entry that
-        # was only a column gets that column's name, which the renaming
+        # name.* becomes the table's columns, * every table's in the FROM's
+        # order, and a select-list entry that was only a column gets that column's name, which the renaming
         # would otherwise change. The original is never changed.
         class Union
           def initialize(original, index, reads)
@@ -75,7 +75,8 @@ module Quaack
           end
 
           def unlimit!(select)
-            [select.sort_clause, select.distinct_clause].each(&:clear)
+            [select.sort_clause, select.distinct_clause, select.group_clause].each(&:clear)
+            select.having_clause = nil
             select.limit_count = select.limit_offset = nil
             select.limit_option = :LIMIT_OPTION_DEFAULT
           end
@@ -102,7 +103,10 @@ module Quaack
             star = Reads.star(target.res_target)
             return [target] unless star
 
-            @reads.stars.fetch(star).map { target(column(@name, @aliases.fetch([star, it])), it) }
+            names = star == ALL ? @reads.order : [star]
+            names.flat_map do |name|
+              @reads.stars.fetch(name).map { target(column(@name, @aliases.fetch([name, it])), it) }
+            end
           end
 
           def target(val, name) = PgQuery::Node.new(res_target: PgQuery::ResTarget.new(name:, val:))

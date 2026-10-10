@@ -178,6 +178,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
         .to eq([true, false])
     end
 
+    it "calls a function an aggregate only when every function of its name is one" do
+      expect([catalog.only_aggregates?(nil, "count"), catalog.only_aggregates?("pg_catalog", "max"),
+              catalog.only_aggregates?("public", "max"), catalog.only_aggregates?(nil, "lower"),
+              catalog.only_aggregates?(nil, "no_such_function"), catalog.only_aggregates?(nil, "many")])
+        .to eq([true, true, false, false, false, false])
+    end
+
     # Task 20261007-32: a public <> that says no would let a key whose
     # triggers are disabled read as binding every row.
     it "doesn't call a foreign key strict when its triggers are disabled" do

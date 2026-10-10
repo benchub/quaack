@@ -203,6 +203,11 @@ module Quaack
           joins.flat_map { conjuncts(it.quals) }
         end
 
+        # Whether every join in a FROM clause is plain: inner, cross, or
+        # outer (LEFT, RIGHT, or FULL), and not NATURAL or USING. A join of a
+        # type Tree doesn't know names no Items (see join_items).
+        def plain_joins?(nodes) = nodes.flat_map { joins(it) }.all? { !it.is_natural && it.using_clause.empty? }
+
         def joins(node)
           return [] unless node.node == :join_expr
 

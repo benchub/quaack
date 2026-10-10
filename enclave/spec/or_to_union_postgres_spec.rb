@@ -210,6 +210,113 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(same_rows(sql, rewrites, params).map(&:first)).to eq(%w[101 102 201 301 601 602 701])
     end
 
+    it "groups the whole UNION, so a group keeps the rows of both arms, each once" do
+      sql = "SELECT a.title, count(*) AS n, max(s.id) AS top, count(DISTINCT s.user_id) AS users " \
+            "#{from} #{where} GROUP BY a.title HAVING count(*) > 0 ORDER BY a.title"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.first).to start_with(
+        "SELECT arms_1.title_1 AS title, count(*) AS n, max(arms_1.id_1) AS top, count(DISTINCT arms_1.user_id_1) " \
+        "AS users FROM (SELECT a.title AS title_1, s.id AS id_1, s.user_id AS user_id_1, a.id AS id_2 FROM"
+      )
+      expect(rewrites.first).to end_with("arms_1 GROUP BY arms_1.title_1 HAVING count(*) > 0 ORDER BY arms_1.title_1")
+      expect(same_rows(sql, rewrites, params, ordered: true))
+        .to eq([%w[one 2 102 1], %w[same 2 701 1], %w[six 2 602 1], %w[two 1 201 1]])
+    end
+
+    it "groups by several columns, filters groups with a HAVING on an aggregate, and groups on a NULL" do
+      sql = "SELECT s.flag, a.loose, sum(a.id), count(s.flag) #{from} WHERE s.flag OR a.loose = 3 OR s.flag IS NULL " \
+            "GROUP BY s.flag, a.loose HAVING max(a.id) >= 1 OR min(a.id) < 0 ORDER BY 1, 2"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites, [], ordered: true).size).to be > 3
+    end
+
+    it "takes HAVING with no GROUP BY, over the whole UNION" do
+      sql = "SELECT count(*) #{from} #{where} HAVING count(*) = 7"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).not_to be_empty
+      expect(same_rows(sql, rewrites, params)).to eq([["7"]])
+    end
+
+    it "would be wrong on a query Postgres accepts only for a key: the UNION has none, and the rewrite raises" do
+      sql = "SELECT a.id, a.title #{from} WHERE s.flag OR a.loose = 3 GROUP BY a.id"
+      union = "SELECT u.id_1, u.title_1 FROM (SELECT a.id AS id_1, a.title AS title_1 #{from} WHERE s.flag " \
+              "UNION SELECT a.id AS id_1, a.title AS title_1 #{from} WHERE a.loose = 3) u GROUP BY u.id_1"
+
+      expect(conn.exec(sql).ntuples).to eq(2)
+      expect { conn.exec(union) }.to raise_error(PG::GroupingError)
+      expect(rewritten(sql)).to eq([])
+    end
+
+    it "would be wrong grouping the arms apart: a group split over two arms would give two rows" do
+      sql = "SELECT a.title, count(*) #{from} WHERE s.user_id = 5 AND (a.id < 4 OR s.id > 600) GROUP BY a.title"
+      apart = "SELECT a.title, count(*) #{from} WHERE s.user_id = 5 AND a.id < 4 GROUP BY a.title " \
+              "UNION ALL SELECT a.title, count(*) #{from} WHERE s.user_id = 5 AND s.id > 600 GROUP BY a.title"
+
+      expect(conn.exec(apart).ntuples).to be > conn.exec(sql).ntuples
+      expect(same_rows(sql, rewritten(sql)).size).to eq(conn.exec(sql).ntuples)
+    end
+
+    context "with a bare * in the select list" do
+      let(:joined) { "FROM public.s JOIN public.cp ON cp.s_id = s.id" }
+      let(:either) { "WHERE s.flag OR cp.user_id = 8 OR s.flag IS NULL OR NOT s.flag" }
+
+      it "expands * into every table's columns in the FROM's order, under their own names, duplicates included" do
+        sql = "SELECT * #{joined} #{either}"
+
+        rewrites = rewritten(sql)
+
+        expect(rewrites.first).to start_with(
+          "SELECT arms_1.id_1 AS id, arms_1.a_id_1 AS a_id, arms_1.user_id_1 AS user_id, arms_1.flag_1 AS flag, " \
+          "arms_1.id_2 AS id, arms_1.s_id_1 AS s_id, arms_1.user_id_2 AS user_id FROM (SELECT s.id AS id_1,"
+        )
+        expect(rewrites.size).to eq(1)
+        expect(same_rows(sql, rewrites).size).to eq(7)
+        expect(conn.exec(rewrites.first).fields).to eq(%w[id a_id user_id flag id s_id user_id])
+      end
+
+      it "follows the FROM's order across joins, and beside other entries and an ORDER BY of ordinals" do
+        sql = "SELECT 1 AS one, *, s.flag AS f FROM public.cp JOIN public.s ON cp.s_id = s.id " \
+              "LEFT JOIN public.a ON a.id = s.a_id AND a.id < 0 " \
+              "WHERE s.flag OR cp.user_id = 8 OR NOT s.flag OR s.flag IS NULL " \
+              "ORDER BY 2, 8"
+
+        expect(rewritten(sql)).to eq([])
+
+        sql = sql.sub("LEFT JOIN public.a ON a.id = s.a_id AND a.id < 0 ", "")
+        rewrites = rewritten(sql)
+
+        expect(rewrites.first).to start_with("SELECT 1 AS one, arms_1.id_1 AS id, arms_1.s_id_1 AS s_id, ")
+        expect(same_rows(sql, rewrites, [], ordered: true).size).to eq(7)
+      end
+
+      it "takes name.* and * together" do
+        sql = "SELECT s.*, * #{joined} #{either}"
+
+        expect(same_rows(sql, rewritten(sql)).size).to eq(7)
+      end
+
+      it "splits an OR over an outer join read by *" do
+        sql = "SELECT * FROM public.s LEFT JOIN public.cp ON cp.s_id = s.id " \
+              "WHERE cp.id IS NULL OR cp.user_id = 8 OR s.id = 101"
+
+        expect(same_rows(sql, rewritten(sql)).size).to be >= 4
+      end
+
+      it "would be wrong as a UNION of the arms' own * : the rows that the original returns twice would merge" do
+        plain = "SELECT s.id, cp.user_id #{joined} WHERE s.flag OR s.flag IS NULL OR NOT s.flag UNION " \
+                "SELECT s.id, cp.user_id #{joined} WHERE cp.user_id = 8"
+
+        expect(conn.exec(plain).ntuples).to be < conn.exec("SELECT s.id, cp.user_id #{joined} #{either}").ntuples
+      end
+    end
+
     it "splits an OR of three arms, and an arm that's an AND" do
       sql = "SELECT a.id #{from} WHERE (s.flag OR (a.loose = 1 AND s.user_id = 5) OR #{exists.sub("$2", "7")})"
 
@@ -321,7 +428,12 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         %(SELECT a.id FROM public.a JOIN public."my s" s ON s.a_id = a.id WHERE s.id = 1 OR a.loose = 3),
       "the select list has a column UNION can't compare" => "SELECT a.id, a.doc FROM_ WHERE s.flag OR a.loose = 3",
       "name.* has a column UNION can't compare" => "SELECT a.* FROM_ WHERE s.flag OR a.loose = 3",
-      "the select list is *" => "SELECT * FROM_ WHERE s.flag OR a.loose = 3",
+      "the select list is * and a table has a column UNION can't compare" =>
+        "SELECT * FROM_ WHERE s.flag OR a.loose = 3",
+      "the select list is * and it has GROUP BY" =>
+        "SELECT * FROM public.s JOIN public.cp ON cp.s_id = s.id WHERE s.flag OR cp.user_id = 8 GROUP BY s.id, cp.id",
+      "the select list is * and a table has no key" =>
+        "SELECT * FROM public.a JOIN public.nokey s ON s.a_id = a.id WHERE s.id = 1 OR a.loose = 3",
       "the select list has an unqualified column" => "SELECT title FROM_ WHERE s.flag OR a.loose = 3",
       "the select list has a system column" => "SELECT a.ctid FROM_ WHERE s.flag OR a.loose = 3",
       "the select list has a subquery" =>
@@ -330,8 +442,31 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         "SELECT a.id, (SELECT count(*) FROM public.cp s WHERE s.id = a.id) AS n FROM_ WHERE s.flag OR a.loose = 3",
       "an unnamed select-list expression takes its name from its column" =>
         "SELECT a.id::text FROM_ WHERE s.flag OR a.loose = 3",
-      "it has GROUP BY" => "SELECT a.id, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.id",
-      "it has HAVING" => "SELECT count(*) FROM_ WHERE s.flag OR a.loose = 3 HAVING count(*) > 0",
+      "it groups by an expression" =>
+        "SELECT lower(a.title), count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY lower(a.title)",
+      "it groups by an ordinal" => "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY 1",
+      "it groups by an unqualified column" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY title",
+      "it has ROLLUP" => "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY ROLLUP (a.title)",
+      "it has GROUPING SETS" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY GROUPING SETS ((a.title), ())",
+      "it has GROUP BY DISTINCT" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY DISTINCT a.title",
+      "it has an empty grouping set" => "SELECT count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY ()",
+      "it selects a column of a grouped key's table that isn't grouped" =>
+        "SELECT a.id, a.title FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.id",
+      "it selects name.* with GROUP BY" => "SELECT a.* FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.id",
+      "it orders by a column that isn't grouped" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title, a.id ORDER BY s.id",
+      "it has HAVING on a column that isn't grouped" =>
+        "SELECT a.title FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title HAVING s.flag",
+      "it has HAVING with a subquery" =>
+        "SELECT a.title FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title " \
+        "HAVING count(*) > (SELECT count(*) FROM public.cp)",
+      "it calls a function that isn't an aggregate on a column that isn't grouped" =>
+        "SELECT a.title, lower(s.id::text) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title",
+      "it has a column outside a call that's an aggregate only by name" =>
+        "SELECT a.title, count(s.id) + s.id FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title",
       "it has a window function" => "SELECT a.id, row_number() OVER (ORDER BY s.id) FROM_ WHERE s.flag OR a.loose = 3",
       "it has a WINDOW clause" => "SELECT a.id FROM_ WHERE s.flag OR a.loose = 3 WINDOW w AS (ORDER BY s.id)",
       "it has DISTINCT ON" => "SELECT DISTINCT ON (a.id) a.id FROM_ WHERE s.flag OR a.loose = 3 ORDER BY a.id",
@@ -346,8 +481,12 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "it has no FROM" =>
         "SELECT 1 WHERE EXISTS (SELECT 1 FROM public.a WHERE a.loose = 3) " \
         "OR EXISTS (SELECT 1 FROM public.s WHERE s.flag)",
-      "it has an outer join" =>
-        "SELECT a.id, a.title FROM public.a LEFT JOIN public.s ON s.a_id = a.id WHERE s.flag OR a.loose = 3",
+      "it has a NATURAL outer join" =>
+        "SELECT a.id, a.title FROM public.a NATURAL LEFT JOIN public.s WHERE s.flag OR a.loose = 3",
+      "it has an outer join USING" =>
+        "SELECT a.id, a.title FROM public.a LEFT JOIN public.s USING (id) WHERE s.flag OR a.loose = 3",
+      "it has an outer join with an alias" =>
+        "SELECT j.id FROM (public.a LEFT JOIN public.s ON s.a_id = a.id) j WHERE j.flag OR j.loose = 3",
       "it has a NATURAL JOIN" =>
         "SELECT a.id, a.title FROM public.a NATURAL JOIN public.s WHERE s.flag OR a.loose = 3",
       "it has JOIN USING" =>
@@ -701,6 +840,88 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(rewrites.first.scan(" UNION ").size).to eq(1)
       expect(rewrites.first).to include("WHERE i.qty = 0 OR i.val = '9' UNION")
       expect(same_rows(sql, rewrites)).to eq([["1"], ["2"]])
+    end
+  end
+
+  # Parents p and their children c, with parents that have no child and
+  # children that have no parent, so an outer join null-extends rows:
+  #   p 1: children 11 (flag true), 12 (flag NULL)   p 2: child 13 (false)
+  #   p 3: child 14 (NULL)   p 4, 5: no children, both named 'same'
+  #   p 6: no children, grp NULL
+  #   c 15: no parent (NULL)   c 16: parent 99, which doesn't exist
+  context "with an outer join, where the WHERE reads both sides" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.p (id int PRIMARY KEY, name text, grp int);
+        CREATE TABLE public.c (id int PRIMARY KEY, p_id int, flag boolean, tag text);
+        CREATE TABLE public.d (id int PRIMARY KEY, c_id int, mark int);
+        INSERT INTO public.p VALUES (1, 'one', 1), (2, 'two', 1), (3, 'three', 2), (4, 'same', 3), (5, 'same', 3),
+          (6, 'six', NULL);
+        INSERT INTO public.c VALUES (11, 1, true, 'x'), (12, 1, NULL, 'x'), (13, 2, false, 'y'), (14, 3, NULL, 'z'),
+          (15, NULL, true, 'q'), (16, 99, true, 'r');
+        INSERT INTO public.d VALUES (21, 11, 1), (22, 12, 2), (23, 14, 1), (24, 99, 3);
+      SQL
+    end
+
+    %w[LEFT RIGHT FULL].each do |kind|
+      it "reads the UNION of a #{kind} JOIN's arms, and keeps the rows that are null-extended" do
+        sql = "SELECT p.id AS pid, p.name, c.id AS cid FROM public.p #{kind} JOIN public.c ON c.p_id = p.id " \
+              "WHERE c.flag OR p.grp = 3 OR c.flag IS NULL"
+
+        rewrites = rewritten(sql)
+
+        expect(rewrites.size).to eq(1)
+        expect(rewrites.first).to include("#{kind} JOIN public.c ON c.p_id = p.id WHERE c.flag OR c.flag IS NULL UNION")
+        expect(same_rows(sql, rewrites).size).to be >= 4
+      end
+    end
+
+    it "keeps a preserved row once when its arm is true only because the other side is NULL" do
+      sql = "SELECT p.id, c.id FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.id IS NULL OR p.grp = 2"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites)).to eq([%w[3 14], ["4", nil], ["5", nil], ["6", nil]])
+    end
+
+    it "keeps rows that look alike, from the null-extended side" do
+      sql = "SELECT p.name FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.id IS NULL OR p.grp = 3"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[same], %w[same], %w[six]])
+    end
+
+    it "keeps rows that look alike, from the nullable side's rows of one preserved row" do
+      sql = "SELECT p.name FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.flag IS NULL OR p.grp = 1"
+
+      expect(same_rows(sql, rewritten(sql))).to eq([%w[one], %w[one], %w[same], %w[same], %w[six], %w[three], %w[two]])
+    end
+
+    it "takes a chain of outer joins and an aggregate, with a key of every table" do
+      sql = "SELECT count(*), count(d.id), max(p.id) FROM public.p LEFT JOIN public.c ON c.p_id = p.id " \
+            "LEFT JOIN public.d ON d.c_id = c.id WHERE d.mark = 1 OR p.grp = 3 OR c.tag = 'y'"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites).size).to eq(1)
+    end
+
+    it "groups an outer join" do
+      sql = "SELECT p.name, count(c.id) AS kids, count(*) AS n FROM public.p LEFT JOIN public.c ON c.p_id = p.id " \
+            "WHERE c.flag IS NOT TRUE OR p.grp = 3 GROUP BY p.name ORDER BY p.name"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites, [], ordered: true).size).to be >= 3
+    end
+
+    it "would be wrong with the OR in the ON instead of the WHERE: every preserved row comes back" do
+      where = "SELECT p.id FROM public.p LEFT JOIN public.c ON c.p_id = p.id WHERE c.flag OR p.grp = 3"
+      on = "SELECT p.id FROM public.p LEFT JOIN public.c ON c.p_id = p.id AND (c.flag OR p.grp = 3)"
+
+      expect(conn.exec(where).ntuples).to be < conn.exec(on).ntuples
     end
   end
 end
