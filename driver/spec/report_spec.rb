@@ -452,23 +452,37 @@ RSpec.describe Quaack::Driver::Report do
         { "label" => "original:top:2", "search" => "original", "indexes" => ["quaack_b"], "timed_out" => true,
           "measurements" => { "slow" => { "timed_out" => true }, "typical" => m(100, 100) }, "verdicts" => nil }
       end
-      # [caveat text fragment, subject the target must mention (nil: known gap, see above)]
-      let(:caveats) do
-        [["measurement run of candidates timed out", "Rewrite Vivid Cove with a new index"],
-         ["timed out on the slow and typical values", "Any candidate that finished there counts as better"],
-         ["couldn&#39;t see the statistics", "orders_lower_idx"]]
+      # What each link target must mention for the caveats that point at it. A caveat with a new
+      # target has no entry, so the example below fails on it until someone says what it must name.
+      let(:subjects) do
+        { "timeouts" => ["Rewrite Vivid Cove with a new index", "Any candidate that finished there counts as better"],
+          "indexes" => ["orders_lower_idx"] }
       end
 
-      it "lands every caveat on a section that exists, and the statistics one on a section that names its subject" do
+      it "lands every caveat the verdict gives on a section that exists and names its subject" do
+        list = Quaack::Driver::Report::View.new(caveat_payload, "run").caveats
         items = verdict(out).scan(%r{<li class="warn">(.*?)</li>}m).flatten
-        expect(items.size).to eq(caveats.size)
-        caveats.each do |fragment, subject|
-          item = items.find { it.include?(fragment) } or raise "no caveat mentions #{fragment}"
-          target = item[/href="#([^"]+)"/, 1]
+        expect(list.size).to be >= 3
+        expect(items.size).to eq(list.size)
+        list.zip(items).each do |(_, target), item|
+          expect(item).to include(%(href="##{target}"))
           body = out[%r{<section id="#{Regexp.escape(target)}"[^>]*>.*?</section>}m]
           expect(body).not_to be_nil
-          expect(body).to include(subject) if subject
+          expect(body).to include(*subjects.fetch(target))
         end
+      end
+
+      it "says how many extended statistics objects and which indexes are hidden, for either alone or both" do
+        hidden = lambda do |value|
+          caveat_payload["hidden_statistics"] = value
+          section(render(caveat_payload), "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
+        end
+        both = hidden.call({ "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 })
+        expect(both).to include("of 2 extended statistics objects and of this expression index: " \
+                                "#{sq("orders_lower_idx")}.")
+        only_extended = hidden.call({ "indexes" => [], "extended_statistics" => 1 })
+        expect(only_extended).to include("of 1 extended statistics object.")
+        expect(only_extended).not_to include("expression index")
       end
 
       it "explains the timed-out runs in a section of their own, from the payload's labels and sets" do
@@ -1648,6 +1662,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m]).to include('<ul id="negative-rewrites">')
     end
 
+    it "spaces the rewrites list, a direct child of its fold, off the summary" do
+      expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m])
+        .to match(%r{</summary>\s*<ul id="negative-rewrites">})
+      expect(negative_html).to match(/details\.fold > [^{]*\bul\b[^{]*\{ margin-top: 0\.5rem; \}/)
+    end
+
     it "says what became of every rewrite, with its source, in words" do
       list = why[%r{<ul id="negative-rewrites">.*?</ul>}m]
       expect(list.scan(/<li>(Rewrite [^(]+) \(/).flatten)
@@ -2517,8 +2537,11 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "gives a band for a stage with no sentence no hover when everything was recorded" do
-      allow(Quaack::Driver::Report::StageSentences).to receive(:for).and_return(nil)
-      expect(bands(funnel("index"))[2]).not_to include("<title>")
+      expect(Quaack::Driver::Report::StageSentences.for("no-such-stage")).to be_nil
+      rows = [["A stage", rec(2, 1, dropped: { "r" => 1 }), "no-such-stage"]]
+      svg = Quaack::Driver::Report::View.new(payload, "run").funnel("x", "x", rows)
+      expect(bands(svg).size).to eq(1)
+      expect(bands(svg).first).not_to include("<title>")
     end
 
     it "shows a stage the run didn't count as not recorded, never as zero, outside the scale" do
@@ -2697,11 +2720,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(widths(bands(funnel("index")).first)).to eq([0, 0])
     end
 
-    it "draws a first band the run didn't record as a rectangle at least a third of the full width" do
+    it "draws a first band the run didn't record as a rectangle 0.3 of the full width wide" do
       stages.delete("index-from-query")
       first = widths(bands(funnel("index")).first)
       expect(first).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
-      expect(first.first).to be >= Quaack::Driver::Report::Funnel::WIDTH / 4
+      expect(first.first).to eq((Quaack::Driver::Report::Funnel::WIDTH * 0.3).round(2))
     end
 
     it "keeps a stage's counts out of its tooltip, since the table has them" do

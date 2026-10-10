@@ -30,6 +30,14 @@ RSpec.describe PipelineReplay do
     end
   end
 
+  # The drawn first band of a funnel: its top and bottom widths, from the
+  # trapezoid's corners (top left, top right, bottom right, bottom left).
+  def first_band_widths(view, rows)
+    svg = view.funnel("x", "x", rows)
+    points = svg[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").first.to_f }
+    [points[1] - points[0], points[2] - points[3]]
+  end
+
   # Whether the record's in is the width in the pipe. A stage that adds, or
   # that ran on nothing and sent nothing (a skipped round), has in 0.
   def burndown_joins?(record, running)
@@ -73,6 +81,17 @@ RSpec.describe PipelineReplay do
             view = Quaack::Driver::Report::View.new(outcome.report, "run")
             gaps = %i[index_rows rewrite_rows rewrite_index_rows].flat_map { burndown_gaps(view.public_send(it)) }
             expect(gaps).to eq([])
+          end
+
+          # Task 20261009-43: the first band of each funnel is a rectangle.
+          it "draws the first band of each burndown funnel as wide at its top as at its bottom" do
+            next unless outcome.report
+
+            view = Quaack::Driver::Report::View.new(outcome.report, "run")
+            %i[index_rows rewrite_rows rewrite_index_rows].each do |rows|
+              top, bottom = first_band_widths(view, view.public_send(rows))
+              expect(top).to eq(bottom)
+            end
           end
 
           it "sends each replayed ask the prompt its reply answered" do
