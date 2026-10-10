@@ -143,14 +143,17 @@ RSpec.describe TestPostgres do
 
   describe "removing old images" do
     let(:suffix) { "#{Process.pid}-#{SecureRandom.hex(3)}" }
-    let(:old_tag) { "quaack-test-postgres:old-#{suffix}" }
-    let(:survivor_tag) { "quaack-test-postgres:survivor-#{suffix}" }
-    let(:other_tag) { "quaack-test-other:old-#{suffix}" }
+    # The aliases live in repositories made for this example, never the
+    # harness's, which another checkout's launch lists and cleans.
+    let(:repo) { "quaack-test-postgres-spec-#{suffix}" }
+    let(:old_tag) { "#{repo}:old" }
+    let(:survivor_tag) { "#{repo}:survivor" }
+    let(:other_tag) { "#{repo}-other:old" }
     let(:current) { TestPostgres.image_tag }
 
     # Every call passes `only:` with tags this spec made, so it can't remove
     # an image another worktree is about to use.
-    def remove(only, older_than = 0) = TestPostgres::OldImages.remove(current, older_than, only: only)
+    def remove(only, older_than = 0) = TestPostgres::OldImages.remove(current, older_than, only: only, repository: repo)
 
     def image_exists?(tag) = system("docker", "image", "inspect", tag, out: File::NULL, err: File::NULL)
 
@@ -181,13 +184,27 @@ RSpec.describe TestPostgres do
       [old_tag, survivor_tag, other_tag].each { |tag| Open3.capture2e("docker", "rmi", tag) }
     end
 
+    # Another checkout's launch runs the production cleanup (`only: nil`),
+    # and an alias of an image more than a week old counts as old. The stub
+    # reports a creation date of 2020 for every tag but the current one, so
+    # that is deterministic here.
+    it "keeps the aliases it makes out of reach of another checkout's launch cleanup" do
+      tag_current_as(old_tag)
+      script = %(if [ "$1 $2" = "image inspect" ] && [ "$5" != #{current} ]; then echo 2020-01-01T00:00:00Z; exit 0; fi)
+
+      with_docker_stub(script) { TestPostgres::OldImages.remove(current) }
+
+      expect(image_exists?(old_tag)).to be(true)
+    end
+
     it "removes the images it's asked to once they're old enough, and keeps the current one" do
       tag_current_as(old_tag)
+      tag_current_as(survivor_tag)
 
-      remove([old_tag, current])
+      TestPostgres::OldImages.remove(survivor_tag, 0, only: [old_tag, survivor_tag], repository: repo)
 
       expect(image_exists?(old_tag)).to be(false)
-      expect(image_exists?(current)).to be(true)
+      expect(image_exists?(survivor_tag)).to be(true)
     end
 
     it "removes only the tags it's given, even when others are old and unused" do

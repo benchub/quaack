@@ -10,15 +10,18 @@ module TestPostgres
   module OldImages
     OLD_IMAGE_AGE = 7 * 24 * 3600
 
-    # Removes the images of the current tag's repository, other than the
-    # current one, that are older than `older_than` seconds. `only`, a list
-    # of tags, limits it further: a spec passes the tags it made, so it can
-    # never remove an image it didn't. Nothing else is touched. `docker rmi`
+    # Removes the images of `repository` (the current tag's, unless a spec
+    # names its own), other than the current one, that are older than
+    # `older_than` seconds. `only`, a list of tags, limits it further: a spec
+    # passes the tags it made, so it can never remove an image it didn't. A
+    # spec also makes them under a throwaway repository, so a launch in
+    # another checkout, which lists the harness's repository, never sees
+    # them. Nothing else is touched. `docker rmi`
     # without force leaves an image any container uses. Cleanup is a
     # courtesy, so any failure skips that image, or all of them if the
     # listing fails, and never fails a launch.
-    def self.remove(current, older_than = OLD_IMAGE_AGE, only: nil)
-      tags = TestPostgres.docker("image", "ls", current.split(":").first, "--format", "{{.Repository}}:{{.Tag}}")
+    def self.remove(current, older_than = OLD_IMAGE_AGE, only: nil, repository: current.split(":").first)
+      tags = TestPostgres.docker("image", "ls", repository, "--format", "{{.Repository}}:{{.Tag}}")
       tags = tags.lines.map(&:strip) - [current]
       (only ? tags & only : tags).each { |tag| remove_one(tag, older_than) }
     rescue RuntimeError
