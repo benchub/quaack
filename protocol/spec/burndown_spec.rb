@@ -18,7 +18,7 @@ RSpec.describe Quaack::Protocol::Burndown do
   it "lists the driver steps that call an LLM, once each, as frozen Strings" do
     expect(described_class::LLM_STEPS)
       .to eq(%w[llm-index-ideas llm-index-refine llm-rewrites operator-rewrites llm-counterexamples
-                rewrite-llm-index-ideas rewrite-llm-index-refine])
+                rewrite-llm-index-ideas rewrite-llm-index-refine winner-summary])
     expect(described_class::LLM_STEPS).to be_frozen.and(all(be_frozen))
   end
 

@@ -24,7 +24,8 @@ module Quaack
         def record(raw)
           kept = { "providers" => list(raw["providers"]) { provider(it) }, **rewrites(raw), **parts(raw) }
                  .reject { |_, v| v.nil? || v.empty? }
-          name?(raw["operator_inference"]) ? kept.merge("operator_inference" => raw["operator_inference"]) : kept
+          kept = kept.merge("operator_inference" => raw["operator_inference"]) if name?(raw["operator_inference"])
+          (summary = SummaryShape.check(raw["winner_summary"])) ? kept.merge("winner_summary" => summary) : kept
         end
 
         # The counterexample rounds, index rounds, and failed branches.

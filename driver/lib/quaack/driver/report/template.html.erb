@@ -70,6 +70,8 @@
             overflow-x: auto; line-height: 1.4; }
   article { margin: 1rem 0 1.75rem; }
   .note { color: var(--note); font-size: 0.92rem; }
+  .llm-summary { border-left: 3px solid var(--rule); padding-left: 0.9rem; margin: 0.75rem 0 1rem; }
+  .llm-summary p { margin: 0.3rem 0; }
   details { margin: 0.5rem 0; }
   summary { cursor: pointer; }
   summary h3 { display: inline; margin: 0; }
@@ -217,6 +219,9 @@
 <% end %>
 <% if winner %>
 <section id="explanation"><h2>Why the winner reads fewer blocks</h2>
+<% if (summary = llm_summary) %>
+<div class="llm-summary" id="llm-summary"><p class="note">Summary written by an LLM (<%= summary[:by] %>), <%= h SUMMARY_LABEL %></p><p><%= h summary[:text] %></p></div>
+<% end %>
 <p><%= h describe(winner["label"]) %> <%= h compared %> <%= h CACHE %></p>
 <% measured_plan = (measured(winner["label"]) || {})["plan"] %>
 <% winner_plan = measured_plan || ((r = rewrite_of(winner["label"])) && r["plan"]) %>

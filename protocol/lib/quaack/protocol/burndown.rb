@@ -16,9 +16,10 @@ module Quaack
 
       # The steps the driver runs that call an LLM (DESIGN.md, "Which part runs
       # each step"). The last two are llm-index-ideas and llm-index-refine in rewrite-index-ideas, searching
-      # for a rewrite.
+      # for a rewrite. winner-summary is the report's own ask, for the short summary that opens "Why the
+      # winner reads fewer blocks".
       LLM_STEPS = %w[llm-index-ideas llm-index-refine llm-rewrites operator-rewrites llm-counterexamples
-                     rewrite-llm-index-ideas rewrite-llm-index-refine].map(&:freeze).freeze
+                     rewrite-llm-index-ideas rewrite-llm-index-refine winner-summary].map(&:freeze).freeze
 
       # A lowercase word, such as duplicate or generator_one.
       NAME = /\A[a-z][a-z0-9_]{0,62}\z/

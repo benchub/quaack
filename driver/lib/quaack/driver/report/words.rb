@@ -9,7 +9,7 @@ module Quaack
       # payload's names are QUAACK's own constants (stages, reasons, fates,
       # scenarios), which mean nothing to a reader who hasn't read
       # DESIGN.md, so the report never prints one where it has words.
-      module Words
+      module Words # rubocop:disable Metrics/ModuleLength
         MISSING = "not recorded"
 
         SETS = { "slow" => "slow", "worst_case" => "worst case", "typical" => "typical" }.freeze
@@ -116,7 +116,8 @@ module Quaack
                       "llm-rewrites" => "Rewrite suggestions", "operator-rewrites" => "Reading your own rewrites",
                       "llm-counterexamples" => "Test data written to break the rewrites",
                       "rewrite-llm-index-ideas" => "Index suggestions for the rewrites",
-                      "rewrite-llm-index-refine" => "Revised index suggestions for the rewrites" }.freeze
+                      "rewrite-llm-index-refine" => "Revised index suggestions for the rewrites",
+                      "winner-summary" => "Summary of why the winner reads fewer blocks" }.freeze
 
         # DESIGN.md's burndown's work totals from the enclave, always listed.
         TOTALS = { "hypothetical_explains" => "Plans tried with an index that wasn't built",

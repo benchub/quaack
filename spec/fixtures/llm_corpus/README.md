@@ -33,6 +33,8 @@ The steps:
 - `llm-counterexamples`: counterexample inserts (Counterexamples), up to three rounds per surviving rewrite, numbered on across rewrites (`llm-counterexamples-4` is the second rewrite's first round). Each rewrite keeps its block of three numbers even if an earlier one is disproved before its third round, so the pipeline replay finds each reply by rewrite and round.
 - `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`: rewrite-index-ideas' index asks for each rewrite that survived rewrite-test and counterexamples, the same prompts as llm-index-ideas and llm-index-refine but for the rewrite. They're numbered on across rewrites too, so with two survivors, `rewrite-llm-index-ideas-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
 
+- `winner-summary`: the report's own ask (WinnerSummary), one per query whose run has a winner. It answers in plain text, not JSON, and a replay with no reply for it gets an empty answer, so the report reads without a summary. The corpus holds none yet.
+
 ## How to fill it
 
 For every `prompt.md`:

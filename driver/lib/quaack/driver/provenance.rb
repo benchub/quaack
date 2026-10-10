@@ -9,6 +9,7 @@ require_relative "provenance/calls"
 require_relative "provenance/entries"
 require_relative "provenance/saving"
 require_relative "provenance/shape"
+require_relative "provenance/summary_shape"
 
 module Quaack
   module Driver
@@ -45,6 +46,9 @@ module Quaack
     #   its entry, and the rule it failed with, never the reason.
     # - operator_inference: the entry that inferred the operator rewrites'
     #   transformations and assumptions.
+    # - winner_summary: how the report's winner-summary ask went: its
+    #   outcome (used, empty, rejected, or failed), the entry that answered
+    #   if one did, and, for a failed ask, the rule. Never the summary's text.
     #
     # Trust boundary. It holds names (from the operator's own config),
     # models, store names, rules, and counts only: never SQL, DDL, a prompt,
@@ -202,6 +206,16 @@ module Quaack
           list = (@record["failed_branches"] ||= [])
           list << branch unless list.include?(branch)
         end
+        self
+      end
+
+      # WinnerSummary's result, which replaces any recorded before, since a
+      # rerun's ask is the one that counts. A result with no winner records
+      # nothing.
+      def winner_summary!(result)
+        recorded = SummaryShape.check({ "outcome" => result.outcome, "entry" => result.entry,
+                                        "rule" => result.rule }.compact)
+        recorded ? @record["winner_summary"] = recorded : @record.delete("winner_summary")
         self
       end
 

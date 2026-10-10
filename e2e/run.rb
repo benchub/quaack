@@ -81,6 +81,8 @@ module E2ERun
         n = JSON.parse(content[/```json\n(.*)\n```/m, 1])["rewrites"].size
         { "rewrites" => Array.new(n) { { "transformation" => "none", "assumptions" => [] } } }
       when "llm-counterexamples" then { "inserts" => [] }
+      # No summary: the report reads as it did before the winner-summary step.
+      when "winner-summary" then ""
       else raise "no empty answer for step #{step}"
       end
     end

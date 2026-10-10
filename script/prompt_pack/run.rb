@@ -141,7 +141,12 @@ module PromptPack
     # A first llm-index-ideas ask gets the query's indexes: one the planner won't use,
     # so llm-index-refine gets asked, and one with an unqualified table, which is
     # dropped, so the replacement ask happens.
-    def for(step, body, query)
+    def for(step, body, query) = step == "winner-summary" ? SUMMARY : json_for(step, body, query)
+
+    # winner-summary is the one step that answers in plain text.
+    SUMMARY = "The winner reads fewer blocks than the original query."
+
+    def json_for(step, body, query)
       messages = body[:messages]
       first = messages.first[:content]
       case step

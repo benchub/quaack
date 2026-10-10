@@ -285,8 +285,8 @@ RSpec.describe "Quaack::Driver::LLM.providers" do
       "a step that isn't an LLM step" => [{ "steps" => { "index-test" => {} } },
                                           "llm_routing.steps.index-test in ~/.quaack/driver.json isn't an LLM " \
                                           "step: use llm-index-ideas, llm-index-refine, llm-rewrites, " \
-                                          "operator-rewrites, llm-counterexamples, rewrite-llm-index-ideas, or " \
-                                          "rewrite-llm-index-refine"],
+                                          "operator-rewrites, llm-counterexamples, rewrite-llm-index-ideas, " \
+                                          "rewrite-llm-index-refine, or winner-summary"],
       "a step that isn't an object" => [{ "steps" => { "llm-rewrites" => "SENTINEL-VALUE" } },
                                         "llm_routing.steps.llm-rewrites in ~/.quaack/driver.json must be an object"],
       "a step's unknown key" => [{ "steps" => { "llm-rewrites" => { "pairing" => "any" } } },
