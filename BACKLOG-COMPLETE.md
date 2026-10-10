@@ -10037,3 +10037,14 @@ The builder of 20261010-21 found, on `main` before and after that change, that t
 - **Came from:** The work and review of 20261010-21, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10: a top-level LIMIT/OFFSET condition now counts as tested only after fixture-compare with it removed reports a mismatch; every S1 fixture is checked; rows that fail a condition get their own values in read columns; enum labels join the candidate values; each scenario ranks its own pinned keys. Still untested, correctly: a deep OFFSET and WITH TIES. Minor: 20261010-26.
+
+### 20261010-21. Untested conditions: pinned keys make S1's groups collide, so near misses are dropped.
+
+Found while building 20261010-19 on the user's real query shape (a `SELECT count(*)` with an `IN (SELECT ... UNION ALL SELECT ...)` and a 12-value `assignments.id IN` list): after per-scope and branch-aware near misses, 16 of 24 atoms were still untested. The `assignments.id IN ($55..$66)` list pins the primary key, so every group needs an assignments id from the 12 listed values (or one of 5 values that fail the list). Groups whose rows come out identical merge, and a collision tries only 3 later values (`SHIFTS`). S1 ends with 8 assignment rows and 32 groups are dropped across the scenarios. Child-table near misses join the hit's own assignment, which is already in the result, so they can't change the count. A trial with `SHIFTS = 12` cut the dropped groups from 32 to 5 and the untested atoms to 14 at similar run time.
+
+Build it properly: give more groups their own value of a key the query pins (a larger or demand-sized shift, a fresh value from the pinned list per group, and a child near miss that joins a parent of its own), keeping the soundness rule (an atom counts as tested only if loosening it changes a result) and the group and row caps. Measure the group count and run time before and after on the real shape, and on ordinary queries. The target is that only truly redundant atoms (duplicates, or implied by another condition) stay untested on that query.
+
+- **Depends on:** 20261010-19 (landed).
+- **Came from:** The work on 20261010-19, 2026-10-10. Priority: the user said the untested conditions cost more confidence in QUAACK than any other issue.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10 (`Scenarios::PinnedKeys`): a join key pinned by an atom gives each group its own value (its own generated key, else a ranked list value), so near misses stop colliding. On the synthetic real shape, untested atoms went from 16 to 6, five of them truly redundant. The sixth: 20261010-24.
