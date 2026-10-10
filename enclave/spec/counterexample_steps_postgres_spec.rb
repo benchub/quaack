@@ -618,6 +618,18 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(sent["untested_atoms"]).to eq(["o.status = $2"])
     end
+
+    # Task 20261008-26: no reply can cover a USING or NATURAL JOIN marker, so
+    # asking the LLM to exercise it wastes a round's aim.
+    it "leaves out the USING and NATURAL JOIN markers no insert can cover" do
+      ready(same)
+      store.write("rewrite_tested_1", "passed" => true, "untested" => ["NATURAL JOIN", "o.status = $2", "USING (id)"],
+                                      "untested_atoms" => [0, 1, 2])
+
+      sent = lines(step("counterexample-payload", "--search", "rewrite_1")).first
+
+      expect(sent["untested_atoms"]).to eq(["o.status = $2"])
+    end
   end
 
   describe "counterexample-round (counterexample-compare and counterexample-rollback)" do
