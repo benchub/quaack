@@ -340,7 +340,15 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a word cast to text in a nested ARRAY cast to date[]" => ["note", "ARRAY[ARRAY['today'::text]]::date[]"],
       "a word in a nested ARRAY for a date[]" => ["days", "ARRAY[ARRAY['2024-01-01'], ARRAY['today']]"],
       "a word in an ARRAY of text[] casts, cast to date[]" => ["note", "ARRAY['{today}'::text[]]::date[]"],
-      "a word in a cast nested ARRAY, cast to date[]" => ["note", "ARRAY[ARRAY['today']::text[]]::date[]"]
+      "a word in a cast nested ARRAY, cast to date[]" => ["note", "ARRAY[ARRAY['today']::text[]]::date[]"],
+      "a word passed through an array function inside an ARRAY cast to date[]" =>
+        ["note", "ARRAY[array_reverse(ARRAY['today'])]::date[]"],
+      "a text word passed through an array function inside an ARRAY cast to date[]" =>
+        ["note", "ARRAY[array_reverse(ARRAY['today'::text])]::date[]"],
+      "a word passed through an array function inside a three-level ARRAY cast to date[]" =>
+        ["note", "ARRAY[ARRAY[array_reverse(ARRAY['today'])]]::date[]"],
+      "a word passed through an array function inside an ARRAY for a date[]" =>
+        ["days", "ARRAY[array_reverse(ARRAY['2024-01-01', 'today'])]"]
     }.each do |what, (column, value)|
       it "refuses #{what}" do
         expect { stamps(column, value) }.to clock(column)

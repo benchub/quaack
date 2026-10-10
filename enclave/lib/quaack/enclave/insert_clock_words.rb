@@ -171,6 +171,9 @@ module Quaack
       def element_targets(element, targets)
         cast = element.type_cast
         return targets if element.a_array_expr || (cast && !cast.type_name.array_bounds.empty?)
+        # A function's result could be an array of any depth, as
+        # array_reverse's is, so what it takes in could be a sub-array too.
+        return [*targets, *targets.map { Element.new(it) }] if element.func_call
 
         targets.map { Element.new(it) }
       end
