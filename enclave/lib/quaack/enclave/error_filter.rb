@@ -54,11 +54,13 @@ module Quaack
     # - The cycle comes from the error's cycle method, and is sent only
     #   when the rule is fk_cycle (DESIGN.md's rewrite-test): the tables of a
     #   foreign key cycle, in the order their foreign keys point, which are
-    #   schema, never a row value. It must be an Array of 3 to 64 plain
-    #   schema.name Strings, like the function, whose last is its first.
+    #   schema, never a row value. It must be an Array of 3 to 64
+    #   schema.name Strings, each part bare or quoted as the catalog's
+    #   quote_ident writes it (Cycle::NAME), whose last is its first.
     #   Otherwise the whole field is left out. This file can't see the
     #   run's schema, so whoever raises the error checks that each is one
-    #   of the run's relations (Steps::CycleTables).
+    #   of the run's relations (Steps::CycleTables). Nothing does today
+    #   (20261003-43), so no error line carries one.
     # - The tables come from the error's tables method, and are sent only
     #   when the rule is dump_object_unreadable (DESIGN.md's schema-dump): the
     #   tables the dump needs that the operator's role can't read, which are

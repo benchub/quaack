@@ -164,7 +164,8 @@ module Quaack
 
         def untested(tested, context)
           rule = known(REFUSALS, tested["rule"])
-          cycle = CycleTables.check(tested["cycle"], context.tables) if rule == "fk_cycle"
+          # RuleBugs asks without a context, and only for the fate's name.
+          cycle = CycleTables.check(tested["cycle"], context ? context.tables : []) if rule == "fk_cycle"
           fate("rewrite_test_untested", rule:, cycle:)
         end
 

@@ -120,6 +120,26 @@ module Quaack
           fields.map { it.string.sval } if fields.size == 2 && fields.all? { it.node == :string }
         end
 
+        # Whether nodes write a bare name, such as posts in posts IS NULL, that is
+        # also a name a FROM item in nodes goes by: a table's, an alias, or
+        # an unaliased function's. Postgres reads a bare name as a column of
+        # any query in scope before it reads it as that item's whole row, so
+        # moving nodes to a place with other columns in scope, or out of one
+        # (even to where it still prepares), could change what the name reads.
+        def bare_from_item_name?(nodes)
+          names = find(nodes, PgQuery::RangeVar).map(&:relname) + find(nodes, PgQuery::Alias).map(&:aliasname) +
+                  find(nodes, PgQuery::RangeFunction).reject(&:alias).flat_map { function_names(it) }
+          find(nodes, PgQuery::ColumnRef).any? { |ref| names.include?(bare_name(ref)) }
+        end
+
+        # Every name in the calls of an unaliased function in FROM, each of
+        # which is its own name, whatever its schema.
+        def function_names(function)
+          find(function, PgQuery::FuncCall).flat_map { |call| call.funcname.map { it.string.sval } }
+        end
+
+        def bare_name(ref) = (ref.fields.first.string.sval if ref.fields.size == 1 && ref.fields.first.node == :string)
+
         def qualify!(column_ref, qualifier)
           column_ref.fields[0] = PgQuery::Node.new(string: PgQuery::String.new(sval: qualifier))
         end

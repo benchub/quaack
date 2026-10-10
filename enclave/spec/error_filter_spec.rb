@@ -356,6 +356,11 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         expect(cycle_line(cycle)).to eq(line(step: "counterexample-round", rule: "fk_cycle", cycle:))
       end
 
+      it "sends a quoted name, as the catalog quotes mixed case, a dot, a keyword, or a doubled quote" do
+        quoted = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', "public.action", '"Sales"."Acc""ounts"']
+        expect(cycle_line(quoted)).to eq(line(step: "counterexample-round", rule: "fk_cycle", cycle: quoted))
+      end
+
       it "sends no tables for any other rule" do
         expect(cycle_line(cycle, rule: "complex_check"))
           .to eq(line(step: "counterexample-round", rule: "complex_check"))
@@ -365,7 +370,13 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       [
         ["a sentinel table", ["public.accounts", ERROR_SENTINEL, "public.accounts"]],
         ["an unqualified table", %w[accounts public.courses accounts]],
-        ["a quoted table", ['"Sales"."Accounts"', "public.courses", '"Sales"."Accounts"']],
+        ["a quoted table with a control character",
+         ["\"Sales\".\"Acc\nounts\"", "public.b", "\"Sales\".\"Acc\nounts\""]],
+        ["a quoted table with an unescaped quote", ['"Sa"les".accounts', "public.b", '"Sa"les".accounts']],
+        ["a quoted table with junk after it", ['"Sales"."Accounts" x', "public.b", '"Sales"."Accounts" x']],
+        ["an empty quoted name", ['"".accounts', "public.b", '"".accounts']],
+        ["a quoted name of more than 126 characters",
+         ["public.\"#{"a" * 127}\"", "public.b", "public.\"#{"a" * 127}\""]],
         ["a table that's a String subclass", [Class.new(String).new("public.a"), "public.b", "public.a"]],
         ["a table that isn't a String", [%w[public a], "public.b", %w[public a]]],
         ["no second table", %w[public.a public.a]],

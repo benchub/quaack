@@ -38,6 +38,10 @@ module Quaack
       # - Postgres can analyze each of its subqueries alone under the
       #   top-level WITH, so every name in one resolves inside it or to
       #   that WITH, and no WITH nearer an arm defines a CTE it names.
+      # - No bare name in one of its subqueries, such as tag in tag IS NULL,
+      #   is also the name of a FROM item in it. Where the subquery
+      #   stands it can read an outer column of that name, and in an arm
+      #   another, or the item's whole row, though it prepares alone.
       # - It calls no volatile function (Catalog#calls_volatile?).
       # - The UNION isn't LATERAL, on an outer join's nullable side, or
       #   grouped by grouping sets in any arm. Its set operations are all
@@ -92,7 +96,8 @@ module Quaack
           return false if catalog.calls_volatile?(Deparse.statement(Conjuncts.filter(condition)))
 
           Conjuncts.sublinks(condition).all? do |sublink|
-            catalog.self_contained?(Deparse.statement(Conjuncts.standalone(sublink, top)))
+            !Tree.bare_from_item_name?(sublink.subselect) &&
+              catalog.self_contained?(Deparse.statement(Conjuncts.standalone(sublink, top)))
           end
         rescue Deparse::Error
           false

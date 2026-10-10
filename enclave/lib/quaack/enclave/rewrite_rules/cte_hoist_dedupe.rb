@@ -34,6 +34,10 @@ module Quaack
       #   no column or table alias in it comes from outside it, and each
       #   name it resolves inside resolves the same anywhere, since a
       #   nearer scope wins.
+      # - No bare name in it, such as name in name IS NULL, is also the name
+      #   of a FROM item in it: alone it reads that item's whole row, but
+      #   where it was, a column of an outer query with that name would be
+      #   read first, and Postgres would still prepare it alone.
       # - No unqualified table name in it reads a CTE outside its body.
       #   Another unqualified name is a table, as it is at the front of a
       #   WITH that isn't RECURSIVE.
@@ -98,7 +102,8 @@ module Quaack
         def unnamed(cte) = Deparse.copy(cte).tap { it.ctename = "" }
 
         def hoistable?(entry, scopes, catalog)
-          return false if entry.with_clause.recursive || reads_outer_cte?(entry, scopes)
+          return false if entry.with_clause.recursive || reads_outer_cte?(entry, scopes) ||
+                          Tree.bare_from_item_name?(entry.cte.ctequery)
 
           sql = Deparse.statement(entry.cte.ctequery.select_stmt)
           catalog.self_contained?(sql) && !catalog.calls_volatile?(sql)

@@ -735,9 +735,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(4, note_row)).first["rule"]).to eq("counterexample_round_bad_round")
     end
 
-    # rewrite-test refuses an fk_cycle first, so a round meets one only if the
-    # arena changed after it; its error line still names the cycle's tables,
-    # but only those of the schema subset, and never a row of theirs.
+    # rewrite-test refuses an fk_cycle first, and a round builds the same
+    # scenarios, so a round meets one only if the arena changed after it
+    # (20261003-43: that's the only way, so the round doesn't name the cycle).
+    # Its error line is the bare rule, and never has a row of the tables'.
     context "when the arena's foreign keys make a NOT NULL cycle" do
       let(:rows) { LeakCheck::Sentinels.new }
 
@@ -747,26 +748,14 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
       end
 
-      it "ends the round naming the cycle's tables, in the order their foreign keys point" do
+      it "ends the round with the rule alone, even when the cycle's tables are in the schema subset" do
         cycle_ready([%w[public orders], %w[public accounts]])
 
         outcome = round(1, note_row)
 
-        expect(lines(outcome).first).to include("type" => "error", "step" => "counterexample-round",
-                                                "rule" => "fk_cycle",
-                                                "cycle" => %w[public.orders public.accounts public.orders])
+        expect(lines(outcome).first).to eq("type" => "error", "step" => "counterexample-round", "rule" => "fk_cycle")
         expect_no_leaks(rows, outcome)
         expect_no_leaks(sentinels, outcome)
-      end
-
-      it "names no table when one of the cycle's isn't in the schema subset" do
-        cycle_ready([%w[public orders]])
-
-        outcome = round(1, note_row)
-
-        expect(lines(outcome).first).to include("type" => "error", "rule" => "fk_cycle")
-        expect(lines(outcome).first).not_to have_key("cycle")
-        expect_no_leaks(rows, outcome)
       end
     end
   end

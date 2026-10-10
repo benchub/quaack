@@ -306,6 +306,38 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     )
   end
 
+  # 20261003-44: a constant key is only a position when it's an integer in the
+  # select list; the rewrite's ORDER BY 1 would hide an original that errors.
+  describe "an ORDER BY of constants" do
+    def constant_key(key) = canvas(10, limit: "ORDER BY #{key} LIMIT 1")
+
+    it "keeps a position inside the select list" do
+      expect_flips(*[10, 11, 12, 13].map { canvas(it, limit: "ORDER BY 1 LIMIT 1") })
+    end
+
+    it "refuses a position outside it, where the original errors and the rewrite wouldn't" do
+      %w[2 0].each do |key|
+        expect { conn.exec(constant_key(key)) }.to raise_error(PG::Error, /ORDER BY position #{key} is not in select/)
+        expect(rewritten(constant_key(key))).to eq([]), key
+      end
+      expect { conn.exec(canvas(10, select: "1, 2", limit: "ORDER BY 3 LIMIT 1")) }.to raise_error(PG::Error)
+      expect(rewritten(canvas(10, select: "1, 2", limit: "ORDER BY 3 LIMIT 1"))).to eq([])
+      expect(rewritten(canvas(10, select: "1, 2", limit: "ORDER BY 2 LIMIT 1")).size).to eq(1)
+    end
+
+    # Redaction turns every other constant into a placeholder, so one reaches
+    # the rule only if the rule is handed a tree that hasn't been through it.
+    it "refuses a constant that isn't an integer, which sorts nothing but isn't a position" do
+      redacted, literals = literals_for(constant_key("1"))
+      expect(redacted).to include("ORDER BY 1")
+      expect(rule.rewrites(PgQuery.parse(redacted), catalog, literals).size).to eq(1)
+      ["NULL", "true", "1.5", "'x'"].each do |key|
+        tree = PgQuery.parse(redacted.sub("ORDER BY 1", "ORDER BY #{key}"))
+        expect(rule.rewrites(tree, catalog, literals)).to eq([]), key
+      end
+    end
+  end
+
   it "takes a cast constant in the select list as a constant" do
     expect_rewrites(
       canvas(10, select: "CAST(1 AS bigint)::text AS one"),
@@ -416,6 +448,20 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     end)
   end
 
+  # 20261003-44: a table that isn't plain, as S's only FROM item, is
+  # qualified by its own name.
+  it "qualifies a bare column of a view as S, and the flip returns the original's rows" do
+    conn.exec("CREATE VIEW public.lookup_view AS SELECT assignment_id FROM public.tool_lookups")
+    expect_flips(*[1, 99].map do |id|
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id = #{id} AND assignments.id IN " \
+        "(SELECT assignment_id FROM public.lookup_view) LIMIT 1"
+    end)
+    expect_flips(*[1, 99].map do |id|
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id = #{id} AND assignments.id IN " \
+        "(SELECT lookup_view.assignment_id + 0 FROM public.lookup_view) LIMIT 1"
+    end)
+  end
+
   it "renames a table its subqueries read, when none of them has a FROM item of that name" do
     expect_rewrites(
       "SELECT 1 AS one FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
@@ -488,6 +534,23 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
         "SELECT 1 AS one FROM public.holders WHERE holders.id IN (SELECT posts.id FROM public.posts " \
         "WHERE posts IS NULL) LIMIT 1"
       )
+    end
+
+    # 20261003-44: an unaliased function in FROM goes by its own name too, and
+    # reads as a whole row when it returns a composite.
+    it "refuses one that names an unaliased function in FROM, which the subquery's column of that name would capture" do
+      conn.exec(<<~SQL)
+        CREATE TYPE public.rec AS (a int);
+        CREATE FUNCTION public.fx() RETURNS public.rec LANGUAGE sql IMMUTABLE AS 'SELECT ROW(NULL)::public.rec';
+        CREATE TABLE public.fxholders (id int PRIMARY KEY, fx int);
+        INSERT INTO public.fxholders VALUES (1, 5), (2, 6);
+      SQL
+      sql = "SELECT 1 AS one FROM public.posts, public.fx() WHERE posts.id IN (SELECT fxholders.id " \
+            "FROM public.fxholders) AND fx IS NULL LIMIT 1"
+      expect(runs(sql)).to eq([["1"]])
+      expect_no_flip(sql,
+                     "SELECT 1 AS one FROM public.fxholders WHERE fxholders.id IN (SELECT posts.id " \
+                     "FROM public.posts, public.fx() WHERE fx IS NULL) LIMIT 1")
     end
 
     it "still flips when a whole row is written qualified" do

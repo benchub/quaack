@@ -616,6 +616,43 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(6)).to include("rule" => "complex_check", "cycle" => nil)
       end
     end
+
+    # 20261003-43: a name the catalog would quote goes out quoted, and a
+    # table matches on its schema and its name separately.
+    context "when the cycle's tables have names that need quoting" do
+      def refused(cycle) = tested(false, nil, "fk_cycle").merge("refused" => true, "cycle" => cycle)
+
+      let(:kw) { %w[action name a$b select int left] }
+
+      let(:outcome) do
+        payload_of do |store|
+          store.write("schema_subset", "tables" => [["Sales", "Acc\"ounts"], %w[public user], %w[a b.c],
+                                                    *kw.map { %w[public] + [it] }],
+                                       "ddl" => "")
+          stored(store, 2, tested: refused([["Sales", "Acc\"ounts"], %w[public user], ["Sales", "Acc\"ounts"]]),
+                           survived: false)
+          stored(store, 3, tested: refused([%w[a b.c], %w[public user], %w[a b.c]]), survived: false)
+          stored(store, 4, tested: refused([%w[a.b c], %w[public user], %w[a.b c]]), survived: false)
+          stored(store, 5, tested: refused(kw.map { %w[public] + [it] } + [%w[public action]]), survived: false)
+        end
+      end
+
+      it "sends mixed-case, quote-bearing, keyword, and dotted names quoted as the catalog quotes them" do
+        expect(rewrite(2)["cycle"]).to eq(['"Sales"."Acc""ounts"', 'public."user"', '"Sales"."Acc""ounts"'])
+        expect(rewrite(3)["cycle"]).to eq(['a."b.c"', 'public."user"', 'a."b.c"'])
+      end
+
+      # Pinned to quote_ident's own rule: only unreserved keywords stay bare.
+      it "quotes exactly as quote_ident does: unreserved keywords bare, other keywords and a $ name quoted" do
+        expect(rewrite(5)["cycle"]).to eq(%w[public.action public.name] + ['public."a$b"', 'public."select"',
+                                                                           'public."int"', 'public."left"',
+                                                                           "public.action"])
+      end
+
+      it "sends no cycle whose dotted schema and name only join to a held table's string" do
+        expect(rewrite(4)).to include("rule" => "fk_cycle", "cycle" => nil)
+      end
+    end
   end
 
   describe "where each rewrite came from (rewrite-rules)" do
@@ -792,6 +829,24 @@ RSpec.describe "quaacks report-payload" do
           expect(report["top"]).to eq([])
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "rewrite-test",
                                                "rules" => %w[key_in_self_join key_in_self_join] }])
+        end
+      end
+
+      # 20261003-43: found by the end-to-end fk_cycle run. The bug check reads a
+      # refusal's fate without a context, so it must not look for the cycle's tables.
+      context "with a rule-made rewrite that rewrite-test refused for an fk_cycle" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "fk_cycle").merge("refused" => true,
+                                                                "cycle" => [%w[public a], %w[public b], %w[public a]]),
+                      false)
+          end
+        end
+
+        it "builds the report, names no rule bug, and sends the cycle as untested" do
+          expect(report["rule_bugs"]).to eq([])
+          expect(report["rewrites"].find { it["rewrite"] == "rewrite_2" })
+            .to include("fate" => "rewrite_test_untested", "rule" => "fk_cycle", "cycle" => nil)
         end
       end
 

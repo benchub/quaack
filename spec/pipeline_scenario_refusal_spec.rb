@@ -113,3 +113,67 @@ RSpec.describe ScenarioRefusalRun do
     end
   end
 end
+
+# Task 20261003-43: the same run, but the refusal is an fk_cycle (DESIGN.md's
+# rewrite-test). A NOT NULL foreign key cycle between orders and a mixed-case
+# "Accounts" table can't be loaded, so the rule's rewrite is never tested, and
+# the report names the cycle's tables in the order the foreign keys point,
+# the mixed-case one quoted as the catalog quotes it.
+module FkCycleRun
+  CYCLE = <<~SQL
+    CREATE TABLE public."Accounts" (id int PRIMARY KEY, order_id int NOT NULL);
+    INSERT INTO public."Accounts" SELECT 1, min(id) FROM public.orders;
+    ALTER TABLE public.orders ADD COLUMN account_id int NOT NULL DEFAULT 1;
+    ALTER TABLE public.orders ADD FOREIGN KEY (account_id) REFERENCES public."Accounts";
+    ALTER TABLE public."Accounts" ADD FOREIGN KEY (order_id) REFERENCES public.orders;
+  SQL
+  QUERY = PipelineReplay::RULE_QUERY.with(name: "fk_cycle")
+
+  module_function
+
+  def cached
+    @cached ||= begin
+      server = TestPostgres.server
+      Dir.mktmpdir("quaack-fk-cycle") do |home|
+        prod, racetrack = PromptPack.databases(server, QUERY)
+        [prod, racetrack].each { add_cycle(server, it) }
+        PromptPack.with_env(home, server, prod) { ScenarioRefusalRun.twice(home, server, prod, racetrack) }
+      ensure
+        PipelineReplay.drop(server, [prod, racetrack, "#{racetrack}_arena"].compact)
+      end
+    end
+  end
+
+  def add_cycle(server, db)
+    conn = PG.connect(host: server.host, port: server.port, dbname: db, user: TestPostgres::USER,
+                      password: TestPostgres::PASSWORD)
+    conn.exec(CYCLE)
+  ensure
+    conn&.close
+  end
+end
+
+RSpec.describe FkCycleRun do
+  def self.cycle_spec(&)
+    TestPgDump.examples(self, "runs the pipeline over an fk_cycle schema, with a pg_dump of the test server's " \
+                              "major version", &)
+  end
+
+  cycle_spec do
+    let(:runs) { described_class.cached }
+    let(:rewrite) { runs.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
+
+    it "finishes both runs and sends the rewrite as untested, by fk_cycle, naming the cycle's tables in order" do
+      expect([runs.first_error, runs.second_error]).to eq([nil, nil])
+      expect(rewrite).to include("fate" => "rewrite_test_untested", "rule" => "fk_cycle",
+                                 "cycle" => ["public.orders", 'public."Accounts"', "public.orders"])
+    end
+
+    it "says in the report file which tables form the cycle" do
+      cycle = ["public.orders", %(public.&quot;Accounts&quot;), "public.orders"]
+      expect(runs.html).to include("because its tables&#39; foreign keys form a cycle QUAACK can&#39;t load " \
+                                   "(#{cycle.map { %(<code class="sql">#{it}</code>) }.join(" -&gt; ")}), so it " \
+                                   "never tested this rewrite")
+    end
+  end
+end
