@@ -3,6 +3,8 @@
 require "pg_query"
 require_relative "node_rewrite"
 require_relative "pg_array"
+require_relative "redacted_ddl_text"
+require_relative "table_name"
 
 module Quaack
   module Enclave
@@ -34,10 +36,31 @@ module Quaack
 
       def ddl(candidate)
         parse = PgQuery.parse(candidate.to_ddl)
-        stmt = parse.tree.stmts.first.stmt.index_stmt
-        mask_all(stmt.index_params)
-        stmt.where_clause = predicate(stmt.where_clause, allowed(candidate.table))
+        redact!(parse.tree.stmts.first.stmt.index_stmt, allowed(candidate.table))
         PgQuery.deparse(parse.tree)
+      end
+
+      # Whether text, a DDL string as #ddl made it (its masks written ?),
+      # is already redacted: one CREATE INDEX that redacting again, with
+      # the same rules, over the table it names, changes nothing but the
+      # masks' spelling. A literal #ddl would have masked, or a statement
+      # of any other shape, is false. This is the check on the way out, so
+      # it never trusts how the string was made. Never raises.
+      def redacted?(text)
+        once = RedactedDdlText.parse(text)
+        return false unless once
+
+        twice = RedactedDdlText.parse(text)
+        stmt = twice.tree.stmts.first.stmt.index_stmt
+        redact!(stmt, allowed(TableName.new(schema: stmt.relation.schemaname, name: stmt.relation.relname)))
+        RedactedDdlText.spelled(once) == RedactedDdlText.spelled(twice)
+      rescue PgQuery::ParseError, ArgumentError
+        false
+      end
+
+      def redact!(stmt, allowed)
+        mask_all(stmt.index_params)
+        stmt.where_clause = predicate(stmt.where_clause, allowed)
       end
 
       def allowed(table) = @allowed.fetch([table.schema, table.name], {})
@@ -63,7 +86,7 @@ module Quaack
         values = allowed[column]
         return unless values
 
-        constants.each { |c| masked!(c) unless allowed_constant?(c, values, array_text) }
+        constants.each { |c| masked!(c) unless c.node == :param_ref || allowed_constant?(c, values, array_text) }
         node
       end
 
@@ -123,7 +146,7 @@ module Quaack
 
       def const_node(node)
         node = uncast(node)
-        node if node&.node == :a_const
+        node if %i[a_const param_ref].include?(node&.node)
       end
 
       def masked!(node) = node.param_ref = PgQuery::ParamRef.new(number: 0)

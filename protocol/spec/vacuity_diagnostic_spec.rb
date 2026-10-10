@@ -26,9 +26,15 @@ RSpec.describe Quaack::Protocol::VacuityDiagnostic do
     expect(valid?({})).to be(true)
   end
 
+  it "caps s1_rows at MAX_ROWS, a few million, inclusive" do
+    expect(described_class::MAX_ROWS).to eq(2_000_000)
+    expect(valid?({ "s1_rows" => described_class::MAX_ROWS })).to be(true)
+    expect(valid?({ "s1_rows" => described_class::MAX_ROWS + 1 })).to be(false)
+  end
+
   it "refuses a rule not on the list, a non-count, and a negative or huge count, never quoting it" do
     [{ "s1_load_rule" => sentinel }, { "s1_load_rule" => 5 }, { "s1_rows" => sentinel }, { "s1_rows" => "3" },
-     { "s1_rows" => -1 }, { "s1_rows" => 10**13 }, { "s1_rows" => 1.5 }].each do |fields|
+     { "s1_rows" => -1 }, { "s1_rows" => 10**13 }, { "s1_rows" => 10**12 }, { "s1_rows" => 1.5 }].each do |fields|
       expect(valid?(fields)).to be(false), fields.inspect
     end
   end
