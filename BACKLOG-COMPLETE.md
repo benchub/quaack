@@ -9041,3 +9041,13 @@ From the review of 20261009-26. The light theme's cream stripe `#b08a1e` is 2.96
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-35, second commit; review clean). Light `--minor-edge` is now #9a7615 (3.87:1 on the cream, 4.22:1 on the page), with a new contrast spec for both themes.
+
+### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have".
+
+The user, 2026-10-09. Remove the "Tried for" column from the `#existing-indexes` table in the template (the other columns stay: Index, Your index that covers it, Its size). Update README.md's bullet for that table, which says it lists "the queries it was tried for", and DESIGN.md if it names the column, and the report spec, with a test that the header and cells are gone and the others remain. Check that nothing else reads the removed cells (a helper such as `searches(e)` may then be used by one table only). The user decided (2026-10-09) that the "Indexes the planner wouldn't use" table (`#declined-indexes`) loses its own "Tried for" column too. Remove both, and reword the intro lines of both tables. The intro line above the table may mention it ("An index is listed once, with every query it was tried for"), so reword it to match.
+
+- **Depends on:** None. Edits the same template section as 20261009-34, so build after it lands.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-38; review clean). Both index-idea tables lose "Tried for"; the `searches` helper is gone; README.md and DESIGN.md updated. The reviewer saw each suite green but not one clean unpiped `rake` line; the driver suite passed on its own (1819 examples).
