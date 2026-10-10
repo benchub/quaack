@@ -77,13 +77,13 @@ RSpec.describe Quaack::Enclave::AtomPosition do
     [verdicts(original, made.first), made.first]
   end
 
-  it "calls only the conjuncts key_in_self_join left in the outer WHERE unchanged" do
+  it "calls every atom changed when key_in_self_join moves predicates into the outer WHERE" do
     sql = "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = $1) AND t.loose = $2"
     got, rewrite = verdicts_of(rules::KeyInSelfJoin.new, sql)
 
     expect(rewrite).to eq("SELECT t.id FROM public.t WHERE t.x = $1 AND t.loose = $2")
     expect(got).to eq("t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = $1)" => false, "t2.x = $1" => false,
-                      "t.loose = $2" => true)
+                      "t.loose = $2" => false)
   end
 
   it "calls every atom changed when or_to_union copies each into a UNION arm" do
@@ -97,13 +97,13 @@ RSpec.describe Quaack::Enclave::AtomPosition do
     expect(rewrite).to include("s.user_id = $1").and include("cp.user_id = $2").and include("a.id IN ($3, $4)")
   end
 
-  it "calls the conjunct beside a NOT IN unchanged, and the NOT IN and its subquery's atoms changed" do
+  it "calls every atom changed when not_in_to_not_exists adds a NOT EXISTS beside the other conjunct" do
     sql = "SELECT users.* FROM public.users WHERE users.account_id = $1 AND users.id NOT IN " \
           "(SELECT memberships.user_id FROM public.memberships WHERE memberships.group_id = $2)"
     got, rewrite = verdicts_of(rules::NotInToNotExists.new, sql)
 
     expect(rewrite).to include("NOT EXISTS").and include("memberships.group_id = $2")
-    expect(got).to eq("users.account_id = $1" => true,
+    expect(got).to eq("users.account_id = $1" => false,
                       "users.id IN (SELECT memberships.user_id FROM public.memberships WHERE " \
                       "memberships.group_id = $2)" => false,
                       "memberships.group_id = $2" => false)
@@ -152,7 +152,7 @@ RSpec.describe Quaack::Enclave::AtomPosition do
     got, rewrite = verdicts_of(rules::TransitivePredicateCopy.new, sql, literals: true)
 
     expect(rewrite).to include("courses.id IN ($1, $2)").and include("enrollments.course_id IN ($1, $2)")
-    expect(got).to include("courses.id IN ($1, $2)" => false, "enrollments.user_id = $3" => true)
+    expect(got).to include("courses.id IN ($1, $2)" => false, "enrollments.user_id = $3" => false)
   end
 
   describe "an LLM-style rewrite, which no rule wrote" do
@@ -160,6 +160,14 @@ RSpec.describe Quaack::Enclave::AtomPosition do
       conn.prepare("quaack_llm_check", sql)
       conn.exec("DEALLOCATE quaack_llm_check")
       true
+    end
+
+    it "calls every atom changed when it adds a soft-delete filter, though it keeps the atom's text" do
+      original = "SELECT e.id FROM public.courses e WHERE e.workflow_state = $1"
+      candidate = "SELECT e.id FROM public.courses e WHERE e.workflow_state = $1 AND e.id IS NOT NULL"
+
+      expect([original, candidate].all? { prepared?(it) }).to be(true)
+      expect(verdicts(original, candidate)).to eq("e.workflow_state = $1" => false)
     end
 
     it "calls every atom changed when it reuses an alias for another table" do
@@ -170,9 +178,9 @@ RSpec.describe Quaack::Enclave::AtomPosition do
       expect(verdicts(original, candidate)).to eq("e.workflow_state = $1" => false, "e.id > $2" => false)
     end
 
-    it "calls an atom unchanged when the rewrite only changed another predicate of the same table" do
+    it "calls an atom unchanged when the rewrite only dropped another predicate of the same table" do
       original = "SELECT e.id FROM public.courses e WHERE e.workflow_state = $1 AND e.id > $2"
-      candidate = "SELECT e.id FROM public.courses e WHERE e.workflow_state = $1 AND e.id >= $2"
+      candidate = "SELECT e.id FROM public.courses e WHERE e.workflow_state = $1"
 
       expect([original, candidate].all? { prepared?(it) }).to be(true)
       expect(verdicts(original, candidate)).to eq("e.workflow_state = $1" => true, "e.id > $2" => false)

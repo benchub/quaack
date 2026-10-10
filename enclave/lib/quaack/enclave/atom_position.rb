@@ -18,8 +18,9 @@ module Quaack
     # more than one statement), a different scope signature (everything in
     # the one SELECT but its WHERE, HAVING, and join ONs, so a locking clause
     # or INTO counts), an atom it can't place, a different number of copies
-    # of the atom's key, or a new predicate that shares a $n or a column
-    # name with the atom. Never raises for a query it can't parse: that's
+    # of the atom's key, or any top-level atom in the rewrite that the
+    # original lacks (a new filter can hide what an untested atom never
+    # exercised, so it changes every atom). Never raises for a query it can't parse: that's
     # all false.
     #
     # Trust boundary: it reads parse trees and returns booleans. Nothing it
@@ -56,8 +57,9 @@ module Quaack
         candidate = Analysis.of(candidate_sql)
         return none unless original && candidate
 
-        new_material = candidate.new_material(original)
-        paths.map { |path| original.unchanged?(path, candidate, new_material) }
+        return none if candidate.new_atoms?(original)
+
+        paths.map { |path| original.unchanged?(path, candidate) }
       rescue PgQuery::ParseError
         none
       end
@@ -111,19 +113,18 @@ module Quaack
 
         # Whether the atom at path, an atom of the original, is unchanged in
         # the candidate: its top-level atom has the same key the same number
-        # of times, and no new atom of the candidate shares a $n or a column
-        # name with it.
-        def unchanged?(path, candidate, new_material)
+        # of times.
+        def unchanged?(path, candidate)
           top = tops.find { path.first(it.path.size) == it.path } or return false
-          return false unless @counts[top.key] == candidate.counts[top.key]
 
-          Taint.of(top.node).none? { new_material.include?(it) }
+          @counts[top.key] == candidate.counts[top.key]
         end
 
-        # The $ns and column names of the candidate's top-level atoms that
-        # have no counterpart in the original.
-        def new_material(original)
-          tops.reject { original.counts.key?(it.key) }.flat_map { Taint.of(it.node) }.to_set
+        # Whether this (the candidate) has a top-level atom, in any WHERE,
+        # HAVING, or ON, that the original lacks. A new filter can hide the
+        # rows an untested atom never exercised, so it changes every atom.
+        def new_atoms?(original)
+          tops.any? { !original.counts.key?(it.key) }
         end
 
         protected
@@ -196,19 +197,6 @@ module Quaack
             "#{field.name}=#{of(value)}" unless value.nil?
           end
           "#{node.class.name.split("::").last}(#{fields.join(",")})"
-        end
-      end
-
-      # The $n numbers and column names a parse node names, anywhere inside.
-      module Taint
-        module_function
-
-        def of(node)
-          case node
-          when PgQuery::ParamRef then ["$#{node.number}"]
-          when PgQuery::ColumnRef then [node.fields.last&.string&.sval || "*"]
-          else Tree.children(node).flat_map { of(it) }
-          end
         end
       end
     end

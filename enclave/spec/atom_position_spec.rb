@@ -31,16 +31,22 @@ RSpec.describe Quaack::Enclave::AtomPosition do
         .to eq("t.a = $1" => true, "t.b = $2" => true, "t.b IN ($3, $4)" => false)
     end
 
-    it "is unchanged when the rewrite only added a conjunct on other columns and placeholders" do
-      original = "SELECT t.id #{from} WHERE t.a = $1"
-      candidate = "SELECT t.id #{from} WHERE t.a = $1 AND u.x = $2"
-
-      expect(verdicts(original, candidate, "t.a = $1")).to eq("t.a = $1" => true)
+    # A new filter may hide every row the untested atom never exercised, so
+    # any new atom in the scope, in the WHERE or an ON, changes every atom.
+    it "is changed when the rewrite added a filter anywhere in the scope, whatever it names" do
+      plain = "SELECT t.id FROM public.t WHERE t.a = $1"
+      joined = "SELECT t.id FROM public.t JOIN public.u ON u.id = t.uid"
+      [[plain, "#{plain} AND t.deleted_at IS NULL"], [plain, "#{plain} AND t.b > 0"],
+       ["SELECT t.id #{from} WHERE t.a = $1", "SELECT t.id #{from} WHERE t.a = $1 AND u.x = $2"],
+       ["#{joined} WHERE t.a = $1", "#{joined} AND u.x = 2 WHERE t.a = $1"]].each do |original, candidate|
+        expect(verdicts(original, candidate, "t.a = $1")).to eq("t.a = $1" => false), candidate
+      end
     end
 
     it "is unchanged in a join's ON when the same join keeps it" do
       original = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.x > $1 WHERE t.a = $2"
-      candidate = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.x > $1 WHERE t.a = $2 AND t.b = $3"
+      candidate = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.x > $1 WHERE t.a = $2"
+      original = "#{original} AND t.b = $3"
 
       expect(verdicts(original, candidate, "u.x > $1", "t.a = $2")).to eq("u.x > $1" => true, "t.a = $2" => true)
     end
@@ -102,11 +108,11 @@ RSpec.describe Quaack::Enclave::AtomPosition do
   end
 
   describe "an ON that a rewrite changed" do
-    it "leaves an unchanged atom of the WHERE unchanged, and changes the ON conjunct" do
+    it "changes the ON conjunct and, with a new atom in the scope, the WHERE atom too" do
       original = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.x > $1 WHERE t.a = $2"
       candidate = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.y > $3 WHERE t.a = $2"
 
-      expect(verdicts(original, candidate, "u.x > $1", "t.a = $2")).to eq("u.x > $1" => false, "t.a = $2" => true)
+      expect(verdicts(original, candidate, "u.x > $1", "t.a = $2")).to eq("u.x > $1" => false, "t.a = $2" => false)
     end
   end
 
@@ -200,19 +206,29 @@ RSpec.describe Quaack::Enclave::AtomPosition do
     end
   end
 
-  describe "taint from new predicates" do
+  describe "a rewrite that adds, wraps, or restructures the scope" do
+    it "changes every atom when it adds a WITH, an INTO, or a locking clause" do
+      original = "SELECT t.id FROM public.t WHERE t.a = $1"
+
+      ["WITH w AS (SELECT 1) SELECT t.id FROM public.t WHERE t.a = $1",
+       "SELECT t.id INTO public.copy FROM public.t WHERE t.a = $1",
+       "SELECT t.id FROM public.t WHERE t.a = $1 FOR UPDATE"].each do |candidate|
+        expect(verdicts(original, candidate, "t.a = $1")).to eq("t.a = $1" => false), candidate
+      end
+    end
+
     it "changes an untested atom that shares a placeholder with a new predicate (a copied filter)" do
       original = "SELECT t.id #{from} WHERE t.id = u.id AND t.a < $1 AND t.b = $2"
       candidate = "SELECT t.id #{from} WHERE t.id = u.id AND t.a < $1 AND u.a < $1 AND t.b = $2"
 
-      expect(verdicts(original, candidate, "t.a < $1", "t.b = $2")).to eq("t.a < $1" => false, "t.b = $2" => true)
+      expect(verdicts(original, candidate, "t.a < $1", "t.b = $2")).to eq("t.a < $1" => false, "t.b = $2" => false)
     end
 
-    it "changes an untested atom that shares a column name with a new predicate" do
+    it "changes every atom when the new predicate shares a column name with only some" do
       original = "SELECT t.id FROM public.t WHERE t.a = $1 AND t.b = $2"
       candidate = "SELECT t.id FROM public.t WHERE t.a = $1 AND t.b = $2 AND t.b IS NOT NULL"
 
-      expect(verdicts(original, candidate, "t.a = $1", "t.b = $2")).to eq("t.a = $1" => true, "t.b = $2" => false)
+      expect(verdicts(original, candidate, "t.a = $1", "t.b = $2")).to eq("t.a = $1" => false, "t.b = $2" => false)
     end
   end
 
