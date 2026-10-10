@@ -1006,3 +1006,12 @@ Rendering: inline SVG generated in Ruby, like the funnel (no JavaScript or exter
 - **Came from:** The user, 2026-10-10.
 - **Design:** report, burndown.
 - **Status:** todo
+
+### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`).
+
+From the review of 20261010-35, pre-existing on `main` and the branch: `(SELECT count(*) ...) > 2 AND title = 'x' AND score > 3` leaves `title` and `score` untested, because their near misses have one child and so fail the count too. A near miss for a non-count atom needs the parent to keep its n+1 children (and fail only its own atom). Find the cause in the scenario build, fix it without weakening the guard, and add the corpus shape.
+
+- **Depends on:** 20261010-35 (landed when its fix round lands).
+- **Came from:** The review of 20261010-35, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
