@@ -13,7 +13,7 @@ module Quaack
         SQLSTATE = /\A[0-9A-Z]{5}\z/
         # A volatile_function refusal's function (DESIGN.md's volatility), as
         # the enclave's ErrorFilter shapes it: one unquoted qualified name. A
-        # column's table and a cycle's tables have the same shape.
+        # column's table has the same shape.
         FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
         # An intake refusal's reason (DESIGN.md's input), one fixed cause.
         REASON_RULES = %w[query_unreadable plan_unreadable].freeze
@@ -33,10 +33,15 @@ module Quaack
         IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
         TYPE = /\A[a-z_][a-z0-9_ $.,()\[\]]{0,127}\z/
         # An fk_cycle refusal's tables (DESIGN.md's rewrite-test), as the enclave's
-        # ErrorFilter shapes them: 3 to 64 plain schema.name Strings, the
-        # last the first again.
+        # ErrorFilter shapes them: 3 to 64 schema.name Strings (quoted where the
+        # catalog quotes them), the last the first again.
         CYCLE_RULE = "fk_cycle"
         CYCLE_SIZES = (3..64)
+        # One part of a cycle's table name, as the catalog's quote_ident writes
+        # it: a bare lowercase name, or a quoted one of printable characters
+        # (no control or format characters) whose quote marks are doubled.
+        CYCLE_PART = /(?:[a-z_][a-z0-9_$]{0,62}|"(?:[^"\p{C}]|""){1,126}")/
+        CYCLE_TABLE = /\A#{CYCLE_PART}\.#{CYCLE_PART}\z/
         # A dump_object_unreadable refusal's tables (DESIGN.md's schema-dump), as
         # the enclave's ErrorFilter shapes them: 1 to 64 plain schema.name
         # Strings, for the operator.
@@ -66,7 +71,7 @@ module Quaack
         def cycle(cycle)
           return unless cycle.instance_of?(Array) && CYCLE_SIZES.cover?(cycle.size) && cycle.first == cycle.last
 
-          cycle if cycle.all? { shaped(it, FUNCTION) }
+          cycle if cycle.all? { shaped(it, CYCLE_TABLE) }
         end
 
         def tables(tables)

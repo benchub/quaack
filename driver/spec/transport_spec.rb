@@ -1134,7 +1134,22 @@ RSpec.describe Quaack::Driver::Transport do
                                   "cycle public.accounts -> billing.courses -> public.accounts, exit 0)")
     end
 
+    it "shows a cycle's quoted names, as the catalog quotes them" do
+      cycle = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', '"Sales"."Acc""ounts"']
+      error = refusal(JSON.generate({ type: "error", rule: "fk_cycle", cycle: }))
+
+      expect(error.cycle).to eq(cycle)
+      expect(error.rule_with_note).to start_with(%(fk_cycle: #{cycle.join(" -> ")}. ))
+    end
+
     [
+      ["a quoted name with a control character", ["\"Sales\".\"Acc\nounts\"", "public.b", "\"Sales\".\"Acc\nounts\""]],
+      ["a quoted name with an unescaped quote", ['"Sa"les".a', "public.b", '"Sa"les".a']],
+      ["a quoted name with junk after it", ['"Sales"."A" SENTINEL', "public.b", '"Sales"."A" SENTINEL']],
+      ["a quoted name with a bidi override", ["\"Sa‮les\".a", "public.b", "\"Sa‮les\".a"]],
+      ["a quoted name with an escape", ["\"Sa\e[31mles\".a", "public.b", "\"Sa\e[31mles\".a"]],
+      ["an empty quoted name", ['"".a', "public.b", '"".a']],
+      ["a quoted name of more than 126 characters", ["public.\"#{"a" * 127}\"", "public.b", "public.\"#{"a" * 127}\""]],
       ["a sentinel table", %w[public.a SENTINEL public.a]],
       ["a sentinel after a table", ["public.a SENTINEL", "public.b", "public.a SENTINEL"]],
       ["an end that isn't its start", %w[public.a public.b public.c]],

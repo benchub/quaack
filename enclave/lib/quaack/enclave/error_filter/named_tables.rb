@@ -11,15 +11,20 @@ module Quaack
         # A cycle names at least two tables and its first again, and at
         # most 64 in all.
         SIZES = (3..64)
+        # One part of a name, as the catalog's quote_ident writes it: a bare
+        # lowercase name, or a quoted one of printable ASCII (ErrorFilter's
+        # shaped? refuses the rest) whose quote marks are doubled.
+        PART = /(?:[a-z_][a-z0-9_$]{0,62}|"(?:[^"\x00-\x1f\x7f]|""){1,126}")/
+        NAME = /\A#{PART}\.#{PART}\z/
 
         module_function
 
-        # cycle if it's an Array of SIZES plain schema.name Strings whose
+        # cycle if it's an Array of SIZES plain schema.name Strings (NAME) whose
         # last is its first, and nil otherwise.
         def check(cycle)
           return unless cycle.instance_of?(Array) && SIZES.cover?(cycle.size) && cycle.first == cycle.last
 
-          cycle if cycle.all? { ErrorFilter.shaped?(it, FUNCTION) }
+          cycle if cycle.all? { ErrorFilter.shaped?(it, NAME) }
         end
       end
 
