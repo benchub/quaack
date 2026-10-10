@@ -21,8 +21,6 @@ RSpec.describe Quaack::Enclave::Scenarios::Builder do
     [builder.build, builder.spills]
   end
 
-  def names(rows) = rows.map { |r| r.columns.zip(r.values).to_h.fetch("name") }
-
   it "adds a fixture of S1's near misses alone, with no hit, for LIMIT without ORDER BY" do
     scenarios, spills = build("SELECT 1 AS one FROM fx.users WHERE fx.users.email = 'a@b' " \
                               "AND fx.users.name = 'ann' LIMIT 1")
@@ -41,10 +39,18 @@ RSpec.describe Quaack::Enclave::Scenarios::Builder do
     ].each { |sql| expect(build(sql).last).to eq({}), sql }
   end
 
+  # With a unique email, both name near misses hold the hit's email, so
+  # they collide with the hit in S1 and with each other alone: one of them
+  # spills there too, which mustn't count again.
   it "doesn't count the near misses alone as dropped" do
-    builder = described_class.new(conn, PgQuery.parse("SELECT 1 FROM fx.users WHERE fx.users.email = 'a@b' LIMIT 1"))
-    builder.build
-    expect(builder.dropped).to eq(0)
-    expect(names(builder.spills.fetch(:s1).first).size).to eq(1)
+    conn.exec("CREATE UNIQUE INDEX ON fx.users (email)")
+    where = "WHERE fx.users.email = 'a@b' AND fx.users.name <> 'x' AND fx.users.name <> 'y'"
+    dropped = ["LIMIT 1", "ORDER BY fx.users.id LIMIT 1"].map do |tail|
+      builder = described_class.new(conn, PgQuery.parse("SELECT 1 FROM fx.users #{where} #{tail}"))
+      builder.build
+      [builder.dropped, builder.spills.fetch(:s1, []).size]
+    end
+    expect(dropped.first.first).to eq(dropped.last.first)
+    expect(dropped.first.last).to be > dropped.last.last + 1
   end
 end
