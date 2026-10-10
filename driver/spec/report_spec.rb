@@ -15,6 +15,34 @@ RSpec.describe Quaack::Driver::Report do
       "same in the rewrite."
   end
 
+  # The report's two color themes as {name => {"--var" => "#hex"}}, from its stylesheet, and WCAG's contrast ratio
+  # between two #hex colors.
+  def theme_variables
+    style = html[%r{<style>(.*?)</style>}m, 1]
+    dark = style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1]
+    light = style[/^  :root \{(.*?)^  \}/m, 1]
+    { light: light, dark: dark }.transform_values { |theme| theme.scan(/(--[a-z-]+): (#\h{3,6})/).to_h }
+  end
+
+  # A #hex color (three or six digits) as its red, green and blue, 0 to 255.
+  def rgb(hex)
+    hex = hex.chars.drop(1).map { |c| c * 2 }.join if hex.length == 4
+    hex.delete("#").scan(/\h\h/).map(&:hex)
+  end
+
+  def luminance(hex)
+    r, g, b = rgb(hex).map { |c| c / 255.0 }.map { |c| c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055)**2.4 }
+    (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
+  end
+
+  # How far apart two #hex colors are, as the straight-line distance between their RGB values.
+  def distance(one, other) = Math.sqrt(rgb(one).zip(rgb(other)).sum { |a, b| (a - b)**2 })
+
+  def contrast(one, other)
+    hi, lo = [luminance(one), luminance(other)].sort.reverse
+    (hi + 0.05) / (lo + 0.05)
+  end
+
   def esc(text) = text.gsub("'", "&#39;")
 
   def render(payload, **) = described_class.render(payload, run_id: "RUN-1", **)
@@ -236,6 +264,34 @@ RSpec.describe Quaack::Driver::Report do
       expect(verdict(render(payload))).to include("The verdict: minor improvements possible")
     end
 
+    describe "links" do
+      let(:backgrounds) do
+        %w[--bg --panel --head-bg --code-bg --summary-bg --good-bg --minor-bg --bug-bg --rose-bg --query-bg
+           --baseline-bg --differs-bg]
+      end
+
+      it "are the accent color, with their own visited and hover colors" do
+        style = html[%r{<style>(.*?)</style>}m, 1]
+        expect(style[/^  a \{[^}]*\}/]).to include("color: var(--accent)")
+        expect(style[/^  a:visited \{[^}]*\}/]).to include("color: var(--link-visited)")
+        expect(style[/^  a:hover \{[^}]*\}/]).to include("color: var(--link-hover)")
+        expect(style[/^  a:hover \{[^}]*\}/]).to include("text-decoration-thickness")
+        theme_variables.each_value do |v|
+          expect([v["--accent"], v["--link-visited"], v["--link-hover"]].uniq.size).to eq(3)
+        end
+      end
+
+      it "read at 4.5:1 or better on the page and on every box and table a link can sit in, in both themes" do
+        theme_variables.each do |name, v|
+          %w[--accent --link-visited --link-hover].each do |link|
+            backgrounds.each do |bg|
+              expect(contrast(v[link], v[bg])).to be >= 4.5, "#{name} #{link} on #{bg}"
+            end
+          end
+        end
+      end
+    end
+
     describe "the verdict section's color" do
       def summary_open(out)
         out[/<section id="summary"[^>]*>/]
@@ -259,25 +315,9 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "keeps the cream stripe at 3:1 or better against the cream background and the page, in both themes" do
-        style = html[%r{<style>(.*?)</style>}m, 1]
-        dark = style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1]
-        light = style[/^  :root \{(.*?)^  \}/m, 1]
-        lum = lambda do |short|
-          hex = short.length == 4 ? short.chars.drop(1).map { |c| c * 2 }.join : short.delete("#")
-          r, g, b = hex.scan(/\h\h/).map do |c|
-            c = c.hex / 255.0
-            c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055)**2.4
-          end
-          (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
-        end
-        ratio = lambda do |a, b|
-          hi, lo = [lum.call(a), lum.call(b)].sort.reverse
-          (hi + 0.05) / (lo + 0.05)
-        end
-        [light, dark].each do |theme|
-          v = theme.scan(/(--[a-z-]+): (#\h{3,6})/).to_h
-          expect(ratio.call(v["--minor-edge"], v["--minor-bg"])).to be >= 3.0
-          expect(ratio.call(v["--minor-edge"], v["--bg"])).to be >= 3.0
+        theme_variables.each_value do |v|
+          expect(contrast(v["--minor-edge"], v["--minor-bg"])).to be >= 3.0
+          expect(contrast(v["--minor-edge"], v["--bg"])).to be >= 3.0
         end
       end
 
@@ -1038,6 +1078,19 @@ RSpec.describe Quaack::Driver::Report do
       expect(style).to include("border-left: 5px solid var(--stripe)")
     end
 
+    it "tints each kind's heading differently from the page, the panel and the table header, with readable text" do
+      theme_variables.each do |name, v|
+        %w[--sb-teal --sb-violet --sb-brown].each do |tint|
+          %w[--bg --panel --head-bg].each do |other|
+            expect(v[tint]).not_to eq(v[other]), "#{name} #{tint} matches #{other}"
+            expect(distance(v[tint], v[other])).to be >= 15, "#{name} #{tint} against #{other}"
+          end
+          expect(contrast(v["--text"], v[tint])).to be >= 4.5, "#{name} text on #{tint}"
+        end
+        expect(v.values_at("--sb-teal", "--sb-violet", "--sb-brown").uniq.size).to eq(3)
+      end
+    end
+
     it "shows each candidate's blocks and index footprint, right-aligned, with separators and a fitting unit" do
       payload["top"][1].merge!("slow_blocks" => 12_345, "total_blocks_sum" => 1_234_567, "footprint" => 5_000_000)
       expect(ranking).to include('<td class="num">12,345</td><td class="num">1,234,567</td>' \
@@ -1622,11 +1675,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(bug_html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten.first(2)).to eq(%w[quaack-bugs summary])
       expect(bug_section).to include("<h2>QUAACK bug: a rule made a wrong rewrite</h2>")
       expect(bug_section).to include("a rule has a bug")
-      expect(bug_section).to include(esc(
-        "<p>The transform rules are meant to be sound: a rewrite one makes should return the same rows as the " \
-        "original query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped " \
-        "these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>"
-      ))
+      sentence = "<p>The transform rules are meant to be sound: a rewrite one makes should return the same rows as " \
+                 "the original query on any data. A test proved each rewrite below wrong, so a rule has a bug. " \
+                 "QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, " \
+                 "with the names of the rules.</p>"
+      expect(bug_section).to include(esc(sentence))
       expect(bug_section).not_to include("mechanical")
     end
 
@@ -2955,7 +3008,8 @@ RSpec.describe Quaack::Driver::Report do
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
                      "<ul><li>", '<td class="step" style="padding-left: 0.65rem">', %(<td><code class="sql">), "<td>",
-                     "<td>by the transform rule ", %(<td><code class="sql">), 'couldn&#39;t describe (<code class="sql">')
+                     "<td>by the transform rule ", %(<td><code class="sql">),
+                     'couldn&#39;t describe (<code class="sql">')
     end
 
     it "prints, escaped, every value a negative report shows" do

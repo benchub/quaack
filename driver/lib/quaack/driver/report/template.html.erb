@@ -3,7 +3,7 @@
 <style>
   :root {
     color-scheme: light dark;
-    --text: #1c2430; --bg: #fff; --panel: #fff; --rule: #d5dbe3; --accent: #2f6fb3;
+    --text: #1c2430; --bg: #fff; --panel: #fff; --rule: #d5dbe3; --accent: #2a64a8; --link-visited: #6b3fa0; --link-hover: #163f73;
     --summary-bg: #eef4fb; --warn: #8a5a00; --bug-bg: #fdecec; --bug-edge: #c0392b;
     --head-bg: #f3f5f8; --code-bg: #f3f5f8; --muted: #5c6674; --note: #515b69;
     --baseline-bg: #f7f8fa; --differs-bg: #fff4d6;
@@ -18,7 +18,7 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --text: #e6eaf0; --bg: #14181f; --panel: #1e242d; --rule: #3a4452; --accent: #6aa8e8;
+      --text: #e6eaf0; --bg: #14181f; --panel: #1e242d; --rule: #3a4452; --accent: #6aa8e8; --link-visited: #c4a3ee; --link-hover: #a9cdf5;
       --summary-bg: #1a2738; --warn: #e5b04a; --bug-bg: #3a1c1c; --bug-edge: #e0675a;
       --head-bg: #252c37; --code-bg: #252c37; --muted: #9aa5b4; --note: #a9b3c1;
       --baseline-bg: #1c222b; --differs-bg: #3d3216;
@@ -38,6 +38,9 @@
   h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 2px solid var(--rule); }
   h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
   p, ul { margin: 0.5rem 0; }
+  a { color: var(--accent); }
+  a:visited { color: var(--link-visited); }
+  a:hover { color: var(--link-hover); text-decoration-thickness: 2px; }
   #summary { background: var(--summary-bg); border-left: 5px solid var(--accent); padding: 0.75rem 1.25rem; }
   #summary.substantial { background: var(--good-bg); border-left-color: var(--good-edge); }
   #summary.minor { background: var(--minor-bg); border-left-color: var(--minor-edge); }
