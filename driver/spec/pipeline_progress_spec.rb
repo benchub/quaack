@@ -104,7 +104,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
     expect(closing("index-search")).to eq(["Searched for indexes"])
     expect(closing("llm-index-ideas"))
-      .to eq(["Got 3 index ideas from the LLM, 1 of them new and tested, 1 set aside untested"])
+      .to eq(["Got 3 index ideas from the LLM, 1 of them new and tested, 1 held back untested"])
     expect(closing("llm-index-refine")).to eq(["No index ideas needed improving"])
     expect(closing("index-rank")).to eq(["Ranked the index ideas"])
   end

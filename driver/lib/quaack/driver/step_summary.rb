@@ -47,13 +47,13 @@ module Quaack
       def kept(outcomes) = outcomes.count { it["outcome"] == "accepted" }
 
       # What an LLM's index ideas came to: how many, how many the enclave
-      # tested as new, and how many it set aside untested (GIN and GiST).
+      # tested as new, and how many it held back untested (GIN and GiST).
       def ideas(ddls, outcomes, kind = "index idea")
         return "Got no #{kind}s from the LLM" if ddls.empty?
 
         aside = outcomes.count { it["outcome"] == "set_aside" }
         got = "Got #{count(ddls.size, kind)} from the LLM, #{kept(outcomes)} of them new"
-        aside.zero? ? got : "#{got} and tested, #{aside} set aside untested"
+        aside.zero? ? got : "#{got} and tested, #{aside} held back untested"
       end
 
       # rewrite-rules', from rewrite-rules' reply, with the rules that fired

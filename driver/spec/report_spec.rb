@@ -2520,8 +2520,11 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "gives a band for a stage with no sentence no hover when everything was recorded" do
-      allow(Quaack::Driver::Report::StageSentences).to receive(:for).and_return(nil)
-      expect(bands(funnel("index"))[2]).not_to include("<title>")
+      expect(Quaack::Driver::Report::StageSentences.for("no-such-stage")).to be_nil
+      svg = Quaack::Driver::Report::View.new(payload, "run")
+                                        .funnel("x", "x", [["A stage", rec(2, 1, dropped: { "r" => 1 }), "no-such-stage"]])
+      expect(bands(svg).size).to eq(1)
+      expect(bands(svg).first).not_to include("<title>")
     end
 
     it "shows a stage the run didn't count as not recorded, never as zero, outside the scale" do
