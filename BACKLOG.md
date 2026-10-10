@@ -1125,8 +1125,6 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 - **Design:** none (test infrastructure).
 - **Status:** todo
 
-### 20261009-26. Verdict section: background color follows the verdict. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261009-27. Verdict section: drop the index definitions.
 
 The verdict table's Plan cell shows `describe(label)` under the plan name (`detail` in `Report::Verdict#candidate_row`), which spells out the label's new indexes. The verdict section doesn't need index definitions. Remove them there. The reader already gets each index's definition in the ranked candidates' tables further down, so check that every definition the verdict showed is still shown somewhere else before dropping it, and keep anything that isn't a definition (the plan's kind, the Index change size). Update DESIGN.md's verdict bullet and the report spec, with a test that plants a sentinel index definition and asserts it's absent from the verdict section but present in the candidates' tables.
@@ -1208,8 +1206,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 ### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-35. Ranking: set each kind's heading apart from its rows. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-36. Verdict section: the cream stripe is a little faint on its own background. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-37. Report: an LLM-written "tl;dr" at the top of "Why the winner reads fewer blocks".
 
