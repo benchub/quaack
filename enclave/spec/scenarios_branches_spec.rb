@@ -52,6 +52,11 @@ RSpec.describe Quaack::Enclave::Scenarios::Branches do
     expect(also(sql, columns, 0) { |chosen| chosen.size == 4 && chosen != [1, 2, 3, 4] }).to be_nil
   end
 
+  it "looks ahead with the first atom of each later arm" do
+    sql = "SELECT 1 FROM fx.a WHERE a.t = '1' OR a.t = '2' OR (a.w = 'd' AND a.m)"
+    expect(also(sql, columns, 0) { |chosen| chosen.size == 2 && chosen != [1, 3] }).to eq([1, 2])
+  end
+
   it "keeps the one-arm-at-a-time choice when it finds one" do
     sql = "SELECT 1 FROM fx.a WHERE a.t = 'x' OR (a.w <> 'd' AND a.m) OR (a.id = 5 AND a.id <> 6)"
     expect(also(sql, columns, 0) { |chosen| chosen != [1, 3] }).to eq([1, 4])

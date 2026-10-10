@@ -124,11 +124,18 @@ module Quaack
         []
       end
 
-      # The S1 row counts of result, the original's rows, or nil for both.
+      # The S1 row counts of result, the original's rows, or nil for both,
+      # each 0 or REPORTED_ROWS, for one or more. S1's rows follow the
+      # query's literals (a count's threshold gives the hit's parent as many
+      # children as pass it, see Scenarios::Unmatched), so an exact count,
+      # or even "two or more", could carry one out of the enclave. Whether
+      # S1 matched anything is the part the diagnostic needs.
       def s1_counts(state, result)
-        state[:s1_rows] = result&.size
-        state[:s1_nonzero_rows] = result && nonzero_rows(result)
+        state[:s1_rows] = result && [result.size, REPORTED_ROWS].min
+        state[:s1_nonzero_rows] = result && [nonzero_rows(result), REPORTED_ROWS].min
       end
+
+      REPORTED_ROWS = 1
 
       # The rule a load failed with if it's on the fixed list, else :other.
       def load_rule(rule)

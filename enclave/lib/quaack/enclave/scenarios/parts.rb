@@ -29,9 +29,10 @@ module Quaack
         end
 
         # chains: the group's tries, then its fallbacks' (each tries for
-        # RowSet#add_any?).
-        def add(chains)
-          return if @sets.first.add_any?(chains.first)
+        # RowSet#add_any?). One that's not kept when it doesn't fit is left
+        # out of dropped and of the further fixtures.
+        def add(chains, kept: true)
+          return if @sets.first.add_any?(chains.first) || !kept
 
           @dropped += 1
           chains.any? { spill?(it) }

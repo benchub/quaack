@@ -22,10 +22,11 @@ module Quaack
       # change. Neither does an outer join whose WHERE never passes the
       # child's NULLs (see Unmatched::Rejects).
       #
-      # A correlated scalar subquery compared to an integer,
-      # (SELECT count(*) FROM o WHERE o.user_id = u.id) > 2, gets the hit's
-      # parent one child past the integer (see Unmatched::Children): with
-      # fewer children in all, the loosened count can't cross it either.
+      # A correlated count compared to an integer,
+      # (SELECT count(*) FROM o WHERE o.user_id = u.id) > 2, gives the hit's
+      # parent as many children as pass the comparison (see
+      # Unmatched::Children): with fewer in all, the loosened count can't
+      # cross it either.
       #
       #   Unmatched.new(parse.tree, atoms, topology).entries
       #   # => [Entry(tables: [users], child: posts, children: 1, cross: nil)]
@@ -43,11 +44,12 @@ module Quaack
           @topology = topology
         end
 
-        # One per parent's tables, with the most children any of its atoms
-        # asks for.
+        # One per parent's tables and child, with the most children any of
+        # its atoms asks for: a parent with two optional children (its posts
+        # and the users who report to it) gets one for each.
         def entries
           found = @atoms.filter_map { |atom| entry(atom) if Topology.equality_join?(atom) }
-          found.group_by(&:tables).map { |_, same| same.max_by(&:children) }
+          found.group_by { [it.tables, it.child, it.cross] }.map { |_, same| same.max_by(&:children) }
         end
 
         private
@@ -132,13 +134,15 @@ module Quaack
         # an atom ANDed into the WHERE of the join's SELECT that's never
         # true on a NULL in the child's columns (WHERE o.state = 'x' after
         # LEFT JOIN o). Only the bare tests STRICT names count, so anything
-        # else (IS NULL, IS DISTINCT FROM, coalesce, an OR) keeps the
-        # group. The other groups test such a join as they would an inner
-        # one.
+        # else (IS NULL, IS DISTINCT FROM, <> ALL, coalesce, an OR) keeps
+        # the group. The other groups test such a join as they would an
+        # inner one. IS NOT NULL keeps it too: on a NOT NULL key
+        # (o.id IS NOT NULL, Rails' where.not(o: { id: nil })) the
+        # unmatched parent is the only row that fails it.
         class Rejects
           # By kind, the operators never true on NULL: nil for every one.
-          STRICT = { equality: %w[= <>], range: nil, like: nil, in: ["IN", "NOT IN", "= ANY"],
-                     null_test: ["IS NOT NULL"] }.freeze
+          # NULL <> ALL('{}') is true, so <> ALL isn't here.
+          STRICT = { equality: %w[= <>], range: nil, like: nil, in: ["IN", "NOT IN", "= ANY"] }.freeze
 
           def initialize(tree, atoms)
             @tree = tree
@@ -177,14 +181,24 @@ module Quaack
           end
         end
 
-        # How many children the hit's parent gets for a join atom in a
-        # correlated scalar subquery compared to an integer: one past it,
-        # so the hit's parent passes > n and an unmatched one doesn't, while
-        # with the join atom loosened every parent counts them all. 1 for
-        # anything else, or an integer of MAX or more.
+        # How many children the hit's parent gets in all, for a join atom in
+        # a correlated count(*) or count(x) compared to an integer,
+        # (SELECT count(*) ... ) > 2: a count that passes the comparison, so
+        # the hit's parent passes and an unmatched one (0) doesn't, while
+        # with the join atom loosened every parent counts them all. Only a
+        # count with no GROUP BY, which returns one row however many
+        # children there are: another subquery (SELECT o.score ...) would
+        # return several and fail the query. 1, the hit's own child, for
+        # anything else, or when the count would pass MAX.
         module Children
           MAX = 10
-          COMPARISONS = %w[> >= = < <= <>].freeze
+          # The count that passes count <op> n, for each operator.
+          PASSING = {
+            ">" => ->(n) { n + 1 }, ">=" => ->(n) { n }, "=" => ->(n) { n }, "<=" => ->(n) { n },
+            "<" => ->(n) { n - 1 }, "<>" => ->(n) { n == 1 ? 2 : 1 }
+          }.freeze
+          # The same test with the count on the right: n < count is count > n.
+          MIRRORED = { ">" => "<", ">=" => "<=", "<" => ">", "<=" => ">=", "=" => "=", "<>" => "<>" }.freeze
 
           module_function
 
@@ -192,25 +206,37 @@ module Quaack
             k = path.rindex("sub_link")
             return 1 unless compared?(tree, path, k)
 
-            limit = threshold(dig(tree, path[0...(k - 1)]), path[k - 1])
-            limit && limit < MAX ? limit + 1 : 1
+            wanted = passing(dig(tree, path[0...(k - 1)]), path[k - 1])
+            wanted&.between?(1, MAX) ? wanted : 1
           end
 
           # Whether the step at k is the atom's innermost scope, a scalar
-          # subquery that's one side of an operator.
+          # count that's one side of an operator.
           def compared?(tree, path, step)
             return false unless step && step >= 2 && path[step - 2] == "a_expr"
 
-            !path[step..].intersect?(%w[join_expr range_subselect]) &&
-              dig(tree, path[0..step]).sub_link_type == :EXPR_SUBLINK
+            link = dig(tree, path[0..step])
+            !path[step..].intersect?(%w[join_expr range_subselect]) && link.sub_link_type == :EXPR_SUBLINK &&
+              count?(link.subselect.select_stmt)
           end
 
-          # The integer on the other side, when the operator compares.
-          def threshold(expr, side)
-            return unless expr.kind == :AEXPR_OP && COMPARISONS.include?(operator(expr))
+          def count?(select)
+            return false unless select && select.group_clause.empty? && select.target_list.size == 1
+
+            call = select.target_list[0].res_target.val&.func_call
+            call && names(call) == ["count"] && call.over.nil?
+          end
+
+          def names(call) = call.funcname.map { it.string.sval }
+
+          # The count that passes, when the other side is an integer.
+          def passing(expr, side)
+            op = operator(expr)
+            op = MIRRORED[op] if side == "rexpr"
+            return unless expr.kind == :AEXPR_OP && PASSING.key?(op)
 
             value = integer(side == "lexpr" ? expr.rexpr : expr.lexpr)
-            value if value&.>=(0)
+            PASSING.fetch(op).call(value) if value&.>=(0)
           end
 
           def integer(node)
