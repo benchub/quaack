@@ -1129,17 +1129,7 @@ Found in the build of 20261004-3. Run by itself, the spec file fails with a Leak
 
 ### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them.
-
-Found by the user in a real report, 2026-10-09. The verdict section showed "⚠ 4 measurement runs of candidates timed out, and QUAACK dropped those candidates." Its Details link jumped to the Ranking section (`#ranking`), which doesn't address the warning. `Report::Verdict#caveats` sends the other timeout caveat (the original timing out on the slow values) to `#ranking` too.
-
-Give the first caveat a target that says which measurement runs timed out: which candidates, on which literal sets, how long QUAACK waited, and that QUAACK dropped those candidates (so they're not ranked, and the reader knows they weren't measured to the end). Decide whether the Ranking section can carry it or whether it needs a note of its own; the data is in the payload's measured labels. Check that the second caveat's target (the original timing out, so any candidate that finished counts as better) says so, and fix it if not. Use the caveat-link check from 20261009-28, which asserts every caveat's target exists and mentions the caveat's subject; if 28 hasn't landed, add the check here for these two caveats. Update DESIGN.md's verdict bullet, which lists the caveats, to say where each one's detail lives.
-
-- **Depends on:** 20261009-28 (shares the caveat-link check).
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Decided by the user (2026-10-09):** the explanation goes in a section of its own, and the caveat links there.
-- **Status:** todo
+### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-32. Report: reword the fate of a rewrite that regressed, and drop its correctness caution.
 

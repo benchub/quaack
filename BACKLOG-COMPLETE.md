@@ -9120,3 +9120,16 @@ The user, 2026-10-09. A rewrite's summary reads "Where it came from: made by QUA
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-31; review clean). `RuleLinks#source_html` says "transform rule X" / "transform rules X, then Y" (linked, in order); README's bullet updated. Left as they were, listed for the user: the rule-bug section, the fate list, the candidates table's "who" cell (all from `Rewrites::RULES`), the "Rewrites from QUAACK's own rules" row label in `words.rb`, the rewrite-rules progress line in `pipeline.rb`, and README step 4 and its rule-bug example. Follow-up: 20261009-52.
+
+### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them.
+
+Found by the user in a real report, 2026-10-09. The verdict section showed "⚠ 4 measurement runs of candidates timed out, and QUAACK dropped those candidates." Its Details link jumped to the Ranking section (`#ranking`), which doesn't address the warning. `Report::Verdict#caveats` sends the other timeout caveat (the original timing out on the slow values) to `#ranking` too.
+
+Give the first caveat a target that says which measurement runs timed out: which candidates, on which literal sets, how long QUAACK waited, and that QUAACK dropped those candidates (so they're not ranked, and the reader knows they weren't measured to the end). Decide whether the Ranking section can carry it or whether it needs a note of its own; the data is in the payload's measured labels. Check that the second caveat's target (the original timing out, so any candidate that finished counts as better) says so, and fix it if not. Use the caveat-link check from 20261009-28, which asserts every caveat's target exists and mentions the caveat's subject; if 28 hasn't landed, add the check here for these two caveats. Update DESIGN.md's verdict bullet, which lists the caveats, to say where each one's detail lives.
+
+- **Depends on:** 20261009-28 (shares the caveat-link check).
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Decided by the user (2026-10-09):** the explanation goes in a section of its own, and the caveat links there.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-29; two reviews, one fix round). A `#timeouts` section ("Runs that timed out"), shown only when something timed out: the dropped candidates (listed with "timed out", the same population as the caveat's count: labels with `timed_out` true and no measurements) and the original's timed-out literal sets, with what each means for ranking. Both timed-out caveats link to it, and the caveat-link spec now checks each target's subject. Not done: how long QUAACK waited and which sets a dropped candidate timed out on, since neither is in the payload or DESIGN.md.
