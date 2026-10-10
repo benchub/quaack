@@ -10,8 +10,9 @@ RSpec.describe Quaack::Driver::Report do
 
   # What ERB's escaping makes of text with an apostrophe in it.
   let(:unproven) do
-    "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its " \
-      "conditions, so those parts are unproven."
+    "Read it with care: every test QUAACK ran passed, but the test data never made some " \
+      "conditions of the query both true and false, so the tests cannot show whether those parts behave the " \
+      "same in the rewrite."
   end
 
   def esc(text) = text.gsub("'", "&#39;")
@@ -552,7 +553,8 @@ RSpec.describe Quaack::Driver::Report do
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: transform " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat the original " \
          "query and is ranked below.</span> <span class=\"warn\">Read it with care: every test QUAACK ran " \
-         "passed, but the test data never exercised some of its conditions, so those parts are unproven.</span>",
+         "passed, but the test data never made some conditions of the query both true and false, so the " \
+         "tests cannot show whether those parts behave the same in the rewrite.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM (its " \
          "model wasn&#39;t recorded).</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
@@ -580,7 +582,8 @@ RSpec.describe Quaack::Driver::Report do
         expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
         expect(warning(atoms: ["a < $1"], empirical: assumed))
           .to eq("Read it with care: it relies on what your data holds today. The test data also never " \
-                 "exercised some of its conditions, so those parts are unproven.")
+                 "made some conditions of the query both true and false, so the tests cannot show whether those " \
+                 "parts behave the same in the rewrite.")
       end
 
       it "flags untested conditions only while a later test left some of them unchecked" do
@@ -910,9 +913,9 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says how a rewrite that passed every test lost" do
-        expect(fate("not_better")).to eq(esc("It passed every test, but on the real data it was either less than a " \
-                                             "5% improvement on the slow values or over 5% more blocks on some " \
-                                             "others, so QUAACK didn't rank it."))
+        expect(fate("not_better")).to eq(esc("It passed every test, then QUAACK measured it on the real data, " \
+                                             "where it either improved by less than 5% on the slow values or read " \
+                                             "over 5% more blocks on some others, so QUAACK didn't rank it."))
         expect(fate("footprint_tie")).to include("tied with a candidate whose new indexes take less disk space")
         expect(fate("below_top_three")).to include("three others of its kind did better")
         expect(fate("measurement_timed_out")).to include("every measurement run of it timed out")
@@ -924,12 +927,12 @@ RSpec.describe Quaack::Driver::Report do
                                "verdicts" => { "slow" => "no_worse", "typical" => "no_worse" } }
         payload["excluded"]["rewrite_2:none"] = "not_better"
         expect(fate("not_better"))
-          .to eq(esc("It passed every test, but on the real data it was less than a 5% improvement, " \
-                     "so QUAACK didn't rank it."))
+          .to eq(esc("It passed every test, then QUAACK measured it on the real data, where it improved " \
+                     "by less than 5%, so QUAACK didn't rank it."))
         payload["labels"].last["verdicts"] = { "slow" => "better", "typical" => "worse" }
         expect(fate("not_better"))
-          .to eq(esc("It passed every test, but on the real data it read over 5% more blocks on some values, " \
-                     "so QUAACK didn't rank it."))
+          .to eq(esc("It passed every test, then QUAACK measured it on the real data, where it read over " \
+                     "5% more blocks on some values, so QUAACK didn't rank it."))
       end
 
       it "says how far an unfinished rewrite got" do

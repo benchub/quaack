@@ -140,7 +140,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "capitalizes the pairing's warning when it follows another warning in the summary" do
       expect(warn(8)).to eq("Read it with care: every test QUAACK ran passed, but the test data " \
-                            "never exercised some of its conditions, so those parts are unproven. A model " \
+                            "never made some conditions of the query both true and false, so the tests cannot show " \
+                            "whether those parts behave the same in the rewrite. A model " \
                             "checked its own work, since the one that wrote it also wrote test data meant to " \
                             "break it.")
     end
