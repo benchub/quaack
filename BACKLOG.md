@@ -21,6 +21,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261004-92: `quaacks literals` refuses a rerun (`literals_already_used`) once baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (enclave and protocol).
 - 20261006-6: clock words and defaults: array-element function calls keep the outer targets, an inventory without a TimeZone refuses with `run_from_older_version`, `current_time` is anchored in queries and defaults (enclave).
 - 20261004-89: each `indexes` entry in the report payload carries `sources` (names from the fixed generator list), checked at egress and in the driver (enclave and protocol).
+- 20261007-58: the equality check follows a column's domain chain and refuses a planted `=` on a domain (enclave).
+- 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
 - 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
@@ -397,28 +399,9 @@ From the reviews of 20260924-7.
 
 ### 20261007-51. Equality: refuse a half-exact `=` too. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-58. Equality: planted operators on domains and same-signature shadows.
+### 20261007-58. Equality: planted operators on domains and same-signature shadows. Done, see BACKLOG-COMPLETE.md.
 
-From the review of 20261007-51. Neither is new in that task.
-1. A planted `=` on a domain type (`=(email, email)` for a domain over text) is matched exactly by Postgres before domains are reduced, so it wins, while `Equality` compares base types and returns `OPERATOR(pg_catalog.=)`. Run the exact check against the unreduced domain types too, or list it as unsupported in v1; DESIGN.md's "a domain counting as its base type" hides the case.
-2. A same-signature `=` in another schema (`public.=(text, text)` with `public` listed before `pg_catalog` on the path) wins over pg_catalog's, for any type whose family `=` is exact on both sides. Refuse it, or document it as unsupported.
-3. A one-side-exact `=` the columns can't be cast to (`=(mood, int4)`) isn't a Postgres candidate but still refuses. Only costs a refusal; tighten the wording or the rule.
-
-- **Depends on:** 20261007-51.
-- **Came from:** The review of 20261007-51.
-- **Design:** trust boundary, assumption checks.
-- **Status:** todo
-
-### 20261007-64. Intake unreadable reasons: new causes, and one shared list.
-
-The two items 20261003-7 left, since each changes enclave or protocol behavior and goes in a batch.
-1. Give `EIO`, `ENAMETOOLONG`, and `IOError` their own unreadable reasons in the enclave (`ErrorFilter::UNREADABLE_REASONS`), with the driver's `ErrorFields::REASONS` and `EnclaveError#reason_message` updated to match.
-2. Move the reason list into the protocol gem so the enclave and the driver share one copy; `EnclaveError#reason_message` still repeats the keys in its hash. Under the batching rule this lands with the next version bump, so a jump server never runs a protocol gem without the constant.
-
-- **Depends on:** 20261003-7.
-- **Came from:** The builder of 20261003-7, 2026-10-08.
-- **Design:** intake, trust boundary.
-- **Status:** todo
+### 20261007-64. Intake unreadable reasons: new causes, and one shared list. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE.
 
@@ -1078,3 +1061,12 @@ From the review of 20261004-89 (minor).
 - **Came from:** The review of 20261004-89, 2026-10-10 (minor).
 - **Design:** report.
 - **Status:** todo
+
+### 20261010-11. Equality check: refuse when a same-signature `=` exists outside `pg_catalog`? (needs the user)
+
+From the review of 20261007-58 (minor, a requirement question). The denormalized-equality check names its operator `OPERATOR(pg_catalog.=)`, so a planted `public.=(bigint, bigint)` can't change what the check reads (20261007-9's deliberate behavior; three specs depend on it). But the application's own queries use the bare `=`, which resolves through the search path: if the application's role sees a different `=` with the same signature, a rewrite could rest on an equality the application never uses. It takes a hostile or very unusual setup. Decide: (a) leave it (documented unsupported in v1), or (b) refuse the assumption when a same-signature `=` exists outside `pg_catalog` on the operand types, and update the three 20261007-9 specs and DESIGN.md's text for 20261007-9. Ask the user before building (b).
+
+- **Depends on:** 20261007-58.
+- **Came from:** The review of 20261007-58, 2026-10-10.
+- **Design:** assumption check, CatalogShadow.
+- **Status:** todo (needs the user)

@@ -9711,3 +9711,28 @@ From the builder and review of 20261004-80.
 - **Decided by the user (2026-10-09):** do items 2 and 3. Item 2: add `sources` to each `indexes` entry and show them in the "Who proposed it" cell. The cell reads the rewrite's source first, then the indexes' sources, such as "QUAACK's rules; indexes: generator one, the LLM" (decided by the user, 2026-10-09); a label with no new indexes shows only the rewrite's source. Item 3: record already existed and planner ignored by generator. Both change the enclave payload, so they go on the unreleased-changes list.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261004-89; Opus review clean). Item 1 landed earlier (835eb325). Item 2: each `indexes` entry gains `sources`, unique names from `Protocol::IndexSources::SOURCES` in that order, checked by `Protocol::IndexSources.entries_valid?` at enclave egress (`check_ranking`) and in the driver's reply check (a missing `sources` from an older enclave is allowed; a stored source such as `:existing` never goes out); the "Who proposed it" cell reads "<rewrite's source>; indexes: generator one, the LLM" (the union across the label's indexes, in protocol order; "; indexes: not recorded" when none is recorded; the original with new indexes reads "Indexes: ..."). Item 3 was already done by 20261003-5 (`index_sources` carries per-source `existed` and `ignored` counts and the generators' cells are filled from them): only DESIGN.md and README were wrong, and now state the five counts. On the unreleased list. Minor findings: 20261010-10.
+
+### 20261007-58. Equality: planted operators on domains and same-signature shadows.
+
+From the review of 20261007-51. Neither is new in that task.
+1. A planted `=` on a domain type (`=(email, email)` for a domain over text) is matched exactly by Postgres before domains are reduced, so it wins, while `Equality` compares base types and returns `OPERATOR(pg_catalog.=)`. Run the exact check against the unreduced domain types too, or list it as unsupported in v1; DESIGN.md's "a domain counting as its base type" hides the case.
+2. A same-signature `=` in another schema (`public.=(text, text)` with `public` listed before `pg_catalog` on the path) wins over pg_catalog's, for any type whose family `=` is exact on both sides. Refuse it, or document it as unsupported.
+3. A one-side-exact `=` the columns can't be cast to (`=(mood, int4)`) isn't a Postgres candidate but still refuses. Only costs a refusal; tighten the wording or the rule.
+
+- **Depends on:** 20261007-51.
+- **Came from:** The review of 20261007-51.
+- **Design:** trust boundary, assumption checks.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261007-58; Opus review clean). Item 1: `Equality.operator` follows each column's domain chain and refuses (the assumption is unmet) when a `=` is planted on a domain, including a domain over a domain, or a half-exact `=(ident, bigint)`; `EXACT_SQL` refuses any `=` in any schema taking a domain type from either chain; `DenormalizedEqual#column` keeps the unreduced type oid and uses the base type name only for the cast. Item 2 (a same-signature `=` in another schema) is documented unsupported in v1, not refused: the check names its operator `OPERATOR(pg_catalog.=)`, so a planted `public.=(bigint, bigint)` can't change what it reads, and refusing would change 20261007-9's deliberate behavior (three specs); see 20261010-11. Item 3 (`=(mood, int4)` refused though Postgres wouldn't consider it) costs only a refusal; DESIGN.md says so. On the unreleased list.
+
+### 20261007-64. Intake unreadable reasons: new causes, and one shared list.
+
+The two items 20261003-7 left, since each changes enclave or protocol behavior and goes in a batch.
+1. Give `EIO`, `ENAMETOOLONG`, and `IOError` their own unreadable reasons in the enclave (`ErrorFilter::UNREADABLE_REASONS`), with the driver's `ErrorFields::REASONS` and `EnclaveError#reason_message` updated to match.
+2. Move the reason list into the protocol gem so the enclave and the driver share one copy; `EnclaveError#reason_message` still repeats the keys in its hash. Under the batching rule this lands with the next version bump, so a jump server never runs a protocol gem without the constant.
+
+- **Depends on:** 20261003-7.
+- **Came from:** The builder of 20261003-7, 2026-10-08.
+- **Design:** intake, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261007-58 branch; Opus review clean). `Errno::ENAMETOOLONG` becomes `name_too_long`; `Errno::EIO` and `IOError` both become `io_error`; the reason lists live in one place, `Protocol::UnreadableReasons` (`RULES`, `NAMES`), used by the enclave's `ErrorFilter` and the driver's `ErrorFields`/`EnclaveError`, with a driver spec that fails if the driver's reason words drift from the protocol list. `OperatorFile.reason` returns only fixed strings (never an exception message); an unmapped class falls back to `symlink` or `not_regular_file`. On the unreleased list.
