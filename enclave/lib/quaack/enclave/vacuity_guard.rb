@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/vacuity_diagnostic"
 require_relative "arena_runner"
 require_relative "deparse"
 require_relative "predicate_atoms"
@@ -32,7 +33,7 @@ module Quaack
     module VacuityGuard
       RETRIES = 3
 
-      Result = Data.define(:untested, :untested_atoms, :retries, :variants, :scenarios) do
+      Result = Data.define(:untested, :untested_atoms, :retries, :variants, :scenarios, :s1_load_rule, :s1_rows) do
         def inspect = "#<data #{self.class} untested=#{untested} retries=#{retries} scenarios=<redacted>>"
 
         alias_method :to_s, :inspect
@@ -42,7 +43,7 @@ module Quaack
 
       def run(runner, builder, sql)
         loosened, unreplaceable = loosened_queries(builder)
-        state = { exercised: [], variants: {}, retries: 0 }
+        state = { exercised: [], variants: {}, retries: 0, s1_load_rule: nil, s1_rows: nil }
         (0..RETRIES).each do |attempt|
           scenarios = builder.build(state[:variants])
           vacuous = vacuous_atoms(runner, scenarios[:s1], sql, loosened, state)
@@ -60,7 +61,8 @@ module Quaack
 
       def result(builder, untested, state, scenarios)
         Result.new(untested: untested.map { |i| builder.atoms[i].shape }, untested_atoms: untested,
-                   retries: state[:retries], variants: state[:variants], scenarios:)
+                   retries: state[:retries], variants: state[:variants], scenarios:,
+                   s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows])
       end
 
       # The atoms not yet exercised that this fixture doesn't exercise
@@ -69,18 +71,28 @@ module Quaack
       # are retried, and end untested. Scenarios never crash rewrite-test.
       def vacuous_atoms(runner, rows, sql, loosened, state)
         pending = loosened.keys - state[:exercised]
-        state[:exercised] += loaded_exercised_atoms(runner, rows, sql, loosened.slice(*pending))
+        state[:exercised] += loaded_exercised_atoms(runner, rows, sql, loosened.slice(*pending), state)
         pending - state[:exercised]
       end
 
       LOAD_STEPS = %i[load insert].freeze
 
-      def loaded_exercised_atoms(runner, rows, sql, loosened)
-        exercised_atoms(runner, rows, sql, loosened)
+      # state also takes the last attempt's S1 diagnostic: the rule the load
+      # failed with, or the original's row count once it loaded.
+      def loaded_exercised_atoms(runner, rows, sql, loosened, state)
+        state[:s1_load_rule] = nil
+        exercised_atoms(runner, rows, sql, loosened) { state[:s1_rows] = it }
       rescue ArenaRunner::Error => e
         raise unless LOAD_STEPS.include?(e.step)
 
+        state[:s1_load_rule] = load_rule(e.rule)
+        state[:s1_rows] = nil
         []
+      end
+
+      # The rule a load failed with if it's on the fixed list, else :other.
+      def load_rule(rule)
+        Protocol::VacuityDiagnostic::LOAD_RULES.include?(rule.to_s) ? rule : :other
       end
 
       # Each replaceable atom's loosened query, and the atoms that can't be
@@ -101,7 +113,9 @@ module Quaack
       # reuses it on its counterexamples.
       def exercised_atoms(runner, rows, sql, loosened, inserts: [])
         runner.with_fixture(rows, inserts:) do |tx|
-          base = multiset(tx.query(sql))
+          result = tx.query(sql)
+          yield result.rows.size if block_given?
+          base = multiset(result)
           loosened.reject { |_, query| multiset(tx.query(query)) == base }.keys
         end
       end

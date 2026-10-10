@@ -9,6 +9,7 @@ require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/step_counts"
+require "quaack/protocol/vacuity_diagnostic"
 require_relative "plain_data"
 
 module Quaack
@@ -106,6 +107,7 @@ module Quaack
         check_burndown(fields) if type == "burndown"
         check_report(fields) if type == "report"
         check_step_counts(fields) if type == "step_counts"
+        check_rewrite_test(fields) if type == "rewrite_test"
         JSON.generate({ "type" => type, **fields })
       rescue PlainData::NotPlain, JSON::JSONError
         raise Error, "a value in this #{type} message can't be written as JSON", cause: nil
@@ -129,6 +131,16 @@ module Quaack
         return if Protocol::StepCounts.valid?(fields)
 
         raise Error, "a value in this step_counts message isn't counts"
+      end
+
+      # A rewrite_test message's s1_load_rule must be nil or a rule from the
+      # fixed list and its s1_rows nil or a count (see
+      # Protocol::VacuityDiagnostic.valid?), so no error message or value
+      # rides out in them.
+      def check_rewrite_test(fields)
+        return if Protocol::VacuityDiagnostic.valid?(fields)
+
+        raise Error, "a value in this rewrite_test message isn't a vacuity diagnostic"
       end
 
       # A report's plans are nested too, so each must be exactly plan nodes

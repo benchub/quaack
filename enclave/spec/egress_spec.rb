@@ -70,7 +70,7 @@ RSpec.describe Quaack::Enclave::Egress do
     it "keeps every field on each type's list, and only those, for every type on the whitelist" do
       # A burndown's fields must be a burndown, a report's plans plan nodes,
       # and step_counts' counts, so they get their own tests below.
-      whitelist.except(:burndown, :report, :step_counts).each do |type, fields|
+      whitelist.except(:burndown, :report, :step_counts, :rewrite_test).each do |type, fields|
         message = fields.to_h { |f| [f, "value of #{f}"] }.merge(type: type, not_on_the_list: EGRESS_SENTINEL)
         out = egress.serialize(message)
 
@@ -226,6 +226,33 @@ RSpec.describe Quaack::Enclave::Egress do
       it "refuses one with #{what}, without quoting it" do
         expect { egress.serialize(type: :step_counts, **fields) }
           .to raise_error(described_class::Error, "a value in this step_counts message isn't counts") { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+      end
+    end
+  end
+
+  describe "a rewrite_test message" do
+    it "sends the S1 load rule and row count, and drops other fields" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: nil, rule: nil,
+                             s1_load_rule: "fixture_load_failed", s1_rows: 3, sql: EGRESS_SENTINEL)
+
+      expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => true,
+                                    "scenario" => nil, "rule" => nil, "s1_load_rule" => "fixture_load_failed",
+                                    "s1_rows" => 3)
+    end
+
+    [
+      ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
+      ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],
+      ["a string where the row count belongs", { s1_rows: EGRESS_SENTINEL }],
+      ["a negative row count", { s1_rows: -1 }]
+    ].each do |what, fields|
+      it "refuses one with #{what}, without quoting it" do
+        message = "a value in this rewrite_test message isn't a vacuity diagnostic"
+        expect { egress.serialize(type: :rewrite_test, rewrite: "rewrite_1", passed: false, **fields) }
+          .to raise_error(described_class::Error, message) { |e|
             expect(e.message).not_to include(EGRESS_SENTINEL)
             expect(e.cause).to be_nil
           }

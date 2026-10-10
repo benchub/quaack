@@ -36,6 +36,32 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.scenarios[:s1]).not_to be_empty
   end
 
+  it "records no load failure and the original's row count on S1 when the fixture loads" do
+    sql = "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id " \
+          "WHERE o.status = 'open' AND o.qty > 2"
+    _, result = guard(sql)
+    expected = runner.with_fixture(result.scenarios[:s1]) { |tx| tx.query(sql).rows.size }
+
+    expect(result.s1_load_rule).to be_nil
+    expect(result.s1_rows).to eq(expected)
+    expect(result.s1_rows).to be_positive
+  end
+
+  it "records the rule S1 failed to load with, and no row count, never the error's message" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.gated (id integer PRIMARY KEY, label text NOT NULL);
+      CREATE FUNCTION fx.refuse() RETURNS trigger LANGUAGE plpgsql
+        AS $$ BEGIN RAISE EXCEPTION 'SENTINEL_9c refused'; END $$;
+      CREATE TRIGGER refuse BEFORE INSERT ON fx.gated FOR EACH ROW EXECUTE FUNCTION fx.refuse();
+    SQL
+    _, result = guard("SELECT g.id FROM fx.gated g WHERE g.label = 'a' AND g.id > 3")
+
+    expect(result.untested.size).to eq(2)
+    expect(result.s1_load_rule).to eq(:fixture_load_failed)
+    expect(result.s1_rows).to be_nil
+    expect(result.inspect).not_to include("SENTINEL_9c")
+  end
+
   it "exercises a keyset row comparison through its leading column, in either direction" do
     %w[< <= > >=].each do |op|
       sql = "SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) #{op} (5, 10) ORDER BY o.qty, o.id LIMIT 20"
