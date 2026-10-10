@@ -27,6 +27,9 @@ module Quaack
     # outbound_statistics is the classification entry's, as
     # PiiClassification stores it.
     class CandidateDdlRedaction
+      # A DDL string that isn't in redacted form was about to leave (20261009-58).
+      class Error < StandardError; end
+
       def initialize(outbound_statistics)
         @allowed = outbound_statistics.fetch("tables").to_h do |table|
           columns = table["columns"].select { it["most_common_vals"] }
@@ -38,6 +41,14 @@ module Quaack
         parse = PgQuery.parse(candidate.to_ddl)
         redact!(parse.tree.stmts.first.stmt.index_stmt, allowed(candidate.table))
         PgQuery.deparse(parse.tree)
+      end
+
+      # #ddl, checked on the way out: the string #ddl made, if redacted? says
+      # it is redacted, and an Error with a fixed message, naming none of
+      # it, if not. Every DDL string a payload or report carries comes
+      # through here (or redacted? itself, for NegativeResult).
+      def outbound_ddl(candidate)
+        ddl(candidate).tap { raise Error, "a DDL string isn't in redacted form" unless redacted?(it) }
       end
 
       # Whether text, a DDL string as #ddl made it (its masks written ?),

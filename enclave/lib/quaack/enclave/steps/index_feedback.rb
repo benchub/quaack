@@ -65,7 +65,7 @@ module Quaack
             "beaten_by" => index && ddl(mechanical.fetch(index), redaction) }
         end
 
-        def ddl(result, redaction) = redaction.ddl(IndexStore.candidate(result["candidate"]))
+        def ddl(result, redaction) = redaction.outbound_ddl(IndexStore.candidate(result["candidate"]))
       end
     end
   end

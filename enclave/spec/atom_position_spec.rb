@@ -43,6 +43,24 @@ RSpec.describe Quaack::Enclave::AtomPosition do
       end
     end
 
+    # 20261009-63: a bare constant conjunct is material too.
+    it "is changed when the rewrite added a constant conjunct the original lacks" do
+      plain = "SELECT t.id FROM public.t WHERE t.a = $1"
+      ["#{plain} AND false", "#{plain} AND NULL::boolean", "#{plain} AND true", "#{plain} AND NULL",
+       "SELECT t.id FROM public.t WHERE t.a = $1 OR false"].each do |candidate|
+        expect(verdicts(plain, candidate, "t.a = $1")).to eq("t.a = $1" => false), candidate
+      end
+    end
+
+    it "is unchanged when both queries carry the same constant conjunct, and changed when it differs" do
+      original = "SELECT t.id FROM public.t WHERE t.a = $1 AND true AND t.b = $2"
+
+      expect(verdicts(original, "SELECT t.id FROM public.t WHERE t.a = $1 AND true", "t.a = $1"))
+        .to eq("t.a = $1" => true)
+      expect(verdicts(original, "SELECT t.id FROM public.t WHERE t.a = $1 AND false", "t.a = $1"))
+        .to eq("t.a = $1" => false)
+    end
+
     it "is unchanged in a join's ON when the same join keeps it" do
       original = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.x > $1 WHERE t.a = $2"
       candidate = "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id AND u.x > $1 WHERE t.a = $2"

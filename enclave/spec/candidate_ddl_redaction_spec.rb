@@ -105,6 +105,29 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
       ].each { |ddl| expect(redacted?(ddl)).to be(false), ddl }
     end
 
+    # 20261009-57: a jsonb operator is a ? the lexer finds, but not a mask.
+    it "passes what #ddl makes for a jsonb partial or expression index using ?, ?| or ?&" do
+      [
+        "data ? 'k'", "data ?| ARRAY['a', 'b']", "data ?& ARRAY['a', 'b']", "(data -> 'a') ? 'k' AND note IS NULL",
+        "lower(note) = 'x' AND data ? 'k'", "status = 'held' AND data ?| '{a,b}'::text[]"
+      ].each do |predicate|
+        ddl = redaction.ddl(candidate(predicate:))
+        expect(ddl).not_to include(sentinel)
+        expect(redacted?(ddl)).to be(true), ddl
+      end
+      expr = Quaack::Enclave::IndexCandidate::KeyColumn.new(expression: "(data ? 'k')")
+      expect(redacted?(redaction.ddl(candidate(key: [expr])))).to be(true)
+    end
+
+    it "still refuses a literal next to a jsonb operator" do
+      [
+        "CREATE INDEX ON public.orders USING btree (created_at) WHERE data ? ? AND note = '#{sentinel}'",
+        "CREATE INDEX ON public.orders USING btree (created_at) WHERE data ?| ARRAY['#{sentinel}']",
+        "CREATE INDEX ON public.orders USING btree (created_at) WHERE data ?& '{#{sentinel}}'::text[]",
+        "CREATE INDEX ON public.orders USING btree (created_at) WHERE data ? '#{sentinel}'"
+      ].each { |ddl| expect(redacted?(ddl)).to be(false), ddl }
+    end
+
     it "refuses what isn't one CREATE INDEX, or isn't SQL, and a table the payload says nothing of" do
       ["", "SELECT 1", "CREATE INDEX ON public.orders (id); SELECT '#{sentinel}'", "not sql #{sentinel}",
        "CREATE INDEX ON public.unknown USING btree (id) WHERE a = 'x'"].each do |ddl|

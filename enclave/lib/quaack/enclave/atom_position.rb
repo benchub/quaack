@@ -157,8 +157,10 @@ module Quaack
         end
 
         # The atoms of one clause, split on AND, OR, and NOT as
-        # PredicateAtoms splits them. An atom under an OR or NOT carries the
-        # whole outermost such expression in its key.
+        # PredicateAtoms splits them. A bare constant counts too (20261009-63):
+        # it is no atom of the original, but one the rewrite adds is new.
+        # An atom under an OR or NOT carries the whole outermost such
+        # expression in its key.
         def clause(node, path, whole: nil, clause_path: path)
           return if node.nil?
 
@@ -168,12 +170,10 @@ module Quaack
             bool.args.each_with_index do |arg, i|
               clause(arg, path + ["bool_expr", "args", i], whole:, clause_path:)
             end
-          elsif !constant?(node)
+          else
             @tops << Top.new(path:, node:, key: [@scope, clause_path, whole, Signature.of(node)])
           end
         end
-
-        def constant?(node) = !(node.a_const || node.type_cast&.arg&.a_const).nil?
       end
 
       # A canonical text of a parse node, with no locations: equal text means

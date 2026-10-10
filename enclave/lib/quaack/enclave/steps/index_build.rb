@@ -87,7 +87,8 @@ module Quaack
         # be read as a candidate.
         def shown(redaction, ddl)
           candidate = IndexCandidate.from_ddl(ddl, sources: [:llm]) or return
-          redaction.ddl(candidate).sub(/\ACREATE INDEX ON /, "CREATE INDEX #{Enclave::IndexBuild.name(ddl)} ON ")
+          redaction.outbound_ddl(candidate).sub(/\ACREATE INDEX ON /,
+                                                "CREATE INDEX #{Enclave::IndexBuild.name(ddl)} ON ")
         end
       end
     end
