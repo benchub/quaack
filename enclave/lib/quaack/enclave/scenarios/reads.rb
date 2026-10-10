@@ -36,11 +36,7 @@ module Quaack
           @all = false
           @whole = []
           known = column_names.values.flatten
-          (parse.is_a?(Array) ? parse : [parse]).each do |p|
-            tables = Tables.new(p.tree)
-            @whole.concat(tables.renamed)
-            walk(p.tree, nil) { |fields, agg| note(fields, known, tables, agg) }
-          end
+          (parse.is_a?(Array) ? parse : [parse]).each { read(it, known) }
         end
 
         def read?(table, name)
@@ -56,6 +52,14 @@ module Quaack
 
         private
 
+        def read(parse, known)
+          tables = Tables.new(parse.tree)
+          @whole.concat(tables.renamed)
+          walk(parse.tree, nil) do |fields, agg|
+            note(fields, known, tables)&.then { |key| @aggregated[key] << agg if agg }
+          end
+        end
+
         # agg is the name of the aggregate the node is an argument of. An
         # aggregate's FILTER isn't its argument.
         def walk(node, agg, &)
@@ -64,7 +68,11 @@ module Quaack
           inner = aggregate_name(node)
           return ValuePools::Sides.children(node).each { walk(it, agg, &) } unless inner
 
-          node.class.descriptor.each { |field| walk(field.get(node), field.name == "args" ? inner : agg, &) }
+          arguments(node, inner, agg, &)
+        end
+
+        def arguments(node, inner, agg, &)
+          node.class.descriptor.each { |f| walk(f.get(node), f.name == "args" ? inner : agg, &) }
         end
 
         def aggregate_name(node)
@@ -79,14 +87,15 @@ module Quaack
           @names.concat(node.using_clause.map { it.string.sval })
         end
 
-        def note(fields, known, tables, agg)
+        # The [table, name] it noted (table nil when unqualified), or nil.
+        def note(fields, known, tables)
           name = fields.last&.string&.sval
           @all = true unless name && known.include?(name)
           return unless name
 
           table = qualifier(fields, tables)
           table ? @qualified << [table, name] : @names << name
-          @aggregated[[table, name]] << agg if agg
+          [table, name]
         end
 
         def qualifier(fields, tables)
