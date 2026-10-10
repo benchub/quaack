@@ -123,6 +123,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     # planner never uses.
     def llm_candidates = [llm(key: ["a"]), llm(key: ["c"], access_method: :gin), llm(key: ["c"])]
 
+    # Task 20261010-20: the round carries index-test's out, so its out is the whole pool.
     it "records index-dedupe and index-test on the LLM's candidates as one llm-index-ideas record that adds them" do
       since, = mechanical
       survivors = dedupe.filter(llm_candidates)
@@ -134,8 +135,8 @@ RSpec.describe Quaack::Enclave::Burndown do
 
       burndown = described_class.read(store)
       expect(burndown.dig("stages", "llm-index-ideas", "original")).to eq(
-        "in" => 0, "added" => { "llm" => 3 }, "dropped" => { "duplicate" => 1, "never_used" => 1 },
-        "set_aside" => 1, "out" => 0, "extra" => {}
+        "in" => 2, "added" => { "llm" => 3 }, "dropped" => { "duplicate" => 1, "never_used" => 1 },
+        "set_aside" => 1, "out" => 2, "extra" => {}
       )
       expect(burndown.dig("stages", "index-dedupe", "original", "in")).to eq(2)
       expect(burndown.dig("stages", "index-test", "original", "out")).to eq(2)
@@ -153,8 +154,19 @@ RSpec.describe Quaack::Enclave::Burndown do
                                               report: revised)
 
       expect(described_class.read(store).dig("stages", "llm-index-refine", "original")).to eq(
-        "in" => 0, "added" => { "llm" => 1 }, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {}
+        "in" => 2, "added" => { "llm" => 1 }, "dropped" => {}, "set_aside" => 0, "out" => 3, "extra" => {}
       )
+    end
+
+    it "carries the pool into a stage's record once, so a second call for the round adds only its own ideas" do
+      since, = mechanical
+      after = described_class.record_llm_round(store, stage: "llm-index-ideas", search: :original, dedupe:, since:,
+                                                      report: test(dedupe.filter([llm(key: %w[a s])])))
+      described_class.record_llm_round(store, stage: "llm-index-ideas", search: :original, dedupe:, since: after,
+                                              report: test(dedupe.filter([llm(key: %w[s a])])))
+
+      expect(described_class.read(store).dig("stages", "llm-index-ideas", "original").values_at("in", "added", "out"))
+        .to eq([2, { "llm" => 2 }, 4])
     end
 
     it "refuses a round whose report didn't test what this round's filtering kept" do

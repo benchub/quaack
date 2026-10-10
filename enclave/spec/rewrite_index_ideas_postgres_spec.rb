@@ -50,8 +50,9 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
     expect(%w[index-from-query index-from-plan index-dedupe index-test].map { stages[it].keys })
       .to all(eq(["rewrite_1"]))
     expect(stages["index-test"]["rewrite_1"]).to include("in" => entry["dedupe"]["proposals"].size, "out" => used)
-    generated = stages.values_at("index-from-query", "index-from-plan").sum { it["rewrite_1"]["out"] }
-    expect(stages["index-dedupe"]["rewrite_1"]["in"]).to eq(generated)
+    # Task 20261010-20: index-from-plan carries index-from-query's, so its out is index-dedupe's in.
+    expect(stages["index-from-plan"]["rewrite_1"]["in"]).to eq(stages["index-from-query"]["rewrite_1"]["out"])
+    expect(stages["index-dedupe"]["rewrite_1"]["in"]).to eq(stages["index-from-plan"]["rewrite_1"]["out"])
   end
 
   it "sends a surviving rewrite's payload with its own query and its plan redacted through redact" do
@@ -112,8 +113,9 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
     expect(pruning.keys).not_to include("llm-index-ideas", "llm-index-refine")
     expect(stages["index-rank"]).to eq(pruning["index-rank"])
     expect(stages["index-rank"].keys).to eq(["rewrite_1"])
+    pool = stages["index-test"]["rewrite_1"]["out"]
     expect(stages["llm-index-ideas"]).to eq(
-      "rewrite_1" => { "in" => 0, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => 0,
+      "rewrite_1" => { "in" => pool, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => pool,
                        "extra" => {} }
     )
     expect(stages["llm-index-refine"]["rewrite_1"]["extra"]).to eq("no_ideas_tested" => 1)

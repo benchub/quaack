@@ -90,7 +90,7 @@ module Quaack
       def record_rank(store, search, entry, ranked)
         report, ranking = ranked
         records = [["index-rank", search, rank_counts(report, ranking)]]
-        records << ["llm-index-refine", search, skipped(entry)] if skipped?(store, search, entry)
+        records << ["llm-index-refine", search, skipped(store, search, entry)] if skipped?(store, search, entry)
         Burndown.record_replacing(
           store, records, totals: { hypothetical_explains: Burndown.tested_totals(report)[:hypothetical_explains] +
                                                            ranking.tally.explains }
@@ -118,14 +118,19 @@ module Quaack
         store.entry?("index_generated_#{search}") && Refinement.shortfalls(entry).none?
       end
 
-      def skipped(entry)
+      # A skipped round passes the pool llm-index-ideas sent on straight through.
+      def skipped(store, search, entry)
         why = Refinement.first_round(entry).empty? ? :no_ideas_tested : :nothing_fell_short
-        { in: 0, out: 0, extra: { why => 1 } }
+        pool = Burndown.carried(store, "llm-index-refine", search, replace: true)
+        { in: pool, out: pool, extra: { why => 1 } }
       end
 
+      # index-from-plan carries index-from-query's ideas, so its out is what
+      # index-dedupe takes in (task 20261010-20).
       def generated_record(stage, search, source, generated)
         count = generated.fetch(source)
-        [stage, search, { in: 0, added: { source => count }, out: count }]
+        carried = source == :generator_two ? generated.fetch(:generator_one) : 0
+        [stage, search, { in: carried, added: { source => count }, out: carried + count }]
       end
     end
   end

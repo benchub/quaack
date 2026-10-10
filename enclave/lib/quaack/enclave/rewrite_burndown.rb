@@ -37,7 +37,7 @@ module Quaack
       # Records a rewrite-check call's burndown, check's records, once. For
       # source "rule", also gives the records instead (RewriteCheck.check).
       def record_check(store, source, tagged, also)
-        return Burndown.record_once(store, check(source, tagged)) unless source == "rule"
+        return Burndown.record_once(store, check(source, tagged, carried(store, source))) unless source == "rule"
 
         more = also.call(tagged.map(&:first), arrived(tagged))
         Burndown.record_all(store, more + later(source, tagged)) if more
@@ -51,10 +51,21 @@ module Quaack
         OWN.fetch(error.rule, :pruning)
       end
 
-      def check(source, tagged)
+      # The arrival stages, in the order they run. Each carries what the
+      # nearest earlier one sent on, so its out is every rewrite that has
+      # arrived so far (task 20261010-20).
+      ARRIVALS = %w[rewrite-rules llm-rewrites operator-rewrites].freeze
+
+      def carried(store, source)
+        stages = Burndown.read(store)["stages"]
+        ARRIVALS.take_while { it != ARRIVAL.fetch(source) }.reverse
+                .lazy.filter_map { stages.dig(it, "rewrites", "out") }.first || 0
+      end
+
+      def check(source, tagged, carried)
         arrival = by_rule(tagged, :arrival, :inbound_check)
-        [[ARRIVAL.fetch(source), :rewrites, { in: 0, added: { source.to_sym => tagged.size }, dropped: arrival,
-                                              out: arrived(tagged) }],
+        [[ARRIVAL.fetch(source), :rewrites, { in: carried, added: { source.to_sym => tagged.size }, dropped: arrival,
+                                              out: carried + arrived(tagged) }],
          *later(source, tagged)]
       end
 

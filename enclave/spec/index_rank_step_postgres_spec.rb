@@ -86,8 +86,9 @@ RSpec.describe "quaacks index-rank, against a real server" do
       "set_aside" => 0, "out" => 3, "extra" => {}
     )
     # The LLM's idea held up, so llm-index-refine had nothing to revise.
+    pool = burndown["stages"]["llm-index-ideas"]["original"]["out"]
     expect(burndown["stages"]["llm-index-refine"]).to eq(
-      "original" => { "in" => 0, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 0,
+      "original" => { "in" => pool, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => pool,
                       "extra" => { "nothing_fell_short" => 1 } }
     )
     expect(burndown["stages"].except("index-rank", "llm-index-refine")).to eq(before["stages"])
@@ -105,8 +106,10 @@ RSpec.describe "quaacks index-rank, against a real server" do
 
     index_test
     index_rank
+    pool = burndown["stages"]["index-test"]["original"]["out"]
+    expect(pool).to be_positive
     expect(burndown["stages"]["llm-index-refine"]).to eq(
-      "original" => { "in" => 0, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 0,
+      "original" => { "in" => pool, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => pool,
                       "extra" => { "no_ideas_tested" => 1 } }
     )
   end

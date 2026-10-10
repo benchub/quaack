@@ -18,13 +18,17 @@ RSpec.describe PipelineReplay do
 
   # The stages whose "in" isn't what the recorded stages before them left
   # in the pipe, as "name: in N, in the pipe M". Rows are as Report's Stages
-  # gives them. A stage that adds records in 0 and starts from what's there.
-  def burndown_gaps(rows)
+  # gives them. Every stage carries what's in the pipe (task 20261010-20).
+  # strict is false for the rewrites' index searches, summed over every
+  # rewrite, where only the rewrites that reached an LLM round carry their
+  # pool into it.
+  def burndown_gaps(rows, strict: false)
     running = 0
-    rows.filter_map do |name, record, _|
+    rows.filter_map do |name, record, stage|
       next unless record&.values_at("in", "out")&.all?
 
-      gap = "#{name}: in #{record["in"]}, in the pipe #{running}" unless burndown_joins?(record, running)
+      joins = burndown_joins?(record, running, stage, strict:)
+      gap = "#{name}: in #{record["in"]}, in the pipe #{running}" unless joins
       running += record["out"] - record["in"]
       gap
     end
@@ -38,12 +42,12 @@ RSpec.describe PipelineReplay do
     [points[1] - points[0], points[2] - points[3]]
   end
 
-  # Whether the record's in is the width in the pipe. A stage that adds, or
-  # that ran on nothing and sent nothing (a skipped round), has in 0.
-  def burndown_joins?(record, running)
+  # Whether the record's in is the width in the pipe. Not strict, an LLM
+  # index round may carry less, never more.
+  def burndown_joins?(record, running, stage, strict:)
     return true if record["in"] == running
 
-    record["in"].zero? && (!record["added"].to_h.empty? || record["out"].zero?)
+    !strict && %w[llm-index-ideas llm-index-refine].include?(stage) && record["in"] < running
   end
 
   # The runs whose first funnel band was drawn and checked (task 20261009-53),
@@ -90,7 +94,8 @@ RSpec.describe PipelineReplay do
             next unless outcome.report
 
             view = Quaack::Driver::Report::View.new(outcome.report, "run")
-            gaps = %i[index_rows rewrite_rows rewrite_index_rows].flat_map { burndown_gaps(view.public_send(it)) }
+            gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
+                   burndown_gaps(view.rewrite_index_rows)
             expect(gaps).to eq([])
           end
 
@@ -212,8 +217,11 @@ RSpec.describe PipelineReplay do
         index_stages = Quaack::Driver::Report::Words::INDEX_STAGES.keys
         expect(index_stages.reject { stages.dig(it, "original") }).to eq([])
         expect(stages.dig("index-from-query", "original", "added")).to include("generator_one" => be_positive)
-        expect(stages.dig("llm-index-ideas", "original")).to include("added" => { "llm" => 0 }, "out" => 0)
-        expect(stages.dig("llm-index-refine", "original", "extra")).to eq("no_ideas_tested" => 1)
+        pool = stages.dig("index-test", "original", "out")
+        expect(stages.dig("llm-index-ideas", "original")).to include("in" => pool, "added" => { "llm" => 0 },
+                                                                     "out" => pool)
+        expect(stages.dig("llm-index-refine", "original"))
+          .to include("in" => pool, "out" => pool, "extra" => { "no_ideas_tested" => 1 })
         expect(stages.dig("index-rank", "original")).to include("out" => be_positive)
         expect(index_stages.reject { stages.dig(it, "rewrite_1") }).to eq([])
       end
