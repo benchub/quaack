@@ -10171,3 +10171,12 @@ The review of 20261010-24 found these minor issues:
 - **Came from:** The review of 20261010-24, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10: negative spec for the sibling parent check; `Plan#scope_mate` makes a sibling fail one other pooled atom of the near miss's scope on the same table, which fixes the users/posts count shape. Harder variants: 20261010-39.
+
+### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
+
+From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `users.email = $2` untested, and Rails `exists?` leaves `memberships.user_id = $2` and `memberships.group_name = $3` untested. The result is 1 row whenever any row exists, so a near miss only shows when a fixture holds only near misses (no hit). Add a fixture shape that holds only near misses for a query whose result can't change otherwise, keep the guard sound, and flip the shapes in the corpus.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10: when the top-level SELECT has a LIMIT and no ORDER BY, S1 gets one more spill fixture holding only the near misses (no hit), so `SELECT 1 ... LIMIT 1` and Rails `exists?` can show a difference; every spill is already compared by rewrite-test in every load order, so soundness holds. Unsupported in v1: `SELECT EXISTS (...)`, `bool_or`, an OFFSET with no LIMIT. Minor: assert that `dropped` is above 0 for the ORDER BY build in the near-misses-alone spec (a surviving mutant, `counted:` defaulting to false).

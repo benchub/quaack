@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-32: a boolean test on a plain column gets a value pool, and a spill fixture skips a parent the group already brings (enclave).
 - 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
 - 20261010-34: `Plan#scope_mate`, a sibling fails one other pooled atom of the near miss's scope on the same table (enclave).
+- 20261010-31: S1 gets a near-misses-only fixture for a top-level LIMIT without ORDER BY (enclave).
 
 ## How this file works.
 
@@ -892,17 +893,6 @@ Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... 
 
 - **Depends on:** 20261010-19.
 - **Came from:** The review of 20261010-19, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-
-
-### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
-
-From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `users.email = $2` untested, and Rails `exists?` leaves `memberships.user_id = $2` and `memberships.group_name = $3` untested. The result is 1 row whenever any row exists, so a near miss only shows when a fixture holds only near misses (no hit). Add a fixture shape that holds only near misses for a query whose result can't change otherwise, keep the guard sound, and flip the shapes in the corpus.
-
-- **Depends on:** 20261010-27 (landed).
-- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
 
