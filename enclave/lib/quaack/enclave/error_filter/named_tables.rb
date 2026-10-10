@@ -35,11 +35,16 @@ module Quaack
 
         module_function
 
-        # tables if it's an Array of SIZES plain schema.name Strings, and nil
-        # otherwise.
+        # The names of tables that are schema.name Strings of Cycle::NAME's
+        # shape (bare, or quoted as quote_ident writes them), when tables is
+        # an Array of SIZES of them. A name that fails the shape check, such
+        # as a non-ASCII one, is left out, not the whole field, and nil if
+        # none is left.
         def check(tables)
-          tables if tables.instance_of?(Array) && SIZES.cover?(tables.size) &&
-                    tables.all? { ErrorFilter.shaped?(it, FUNCTION) }
+          return unless tables.instance_of?(Array) && SIZES.cover?(tables.size)
+
+          kept = tables.select { ErrorFilter.shaped?(it, Cycle::NAME) }
+          kept unless kept.empty?
         end
       end
     end

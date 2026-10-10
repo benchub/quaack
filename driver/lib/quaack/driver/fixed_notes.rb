@@ -192,7 +192,15 @@ module Quaack
         "dump_object_unreadable" => "Your role on the production server can't read these tables, which the " \
                                     "schema dump needs, and pg_dump locks every table it dumps. Grant your " \
                                     "role there SELECT on the tables named, or use a role that can read " \
-                                    "them. #{GO_ON}",
+                                    "them. A table whose name isn't plain ASCII isn't named. #{GO_ON}",
+        "unknown_extra_dump_schema" => "A name in extra_dump_schemas, in ~/.quaack/config.json on the jump " \
+                                       "server, isn't a schema in the production database. Fix the name, or " \
+                                       "remove it. #{GO_ON}",
+        "dump_exclusions_too_long" => "The schemas the schema dump adds hold so many tables it doesn't need that " \
+                                      "pg_dump's command line would grow too long. Remove the schemas that hold " \
+                                      "them from extra_dump_schemas in ~/.quaack/config.json on the jump " \
+                                      "server, or move the objects the query's schemas use out of those " \
+                                      "schemas. #{GO_ON}",
         "pg_dump_failed" => "pg_dump failed against the production server. It also fails when it waits more " \
                             "than 30 seconds for a table's lock. Check that your role can dump the schema. " \
                             "#{GO_ON}",

@@ -431,15 +431,33 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
                   line(step: "schema-dump", rule: "dump_object_unreadable", tables: many)])
       end
 
+      it "sends a quoted name, as the catalog's quote_ident writes it" do
+        quoted = ['"Sales"."Order ""Items"""', "public.accounts"]
+
+        expect(tables_line(quoted)).to eq(line(step: "schema-dump", rule: "dump_object_unreadable", tables: quoted))
+      end
+
+      # 20261008-48: one name that fails the shape check no longer costs the others.
+      it "keeps the names that pass the shape check, and drops the ones that don't" do
+        mixed = ["public.accounts", ERROR_SENTINEL, "public.café", '"Sales"."Items"']
+
+        out = tables_line(mixed)
+
+        expect(out).to eq(line(step: "schema-dump", rule: "dump_object_unreadable",
+                               tables: ["public.accounts", '"Sales"."Items"']))
+        expect(out).not_to include("SENTINEL")
+      end
+
       it "sends no tables for any other rule" do
         expect(tables_line(tables, rule: "pg_dump_failed")).to eq(line(step: "schema-dump", rule: "pg_dump_failed"))
       end
 
       sneaky = Class.new(Array) { def to_json(*) = ERROR_SENTINEL.to_json }
       [
-        ["a sentinel table", ["public.accounts", ERROR_SENTINEL]],
+        ["only a sentinel table", [ERROR_SENTINEL]],
         ["an unqualified table", %w[accounts]],
-        ["a quoted table", ['"Sales"."Accounts"']],
+        ["only a non-ASCII table", ["public.café"]],
+        ["a bare mixed-case table", %w[Sales.Accounts]],
         ["a table that's a String subclass", [Class.new(String).new("public.a")]],
         ["no tables", []],
         ["more than 64 tables", Array.new(65) { "public.t#{it}" }],

@@ -26,6 +26,9 @@ module Quaack
         # constraint, trigger, rule, index, or row type as its table's, a
         # domain's constraint as its domain's, and an array type as its
         # element's. A system schema's objects are never followed or listed.
+        # The walk also goes from a table to each of its partitions and
+        # inheritance children, at any depth, which pg_depend records only
+        # the other way.
         # An internal trigger, such as a foreign key's on its parent table, is
         # left out: it's part of its constraint, whose home is the child, so
         # following it would lead from the parent to the child.
@@ -98,11 +101,21 @@ module Quaack
             UNION
             SELECT r.hclass, r.hobj
             FROM reach
-            JOIN home d ON d.hclass OPERATOR(pg_catalog.=) reach.hclass AND d.hobj OPERATOR(pg_catalog.=) reach.hobj
-            JOIN pg_catalog.pg_depend dep
-              ON dep.classid OPERATOR(pg_catalog.=) d.classid AND dep.objid OPERATOR(pg_catalog.=) d.objid
-            JOIN home r ON r.classid OPERATOR(pg_catalog.=) dep.refclassid AND r.objid OPERATOR(pg_catalog.=) dep.refobjid
-            WHERE dep.deptype OPERATOR(pg_catalog.=) ANY ('{n,a,i}'::pg_catalog."char"[]) AND NOT r.system
+            CROSS JOIN LATERAL (
+              SELECT dep.refclassid AS nclass, dep.refobjid AS nobj
+              FROM home d
+              JOIN pg_catalog.pg_depend dep
+                ON dep.classid OPERATOR(pg_catalog.=) d.classid AND dep.objid OPERATOR(pg_catalog.=) d.objid
+              WHERE d.hclass OPERATOR(pg_catalog.=) reach.hclass AND d.hobj OPERATOR(pg_catalog.=) reach.hobj
+                AND dep.deptype OPERATOR(pg_catalog.=) ANY ('{n,a,i}'::pg_catalog."char"[])
+              UNION ALL
+              SELECT 'pg_catalog.pg_class'::pg_catalog.regclass::pg_catalog.oid, inh.inhrelid
+              FROM pg_catalog.pg_inherits inh
+              WHERE reach.hclass OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass::pg_catalog.oid
+                AND inh.inhparent OPERATOR(pg_catalog.=) reach.hobj
+            ) nxt
+            JOIN home r ON r.classid OPERATOR(pg_catalog.=) nxt.nclass AND r.objid OPERATOR(pg_catalog.=) nxt.nobj
+            WHERE NOT r.system
           )
           SELECT DISTINCT h.nspname, c.relname
           FROM reach
@@ -151,7 +164,7 @@ module Quaack
         # pg_dump will lock: one in namespaces that isn't excluded.
         def readable!(connection, namespaces, excluded)
           unreadable = relations(connection, namespaces).filter_map do |schema, name, locked, readable|
-            "#{schema}.#{name}" if locked && !readable && !excluded.include?([schema, name])
+            "#{ident(schema)}.#{ident(name)}" if locked && !readable && !excluded.include?([schema, name])
           end
           return if unreadable.empty?
 
@@ -160,6 +173,10 @@ module Quaack
                           "the role can't read #{count} #{count == 1 ? "table" : "tables"} the dump needs",
                           tables: unreadable.first(ErrorFilter::Tables::SIZES.max))
         end
+
+        # A name as the catalog's quote_ident writes it: bare if it's a
+        # plain lowercase name, otherwise in double quotes with each one doubled.
+        def ident(name) = name.match?(/\A[a-z_][a-z0-9_$]*\z/) ? name : "\"#{name.gsub('"', '""')}\""
 
         def relations(connection, namespaces)
           connection.exec_params(RELATIONS_SQL, [JSON.generate(namespaces)]).values.map do |schema, name, locked, ok|
