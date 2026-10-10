@@ -9828,3 +9828,45 @@ The review of 20260923-21 found these minor issues:
 - **Design:** index-from-query.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261008-24 branch; review clean). Tests for `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` not reducing and for a COLLATE-wrapped column; a `char(n)` column's pattern idea uses `bpchar_pattern_ops` (confirmed in real HypoPG: `text_pattern_ops` is refused on `char(n)`; `varchar` takes `text_pattern_ops`) via a new optional `column_types:` on `TableStatistics` (stays inside the enclave; chosen from a fixed pair, never from the type string); the pattern key is skipped under C, POSIX and `ucs_basic` collations; DESIGN.md matches. On the unreleased list.
+
+### 20261008-26. NATURAL JOIN marker: minors from 20260923-30.
+
+The review of 20260923-30 found these minor issues:
+
+1. **DESIGN.md doesn't say what a NATURAL JOIN leaves untested.** It never ties its shared columns, so the query's other atoms can come out untested too: in the spec's query, `o.status = $1` stays untested after three retries that can't succeed. Add a line to "Also unsupported in v1", around line 1151.
+2. **The counterexample prompt asks for something no reply can give.** It asks the LLM to exercise every untested atom, but a "NATURAL JOIN" marker, like a USING one, can never be covered. Consider leaving unreplaceable markers out of that list.
+3. **The new vacuity-guard spec is loose.** It checks the marker only with `include`. Also assert that the marker shows up exactly once and gets no retry.
+
+- **Depends on:** 20260923-30.
+- **Came from:** The review of 20260923-30, 2026-10-08.
+- **Design:** vacuity-guard.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-26; Opus review clean). DESIGN.md says a NATURAL JOIN's common columns are never tied in a fixture so the query's other atoms can come out untested too; `counterexample-payload` drops the `USING (col)` and `NATURAL JOIN` marker shapes from `untested_atoms` (`PredicateAtoms.marker_shape?`; the report's stored `untested` still lists them); the vacuity-guard spec asserts the marker once, never in `variants`, `retries` 3. On the unreleased list.
+
+### 20261008-28. Boolean folding in index-dedupe: minors from 20260923-36.
+
+The review of 20260923-36 found these minor issues:
+
+1. **`BooleanFold` folds only once, so it isn't idempotent.** `(f = true) = true` becomes `f = true`, and only a second normalization, after an `IndexStore` round trip, takes it to `f`. Fold until nothing changes.
+2. **A double NOT isn't collapsed.** `NOT (f = false)` folds to `NOT NOT f`, not to `f`. Postgres prints an existing index as `WHERE (NOT (f = false))`, and the planner uses it for `WHERE f`, so a matching candidate is tested as new. Collapse double NOT.
+3. **One guard has no test.** The `expr.name.size == 1` guard in `BooleanFold.operator` can be replaced with `true` and every test stays green. Either drop it or add a test with `OPERATOR(pg_catalog.=)`.
+
+- **Depends on:** 20260923-36.
+- **Came from:** The review of 20260923-36, 2026-10-08.
+- **Design:** index-dedupe.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-26 branch; Opus review clean). `BooleanFold.fold` repeats until nothing changes (`(f = true) = true` becomes `f`), a double NOT collapses (`NOT (f = false)` becomes `f`; sound in three-valued logic in any context), and the dead `expr.name.size == 1` guard is gone (a schema-qualified operator never matches). `(NOT active) = true` is still not folded. On the unreleased list.
+
+### 20261008-29. Rewrite candidate relation check: minors from 20260923-57.
+
+The first review of 20260923-57 found these minor issues:
+
+1. **A descendant's kind leaks when ONLY is dropped.** Say the original reads `ONLY public.parent_s` and a candidate drops the ONLY. The candidate is refused with the descendant's own rule, such as `foreign_relation` for a foreign-table inheritance child, so the LLM learns the kind of a child it never saw. Only the rule leaves the enclave, not the child's name. Use one rule for every descendant refusal.
+2. **The newly inherited rules have no candidate-level tests.** `rewrite_candidate_check_spec.rb` doesn't test the inheritance-descendant check (ONLY dropped) or `ambiguous_user_schema`. `relations_spec.rb` covers their logic.
+3. **`user_function_in_from` runs before the allowed check.** It reveals nothing about relations, since it only says whether a FROM function is pg_catalog's, but it should run after the allowed check, for consistency.
+
+- **Depends on:** 20260923-57.
+- **Came from:** The first review of 20260923-57, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-26 branch; Opus review clean). A descendant refusal in a candidate is `unknown_relation` (message names only the table the candidate wrote; `Relations::Error` carries `table:` for descendants; qualify keeps its kind-specific rules); candidate-level tests for a dropped ONLY with foreign children at depth 1 and 2, ONLY kept accepted, a `$user` search path, and user-function-in-FROM ordering (item 3 was already done). On the unreleased list.

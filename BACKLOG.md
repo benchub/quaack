@@ -26,6 +26,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-22: live EXPLAIN JSON in `IndexBuild.confirm` and `Measurement.measure_set` is parsed with the store's depth bound (3000) instead of JSON's default 100 (enclave).
 - 20261008-7, 20261008-8, 20261008-9: `or_to_union` takes a GROUP BY and HAVING (plain grouped columns, aggregates only if the catalog says every function of that name is one), outer joins (LEFT, RIGHT, FULL; no NATURAL, USING or a join alias), and a bare `*` expanded from the catalog (enclave).
 - 20261008-24 (items 3 and 4) and 20261008-25: index-from-query reduces joins through a FROM subquery's columns, counts a whole-row reference as reading every column, and keys a `char(n)` pattern idea with `bpchar_pattern_ops` (enclave).
+- 20261008-26: the counterexample payload leaves the `USING (col)` and `NATURAL JOIN` marker shapes out of `untested_atoms` (enclave). 20261008-28: `BooleanFold.fold` repeats to a fixed point and collapses a double NOT (enclave). 20261008-29: a descendant refusal in a candidate is `unknown_relation`, naming only the table the candidate wrote (enclave).
 - 20261008-21 (InitPlan half): `(InitPlan n).colm` in a plan condition is read as a parameter by index-from-plan (enclave). 20261008-23: a bare boolean or NOT boolean skips the MCV coverage rule (enclave).
 - 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
@@ -456,44 +457,11 @@ The builder of 20260923-21 left these items out:
 
 ### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-26. NATURAL JOIN marker: minors from 20260923-30.
+### 20261008-26. NATURAL JOIN marker: minors from 20260923-30. Done, see BACKLOG-COMPLETE.md.
 
-The review of 20260923-30 found these minor issues:
+### 20261008-28. Boolean folding in index-dedupe: minors from 20260923-36. Done, see BACKLOG-COMPLETE.md.
 
-1. **DESIGN.md doesn't say what a NATURAL JOIN leaves untested.** It never ties its shared columns, so the query's other atoms can come out untested too: in the spec's query, `o.status = $1` stays untested after three retries that can't succeed. Add a line to "Also unsupported in v1", around line 1151.
-2. **The counterexample prompt asks for something no reply can give.** It asks the LLM to exercise every untested atom, but a "NATURAL JOIN" marker, like a USING one, can never be covered. Consider leaving unreplaceable markers out of that list.
-3. **The new vacuity-guard spec is loose.** It checks the marker only with `include`. Also assert that the marker shows up exactly once and gets no retry.
-
-- **Depends on:** 20260923-30.
-- **Came from:** The review of 20260923-30, 2026-10-08.
-- **Design:** vacuity-guard.
-- **Status:** todo
-
-### 20261008-28. Boolean folding in index-dedupe: minors from 20260923-36.
-
-The review of 20260923-36 found these minor issues:
-
-1. **`BooleanFold` folds only once, so it isn't idempotent.** `(f = true) = true` becomes `f = true`, and only a second normalization, after an `IndexStore` round trip, takes it to `f`. Fold until nothing changes.
-2. **A double NOT isn't collapsed.** `NOT (f = false)` folds to `NOT NOT f`, not to `f`. Postgres prints an existing index as `WHERE (NOT (f = false))`, and the planner uses it for `WHERE f`, so a matching candidate is tested as new. Collapse double NOT.
-3. **One guard has no test.** The `expr.name.size == 1` guard in `BooleanFold.operator` can be replaced with `true` and every test stays green. Either drop it or add a test with `OPERATOR(pg_catalog.=)`.
-
-- **Depends on:** 20260923-36.
-- **Came from:** The review of 20260923-36, 2026-10-08.
-- **Design:** index-dedupe.
-- **Status:** todo
-
-### 20261008-29. Rewrite candidate relation check: minors from 20260923-57.
-
-The first review of 20260923-57 found these minor issues:
-
-1. **A descendant's kind leaks when ONLY is dropped.** Say the original reads `ONLY public.parent_s` and a candidate drops the ONLY. The candidate is refused with the descendant's own rule, such as `foreign_relation` for a foreign-table inheritance child, so the LLM learns the kind of a child it never saw. Only the rule leaves the enclave, not the child's name. Use one rule for every descendant refusal.
-2. **The newly inherited rules have no candidate-level tests.** `rewrite_candidate_check_spec.rb` doesn't test the inheritance-descendant check (ONLY dropped) or `ambiguous_user_schema`. `relations_spec.rb` covers their logic.
-3. **`user_function_in_from` runs before the allowed check.** It reveals nothing about relations, since it only says whether a FROM function is pg_catalog's, but it should run after the allowed check, for consistency.
-
-- **Depends on:** 20260923-57.
-- **Came from:** The first review of 20260923-57, 2026-10-08.
-- **Design:** What goes into the enclave.
-- **Status:** todo
+### 20261008-29. Rewrite candidate relation check: minors from 20260923-57. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-30. Production inventory: minors from 20260924-24, and silent packet drops.
 
