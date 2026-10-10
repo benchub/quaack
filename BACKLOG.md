@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261008-35 and 20261008-39: index DDL key expressions and predicates and rewrite candidates refuse reg literals, name lookups, OID probes, reg input functions and integer text search configs; an "any" argument is declared text and prepared again (enclave).
 - 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
 - 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
 - 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
@@ -474,30 +475,18 @@ The builder of 20260923-21 left these items out:
 
 ### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-35. Reg literals in candidates: minors from 20261008-31.
-
-The first review of 20261008-31 found these minor issues:
-
-1. **The driver's note for `unsupported_reg_literal` misdescribes a refused candidate.** The note in `FixedNotes` says "The query has a regproc, regprocedure, regoper, or regoperator constant ... can't tune this query." For a refused rewrite candidate, that's wrong. Check whether candidate refusals ever reach that note. If they do, give the candidate case its own rule or words.
-2. **Index DDL predicates weren't checked for the same reg-literal leak.** Check whether an LLM-proposed index predicate, such as `WHERE x = 'hid.t'::regclass`, or its planning, can reveal that a relation exists.
-
-- **Depends on:** 20261008-31.
-- **Came from:** The first review of 20261008-31, 2026-10-08.
-- **Design:** What goes into the enclave.
-- **Status:** todo
-
 ### 20261008-36. Cast placeholders in literals: minors from 20260924-28.
 
 The review of 20260924-28 found these minor issues:
 
-1. **Older entries.** No test covers a statistics entry stored before `column_types` existed.
+1. **Older entries.** (Done in the 20261008-35 batch.) No test covers a statistics entry stored before `column_types` existed.
 2. **DateStyle.** A picked date or timestamp value goes through its cast as text, in the DateStyle that was active when statistics read it. A replay session with another DateStyle could misread the value or fail to bind it. Pin the DateStyle, for example to ISO, wherever the statistics are read and replayed.
-3. **Shadowed type names.** A bare cast like `$1::timestamptz` matches the pg_catalog type by name only, so a type of the same name earlier on the search_path would match too. The worst case is a bind error, not a leak.
+3. **Shadowed type names.** (Done.) A bare cast like `$1::timestamptz` matches the pg_catalog type by name only, so a type of the same name earlier on the search_path would match too. The worst case is a bind error, not a leak.
 
 - **Depends on:** 20260924-28.
 - **Came from:** The review of 20260924-28, 2026-10-08.
 - **Design:** literals.
-- **Status:** todo
+- **Status:** todo. Only item 2 (DateStyle) is left.
 
 ### 20261008-37. Plan table check: RLS policies that read other tables.
 
@@ -519,18 +508,6 @@ The review of 20260924-29 found these:
 - **Depends on:** 20260924-29.
 - **Came from:** The review of 20260924-29, 2026-10-08.
 - **Design:** inventory and run-server.
-- **Status:** todo
-
-### 20261008-39. Reg-literal check: "any" arguments and OID probes, from 20261008-31.
-
-The second review of 20261008-31 found these:
-
-1. **"any" arguments are over-refused.** `untyped_literal` refuses calls whose arguments have type "any", such as `concat('a', name)` and `json_build_object('a', id)`, because a literal turned into an untyped `$k` has no type Postgres can work out. `json_build_object` turns up in real rewrites. Bind such arguments as text.
-2. **OID probes.** `WHERE pg_get_indexdef(16384) IS NULL` is accepted, and the fixture-compare verdict can show whether an object with that OID exists. The same goes for `pg_get_viewdef(oid)`, `pg_get_constraintdef`, and similar functions. This reveals an OID's existence, not a guessed name. Consider adding the OID-taking catalog functions to the deny-list.
-
-- **Depends on:** 20261008-31.
-- **Came from:** The second review of 20261008-31, 2026-10-08.
-- **Design:** What goes into the enclave.
 - **Status:** todo
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
@@ -971,3 +948,13 @@ From the review of 20261008-33 (minor). Removing `.lazy` from `distinct_loads` l
 - **Came from:** The review of 20261008-33, 2026-10-10 (minor).
 - **Design:** fixture-compare.
 - **Status:** todo
+
+### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
+
+The second review of 20261008-39 found this minor issue: rewrite candidates accept `record_in('(1)'::cstring, 999999, -1)`, `enum_in`, `array_in`, `domain_in`, `range_in`, `multirange_in` and their `*_recv` forms. They're stable, take a type oid, and raise "type with OID ... does not exist" or "cache lookup failed" for one that names nothing, so they probe whether a type oid exists. The completeness spec misses them because its `(in|out|send|recv|...)$` exclusion filters them out. Index DDL isn't affected, since an index expression must be immutable. Refuse a call to any `*_in` or `*_recv` function given an oid argument (or list these names), and narrow the spec's exclusion so they show up. It's exotic SQL that no ORM generates.
+
+- **Depends on:** 20261008-39.
+- **Came from:** The second review of 20261008-39, 2026-10-10.
+- **Design:** What goes into the enclave.
+- **Status:** todo
+

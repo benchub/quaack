@@ -9923,3 +9923,27 @@ The review of 20261001-5 found this gap. It was already on main. `APIErrorDetail
 - **Came from:** The review of 20261001-5, 2026-10-08.
 - **Design:** LLM client.
 - **Status:** done. `char_pattern` now matches `%XX` (either hex case) for every character; sentinel tests added. Driver only, so not on the unreleased list.
+
+### 20261008-35. Reg literals in candidates: minors from 20261008-31.
+
+The first review of 20261008-31 found these minor issues:
+
+1. **The driver's note for `unsupported_reg_literal` misdescribes a refused candidate.** The note in `FixedNotes` says "The query has a regproc, regprocedure, regoper, or regoperator constant ... can't tune this query." For a refused rewrite candidate, that's wrong. Check whether candidate refusals ever reach that note. If they do, give the candidate case its own rule or words.
+2. **Index DDL predicates weren't checked for the same reg-literal leak.** Check whether an LLM-proposed index predicate, such as `WHERE x = 'hid.t'::regclass`, or its planning, can reveal that a relation exists.
+
+- **Depends on:** 20261008-31.
+- **Came from:** The first review of 20261008-31, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** done. Item 1 and item 2 landed (index DDL key expressions and predicates get the same three reg checks, driver note checked).
+
+### 20261008-39. Reg-literal check: "any" arguments and OID probes, from 20261008-31.
+
+The second review of 20261008-31 found these:
+
+1. **"any" arguments are over-refused.** `untyped_literal` refuses calls whose arguments have type "any", such as `concat('a', name)` and `json_build_object('a', id)`, because a literal turned into an untyped `$k` has no type Postgres can work out. `json_build_object` turns up in real rewrites. Bind such arguments as text.
+2. **OID probes.** `WHERE pg_get_indexdef(16384) IS NULL` is accepted, and the fixture-compare verdict can show whether an object with that OID exists. The same goes for `pg_get_viewdef(oid)`, `pg_get_constraintdef`, and similar functions. This reveals an OID's existence, not a guessed name. Consider adding the OID-taking catalog functions to the deny-list.
+
+- **Depends on:** 20261008-31.
+- **Came from:** The second review of 20261008-31, 2026-10-08.
+- **Design:** What goes into the enclave.
+- **Status:** done. "any" arguments are declared text and prepared again; OID probes, reg input functions, `satisfies_hash_partition` and integer text search configs are refused; completeness specs check the list against PG 18. Minor: 20261010-16.
