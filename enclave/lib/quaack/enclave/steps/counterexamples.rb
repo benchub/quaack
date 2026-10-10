@@ -95,7 +95,7 @@ module Quaack
             Counterexamples.survived(store, number, false) unless result["passed"]
             store.write("rewrite_tested_#{number}", result)
             [{ type: :rewrite_test, rewrite: search,
-               **result.slice("passed", "scenario", "rule").transform_keys(&:to_sym) }]
+               **result.slice("passed", "scenario", "rule", "s1_load_rule", "s1_rows").transform_keys(&:to_sym) }]
           end
 
           def discarded?(store, number)
@@ -119,7 +119,8 @@ module Quaack
           def refusal(store, search)
             result = store.read("rewrite_test_refusal")
             report = ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
-                                               refused: result["rule"], cycle: nil, loads: 0)
+                                               refused: result["rule"], cycle: nil, loads: 0, s1_load_rule: nil,
+                                               s1_rows: nil)
             result.tap { RewriteBurndown.record_test(store, search, it, report) }
           end
 
@@ -132,10 +133,17 @@ module Quaack
             connection&.close
           end
 
+          # What a tested (not refused) report adds: the dropped count and
+          # vacuity-guard's diagnostic, the rule S1 failed to load with (a
+          # String or nil) and the original's row count on S1.
+          def diagnostic(report)
+            { "dropped" => report.dropped, "s1_load_rule" => report.s1_load_rule&.to_s, "s1_rows" => report.s1_rows }
+          end
+
           def outcome(report)
             result = report.results.first
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
-              **(report.refused ? { "refused" => true } : { "dropped" => report.dropped }),
+              **(report.refused ? { "refused" => true } : diagnostic(report)),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
               "untested" => report.untested, "untested_atoms" => report.untested_atoms }
           end

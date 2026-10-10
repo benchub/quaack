@@ -10,6 +10,7 @@ require_relative "protocol/hidden_statistics"
 require_relative "protocol/suggested_drops"
 require_relative "protocol/port"
 require_relative "protocol/step_counts"
+require_relative "protocol/vacuity_diagnostic"
 require_relative "protocol/error_rules"
 
 module Quaack

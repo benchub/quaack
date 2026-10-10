@@ -49,8 +49,12 @@ module Quaack
     module ScenarioTests
       # dropped counts the scenario groups left out because they collide on
       # a unique key (Scenarios::Builder#dropped). loads counts the fixtures
-      # loaded in arena (ArenaRunner#loads), the guard's included.
-      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle, :loads)
+      # loaded in arena (ArenaRunner#loads), the guard's included. s1_load_rule
+      # and s1_rows are vacuity-guard's diagnostic (VacuityGuard::Result): the
+      # rule S1 failed to load with, and the original's row count on S1, each
+      # nil when it doesn't apply (and both nil on a refusal).
+      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle, :loads,
+                           :s1_load_rule, :s1_rows)
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
@@ -68,13 +72,14 @@ module Quaack
       # The report of candidates tested on the guard's scenarios.
       def tested(guard, builder, results, loads)
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
-                   dropped: builder.dropped, refused: nil, cycle: nil, loads:)
+                   dropped: builder.dropped, refused: nil, cycle: nil, loads:, s1_load_rule: guard.s1_load_rule,
+                   s1_rows: guard.s1_rows)
       end
 
       def refused(candidates, rule, cycle: nil, loads: 0)
         results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
         Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule,
-                   cycle: (cycle if rule == :fk_cycle), loads:)
+                   cycle: (cycle if rule == :fk_cycle), loads:, s1_load_rule: nil, s1_rows: nil)
       end
 
       # A scenario's further fixtures (spills, see Scenarios::Parts) run
