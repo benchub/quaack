@@ -666,7 +666,7 @@ The first row, with no rank, is the original query, so you can see how far each 
 
 - **Blocks read, slow values:** blocks read with the values from your slow plan. This is the number you most want down.
 - **Blocks read, all values:** blocks read, added up over the slow, worst-case, and typical values.
-- **Size of its new indexes:** disk space for the candidate's new indexes. It breaks ties: when candidates of a kind tie, the one whose new indexes take less space is ranked and the other isn't. (QUAACK takes the candidates from the smallest size up and keeps each one unless it ties one already kept, so a candidate that lost a tie never knocks out another.)
+- **Size of its new indexes:** disk space for the candidate's new indexes. It breaks ties. Before candidates are grouped by kind, any two whose slow-value blocks are within 5% of each other tie, whatever their kinds, and the one whose new indexes take more space isn't ranked. (QUAACK takes the candidates from the smallest size up and keeps each one unless it ties one already kept, so a candidate that lost a tie never knocks out another.)
 
 Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks than the original query, and *no worse* on every other value set, meaning no more than 5% more blocks.
 
@@ -732,13 +732,14 @@ Each of these three starts open, in a rose box. When something did beat the orig
 
 ### Proposed indexes.
 
-| Index | Built size | Your index that already covers it | Your indexes it would make redundant |
-| --- | ---: | --- | --- |
-| `CREATE INDEX ON public.events USING btree (account_id, created_at) INCLUDE (kind)` | 14.8 MB | none | events_account_id_idx (9.1 MB) |
+| Index | Built size | Your index that already covers it |
+| --- | ---: | --- |
+| `CREATE INDEX ON public.events USING btree (account_id, created_at) INCLUDE (kind)` | 14.8 MB | none |
+| `CREATE INDEX ON public.events USING btree (account_id, created_at)` | 11.5 MB | none |
 
 Only the ranked candidates' indexes are proposed. A second table, **Other indexes QUAACK built and measured,** lists the ones it built that no ranked candidate uses. When nothing beat the original query, nothing is proposed, and the section is one table called **Indexes QUAACK built and measured.** When your role on the production server couldn't read some statistics, a note here, **Statistics QUAACK couldn't see**, says which, that QUAACK went on without them, and that a role that owns the tables lets it read them. The verdict's caveat links to it.
 
-Sizes use the unit that fits: kB, MB, or GB. The **built size** is real: QUAACK built the index on the racetrack. The last two columns name your existing indexes, each with its size: one that already covers the new index, and the ones the new index would make redundant, which you could drop after checking that nothing else needs them.
+Sizes use the unit that fits: kB, MB, or GB. The **built size** is real: QUAACK built the index on the racetrack. The last column names your existing index that already covers the new one, with its size, if there is one. An existing index a new index would make redundant isn't in this table. When a ranked candidate has such indexes, a note under that candidate lists each with its size and scan count, as ones you could drop after checking that nothing else needs them, and the verdict's Index change subtracts their size. In this run there are none, so the winner's Index change is its built size.
 
 To ship an index, build it on production yourself, usually with `CREATE INDEX CONCURRENTLY`, and give it a name.
 
