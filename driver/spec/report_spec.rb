@@ -462,9 +462,9 @@ RSpec.describe Quaack::Driver::Report do
 
       it "explains the hidden statistics in the indexes section, from the payload's names and count only" do
         note = section(out, "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
-        expect(note).to include("2 extended statistics objects", sq("orders_lower_idx"), "index ideas",
+        expect(note).to include("2 extended statistics objects", sq("orders_lower_idx"), "LLM&#39;s index ideas",
                                 "can&#39;t read its columns", "let QUAACK read these statistics", "owns the tables")
-        expect(note).not_to include("estimate", "run server", "copy", "real reads")
+        expect(note).not_to include("estimate", "run server", "copy", "real reads", "which ideas to try")
         caveat_payload["hidden_statistics"] = { "indexes" => ["<b>x</b>"], "extended_statistics" => 0 }
         note = section(render(caveat_payload), "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
         expect(note).to include("&lt;b&gt;x&lt;/b&gt;")
