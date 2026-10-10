@@ -17,12 +17,15 @@ RSpec.describe Quaack::Protocol::VacuityDiagnostic do
   end
 
   it "is whitelisted on rewrite_test under the names it checks" do
-    expect(Quaack::Protocol::WHITELIST[:rewrite_test].map(&:name)).to include("s1_load_rule", "s1_rows")
+    expect(Quaack::Protocol::WHITELIST[:rewrite_test].map(&:name))
+      .to include("s1_load_rule", "s1_rows", "s1_nonzero_rows")
   end
 
   it "takes a rule from the list or nil, and a row count or nil, and ignores other fields" do
     expect(valid?({ "s1_load_rule" => "fixture_load_failed", "s1_rows" => nil, "passed" => true })).to be(true)
     expect(valid?({ "s1_load_rule" => nil, "s1_rows" => 0 })).to be(true)
+    expect(valid?({ "s1_rows" => 1, "s1_nonzero_rows" => 0 })).to be(true)
+    expect(valid?({ "s1_nonzero_rows" => nil })).to be(true)
     expect(valid?({})).to be(true)
   end
 
@@ -30,11 +33,15 @@ RSpec.describe Quaack::Protocol::VacuityDiagnostic do
     expect(described_class::MAX_ROWS).to eq(2_000_000)
     expect(valid?({ "s1_rows" => described_class::MAX_ROWS })).to be(true)
     expect(valid?({ "s1_rows" => described_class::MAX_ROWS + 1 })).to be(false)
+    expect(valid?({ "s1_nonzero_rows" => described_class::MAX_ROWS })).to be(true)
+    expect(valid?({ "s1_nonzero_rows" => described_class::MAX_ROWS + 1 })).to be(false)
   end
 
   it "refuses a rule not on the list, a non-count, and a negative or huge count, never quoting it" do
     [{ "s1_load_rule" => sentinel }, { "s1_load_rule" => 5 }, { "s1_rows" => sentinel }, { "s1_rows" => "3" },
-     { "s1_rows" => -1 }, { "s1_rows" => 10**13 }, { "s1_rows" => 10**12 }, { "s1_rows" => 1.5 }].each do |fields|
+     { "s1_rows" => -1 }, { "s1_rows" => 10**13 }, { "s1_rows" => 10**12 }, { "s1_rows" => 1.5 },
+     { "s1_nonzero_rows" => sentinel }, { "s1_nonzero_rows" => "0" }, { "s1_nonzero_rows" => -1 },
+     { "s1_nonzero_rows" => true }, { "s1_nonzero_rows" => 0.5 }].each do |fields|
       expect(valid?(fields)).to be(false), fields.inspect
     end
   end

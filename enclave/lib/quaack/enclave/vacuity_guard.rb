@@ -42,7 +42,7 @@ module Quaack
       MAX_COMPARISONS = 32
 
       Result = Data.define(:untested, :untested_atoms, :untested_paths, :retries, :variants, :scenarios, :s1_load_rule,
-                           :s1_rows) do
+                           :s1_rows, :s1_nonzero_rows) do
         def inspect = "#<data #{self.class} untested=#{untested} retries=#{retries} scenarios=<redacted>>"
 
         alias_method :to_s, :inspect
@@ -66,7 +66,7 @@ module Quaack
       def s1_fixtures(builder, scenarios) = [scenarios[:s1], *builder.spills.fetch(:s1, [])]
 
       def new_state
-        { exercised: [], variants: {}, retries: 0, s1_load_rule: nil, s1_rows: nil,
+        { exercised: [], variants: {}, retries: 0, s1_load_rule: nil, s1_rows: nil, s1_nonzero_rows: nil,
           compared: Compared.new(MAX_COMPARISONS) }
       end
 
@@ -79,7 +79,8 @@ module Quaack
         Result.new(untested: untested.map { |i| builder.atoms[i].shape }, untested_atoms: untested,
                    untested_paths: untested.map { |i| builder.atoms[i].path },
                    retries: state[:retries], variants: state[:variants], scenarios:,
-                   s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows])
+                   s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows],
+                   s1_nonzero_rows: state[:s1_nonzero_rows])
       end
 
       # The atoms not yet exercised that none of S1's fixtures exercise
@@ -110,16 +111,23 @@ module Quaack
       LOAD_STEPS = %i[load insert].freeze
 
       # state also takes the last attempt's S1 diagnostic: the rule the load
-      # failed with, or the original's row count once it loaded.
+      # failed with, or the original's row count once it loaded, and how
+      # many of those rows are nonzero (nonzero_rows).
       def loaded_exercised_atoms(runner, rows, sql, loosened, state)
         state[:s1_load_rule] = nil
-        exercised_atoms(runner, rows, sql, loosened, compared: state[:compared]) { state[:s1_rows] = it }
+        exercised_atoms(runner, rows, sql, loosened, compared: state[:compared]) { s1_counts(state, it) }
       rescue ArenaRunner::Error => e
         raise unless LOAD_STEPS.include?(e.step)
 
         state[:s1_load_rule] = load_rule(e.rule)
-        state[:s1_rows] = nil
+        s1_counts(state, nil)
         []
+      end
+
+      # The S1 row counts of result, the original's rows, or nil for both.
+      def s1_counts(state, result)
+        state[:s1_rows] = result&.size
+        state[:s1_nonzero_rows] = result && nonzero_rows(result)
       end
 
       # The rule a load failed with if it's on the fixed list, else :other.
@@ -176,11 +184,19 @@ module Quaack
       def changed_atoms(runner, rows, sql, loosened, inserts)
         runner.with_fixture(rows, inserts:) do |tx|
           result = tx.query(sql)
-          yield result.rows.size if block_given?
+          yield result.rows if block_given?
           base = multiset(result)
           [loosened.reject { |_, query| multiset(tx.query(query)) == base }.keys, base.empty?]
         end
       end
+
+      # How many rows hold a value that's neither NULL nor a numeric zero.
+      # An aggregate always returns a row, so S1 matching nothing shows as
+      # 0 here: count(*) gives 0, sum() and max() give NULL. Only a count
+      # leaves the enclave, never a value.
+      def nonzero_rows(rows) = rows.count { |row| row.any? { !it.nil? && !ZERO.match?(it.to_s) } }
+
+      ZERO = /\A[-+]?(0+(\.0*)?|\.0+)\z/
 
       def top_level_cut?(sql)
         select = PgQuery.parse(sql).tree.stmts.first&.stmt&.select_stmt

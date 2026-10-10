@@ -186,12 +186,14 @@ module Quaack
       # holds the mechanical proposals, and then tests what's left in index-test.
       # The two are a chain, so the round's record covers both:
       #
-      # - in is 0, and added is { llm: the candidates the round filtered,
-      #   and the ones it refused before filtering }.
+      # - in is the pool the round carries (see carried): what the stage
+      #   before it sent on. added is { llm: the candidates the round
+      #   filtered, and the ones it refused before filtering }.
       # - dropped holds the refused ones by rule, and the round's index-dedupe
       #   reasons and its index-test ones.
       # - set_aside is what the round's filtering set aside.
-      # - out is what the planner used, from report.
+      # - out is the carried pool plus what the planner used, from report,
+      #   so it's the whole pool that goes on.
       # - extra is the caller's, such as how many candidates fell short
       #   before llm-index-refine.
       #
@@ -211,10 +213,30 @@ module Quaack
         raise Error, "an LLM round's stage must be llm-index-ideas or llm-index-refine" unless ROUNDS.include?(stage)
 
         counts = Adapters.dedupe_counts(dedupe)
-        round = Adapters.round_counts(counts, Adapters.since(since), report)
+        round = Adapters.carry(Adapters.round_counts(counts, Adapters.since(since), report),
+                               carried(store, stage, search, replace:))
         add(store, [[stage, search, Adapters.with_refused(round, refused).merge(extra:)]],
             Adapters.tested_totals(report), replace:)
         counts
+      end
+
+      # The stage each LLM round carries its pool from.
+      CARRIED_FROM = { "llm-index-ideas" => "index-test", "llm-index-refine" => "llm-index-ideas" }.freeze
+
+      # What an LLM round carries in for search: the out of the stage before
+      # it (CARRIED_FROM), the ideas that are still in the pool, when the
+      # search has no record for the round yet or the round replaces it.
+      # A later call for the same round adds only its own ideas, so it
+      # carries 0, and the pool is counted once. The ideas index-test held
+      # back for a real build aren't in its out, so they aren't carried:
+      # they stay in index-test's set_aside, for index-build. 0 if the stage
+      # before has no record.
+      def carried(store, stage, search, replace: false)
+        burndown = read(store)
+        name = Input.name(search, "search")
+        return 0 if burndown["stages"][stage]&.key?(name) && !replace
+
+        burndown.dig("stages", CARRIED_FROM.fetch(stage), name, "out") || 0
       end
 
       # The burndown so far, with String keys, or an empty one.
@@ -295,6 +317,10 @@ module Quaack
             dropped: drops_since(counts[:dropped], since[:dropped]).merge(tested[:dropped]),
             set_aside: counts[:set_aside] - since[:set_aside], out: tested[:out] }
         end
+
+        # The round's counts with the carried pool in it, going in and
+        # going on.
+        def carry(round, carried) = round.merge(in: carried, out: round[:out] + carried)
 
         # The round's counts with the refused DDL added by the LLM and
         # dropped by rule.

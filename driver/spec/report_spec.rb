@@ -2868,6 +2868,47 @@ RSpec.describe Quaack::Driver::Report do
       expect(widths(bands(funnel("index"))[1])).to eq([width(4, 6), width(6, 6)])
     end
 
+    # Task 20261010-20: three widths per band: what came in at its top, what it added at its
+    # middle, as a lighter slice on each side, and what went on at its bottom.
+    def added_slices(band)
+      band.scan(/<polygon class="added" points="([^"]+)"/).map { it.first.split.map { it.split(",").map(&:to_f) } }
+    end
+
+    it "draws what a later stage added as a lighter slice on each side, out to in plus added at the band's middle" do
+      band = bands(funnel("rewrite"))[1]
+      top = rows_y(band).first
+      slices = added_slices(band)
+      expect(slices.size).to eq(2)
+      middle = Quaack::Driver::Report::Funnel::WIDTH / 2
+      peaks = slices.map { |points| points.find { it.last == top + (Quaack::Driver::Report::Funnel::HEIGHT / 2) } }
+      expect(peaks.map { (it.first - middle).abs.round(1) }).to all(eq((width(2 + 5, 8) / 2).round(1)))
+      came_in, went_on = widths(band)
+      expect([came_in, went_on]).to eq([width(2, 8), width(6, 8)])
+      expect(band[/<polygon class="added"[^>]*>/]).to include('fill-opacity="0.35"')
+    end
+
+    it "draws no added slice on a band that added nothing, nor on the first band, whose width is what it added" do
+      rewrite = bands(funnel("rewrite"))
+      expect(added_slices(rewrite[0])).to eq([])
+      expect(added_slices(rewrite[3])).to eq([])
+    end
+
+    it "draws the added slice on a band that added and dropped nothing, so it widens to what went on" do
+      band = bands(funnel("rewrite"))[2]
+      expect(added_slices(band).map { it[1].first.round(1) })
+        .to eq([(160 - (width(8, 8) / 2)).round(1), (160 + (width(8, 8) / 2)).round(1)])
+    end
+
+    it "says beside a later band how many its stage added" do
+      expect(counts(bands(funnel("rewrite"))[1])).to start_with("5 added, 6 went on")
+      expect(counts(bands(funnel("rewrite"))[0])).to start_with("2 went on")
+    end
+
+    it "sets the scale by a band's widest point, where what came in and what it added meet" do
+      stages["llm-rewrites"]["rewrites"] = rec(2, 6, added: { "llm" => 14 }, dropped: { "inbound_check" => 10 })
+      expect(widths(bands(funnel("rewrite"))[1])).to eq([width(2, 16), width(6, 16)])
+    end
+
     it "keeps a first band that added nothing at zero width" do
       stages["index-from-query"] = { "original" => rec(0, 0) }
       expect(widths(bands(funnel("index")).first)).to eq([0, 0])

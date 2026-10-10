@@ -10180,3 +10180,34 @@ From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `u
 - **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10: when the top-level SELECT has a LIMIT and no ORDER BY, S1 gets one more spill fixture holding only the near misses (no hit), so `SELECT 1 ... LIMIT 1` and Rails `exists?` can show a difference; every spill is already compared by rewrite-test in every load order, so soundness holds. Unsupported in v1: `SELECT EXISTS (...)`, `bool_or`, an OFFSET with no LIMIT. Minor: assert that `dropped` is above 0 for the ORDER BY build in the near-misses-alone spec (a surviving mutant, `counted:` defaulting to false).
+
+### 20261010-37. Winner summary: push the duplicated-constraint angle, and tighten the node check.
+
+From the live run and review of 20261010-28. (1) A live synthetic `or_to_union` case (two OR arms that both repeated one condition) got a why about planning the arms separately, but never mentioned the duplicated condition, which is the angle in the user's own example ("the original repeated many of the same constraints in several OR clauses; pulling those out left something simple enough for the planner to switch to EXISTS"). Have the payload carry what the SQL comparison shows, as facts the model can't invent: conditions repeated across OR arms or UNION branches in the original, and which of them the winner no longer repeats (computed from the two SQL texts in the driver, as condition shapes with `$n`, never values), and have the prompt say to name that when present. Re-run a live synthetic case and show the user the text. (2) The node-type check passes a wrong qualifier ("Hash Anti Join" passes on "Hash", "Parallel Seq Scan" on "Seq Scan"): refuse Anti, Semi or Parallel unless the payload carries the join type or parallel flag. (3) The user should confirm the 1000-character cap and the looser prompt (the old rule against saying how a step works was dropped so the summary can explain).
+
+- **Depends on:** 20261010-28 (landed).
+- **Came from:** The live run and review of 20261010-28, 2026-10-10.
+- **Design:** report.
+- **Status:** done. Landed 2026-10-10 (driver only): the summary is a conditional lesson (precondition from the query or schema, the transformation, why it helps here, when it would not; one or two sentences for an index-only winner); `Repeats` finds condition shapes repeated across OR arms or UNION branches (every `$n` treated as one placeholder; two copies may hold different values) and `Input::RULE_PRECONDITIONS` gives each of the 12 rules a fixed precondition (9 verified against the code, 3 read plausibly); guards refuse universal advice phrasings and Anti/Semi/Parallel qualifiers. Cap 1000 characters, prompt asks under 700 (the user should confirm). Minors: 20261010-41.
+
+### 20261010-22. Vacuity diagnostic: say whether an aggregate query's S1 result was empty.
+
+`s1_rows` is 1 for any `count(*)`/aggregate query, so it can't tell "S1 matched nothing" from "S1 matched". Add a number-only diagnostic: whether S1's result value for an aggregate was zero or the aggregate's group count (a flag or an integer, never data). It touches Protocol `VacuityDiagnostic`, the egress whitelist, `VacuityGuard`, `ScenarioTests`, the counterexamples step and key-list assertions in several specs, with sentinel coverage. Skipped in 20261010-19, whose repro showed S1's count was 7 there; useful for the next real run.
+
+- **Depends on:** 20261010-19.
+- **Came from:** The work on 20261010-19, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** done. Landed 2026-10-10 (enclave and protocol): `s1_nonzero_rows`, an Integer 0..MAX_ROWS (nil when S1 did not load): how many of the original's S1 result rows hold a value that is neither NULL nor a numeric zero. For count(*), sum() and max() it reads 0 when S1 matched nothing and 1 when it matched, while `s1_rows` stays 1. Only a count crosses the boundary. Minor: 20261010-42.
+
+### 20261010-20. Index burndown: carry the surviving ideas through the LLM rounds, and show added as its own width.
+
+The user asked, looking at the original query's index burndown: "Ideas from the LLM" shows 5 added, 3 dropped and 2 went on, after the planner stage sent 6 on. It reads as if 6 came in and the output got wider than the input. It isn't: an LLM round's record is `in: 0`, `added: {llm: 5}`, `out: 2` (`Burndown.round_counts` in the enclave), so it counts only its own ideas, and the 6 that went on from index-test aren't in it. The `in + added - dropped - set_aside = out` check holds for that record, but the funnel isn't one flow, so the picture misleads. (The 4 that "Trying indexes together" sends on is a different unit again: combinations.)
+
+1. Carry the pool: give each LLM round `in` equal to the earlier stage's `out` (plus what it holds), so `out` is the whole surviving set (6 + 2 = 8) and the next stage's `in` matches it. Check how index-rank, the second round and the combination stage read these counts so the funnel, the table and the tooltips stay consistent, and what happens to the "held back" ideas.
+2. Draw three widths per layer: what came in, what was added, and what went on (the filtered output), instead of in and out. Or keep two widths but show the added ones as a separate, visibly different slice. The user's idea; they left the visual choice open.
+3. The enclave records the counts, so a change to `in` is an enclave and protocol check (`Protocol::Burndown.adds_up?` still holds). Report-only parts are driver.
+
+- **Depends on:** none.
+- **Came from:** the user, 2026-10-10.
+- **Design:** report, burndown.
+- **Status:** done. Landed 2026-10-10 (enclave and driver; no protocol change): every stage's `in` is the earlier stage's `out` (index-from-plan takes index-from-query's count; llm-index-ideas and llm-index-refine take the earlier round's out and carry the pool once per search; rewrite arrivals take the nearest earlier arrival stage's out; a skipped refine passes the pool through; held-back ideas stay in index-test's set_aside and never reach index-rank). The funnel draws three widths per later band (came in, came in plus added as a lighter dashed slice, went on). Minors: 20261010-44.

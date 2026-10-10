@@ -17,6 +17,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
 - 20261010-34: `Plan#scope_mate`, a sibling fails one other pooled atom of the near miss's scope on the same table (enclave).
 - 20261010-31: S1 gets a near-misses-only fixture for a top-level LIMIT without ORDER BY (enclave).
+- 20261010-22: `s1_nonzero_rows` in the rewrite_test message, the whitelist and `Protocol::VacuityDiagnostic` (enclave and protocol).
+- 20261010-20: each burndown stage's `in` carries the earlier stage's `out` (index-from-plan, the LLM rounds, the rewrite arrival stages) (enclave).
 
 ## How this file works.
 
@@ -865,27 +867,6 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261010-20. Index burndown: carry the surviving ideas through the LLM rounds, and show added as its own width.
-
-The user asked, looking at the original query's index burndown: "Ideas from the LLM" shows 5 added, 3 dropped and 2 went on, after the planner stage sent 6 on. It reads as if 6 came in and the output got wider than the input. It isn't: an LLM round's record is `in: 0`, `added: {llm: 5}`, `out: 2` (`Burndown.round_counts` in the enclave), so it counts only its own ideas, and the 6 that went on from index-test aren't in it. The `in + added - dropped - set_aside = out` check holds for that record, but the funnel isn't one flow, so the picture misleads. (The 4 that "Trying indexes together" sends on is a different unit again: combinations.)
-
-1. Carry the pool: give each LLM round `in` equal to the earlier stage's `out` (plus what it holds), so `out` is the whole surviving set (6 + 2 = 8) and the next stage's `in` matches it. Check how index-rank, the second round and the combination stage read these counts so the funnel, the table and the tooltips stay consistent, and what happens to the "held back" ideas.
-2. Draw three widths per layer: what came in, what was added, and what went on (the filtered output), instead of in and out. Or keep two widths but show the added ones as a separate, visibly different slice. The user's idea; they left the visual choice open.
-3. The enclave records the counts, so a change to `in` is an enclave and protocol check (`Protocol::Burndown.adds_up?` still holds). Report-only parts are driver.
-
-- **Depends on:** none.
-- **Came from:** the user, 2026-10-10.
-- **Design:** report, burndown.
-- **Status:** todo
-
-### 20261010-22. Vacuity diagnostic: say whether an aggregate query's S1 result was empty.
-
-`s1_rows` is 1 for any `count(*)`/aggregate query, so it can't tell "S1 matched nothing" from "S1 matched". Add a number-only diagnostic: whether S1's result value for an aggregate was zero or the aggregate's group count (a flag or an integer, never data). It touches Protocol `VacuityDiagnostic`, the egress whitelist, `VacuityGuard`, `ScenarioTests`, the counterexamples step and key-list assertions in several specs, with sentinel coverage. Skipped in 20261010-19, whose repro showed S1's count was 7 there; useful for the next real run.
-
-- **Depends on:** 20261010-19.
-- **Came from:** The work on 20261010-19, 2026-10-10.
-- **Design:** rewrite-test.
-- **Status:** todo
 
 ### 20261010-23. Untested conditions: an OR of four or more equality arms on one column plus another arm.
 
@@ -914,14 +895,6 @@ From the review of 20261010-30:
 - **Status:** todo
 
 
-### 20261010-37. Winner summary: push the duplicated-constraint angle, and tighten the node check.
-
-From the live run and review of 20261010-28. (1) A live synthetic `or_to_union` case (two OR arms that both repeated one condition) got a why about planning the arms separately, but never mentioned the duplicated condition, which is the angle in the user's own example ("the original repeated many of the same constraints in several OR clauses; pulling those out left something simple enough for the planner to switch to EXISTS"). Have the payload carry what the SQL comparison shows, as facts the model can't invent: conditions repeated across OR arms or UNION branches in the original, and which of them the winner no longer repeats (computed from the two SQL texts in the driver, as condition shapes with `$n`, never values), and have the prompt say to name that when present. Re-run a live synthetic case and show the user the text. (2) The node-type check passes a wrong qualifier ("Hash Anti Join" passes on "Hash", "Parallel Seq Scan" on "Seq Scan"): refuse Anti, Semi or Parallel unless the payload carries the join type or parallel flag. (3) The user should confirm the 1000-character cap and the looser prompt (the old rule against saying how a step works was dropped so the summary can explain).
-
-- **Depends on:** 20261010-28 (landed).
-- **Came from:** The live run and review of 20261010-28, 2026-10-10.
-- **Design:** report.
-- **Status:** todo
 
 ### 20261010-38. Aggregated columns: untested CHECK guard and the `MIN_APART` wrap.
 
@@ -958,4 +931,87 @@ Found while building 20261010-33: in S6, with copies of posts under `posts.id IN
 - **Depends on:** 20261010-33 (landed).
 - **Came from:** The work on 20261010-33, 2026-10-10.
 - **Design:** scenarios.
+- **Status:** todo
+
+### 20261010-41. Winner summary: minors from 20261010-37.
+
+1. A repeated condition's column cut merges columns of different tables (`a.x = $1` and `b.x = $3` both read `x = $`), which can overstate how often a condition repeats; keep the qualifier when the query reads more than one table.
+2. No spec covers a duplicate condition inside one OR arm (`a = $1 AND a = $2`): removing the `.uniq` on each arm's conjuncts stays green and would report a repeat that isn't one. Add the spec.
+3. The `(all|every) quer(y|ies)` guard refuses a plain description such as "Every query in the run read fewer blocks"; narrow it to advice use.
+4. No spec covers `Repeats.of` getting nil from a rejected `sql()` string (over 20000 characters or a NUL).
+5. The three rule preconditions not checked in depth (implied_predicate_removal, cte_hoist_dedupe, unused_join_removal): verify against the code.
+6. The not_in "when it wouldn't help" sentence says only when the rewrite doesn't apply, not when it doesn't pay off.
+
+- **Depends on:** 20261010-37 (landed).
+- **Came from:** The reviews of 20261010-37, 2026-10-10.
+- **Design:** report.
+- **Status:** todo
+
+### 20261010-42. `s1_nonzero_rows`: what counts as empty.
+
+From the review of 20261010-22. Only NULL and numeric zeros (regex `/\A[-+]?(0+(\.0*)?|\.0+)\z/`) count as empty, so values that read as empty but aren't numeric zeros count as nonzero: `bool_or`/`bool_and` returning `f`, a zero interval (`00:00:00`), an empty string, an epoch-like date. It is a heuristic, not a security issue. Say so in DESIGN.md (only NULL and numeric zero count as empty), and decide whether `bool_or` (the existence-check shapes) needs `f` counted as empty.
+
+- **Depends on:** 20261010-22 (landed).
+- **Came from:** The review of 20261010-22, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261010-43. Vacuity guard: a bounded search for a distinguishing database, behind the rule-based scenarios.
+
+The user, 2026-10-10, approved trying this. **Context.** The vacuity guard (`enclave/lib/quaack/enclave/vacuity_guard.rb`, `vacuity_guard/compared.rb`) reports an atom of the original query as "untested" when no scenario fixture makes the query return something different with that atom replaced by TRUE. Scenario rows are built by hand-written rules (`enclave/lib/quaack/enclave/scenarios*.rb`, `scenarios/plan.rb`, `picker.rb`, `pinned_keys.rb`, `branches.rb`, `siblings.rb`, `unmatched.rb`, `value_pools*.rb`). Every new query shape the corpus (`enclave/spec/vacuity_guard_corpus_postgres_spec.rb`, 120 shapes, a `PENDING` list) turns up has needed another rule (20261010-19, -21, -24, -25, -30, -31, -32, -34, -35, -36). This is whack-a-mole, and "untested" erodes trust in the whole report. Equivalence of arbitrary SQL is undecidable, so some atoms will always stay undecided; the goal is to shrink that set a lot and say honestly why an atom is unproven.
+
+**The idea.** For each atom still untested after the rule-based scenarios, search for a tiny database where the query with the atom and the query with the atom replaced by TRUE return different results (the guard's existing test of "tested"). Use Postgres itself as the oracle, on the existing arena database: one database, one schema, one transaction per trial: `BEGIN`, insert the trial's rows (parents first; reuse `Scenarios::Topology` load order and the value pools), run both queries, compare (reuse the guard's multiset comparison and, for LIMIT/OFFSET shapes, the fixture-compare path in `vacuity_guard/compared.rb`), `ROLLBACK`. No new databases or schemas. A trial that fails to load (constraint violation) or times out (the existing 10 s statement timeout) is discarded and counted against the budget.
+
+**Trial generation (small-scope hypothesis).** 1 to 4 rows per table touched by the query (more for a table whose atom needs a threshold, as `Children::MAX` does); per column, values drawn from the column's pool (`ValuePools`: values that satisfy and fail each atom, boundaries, NULL for nullable columns, enum labels, a few plain values); foreign keys pick among the parent rows present (or NULL when nullable); unique and composite keys get distinct values; CHECKs are respected as the pools already do. Use a seeded generator (seed recorded so a run is reproducible), try an exhaustive pass over very small cases before random ones, and guide the search by the atom: prefer rows that satisfy every other atom and fail this one (near miss), then relax. Per-query budget: at most N trials and T seconds in total (start with N = 300 per untested atom and 20 s per query, measure, tune), like `VacuityGuard::MAX_COMPARISONS`; hitting the budget leaves the atom untested, never "tested".
+
+**What a found instance becomes.** The rows (not a database) become one more fixture in the list the guard, rewrite-test, fixture-compare and counterexamples already replay for every candidate in a `BEGIN`/insert/compare/`ROLLBACK` cycle, in every load order. This is the same soundness argument as 20261010-31's near-misses-only fixture: an atom counts as tested only when a fixture's result really differs, and a rewrite that dropped that atom is compared on the same fixture, so it would be caught. Keep the smallest set: pick instances greedily until every found atom is covered, drop the rest, and cap the extra fixtures (each one is replayed for every candidate). The rows are synthetic and stay in the enclave; only atom shapes and counts leave. Add a sentinel test for that.
+
+**Reporting.** Replace the single "untested" with three states per atom: tested; **searched and no difference found** (budget spent, with the budget stated in DESIGN.md; if the exhaustive pass over the small scope finished, call it "no difference within the search bound"); **not searched** (budget or caps hit before this atom). This touches the egress shape of `untested_atoms` (a fixed state word per atom, from a fixed list in the protocol whitelist), the counterexample payload, and the driver's wording where the caution is shown (`unproven` caution text, the untested-conditions note under a rewrite, 20261004-51): the user wants the report to say how an atom stayed unproven, not just that it did. Keep old messages valid. This is an enclave, protocol and driver change.
+
+**Build in steps.**
+1. A spike (spec-only or a script in the scratchpad) on the corpus's `PENDING` shapes and the real count-query shape (`vacuity_guard_scopes_postgres_spec.rb`): how many atoms does a search with N trials close, how many trials and seconds does it take, and are there shapes it can't close that the rules do? Report the numbers before building the rest. If it runs slower than a few seconds per query, or closes few atoms, stop and report.
+2. The search as a fallback after the rule-based scenarios for atoms still untested (never replacing them: the rule-based fixtures stay as the explainable first pass), with the greedy fixture selection and the budget.
+3. The three-state reporting end to end (enclave, protocol, driver, report), with sentinel and shape checks.
+4. Corpus: run every shape with the search enabled, add a column for which atoms the search closed, and move closed shapes out of `PENDING`; make a regression spec that goes red if the search is disabled.
+Tests: red first for the right reason; mutate (drop the TRUE comparison, count a discarded trial as a difference, skip the rollback so state leaks between trials, use an unseeded generator, ignore the budget) and confirm red; check the arena is empty after a search (no leaked rows) and that a trial that violates a constraint is discarded, not counted.
+
+**Risks to check.** Runtime on queries slow even on tiny data (rely on the statement timeout, count a timeout as no difference); queries with volatile functions, `now()`, sequences or random() (a search must not trust a difference that comes from nondeterminism: run both queries twice in the transaction and discard unstable results, or skip such queries); aggregates and LIMIT without ORDER BY (nondeterministic row choice: reuse the guard's existing subset/multiset rules); search reproducibility across runs (seed); extra fixtures slowing rewrite-test (cap and greedy selection); the 20261010-22 `s1_nonzero_rows` flag and the diagnostic fields stay as they are.
+
+- **Depends on:** 20261010-19 to -36 (landed); do it after the version bump and the user's next run, when the user says to pick up new work.
+- **Came from:** The user, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-44. Burndown: minors from 20261010-20.
+
+1. **index-rank's added slice counts combinations, not ideas.** "Trying indexes together" adds 6 combinations (`added: {combinations: 6}`), which the funnel now draws as a lighter slice on top of the 9 ideas it takes in (widest point 15) and then narrows to 4 that went on. That mixes units, and it is the kind of "output wider than input" picture the user objected to. Leave index-rank out of the added slice, or draw it as a separate kind of mark, and word its label so it doesn't read as added ideas.
+2. **The rewrites' index searches join only loosely.** The replay check (`spec/pipeline_replay_spec.rb`, `burndown_joins?` with `strict: false`) requires only `in < running` on the summed "Index ideas for the rewrites" rows, which can hide a real under-carry. Check each `rewrite_N` search strictly, one at a time, and show why a narrowing happens (a rewrite dropped after its index search keeps its index-test out but has no LLM round).
+3. No focused enclave unit spec for `RewriteBurndown#carried` (nearest earlier stage, falling back past a missing stage); it is covered only through the replay and rewrite step specs.
+4. The two extra synthetic funnel cases (a round that adds more than it keeps, a skipped refine) weren't rendered in headless Firefox.
+
+- **Depends on:** 20261010-20 (landed).
+- **Came from:** The reviews of 20261010-20, 2026-10-10.
+- **Design:** report, burndown.
+- **Status:** todo
+
+### 20261010-45. Burndown: a Sankey diagram beside the funnel, for side-by-side comparison.
+
+The user, 2026-10-10. The burndown funnel (driver/lib/quaack/driver/report/funnel.rb) tracks several things at once: items that enter at several stages (index ideas from the query text and the plan, then the LLM; rewrites from transform rules, the LLM, and the user's own), items that leave for different reasons, and units that change (ideas, then combinations of indexes, then rewrite-plus-index-set candidates). It strains to show that (the "added" slice was the patch, and "Trying indexes together" mixes combinations with ideas; see 20261010-44 item 1). The user may replace the funnel with a Sankey diagram and wants to compare them first: **keep the current funnel and add the Sankey in the same report, side by side or one under the other within each burndown subsection, labelled so it is clear they show the same data.** The user will decide afterwards; removing the funnel is a separate later task.
+
+Build it from the data the report already has (no enclave or protocol change is expected: each stage record has `in`, `added` by source, `dropped` by reason, `set_aside`, `out`, and `extra`; check that this is enough, and if not, say what is missing): one column per stage; the flow that carries from a stage's `out` to the next stage's `in` as a ribbon; each source in `added` entering the stage where it arrives as its own named input (query text, plan, LLM, your own rewrites, transform rules) so nothing appears to widen out of nowhere; each drop reason as its own labelled sink; `set_aside` ("held back for a real build") as its own sink. Keep units apart: draw a separate diagram for each unit (index ideas; rewrites; combinations and candidates at the end), each with a one-line caption naming its unit, so widths in one diagram are always comparable.
+
+Rendering: inline SVG generated in Ruby, like the funnel (no JavaScript or external library; the report is self-contained and the contrast and dark-theme specs apply: colors as variables with dark values; links and text readable). Write a small layout (columns by stage, nodes stacked in order with a minimum height so a count of 1 is still visible, ribbons as cubic paths, labels outside the nodes, collision-free for the real stage counts, for zero counts, and for large counts), keep the existing table under each diagram as the accessible exact numbers, and give each ribbon and node a tooltip that says only the stage's sentence and its numbers (as the user asked for the funnel). Decide with a screenshot: render a synthetic burndown with the real stage set (the 6/8/9/4 and 2/6/7 flows from 20261010-20's screenshots and one with a skipped refine and one with no LLM rewrites) in headless Firefox in both themes and show the user; ask nothing else until they have seen it. Test first in driver/spec/report_spec.rb (structure, node and ribbon counts equal the stage records, flows conserve: a node's inputs equal its outputs, units kept apart, both diagrams present), mutate, update DESIGN.md and the README sample.
+
+- **Depends on:** 20261010-20 (landed). Not started: the user asked that no new items be picked up until their next run; they have not said whether this goes before the version bump.
+- **Came from:** The user, 2026-10-10.
+- **Design:** report, burndown.
+- **Status:** todo
+
+### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`).
+
+From the review of 20261010-35, pre-existing on `main` and the branch: `(SELECT count(*) ...) > 2 AND title = 'x' AND score > 3` leaves `title` and `score` untested, because their near misses have one child and so fail the count too. A near miss for a non-count atom needs the parent to keep its n+1 children (and fail only its own atom). Find the cause in the scenario build, fix it without weakening the guard, and add the corpus shape.
+
+- **Depends on:** 20261010-35 (landed when its fix round lands).
+- **Came from:** The review of 20261010-35, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
 - **Status:** todo

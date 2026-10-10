@@ -113,14 +113,17 @@ RSpec.describe "quaacks index-test, against a real server" do
     index_search
     duplicate = Quaack::Enclave::IndexStore.candidate(stored.read("index_search_original")["results"].first["candidate"])
     before = burndown
+    # Task 20261010-20: the first call carries index-test's pool, and a later one adds only its own ideas.
+    pool = before["stages"]["index-test"]["original"]["out"]
+    expect(pool).to be_positive
 
     index_test(ddls(partial, "CREATE INDEX ON orders (total)", duplicate.to_ddl))
     first = stored.read("index_search_original")["llm_results"]
     out, dropped = tested(first)
     expect(burndown["stages"]["llm-index-ideas"]).to eq(
-      "original" => { "in" => 0, "added" => { "llm" => 3 },
+      "original" => { "in" => pool, "added" => { "llm" => 3 },
                       "dropped" => { "unqualified_table" => 1, "duplicate" => 1 }.merge(dropped),
-                      "set_aside" => 0, "out" => out, "extra" => {} }
+                      "set_aside" => 0, "out" => pool + out, "extra" => {} }
     )
     expect(burndown["totals"]["hypothetical_explains"])
       .to eq(before["totals"]["hypothetical_explains"] + first.sum { it["plans"].size })
@@ -129,14 +132,15 @@ RSpec.describe "quaacks index-test, against a real server" do
     both = stored.read("index_search_original")
     out, dropped = tested(both["llm_results"])
     expect(burndown["stages"]["llm-index-ideas"]["original"]).to eq(
-      "in" => 0, "added" => { "llm" => 5 }, "dropped" => { "unqualified_table" => 1, "duplicate" => 2 }.merge(dropped),
-      "set_aside" => 0, "out" => out, "extra" => {}
+      "in" => pool, "added" => { "llm" => 5 },
+      "dropped" => { "unqualified_table" => 1, "duplicate" => 2 }.merge(dropped),
+      "set_aside" => 0, "out" => pool + out, "extra" => {}
     )
 
     index_test(ddls("CREATE INDEX ON orders (created_at)"), "--round", "refinement")
     expect(burndown["stages"]["llm-index-refine"]).to eq(
-      "original" => { "in" => 0, "added" => { "llm" => 1 }, "dropped" => { "unqualified_table" => 1 },
-                      "set_aside" => 0, "out" => 0,
+      "original" => { "in" => pool + out, "added" => { "llm" => 1 }, "dropped" => { "unqualified_table" => 1 },
+                      "set_aside" => 0, "out" => pool + out,
                       "extra" => { "fell_short" => Quaack::Enclave::Refinement.shortfalls(both).compact.size } }
     )
     expect(burndown["stages"].except("llm-index-ideas", "llm-index-refine")).to eq(before["stages"])

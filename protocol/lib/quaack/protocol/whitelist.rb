@@ -135,8 +135,9 @@ module Quaack
       # or one of the enclave's rule constants, such as row_count or
       # discarded. s1_load_rule is nil or the rule S1 failed to load with, and
       # s1_rows how many rows the original returned on S1 (nil when it didn't
-      # load), checked by Protocol::VacuityDiagnostic.valid?. Never SQL or a row.
-      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows].freeze,
+      # load), and s1_nonzero_rows how many of them hold a nonzero value,
+      # checked by Protocol::VacuityDiagnostic.valid?. Never SQL or a row.
+      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows].freeze,
       # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
       # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound

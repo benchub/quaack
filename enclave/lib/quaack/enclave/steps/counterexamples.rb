@@ -95,9 +95,10 @@ module Quaack
             # rewrite untested, so a resumed run tests it again.
             Counterexamples.survived(store, number, false) unless result["passed"]
             store.write("rewrite_tested_#{number}", result)
-            [{ type: :rewrite_test, rewrite: search,
-               **result.slice("passed", "scenario", "rule", "s1_load_rule", "s1_rows").transform_keys(&:to_sym) }]
+            [{ type: :rewrite_test, rewrite: search, **result.slice(*MESSAGE_KEYS).transform_keys(&:to_sym) }]
           end
+
+          MESSAGE_KEYS = %w[passed scenario rule s1_load_rule s1_rows s1_nonzero_rows].freeze
 
           def discarded?(store, number)
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]
@@ -122,7 +123,7 @@ module Quaack
             result = store.read("rewrite_test_refusal")
             report = ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
                                                refused: result["rule"], cycle: nil, loads: 0, s1_load_rule: nil,
-                                               s1_rows: nil)
+                                               s1_rows: nil, s1_nonzero_rows: nil)
             result.tap { RewriteBurndown.record_test(store, search, it, report) }
           end
 
@@ -147,9 +148,11 @@ module Quaack
 
           # What a tested (not refused) report adds: the dropped count and
           # vacuity-guard's diagnostic, the rule S1 failed to load with (a
-          # String or nil) and the original's row count on S1.
+          # String or nil), the original's row count on S1, and how many of
+          # those rows are nonzero.
           def diagnostic(report)
-            { "dropped" => report.dropped, "s1_load_rule" => report.s1_load_rule&.to_s, "s1_rows" => report.s1_rows }
+            { "dropped" => report.dropped, "s1_load_rule" => report.s1_load_rule&.to_s, "s1_rows" => report.s1_rows,
+              "s1_nonzero_rows" => report.s1_nonzero_rows }
           end
 
           def outcome(report, unchanged = [])

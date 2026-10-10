@@ -123,10 +123,12 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(message).to include("type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
                                  "scenario" => nil, "rule" => nil, "s1_load_rule" => nil)
       expect(message["s1_rows"]).to be_a(Integer).and be_positive
-      expect(message.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows])
+      expect(message["s1_nonzero_rows"]).to be_a(Integer).and be_positive
+      expect(message.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows])
       expect(lines(outcome).last).to eq({ "type" => "done" })
       expect(stored.read("rewrite_tested_1")).to include("passed" => true, "dropped" => 0, "s1_load_rule" => nil,
-                                                         "s1_rows" => message["s1_rows"])
+                                                         "s1_rows" => message["s1_rows"],
+                                                         "s1_nonzero_rows" => message["s1_nonzero_rows"])
       expect(stored.entry?("rewrite_survived_1")).to be(false)
       expect_no_leaks(sentinels, outcome)
     end
@@ -197,8 +199,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
       expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false,
-                                              "s1_load_rule" => "fixture_load_failed", "s1_rows" => nil)
-      expect(stored.read("rewrite_tested_1")).to include("s1_load_rule" => "fixture_load_failed", "s1_rows" => nil)
+                                              "s1_load_rule" => "fixture_load_failed", "s1_rows" => nil,
+                                              "s1_nonzero_rows" => nil)
+      expect(stored.read("rewrite_tested_1")).to include("s1_load_rule" => "fixture_load_failed", "s1_rows" => nil,
+                                                         "s1_nonzero_rows" => nil)
       expect_no_leaks(sentinels, outcome)
     end
 
@@ -214,7 +218,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         outcome = step("rewrite-test", "--search", "rewrite_1")
 
         expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => ["o.status = $2"])
-        expect(lines(outcome).first.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows])
+        expect(lines(outcome).first.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows
+                                                   s1_nonzero_rows])
         expect_no_leaks(sentinels, outcome)
       end
 
