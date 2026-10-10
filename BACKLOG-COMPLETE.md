@@ -10057,3 +10057,12 @@ The user's worry (2026-10-10): the untested-conditions flag could show up for ma
 - **Came from:** The user, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10: `enclave/spec/vacuity_guard_corpus_postgres_spec.rb`, 110 shapes (95 clean to their allow-lists, 15 pinned in `PENDING`). Follow-ups: 20261010-30 to -33.
+
+### 20261010-26. Vacuity guard: cap the fixture-compare runs under a LIMIT/OFFSET.
+
+The review of 20261010-25 found that the guard's new fixture-compare check runs once per atom, with no cap. A paginated ORM-style query (a users/posts join with 8 atoms, `ORDER BY users.id LIMIT 10 OFFSET 40`) took 0.32 s in the guard on `main` and 19.9 s on the branch, with the same result (all 8 untested); the unordered version took 2.4 s. Cost grows with atoms x 4 attempts x S1 fixtures x 3 load orders x the ordered runs, atoms with no mismatch are compared again on every retry, and the only limit is the 10 s per-statement timeout. Counterexample rounds call the same code. It is worst when nothing can be tested: an OFFSET past the fixture's rows. Fixes: skip the comparison when the original's full result has no more rows than the OFFSET; remember atoms that showed no mismatch across retries of the same fixture; cap the comparisons per query. Keep the guard sound and measure before and after.
+
+- **Depends on:** 20261010-25 (landed).
+- **Came from:** The review of 20261010-25, 2026-10-10. Priority: paginated queries are everywhere.
+- **Design:** rewrite-test.
+- **Status:** done. Landed 2026-10-10: skip the comparison when the original returns no rows on the cut, remember no-mismatch comparisons, cap at 32 per guard run (`VacuityGuard::MAX_COMPARISONS`, a builder-picked number). The reviewer measured the paginated 8-atom join at 22.6 s on main and 0.7 s after; results unchanged. Counterexample rounds get the skip but not the memo or cap.

@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-19: per-scope near misses in the Picker, and masking near-miss groups for OR arms and UNION branches, placed last in S1 to S5 (enclave).
 - 20261010-21: a pinned join key (an atom such as `id IN (...)` on a key) gives each group its own key value, so near misses stop colliding (enclave).
 - 20261010-25: the vacuity guard runs fixture-compare for a top-level LIMIT/OFFSET condition, checks every S1 fixture, gives near-miss rows their own values in read columns, adds enum labels to the candidate values, and ranks pinned keys per scenario (enclave).
+- 20261010-26: the vacuity guard skips fixture-compare on an empty cut result, remembers no-mismatch comparisons, and caps them at 32 per run (enclave).
 
 ## How this file works.
 
@@ -896,15 +897,6 @@ Left over from 20261010-21 on the real query shape: `submissions.workflow_state 
 - **Depends on:** 20261010-21 (landed).
 - **Came from:** The work on 20261010-21, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-### 20261010-26. Vacuity guard: cap the fixture-compare runs under a LIMIT/OFFSET.
-
-The review of 20261010-25 found that the guard's new fixture-compare check runs once per atom, with no cap. A paginated ORM-style query (a users/posts join with 8 atoms, `ORDER BY users.id LIMIT 10 OFFSET 40`) took 0.32 s in the guard on `main` and 19.9 s on the branch, with the same result (all 8 untested); the unordered version took 2.4 s. Cost grows with atoms x 4 attempts x S1 fixtures x 3 load orders x the ordered runs, atoms with no mismatch are compared again on every retry, and the only limit is the 10 s per-statement timeout. Counterexample rounds call the same code. It is worst when nothing can be tested: an OFFSET past the fixture's rows. Fixes: skip the comparison when the original's full result has no more rows than the OFFSET; remember atoms that showed no mismatch across retries of the same fixture; cap the comparisons per query. Keep the guard sound and measure before and after.
-
-- **Depends on:** 20261010-25 (landed).
-- **Came from:** The review of 20261010-25, 2026-10-10. Priority: paginated queries are everywhere.
-- **Design:** rewrite-test.
 - **Status:** todo
 
 
