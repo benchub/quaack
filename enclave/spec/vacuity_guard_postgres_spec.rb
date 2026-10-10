@@ -65,20 +65,26 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
   # Only the runner is faked, the edge to the arena: attempts[n] says whether
   # the nth load fails (with a rule) or loads, and a loaded fixture returns
-  # `rows` rows for every query, so every atom stays vacuous and the guard
-  # makes all of its four attempts.
+  # rows (an Integer, or one per attempt) rows for every query, so every atom
+  # stays vacuous and the guard makes all of its four attempts.
   def faked_runner(attempts, rows: 4)
-    tx = Struct.new(:result) { def query(_sql) = result }.new(Struct.new(:rows).new(Array.new(rows) { [it] }))
     calls = 0
+    tx_for = method(:faked_tx)
     Object.new.tap do |runner|
       runner.define_singleton_method(:with_fixture) do |_rows, **, &block|
-        failure = attempts.fetch(calls)
-        calls += 1
+        attempt = (calls += 1) - 1
+        failure = attempts.fetch(attempt)
         raise Quaack::Enclave::ArenaRunner::Error.new(failure, step: :load), cause: nil if failure
 
-        block.call(tx)
+        block.call(tx_for.call(Array(rows).fetch(attempt) { Array(rows).first }))
       end
     end
+  end
+
+  # A transaction whose every query returns count rows.
+  def faked_tx(count)
+    result = Struct.new(:rows).new(Array.new(count) { [it] })
+    Struct.new(:result) { def query(_sql) = result }.new(result)
   end
 
   def guard_with(runner)
@@ -115,6 +121,19 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
     expect(result.s1_load_rule).to eq(:statement_timeout)
     expect(result.s1_rows).to be_nil
+  end
+
+  it "records the last attempt's row count, not the first's" do
+    result = guard_with(faked_runner([nil, nil, nil, nil], rows: [4, 4, 7, 9]))
+
+    expect(result.s1_rows).to eq(9)
+  end
+
+  it "records the later count when the first attempt loaded, an intermediate one failed, and the last loaded" do
+    result = guard_with(faked_runner([nil, :fixture_load_failed, :fixture_load_failed, nil], rows: [4, 0, 0, 9]))
+
+    expect(result.s1_load_rule).to be_nil
+    expect(result.s1_rows).to eq(9)
   end
 
   it "records the last failure's rule, not the first's" do
