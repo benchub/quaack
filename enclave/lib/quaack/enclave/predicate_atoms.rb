@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "redaction"
 require_relative "supported_sql"
 require_relative "table_name"
 
@@ -128,7 +129,7 @@ module Quaack
 
       def extract(parse, column_names:)
         tree = select_tree(parse)
-        Walker.new(Frames.new(column_names), Redaction.new(tree)).atoms(tree)
+        Walker.new(Frames.new(column_names), Redaction.new(tree, parse)).atoms(tree)
       end
 
       def select_tree(parse)
@@ -227,12 +228,16 @@ module Quaack
         end
       end
 
-      # Stands in for redact (20260922-23) until it lands: each constant becomes
-      # a numbered placeholder, numbered in the order the constants appear in
-      # the query's text, after the query's own parameters. That's often,
-      # but not always, how PgQuery.normalize numbers them. redact's placeholder
-      # map should take over the numbering here, so a shape names the same
-      # $n as the redacted query the driver gets.
+      # Each constant becomes a numbered placeholder. The numbers are
+      # the ones redact gives the same query (Redaction.numbers), so a shape
+      # names the same $n as the redacted query the driver shows. A constant
+      # redact leaves as written, such as a GROUP BY's, stays here too.
+      #
+      # redact refuses a query with parameters of its own, or an interval
+      # with a field qualifier. For one of those the numbers are a stand-in:
+      # the order the constants appear in the query's text, after its own
+      # parameters. Only a rewrite's query can be one, since the original
+      # never is, and its shapes don't reach the report.
       #
       # A constant is any A_Const: numbers, strings, booleans, NULL, bit
       # strings, wherever they sit, including casts, arrays, IN lists, LIKE
@@ -255,12 +260,8 @@ module Quaack
       # as JSON_TABLE paths, CYCLE marks, and normalize's normal form, are
       # refused by SupportedSql before this runs.
       class Redaction
-        def initialize(tree)
-          constants = []
-          params = []
-          collect(tree, constants, params)
-          base = params.max || 0
-          @numbers = constants.sort.each_with_index.to_h { |location, i| [location, base + i + 1] }
+        def initialize(tree, parse)
+          @numbers = redact_numbers(parse) || text_order(tree)
         end
 
         # A column name, quoted when it needs it.
@@ -283,6 +284,22 @@ module Quaack
 
         private
 
+        # The numbers redact gives each constant by its place in the text, or
+        # nil when redact refuses the query.
+        def redact_numbers(parse)
+          Enclave::Redaction.numbers(parse)
+        rescue Enclave::Redaction::Error
+          nil
+        end
+
+        def text_order(tree)
+          constants = []
+          params = []
+          collect(tree, constants, params)
+          base = params.max || 0
+          constants.sort.each_with_index.to_h { |location, i| [location, base + i + 1] }
+        end
+
         def collect(node, constants, params)
           case node
           when PgQuery::A_Const then constants << node.location unless Literals.made?(node)
@@ -303,7 +320,7 @@ module Quaack
         end
 
         def replace_node(node)
-          return Literals.made?(node.a_const) ? node : placeholder(node.a_const) if node.a_const
+          return @numbers.key?(node.a_const.location) ? placeholder(node.a_const) : node if node.a_const
 
           replace(node.inner)
           node
@@ -325,7 +342,7 @@ module Quaack
         end
 
         def placeholder(constant)
-          PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: @numbers.fetch(constant.location, 0)))
+          PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: @numbers.fetch(constant.location)))
         end
       end
 
