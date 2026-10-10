@@ -163,7 +163,11 @@ RSpec.describe "Dedupe.covers? against the planner" do
       query: "SELECT * FROM t WHERE a = 5 AND f", covered: true },
     { name: "a NOT predicate under the same one compared with false", existing: "(a) WHERE f = false",
       candidate: { key: ["a"], predicate: "NOT f" },
-      query: "SELECT * FROM t WHERE a = 5 AND NOT f", covered: true }
+      query: "SELECT * FROM t WHERE a = 5 AND NOT f", covered: true },
+    # Task 20261008-28: Postgres prints this WHERE (NOT (f = false)), and the planner uses it for WHERE f.
+    { name: "a bare boolean predicate under a double negation", existing: "(a) WHERE NOT (f = false)",
+      candidate: { key: ["a"], predicate: "f" },
+      query: "SELECT * FROM t WHERE a = 5 AND f", covered: true }
   ].freeze
 
   cases.each do |c|

@@ -167,7 +167,8 @@ module Quaack
         # query), candidate ({ "sql" }, the rewrite's SQL with $n
         # placeholders; its transformation and assumptions stay here),
         # placeholders and schema as in index_payload, and untested_atoms
-        # (rewrite-test's redacted shapes). It doesn't connect to anything.
+        # (rewrite-test's redacted shapes, less the USING and NATURAL JOIN
+        # markers no insert can cover). It doesn't connect to anything.
         module Payload
           module_function
 
@@ -177,10 +178,11 @@ module Quaack
             tested = store.read("rewrite_tested_#{number}") if store.entry?("rewrite_tested_#{number}")
             raise Error, "counterexample_payload_untested" unless tested
 
+            untested = tested["untested"].reject { PredicateAtoms.marker_shape?(it) }
             [{ type: :counterexample_payload, original: store.read("redacted_query"),
                candidate: { "sql" => store.read(search)["sql"] },
                placeholders: IndexPayload.placeholders(store),
-               schema: IndexPayload.schema(store), untested_atoms: tested["untested"] }]
+               schema: IndexPayload.schema(store), untested_atoms: untested }]
           end
         end
 

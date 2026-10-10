@@ -376,6 +376,24 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       end
     end
 
+    # Task 20261008-28: normalizing twice, as an IndexStore round trip does, must change nothing.
+    it "folds until nothing changes, and collapses a double NOT" do
+      {
+        "(deleted = true) = true" => "deleted", "(deleted = true) <> false" => "deleted",
+        "NOT (deleted = false)" => "deleted", "NOT (active = true)" => "NOT active", "NOT (active = false)" => "active",
+        "NOT NOT deleted" => "deleted", "NOT (NOT (deleted = true))" => "deleted"
+      }.each do |written, folded|
+        once = candidate(predicate: written)
+        expect(once.predicate).to eq(folded), written
+        expect(candidate(predicate: once.predicate)).to eq(once), written
+      end
+    end
+
+    it "leaves an operator written with its schema as written" do
+      predicate = "deleted OPERATOR(pg_catalog.=) true"
+      expect(candidate(predicate:).predicate).to eq(predicate)
+    end
+
     it "leaves a boolean compared with anything but a column, or with a cast constant, as written" do
       expect(candidate(predicate: "(a > 1) = true").predicate).to eq("(a > 1) = true")
       expect(candidate(predicate: "deleted = 'yes'").predicate).to eq("deleted = 'yes'")

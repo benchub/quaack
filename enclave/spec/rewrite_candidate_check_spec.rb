@@ -305,6 +305,62 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect { check("SELECT * FROM public.ids() AS i JOIN orders o ON o.id = i") }
         .to rejected("user_function_in_from", "user_function_in_from: a function in FROM isn't in pg_catalog")
     end
+
+    # Task 20261008-29. user_function_in_from says nothing about relations, but it still waits
+    # for the allowed-relation check, so a relation the original doesn't use is what's reported.
+    it "refuses a relation the original doesn't use before a user function in FROM" do
+      conn.exec("CREATE FUNCTION public.ids() RETURNS SETOF int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$")
+      expect { check("SELECT * FROM public.ids() AS i JOIN public.order_view v ON v.id = i") }
+        .to rejected("unknown_relation", "unknown_relation: public.order_view isn't a relation the original uses")
+    end
+
+    # Dropping ONLY takes in the table's descendants, which the original never read. The LLM must not learn
+    # what kind of descendant refuses it, so every descendant gets one rule, naming the table the candidate wrote.
+    describe "a candidate that drops ONLY from a table with descendants" do
+      let(:only_original) do
+        described_class::Original.new(relations: [table_name("public", "parent_s"), table_name("public", "top_s")],
+                                      placeholders: 0, sql: "SELECT id FROM ONLY public.parent_s")
+      end
+
+      before do
+        conn.exec(<<~SQL)
+          CREATE EXTENSION postgres_fdw;
+          CREATE SERVER elsewhere FOREIGN DATA WRAPPER postgres_fdw;
+          CREATE TABLE public.parent_s (id int);
+          CREATE FOREIGN TABLE public.fchild_s () INHERITS (public.parent_s) SERVER elsewhere;
+          CREATE TABLE public.top_s (id int);
+          CREATE TABLE public.mid_s () INHERITS (public.top_s);
+          CREATE FOREIGN TABLE public.bottom_s () INHERITS (public.mid_s) SERVER elsewhere;
+        SQL
+      end
+
+      it "is refused with one rule, whatever the kind and depth of the descendant, and names no descendant" do
+        %w[parent_s top_s].each do |table|
+          expect { check("SELECT id FROM public.#{table}", original: only_original) }
+            .to rejected("unknown_relation",
+                         "unknown_relation: dropping ONLY from public.#{table} takes in a relation the original " \
+                         "doesn't read") { |e| expect(e.message).not_to match(/fchild_s|bottom_s|mid_s|foreign/) }
+        end
+      end
+
+      it "is accepted with ONLY kept" do
+        expect(check("SELECT id FROM ONLY public.parent_s", original: only_original).sql)
+          .to eq("SELECT id FROM ONLY public.parent_s")
+      end
+    end
+
+    # A candidate's "$user" can't be told apart from the original's, and ambiguous_user_schema would say
+    # what another role's schema holds, so a candidate is never refused with it.
+    it 'resolves an unqualified name through a search path with "$user", never refusing it as ambiguous' do
+      role = "app_#{SecureRandom.hex(4)}"
+      conn.exec(%(CREATE ROLE "#{role}"; CREATE SCHEMA "#{role}"; CREATE TABLE "#{role}".orders (id int)))
+      begin
+        expect(check("SELECT id FROM orders", { "search_path" => '"$user", public' }).sql)
+          .to eq("SELECT id FROM public.orders")
+      ensure
+        conn.exec(%(SET client_min_messages = warning; DROP SCHEMA "#{role}" CASCADE; DROP ROLE "#{role}"))
+      end
+    end
   end
 
   # The volatility check (volatility) runs on every candidate. These are the calls

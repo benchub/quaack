@@ -183,8 +183,11 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     builder, result = guard("SELECT o.id FROM fx.orders o NATURAL JOIN fx.customers c WHERE o.status = 'open'")
     natural = builder.atoms.index { it.operator == "NATURAL" }
     expect(natural).not_to be_nil
-    expect(result.untested_atoms).to include(natural)
-    expect(result.untested).to include("NATURAL JOIN")
+    expect(result.untested_atoms.count(natural)).to eq(1)
+    expect(result.untested.count("NATURAL JOIN")).to eq(1)
+    # It's never rebuilt: only o.status = $1 gets retries.
+    expect(result.variants.keys).not_to include(natural)
+    expect(result.retries).to eq(3)
   end
 
   it "retries a vacuous atom three times, then reports it untested by its redacted shape" do

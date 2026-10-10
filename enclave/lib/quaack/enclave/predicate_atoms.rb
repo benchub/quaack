@@ -125,7 +125,14 @@ module Quaack
       USING_UNREPLACEABLE = "a JOIN ... USING column can't be replaced by TRUE"
       NATURAL_UNREPLACEABLE = "a NATURAL JOIN's condition can't be replaced by TRUE"
 
+      NATURAL_SHAPE = "NATURAL JOIN"
+      USING_SHAPE_PREFIX = "USING ("
+
       module_function
+
+      # Whether a redacted shape is a USING or NATURAL JOIN marker's, which
+      # no inserts can cover. A real atom's shape never starts this way.
+      def marker_shape?(shape) = shape == NATURAL_SHAPE || shape.start_with?(USING_SHAPE_PREFIX)
 
       def extract(parse, column_names:)
         tree = select_tree(parse)
@@ -454,12 +461,12 @@ module Quaack
         def using(name, sides, path, frames)
           columns = sides.map { |side| frames.using_column(name, side) }.freeze
           Atom.new(kind: :join, operator: "USING", negated: false, bare: true, columns:,
-                   shape: "USING (#{Redaction.identifier(name)})", path: path.freeze, replaceable: false)
+                   shape: "#{USING_SHAPE_PREFIX}#{Redaction.identifier(name)})", path: path.freeze, replaceable: false)
         end
 
         def natural(path)
           Atom.new(kind: :join, operator: "NATURAL", negated: false, bare: true, columns: [].freeze,
-                   shape: "NATURAL JOIN", path: path.freeze, replaceable: false)
+                   shape: NATURAL_SHAPE, path: path.freeze, replaceable: false)
         end
       end
 
