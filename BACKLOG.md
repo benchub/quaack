@@ -1315,3 +1315,20 @@ Where the rule lives: the comment at the top of `driver/lib/quaack/driver/report
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, burndown.
 - **Status:** todo
+
+### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers.
+
+The user, 2026-10-09. Four changes to the burndown funnels and their tables (`Report::Funnel`, the `burndown-*` tables in the template, `StageSentences`, DESIGN.md's funnel paragraph and stage table):
+
+1. **"Set aside" isn't clear.** The enclave records `set_aside` as candidates held back untested (index-dedupe's GIN and GiST candidates, and index-build's unused candidates held for a real build; see `Burndown`'s header). Say that in the reader's words: rename the column and the label to something that says what happened (for example "Held back, not tested") and give it a one-line note under the table saying which stages do it and why. Check each stage that sets it, so the note is true for all of them.
+2. **Drop "came in".** It's the same as "went on" from the layer above. Remove the "Came in" column, the "N came in" sentence in the hover, and the "N in," part of the label beside each band (keep "N out" or "N went on"; say in the label what's first). Keep the `in` field in the record and the spec that checks the stages join up, since that check is how we know the numbers add up; it just isn't shown. A stage that adds records `in` 0 and isn't the first of its funnel; check that the first row of each funnel and any row after a gap still read sensibly without "came in".
+3. **No gap between bands.** Remove the white line (`GAP`) between the bands, so the funnel reads as one shape. Each stage keeps its own color, so the bands stay distinguishable. Check the grey striped "not recorded" bands and the partial ones against their neighbors, in both themes, and show the user a screenshot of one funnel.
+4. **Shorter hovers.** The band's `<title>` and each table row's `title` open with the stage's counts (added, dropped, set aside, went on, also counted), all of which the table already shows. Keep only the part after "What it does", the stage's sentence. A band with nothing recorded or only partly recorded keeps its short note saying so, since the table can't say that.
+
+Update the specs that quote the old hover text and column headers, with a test for each of the four.
+
+- **Depends on:** 20261009-41 (the same file, `funnel.rb`).
+- **Came from:** The user, 2026-10-09.
+- **Design:** report, burndown.
+- **Open questions:** What to call "set aside"; whether the "Also counted" counts should stay in the hover for stages with no sentence.
+- **Status:** todo
