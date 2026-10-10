@@ -1153,7 +1153,8 @@ The user, 2026-10-09. A rewrite that wasn't ranked as `not_better` reads: "What 
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-09. Related: 20261009-18 (the same caution reading twice).
 - **Design:** report, counterexamples.
-- **Open questions:** Whether the suggested sentence is true for every not-better rewrite (step 1).
+- **Finding (2026-10-09, step 1):** the suggested sentence is false. A rewrite dropped as `not_better` gets the same correctness testing as a ranked one: DESIGN.md's step order puts rewrite-correctness (rewrite-test, then counterexamples) at step 12 and minimax at step 18, and only survivors of step 12 are measured, so `not_better` is assigned after counterexamples. Nothing skips them. The confusion is the pairing of "It passed every test, but on the real data it ..." with the "unproven" caution, which is what 20261009-40 (the caution's scope) and 20261009-33 (why most atoms are untested) address. Reword on the true basis, together with 20261009-40, and never claim the logic went untested.
+- **Open questions:** None left; do this together with 20261009-40.
 - **Status:** todo
 
 ### 20261009-33. Ranked rewrites carry the "unproven" caution: find out why, and fix the cause.
