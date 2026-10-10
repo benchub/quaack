@@ -286,6 +286,8 @@
 </tbody></table>
 <% end %>
 <% end %>
+<% if hidden_statistics_note %><div id="hidden-statistics" class="note"><h3>Statistics QUAACK couldn't see</h3><p><%= h hidden_statistics_note %></p></div>
+<% end %>
 <p class="note">Each size is real: QUAACK built the index on a copy of your data. Sizes of your own indexes come from Postgres's statistics.</p>
 </section>
 <section id="accountability"><h2>Who proposed what</h2>

@@ -87,14 +87,32 @@ module Quaack
         # DESIGN.md's statistics: what the production role couldn't see,
         # which the run went on without. An older payload has none.
         def hidden_statistics
+          parts = hidden_parts or return
+
+          "Your role on the production server couldn't see the statistics of #{parts.join(" and of ")}, so " \
+            "QUAACK's estimates for those may be off. A role that owns the tables can see them."
+        end
+
+        # The pieces both the caveat and the indexes section's note name, or nil
+        # when there's nothing hidden.
+        def hidden_parts
           hidden = @payload["hidden_statistics"] or return
           extended = hidden["extended_statistics"]
           parts = [*(Words.count(extended, "extended statistics object") if extended.positive?),
                    *hidden_indexes(hidden["indexes"])]
-          return if parts.empty?
+          parts unless parts.empty?
+        end
 
-          "Your role on the production server couldn't see the statistics of #{parts.join(" and of ")}, so " \
-            "QUAACK's estimates for those may be off. A role that owns the tables can see them."
+        # The indexes section's note: what the production role couldn't read,
+        # what QUAACK did without it, and what the operator can do.
+        def hidden_statistics_note
+          parts = hidden_parts or return
+
+          "Your role on the production server couldn't read the statistics of #{parts.join(" and of ")}. " \
+            "Postgres shows them only to a role that owns the table. QUAACK went on without them, so the run " \
+            "server's planner had no statistics for those and may estimate row counts differently from production, " \
+            "and so may pick a different plan. The blocks QUAACK counted are real reads on a copy of your data. " \
+            "To have QUAACK copy these statistics, run it with a role that owns the tables."
         end
 
         def hidden_indexes(names)
