@@ -32,6 +32,14 @@ RSpec.describe Quaack::Driver::FixedNotes do
              "and analyzed. To go on, resume with `quaack setup --run R1`")
   end
 
+  # 20261008-37: a plan that scans a table the query doesn't name is often a
+  # row-level security policy that reads another table, so the note says so.
+  it "says a plan_table_mismatch may come from a row-level security policy that reads another table" do
+    note = error("plan_table_mismatch").rule_with_note(next_step: "unused")
+    expect(note).to include("row-level security policy that reads another table")
+    expect(note).to include("QUAACK v1 doesn't support")
+  end
+
   # 20261009-5: the cap refusal says what the cap is and where to raise it.
   it "says the original ran past the baseline cap, and where to raise it" do
     expect(error("baseline_original_exceeded_cap", step: "baseline").rule_with_note(next_step:))
