@@ -69,7 +69,7 @@ module Quaack
         def column(connection, table, as, name)
           type = Equality.column_type(connection, table, name) or raise Unmet
           sql = "#{as}.#{connection.quote_ident(name)}"
-          Column.new(sql:, **%i[type type_name].zip(Equality.base(connection, type)).to_h)
+          Column.new(sql:, type:, type_name: Equality.base(connection, type).last)
         end
 
         # left = right by their types' =, and with nulls, also true when

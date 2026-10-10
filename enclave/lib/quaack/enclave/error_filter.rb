@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/unreadable_reasons"
 require_relative "egress"
 require_relative "error_filter/named_tables"
 
@@ -78,8 +79,8 @@ module Quaack
       SQLSTATE = /\A[0-9A-Z]{5}\z/
       FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
       FUNCTION_RULE = "volatile_function"
-      UNREADABLE_RULES = %w[query_unreadable plan_unreadable].freeze
-      UNREADABLE_REASONS = %w[missing symlink not_regular_file permission_denied].freeze
+      UNREADABLE_RULES = Protocol::UnreadableReasons::RULES
+      UNREADABLE_REASONS = Protocol::UnreadableReasons::NAMES
       BACKEND_START = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
       CLIENTS_RULE = "run_server_other_clients"
       CLIENT_KEYS = %w[pid backend_start].freeze

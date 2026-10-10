@@ -274,6 +274,33 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       expect([met, met?(assumption)]).to eq([true, false])
     end
 
+    # Task 20261007-58: Postgres matches an = on the unreduced domain types
+    # exactly before it reduces them, so a planted one wins over the base
+    # type's, even when it takes the domain on one side only.
+    [%w[public.ident public.ident], %w[public.ident bigint], %w[public.course_ref public.course_ref]]
+      .each do |left, right|
+      it "refuses domain columns when an = (#{left}, #{right}) is planted" do
+        conn.exec(<<~SQL)
+          CREATE DOMAIN public.ident AS bigint;
+          CREATE DOMAIN public.course_ref AS public.ident;
+          ALTER TABLE public.submissions ALTER course_id TYPE public.course_ref, ALTER assignment_id TYPE public.ident;
+          ALTER TABLE public.assignments ALTER context_id TYPE public.course_ref, ALTER id TYPE public.ident;
+        SQL
+        before = met?(assumption)
+        conn.exec(<<~SQL)
+          CREATE FUNCTION public.same(#{left}, #{right}) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
+          CREATE OPERATOR public.= (LEFTARG = #{left}, RIGHTARG = #{right}, FUNCTION = public.same);
+        SQL
+
+        expect([before, met?(assumption)]).to eq([true, false])
+      end
+    end
+
+    # Task 20261007-58 (unsupported in v1, see DESIGN.md): a same-signature =
+    # in another schema ahead of pg_catalog on the search_path isn't refused.
+    # The shadow tests below show it, as they plant public's =(bigint,
+    # bigint) and =(text, text), and still get the check's own answer.
+
     # Task 20261007-32: the type value is cast to the type column's type by
     # its schema-qualified name, so a type planted ahead of it on the
     # search_path, here a text domain that refuses every value (see

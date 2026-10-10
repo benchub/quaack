@@ -1062,12 +1062,22 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.message).to include("function pg_catalog.random")
     end
 
-    {
+    unreadable_words = {
       "missing" => "no such file on the jump server",
       "symlink" => "path is a symlink on the jump server",
       "not_regular_file" => "not a regular file on the jump server",
-      "permission_denied" => "permission denied on the jump server"
-    }.each do |reason, text|
+      "permission_denied" => "permission denied on the jump server",
+      "name_too_long" => "path too long for the jump server's file system",
+      "io_error" => "input/output error reading the file on the jump server"
+    }
+
+    # Task 20261007-64: the protocol gem's list is the one the enclave
+    # sends from, so each of its causes has words, and nothing else does.
+    it "has words for each of the protocol's unreadable reasons and no others" do
+      expect(unreadable_words.keys).to eq(Quaack::Protocol::UnreadableReasons::NAMES)
+    end
+
+    unreadable_words.each do |reason, text|
       %w[query_unreadable plan_unreadable].each do |rule|
         it "tells the operator #{rule} with reason #{reason} as #{text.inspect}" do
           error = refusal(%({"type":"error","step":"intake","rule":"#{rule}","reason":"#{reason}"}))

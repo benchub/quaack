@@ -74,15 +74,21 @@ module Quaack
             AND o.amoplefttype OPERATOR(pg_catalog.=) $1 AND o.amoprighttype OPERATOR(pg_catalog.=) $2
         SQL
 
-        # Whether an =, in any schema, takes the two types ($1, $2) exactly
-        # in more places than the family's = does ($3, 0 to 2).
+        # Whether an =, in any schema, would be picked over the family's,
+        # which takes other types than the columns' base types $1 and $2: one
+        # that takes them exactly in more places than the family's does ($3,
+        # 0 to 2), or takes a domain type ($4, oids) either column goes
+        # through, which Postgres matches before it reduces the domains to
+        # their base types.
         EXACT_SQL = <<~SQL
           SELECT EXISTS (
             SELECT 1 FROM pg_catalog.pg_operator op
             WHERE op.oprname OPERATOR(pg_catalog.=) '='
-              AND (op.oprleft OPERATOR(pg_catalog.=) $1)::pg_catalog.int4
-                  OPERATOR(pg_catalog.+) (op.oprright OPERATOR(pg_catalog.=) $2)::pg_catalog.int4
-                  OPERATOR(pg_catalog.>) $3::pg_catalog.int4)
+              AND ((op.oprleft OPERATOR(pg_catalog.=) $1)::pg_catalog.int4
+                   OPERATOR(pg_catalog.+) (op.oprright OPERATOR(pg_catalog.=) $2)::pg_catalog.int4
+                   OPERATOR(pg_catalog.>) $3::pg_catalog.int4
+                OR op.oprleft OPERATOR(pg_catalog.=) ANY ($4::pg_catalog.oid[])
+                OR op.oprright OPERATOR(pg_catalog.=) ANY ($4::pg_catalog.oid[])))
         SQL
 
         module_function
@@ -106,11 +112,28 @@ module Quaack
         # The = between values of left and right, both base type oids, or
         # nil.
         def operator(connection, left, right)
-          inputs = input_types(connection, left, right) or return
+          chains = [left, right].map { chain(connection, it) }
+          bases = chains.map(&:last)
+          inputs = input_types(connection, *bases) or return
 
           rows = connection.exec_params(EQUALITY_SQL, inputs).values
           schema, name = rows.first
-          "OPERATOR(#{schema}.#{name})" if rows.size == 1 && name.match?(OPERATOR_NAME)
+          return unless rows.size == 1 && name.match?(OPERATOR_NAME)
+
+          domains = chains.flat_map { it[...-1] }.uniq
+          "OPERATOR(#{schema}.#{name})" unless shadowed?(connection, bases, inputs, domains)
+        end
+
+        # The type, then each type it's a domain over, down to the base.
+        def chain(connection, type)
+          [type].tap do |types|
+            loop do
+              kind, base = connection.exec_params(TYPE_SQL, [types.last]).values.first
+              break unless kind == "d"
+
+              types << Integer(base)
+            end
+          end
         end
 
         # The btree input types whose = compares left and right, or nil.
@@ -118,18 +141,20 @@ module Quaack
           left_in = btree_type(connection, left)
           right_in = btree_type(connection, right)
           left_in = right_in = polymorphic(connection, left) if left == right && !left_in
-          return unless left_in && right_in
-
-          [left_in, right_in] unless shadowed?(connection, [left, right], [left_in, right_in])
+          [left_in, right_in] if left_in && right_in
         end
 
-        # Whether an = matches the types exactly in more places than the
-        # family's, which takes others, such as anyenum, record, or text for
-        # varchar: Postgres prefers the candidate with the most exact
-        # matches, so a bare = picks it, even when it's exact on one side.
-        def shadowed?(connection, types, inputs)
+        # Whether an = other than the family's would be picked over it for
+        # the columns' base types: one that matches the types exactly in more
+        # places than the family's, which takes others, such as anyenum,
+        # record, or text for varchar, since Postgres prefers the candidate
+        # with the most exact matches, even on one side; or one on a domain
+        # the columns go through. See EXACT_SQL. Not one of the family's own
+        # signature in another schema: see DESIGN.md.
+        def shadowed?(connection, types, inputs, domains)
           exact = types.zip(inputs).count { |type, input| type == input }
-          connection.exec_params(EXACT_SQL, [*types, exact]).values.dig(0, 0) == "t"
+          params = [*types, exact, "{#{domains.join(",")}}"]
+          connection.exec_params(EXACT_SQL, params).values.dig(0, 0) == "t"
         end
 
         # The polymorphic type a type's default opclass takes, or nil.

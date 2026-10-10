@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/unreadable_reasons"
+
 module Quaack
   module Driver
     module Transport
@@ -16,8 +18,8 @@ module Quaack
         # column's table has the same shape.
         FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
         # An intake refusal's reason (DESIGN.md's input), one fixed cause.
-        REASON_RULES = %w[query_unreadable plan_unreadable].freeze
-        REASONS = %w[missing symlink not_regular_file permission_denied].freeze
+        REASON_RULES = Protocol::UnreadableReasons::RULES
+        REASONS = Protocol::UnreadableReasons::NAMES
         # A run_server_other_clients failure's clients (DESIGN.md's run-server), as
         # the enclave's ErrorFilter shapes them: 1 to MAX_CLIENTS entries, each
         # exactly a positive Integer pid and a UTC backend_start.

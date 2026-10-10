@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/unreadable_reasons"
 require_relative "fixed_notes"
 require_relative "production_failed_note"
 
@@ -182,7 +183,7 @@ module Quaack
       # volatile_function refusal's function, or run_server_other_clients's
       # clients. Each was checked for shape (Transport::ErrorFields).
       def facts
-        return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
+        return reason_message(reason) if Protocol::UnreadableReasons::RULES.include?(rule) && reason
 
         named_schema || function || (described_clients if clients)
       end
@@ -240,7 +241,9 @@ module Quaack
           "missing" => "no such file on the jump server",
           "symlink" => "path is a symlink on the jump server",
           "not_regular_file" => "not a regular file on the jump server",
-          "permission_denied" => "permission denied on the jump server"
+          "permission_denied" => "permission denied on the jump server",
+          "name_too_long" => "path too long for the jump server's file system",
+          "io_error" => "input/output error reading the file on the jump server"
         }.fetch(reason)
       end
     end
