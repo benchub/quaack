@@ -9736,3 +9736,23 @@ The two items 20261003-7 left, since each changes enclave or protocol behavior a
 - **Design:** intake, trust boundary.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261007-58 branch; Opus review clean). `Errno::ENAMETOOLONG` becomes `name_too_long`; `Errno::EIO` and `IOError` both become `io_error`; the reason lists live in one place, `Protocol::UnreadableReasons` (`RULES`, `NAMES`), used by the enclave's `ErrorFilter` and the driver's `ErrorFields`/`EnclaveError`, with a driver spec that fails if the driver's reason words drift from the protocol list. `OperatorFile.reason` returns only fixed strings (never an exception message); an unmapped class falls back to `symlink` or `not_regular_file`. On the unreleased list.
+
+### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to `NOT IN` outside the top-level WHERE (in a JOIN ON, a HAVING, or a nested subquery). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-4; Opus review clean, built wider than the brief). With the tested and selected columns proven not null (tested column's table a plain table in the nearest enclosing SELECT's FROM, not on an outer join's nullable side; every UNION branch) a NOT IN is only ever true or false, so NOT EXISTS is equivalent in any position: WHERE, HAVING, select list, CASE, under OR or NOT, join ON, subqueries, FROM subqueries, CTEs, UNION branches; a SELECT with ROLLUP, CUBE or GROUPING SETS is refused; a UNION subquery outside a WHERE conjunct becomes an AND of NOT EXISTS. The reviewer ran the original and rewritten SQL on data with NULLs, duplicates and empty tables (nullable-side and expression selected columns, views, FULL JOIN, LATERAL, windows, aggregates all refused or equivalent). On the unreleased list. Minor finding: 20261010-12.
+
+### 20261008-5. `not_in_to_not_exists`: support `<> ALL`.
+
+One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to `<> ALL (SELECT ...)`, which means the same as `NOT IN`. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-38.
+- **Came from:** The split of 20261007-38, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-4 branch; Opus review clean). `x <> ALL (SELECT y ...)` (also `!=`), one column, becomes NOT EXISTS over `=` in every position NOT IN is taken; `Catalog#negated_equality?` requires `=` and `<>` between the columns' exact types to be pg_catalog operators and each other's negators with one shared collation (a domain column is refused); rows, other ALL operators, ANY and `OPERATOR(...)` spellings are refused. On the unreleased list.

@@ -22,6 +22,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261006-6: clock words and defaults: array-element function calls keep the outer targets, an inventory without a TimeZone refuses with `run_from_older_version`, `current_time` is anchored in queries and defaults (enclave).
 - 20261004-89: each `indexes` entry in the report payload carries `sources` (names from the fixed generator list), checked at egress and in the driver (enclave and protocol).
 - 20261007-58: the equality check follows a column's domain chain and refuses a planted `=` on a domain (enclave).
+- 20261008-4 and 20261008-5: `not_in_to_not_exists` takes a NOT IN (and a one-column `<> ALL` with a pg_catalog negator proof) in any position of a plain SELECT, with the not-null proofs, and refuses a grouping-set GROUP BY (enclave).
 - 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
 - 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
@@ -403,23 +404,9 @@ From the reviews of 20260924-7.
 
 ### 20261007-64. Intake unreadable reasons: new causes, and one shared list. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE.
+### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE. Done, see BACKLOG-COMPLETE.md.
 
-One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to `NOT IN` outside the top-level WHERE (in a JOIN ON, a HAVING, or a nested subquery). A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-38.
-- **Came from:** The split of 20261007-38, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
-### 20261008-5. `not_in_to_not_exists`: support `<> ALL`.
-
-One of 20261007-38's extensions, each its own task by the user's decision (2026-10-08). Extend `not_in_to_not_exists` to `<> ALL (SELECT ...)`, which means the same as `NOT IN`. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-38.
-- **Came from:** The split of 20261007-38, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-5. `not_in_to_not_exists`: support `<> ALL`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-7. `or_to_union`: support a query with GROUP BY.
 
@@ -1070,3 +1057,12 @@ From the review of 20261007-58 (minor, a requirement question). The denormalized
 - **Came from:** The review of 20261007-58, 2026-10-10.
 - **Design:** assumption check, CatalogShadow.
 - **Status:** todo (needs the user)
+
+### 20261010-12. `not_in_to_not_exists`: the same NOT IN twice in one SELECT.
+
+From the review of 20261008-4 (minor). When the same NOT IN appears twice in one SELECT and Postgres needs the two copies to match, rewriting only one copy breaks the query: `SELECT x NOT IN (...), count(*) ... GROUP BY x NOT IN (...)` fails with "subquery uses ungrouped column" / "must appear in the GROUP BY clause", and `DISTINCT ON (x NOT IN ...) ... ORDER BY x NOT IN ...` fails with "DISTINCT ON expressions must match initial ORDER BY expressions". The rewrite errors instead of returning different rows, and plan-pruning discards a rewrite that fails to plan (`failed_to_plan`), so nothing wrong is recommended: it only wastes a candidate. Fix by rewriting every identical copy together, or refuse a condition that also appears in the same SELECT's GROUP BY, DISTINCT ON or ORDER BY. Add Postgres-backed tests for both queries and a note in docs/transforms/not_in_to_not_exists.md and DESIGN.md. Enclave change: unreleased list.
+
+- **Depends on:** 20261008-4.
+- **Came from:** The review of 20261008-4, 2026-10-10 (minor).
+- **Design:** rewrite-rules.
+- **Status:** todo
