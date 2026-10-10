@@ -15,6 +15,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-57: the redaction re-check reads a jsonb `?` operator correctly (enclave).
 - 20261003-28: `shared_scan_cte` widenings: copies in subqueries and CTE bodies, a nullable copy, GROUP BY on the primary key, ONLY, aliased joins (enclave).
 - 20261004-9: rewrite-test and counterexamples disproofs of a `denormalized_equal` rewrite are reported as rule bugs (enclave; no new fields).
+- 20261003-43: `fk_cycle` table names are built by the enclave from a stored [schema, name] pair and quoted like `quote_ident`; the enclave and driver shape checks accept bare or quoted parts; the counterexamples round's error line carries only the rule (enclave and driver).
+- 20261003-44: `existence_in_flip` scope check includes unaliased function names; ORDER BY positions out of range are refused; the same capture is refused in `cte_hoist_dedupe` and `union_outer_filter_removal` (enclave).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
 - 20261004-8: rewrite-test fixtures: a cut foreign key's S3 cross row keeps every table, `Topology#roots` uses `load_parents`, S5 builds the reversed boundary group first (enclave).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
@@ -298,38 +300,9 @@ These are minor findings from building and reviewing 20261003-40:
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19.
+### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19. Done, see BACKLOG-COMPLETE.md.
 
-These are minor findings from building and reviewing 20261003-19:
-
-- **Quoted names are dropped.** The driver's name-shape check drops a cycle that has mixed-case or quoted table names, so the report falls back to the bare refusal. Allow any name that came from `schema_subset`, quoted the way the catalog quotes it.
-- **A dot inside a name can match the wrong table.** `CycleTables` matches by joining `schema.table` with a dot. The output is still a `schema_subset` string, so this isn't a leak. Match on the schema and the table separately.
-- **No end-to-end test.** Nothing runs a whole pipeline on an `fk_cycle` schema and checks the report sentence.
-- **counterexamples' re-raise of a cycle is nearly unreachable.** Prove it can happen, or simplify it.
-
-- **Depends on:** 20261003-19.
-- **Came from:** The build and reviews of 20261003-19, 2026-10-03.
-- **Design:** rewrite-test, report.
-- **Status:** todo
-
-### 20261003-44. `existence_in_flip`: loose ends from 20261003-29.
-
-These are findings from building and reviewing 20261003-29:
-
-- **A wrong result with a constant under COLLATE** (`selection.rb:35`). The bare-constant refusal for y only looks at a bare placeholder, so `users.code IN (SELECT 'a ' COLLATE "C" FROM groups)` on a `char(3)` column still flips. The original returns no rows and the rewrite returns one. Refuse a placeholder under COLLATE, or under any wrapper that keeps it a plain constant.
-- **Siblings may have the capture bug.** `cte_hoist_dedupe`, `shared_scan_cte` and `union_outer_filter_removal` check a hoisted body by preparing it on its own, so a bare name that used to read an outer column might prepare as a whole-row reference. Write a reproducer for each, and fix any that capture.
-- **Skipped widenings:** the flip inside an EXISTS body, and `x = ANY (SELECT ...)`.
-- **ORDER BY keys** from CTEs, subqueries or tables that aren't plain are refused. Widen this if real queries need it.
-- **The scope check** ignores the names of unaliased function calls in FROM.
-- **Errors (E):** a y expression that can raise, such as `1/(x-1)`, may raise on rows the original's plan never evaluated. Consider refusing a y that can raise.
-- **Originals that already error** still get rewrites: `ORDER BY 2` with one output column, and `y COLLATE "C"` against a nondeterministic collation. Refuse them, or leave them be.
-- **Test gaps:** the `ival` guard on constant ORDER BY keys (`ordering.rb:31`), and the `sole_table` path when S is a single CTE or a table that isn't plain (`selection.rb:46`).
-
-- **Partly landed (2026-10-09):** 131f8b0a. A placeholder under COLLATE as y is now refused. A spec shows that a sole CTE as S flips soundly. The Opus review found the cast-over-placeholder case sound (both forms resolve through the same `=`); the docs could say so. Still open: reproducers for sibling capture in cte_hoist_dedupe, shared_scan_cte, and union_outer_filter_removal (judged rare, not urgent), the two widenings, non-plain ORDER BY keys, unaliased function names in the scope check, a y that can raise, originals that already error, and the `ival` test.
-- **Depends on:** 20261003-29.
-- **Came from:** The build and review of 20261003-29, 2026-10-03.
-- **Design:** rewrite-rules, `existence_in_flip`.
-- **Status:** todo
+### 20261003-44. `existence_in_flip`: loose ends from 20261003-29. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-2. Step 9 re-probes CHECK constraints thousands of times. Done, see BACKLOG-COMPLETE.md.
 
@@ -1149,4 +1122,13 @@ From the review of 20261004-8 (minor). With `course_template_id bigint UNIQUE` (
 - **Depends on:** 20261004-8, 20261003-39.
 - **Came from:** The review of 20261004-8, 2026-10-10 (minor).
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261010-6. Delete the producer-less error-line `cycle` field.
+
+From 20261003-43. After the counterexamples round stopped naming a cycle on its error line, nothing in the enclave sends an error-line `cycle` field: `ErrorFilter::Cycle`, the driver's `ErrorFields.cycle`, `EnclaveError`'s cycle rendering, and the whitelist field are producer-less (the reviewer confirmed: the only exception that still has `cycle`, `Scenarios::Error` from the topology step, carries `TableName` structs and `shaped?` refuses them). They're harmless and kept as defense, but dead code on a trust boundary is a liability: delete them (a protocol change: unreleased list), or keep them and add a spec that pins why. Decide with the reviewer's view of whether a future producer is likely.
+
+- **Depends on:** 20261003-43.
+- **Came from:** 20261003-43's build and review, 2026-10-10.
+- **Design:** What goes out of the enclave.
 - **Status:** todo

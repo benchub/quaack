@@ -9555,3 +9555,38 @@ Seen 2026-10-10 by the builder of 20261004-6: in a full per-commit run (other bu
 - **Design:** none (CLAUDE.md Development).
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261010-3; review clean). Reproduced with a docker stub that dates every non-current tag in 2020, then fixed: `OldImages.remove` takes `repository:` (default the current tag's repository, so a launch is unchanged) and the old-image specs alias under a throwaway repository unique per example, so a concurrent production cleanup never lists them (the exact-name repository filter was confirmed against real Docker). The reviewer ran the production cleanup in a loop during the specs (6 of 6 passes) and all mutations went red. A leftover throwaway alias on an in-use image from a concurrent run is the intended refusal to remove an image a container uses.
+
+### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19.
+
+These are minor findings from building and reviewing 20261003-19:
+
+- **Quoted names are dropped.** The driver's name-shape check drops a cycle that has mixed-case or quoted table names, so the report falls back to the bare refusal. Allow any name that came from `schema_subset`, quoted the way the catalog quotes it.
+- **A dot inside a name can match the wrong table.** `CycleTables` matches by joining `schema.table` with a dot. The output is still a `schema_subset` string, so this isn't a leak. Match on the schema and the table separately.
+- **No end-to-end test.** Nothing runs a whole pipeline on an `fk_cycle` schema and checks the report sentence.
+- **counterexamples' re-raise of a cycle is nearly unreachable.** Prove it can happen, or simplify it.
+
+- **Depends on:** 20261003-19.
+- **Came from:** The build and reviews of 20261003-19, 2026-10-03.
+- **Design:** rewrite-test, report.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261003-43; Opus review, one fix round, a clean re-review). `CycleTables` builds each name from a stored [schema, name] pair matched on schema and name separately (a dot can't make one table look like another) and quotes it exactly like `quote_ident` (verified against 1010 identifiers on Postgres 18: 0 differences); `ErrorFilter::Cycle::NAME` (enclave, printable ASCII) and the driver's `CYCLE_TABLE` (no `\p{C}`) accept a bare or quoted part of 1 to 126 units; the counterexamples round's error line carries only the rule. An end-to-end pipeline test (`FkCycleRun`) found a real bug, fixed: `report-payload` crashed with a NoMethodError when a rule-made rewrite was refused for `fk_cycle` (`RuleBugs` passed a nil context to `RewriteFate.early`). On the unreleased list. Follow-up: 20261010-6.
+
+### 20261003-44. `existence_in_flip`: loose ends from 20261003-29.
+
+These are findings from building and reviewing 20261003-29:
+
+- **A wrong result with a constant under COLLATE** (`selection.rb:35`). The bare-constant refusal for y only looks at a bare placeholder, so `users.code IN (SELECT 'a ' COLLATE "C" FROM groups)` on a `char(3)` column still flips. The original returns no rows and the rewrite returns one. Refuse a placeholder under COLLATE, or under any wrapper that keeps it a plain constant.
+- **Siblings may have the capture bug.** `cte_hoist_dedupe`, `shared_scan_cte` and `union_outer_filter_removal` check a hoisted body by preparing it on its own, so a bare name that used to read an outer column might prepare as a whole-row reference. Write a reproducer for each, and fix any that capture.
+- **Skipped widenings:** the flip inside an EXISTS body, and `x = ANY (SELECT ...)`.
+- **ORDER BY keys** from CTEs, subqueries or tables that aren't plain are refused. Widen this if real queries need it.
+- **The scope check** ignores the names of unaliased function calls in FROM.
+- **Errors (E):** a y expression that can raise, such as `1/(x-1)`, may raise on rows the original's plan never evaluated. Consider refusing a y that can raise.
+- **Originals that already error** still get rewrites: `ORDER BY 2` with one output column, and `y COLLATE "C"` against a nondeterministic collation. Refuse them, or leave them be.
+- **Test gaps:** the `ival` guard on constant ORDER BY keys (`ordering.rb:31`), and the `sole_table` path when S is a single CTE or a table that isn't plain (`selection.rb:46`).
+
+- **Partly landed (2026-10-09):** 131f8b0a. A placeholder under COLLATE as y is now refused. A spec shows that a sole CTE as S flips soundly. The Opus review found the cast-over-placeholder case sound (both forms resolve through the same `=`); the docs could say so. Still open: reproducers for sibling capture in cte_hoist_dedupe, shared_scan_cte, and union_outer_filter_removal (judged rare, not urgent), the two widenings, non-plain ORDER BY keys, unaliased function names in the scope check, a y that can raise, originals that already error, and the `ival` test.
+- **Depends on:** 20261003-29.
+- **Came from:** The build and review of 20261003-29, 2026-10-03.
+- **Design:** rewrite-rules, `existence_in_flip`.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261003-43 branch; Opus review clean). The scope check includes unaliased function names (a composite-returning function and a bare `fx IS NULL` gave wrong rows in both directions before; now refused); an ORDER BY position outside the select list is refused; the `ival` guard test hands the rule an un-redacted tree; two siblings had the same capture and now refuse it (`cte_hoist_dedupe`'s `hoistable?`, `union_outer_filter_removal`'s `stands?`), each with a wrong-rows reproducer red before. Not built, on purpose: a flip inside an EXISTS body or `= ANY (SELECT ...)` (new features), ORDER BY keys from CTEs or subqueries (on demand), a `y` that can raise (a mismatch is caught by result comparison; refusing would remove the landed `y` as an expression), `y COLLATE "C"` against a nondeterministic collation (not reproduced). On the unreleased list.
