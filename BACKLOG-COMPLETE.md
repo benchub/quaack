@@ -9019,3 +9019,25 @@ Reuse the `details.query` rules (a left stripe, a `position: sticky` summary bar
 - **Open questions:** Whether the index-ideas sections start open or closed.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-34; review clean, full rake passed). The query sections' CSS hangs off a shared `fold` class and `--fold-bg/-edge/-accent` variables; `details.rose` sets them from `--rose-bg/-edge/-accent` (light #fcedf2 / #b02a5b / #8e1f48; dark #33202a / #e0699a / #f2a3c4). "Measured, and not ranked" stays closed; "Indexes the planner wouldn't use" and "Indexes QUAACK thought of that you already have" are open folds, and so is "The rewrites" in the nothing-won report. Nothing links into them yet. Minor finding: 20261009-44.
+
+### 20261009-35. Ranking: set each kind's heading apart from its rows.
+
+The user, 2026-10-09. In the Ranking table, the kind headings ("A rewrite of the original query, with new indexes", "A rewrite of the original query, with no new indexes", "The original query, with new indexes") are `<tr class="kind"><th scope="rowgroup" colspan="5">` rows in the one table, and they don't stand out from the ranked rows under them. Make each heading read as a heading for its rows. The user leaves the design to us; they suggested an indent for the rows, and maybe a vertical stripe for each group.
+
+A direction to start from: give the heading row a tinted background and a bold weight, indent the rank and candidate cells of the rows under it, and run a left stripe of that group's color down the heading and its rows (a different stripe color per kind, from the report's existing color variables, so it works in both themes). Keep it a single `<table>` with `rowgroup` headings, so screen readers still announce the group, and keep each group's rows numbered from 1. Add any new colors as variables with dark values, as the report's spec requires, and check contrast. Show the user the result as a screenshot in both themes, since this is a visual choice. Update DESIGN.md's ranking bullet and the report spec (assert the heading's class, the group's rows carry the stripe class, and each kind's stripe class differs).
+
+- **Depends on:** None. Touches the report CSS that 20261009-26 and 20261009-34 also change; build after them.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-35; review clean). The Ranking table stays one table with rowgroup headings; heading rows are `tr.kind.stripe-<kind>` (bold, `--head-bg` tint, 5px left stripe) and ranked rows carry the same stripe, with the candidate cell indented. Stripes use `--st-teal` (rewrite with new indexes), `--st-violet` (rewrite, same indexes), `--st-brown` (original with new indexes), all with dark values. No screenshot yet (headless rendering wasn't available). Minor findings: 20261009-45.
+
+### 20261009-36. Verdict section: the cream stripe is a little faint on its own background.
+
+From the review of 20261009-26. The light theme's cream stripe `#b08a1e` is 2.96:1 against its own cream background (`#fbf5e1`), just under the 3:1 guideline for non-text marks. It is 3.23:1 against the white page, and the text passes AA, so it's decorative. Darken it to about `#9a7615` and recheck that the report's contrast spec still passes.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-26, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-35, second commit; review clean). Light `--minor-edge` is now #9a7615 (3.87:1 on the cream, 4.22:1 on the page), with a new contrast spec for both themes.

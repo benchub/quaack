@@ -1207,25 +1207,9 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-35. Ranking: set each kind's heading apart from its rows.
+### 20261009-35. Ranking: set each kind's heading apart from its rows. Done, see BACKLOG-COMPLETE.md.
 
-The user, 2026-10-09. In the Ranking table, the kind headings ("A rewrite of the original query, with new indexes", "A rewrite of the original query, with no new indexes", "The original query, with new indexes") are `<tr class="kind"><th scope="rowgroup" colspan="5">` rows in the one table, and they don't stand out from the ranked rows under them. Make each heading read as a heading for its rows. The user leaves the design to us; they suggested an indent for the rows, and maybe a vertical stripe for each group.
-
-A direction to start from: give the heading row a tinted background and a bold weight, indent the rank and candidate cells of the rows under it, and run a left stripe of that group's color down the heading and its rows (a different stripe color per kind, from the report's existing color variables, so it works in both themes). Keep it a single `<table>` with `rowgroup` headings, so screen readers still announce the group, and keep each group's rows numbered from 1. Add any new colors as variables with dark values, as the report's spec requires, and check contrast. Show the user the result as a screenshot in both themes, since this is a visual choice. Update DESIGN.md's ranking bullet and the report spec (assert the heading's class, the group's rows carry the stripe class, and each kind's stripe class differs).
-
-- **Depends on:** None. Touches the report CSS that 20261009-26 and 20261009-34 also change; build after them.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
-
-### 20261009-36. Verdict section: the cream stripe is a little faint on its own background.
-
-From the review of 20261009-26. The light theme's cream stripe `#b08a1e` is 2.96:1 against its own cream background (`#fbf5e1`), just under the 3:1 guideline for non-text marks. It is 3.23:1 against the white page, and the text passes AA, so it's decorative. Darken it to about `#9a7615` and recheck that the report's contrast spec still passes.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261009-26, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
+### 20261009-36. Verdict section: the cream stripe is a little faint on its own background. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-37. Report: an LLM-written "tl;dr" at the top of "Why the winner reads fewer blocks".
 
@@ -1316,5 +1300,17 @@ From the review of 20261009-34 (minor). `details.fold > ul { margin-top: 0.5rem 
 
 - **Depends on:** None.
 - **Came from:** The review of 20261009-34, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-45. Ranking headings: make the tint visible, and look at it in a browser.
+
+From the review of 20261009-35 (minor, but the user asked for the kind headings to be set apart, so check the result by eye).
+- The heading row's tint is `--head-bg` (#f3f5f8 in the light theme), the same as the table's header row and about 1.1:1 against white. In the light theme the heading is set apart by its stripe and bold only, and `th` is bold already, so the `font-weight: 700` spec guards a declaration with no visible effect. Give the kind heading a more visible tint of its stripe's color (a variable per kind, with dark values), or drop the dead declaration.
+- The rank number sits in a right-aligned, no-wrap `td.num`, so its `padding-left: 1.5rem` only widens the column and the number isn't indented. The candidate cell's indent shows. Decide whether the number should move, and fix or drop the padding.
+- Nobody has seen the stripe render: it was checked from the CSS only (a 5px left border on a `border-collapse` table's cells). Render a spec-fixture report in a headless browser (Firefox is installed; its headless screenshot failed with "A copy of Firefox is already open", so try a fresh `--profile` outside the sandbox or another browser) and look at both themes. Report with screenshots to the user.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261009-35, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo
