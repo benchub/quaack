@@ -10,7 +10,8 @@ A top-level `OR` whose arms read different tables or subqueries becomes a `UNION
 
 It leaves a query alone when:
 
-- It has `GROUP BY`, `HAVING`, a window function, `DISTINCT ON`, a locking clause, `WITH`, or `INTO`.
+- It has a window function, `WINDOW`, `DISTINCT ON`, a locking clause, `WITH`, or `INTO`.
+- It has `GROUP BY` or `HAVING` and Postgres might accept it only for a key. See the next section.
 - Its `FROM` has an outer join, a `NATURAL` join, a join with `USING`, a join with an alias, or an item that isn't a schema-qualified table. A table read with `ONLY`, or under an alias that renames its columns, counts too.
 - Outside the `WHERE`, it has a subquery, in the select list or the `ORDER BY`.
 - Outside the `WHERE`, a column isn't written `name.column`, such as an unqualified column or a bare `*`, or the `ORDER BY` names an output column. In the `OR`'s arms, outside their subqueries, every column must be written `name.column` too.
@@ -28,6 +29,18 @@ A parameter pattern's value isn't something the rule sees. If the app passes a p
 The rule reads only the parse tree, so it doesn't see the casts the planner adds when an operator's two sides have different types. `n.amount = r.ratio`, a `numeric` against a `real`, compares as `double precision`, and an amount too big for one, such as `1e400`, raises. The rule splits that `OR` anyway, so such an arm can raise in the `UNION` where the original returns rows.
 
 Arms with no subquery that read the same tables stay together in one query of the `UNION`, as an `OR` in their order. So `i.qty = 0 OR i.total > 10 OR o.vip` becomes two queries, not three.
+
+## GROUP BY and HAVING.
+
+The query reads the `UNION` in the tables' place, with its `GROUP BY` and `HAVING` as written, over the renamed columns. The `UNION` holds each row of the join that passes the `WHERE` once, so the groups and the aggregates are the ones the original gives.
+
+What can differ is whether Postgres accepts the query. It takes `SELECT a.id, a.title ... GROUP BY a.id` since `a.id` is a primary key, but the `UNION`'s columns have no key, so that query over it raises. So the rule takes a query with `GROUP BY` or `HAVING` only when:
+
+- Each `GROUP BY` item is a column written `name.column`: no expression, no ordinal such as `GROUP BY 1`, no `ROLLUP`, `CUBE`, `GROUPING SETS`, `GROUP BY DISTINCT`, or `()`.
+- Every column in the select list, the `HAVING`, and the `ORDER BY` is inside an aggregate's call or is one of the `GROUP BY` columns itself. So `SELECT a.title, count(*) ... GROUP BY a.title` fires, and `SELECT a.id, a.title ... GROUP BY a.id` doesn't. A call counts as an aggregate only when every function of its name in the catalog is one. `name.*` and `*` never count, since they aren't written `name.column`.
+- The `HAVING` has no subquery, like the rest of the query outside its `WHERE`.
+
+A `HAVING` with no `GROUP BY` works the same way.
 
 ## What it rests on.
 

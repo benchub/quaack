@@ -210,6 +210,59 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       expect(same_rows(sql, rewrites, params).map(&:first)).to eq(%w[101 102 201 301 601 602 701])
     end
 
+    it "groups the whole UNION, so a group keeps the rows of both arms, each once" do
+      sql = "SELECT a.title, count(*) AS n, max(s.id) AS top, count(DISTINCT s.user_id) AS users " \
+            "#{from} #{where} GROUP BY a.title HAVING count(*) > 0 ORDER BY a.title"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.first).to start_with(
+        "SELECT arms_1.title_1 AS title, count(*) AS n, max(arms_1.id_1) AS top, count(DISTINCT arms_1.user_id_1) " \
+        "AS users FROM (SELECT a.title AS title_1, s.id AS id_1, s.user_id AS user_id_1, a.id AS id_2 FROM"
+      )
+      expect(rewrites.first).to end_with("arms_1 GROUP BY arms_1.title_1 HAVING count(*) > 0 ORDER BY arms_1.title_1")
+      expect(same_rows(sql, rewrites, params, ordered: true))
+        .to eq([%w[one 2 102 1], %w[same 2 701 1], %w[six 2 602 1], %w[two 1 201 1]])
+    end
+
+    it "groups by several columns, filters groups with a HAVING on an aggregate, and groups on a NULL" do
+      sql = "SELECT s.flag, a.loose, sum(a.id), count(s.flag) #{from} WHERE s.flag OR a.loose = 3 OR s.flag IS NULL " \
+            "GROUP BY s.flag, a.loose HAVING max(a.id) >= 1 OR min(a.id) < 0 ORDER BY 1, 2"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(same_rows(sql, rewrites, [], ordered: true).size).to be > 3
+    end
+
+    it "takes HAVING with no GROUP BY, over the whole UNION" do
+      sql = "SELECT count(*) #{from} #{where} HAVING count(*) = 7"
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites).not_to be_empty
+      expect(same_rows(sql, rewrites, params)).to eq([["7"]])
+    end
+
+    it "would be wrong on a query Postgres accepts only for a key: the UNION has none, and the rewrite raises" do
+      sql = "SELECT a.id, a.title #{from} WHERE s.flag OR a.loose = 3 GROUP BY a.id"
+      union = "SELECT u.id_1, u.title_1 FROM (SELECT a.id AS id_1, a.title AS title_1 #{from} WHERE s.flag " \
+              "UNION SELECT a.id AS id_1, a.title AS title_1 #{from} WHERE a.loose = 3) u GROUP BY u.id_1"
+
+      expect(conn.exec(sql).ntuples).to eq(2)
+      expect { conn.exec(union) }.to raise_error(PG::GroupingError)
+      expect(rewritten(sql)).to eq([])
+    end
+
+    it "would be wrong grouping the arms apart: a group split over two arms would give two rows" do
+      sql = "SELECT a.title, count(*) #{from} WHERE s.user_id = 5 AND (a.id < 4 OR s.id > 600) GROUP BY a.title"
+      apart = "SELECT a.title, count(*) #{from} WHERE s.user_id = 5 AND a.id < 4 GROUP BY a.title " \
+              "UNION ALL SELECT a.title, count(*) #{from} WHERE s.user_id = 5 AND s.id > 600 GROUP BY a.title"
+
+      expect(conn.exec(apart).ntuples).to be > conn.exec(sql).ntuples
+      expect(same_rows(sql, rewritten(sql)).size).to eq(conn.exec(sql).ntuples)
+    end
+
     it "splits an OR of three arms, and an arm that's an AND" do
       sql = "SELECT a.id #{from} WHERE (s.flag OR (a.loose = 1 AND s.user_id = 5) OR #{exists.sub("$2", "7")})"
 
@@ -330,8 +383,31 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         "SELECT a.id, (SELECT count(*) FROM public.cp s WHERE s.id = a.id) AS n FROM_ WHERE s.flag OR a.loose = 3",
       "an unnamed select-list expression takes its name from its column" =>
         "SELECT a.id::text FROM_ WHERE s.flag OR a.loose = 3",
-      "it has GROUP BY" => "SELECT a.id, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.id",
-      "it has HAVING" => "SELECT count(*) FROM_ WHERE s.flag OR a.loose = 3 HAVING count(*) > 0",
+      "it groups by an expression" =>
+        "SELECT lower(a.title), count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY lower(a.title)",
+      "it groups by an ordinal" => "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY 1",
+      "it groups by an unqualified column" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY title",
+      "it has ROLLUP" => "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY ROLLUP (a.title)",
+      "it has GROUPING SETS" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY GROUPING SETS ((a.title), ())",
+      "it has GROUP BY DISTINCT" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY DISTINCT a.title",
+      "it has an empty grouping set" => "SELECT count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY ()",
+      "it selects a column of a grouped key's table that isn't grouped" =>
+        "SELECT a.id, a.title FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.id",
+      "it selects name.* with GROUP BY" => "SELECT a.* FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.id",
+      "it orders by a column that isn't grouped" =>
+        "SELECT a.title, count(*) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title, a.id ORDER BY s.id",
+      "it has HAVING on a column that isn't grouped" =>
+        "SELECT a.title FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title HAVING s.flag",
+      "it has HAVING with a subquery" =>
+        "SELECT a.title FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title " \
+        "HAVING count(*) > (SELECT count(*) FROM public.cp)",
+      "it calls a function that isn't an aggregate on a column that isn't grouped" =>
+        "SELECT a.title, lower(s.id::text) FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title",
+      "it has a column outside a call that's an aggregate only by name" =>
+        "SELECT a.title, count(s.id) + s.id FROM_ WHERE s.flag OR a.loose = 3 GROUP BY a.title",
       "it has a window function" => "SELECT a.id, row_number() OVER (ORDER BY s.id) FROM_ WHERE s.flag OR a.loose = 3",
       "it has a WINDOW clause" => "SELECT a.id FROM_ WHERE s.flag OR a.loose = 3 WINDOW w AS (ORDER BY s.id)",
       "it has DISTINCT ON" => "SELECT DISTINCT ON (a.id) a.id FROM_ WHERE s.flag OR a.loose = 3 ORDER BY a.id",

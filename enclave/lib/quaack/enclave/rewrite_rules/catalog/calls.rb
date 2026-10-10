@@ -23,6 +23,23 @@ module Quaack
                 AND (p.proretset OR p.prokind OPERATOR(pg_catalog.<>) 'f'))
           SQL
 
+          # Functions of the name, in the schema if the call names one and in
+          # any schema if not, of which there's one and all are aggregates.
+          AGGREGATES = <<~SQL
+            SELECT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_proc p
+              JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+              WHERE p.proname OPERATOR(pg_catalog.=) $1
+                AND ($2::pg_catalog.text IS NULL OR n.nspname OPERATOR(pg_catalog.=) $2)
+                AND p.prokind OPERATOR(pg_catalog.=) 'a')
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_proc p
+              JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+              WHERE p.proname OPERATOR(pg_catalog.=) $1
+                AND ($2::pg_catalog.text IS NULL OR n.nspname OPERATOR(pg_catalog.=) $2)
+                AND p.prokind OPERATOR(pg_catalog.<>) 'a')
+          SQL
+
           # An operator of the name, likewise, whose function returns a set.
           OPERATORS = <<~SQL
             SELECT EXISTS (
@@ -46,6 +63,16 @@ module Quaack
             calls.none? do |call|
               key = [call.kind, call.schema, call.name]
               @many.fetch(key) { @many[key] = many?(call) }
+            end
+          end
+
+          # Whether a call of the function, by name and schema (nil if the
+          # call names none), is an aggregate however Postgres reads it: at
+          # least one function of the name is one and none is anything else.
+          def only_aggregates?(schema, name)
+            @aggregates ||= {}
+            @aggregates.fetch([schema, name]) do
+              @aggregates[[schema, name]] = @connection.exec_params(AGGREGATES, [name, schema]).getvalue(0, 0) == "t"
             end
           end
 

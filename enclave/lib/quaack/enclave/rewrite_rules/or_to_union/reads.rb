@@ -93,8 +93,8 @@ module Quaack
           # Everything outside the FROM and the WHERE, but for the name.*
           # entries: the nodes whose columns the UNION must give.
           def self.outside(select)
-            [*select.target_list.reject { star(it.res_target) }, *select.sort_clause, select.limit_count,
-             select.limit_offset].compact
+            [*select.target_list.reject { star(it.res_target) }, *select.group_clause, select.having_clause,
+             *select.sort_clause, select.limit_count, select.limit_offset].compact
           end
 
           # Every [name, column] the query uses outside its WHERE, or nil
