@@ -475,7 +475,7 @@ From the builder and review of 20261004-80.
 - **Came from:** The builder and review of 20261004-80.
 - **Design:** report, burndown.
 - **Landed so far:** item 1, 2026-10-08 (task/20261004-89, commit 835eb325; review clean). Items 2 and 3 wait on a user decision, since DESIGN.md keeps both cells "not recorded" on purpose. Item 2 would add a `sources` list to each `indexes` entry in the payload, checked on the way out, and the user would also choose what the cell says for a rewrite with new indexes. Item 3 would record index-dedupe's and index-test's drops by generator in the burndown, which changes its shape.
-- **Decided by the user (2026-10-09):** do items 2 and 3. Item 2: add `sources` to each `indexes` entry and show them in the "Who proposed it" cell. The user didn't say how the cell reads for a rewrite with new indexes; propose a wording when the task starts and ask. Item 3: record already existed and planner ignored by generator. Both change the enclave payload, so they go on the unreleased-changes list.
+- **Decided by the user (2026-10-09):** do items 2 and 3. Item 2: add `sources` to each `indexes` entry and show them in the "Who proposed it" cell. The cell reads the rewrite's source first, then the indexes' sources, such as "QUAACK's rules; indexes: generator one, the LLM" (decided by the user, 2026-10-09); a label with no new indexes shows only the rewrite's source. Item 3: record already existed and planner ignored by generator. Both change the enclave payload, so they go on the unreleased-changes list.
 - **Status:** todo
 
 ### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
@@ -1158,7 +1158,7 @@ Give the first caveat a target that says which measurement runs timed out: which
 - **Depends on:** 20261009-28 (shares the caveat-link check).
 - **Came from:** The user, 2026-10-09.
 - **Design:** report.
-- **Open questions:** Whether the details are a note in the Ranking section or a section of their own; ask the user, with 20261009-28's answer in hand.
+- **Decided by the user (2026-10-09):** the explanation goes in a section of its own, and the caveat links there.
 - **Status:** todo
 
 ### 20261009-31. Report: shorten "made by QUAACK's own rewrite rule" to "transform rule".
@@ -1252,12 +1252,13 @@ If the prototype is good enough, the feature needs: a new LLM step (its own entr
 - **Depends on:** None for the prototype. The feature depends on the prototype's result.
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, Several LLM providers.
-- **Open questions:** Whether the user wants the summary only for the winner or for each ranked candidate; which provider writes it (the cheapest one that does well in the prototype); whether a reader who can't tell it's LLM-written is acceptable (no: it's labeled).
+- **Decided by the user (2026-10-09):** the summary compares the winner only against the original query without new indexes (the baseline: the original with the same indexes). Not each ranked candidate.
+- **Open questions:** Which provider writes it (the cheapest one that does well in the prototype).
 - **Status:** todo
 
 ### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have".
 
-The user, 2026-10-09. Remove the "Tried for" column from the `#existing-indexes` table in the template (the other columns stay: Index, Your index that covers it, Its size). Update README.md's bullet for that table, which says it lists "the queries it was tried for", and DESIGN.md if it names the column, and the report spec, with a test that the header and cells are gone and the others remain. Check that nothing else reads the removed cells (a helper such as `searches(e)` may then be used by one table only). The "Indexes the planner wouldn't use" table (`#declined-indexes`) has its own "Tried for" column; leave it unless the user asks, and say so in the report. The intro line above the table may mention it ("An index is listed once, with every query it was tried for"), so reword it to match.
+The user, 2026-10-09. Remove the "Tried for" column from the `#existing-indexes` table in the template (the other columns stay: Index, Your index that covers it, Its size). Update README.md's bullet for that table, which says it lists "the queries it was tried for", and DESIGN.md if it names the column, and the report spec, with a test that the header and cells are gone and the others remain. Check that nothing else reads the removed cells (a helper such as `searches(e)` may then be used by one table only). The user decided (2026-10-09) that the "Indexes the planner wouldn't use" table (`#declined-indexes`) loses its own "Tried for" column too. Remove both, and reword the intro lines of both tables. The intro line above the table may mention it ("An index is listed once, with every query it was tried for"), so reword it to match.
 
 - **Depends on:** None. Edits the same template section as 20261009-34, so build after it lands.
 - **Came from:** The user, 2026-10-09.
