@@ -18,13 +18,14 @@ RSpec.describe TestPostgres do
   end
 
   # Runs a spec file in a child process that inherits this bundle, the way
-  # rake runs a suite, and returns its output and status.
+  # rake runs a suite, and returns its output and status. It runs from the
+  # file's own directory, so no .rspec loads the root spec_helper.
   def run_child_spec(source, env: {})
     Dir.mktmpdir do |dir|
       file = File.join(dir, "child_spec.rb")
       File.write(file, source)
       out, status = Open3.capture2e(env, RbConfig.ruby, "-rrspec/core", "-e", "RSpec::Core::Runner.invoke", "--", file,
-                                    chdir: REPO_ROOT)
+                                    chdir: dir)
       [out, status]
     end
   end
@@ -451,6 +452,25 @@ RSpec.describe TestPostgres do
           end
         end
       RUBY
+    end
+
+    # The documented setup is the two lines at the top of test_postgres.rb.
+    # A child that ran from the repo root would also load the root
+    # spec_helper through .rspec, which configures the harness a second time
+    # and hides a setup that doesn't work on its own.
+    it "runs a child without the root spec_helper, so the documented setup is all that configures it" do
+      source = <<~RUBY
+        #{prelude}
+        RSpec.describe "a bare child" do
+          it("checks") do
+            puts "ROOT_HELPER=\#{defined?(REPO_ROOT).inspect}"
+          end
+        end
+      RUBY
+      out, status = run_child_spec(source)
+
+      expect(status).to be_success, out
+      expect(child_value(out, "ROOT_HELPER")).to eq("nil"), out
     end
 
     it "gives each test its own database, drops it at the end of that test, and removes the container at exit" do
