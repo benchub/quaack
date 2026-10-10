@@ -386,33 +386,9 @@ From the reviews of 20260924-7.
 
 ### 20261004-95. Insert check: clock words, loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-2. Structured columns: minors from 20261004-91.
-
-From the builder and review of 20261004-91.
-1. The classify-level tests for xml, tsvector, range and multirange columns (`pii_classification_postgres_spec.rb` ~380-418) stay green when those types are dropped from the list, since ANALYZE gives them no positive `n_distinct`. Only `planner_statistics_postgres_spec.rb` (~131) catches it. Rename the tests to say what they show, or make them bite.
-2. Done in 20261006-3. `planner_statistics/catalog.rb` (~47-49) compares an `oid` with `regtype` values using a bare `=`. A planted `public.=` operator on (oid, regtype) turns json, jsonb and xml columns non-structured. Use `OPERATOR(pg_catalog.=)` or cast to `pg_catalog.oid`. Related: 20260930-13, 20260930-14.
-3. The trust-boundary test's comment (`pii_classification_postgres_spec.rb` ~222-226) doesn't mention the json sentinel in `customers.preferences`.
-4. tsvector lexemes and array elements go to `most_common_elems`, which statistics doesn't read today. If it ever does, apply the same rule there.
-
-- **Depends on:** 20261004-91.
-- **Came from:** The builder and review of 20261004-91.
-- **Design:** classify, statistics, trust boundary.
-- **Status:** todo
+### 20261006-2. Structured columns: minors from 20261004-91. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values. Done, see BACKLOG-COMPLETE.md.
-
-### 20261006-4. ambiguous_user_schema: minors from 20261004-88.
-
-From the builder of 20261004-88.
-1. `pg_temp` isn't modelled in the path walk.
-2. Schemas the application role has no USAGE on aren't modelled; only the operator's USAGE is. The check can refuse a name the application could never resolve to that schema.
-3. A collation's encoding isn't considered, so the refusal can be over-cautious.
-4. A role schema that defines `=` refuses nearly every query. Correct, but blunt; consider naming the operator in the message so the fix is obvious.
-
-- **Depends on:** 20261004-88.
-- **Came from:** The builder of 20261004-88.
-- **Design:** input, qualify.
-- **Status:** todo
 
 ### 20261006-6. Clock words and defaults: minors from 20261004-95.
 
