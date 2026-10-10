@@ -662,7 +662,7 @@ QUAACK ranks the three best candidates of each kind of change: a rewrite with ne
 | | **The original query, with new indexes** | | | |
 | 1 | The original query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
 
-The first row, with no rank, is the original query, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where the original query timed out, "timed out". Each **candidate** is the original query, or a rewrite, run with a set of new indexes or none, and the report names it that way. Within a kind, the fewest blocks on the slow values ranks first. The winner, the one the verdict and the next section describe, is the best candidate of any kind. It's the first row under one of the headings, not necessarily the first row under the first heading. A kind with no ranked candidate has no heading. Here, no rewrite with no new indexes was ranked, so that kind is missing, and the verdict says so.
+The first row, with no rank, is the original query, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where the original query timed out, "timed out". Each **candidate** is the original query, or a rewrite, run with a set of new indexes or none, and the report names it that way. Within a kind, the fewest blocks on the slow values ranks first, and the smaller sum of blocks across all the value sets breaks a tie there. The verdict has a row for the best candidate of each kind, and the next section describes the winner, the best candidate of any kind. It's the first row under one of the headings, not necessarily the first row under the first heading. A kind with no ranked candidate has no heading. Here, no rewrite with no new indexes was ranked, so that kind is missing, and the verdict says so.
 
 - **Blocks read, slow values:** blocks read with the values from your slow plan. This is the number you most want down.
 - **Blocks read, all values:** blocks read, added up over the slow, worst-case, and typical values.
@@ -675,8 +675,8 @@ Only candidates that pass the **minimax rule** are ranked. A candidate must be *
 | What it was | Who proposed it | Why it didn't make the cut |
 | --- | --- | --- |
 | The original query with a new index on public.events (kind) | not recorded | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
-| Rewrite Silver Fox with no new indexes | Suggested by the LLM | Read 503 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
-| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
+| Rewrite Silver Fox with no new indexes | Suggested by the LLM (groq, llama-3.3-70b-versatile) | Read 503 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
+| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM (groq, llama-3.3-70b-versatile) | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
 
 Who proposed it means who proposed the rewrite. QUAACK doesn't record who thought of each index, so for the original query with new indexes it says not recorded.
 
