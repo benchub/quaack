@@ -1216,8 +1216,8 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Depends on:** None. Related: 20261009-32, 20261009-18, 20261003-39, 20261003-42.
 - **Came from:** The user, 2026-10-09.
 - **Design:** rewrite-test (vacuity-guard), counterexamples, report.
-- **Open questions:** The run ID and untested-atom shapes (from the user's run store); whether the caution is about the whole query or only the rewrite's difference.
-- **Status:** todo
+- **Decided by the user (2026-10-09):** the caution should warn only about untested atoms in the part the rewrite changed. That's task 20261009-40. This task builds the diagnostic (why an atom stayed vacuous) first; the cause of the untested atoms in the user's run is still unknown and waits on that diagnostic.
+- **Status:** in progress (diagnostic)
 
 ### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections.
 
@@ -1292,4 +1292,15 @@ Update README.md's bullet for the table and DESIGN.md's index paragraph.
 - **Depends on:** 20261009-38 (the same table loses its "Tried for" column first).
 - **Came from:** The user, 2026-10-09.
 - **Design:** report, statistics.
+- **Status:** todo
+
+### 20261009-40. Caution: warn only about untested atoms in the part the rewrite changed.
+
+Decided by the user, 2026-10-09, from 20261009-33's diagnosis. `Report::Cautions#warning` adds "every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven" whenever any atom of the whole query is untested (`unchecked_atoms(entry)`). An atom the rewrite left exactly as the original had it can't tell the two apart, so an untested one says nothing about the rewrite. Warn only when an untested atom lies in a part the rewrite changed.
+
+Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexamples and result-comparison design and the rule-and-LLM rewrites' shapes: for example, an atom counts as changed when its redacted shape doesn't appear unchanged in the rewrite's atoms, or the enclave marks each untested atom as shared with the rewrite or not and sends that one flag per atom (a shape-only boolean; test with a sentinel). An LLM-written rewrite or a rule that restructures the whole WHERE may leave no atom shared; then every untested atom counts, as today. Put the check in the enclave if only it can compare, and put the task on the unreleased list. Do this together with 20261009-32 (the not-better wording), and word the caution so it can't read as "QUAACK didn't test this".
+
+- **Depends on:** 20261009-33 (its diagnostic; the cause of the untested atoms may change what's left to warn about), 20261009-32.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report, counterexamples, rewrite-test.
 - **Status:** todo
