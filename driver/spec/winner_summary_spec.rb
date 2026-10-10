@@ -63,7 +63,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
         "original" => { "sql" => payload["original_sql"],
                         "plan" => [{ "step" => "Seq Scan", "table" => "public.t", "index" => nil,
                                      "estimated_rows" => 50, "actual_rows" => 50, "depth" => 0, "blocks" => 1_234 }],
-                        "plan_source" => described_class::Input::ORIGINAL_PLAN },
+                        "plan_source" => "how Postgres runs the original query now, on the indexes the database has" },
         "winner" => { "is" => "a rewrite of the original query",
                       "rewrite" => { "name" => "Rewrite Steady Lute", "source" => "rule", "rules" => ["in_to_exists"],
                                      "sql" => payload["rewrites"][0]["sql"] },
@@ -181,6 +181,9 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(system).to include("only with the original query as it runs now, on the indexes the database already has")
         .and include("Say only what the plans and numbers in the payload show")
         .and include("Don't guess at a cause you can't see")
+        .and include("Use short sentences").and include("under 600 characters")
+        .and include("Quote a plan step's own numbers")
+        .and include("never carry one step's row count to another step")
       expect(ask.body).not_to have_key(:output_config)
     end
 
@@ -209,6 +212,12 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       "an entity" => "Rewrite Steady Lute reads fewer blocks &amp; rows.",
       "a url" => "Rewrite Steady Lute reads fewer blocks, see https://example.test/plan for more.",
       "a bare domain" => "Rewrite Steady Lute reads fewer blocks, see example.com for more.",
+      "a bare domain on an unlisted ending" => "Rewrite Steady Lute reads fewer blocks, see evil.example.co now.",
+      "a javascript link as text" => "Rewrite Steady Lute reads fewer blocks, see javascript:alert(1) now.",
+      "a data link as text" => "Rewrite Steady Lute reads fewer blocks, see data:text/plain,hi now.",
+      "an email address" => "Rewrite Steady Lute reads fewer blocks, ask dba@corp for more.",
+      "a zero-width character" => "Rewrite Steady Lute reads fewer​ blocks.",
+      "a bidi override" => "Rewrite Steady Lute reads fewer blocks.‮",
       "a markdown link" => "Rewrite Steady Lute reads [fewer blocks](x).",
       "a code fence" => "Rewrite Steady Lute reads fewer blocks.\n```sql\nSELECT 1\n```",
       "a bold word" => "Rewrite Steady Lute reads **fewer** blocks.",
@@ -232,9 +241,32 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     end
 
     it "keeps the comparison operators of a condition, which the report escapes" do
+      payload["original_sql"] = "SELECT 1 FROM public.orders o WHERE (o.created_at >= $1 AND o.created_at < $2) " \
+                                "OR o.status = $3"
       answer = "Rewrite Steady Lute filters on (o.created_at >= $1 AND o.created_at < $2) OR o.status = $3."
 
-      expect(run(answer)).to have_attributes(text: answer, outcome: "used")
+      expect(run(answer, payload)).to have_attributes(text: answer, outcome: "used")
+    end
+
+    it "keeps schema-qualified names, aliased columns, operators, and numbers with commas and decimals" do
+      payload["original_sql"] = "SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id " \
+                                "WHERE o.status = $1 AND o.total >= $2"
+      answer = "Rewrite Steady Lute reads public.orders through o.status and o.total >= $2, then joins public.users " \
+               "on u.id = o.user_id. It reads 30 blocks against 1,234 for the original, a 97.6 percent drop."
+
+      expect(run(answer, payload)).to have_attributes(text: answer, outcome: "used")
+    end
+
+    it "refuses a dotted name that isn't in what the LLM was sent" do
+      answer = "Rewrite Steady Lute reads fewer blocks than evil.orders does."
+
+      expect(run(answer)).to have_attributes(text: nil, outcome: "rejected")
+    end
+
+    it "refuses an answer over 800 characters, and keeps one of 700" do
+      expect(run("#{good} #{"It reads fewer blocks. " * 26}")).to have_attributes(text: nil, outcome: "rejected")
+      keep = "#{good} #{"It reads fewer blocks. " * 20}"[0, 700].strip
+      expect(run(keep)).to have_attributes(text: keep, outcome: "used")
     end
 
     it "keeps one paragraph: runs of whitespace in a good answer become a space" do
