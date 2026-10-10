@@ -845,3 +845,12 @@ The reviews of 20261008-38 found these minor issues:
 - **Came from:** The reviews of 20261008-38, 2026-10-10.
 - **Design:** What goes into the enclave.
 - **Status:** todo
+
+### 20261010-18. LLM adapter for the Claude Code CLI.
+
+The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI does (`claude -p`, with a model flag and no tools). Add a provider type, for example `claude_cli`, beside `copilot_cli`, modeled on `driver/lib/quaack/driver/llm/copilot_cli_adapter.rb`: a local command run once per ask without a shell, the prompt passed by file or stdin, a `command_template` with `{prompt_file}` and `{model}` placeholders, `timeout_seconds`, and the same error handling and reply shape checks as the other adapters. Check the CLI's current flags and output format (a JSON output mode, how to turn tools and session saving off, how it reports usage) before building. Keep it driver-only: the enclave must never see the adapter, and the prompt carries only what the other adapters already send. Update the provider list, the `llm` block rules and the example config in DESIGN.md and the README, and add the type to the boundary specs' provider coverage if they list providers.
+
+- **Depends on:** none.
+- **Came from:** the user, 2026-10-10.
+- **Design:** LLM client.
+- **Status:** todo
