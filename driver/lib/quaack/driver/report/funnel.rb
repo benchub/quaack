@@ -97,9 +97,10 @@ module Quaack
         end
 
         # Each row's [top, bottom] widths, on the scale of the widest point.
-        # The running width, in counts, starts at zero, and a row with both
-        # counts moves it by out - in, except the first row, whose top is as
-        # wide as its bottom (a rectangle). A row with no count is
+        # The running width, in counts, is zero before the first row. A row
+        # with both counts moves it by out - in, except the first row, which
+        # sets it to its out, so its top is as wide as its bottom (a
+        # rectangle). A row with no count is
         # [width, nil], and one with only what came in [width, :partial], at
         # the running width and leaving it be.
         def funnel_widths(rows)

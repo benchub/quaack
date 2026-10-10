@@ -2694,11 +2694,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(widths(bands(funnel("index")).first)).to eq([0, 0])
     end
 
-    it "draws a first band the run didn't record as a rectangle at least a third of the full width" do
+    it "draws a first band the run didn't record as a rectangle 0.3 of the full width wide" do
       stages.delete("index-from-query")
       first = widths(bands(funnel("index")).first)
       expect(first).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
-      expect(first.first).to be >= Quaack::Driver::Report::Funnel::WIDTH / 4
+      expect(first.first).to eq((Quaack::Driver::Report::Funnel::WIDTH * 0.3).round(2))
     end
 
     it "keeps a stage's counts out of its tooltip, since the table has them" do
