@@ -907,14 +907,6 @@ The review of 20261010-25 found that the guard's new fixture-compare check runs 
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261010-27. Untested conditions: a corpus of realistic query shapes that must have no non-redundant untested atoms.
-
-The user's worry (2026-10-10): the untested-conditions flag could show up for many query shapes we haven't tried. The fixes so far (20261010-19, -21, -25) each came from a shape we happened to examine. Build a broad safety net: a Postgres-backed spec with about 100 realistic shapes (the ordinary SELECTs that apps and ORMs generate: filters of every type, AND/OR/NOT mixes, IN and NOT IN, BETWEEN, LIKE, IS NULL, joins of every kind with 2 to 4 tables, FK chains, self-joins, subqueries (IN, EXISTS, scalar, correlated), UNION and UNION ALL, CTEs, GROUP BY with HAVING, DISTINCT, ORDER BY with LIMIT and OFFSET, aggregates, window functions, enum, boolean, date, jsonb and array columns, unique and composite keys, polymorphic columns, and the Rails shapes the real queries use). For each shape, run the real Scenarios::Builder and VacuityGuard, and list the atoms that stay untested. Each shape carries an explicit allow-list of atoms that are truly redundant or provably untestable, with a one-line reason; the spec fails when any other atom is untested, so a regression or a new shape shows up as a red test. Shapes that fail today go in a separate pending list with the atoms and a guess at the cause, and each becomes a new backlog task pointing here. Keep the spec's runtime reasonable (parallel-safe, one throwaway Postgres).
-
-- **Depends on:** 20261010-25.
-- **Came from:** The user, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
 
 ### 20261010-28. Winner summary: explain why the winner wins, as a heuristic a developer can reuse.
 
@@ -942,4 +934,55 @@ Move the grouping there: wrap each kind's heading and its numbered entries in on
 - **Depends on:** 20261009-35 (landed).
 - **Came from:** The user, 2026-10-10.
 - **Design:** report.
+- **Status:** todo
+
+### 20261010-30. Untested conditions: outer and anti joins need unmatched rows.
+
+From the corpus (20261010-27, `PENDING` in `enclave/spec/vacuity_guard_corpus_postgres_spec.rb`). These shapes leave non-redundant atoms untested, and look like one family: scenarios never build the unmatched row an outer or anti join needs.
+- NOT EXISTS (correlated): `EXISTS (SELECT $1 FROM comments WHERE comments.post_id = posts.id)` and `comments.post_id = posts.id`; the hit should be a post with no comment, and the scenarios build the comment instead.
+- FULL JOIN: `posts.user_id = users.id`; the ON atom needs unmatched rows on a side.
+- LEFT JOIN anti-join (`... IS NULL`): `posts.user_id = users.id`; needs a post belonging to another user.
+- Rails `left_joins ... where nil`: `comments.post_id = posts.id` and `posts.published = $1`; the hit needs a post with no comment.
+- Correlated scalar count: `comments.post_id = posts.id`; no comment for another post is built.
+Fix the family with a general mechanism (a group with an unmatched parent or child on one side of the join), keep the guard sound and the caps, and flip each shape from `PENDING` to `SHAPES` in the corpus.
+
+- **Depends on:** 20261010-27 (landed); build after 20261010-24 (same scenario code).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-31. Untested conditions: existence checks (`SELECT 1 ... LIMIT 1`, Rails `exists?`).
+
+From the corpus. `SELECT 1 AS one FROM users WHERE email = $1 LIMIT 1` leaves `users.email = $2` untested, and Rails `exists?` leaves `memberships.user_id = $2` and `memberships.group_name = $3` untested. The result is 1 row whenever any row exists, so a near miss only shows when a fixture holds only near misses (no hit). Add a fixture shape that holds only near misses for a query whose result can't change otherwise, keep the guard sound, and flip the shapes in the corpus.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-32. Untested conditions: aggregates, CTEs, keyset pagination, boolean IS TRUE.
+
+From the corpus (each shape's guessed cause is in the spec's `PENDING`, none confirmed):
+- `max(score)` with a filter: `posts.published = $1` (the near miss needs a score above the hit's to change max()).
+- Aggregate FILTER clause: `posts.score > $1` (the near miss may fail the FILTER's other atom too).
+- CTE with an outer filter: `posts.created_at > $1`.
+- Keyset pagination (`user_id = 4 AND id > 100 ORDER BY id LIMIT 25`): `posts.id > $2` (pinned key conflict, or outside the cut).
+- Scalar subquery in WHERE: `p2.published = $1` (the near miss must move avg() across the hit's score).
+- Rails `count` with `where.not`: `comments.workflow_state <> $2`.
+- Boolean `IS TRUE`: `users.active IS TRUE` (a BooleanTest seems to get no pool, so there's no false near miss).
+- A second column-to-column tie between the same two tables (comments.user_id = posts.user_id): no row joins on one and not the other.
+Find each cause, fix it without weakening the guard, and flip the shapes in the corpus; split a shape out if it needs its own task. Start with `IS TRUE` and `where.not`, which are the most common in real queries.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the corpus, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-33. Corpus: the pinned-key rank mutation stays green.
+
+From 20261010-27: with `PinnedKeys`' rank forced to 0, the corpus stays green even with its five pinned-key shapes; only the count-query example in `vacuity_guard_scopes_postgres_spec.rb` catches it. Add corpus shapes that fail when the rank is forced to 0 (an `IN` list of three or four values on a parent key with several groups that each need their own value), and mutation-check them.
+
+- **Depends on:** 20261010-27 (landed).
+- **Came from:** the work on 20261010-27, 2026-10-10.
+- **Design:** rewrite-test.
 - **Status:** todo
