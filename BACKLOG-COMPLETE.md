@@ -9981,3 +9981,25 @@ The review of 20261007-21 part 1 found these minor issues:
 - **Came from:** The review of 20261007-21 part 1, 2026-10-08.
 - **Design:** qualify.
 - **Status:** done. Item 1: `Resolved.pick` probes pg_catalog too and qualifies only when exactly one schema matches and it isn't pg_catalog. Item 2 documented as a known risk. Item 3: probe-error spec.
+
+### 20261008-37. Plan table check: RLS policies that read other tables.
+
+The review of 20260924-3 found this. A table whose RLS policy queries another table, such as a membership lookup for multi-tenancy, gets that table's scan added to the plan, so qualify refuses it as `plan_table_mismatch`. That refusal is wrong. List RLS policies that reference other tables as unsupported in v1 in DESIGN.md, or refuse them earlier with a clearer rule.
+
+- **Depends on:** 20260924-3.
+- **Came from:** The review of 20260924-3, 2026-10-08.
+- **Design:** input.
+- **Status:** done. Listed as unsupported in v1: the `plan_table_mismatch` note and DESIGN.md now name RLS policies that read another table.
+
+### 20261008-38. Tablespace check: narrow it to the query's tables.
+
+The review of 20260924-29 found these:
+
+1. **The check covers more than the query needs.** Inventory records every tablespace any relation uses, so `run_server_tablespace_mismatch` can refuse over a tablespace none of the query's tables use. Two realistic cases hit this: a run server restored with `pg_dump --no-tablespaces`, and an RDS production with a custom tablespace that holds only unrelated tables. Record each relation's tablespace, and check only the query's tables and their indexes, after qualify.
+2. **The operator can't tell which tablespace failed.** The fixed note doesn't say, by design. Have it say how to compare `pg_tablespace` on both servers.
+3. **The missing-tablespace path has no mutation coverage.** Add a test where a tablespace is missing by name.
+
+- **Depends on:** 20260924-29.
+- **Came from:** The review of 20260924-29, 2026-10-08.
+- **Design:** inventory and run-server.
+- **Status:** done. qualify stores `relation_tablespaces` (the query's tables, descendants and indexes); run-server compares only those; setup now runs qualify before run-server. Minors: 20261010-17.

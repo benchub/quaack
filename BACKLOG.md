@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261008-35 and 20261008-39: index DDL key expressions and predicates and rewrite candidates refuse reg literals, name lookups, OID probes, reg input functions and integer text search configs; an "any" argument is declared text and prepared again (enclave).
 - 20261008-46: `Resolved.pick` probes pg_catalog too and leaves a call bare when it and another schema plan the same way (enclave).
+- 20261008-38: qualify stores `relation_tablespaces` in the store; run-server compares only those tablespaces; `quaack setup` runs qualify before run-server (enclave and driver).
 - 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
 - 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
 - 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
@@ -489,28 +490,6 @@ The review of 20260924-28 found these minor issues:
 - **Design:** literals.
 - **Status:** todo. Only item 2 (DateStyle) is left.
 
-### 20261008-37. Plan table check: RLS policies that read other tables.
-
-The review of 20260924-3 found this. A table whose RLS policy queries another table, such as a membership lookup for multi-tenancy, gets that table's scan added to the plan, so qualify refuses it as `plan_table_mismatch`. That refusal is wrong. List RLS policies that reference other tables as unsupported in v1 in DESIGN.md, or refuse them earlier with a clearer rule.
-
-- **Depends on:** 20260924-3.
-- **Came from:** The review of 20260924-3, 2026-10-08.
-- **Design:** input.
-- **Status:** todo
-
-### 20261008-38. Tablespace check: narrow it to the query's tables.
-
-The review of 20260924-29 found these:
-
-1. **The check covers more than the query needs.** Inventory records every tablespace any relation uses, so `run_server_tablespace_mismatch` can refuse over a tablespace none of the query's tables use. Two realistic cases hit this: a run server restored with `pg_dump --no-tablespaces`, and an RDS production with a custom tablespace that holds only unrelated tables. Record each relation's tablespace, and check only the query's tables and their indexes, after qualify.
-2. **The operator can't tell which tablespace failed.** The fixed note doesn't say, by design. Have it say how to compare `pg_tablespace` on both servers.
-3. **The missing-tablespace path has no mutation coverage.** Add a test where a tablespace is missing by name.
-
-- **Depends on:** 20260924-29.
-- **Came from:** The review of 20260924-29, 2026-10-08.
-- **Design:** inventory and run-server.
-- **Status:** todo
-
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-44. Qualifying overloaded names: keyword forms (part 2 of 20261007-21).
@@ -925,3 +904,17 @@ The second review of 20261008-39 found this minor issue: rewrite candidates acce
 - **Design:** What goes into the enclave.
 - **Status:** todo
 
+### 20261010-17. Tablespace check: minors from 20261008-38.
+
+The reviews of 20261008-38 found these minor issues:
+
+1. **Names only.** The comparison matches tablespaces by name and options. It never checks that the query's tables on the run server sit in the same tablespace as in production.
+2. **Fail closed on a shortfall.** In qualify's tablespace query, a scanned relation missing from `pg_class` drops out of the needed set. `Relations.check` has already resolved every relation in the same transaction, so it can't happen today. Count the rows and refuse on a shortfall.
+3. **TOAST tables** aren't looked at separately.
+4. **Stale spec order.** `enclave/spec/cli_dispatcher_spec.rb:221` lists the old step order (harmless, it uses `match_array`).
+5. **Flaky timing.** Two `reply_json_spec` examples with a 0.15 s bound failed once under heavy load.
+
+- **Depends on:** 20261008-38.
+- **Came from:** The reviews of 20261008-38, 2026-10-10.
+- **Design:** What goes into the enclave.
+- **Status:** todo
