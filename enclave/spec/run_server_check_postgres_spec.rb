@@ -262,6 +262,40 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       TestPostgres.server.admin.exec("ALTER TABLESPACE pg_default RESET (random_page_cost)")
     end
 
+    # Task 20261008-38: qualify's relation_tablespaces names the ones the
+    # query's tables and indexes use, and only those are compared.
+    it "passes a tablespace the query's tables don't use, even when it's missing or differs here" do
+      record_inventory { it["tablespaces"][sentinels.word] = ["random_page_cost=1.1"] }
+      store.write("relation_tablespaces", ["pg_default"])
+
+      expect(run_check).to be_nil
+    end
+
+    it "fails a tablespace the query's tables use when it's missing here, by name" do
+      record_inventory { it["tablespaces"][sentinels.word] = [] }
+      store.write("relation_tablespaces", ["pg_default", sentinels.word])
+
+      expect_failure("run_server_tablespace_mismatch", "spcoptions")
+    end
+
+    it "fails a tablespace the query's tables use whose options differ" do
+      record_inventory
+      store.write("relation_tablespaces", ["pg_default"])
+      TestPostgres.server.admin.exec("ALTER TABLESPACE pg_default SET (random_page_cost = 1.1)")
+
+      expect_failure("run_server_tablespace_mismatch", "spcoptions")
+    ensure
+      TestPostgres.server.admin.exec("ALTER TABLESPACE pg_default RESET (random_page_cost)")
+    end
+
+    # Fail closed: a name inventory never recorded can't be compared.
+    it "fails a tablespace the query's tables use that inventory didn't record, even when the run server lacks it" do
+      record_inventory
+      store.write("relation_tablespaces", [sentinels.word])
+
+      expect_failure("run_server_tablespace_mismatch", "spcoptions")
+    end
+
     # The name is production configuration, so the error doesn't carry it.
     it "fails when the run server has no tablespace of a name production's relations use, and doesn't name it" do
       record_inventory { it["tablespaces"][sentinels.word] = [] }

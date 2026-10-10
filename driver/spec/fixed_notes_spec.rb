@@ -40,6 +40,13 @@ RSpec.describe Quaack::Driver::FixedNotes do
     expect(note).to include("QUAACK v1 doesn't support")
   end
 
+  # 20261008-38: the note can't name the tablespace, so it says how to find it.
+  it "says how to compare the tablespaces of both servers when a tablespace the query's tables use is off" do
+    note = error("run_server_tablespace_mismatch").rule_with_note(next_step:)
+    expect(note).to include("Compare pg_tablespace, with its spcoptions, on the production server and the run server")
+    expect(note).to include("the query's tables or indexes")
+  end
+
   # 20261009-5: the cap refusal says what the cap is and where to raise it.
   it "says the original ran past the baseline cap, and where to raise it" do
     expect(error("baseline_original_exceeded_cap", step: "baseline").rule_with_note(next_step:))
