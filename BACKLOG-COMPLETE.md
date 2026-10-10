@@ -9657,3 +9657,42 @@ From the builder of 20261004-88.
 - **Design:** input, qualify.
 - **Status:** dropped
 - **Dropped:** 2026-10-10, on the builder's findings (no code change). 1 (`pg_temp`) is per-session, so QUAACK can't see the application's temp schema and a refusal can't tell if it would help; 2 (schemas the application role has no USAGE on) needs a requirement change (DESIGN.md says the check deliberately assumes any role schema might have been visible, and QUAACK doesn't know the application role); 3 (a collation's encoding) only makes the check over-cautious on a rare case; 4 (naming the operator in the message) is already done (`UserSchema::Error` says `has an operator named =`). Reopen as a new task pointing at 20261004-88 if wanted.
+
+### 20261006-6. Clock words and defaults: minors from 20261004-95.
+
+From the reviews and builder of 20261004-95.
+1. Array-valued function elements bypass the nested clock check: `ARRAY[array_reverse(ARRAY['today'])]::date[]` is accepted and loads the wall-clock date (also the `::text` variant and three-dimensional constructors). Keep the array target through such functions, or refuse and list as unsupported in v1 (insert_clock_words.rb ~166-170).
+2. Some clock-reading defaults stay unanchored: a domain-typed cast such as `DEFAULT ('today'::text)::public.clock_date` (domain names fail `ClockLiterals.castable?`), and array defaults like `('{today}'::text)::date[]` (clock_defaults.rb ~106-110). Handle them or list them in DESIGN.md.
+3. An inventory without a recorded `TimeZone` raises `KeyError` in `RunServer.connect` (run_server.rb ~81), reported as `internal_error`. Refuse with a clear rule instead.
+4. Query and candidate binding outside counterexamples still binds the raw clock word.
+5. Clock anchoring doesn't anchor `current_time` or `clock_timestamp()` in queries.
+
+- **Depends on:** 20261004-95.
+- **Came from:** The reviews and builder of 20261004-95.
+- **Design:** insert check; arena setup; clock anchoring.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261006-6; Opus review clean). Item 1: an `ARRAY[]` element that is a function call keeps the outer targets too (fail closed; `ARRAY[array_reverse(ARRAY['today'])]::date[]` and the `::text` and three-dimensional variants are refused; 12 more shapes tried, none unanchored). Item 3: `RunServer.arena_time_zone` refuses an inventory without a `TimeZone` (nil, empty or missing) before connecting, with the existing rule `run_from_older_version`. Item 5: `current_time` and `current_time(p)` are anchored in queries as `::timetz` (and in column defaults through `ClockDefaults`), restored in the original text; `clock_timestamp()` in a query is volatile and already refused. Item 2: domain-typed casts and array casts in defaults are listed in DESIGN.md as unsupported in v1 (such a default still reads the wall clock). Item 4 (query and candidate binding of a raw clock word outside counterexamples) was dropped as stale or not pinned down: clock-anchor already anchors `$n::date`, `$n::timestamp(tz)`, `$n::time(tz)` and column comparisons; reopen with a concrete case if one turns up. On the unreleased list. Minor findings: 20261010-9.
+
+### 20261006-27. Clock overloads: minors from 20261006-17.
+
+From the review of 20261006-17 (`enclave/lib/quaack/enclave/insert_clock_words.rb`).
+1. A target whose candidates mix a pseudo type and a date type, such as `f(anyelement)` beside `f(date)`, now counts as disagreeing. Its `$n` is refused where it used to be anchored. That's conservative and rare, so revisit it only if someone hits it.
+2. The comment at ~198 says "one target's types disagree", but `oids` drops pseudo types before counting. Fix the wording.
+
+- **Depends on:** 20261006-17.
+- **Came from:** The review of 20261006-17.
+- **Design:** counterexamples inserts, clock anchoring.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261006-6 branch; comment only). Item 2: the comment on `reads_clock?` in `insert_clock_words.rb` says the candidate types disagree and notes the pseudo-type case. Item 1 (`f(anyelement)` beside `f(date)` refuses `$n`) left as is: the task says to revisit only if someone hits it.
+
+### 20261006-28. Stats trimming: join aliases with column lists, and a boundary test.
+
+From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
+1. `renames` (~116-123) reads only `range_var` aliases, so a join alias's column list is ignored. For `SELECT j.x FROM (orders o JOIN customers c ON o.customer_id = c.id) j(x)`, the subset drops `orders.id`, the column `j.x` renames. This SQL is rare. Keep every column of the tables under any join alias that has a column list.
+2. Changing the length guard (~61) from `>` to `>=` leaves every test green. Add a test with a list exactly as long as the table's columns.
+
+- **Depends on:** 20261006-10.
+- **Came from:** The review of 20261006-10.
+- **Design:** llm-index-ideas, llm-rewrites.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261006-6 branch; Opus review: no over-share). Item 1: a join alias with a column list keeps every column of every table under it (`listed_join_tables` in `stats_payload.rb`; it only adds whole tables of the query itself, and classify already lets those through). Item 2: a list exactly as long as the table's columns is tested (`>` to `>=` turns it red). On the unreleased list.

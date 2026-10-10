@@ -19,6 +19,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261003-44: `existence_in_flip` scope check includes unaliased function names; ORDER BY positions out of range are refused; the same capture is refused in `cte_hoist_dedupe` and `union_outer_filter_removal` (enclave).
 - 20261004-61: the `$n` numbers in untested-condition shapes come from the real redaction (`Redaction.numbers`), so a GROUP BY constant keeps no number and a shared constant gets one (enclave).
 - 20261004-92: `quaacks literals` refuses a rerun (`literals_already_used`) once baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (enclave and protocol).
+- 20261006-6: clock words and defaults: array-element function calls keep the outer targets, an inventory without a TimeZone refuses with `run_from_older_version`, `current_time` is anchored in queries and defaults (enclave).
+- 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
 - 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
 - 20261004-8: rewrite-test fixtures: a cut foreign key's S3 cross row keeps every table, `Topology#roots` uses `load_parents`, S5 builds the reversed boundary group first (enclave).
@@ -390,45 +392,13 @@ From the reviews of 20260924-7.
 
 ### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-6. Clock words and defaults: minors from 20261004-95.
-
-From the reviews and builder of 20261004-95.
-1. Array-valued function elements bypass the nested clock check: `ARRAY[array_reverse(ARRAY['today'])]::date[]` is accepted and loads the wall-clock date (also the `::text` variant and three-dimensional constructors). Keep the array target through such functions, or refuse and list as unsupported in v1 (insert_clock_words.rb ~166-170).
-2. Some clock-reading defaults stay unanchored: a domain-typed cast such as `DEFAULT ('today'::text)::public.clock_date` (domain names fail `ClockLiterals.castable?`), and array defaults like `('{today}'::text)::date[]` (clock_defaults.rb ~106-110). Handle them or list them in DESIGN.md.
-3. An inventory without a recorded `TimeZone` raises `KeyError` in `RunServer.connect` (run_server.rb ~81), reported as `internal_error`. Refuse with a clear rule instead.
-4. Query and candidate binding outside counterexamples still binds the raw clock word.
-5. Clock anchoring doesn't anchor `current_time` or `clock_timestamp()` in queries.
-
-- **Depends on:** 20261004-95.
-- **Came from:** The reviews and builder of 20261004-95.
-- **Design:** insert check; arena setup; clock anchoring.
-- **Status:** todo
+### 20261006-6. Clock words and defaults: minors from 20261004-95. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-10. Stats trimming: minor findings from 20261001-7. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-17. Clock binding: overloaded user functions. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-27. Clock overloads: minors from 20261006-17.
-
-From the review of 20261006-17 (`enclave/lib/quaack/enclave/insert_clock_words.rb`).
-1. A target whose candidates mix a pseudo type and a date type, such as `f(anyelement)` beside `f(date)`, now counts as disagreeing. Its `$n` is refused where it used to be anchored. That's conservative and rare, so revisit it only if someone hits it.
-2. The comment at ~198 says "one target's types disagree", but `oids` drops pseudo types before counting. Fix the wording.
-
-- **Depends on:** 20261006-17.
-- **Came from:** The review of 20261006-17.
-- **Design:** counterexamples inserts, clock anchoring.
-- **Status:** todo
-
-### 20261006-28. Stats trimming: join aliases with column lists, and a boundary test.
-
-From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
-1. `renames` (~116-123) reads only `range_var` aliases, so a join alias's column list is ignored. For `SELECT j.x FROM (orders o JOIN customers c ON o.customer_id = c.id) j(x)`, the subset drops `orders.id`, the column `j.x` renames. This SQL is rare. Keep every column of the tables under any join alias that has a column list.
-2. Changing the length guard (~61) from `>` to `>=` leaves every test green. Add a test with a list exactly as long as the table's columns.
-
-- **Depends on:** 20261006-10.
-- **Came from:** The review of 20261006-10.
-- **Design:** llm-index-ideas, llm-rewrites.
-- **Status:** todo
+### 20261006-28. Stats trimming: join aliases with column lists, and a boundary test. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification). Done, see BACKLOG-COMPLETE.md.
 
@@ -1095,4 +1065,16 @@ From the review of 20261004-81 (minor). The scan only matches double-quoted lite
 - **Depends on:** 20261004-81.
 - **Came from:** The review of 20261004-81, 2026-10-10 (minor).
 - **Design:** report, llm-index-ideas.
+- **Status:** todo
+
+### 20261010-9. Clock anchoring: small follow-ups from the review of 20261006-6.
+
+(minor)
+- The `current_time` anchor was checked against `now()::timetz` on Postgres 18 (including `current_time(3)` and a non-UTC TimeZone), but not against `quaack.clock_anchor()` itself: confirm `clock_anchor()` returns `timestamptz` like `now()` so `clock_anchor()::timetz` has the same semantics, with a spec.
+- The driver's note for `run_from_older_version` (`driver/lib/quaack/driver/fixed_notes.rb`) says an older version started the run; for a corrupt or hand-edited inventory (now also refused with that rule when `TimeZone` is missing) that is slightly misleading. Word it to cover both, or add a rule (a protocol and driver change).
+- Domain-typed and array casts in column defaults (`('today'::text)::public.clock_date`, `('{today}'::text)::date[]`) still read the wall clock: listed unsupported in v1. Decide whether to refuse such a default instead of letting it read the clock.
+
+- **Depends on:** 20261006-6.
+- **Came from:** The review of 20261006-6, 2026-10-10 (minor).
+- **Design:** clock anchoring, arena setup.
 - **Status:** todo
