@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "rule_preconditions"
+
 module Quaack
   module Driver
     class WinnerSummary
@@ -13,7 +15,9 @@ module Quaack
       # rewrite, both with $n placeholders; the rule names that made the
       # rewrite; the winner's new indexes' definitions; the two plans' nodes
       # (step, table, index, estimated and actual rows, blocks); and the
-      # blocks each read on every set of values. A string that isn't plain
+      # blocks each read on every set of values; and the conditions the
+      # original repeats across OR arms or UNION branches, with how often
+      # each appears in the original and in the winner (Repeats). A string that isn't plain
       # (a control character, or too long) is dropped, and a number that
       # isn't a count or a share is too.
       #
@@ -71,9 +75,10 @@ module Quaack
           label = Array(payload["top"]).first.then { it["label"] if it.is_a?(Hash) }
           return unless label.is_a?(String)
 
-          { "original" => { "sql" => sql(payload["original_sql"]), "plan" => nodes(payload["original_plan"]),
-                            "plan_source" => ORIGINAL_PLAN },
-            "winner" => winner_part(label, payload), "blocks_read" => blocks(label, payload) }
+          { "original" => { "sql" => (original = sql(payload["original_sql"])),
+                            "plan" => nodes(payload["original_plan"]), "plan_source" => ORIGINAL_PLAN },
+            "winner" => (winner = winner_part(label, payload)), "blocks_read" => blocks(label, payload),
+            "repeated_conditions" => Repeats.of(original, winner.dig("rewrite", "sql")) }
         end
 
         def measured(label, payload) = Array(payload["labels"]).find { it["label"] == label } || {}
@@ -106,7 +111,7 @@ module Quaack
           { "name" => (named = rewrite["name"]).is_a?(String) && PLAIN.match?(named) ? "Rewrite #{named}" : nil,
             "source" => %w[rule llm operator].include?(rewrite["source"]) ? rewrite["source"] : nil,
             "rules" => (rules = Array(rewrite["rules"]).grep(String).grep(NAME)),
-            "rule_purposes" => rules.filter_map { [it, RULE_PURPOSES[it]] if RULE_PURPOSES.key?(it) }.to_h,
+            "rule_purposes" => RULE_PURPOSES.slice(*rules), "rule_preconditions" => RULE_PRECONDITIONS.slice(*rules),
             "sql" => sql(rewrite["sql"]) }
         end
 
@@ -155,8 +160,7 @@ module Quaack
           return { "blocks" => nil, "timed_out" => nil } unless measured.is_a?(Hash)
 
           timed_out = [true, false].include?(measured["timed_out"]) ? measured["timed_out"] : nil
-          blocks = measured["total_blocks"]
-          { "blocks" => (blocks if blocks.is_a?(Integer)), "timed_out" => timed_out }
+          { "blocks" => measured["total_blocks"].then { it if it.is_a?(Integer) }, "timed_out" => timed_out }
         end
       end
     end
