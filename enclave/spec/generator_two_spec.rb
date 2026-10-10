@@ -192,8 +192,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     # nulls cover nearly every row, is most likely an MCV spelled another way
     # (1.5 for a numeric printed as 1.50), so its frequency is unknown.
     describe "a literal that isn't an MCV" do
-      def status_stats(freqs, null_frac: 0.0)
-        values = %w[delivered shipped pending cancelled returned].first(freqs.size)
+      def status_stats(freqs, null_frac: 0.0, values: %w[delivered shipped pending cancelled returned][0, freqs.size])
         status = enclave::ColumnStatistics.new(n_distinct: 6, null_frac:, correlation: nil,
                                                most_common_vals: values, most_common_freqs: freqs)
         enclave::Statistics.new(tables: [orders_stats.with(columns: orders_stats.columns.merge("status" => status)),
@@ -213,6 +212,21 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
           .to eq([btree("orders", "status")])
       end
 
+      # 20261008-23: the case the rule exists for, with the spellings it names.
+      it "gets no partial index for 1.5 on a numeric that pg_stats prints as 1.50" do
+        explain = plan("seq_scan_rare_value")
+        explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (status = 1.5))"
+
+        numeric = %w[1.50 2.00]
+        covered = status_stats([0.6, 0.395], values: numeric)
+        uncovered = status_stats([0.6, 0.3], values: numeric)
+
+        expect(described_class.candidates(explain, statistics: covered).map(&:to_ddl))
+          .to eq([btree("orders", "status")])
+        expect(described_class.candidates(explain, statistics: uncovered).map(&:to_ddl))
+          .to include(btree("orders", "total_cents", " WHERE status = 1.5"))
+      end
+
       it "still gets a partial index by the estimate when the MCVs cover less" do
         expect(ddl("seq_scan_rare_value", stats: status_stats([0.98]))).to include(partial)
         expect(ddl("seq_scan_rare_value", stats: status_stats([0.95], null_frac: 0.03))).to include(partial)
@@ -224,6 +238,29 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     # gives them for capture.rb's table: deleted is true in 1% of the rows,
     # and active false in 1%.
     describe "on a boolean column" do
+      # 20261008-23: the sample never held the rare value, so pg_stats lists
+      # only the common one at 1.0. A boolean has two values, which
+      # BOOLEAN_SPELLINGS maps, so the rare one's absence is real, not a
+      # spelling, and a partial is the best case for one.
+      let(:unsampled) do
+        only = lambda do |common|
+          enclave::ColumnStatistics.new(n_distinct: 1, null_frac: 0, correlation: nil,
+                                        most_common_vals: [common], most_common_freqs: [1.0])
+        end
+        table = flags.tables.values.first
+        columns = table.columns.merge("deleted" => only.call("f"), "active" => only.call("t"))
+        enclave::Statistics.new(tables: [table.with(columns:)])
+      end
+
+      it "makes the partial index even when ANALYZE never sampled the rare value" do
+        expect(ddl("seq_scan_boolean", stats: unsampled)).to eq(
+          [btree("flags", "kind, deleted"), btree("flags", "kind", " WHERE deleted")]
+        )
+        expect(ddl("seq_scan_not_boolean", stats: unsampled)).to eq(
+          [btree("flags", "kind, active"), btree("flags", "kind", " WHERE NOT active")]
+        )
+      end
+
       let(:flags) do
         boolean = lambda do |common, rare|
           enclave::ColumnStatistics.new(n_distinct: 2, null_frac: 0, correlation: nil,
