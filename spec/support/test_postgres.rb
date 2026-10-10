@@ -4,6 +4,7 @@ require "digest"
 require "fileutils"
 require "open3"
 require "socket"
+require "time"
 require "tmpdir"
 require "pg"
 
@@ -250,6 +251,28 @@ module TestPostgres
 
   def build_image = ImageBuild.run(image_tag, DIR)
 
+  # Each Dockerfile edit leaves an old image of about 660 MB. Another
+  # worktree on an older Dockerfile may still be using one, and its image is
+  # rebuilt if it goes, so only images older than OLD_IMAGE_AGE seconds are
+  # removed. That keeps two worktrees from rebuilding each other's.
+  module OldImages
+    OLD_IMAGE_AGE = 7 * 24 * 3600
+
+    # Removes the images of the current tag's repository, other than the
+    # current one, that are older than `older_than` seconds. Nothing else is
+    # touched. `docker rmi` without force leaves an image any container
+    # uses, and one another process removed first is as good as removed.
+    def self.remove(current, older_than = OLD_IMAGE_AGE)
+      tags = TestPostgres.docker("image", "ls", current.split(":").first, "--format", "{{.Repository}}:{{.Tag}}")
+      (tags.lines.map(&:strip) - [current]).each do |tag|
+        created = Time.parse(TestPostgres.docker("image", "inspect", "--format", "{{.Created}}", tag))
+        TestPostgres.docker("rmi", tag) if Time.now - created >= older_than
+      rescue RuntimeError
+        # Still in use, or already gone.
+      end
+    end
+  end
+
   # Removes containers whose owning process is gone. A container whose owner
   # is still running belongs to another spec process, maybe in another
   # worktree, so it stays. So does one another host started, since its pid
@@ -300,7 +323,7 @@ module TestPostgres
   # container. Each one raises a copy with its own backtrace, since raising
   # the stored error again would show the first example's launch frames.
   def server
-    raise @launch_error.dup.tap { it.set_backtrace(caller) } if @launch_error
+    raise(@launch_error.dup.tap { it.set_backtrace(caller) }) if @launch_error
 
     @server ||= launch
   rescue StandardError => e
@@ -312,12 +335,10 @@ module TestPostgres
     check_docker
     remove_stale_containers
     build_image
+    OldImages.remove(image_tag)
     id = start_container
     remove_at_exit(id)
-    started = Server.new(id)
-    started.wait_until_ready
-    started.build_templates
-    started
+    Server.new(id).tap(&:wait_until_ready).tap(&:build_templates)
   end
 
   # Registered as soon as the container exists, so it's removed even if

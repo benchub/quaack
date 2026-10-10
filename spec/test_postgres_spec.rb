@@ -2,6 +2,7 @@
 
 require "open3"
 require "rbconfig"
+require "securerandom"
 require "tmpdir"
 
 # The test database harness in spec/support/test_postgres.rb. These run
@@ -137,6 +138,61 @@ RSpec.describe TestPostgres do
 
       expect(File.readlines(log, chomp: true))
         .to eq(["image inspect #{TestPostgres.image_tag}", "build -q -t #{TestPostgres.image_tag} #{TestPostgres::DIR}"])
+    end
+  end
+
+  describe "removing old images" do
+    let(:suffix) { "#{Process.pid}-#{SecureRandom.hex(3)}" }
+    let(:old_tag) { "quaack-test-postgres:old-#{suffix}" }
+    let(:other_tag) { "quaack-test-other:old-#{suffix}" }
+
+    def image_exists?(tag) = system("docker", "image", "inspect", tag, out: File::NULL, err: File::NULL)
+
+    # The current image under another tag of the harness's repository stands
+    # in for the image an old Dockerfile left behind.
+    def tag_current_as(tag) = TestPostgres.docker("tag", TestPostgres.image_tag, tag)
+
+    after do
+      [old_tag, other_tag].each { |tag| Open3.capture2e("docker", "rmi", tag) }
+    end
+
+    it "removes the harness's other images once they're old enough, and keeps the current one" do
+      tag_current_as(old_tag)
+
+      TestPostgres::OldImages.remove(TestPostgres.image_tag, 0)
+
+      expect(image_exists?(old_tag)).to be(false)
+      expect(image_exists?(TestPostgres.image_tag)).to be(true)
+    end
+
+    it "keeps an image younger than the age limit, which another worktree may still be using" do
+      tag_current_as(old_tag)
+
+      TestPostgres::OldImages.remove(TestPostgres.image_tag, 365 * 24 * 3600)
+
+      expect(image_exists?(old_tag)).to be(true)
+    end
+
+    it "keeps an image that isn't the harness's" do
+      tag_current_as(other_tag)
+
+      TestPostgres::OldImages.remove(TestPostgres.image_tag, 0)
+
+      expect(image_exists?(other_tag)).to be(true)
+    end
+
+    it "keeps an old image a container still uses, without failing" do
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Dockerfile"), "FROM #{TestPostgres.image_tag}\nLABEL quaack.test=#{suffix}\n")
+        TestPostgres.docker("build", "-q", "-t", old_tag, dir)
+      end
+      container = TestPostgres.docker("create", "--label", "#{TestPostgres::LABEL}=1",
+                                      "--label", "#{TestPostgres::OWNER_LABEL}=#{Process.pid}", old_tag, "true")
+
+      expect { TestPostgres::OldImages.remove(TestPostgres.image_tag, 0) }.not_to raise_error
+      expect(image_exists?(old_tag)).to be(true)
+    ensure
+      Open3.capture2e("docker", "rm", "-f", "-v", container) if container
     end
   end
 
