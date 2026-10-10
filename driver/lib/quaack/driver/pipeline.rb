@@ -12,6 +12,7 @@ require_relative "rewrite_generation"
 require_relative "rewrite_names"
 require_relative "setup"
 require_relative "step_summary"
+require_relative "winner_summary"
 
 module Quaack
   module Driver
@@ -434,17 +435,37 @@ module Quaack
       # MeasurementStage has stored selection by the time it runs. It writes
       # nothing, and asks for nothing, when there's no out. Rerunning
       # renders it again.
+      #
+      # With a client and a winner, it first asks the LLM for the summary
+      # that opens "Why the winner reads fewer blocks" (WinnerSummary), and
+      # records how the ask went. An ask that fails costs the report
+      # nothing but that summary. The LLM calls the report prints are
+      # counted after the ask.
       module ReportStage
         module_function
 
-        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, provenance: nil, **) # rubocop:disable Metrics/ParameterLists
+        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, provenance: nil, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           return unless out
 
           Pipeline.step(progress, "report") do
             payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
+            summary = summary(payload, run_id, client, record)
             Report.write(payload, run_id:, path: out, llm_calls: Provenance.llm_calls(provenance, client),
-                                  llm: Provenance.for_report(provenance, client))
+                                  llm: Provenance.for_report(provenance, client), summary:)
           end
+        end
+
+        # The report's summary: a Hash with the text and the entry that
+        # wrote it (name, provider, and model), or nil when there's none.
+        def summary(payload, run_id, client, record)
+          return unless client
+
+          result = WinnerSummary.new(client:).run(Report.named(payload, Report::Format.unmarked(run_id)))
+          record.call { it.winner_summary!(result) }
+          return unless result.outcome == "used"
+
+          entry = client.entries.find { it["name"] == result.entry }.to_h
+          { "text" => result.text, **entry.slice("name", "provider", "model") }
         end
       end
 

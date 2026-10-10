@@ -20,6 +20,7 @@ require_relative "providers"
 require_relative "usage"
 require_relative "failed_branches"
 require_relative "cautions"
+require_relative "llm_summary"
 
 module Quaack
   module Driver
@@ -45,6 +46,7 @@ module Quaack
         include Usage
         include FailedBranches
         include Cautions
+        include LLMSummary
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze
         MISSING = %(<td class="missing">#{Words::MISSING}</td>).freeze
@@ -60,11 +62,16 @@ module Quaack
 
         # llm is the driver's own: "record", the run's provenance record,
         # and "calls", each provider's calls by step (Providers).
-        def initialize(payload, run_id, llm_calls = {}, llm = {})
+        #
+        # summary is the LLM-written summary (WinnerSummary), a Hash with its
+        # "text" and the "name" and "model" of the entry that wrote it, or
+        # nil.
+        def initialize(payload, run_id, llm_calls = {}, llm = {}, summary = nil)
           @payload = Format.unmarked(payload)
           @run_id = Format.unmarked(run_id)
           @llm_calls = Format.unmarked(llm_calls)
           @llm = Format.unmarked(llm)
+          @summary = Format.unmarked(summary)
         end
 
         attr_reader :run_id

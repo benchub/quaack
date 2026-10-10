@@ -6,7 +6,10 @@ module Quaack
   module Driver
     # DESIGN.md's report: the main report, as HTML, from the enclave's report
     # message (`quaacks report-payload`). It's templated from the payload,
-    # never written by an LLM, and every value is HTML-escaped. It's one
+    # and every value is HTML-escaped. One part is written by an LLM: the
+    # summary that opens "Why the winner reads fewer blocks" (summary:, from
+    # WinnerSummary), under a label that says so. Without one, the section
+    # reads as it always has. It's one
     # file: plain CSS, no scripts, and nothing loaded from the network.
     #
     #   Report.render(payload, run_id:, llm_calls: burndown.llm_calls)  # => HTML String
@@ -32,7 +35,8 @@ module Quaack
     #   rewrite with its source and what became of it (Rewrites).
     # - The ranking, every measured label that isn't ranked and why
     #   (Candidates), and each ranked candidate's measurements.
-    # - Why the winner reads fewer blocks, with each plan as a table of
+    # - Why the winner reads fewer blocks, the LLM's summary first when
+    #   there is one (LLMSummary), then each plan as a table of
     #   its steps (Plans), or, when the payload carries negative, why
     #   nothing beat the original (negative-result).
     # - The built indexes (Indexes).
@@ -53,13 +57,13 @@ module Quaack
       # The run ID loses its SQL marks (Format.unmarked) before anything
       # uses it, so named and View draw each rewrite's name from the same
       # string.
-      def render(payload, run_id:, llm_calls: {}, llm: {})
+      def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil)
         run_id = Format.unmarked(run_id)
-        View.new(named(payload, run_id), run_id, llm_calls, llm).render
+        View.new(named(payload, run_id), run_id, llm_calls, llm, summary).render
       end
 
-      def write(payload, run_id:, path:, llm_calls: {}, llm: {})
-        File.write(path, render(payload, run_id:, llm_calls:, llm:))
+      def write(payload, path:, **)
+        File.write(path, render(payload, **))
         path
       end
 
