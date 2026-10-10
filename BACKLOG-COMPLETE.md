@@ -9870,3 +9870,32 @@ The first review of 20260923-57 found these minor issues:
 - **Design:** What goes into the enclave.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261008-26 branch; Opus review clean). A descendant refusal in a candidate is `unknown_relation` (message names only the table the candidate wrote; `Relations::Error` carries `table:` for descendants; qualify keeps its kind-specific rules); candidate-level tests for a dropped ONLY with foreign children at depth 1 and 2, ONLY kept accepted, a `$user` search path, and user-function-in-FROM ordering (item 3 was already done). On the unreleased list.
+
+### 20261008-30. Production inventory: minors from 20260924-24, and silent packet drops.
+
+The build and review of 20260924-24 found these:
+
+1. **The final drain isn't tested.** No test pins `ShellCommand`'s drain after the shell exits. A mutant that returns as soon as the status shows an exit, before the final drain, survives every spec. It would only lose output when the shell writes and exits between a drain and the next status check. A test that delays `Process.wait2` at the edge would pin it.
+2. **DESIGN.md overstates schema-dump's timeout.** It says schema-dump "gets the same timeout". Only its catalog walk inside `read_only` does. Its `pg_dump` child has only `lock_wait_timeout`, so a silently dropping host can still hang it. Reword this, and consider a time limit on the pg_dump child.
+3. **DESIGN.md names `null` only for `memory_command`.** A null `run_server_command`, `destroy_command`, or `pii_columns` is `bad_config` too. Say so in the run-server and teardown sections.
+4. **Silent packet drops can still hang the production connection.** A server-side `statement_timeout` doesn't fully cover a host that silently drops packets, because the error reply can be lost too, and libpq keeps waiting. Client-side TCP keepalives or `tcp_user_timeout` on the production connection would cover it. This came from the builder.
+
+- **Depends on:** 20260924-24.
+- **Came from:** The builder and review of 20260924-24, 2026-10-08.
+- **Design:** inventory.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-30; Opus review clean). Items 1-3: a final-drain spec, the DESIGN.md wording on schema-dump's timeout (only its catalog walk gets the 60 s `statement_timeout`; its `pg_dump` child has `lock_wait_timeout`) and on a `null` in config (`bad_config`), plus a `config_spec` case. Item 4: `Inventory::Production::LIVENESS` (keepalives 1, keepalives_idle 30, keepalives_interval 10, keepalives_count 3, tcp_user_timeout 30000 ms) is merged into every production `PG.connect` (overriding the operator's PGKEEPALIVES*) and into schema-dump's `pg_dump` conninfo, so a silently dropped connection ends in about a minute as `production_connection_failed` or `production_read_failed`; libpq 18.1 accepts all five on both platforms (on macOS `tcp_user_timeout` does nothing, the keepalives still apply); `pg_dump` 18.6 accepts them; nothing written to production. A host that answers but never finishes a dump is documented unsupported in v1. On the unreleased list.
+
+### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run.
+
+The review of 20260924-9 found these:
+
+1. **No spec checks that `self_references` leaves out keys to other tables.** Deleting `AND con.confrelid OPERATOR(pg_catalog.=) con.conrelid` from `SelfReferences::SQL` keeps every spec green. That isn't unsound, but it would quietly weaken the reverse and rotated orders. Add an assertion on `runner.self_references` for a table that has both a self-reference and a reference to another table.
+2. **Three cases have no spec.** Add tests for a composite self-referencing key, a NULL parent key, and a self-referencing table that shows up in more than one run. The review's probes passed for all three, so this is coverage only.
+3. **Cost.** The rotated order adds about 45% to the joins spec. When every run and every level has two rows or fewer, the rotated order is the same as reverse, and with one row it's the same as forward. Skip the rotated load when its order matches one already run.
+
+- **Depends on:** 20260924-9.
+- **Came from:** The review of 20260924-9, 2026-10-08.
+- **Design:** fixture-compare.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-30 branch; Opus review clean). `self_references` is tested to read only self-keys; composite self-keys, half-NULL keys and a self-referencing table in two runs are covered; `compare_in_load_orders` walks `distinct_loads`, a lazy list that drops any order whose final global row positions equal an earlier run's (so reverse is skipped when every run has one row); proven over 25 shapes of two tables and 27 of three that the loads run are exactly the distinct ones; three `fixture_loads` expectations dropped (25 to 21, 4 to 2, 6 to 4). On the unreleased list. Minor finding: 20261010-15.

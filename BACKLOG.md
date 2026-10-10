@@ -27,6 +27,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-7, 20261008-8, 20261008-9: `or_to_union` takes a GROUP BY and HAVING (plain grouped columns, aggregates only if the catalog says every function of that name is one), outer joins (LEFT, RIGHT, FULL; no NATURAL, USING or a join alias), and a bare `*` expanded from the catalog (enclave).
 - 20261008-24 (items 3 and 4) and 20261008-25: index-from-query reduces joins through a FROM subquery's columns, counts a whole-row reference as reading every column, and keys a `char(n)` pattern idea with `bpchar_pattern_ops` (enclave).
 - 20261008-26: the counterexample payload leaves the `USING (col)` and `NATURAL JOIN` marker shapes out of `untested_atoms` (enclave). 20261008-28: `BooleanFold.fold` repeats to a fixed point and collapses a double NOT (enclave). 20261008-29: a descendant refusal in a candidate is `unknown_relation`, naming only the table the candidate wrote (enclave).
+- 20261008-30: every production connection (and schema-dump's pg_dump) carries TCP keepalives and a 30 s tcp_user_timeout (enclave). 20261008-33: fixture-compare skips a load order whose row positions equal an earlier run's (enclave).
 - 20261008-21 (InitPlan half): `(InitPlan n).colm` in a plan condition is read as a parameter by index-from-plan (enclave). 20261008-23: a bare boolean or NOT boolean skips the MCV coverage rule (enclave).
 - 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
@@ -463,36 +464,13 @@ The builder of 20260923-21 left these items out:
 
 ### 20261008-29. Rewrite candidate relation check: minors from 20260923-57. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-30. Production inventory: minors from 20260924-24, and silent packet drops.
-
-The build and review of 20260924-24 found these:
-
-1. **The final drain isn't tested.** No test pins `ShellCommand`'s drain after the shell exits. A mutant that returns as soon as the status shows an exit, before the final drain, survives every spec. It would only lose output when the shell writes and exits between a drain and the next status check. A test that delays `Process.wait2` at the edge would pin it.
-2. **DESIGN.md overstates schema-dump's timeout.** It says schema-dump "gets the same timeout". Only its catalog walk inside `read_only` does. Its `pg_dump` child has only `lock_wait_timeout`, so a silently dropping host can still hang it. Reword this, and consider a time limit on the pg_dump child.
-3. **DESIGN.md names `null` only for `memory_command`.** A null `run_server_command`, `destroy_command`, or `pii_columns` is `bad_config` too. Say so in the run-server and teardown sections.
-4. **Silent packet drops can still hang the production connection.** A server-side `statement_timeout` doesn't fully cover a host that silently drops packets, because the error reply can be lost too, and libpq keeps waiting. Client-side TCP keepalives or `tcp_user_timeout` on the production connection would cover it. This came from the builder.
-
-- **Depends on:** 20260924-24.
-- **Came from:** The builder and review of 20260924-24, 2026-10-08.
-- **Design:** inventory.
-- **Status:** todo
+### 20261008-30. Production inventory: minors from 20260924-24, and silent packet drops. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run.
-
-The review of 20260924-9 found these:
-
-1. **No spec checks that `self_references` leaves out keys to other tables.** Deleting `AND con.confrelid OPERATOR(pg_catalog.=) con.conrelid` from `SelfReferences::SQL` keeps every spec green. That isn't unsound, but it would quietly weaken the reverse and rotated orders. Add an assertion on `runner.self_references` for a table that has both a self-reference and a reference to another table.
-2. **Three cases have no spec.** Add tests for a composite self-referencing key, a NULL parent key, and a self-referencing table that shows up in more than one run. The review's probes passed for all three, so this is coverage only.
-3. **Cost.** The rotated order adds about 45% to the joins spec. When every run and every level has two rows or fewer, the rotated order is the same as reverse, and with one row it's the same as forward. Skip the rotated load when its order matches one already run.
-
-- **Depends on:** 20260924-9.
-- **Came from:** The review of 20260924-9, 2026-10-08.
-- **Design:** fixture-compare.
-- **Status:** todo
+### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security. Done, see BACKLOG-COMPLETE.md.
 
@@ -1005,4 +983,13 @@ From the review of 20261008-24 and -25 (minor). Removing the `!v.empty?` check f
 - **Depends on:** 20261008-25.
 - **Came from:** The review of 20261008-24 and -25, 2026-10-10 (minor).
 - **Design:** index-from-query.
+- **Status:** todo
+
+### 20261010-15. Load-order dedupe: test the laziness.
+
+From the review of 20261008-33 (minor). Removing `.lazy` from `distinct_loads` leaves the load-order and counterexample specs green: the comment says a later order's `self_references` query isn't run when an earlier run ends the comparison, but no test shows it. Add a spec with a runner that counts calls (an earlier run that ends the comparison must leave the later orders' queries unrun) and confirm it goes red without `.lazy`.
+
+- **Depends on:** 20261008-33.
+- **Came from:** The review of 20261008-33, 2026-10-10 (minor).
+- **Design:** fixture-compare.
 - **Status:** todo
