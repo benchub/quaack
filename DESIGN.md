@@ -1127,7 +1127,7 @@ Arena is a second database on the same server. Set it up like this:
 5. Keep all `VALID` constraints.
 6. Disable user triggers only, so FK triggers still fire.
 
-Every arena session sets `TimeZone` to production's, from inventory's `settings`, whatever the operator's `PGTZ` or the run server's default.
+Every arena session sets `TimeZone` to production's, from inventory's `settings`, whatever the operator's `PGTZ` or the run server's default. An inventory with no `TimeZone` (empty, missing, or not text) isn't one this version wrote, so an arena connection refuses it as `run_from_older_version`.
 
 Arena's job is to disprove rewrites, not to measure them. rewrite-test generates its fixtures from the query's predicate structure. Every fixture load happens inside a transaction that gets rolled back, so arena stays empty between tests.
 

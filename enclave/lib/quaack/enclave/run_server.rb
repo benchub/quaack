@@ -85,8 +85,19 @@ module Quaack
       # A connection to the run's racetrack or arena database, its notices
       # dropped (see Connections).
       def connect(store, database)
-        time_zone = store.read("inventory").fetch("settings").fetch("TimeZone") if database == :arena
+        time_zone = arena_time_zone(store) if database == :arena
         connect_to(store.read("run_server"), database, time_zone:).tap { search_path!(it, store) }
+      end
+
+      # Production's TimeZone from inventory. An inventory without one, or
+      # with one that isn't text, isn't one this version wrote: refused as
+      # run_from_older_version, not left to fail as an internal_error.
+      def arena_time_zone(store)
+        settings = store.read("inventory")["settings"]
+        time_zone = settings["TimeZone"] if settings.is_a?(Hash)
+        return time_zone if time_zone.is_a?(String) && !time_zone.empty?
+
+        raise Error, "run_from_older_version", cause: nil
       end
 
       # The same, for a run server entry that isn't stored yet. time_zone is
