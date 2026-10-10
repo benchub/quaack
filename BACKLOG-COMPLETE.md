@@ -9781,3 +9781,33 @@ The review of 20260923-24 found these minor issues:
 - **Item 3 done:** 20260923-36 added `BooleanFold`, so an existing `WHERE (deleted = true)` now covers `WHERE deleted`. Items 1 and 2 are still open.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261008-21 branch; Opus review clean). A bare boolean or `NOT` boolean conjunct skips the MCV coverage rule (`boolean?` in `generator_two_patterns.rb`), so `deleted` listed as `{f}` at 1.0 still gets `WHERE deleted`; a test for `status = 1.5` with MCVs printed as `1.50` pins the numeric comparison; item 3 was already done by 20260923-36 (`BooleanFold`). On the unreleased list.
+
+### 20261008-7. `or_to_union`: support a query with GROUP BY.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to a query with GROUP BY. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-7; Opus review clean). GROUP BY and HAVING: fires only when every GROUP BY item is a plain `name.column` (no ordinal, expression, ROLLUP, CUBE, GROUPING SETS, `()`, GROUP BY DISTINCT), every column outside an aggregate call in the select list, HAVING and ORDER BY is itself grouped, a call counts as an aggregate only when the catalog says every function of that name is one (`Catalog#only_aggregates?`), and HAVING has no subquery; each branch drops the original's GROUP BY and HAVING and the outer query regroups. A GROUP BY that works only because a key determines other columns (functional dependency) is refused (it would raise `PG::GroupingError` on the UNION). Probed on Postgres with aggregates (count, string_agg ORDER BY, array_agg, count DISTINCT, FILTER, a user-defined aggregate, percentile_cont) and expressions across tables. On the unreleased list.
+
+### 20261008-8. `or_to_union`: support outer joins.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to outer joins. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-7 branch; Opus review clean). LEFT, RIGHT and FULL joins are allowed (`Tree.plain_joins?`); each branch keeps the FROM and every ON as written and swaps only the arm into the WHERE (the rule never moves an arm into an ON, which would return every preserved row); NATURAL, USING and an aliased join are refused. On the unreleased list.
+
+### 20261008-9. `or_to_union`: support a bare `*` in the select list.
+
+One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to a bare `*` in the select list. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+
+- **Depends on:** 20261007-47.
+- **Came from:** The split of 20261007-47, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261008-7 branch; Opus review clean). A bare `*` or `name.*` expands to every FROM table's columns from the catalog in FROM order (dropped and system columns excluded, duplicate output names kept); refused when a column type can't be UNIONed (json), with GROUP BY, and with `JOIN ... USING` (the merged column would repeat and move). On the unreleased list.

@@ -24,6 +24,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261007-58: the equality check follows a column's domain chain and refuses a planted `=` on a domain (enclave).
 - 20261008-4 and 20261008-5: `not_in_to_not_exists` takes a NOT IN (and a one-column `<> ALL` with a pg_catalog negator proof) in any position of a plain SELECT, with the not-null proofs, and refuses a grouping-set GROUP BY (enclave).
 - 20261008-22: live EXPLAIN JSON in `IndexBuild.confirm` and `Measurement.measure_set` is parsed with the store's depth bound (3000) instead of JSON's default 100 (enclave).
+- 20261008-7, 20261008-8, 20261008-9: `or_to_union` takes a GROUP BY and HAVING (plain grouped columns, aggregates only if the catalog says every function of that name is one), outer joins (LEFT, RIGHT, FULL; no NATURAL, USING or a join alias), and a bare `*` expanded from the catalog (enclave).
 - 20261008-21 (InitPlan half): `(InitPlan n).colm` in a plan condition is read as a parameter by index-from-plan (enclave). 20261008-23: a bare boolean or NOT boolean skips the MCV coverage rule (enclave).
 - 20261007-64: intake unreadable reasons: `name_too_long`, `io_error`; one shared list in `Protocol::UnreadableReasons` (enclave, driver and protocol).
 - 20261006-28: stats trimming keeps every column of every table under a join alias with a column list (enclave).
@@ -410,32 +411,11 @@ From the reviews of 20260924-7.
 
 ### 20261008-5. `not_in_to_not_exists`: support `<> ALL`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-7. `or_to_union`: support a query with GROUP BY.
+### 20261008-7. `or_to_union`: support a query with GROUP BY. Done, see BACKLOG-COMPLETE.md.
 
-One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to a query with GROUP BY. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
+### 20261008-8. `or_to_union`: support outer joins. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20261007-47.
-- **Came from:** The split of 20261007-47, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
-### 20261008-8. `or_to_union`: support outer joins.
-
-One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to outer joins. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-47.
-- **Came from:** The split of 20261007-47, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
-### 20261008-9. `or_to_union`: support a bare `*` in the select list.
-
-One of 20261007-47's extensions, each its own task by the user's decision (2026-10-08). Extend `or_to_union` to a bare `*` in the select list. A rewrite rule must stay sound: prove the rewrite returns the same rows on every data, refuse what can't be proved, update its `docs/transforms` page and refusal list, and test with real Postgres, NULLs included.
-
-- **Depends on:** 20261007-47.
-- **Came from:** The split of 20261007-47, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261008-9. `or_to_union`: support a bare `*` in the select list. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-18. `or_to_union` composite keys: minors from 20261008-6. Done, see BACKLOG-COMPLETE.md.
 
