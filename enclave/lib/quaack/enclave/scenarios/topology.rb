@@ -69,8 +69,12 @@ module Quaack
         # The tables a cross group on the table's foreign key needs: the
         # table and the ancestors its other foreign keys lead to. The cross
         # points the key at another group's parent, so the group holds its
-        # own only when another path reaches it.
+        # own only when another path reaches it. A cut key's cross keeps
+        # every table, so the row has its own children, such as an account
+        # with courses of its own whose template is another account's.
         def cross_tables(table, foreign)
+          return @order if @cut.fetch(table, []).include?(foreign)
+
           others = (foreign_keys(table) - [foreign]).map(&:parent).uniq - [table]
           @order & [table, *others.flat_map { |p| ancestors(p) }]
         end

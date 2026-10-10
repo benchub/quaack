@@ -37,7 +37,7 @@ module Quaack
         # For each foreign key a row can point across groups (see
         # Topology#crossings), a group whose row points it at the hit's
         # parent, not its own, with no parent of its own that nothing else
-        # needs (see Topology#cross_tables). A key the table holds unique
+        # needs, and all its children for a cut key (see Topology#cross_tables). A key the table holds unique
         # can't point at the hit's parent, which has its child, so it
         # points at a parent of its own group's, with no child (a has_one).
         # A self-reference points at a row of its own table, and is crossed
@@ -68,7 +68,10 @@ module Quaack
 
         def self_references?(table, foreign) = foreign.parent == table
 
-        def boundaries = %i[boundary boundary_reversed].map { |mode| group(fresh_key, mode:) }
+        # The reversed group comes first, so its larger values go with the
+        # smaller keys, and an ORDER BY on a boundary value can't agree with
+        # one on the keys.
+        def boundaries = %i[boundary_reversed boundary].map { |mode| group(fresh_key, mode:) }
 
         def order = @topology.order
 
