@@ -1645,6 +1645,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m]).to include('<ul id="negative-rewrites">')
     end
 
+    it "spaces the rewrites list, a direct child of its fold, off the summary" do
+      expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m])
+        .to match(%r{</summary>\s*<ul id="negative-rewrites">})
+      expect(negative_html).to match(/details\.fold > [^{]*\bul\b[^{]*\{ margin-top: 0\.5rem; \}/)
+    end
+
     it "says what became of every rewrite, with its source, in words" do
       list = why[%r{<ul id="negative-rewrites">.*?</ul>}m]
       expect(list.scan(/<li>(Rewrite [^(]+) \(/).flatten)
