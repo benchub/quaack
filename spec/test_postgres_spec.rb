@@ -144,55 +144,140 @@ RSpec.describe TestPostgres do
   describe "removing old images" do
     let(:suffix) { "#{Process.pid}-#{SecureRandom.hex(3)}" }
     let(:old_tag) { "quaack-test-postgres:old-#{suffix}" }
+    let(:survivor_tag) { "quaack-test-postgres:survivor-#{suffix}" }
     let(:other_tag) { "quaack-test-other:old-#{suffix}" }
+    let(:current) { TestPostgres.image_tag }
+
+    # Every call passes `only:` with tags this spec made, so it can't remove
+    # an image another worktree is about to use.
+    def remove(only, older_than = 0) = TestPostgres::OldImages.remove(current, older_than, only: only)
 
     def image_exists?(tag) = system("docker", "image", "inspect", tag, out: File::NULL, err: File::NULL)
 
-    # The current image under another tag of the harness's repository stands
-    # in for the image an old Dockerfile left behind.
-    def tag_current_as(tag) = TestPostgres.docker("tag", TestPostgres.image_tag, tag)
+    # The current image under another tag stands in for the image an old
+    # Dockerfile left behind.
+    def tag_current_as(tag) = TestPostgres.docker("tag", current, tag)
 
-    after do
-      [old_tag, other_tag].each { |tag| Open3.capture2e("docker", "rmi", tag) }
+    def real_docker
+      ENV.fetch("PATH").split(File::PATH_SEPARATOR).map { |d| File.join(d, "docker") }.find { |f| File.executable?(f) }
     end
 
-    it "removes the harness's other images once they're old enough, and keeps the current one" do
+    # A docker on PATH that runs `script` for the calls it handles and
+    # passes the rest to the real one.
+    def with_docker_stub(script)
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "docker"), "#!/bin/sh\n#{script}\nexec #{real_docker} \"$@\"\n", perm: 0o755)
+        path = ENV.fetch("PATH")
+        begin
+          ENV["PATH"] = "#{dir}#{File::PATH_SEPARATOR}#{path}"
+          yield
+        ensure
+          ENV["PATH"] = path
+        end
+      end
+    end
+
+    after do
+      [old_tag, survivor_tag, other_tag].each { |tag| Open3.capture2e("docker", "rmi", tag) }
+    end
+
+    it "removes the images it's asked to once they're old enough, and keeps the current one" do
       tag_current_as(old_tag)
 
-      TestPostgres::OldImages.remove(TestPostgres.image_tag, 0)
+      remove([old_tag, current])
 
       expect(image_exists?(old_tag)).to be(false)
-      expect(image_exists?(TestPostgres.image_tag)).to be(true)
+      expect(image_exists?(current)).to be(true)
+    end
+
+    it "removes only the tags it's given, even when others are old and unused" do
+      tag_current_as(old_tag)
+      tag_current_as(survivor_tag)
+
+      remove([old_tag])
+
+      expect(image_exists?(old_tag)).to be(false)
+      expect(image_exists?(survivor_tag)).to be(true)
     end
 
     it "keeps an image younger than the age limit, which another worktree may still be using" do
       tag_current_as(old_tag)
 
-      TestPostgres::OldImages.remove(TestPostgres.image_tag, 365 * 24 * 3600)
+      remove([old_tag], 365 * 24 * 3600)
 
       expect(image_exists?(old_tag)).to be(true)
     end
 
-    it "keeps an image that isn't the harness's" do
+    it "keeps an image that isn't the harness's, even when it's asked to remove it" do
       tag_current_as(other_tag)
 
-      TestPostgres::OldImages.remove(TestPostgres.image_tag, 0)
+      remove([other_tag])
 
       expect(image_exists?(other_tag)).to be(true)
     end
 
     it "keeps an old image a container still uses, without failing" do
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Dockerfile"), "FROM #{TestPostgres.image_tag}\nLABEL quaack.test=#{suffix}\n")
+        File.write(File.join(dir, "Dockerfile"), "FROM #{current}\nLABEL quaack.test=#{suffix}\n")
         TestPostgres.docker("build", "-q", "-t", old_tag, dir)
       end
       container = TestPostgres.docker("create", "--label", "#{TestPostgres::LABEL}=1",
                                       "--label", "#{TestPostgres::OWNER_LABEL}=#{Process.pid}", old_tag, "true")
 
-      expect { TestPostgres::OldImages.remove(TestPostgres.image_tag, 0) }.not_to raise_error
+      expect { remove([old_tag]) }.not_to raise_error
       expect(image_exists?(old_tag)).to be(true)
     ensure
       Open3.capture2e("docker", "rm", "-f", "-v", container) if container
+    end
+
+    it "skips an image whose age can't be read, and still removes the others" do
+      tag_current_as(old_tag)
+      tag_current_as(survivor_tag)
+      script = %(if [ "$1 $2" = "image inspect" ] && [ "$5" = #{old_tag} ]; then echo garbage; exit 0; fi)
+
+      with_docker_stub(script) do
+        expect { remove([old_tag, survivor_tag]) }.not_to raise_error
+      end
+
+      expect(image_exists?(old_tag)).to be(true)
+      expect(image_exists?(survivor_tag)).to be(false)
+    end
+
+    it "does nothing, and doesn't fail, when the listing fails" do
+      tag_current_as(old_tag)
+
+      with_docker_stub('if [ "$1 $2" = "image ls" ]; then echo planted >&2; exit 1; fi') do
+        expect { remove([old_tag]) }.not_to raise_error
+      end
+
+      expect(image_exists?(old_tag)).to be(true)
+    end
+
+    # A fake docker that logs each call and lists no images, so nothing is
+    # removed, then runs the real one.
+    it "is run by a launch, after the build and before the container starts" do
+      Dir.mktmpdir do |dir|
+        log = File.join(dir, "calls.log")
+        File.write(File.join(dir, "docker"), <<~SH, perm: 0o755)
+          #!/bin/sh
+          echo "$*" >> #{log}
+          if [ "$1 $2" = "image ls" ]; then exit 0; fi
+          exec #{real_docker} "$@"
+        SH
+        source = <<~RUBY
+          require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}
+          RSpec.configure { |c| TestPostgres.configure(c) }
+          RSpec.describe("a launch") { it("starts") { test_database } }
+        RUBY
+        out, status = run_child_spec(source, env: { "PATH" => "#{dir}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}" })
+        calls = File.readlines(log, chomp: true)
+        listing = calls.index { it.start_with?("image ls quaack-test-postgres") }
+
+        expect(status).to be_success, out
+        expect(listing).not_to be_nil
+        expect(listing).to be > calls.index("image inspect #{current}")
+        expect(listing).to be < calls.index { it.start_with?("run ") }
+      end
     end
   end
 
@@ -819,7 +904,9 @@ RSpec.describe TestPostgres do
 
           expect(status).not_to be_success
           expect(out).to include("2 examples, 2 failures")
-          expect(out.scan("docker port failed: planted port failure").size).to eq(2)
+          # The first example shows the error once. The second shows its copy
+          # and, under "Caused by", the original.
+          expect(out.scan("docker port failed: planted port failure").size).to eq(3)
           expect(File.readlines(log, chomp: true).count("run")).to eq(1)
           expect(docker_ids("label=#{TestPostgres::OWNER_LABEL}=#{child_value(out, "PID")}")).to be_empty
         end
@@ -839,6 +926,7 @@ RSpec.describe TestPostgres do
                   puts "LAUNCH_FRAMES_\#{i}=\#{e.backtrace.grep(/launch/).size}"
                   puts "HERE_\#{i}=\#{e.backtrace.grep(/child_spec/).size}"
                   puts "MESSAGE_\#{i}=\#{e.message.tr(" ", "_")}"
+                  puts "CAUSE_\#{i}=\#{e.cause&.message.to_s.tr(" ", "_")}"
                   raise
                 end
               end
@@ -852,6 +940,7 @@ RSpec.describe TestPostgres do
           expect(child_value(out, "LAUNCH_FRAMES_1")).to eq("0"), out
           expect(child_value(out, "HERE_1").to_i).to be > 0, out
           expect(child_value(out, "MESSAGE_1")).to eq(child_value(out, "MESSAGE_0")), out
+          expect(child_value(out, "CAUSE_1")).to eq(child_value(out, "MESSAGE_0")), out
         end
       end
 
