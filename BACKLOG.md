@@ -914,14 +914,6 @@ From the review of 20261010-30:
 - **Status:** todo
 
 
-### 20261010-37. Winner summary: push the duplicated-constraint angle, and tighten the node check.
-
-From the live run and review of 20261010-28. (1) A live synthetic `or_to_union` case (two OR arms that both repeated one condition) got a why about planning the arms separately, but never mentioned the duplicated condition, which is the angle in the user's own example ("the original repeated many of the same constraints in several OR clauses; pulling those out left something simple enough for the planner to switch to EXISTS"). Have the payload carry what the SQL comparison shows, as facts the model can't invent: conditions repeated across OR arms or UNION branches in the original, and which of them the winner no longer repeats (computed from the two SQL texts in the driver, as condition shapes with `$n`, never values), and have the prompt say to name that when present. Re-run a live synthetic case and show the user the text. (2) The node-type check passes a wrong qualifier ("Hash Anti Join" passes on "Hash", "Parallel Seq Scan" on "Seq Scan"): refuse Anti, Semi or Parallel unless the payload carries the join type or parallel flag. (3) The user should confirm the 1000-character cap and the looser prompt (the old rule against saying how a step works was dropped so the summary can explain).
-
-- **Depends on:** 20261010-28 (landed).
-- **Came from:** The live run and review of 20261010-28, 2026-10-10.
-- **Design:** report.
-- **Status:** todo
 
 ### 20261010-38. Aggregated columns: untested CHECK guard and the `MIN_APART` wrap.
 
@@ -958,4 +950,18 @@ Found while building 20261010-33: in S6, with copies of posts under `posts.id IN
 - **Depends on:** 20261010-33 (landed).
 - **Came from:** The work on 20261010-33, 2026-10-10.
 - **Design:** scenarios.
+- **Status:** todo
+
+### 20261010-41. Winner summary: minors from 20261010-37.
+
+1. A repeated condition's column cut merges columns of different tables (`a.x = $1` and `b.x = $3` both read `x = $`), which can overstate how often a condition repeats; keep the qualifier when the query reads more than one table.
+2. No spec covers a duplicate condition inside one OR arm (`a = $1 AND a = $2`): removing the `.uniq` on each arm's conjuncts stays green and would report a repeat that isn't one. Add the spec.
+3. The `(all|every) quer(y|ies)` guard refuses a plain description such as "Every query in the run read fewer blocks"; narrow it to advice use.
+4. No spec covers `Repeats.of` getting nil from a rejected `sql()` string (over 20000 characters or a NUL).
+5. The three rule preconditions not checked in depth (implied_predicate_removal, cte_hoist_dedupe, unused_join_removal): verify against the code.
+6. The not_in "when it wouldn't help" sentence says only when the rewrite doesn't apply, not when it doesn't pay off.
+
+- **Depends on:** 20261010-37 (landed).
+- **Came from:** The reviews of 20261010-37, 2026-10-10.
+- **Design:** report.
 - **Status:** todo
