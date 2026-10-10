@@ -591,7 +591,7 @@ The verdict is a headline and one table, in a colored box. The box's background 
 
 - **The verdict: substantial improvements possible** (green) when the best candidate reads at least 30% fewer blocks on the slow values than the original query. Where the original query timed out, any candidate that finished counts.
 - **The verdict: minor improvements possible** (cream) when the best candidate beats the original query by less than that.
-- **The verdict: QUAACK found nothing that could help** (blue) when nothing beat the original query. A line under it says what QUAACK tried, such as "It built and measured 2 indexes and kept 1 rewrite. The sections below say what became of each."
+- **The verdict: QUAACK found nothing that could help** (blue) when nothing beat the original query. A line under it says what QUAACK tried, such as, in a different run from the walkthrough's, "It built and measured 2 indexes and kept 1 rewrite. The sections below say what became of each."
 
 The table has a row for each kind of change, and one for the original query as it is:
 
@@ -751,8 +751,8 @@ Two tables say where each idea came from and what became of it. Each has a row p
 
 | Source | Proposed | Not kept | Same plan as the original | Wrong results | Not better | Ranked | Stopped for another reason |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| QUAACK's own rules | 2 | 1 | 0 | 0 | 0 | 1 | 0 |
-| The LLM | 3 | 0 | 1 | 1 | 0 | 0 | 1 |
+| QUAACK's own rules | 2 | 1 | 1 | 0 | 0 | 0 | 0 |
+| The LLM | 3 | 0 | 1 | 1 | 0 | 1 | 0 |
 | You | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 
 A rewrite **not kept** is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, for one of QUAACK's own, repeated another. **Stopped for another reason** counts the rewrites whose tests failed or timed out without comparing anything, the ones that beat the original query and still weren't ranked, and the ones the run never finished. None of those was shown to be wrong.
