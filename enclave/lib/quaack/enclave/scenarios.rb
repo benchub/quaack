@@ -232,6 +232,7 @@ module Quaack
           start(variants)
           ties = tie_groups
           Plan.new(@topology, @atoms, @pools.keys, masked).scenarios.to_h do |name, groups|
+            scenario!
             first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
             @spills[name] = rest unless rest.empty?
             [name, first]
@@ -243,11 +244,17 @@ module Quaack
         def start(variants)
           @picker = Picker.new(@pools, probes, @checks, variants, Scenarios.scopes(@atoms))
           @identities = {}
-          @pinned = PinnedKeys.new(@topology, slots, @picker) { |*args| key_value(*args) }
-          @built = {}
+          scenario!
           @dropped = 0
           @spills = {}
         end
+
+        # Each scenario ranks its own pinned keys (see PinnedKeys), so a
+        # list's values go round the groups of one scenario, not the whole
+        # build: S5's boundary groups and S6's copies each get a list value
+        # of their own. A group's rows depend on its rank, so they're built
+        # again in each scenario.
+        def scenario! = (@built = {}).then { @pinned = PinnedKeys.new(@topology, slots, @picker, &method(:key_value)) }
 
         # The masking near misses' also atoms, by atom (see Branches).
         def masked = Branches.new(@parse.tree, @atoms, @pools.keys).masked(@topology.order) { build_group(it) }
@@ -330,7 +337,11 @@ module Quaack
         # a cross's foreign key doesn't point at gets values of its own, so
         # a row reached through one foreign key differs from the hit's
         # reached through another (a message's sender and its recipient).
-        def apart(table, group) = (group.key if group.cross && group.cross.table != table)
+        # A pooled near miss's rows get values of their own too (in the
+        # columns the query reads, see FreeValues), so a projection that
+        # leaves out the atom's column (SELECT DISTINCT state ... WHERE
+        # admin) can't fold the near miss into the hit.
+        def apart(table, group) = (group.key if group.near || (group.cross && group.cross.table != table))
 
         def free_values
           @free_values ||= FreeValues.new(@schema, @topology, @checks, @values,

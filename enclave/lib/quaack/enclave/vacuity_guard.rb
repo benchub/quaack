@@ -4,6 +4,7 @@ require "quaack/protocol/vacuity_diagnostic"
 require_relative "arena_runner"
 require_relative "deparse"
 require_relative "predicate_atoms"
+require_relative "result_comparison"
 require_relative "scenarios"
 
 module Quaack
@@ -48,7 +49,8 @@ module Quaack
         state = { exercised: [], variants: {}, retries: 0, s1_load_rule: nil, s1_rows: nil }
         (0..RETRIES).each do |attempt|
           scenarios = builder.build(state[:variants])
-          vacuous = vacuous_atoms(runner, scenarios[:s1], sql, loosened, state)
+          fixtures = [scenarios[:s1], *builder.spills.fetch(:s1, [])]
+          vacuous = vacuous_atoms(runner, fixtures, sql, loosened, state)
           done = vacuous.empty? || attempt == RETRIES
           return result(builder, (vacuous + unreplaceable).sort, state, scenarios) if done
 
@@ -68,14 +70,28 @@ module Quaack
                    s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows])
       end
 
-      # The atoms not yet exercised that this fixture doesn't exercise
-      # either. A fixture that won't load (a trigger or constraint QUAACK
-      # doesn't model, say) exercises nothing, so its atoms stay vacuous,
-      # are retried, and end untested. Scenarios never crash rewrite-test.
-      def vacuous_atoms(runner, rows, sql, loosened, state)
+      # The atoms not yet exercised that none of S1's fixtures exercise
+      # either: its first, and its further ones (Scenarios::Parts), which
+      # fixture-compare runs too. A fixture that won't load (a trigger or
+      # constraint QUAACK doesn't model, say) exercises nothing, so its
+      # atoms stay vacuous, are retried, and end untested. Scenarios never
+      # crash rewrite-test. The S1 diagnostic is the first fixture's.
+      def vacuous_atoms(runner, fixtures, sql, loosened, state)
         pending = loosened.keys - state[:exercised]
-        state[:exercised] += loaded_exercised_atoms(runner, rows, sql, loosened.slice(*pending), state)
+        first, *rest = fixtures
+        state[:exercised] += loaded_exercised_atoms(runner, first, sql, loosened.slice(*pending), state)
+        rest.each do |rows|
+          state[:exercised] += spill_exercised_atoms(runner, rows, sql, loosened, pending - state[:exercised])
+        end
         pending - state[:exercised]
+      end
+
+      def spill_exercised_atoms(runner, rows, sql, loosened, left)
+        left.empty? ? [] : exercised_atoms(runner, rows, sql, loosened.slice(*left))
+      rescue ArenaRunner::Error => e
+        raise unless LOAD_STEPS.include?(e.step)
+
+        []
       end
 
       LOAD_STEPS = %i[load insert].freeze
@@ -114,13 +130,43 @@ module Quaack
       # The atoms, of those loosened maps to their loosened queries, whose
       # loosened query changes the original's result on this fixture. counterexample-compare
       # reuses it on its counterexamples.
-      def exercised_atoms(runner, rows, sql, loosened, inserts: [])
+      #
+      # When the original's top level has a LIMIT or an OFFSET, equal rows
+      # can still hide a changed result: an unordered LIMIT 1 returns the
+      # hit whichever row the loosened query lets through, and a cut tie
+      # group can do the same. So an atom equal rows leave vacuous there is
+      # exercised if fixture-compare (ResultComparison.compare_in_load_orders,
+      # every load order) finds the loosened query a mismatch: just what
+      # would catch a rewrite that dropped it. A refusal compares nothing,
+      # so it isn't one, and nor is a comparison that fails to run (a
+      # reordered load that won't load, say).
+      def exercised_atoms(runner, rows, sql, loosened, inserts: [], &)
+        changed = changed_atoms(runner, rows, sql, loosened, inserts, &)
+        return changed unless top_level_cut?(sql)
+
+        changed + loosened.except(*changed).select { |_, query| mismatch?(runner, rows, sql, query, inserts) }.keys
+      end
+
+      # The atoms whose loosened query returns other rows.
+      def changed_atoms(runner, rows, sql, loosened, inserts)
         runner.with_fixture(rows, inserts:) do |tx|
           result = tx.query(sql)
           yield result.rows.size if block_given?
           base = multiset(result)
           loosened.reject { |_, query| multiset(tx.query(query)) == base }.keys
         end
+      end
+
+      def top_level_cut?(sql)
+        select = PgQuery.parse(sql).tree.stmts.first&.stmt&.select_stmt
+        !!(select && (select.limit_count || select.limit_offset))
+      end
+
+      def mismatch?(runner, rows, sql, query, inserts)
+        verdict = ResultComparison.compare_in_load_orders(runner, rows, original: sql, candidate: query, inserts:)
+        ResultComparator::MISMATCHES.include?(verdict.rule)
+      rescue ArenaRunner::Error
+        false
       end
 
       def multiset(result) = result.rows.map { |row| row.map { |v| v.nil? ? [0, ""] : [1, v] } }.sort

@@ -4,6 +4,7 @@ require "pg"
 require "pg_query"
 require_relative "arena_schema"
 require_relative "predicate_atoms"
+require_relative "value_pools/category"
 
 module Quaack
   module Enclave
@@ -18,7 +19,8 @@ module Quaack
     # side of the test that names no column, cast to the column's type),
     # one unit on either side of each, case variants for text, a matching
     # and a non-matching value for a LIKE pattern, NULL for a nullable
-    # column, and the type's boundary values and typical value. Postgres
+    # column, the type's boundary values and typical value, and an enum's
+    # labels. Postgres
     # sorts them: each candidate is bound in place of the column and the
     # atom is evaluated, so collations, casts, and expressions on the column
     # (lower(name) = 'bob') come out right. satisfying holds the ones that
@@ -143,14 +145,8 @@ module Quaack
         literals = Sides.literals(conn, node, col)
         category = Category.of(conn, col)
         near = literals.flat_map { |v| steps(conn, v, col, category) }
-        literals + near + variants(node, literals, category) + (col.nullable ? [nil] : []) + boundaries(col.type)
-      end
-
-      # The column's type's category, such as N for a number or S for text.
-      module Category
-        SQL = "SELECT t.typcategory FROM pg_catalog.pg_type t WHERE t.oid OPERATOR(pg_catalog.=) $1"
-
-        def self.of(conn, col) = conn.exec_params(SQL, [col.oid]).getvalue(0, 0)
+        literals + near + variants(node, literals, category) + (col.nullable ? [nil] : []) + boundaries(col.type) +
+          (category == "E" ? Category.labels(conn, col) : [])
       end
 
       # Case variants for text, and a LIKE pattern's matching and
