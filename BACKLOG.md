@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261008-35 and 20261008-39: index DDL key expressions and predicates and rewrite candidates refuse reg literals, name lookups, OID probes, reg input functions and integer text search configs; an "any" argument is declared text and prepared again (enclave).
+- 20261008-46: `Resolved.pick` probes pg_catalog too and leaves a call bare when it and another schema plan the same way (enclave).
 - 20261009-33: vacuity diagnostic: `rewrite_test` carries `s1_load_rule` and `s1_rows` (enclave and protocol).
 - 20261009-39: `negative.existing[].covered_by` carries the covering index's redacted `definition` (enclave; the driver shows it). Security or Privacy review may want to see the new field.
 - 20261009-46: `s1_rows` is capped at 2,000,000 (protocol and enclave).
@@ -512,46 +513,12 @@ The review of 20260924-29 found these:
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-42. Hidden statistics: minors from 20261008-34.
-
-The review of 20261008-34 found these minor issues:
-
-1. **The empty-columns guard in `Hidden.check_row_security!` is untested.** Turning `return unless entry["columns"].empty?` into a no-op leaves every test green. Test it or remove it.
-2. **Egress checks only the shape of the hidden indexes.** It never checks that each name in `hidden_statistics.indexes` is a stored index. Only `Steps::HiddenStatistics` enforces that. Add the membership check at egress too, the way it should be done for `ExistingIndexes`.
-
-- **Depends on:** 20261008-34.
-- **Came from:** The review of 20261008-34, 2026-10-08.
-- **Design:** statistics, report.
-- **Status:** todo
-
 ### 20261008-44. Qualifying overloaded names: keyword forms (part 2 of 20261007-21).
 
 Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, and USING and NATURAL joins have no qualified spelling. When several schemas on the path define the operator they use, rewrite each one into an equivalent explicit form that can be qualified, or refuse it cleanly, and list it as unsupported in v1. This also covers item 1 of 20261008-41 (keyword operators LIKE, IN, IS DISTINCT FROM, NULLIF resolving through the search path).
 
 - **Depends on:** 20261007-21.
 - **Came from:** The split of 20261007-21, 2026-10-08.
-- **Design:** qualify.
-- **Status:** todo
-
-### 20261008-45. Qualifying overloaded names: reg literals (part 3 of 20261007-21).
-
-Split from 20261007-21. `regproc`, `regprocedure`, `regoper`, and `regoperator` literals in the original are still refused as `unsupported_reg_literal`. Resolve and qualify them, or keep refusing them, and document the choice.
-
-- **Depends on:** 20261007-21.
-- **Came from:** The split of 20261007-21, 2026-10-08.
-- **Design:** qualify.
-- **Status:** todo
-
-### 20261008-46. Probing to qualify overloaded names: minors from 20261007-21 part 1.
-
-The review of 20261007-21 part 1 found these minor issues:
-
-1. **Constant folding can name the wrong winning schema.** With GENERIC_PLAN, two overloads that fold to the same constant give the same plan. The outcome is harmless, since the plan is the same, but the chosen schema can be the wrong one in name.
-2. **Planning runs user code on production.** It evaluates immutable functions on constants, and the probes can evaluate overloads the real query never calls. A read-only transaction stops writes, but not side effects outside the database, such as dblink. Document this in DESIGN.md as a known risk.
-3. **No test covers a probe that errors.** Nothing tests a probe that errors while the baseline plans, or the error-swallowing in general.
-
-- **Depends on:** 20261007-21.
-- **Came from:** The review of 20261007-21 part 1, 2026-10-08.
 - **Design:** qualify.
 - **Status:** todo
 

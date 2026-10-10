@@ -9947,3 +9947,37 @@ The second review of 20261008-31 found these:
 - **Came from:** The second review of 20261008-31, 2026-10-08.
 - **Design:** What goes into the enclave.
 - **Status:** done. "any" arguments are declared text and prepared again; OID probes, reg input functions, `satisfies_hash_partition` and integer text search configs are refused; completeness specs check the list against PG 18. Minor: 20261010-16.
+
+### 20261008-42. Hidden statistics: minors from 20261008-34.
+
+The review of 20261008-34 found these minor issues:
+
+1. **The empty-columns guard in `Hidden.check_row_security!` is untested.** Turning `return unless entry["columns"].empty?` into a no-op leaves every test green. Test it or remove it.
+2. **Egress checks only the shape of the hidden indexes.** It never checks that each name in `hidden_statistics.indexes` is a stored index. Only `Steps::HiddenStatistics` enforces that. Add the membership check at egress too, the way it should be done for `ExistingIndexes`.
+
+- **Depends on:** 20261008-34.
+- **Came from:** The review of 20261008-34, 2026-10-08.
+- **Design:** statistics, report.
+- **Status:** done. Item 1 landed (spec). Item 2 dropped: egress is a stateless whitelist that never sees the stored indexes, and `Steps::HiddenStatistics` already enforces membership.
+
+### 20261008-45. Qualifying overloaded names: reg literals (part 3 of 20261007-21).
+
+Split from 20261007-21. `regproc`, `regprocedure`, `regoper`, and `regoperator` literals in the original are still refused as `unsupported_reg_literal`. Resolve and qualify them, or keep refusing them, and document the choice.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The split of 20261007-21, 2026-10-08.
+- **Design:** qualify.
+- **Status:** done. Kept refusing regproc, regprocedure, regoper and regoperator literals; documented as a v1 choice in DESIGN.md.
+
+### 20261008-46. Probing to qualify overloaded names: minors from 20261007-21 part 1.
+
+The review of 20261007-21 part 1 found these minor issues:
+
+1. **Constant folding can name the wrong winning schema.** With GENERIC_PLAN, two overloads that fold to the same constant give the same plan. The outcome is harmless, since the plan is the same, but the chosen schema can be the wrong one in name.
+2. **Planning runs user code on production.** It evaluates immutable functions on constants, and the probes can evaluate overloads the real query never calls. A read-only transaction stops writes, but not side effects outside the database, such as dblink. Document this in DESIGN.md as a known risk.
+3. **No test covers a probe that errors.** Nothing tests a probe that errors while the baseline plans, or the error-swallowing in general.
+
+- **Depends on:** 20261007-21.
+- **Came from:** The review of 20261007-21 part 1, 2026-10-08.
+- **Design:** qualify.
+- **Status:** done. Item 1: `Resolved.pick` probes pg_catalog too and qualifies only when exactly one schema matches and it isn't pg_catalog. Item 2 documented as a known risk. Item 3: probe-error spec.
