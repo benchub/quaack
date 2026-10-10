@@ -253,6 +253,29 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
       let(:five) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 1], [4, 1], [5, 2]) }
 
+      # 20261004-94: doc is json, which has no btree order, so the tiebreaker is grp and id only,
+      # and the LIMIT cuts the tie of grp 1 whose rows differ in id. The cut-tie check refuses a
+      # query whose tiebreaker leaves a column out, even for the query against itself.
+      it "refuses the cut-tie check when a column is left out of the tiebreaker" do
+        rows = rows_of(%w[id grp doc], [1, 1, '{"a":1}'], [2, 1, '{"a":2}'], [3, 1, '{"a":3}'], [4, 2, '{"a":4}'])
+        sql = "SELECT grp, id, doc FROM items ORDER BY grp LIMIT 2"
+        expect(raw(sql, sql, rows:).first.size).to eq(2)
+
+        expect_refused(sql, sql, rows)
+      end
+
+      # 20261004-94: the sum of the LIMIT and the OFFSET, which the edge query runs, mustn't
+      # overflow bigint, and a NULL OFFSET is 0.
+      it "matches a LIMIT of the biggest bigint, or a NULL OFFSET, with no error and no run without a LIMIT" do
+        biggest = "SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 9223372036854775807"
+        nulled = "SELECT id, grp FROM items ORDER BY grp OFFSET NULL LIMIT 5"
+        moved = "SELECT id, grp FROM #{moved(4)} ORDER BY grp OFFSET"
+
+        expect([unlimited(biggest, "#{moved} 1 LIMIT 9223372036854775807", five),
+                unlimited(nulled, "#{moved} NULL LIMIT 5", five)])
+          .to eq([[{ match: true, mode: :ordered, rule: nil, row: nil, column: nil }, []]] * 2)
+      end
+
       # The original keeps b, b however its ties break. The candidate ties
       # a, b, b, and c around the rows it keeps, so it can keep a and b, as
       # it does here, yet both its tiebreaker runs keep b and b.

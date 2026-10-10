@@ -103,6 +103,21 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         expect(verdict(sql, sql, params: [{ value: "99", type: 23 }])).to eq(["pass", nil])
       end
 
+      # 20261004-94: the runs without a LIMIT hold a hash for every row, bounded by the timeout
+      # and not by memory, so a row cap refuses a result that's too big.
+      it "refuses, rather than hold the rows of a run without a LIMIT past the row cap" do
+        candidate = "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a LIMIT 3"
+        run = -> { described_class.compare(connection: conn, original:, candidate:, params: [], timeout_ms: 5_000) }
+
+        stub_const("Quaack::Enclave::ProductionComparison::HashedRuns::FULL_RUN_ROW_CAP", 9)
+        passed = run.call.then { [it.result, it.rule] }
+        stub_const("Quaack::Enclave::ProductionComparison::HashedRuns::FULL_RUN_ROW_CAP", 8)
+        refused = run.call.then { [it.result, it.rule] }
+
+        expect([passed, refused]).to eq([["pass", nil], %w[fail unsupported_order]])
+        expect([conn.transaction_status, conn.exec("SELECT 1").getvalue(0, 0)]).to eq([PG::PQTRANS_IDLE, "1"])
+      end
+
       it "fails another number of rows with the row_count rule" do
         expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 2"))
           .to eq(%w[fail row_count])
@@ -186,6 +201,65 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         params = [{ value: "20", type: 20 }, { value: "45", type: 20 }]
         result = described_class.compare(connection: spy, original: sql, candidate: sql, params:, timeout_ms: 5_000)
         expect([result.result, result.rule, spy.unlimited]).to eq(["pass", nil, []])
+      end
+    end
+
+    # 20261004-94: CutTies' check relies on this. A cut query keeps every column in the tiebreaker
+    # here, or the comparison refuses before it.
+    it "refuses a LIMIT over a column the tiebreaker can't order, before any cut-tie check" do
+      sql = "SELECT i / 2 AS a, i, '{\"k\":1}'::json AS doc FROM generate_series(1, 9) i ORDER BY a LIMIT 3"
+      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order])
+    end
+
+    # 20261004-94: the edge query adds the OFFSET to the LIMIT. It mustn't overflow bigint, and a
+    # NULL OFFSET is 0. Groups of ten, so the rows kept cut no tie group, and the edge query runs.
+    describe "a LIMIT and an OFFSET whose sum is past bigint" do
+      let(:biggest) { "9223372036854775807" }
+      let(:from) { "SELECT i / 10 AS a, i FROM generate_series(0, 99) i ORDER BY a DESC" }
+      let(:reversed) { "SELECT i / 10 AS a, i FROM generate_series(99, 0, -1) i ORDER BY a DESC" }
+
+      def through(sql, params = [])
+        shape = Quaack::Enclave::ResultComparison::Shape.parse(sql, :original)
+        conn.exec_params(shape.through_window([1, 2], descending: false), params).ntuples
+      end
+
+      it "passes the same query with a constant LIMIT of the biggest bigint" do
+        expect(verdict("#{from} LIMIT #{biggest} OFFSET 10", "#{reversed} LIMIT #{biggest} OFFSET 10"))
+          .to eq(["pass", nil])
+      end
+
+      it "passes the same query with that LIMIT bound to a param" do
+        params = [{ value: biggest, type: 20 }]
+        expect(verdict("#{from} LIMIT $1 OFFSET 10", "#{reversed} LIMIT $1 OFFSET 10", params:)).to eq(["pass", nil])
+      end
+
+      it "passes the biggest bigint as the OFFSET too" do
+        params = [{ value: biggest, type: 20 }]
+        expect(verdict("#{from} LIMIT 20 OFFSET $1", "#{reversed} LIMIT 20 OFFSET $1", params:)).to eq(["pass", nil])
+      end
+
+      it "still fails a candidate that differs, with the row_count rule" do
+        expect(verdict("#{from} LIMIT #{biggest} OFFSET 10", "#{reversed} LIMIT #{biggest} OFFSET 11"))
+          .to eq(%w[fail row_count])
+      end
+
+      it "runs the edge query with the rows through the end of the window" do
+        expect([through("#{from} LIMIT #{biggest} OFFSET 10"),
+                through("#{from} LIMIT $1 OFFSET $2", [biggest, "3"]),
+                through("#{from} LIMIT 20 OFFSET 10"),
+                through("#{from} LIMIT $1 OFFSET $2", %w[20 10])]).to eq([100, 100, 30, 30])
+      end
+
+      it "gives no limit for LIMIT NULL or LIMIT ALL" do
+        expect([through("#{from} LIMIT NULL OFFSET 10"), through("#{from} LIMIT ALL OFFSET 10"),
+                through("#{from} LIMIT $1 OFFSET 10", [nil])]).to eq([100, 100, 100])
+      end
+
+      it "treats an OFFSET of NULL, constant or bound, as 0" do
+        expect([through("#{from} LIMIT 20 OFFSET NULL"), through("#{from} LIMIT 20 OFFSET $1", [nil]),
+                through("#{from} LIMIT $1 OFFSET $2", ["20", nil])]).to eq([20, 20, 20])
+        expect(verdict("#{from} LIMIT 20 OFFSET $1", "#{reversed} LIMIT 20 OFFSET $1",
+                       params: [{ value: nil, type: 20 }])).to eq(["pass", nil])
       end
     end
 

@@ -8,6 +8,7 @@ require_relative "result_comparison/tiebreaker"
 require_relative "result_comparison/load_orders"
 require_relative "result_comparison/cut_ties"
 require_relative "result_comparison/inner_cuts"
+require_relative "result_comparison/limit_sum"
 
 module Quaack
   module Enclave
@@ -350,31 +351,17 @@ module Quaack
       module_function
 
       # An OFFSET node's value when it's an integer constant, 0 for no
-      # node, and nil otherwise.
+      # node or a NULL constant, and nil otherwise.
       def offset_value(node)
         return 0 unless node
+        return unless node.node == :a_const
+        return 0 if node.a_const.isnull
 
-        node.a_const.ival.ival if node.node == :a_const && node.a_const.val == :ival
+        node.a_const.ival.ival if node.a_const.val == :ival
       end
 
-      # Adds a SelectStmt's OFFSET to its LIMIT, and drops the OFFSET.
-      def through_offset!(select)
-        select.limit_count = sum(select.limit_count, select.limit_offset)
-        select.limit_offset = nil
-      end
-
-      # The expression node left::bigint + right::bigint.
-      def sum(left, right)
-        plus = PgQuery::Node.new(string: PgQuery::String.new(sval: "+"))
-        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name: [plus], lexpr: bigint(left),
-                                                      rexpr: bigint(right)))
-      end
-
-      def bigint(node)
-        names = %w[pg_catalog int8].map { PgQuery::Node.new(string: PgQuery::String.new(sval: it)) }
-        type_name = PgQuery::TypeName.new(names:, typemod: -1)
-        PgQuery::Node.new(type_cast: PgQuery::TypeCast.new(arg: node, type_name:))
-      end
+      # Adds a SelectStmt's OFFSET to its LIMIT, and drops the OFFSET (LimitSum).
+      def through_offset!(select) = LimitSum.add_offset!(select)
 
       # Runs the original and the candidate in transaction, an
       # ArenaRunner::Transaction, and returns a ResultComparator::Verdict.
@@ -473,6 +460,10 @@ module Quaack
       # CutTies' check, when the original's LIMIT or OFFSET cuts a tie
       # group, or the candidate's does.
       def cut_tie(transaction, originals, shapes, positions)
+        # CutTies needs every column in the tiebreaker. Fixture-compare lets a LIMIT
+        # or OFFSET through with some left out, and refuses them here.
+        return refused unless positions.size == originals.first.types.size
+
         rule, fields = CutTies.check(shapes, originals.map(&:rows),
                                      FixtureRuns.new(transaction, positions, originals.first.types))
         ResultComparator::Verdict.for(:ordered, rule, **fields)
@@ -490,7 +481,6 @@ module Quaack
         def fetch(shape, limited:) = ResultComparison.both_ways(@transaction, shape, @positions, limited:).map(&:rows)
         def key(row) = ResultComparator::Values.key(@types, row)
         def contained?(big, small) = ResultComparator.unpartnered_row(@types, big, small).nil?
-        def all_columns? = @positions.size == @types.size
       end
 
       def tiebroken(transaction, originals, candidate_shape, positions)

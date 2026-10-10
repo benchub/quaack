@@ -55,12 +55,12 @@ module Quaack
         # the original's two cut runs. source runs queries and compares
         # rows: fetch(shape, limited:) runs a query both ways, with its
         # LIMIT and OFFSET or without them, and gives the two runs' rows,
-        # and it answers key(row), contained?(big, small), and
-        # all_columns?, whether every column is in the tiebreaker. It
-        # refuses unless all_columns?, and for DISTINCT ON, whose picks the
-        # full runs can't show.
+        # and it answers key(row) and contained?(big, small). It refuses
+        # for DISTINCT ON, whose picks the full runs can't show. Its
+        # caller must have put every column in the tiebreaker: a column
+        # left out hides ties from the runs.
         def check(shapes, original_cut, source)
-          return REFUSED unless source.all_columns? && shapes.none?(&:distinct_on?)
+          return REFUSED if shapes.any?(&:distinct_on?)
 
           original = layout_of(shapes.first, original_cut, source)
           return REFUSED unless original

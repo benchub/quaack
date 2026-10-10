@@ -194,6 +194,16 @@ module Quaack
       # comparison refuses with unsupported_order, as it did before the
       # check could recover a tie at a cut.
       class HashedRuns
+        # A run without a LIMIT that's past FULL_RUN_ROW_CAP rows.
+        class TooManyRows < StandardError; end
+
+        # The most rows one of the cut-tie check's runs without a LIMIT may
+        # hold hashes for (32 bytes each, plus Ruby's overhead). Four such
+        # runs are held at once, so a result past it refuses, as a timeout
+        # does, with unsupported_order. The rows still coming are discarded by
+        # the ROLLBACK that ends the run.
+        FULL_RUN_ROW_CAP = 2_000_000
+
         def initialize(run, positions)
           @run = run
           @positions = positions
@@ -210,8 +220,9 @@ module Quaack
 
         def fetch(shape, limited:)
           [false, true].map do |descending|
-            @run.digest(shape.with_tiebreaker(@positions, descending:, limited:)).hashes
-          rescue TimedOut
+            sql = shape.with_tiebreaker(@positions, descending:, limited:)
+            @run.digest(sql, nil, max_rows: (FULL_RUN_ROW_CAP unless limited)).hashes
+          rescue TimedOut, TooManyRows
             raise if limited
 
             throw :full_timed_out, ResultComparison::CutTies::REFUSED
@@ -220,12 +231,12 @@ module Quaack
 
         def key(row) = row
         def contained?(big, small) = ResultComparison::CutTies.tallied?(big, small)
-        def all_columns? = @positions.size == @columns
 
         private
 
         def check(shapes, originals)
-          @columns = originals.first.types.size
+          # ProductionComparison.positions gives a cut query every column, so
+          # CutTies' tiebreaker covers them all.
           rule, = catch(:full_timed_out) { ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self) }
           rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
         end
@@ -253,12 +264,12 @@ module Quaack
 
         # Streams sql's rows into a Digested. Yields each row's hash.
         # tie_positions, 1-based, turn on the hidden check.
-        def digest(sql, tie_positions = nil, &)
+        def digest(sql, tie_positions = nil, max_rows: nil, &)
           RunDiscipline::LOCK.synchronize do
             @connection.exec("BEGIN READ ONLY")
             begin
               started = ServerClock.mark(@connection, "SET LOCAL statement_timeout = #{@timeout_ms};")
-              stream(sql, tie_positions, started, &)
+              stream(sql, tie_positions, started, max_rows, &)
             ensure
               @connection.exec("ROLLBACK")
             end
@@ -270,8 +281,8 @@ module Quaack
         # A cancel is a timeout only if timeout_ms has passed since started
         # on the server's clock, the one statement_timeout fires by. The
         # jump server's clock can run at another rate.
-        def stream(sql, tie_positions, started, &)
-          rows = Rows.new(tie_positions)
+        def stream(sql, tie_positions, started, max_rows, &)
+          rows = Rows.new(tie_positions, max_rows)
           @connection.send_query_params(sql, @params)
           @connection.set_single_row_mode
           read(rows, &)
@@ -297,8 +308,9 @@ module Quaack
 
       # Row hashes gathered from one query.
       class Rows
-        def initialize(tie_positions)
+        def initialize(tie_positions, max_rows = nil)
           @kept = tie_positions&.map(&:pred)
+          @max_rows = max_rows
           @hashes = []
           @ties = {}
           @hidden = false
@@ -310,6 +322,8 @@ module Quaack
             key = ResultComparator::Values.key(@types, row)
             hash = Digest::SHA256.digest(JSON.generate(key))
             @hashes << hash
+            raise HashedRuns::TooManyRows if @max_rows && @hashes.size > @max_rows
+
             yield hash if block_given?
             @hidden ||= hidden?(key) if @kept
           end
