@@ -9618,3 +9618,14 @@ From the review of 20260924-10.
 - **Design:** index-rank, index-feedback, minimax.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261004-92; Opus review clean). Two ranking tests (an in-place string edit; value order); `quaacks literals` refuses a rerun with the new rule `literals_already_used` once any of baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (the driver's resume can't trigger it: it skips a step whose output exists, and `literals` stores `literal_sets` last). On the unreleased list. Minor findings: 20261010-7.
+
+### 20261004-81. Index refusal rules: keep the list from going stale.
+
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-81; review clean). Item 1: a spec scans index_ddl_check.rb, supported_sql.rb, volatility_check.rb and deparse.rb for the rules they raise (`Error.new("rule"...` and fixed `@rule = "..."`) and compares them with `IndexDdlCheck::RULES` (the six option rules come from `REFUSED_OPTIONS`; `VolatilityCheck`'s `parse_error` is excluded because the probe is a tree with no text); a new rule in any of the four files that isn't in `RULES` fails. Item 2: a sentence under the Indexes table says "Planner ignored or couldn't try" counts only each idea's first test, not an index that index-rank's re-test dropped (README and DESIGN.md match). No enclave code change. Minor findings: 20261010-8.
+- **Depends on:** 20261004-77 (done)
+- **Came from:** the review of 20261004-77.
+- **Design:** report, llm-index-ideas.
+
+1. `IndexDdlCheck::RULES` is kept by hand. A new refusal added to `IndexDdlCheck`, `SupportedSql`, `VolatilityCheck` or `Deparse` without updating `RULES` and the samples in `enclave/spec/index_ddl_check_spec.rb` fails nothing, so the cross-gem words spec misses it. Find a way for a new rule to fail a test, such as a spec that scans those files for the rules they raise and compares them with `RULES`.
+2. "Planner ignored" in the Indexes table doesn't count index-rank's re-test drops (`never_used`, `hypopg_refused`). That matches the LLM row and DESIGN.md, so it's a choice of definition. Consider saying so in the table's note.

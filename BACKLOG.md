@@ -349,16 +349,6 @@ These are minor findings from building and reviewing 20261003-40:
 
 ### 20261004-80. Indexes table: which source proposed each built index. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-81. Index refusal rules: keep the list from going stale.
-
-- **Status:** todo
-- **Depends on:** 20261004-77 (done)
-- **Came from:** the review of 20261004-77.
-- **Design:** report, llm-index-ideas.
-
-1. `IndexDdlCheck::RULES` is kept by hand. A new refusal added to `IndexDdlCheck`, `SupportedSql`, `VolatilityCheck` or `Deparse` without updating `RULES` and the samples in `enclave/spec/index_ddl_check_spec.rb` fails nothing, so the cross-gem words spec misses it. Find a way for a new rule to fail a test, such as a spec that scans those files for the rules they raise and compares them with `RULES`.
-2. "Planner ignored" in the Indexes table doesn't count index-rank's re-test drops (`never_used`, `hypopg_refused`). That matches the LLM row and DESIGN.md, so it's a choice of definition. Consider saying so in the table's note.
-
 ### 20261004-88. ambiguous_user_schema: minors and the operator's own schema. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells.
@@ -1120,4 +1110,13 @@ From 20261003-43. After the counterexamples round stopped naming a cycle on its 
 - **Depends on:** 20261004-92, 20261004-94.
 - **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
 - **Design:** result comparison, literals.
+- **Status:** todo
+
+### 20261010-8. Index refusal rules: two gaps in the source scan.
+
+From the review of 20261004-81 (minor). The scan only matches double-quoted literals, so (a) a rule written in single quotes, or built from a variable or constant (`Error.new(rule_var, ...)` outside the existing REFUSED_OPTIONS loop), would slip past it; add a guard that fails when an `Error.new(` in those files has a first argument that is neither a double-quoted literal nor one of the known dynamic forms. (b) The spec compares rule NAMES only: it doesn't check that each rule appears in a sample statement in `index_ddl_check_spec.rb` (the entry's `samples`), so a rule with no test of its own passes; add that check.
+
+- **Depends on:** 20261004-81.
+- **Came from:** The review of 20261004-81, 2026-10-10 (minor).
+- **Design:** report, llm-index-ideas.
 - **Status:** todo
