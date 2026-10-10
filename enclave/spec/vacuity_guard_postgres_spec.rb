@@ -5,6 +5,7 @@ require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
 require "quaack/enclave/vacuity_guard"
+require "quaack/enclave/egress"
 
 # vacuity-guard: on S1, each atom must change the original's result when it's replaced
 # by TRUE. One that doesn't is retried with other pool values, up to three
@@ -60,6 +61,66 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.s1_load_rule).to eq(:fixture_load_failed)
     expect(result.s1_rows).to be_nil
     expect(result.inspect).not_to include("SENTINEL_9c")
+  end
+
+  # Only the runner is faked, the edge to the arena: attempts[n] says whether
+  # the nth load fails (with a rule) or loads, and a loaded fixture returns
+  # `rows` rows for every query, so every atom stays vacuous and the guard
+  # makes all of its four attempts.
+  def faked_runner(attempts, rows: 4)
+    tx = Struct.new(:result) { def query(_sql) = result }.new(Struct.new(:rows).new(Array.new(rows) { [it] }))
+    calls = 0
+    Object.new.tap do |runner|
+      runner.define_singleton_method(:with_fixture) do |_rows, **, &block|
+        failure = attempts.fetch(calls)
+        calls += 1
+        raise Quaack::Enclave::ArenaRunner::Error.new(failure, step: :load), cause: nil if failure
+
+        block.call(tx)
+      end
+    end
+  end
+
+  def guard_with(runner)
+    sql = "SELECT o.id FROM fx.orders o WHERE o.status = 'open' AND o.qty > 2"
+    builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
+    described_class.run(runner, builder, sql)
+  end
+
+  it "records :other for a load failure with a rule off the fixed list, and the wire message carries \"other\"" do
+    off_list = :statement_not_allowed
+    expect(Quaack::Protocol::VacuityDiagnostic::LOAD_RULES).not_to include(off_list.to_s)
+    result = guard_with(faked_runner([off_list] * 4))
+
+    expect(result.s1_load_rule).to eq(:other)
+    out = Quaack::Enclave::Egress.serialize(type: :rewrite_test, rewrite: "rewrite_1", passed: false,
+                                            s1_load_rule: result.s1_load_rule.to_s, s1_rows: result.s1_rows)
+    expect(JSON.parse(out)).to include("s1_load_rule" => "other", "s1_rows" => nil)
+  end
+
+  it "keeps a rule that is on the list as it is" do
+    expect(guard_with(faked_runner([:statement_timeout] * 4)).s1_load_rule).to eq(:statement_timeout)
+  end
+
+  it "records the last attempt: a load that failed early and loaded later has no rule and a row count" do
+    result = guard_with(faked_runner([:fixture_load_failed, :fixture_load_failed, :statement_timeout, nil], rows: 4))
+
+    expect(result.retries).to be_positive
+    expect(result.s1_load_rule).to be_nil
+    expect(result.s1_rows).to eq(4)
+  end
+
+  it "records the last attempt: a load that worked early and failed later has the rule and no row count" do
+    result = guard_with(faked_runner([nil, nil, nil, :statement_timeout], rows: 4))
+
+    expect(result.s1_load_rule).to eq(:statement_timeout)
+    expect(result.s1_rows).to be_nil
+  end
+
+  it "records the last failure's rule, not the first's" do
+    result = guard_with(faked_runner(%i[fixture_load_failed fixture_load_failed fixture_load_failed statement_timeout]))
+
+    expect(result.s1_load_rule).to eq(:statement_timeout)
   end
 
   it "exercises a keyset row comparison through its leading column, in either direction" do
