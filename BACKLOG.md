@@ -1131,15 +1131,6 @@ From 20261004-9's second paragraph and its review (a "Consider", left out of tha
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261010-3. `spec/test_postgres_spec.rb` old-image specs race with a concurrent launch's cleanup.
-
-Seen 2026-10-10 by the builder of 20261004-6: in a full per-commit run (other builders and reviewers were running specs on the host), the root suite failed at `spec/test_postgres_spec.rb:233` ("removing old images skips an image whose age can't be read, and still removes the others", `expected true, got false` at line 242); it passed alone. Probable cause, from the design of 20260926-54: the specs make alias tags of the CURRENT image in the `quaack-test-postgres` repository, and an alias tag's age is the image's creation time. If that image is more than 7 days old, any other checkout's `launch` (the production cleanup, `only: nil`) removes those alias tags (an alias of an in-use image is just untagged, no error) while this spec is mid-run. Fix it so no concurrent cleanup can see the specs' tags: give `OldImages.remove` a `repository:` argument (default `quaack-test-postgres`), and have the specs create and clean up their aliases under a throwaway repository name unique to the example (such as `quaack-test-postgres-spec-<random>`), so the production cleanup never lists them. Reproduce first: run two `spec/test_postgres_spec.rb` processes at once on an image older than 7 days (or fake the age with a stub) and show the failure, then show it gone. Keep the spec's own safety (it removes only what it made). The same trap may exist in the other old-image specs and in the launch-order spec: audit all.
-
-- **Depends on:** 20260926-54 (landed in 2b0a675a).
-- **Came from:** The builder of 20261004-6, 2026-10-10.
-- **Design:** none (CLAUDE.md Development).
-- **Status:** todo
-
 ### 20261010-4. rewrite-test variety: a unique self-FK, and the cases the review didn't check.
 
 From the review of 20261003-39 (minor, and gaps in the review's coverage).
