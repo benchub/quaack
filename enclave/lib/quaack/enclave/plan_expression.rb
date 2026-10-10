@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "init_plan_output"
 
 module Quaack
   module Enclave
@@ -18,10 +19,11 @@ module Quaack
 
       # The top-level AND conjuncts of a condition, as parse tree nodes, or
       # [] if it doesn't parse. Postgres prints some conditions pg_query
-      # can't read, such as "(id = (InitPlan 1).col1)", so those give [].
-      # So does nil, for a node without the condition.
+      # can't read, so those give []. So does nil, for a node without the
+      # condition. An InitPlan's output, "(InitPlan 1).col1", is read as a
+      # parameter first (see InitPlanOutput).
       def conjuncts(text)
-        where = parse_select("SELECT WHERE #{text}")&.where_clause
+        where = parse_select("SELECT WHERE #{InitPlanOutput.as_params(text)}")&.where_clause
         return [] unless where
 
         where.node == :bool_expr && where.bool_expr.boolop == :AND_EXPR ? where.bool_expr.args.to_a : [where]

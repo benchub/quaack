@@ -132,6 +132,26 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([btree("orders", "status")])
     end
 
+    # 20261008-21: the filter is (total_cents > 100) AND (status = <InitPlan 1's
+    # output>). pg_query can't read Postgres's "(InitPlan 1).col1", so the
+    # whole filter was dropped. The output reads as a parameter: a key
+    # column, never a predicate, and nothing of it reaches the candidate.
+    it "keys on a column equal to an InitPlan's output, but never makes it a partial predicate" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (status = (InitPlan 1).col1))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([btree("orders", "status")])
+    end
+
+    it "keeps the rest of a filter that has an InitPlan's output in it, the literals as they were" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (status = 'failed'::text) AND " \
+                                        "(customer_id = (InitPlan 1).col1))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq(
+        [btree("orders", "customer_id, status"),
+         btree("orders", "customer_id, total_cents", " WHERE status = 'failed'::text")]
+      )
+    end
+
     it "makes no partial index on a column with no pg_stats row" do
       no_status = orders_stats.with(columns: orders_stats.columns.except("status"))
       stats = enclave::Statistics.new(tables: [no_status, customers_stats])
@@ -727,7 +747,29 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(expression.sort_key("a LIMIT 1")).to be_nil
       expect(expression.conjuncts("(a = 1) ORDER BY b")).to eq([])
       expect(expression.conjuncts("(a = 1); SELECT 1")).to eq([])
-      expect(expression.conjuncts("(id = (InitPlan 1).col1)")).to eq([])
+    end
+
+    # 20261008-21: Postgres prints an InitPlan's output as "(InitPlan 1).col1",
+    # which isn't SQL. It reads as a parameter, since like one it's a value
+    # the scan's own row can't change, and it never carries a literal.
+    it "reads an InitPlan's output as a parameter" do
+      conjunct = expression.conjuncts("(id = (InitPlan 1).col1)").first
+      expect(expression.equality_sides(conjunct).map(&:node)).to eq(%i[column_ref param_ref])
+      expect(expression.constant?(expression.equality_sides(conjunct).last)).to be(true)
+      expect(expression.literal_text(conjunct)).to be_nil
+      expect(expression.conjuncts("((a = (InitPlan 2).col3) AND (b = (InitPlan 1).col1))").size).to eq(2)
+    end
+
+    it "leaves a string literal that looks like an InitPlan's output as the literal it is" do
+      conjunct = expression.conjuncts("((status = '(InitPlan 1).col1'::text) AND (id = (InitPlan 1).col1))").first
+      expect(expression.literal_text(conjunct)).to eq("(InitPlan 1).col1")
+      expect(expression.conjuncts("(status = '(InitPlan 1).col1'::text)").size).to eq(1)
+    end
+
+    it "gives nothing for an InitPlan reference that isn't one column of one" do
+      expect(expression.conjuncts("(id = (InitPlan 1))")).to eq([])
+      expect(expression.conjuncts("(id = (InitPlan x).col1)")).to eq([])
+      expect(expression.conjuncts("(id = (InitPlan 1).col1 ")).to eq([])
     end
 
     # Task 20260926-56: CanonicalPlan's fingerprint and parse_select share this.

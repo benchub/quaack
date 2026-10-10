@@ -875,6 +875,8 @@ Each problem pattern in the plan points to a potentially-helpful index:
 - **Sort or Hash feeding an aggregate:** an index on the `GROUP BY` keys.
 - **Heap Fetches on an Index Only Scan:** this isn't an index problem, so skip it.
 
+Generator two reads a condition's text with pg_query. Postgres prints an InitPlan's output as `(InitPlan 1).col1`, which isn't SQL, so the generator reads each one as a parameter, found with pg_query's scanner so the same text inside a string literal stays a literal. A column equal to one is a key column and never a partial predicate, as with `$1`. A condition with a `COLLATE` still proposes nothing (see 20261008-21), since a plain key wouldn't serve a comparison in another collation.
+
 ### index-dedupe. Dedupe and filter.
 
 This filter runs on each generator's output as soon as the generator produces it, not once at the end.
