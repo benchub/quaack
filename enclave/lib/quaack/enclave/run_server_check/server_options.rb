@@ -29,14 +29,20 @@ module Quaack
 
         module_function
 
-        def check(connection, inventory)
-          check_tablespaces(connection, inventory)
+        def check(connection, inventory, store)
+          needed = store.entry?("relation_tablespaces") ? store.read("relation_tablespaces") : nil
+          check_tablespaces(connection, inventory, needed)
           check_preload(connection, inventory)
         end
 
-        def check_tablespaces(connection, inventory)
+        # Compares the tablespaces in needed, qualify's names of those the
+        # query's tables and their indexes use, or, when a run has none
+        # recorded, every one inventory did. A needed name inventory didn't
+        # record fails, since there's nothing to compare it with.
+        def check_tablespaces(connection, inventory, needed)
           here = Inventory::Production.tablespaces(connection.exec(TABLESPACES_SQL))
-          return if inventory.fetch("tablespaces").all? { |name, options| here[name] == options }
+          production = inventory.fetch("tablespaces")
+          return if (needed || production.keys).all? { production.key?(it) && here[it] == production[it] }
 
           RunServerCheck.fail!("run_server_tablespace_mismatch", "spcoptions")
         end

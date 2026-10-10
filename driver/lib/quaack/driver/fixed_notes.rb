@@ -73,8 +73,10 @@ module Quaack
                                      "that --plan names the plan of the query --query names. #{GO_ON}",
         # qualify refuses it, after intake started the run, so the run can't go on.
         "plan_table_mismatch" => "The plan file doesn't match the query file: the plan scans a table the query " \
-                                 "doesn't read. Check that --plan names the plan of the query --query names, " \
-                                 "then start a new run with `quaack start`.",
+                                 "doesn't read. Check that --plan names the plan of the query --query names. " \
+                                 "A row-level security policy that reads another table, such as a membership " \
+                                 "lookup, also adds that table to the plan, and QUAACK v1 doesn't support it. " \
+                                 "Then start a new run with `quaack start`.",
 
         # What the query uses that QUAACK v1 can't tune. Going on can't help,
         # since the run's query stays the same.
@@ -236,10 +238,11 @@ module Quaack
         "run_server_guc_mismatch" => "A planner setting on the run server isn't production's: one EXPLAIN's " \
                                      "SETTINGS lists, a query tuning setting, TimeZone, DateStyle, or " \
                                      "IntervalStyle. Set the run server's to match. #{GO_ON}",
-        "run_server_tablespace_mismatch" => "A tablespace the production database's tables or indexes use " \
-                                            "is missing on the run server, or its options, such as " \
-                                            "random_page_cost and seq_page_cost, aren't production's. Create " \
-                                            "it, or set its options to match. #{GO_ON}",
+        "run_server_tablespace_mismatch" => "A tablespace the query's tables or indexes use is missing on " \
+                                            "the run server, or its options, such as random_page_cost and " \
+                                            "seq_page_cost, aren't production's. Compare pg_tablespace, with " \
+                                            "its spcoptions, on the production server and the run server to " \
+                                            "find it, then create it, or set its options to match. #{GO_ON}",
         "run_server_preload_mismatch" => "The run server's shared_preload_libraries doesn't load the same " \
                                          "plan-changing libraries as production's: pg_hint_plan, " \
                                          "pg_dbms_stats, plantuner, and aqo. Set it to match, and restart " \

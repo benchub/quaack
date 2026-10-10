@@ -779,7 +779,7 @@ RSpec.describe "quaack run" do
 
   describe "setup, setup" do
     let(:setup) do
-      %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
+      %w[inventory qualify run-server schema-dump statistics volatility classify redact literals clock-anchor
          racetrack-setup]
     end
 

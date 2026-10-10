@@ -125,7 +125,7 @@ module Quaack
         check_extensions(connection, inventory)
         check_locale(connection, inventory)
         check_planner_settings(connection, inventory)
-        ServerOptions.check(connection, inventory)
+        ServerOptions.check(connection, inventory, store)
         check_quiet(connection, [connection, *own_connections].map { server_pid(it) })
         nil
       end

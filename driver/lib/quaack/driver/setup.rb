@@ -28,8 +28,10 @@ module Quaack
 
       STEPS = [
         Step.new("inventory", "inventory", "Reading production's version, settings, and extensions"),
-        Step.new("run-server", "run_server", "Checking the run server"),
+        # qualify goes before run-server, which compares only the tablespaces
+        # qualify recorded for the query's tables.
         Step.new("qualify", "qualified_query", "Finding the tables the query reads"),
+        Step.new("run-server", "run_server", "Checking the run server"),
         Step.new("schema-dump", "schema_subset", "Dumping the schema of those tables"),
         Step.new("statistics", "statistics", "Reading the planner statistics for those tables"),
         Step.new("volatility", "volatility", "Checking the query calls no volatile functions"),

@@ -64,7 +64,7 @@ RSpec.describe "quaacks qualify, against a real server" do
 
   def expect_failed(outcome, rule)
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([error_line(rule), "", 70])
-    expect(%w[qualified_query relations search_path].select { stored.entry?(it) }).to eq([])
+    expect(%w[qualified_query relations relation_tablespaces search_path].select { stored.entry?(it) }).to eq([])
     expect_no_leaks(sentinels, outcome)
   end
 
@@ -276,6 +276,49 @@ RSpec.describe "quaacks qualify, against a real server" do
     end
   end
 
+  # Task 20261008-38: run-server checks only the tablespaces the query's
+  # tables and their indexes use, so qualify records them, by name, after
+  # the plan check. The default's name stands for a relation with none of
+  # its own. An unrelated table's tablespace isn't listed.
+  context "with tables and indexes in tablespaces" do
+    let(:suffix) { SecureRandom.hex(4) }
+    let(:spaces) { %w[table index child other].to_h { [it, "qts_#{it}_#{suffix}"] } }
+
+    before do
+      spaces.each_value do |name|
+        dir = "/tmp/#{name}"
+        TestPostgres.docker("exec", "-u", "postgres", TestPostgres.server.container_id, "mkdir", "-p", dir)
+        production.server.admin.exec("CREATE TABLESPACE #{name} LOCATION '#{dir}'")
+      end
+      conn = production.connect
+      conn.exec(<<~SQL)
+        ALTER TABLE sales.orders SET TABLESPACE #{spaces["table"]};
+        CREATE INDEX ON sales.orders (note) TABLESPACE #{spaces["index"]};
+        CREATE TABLE sales.orders_child () INHERITS (sales.orders) TABLESPACE #{spaces["child"]};
+        CREATE TABLE public.unrelated (id int) TABLESPACE #{spaces["other"]};
+      SQL
+      conn.close
+      pgpass
+    end
+
+    after do
+      production.drop
+      spaces.each_value { production.server.admin.exec("DROP TABLESPACE IF EXISTS #{it}") }
+    end
+
+    it "stores the sorted names the query's tables, their indexes, and their descendants use" do
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("relation_tablespaces"))
+        .to eq([*spaces.values_at("child", "index", "table"), "pg_default"].sort)
+    end
+
+    it "leaves out a descendant's tablespace when the query says ONLY" do
+      store.write("query", "SELECT id FROM ONLY sales.orders")
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("relation_tablespaces")).to eq(spaces.values_at("index", "table").sort)
+    end
+  end
+
   context "with an unsupported construct" do
     let(:query) { "SELECT id FROM orders TABLESAMPLE SYSTEM (1) WHERE note = '#{sentinels.text}'" }
 
@@ -377,7 +420,7 @@ RSpec.describe "quaacks qualify, against a real server" do
 
       expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
         .to eq([%({"type":"error","step":"qualify","rule":"production_read_failed","sqlstate":"42501"}\n), "", 70])
-      expect(%w[qualified_query relations search_path].select { stored.entry?(it) }).to eq([])
+      expect(%w[qualified_query relations relation_tablespaces search_path].select { stored.entry?(it) }).to eq([])
       expect_no_leaks(sentinels, outcome)
     end
   end
