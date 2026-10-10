@@ -42,10 +42,6 @@ module Quaack
 
         def named?(sent, keys, names) = keys.all? { names.include?(sent[it]) }
 
-        # Whether the entry rests on any denormalized_equal assumption, sent
-        # or not.
-        def any?(entry) = denormalized(entry).any?
-
         # The schema-qualified tables sql reads and the column names it
         # names, or nil if it doesn't parse.
         def names(sql)
