@@ -12,17 +12,30 @@ require_relative "../e2e/run"
 # Task 20261008-73: the pipeline gets the case's HOME, as the CLI's does, so
 # each LLM step writes the run's provenance record there.
 RSpec.describe "e2e/run.rb" do
+  # Task 20261009-49: the kept homes were found by globbing the shared system
+  # tmp, so another checkout's run of this spec, at the same time, took this
+  # run's home for its own and deleted it mid-run (the run failed with
+  # store_error at schema-dump). So the homes are kept in a directory of this
+  # spec's own, and a home it didn't make is never touched.
   it "runs case 036 through the pipeline to a judged report, with a provenance record" do
     kase = E2ERun::Case.new(File.join(E2ERun::CASES, "036-distinct-join-to-exists"))
-    before = Dir.glob(File.join(Dir.tmpdir, "quaack-e2e-036-*"))
-    result = with_kept_home { E2ERun.run_case(TestPostgres.server, kase) }
-    homes = Dir.glob(File.join(Dir.tmpdir, "quaack-e2e-036-*")) - before
+    shared_tmp = Dir.tmpdir
+    own = Dir.mktmpdir("quaack-e2e-spec-")
+    foreign = nil
+    result = with_kept_home(own) do
+      # What a second checkout's run of this spec makes while this one runs.
+      foreign = Dir.mktmpdir("quaack-e2e-036-", shared_tmp)
+      E2ERun.run_case(TestPostgres.server, kase)
+    end
+    homes = Dir.glob(File.join(own, "quaack-e2e-036-*"))
     records = homes.flat_map { Dir.glob(File.join(it, ".quaack", "runs", "*.llm.json")) }
     why = "declined: unused 4; existing: covered 5; rewrites: not_better 1"
     expect([result.verdict, result.detail]).to eq(["INFO", "no fix selected (#{why}); needs the LLM"])
+    expect(homes.size).to eq(1)
     expect(records.size).to eq(1)
+    expect(File.directory?(foreign)).to be(true)
   ensure
-    homes&.each { FileUtils.rm_rf(it) }
+    [own, foreign].compact.each { FileUtils.rm_rf(it) }
   end
 
   # Task 20261009-15: case 034's original is too slow for a 5 second
@@ -37,11 +50,13 @@ RSpec.describe "e2e/run.rb" do
     expect(result.seconds).to be < 120
   end
 
-  def with_kept_home
-    saved = ENV.fetch("QUAACK_E2E_KEEP", nil)
+  # Keeps each case's home, under tmp_dir rather than the shared system tmp.
+  def with_kept_home(tmp_dir)
+    saved = ENV.values_at("QUAACK_E2E_KEEP", "TMPDIR")
     ENV["QUAACK_E2E_KEEP"] = "1"
+    ENV["TMPDIR"] = tmp_dir
     yield
   ensure
-    ENV["QUAACK_E2E_KEEP"] = saved
+    ENV["QUAACK_E2E_KEEP"], ENV["TMPDIR"] = saved
   end
 end
