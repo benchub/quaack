@@ -9498,3 +9498,19 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 - **Design:** rewrite-test, counterexamples and report.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261004-9; Opus review clean). `rule_bugs.rb` no longer exempts a rewrite resting on `denormalized_equal`; the reviewer confirmed the fixtures keep the copy equal (`DenormalizedFixture::Runner` runs after all generated and LLM rows load and overwrites a wrong copy with the same predicate assumption-check used), so a rewrite-test or counterexamples mismatch is a rule bug. `EmpiricalAssumptions.any?` removed. On the unreleased list. The task's optional second paragraph (a fixture row of another class with the copy set, to catch a twin that drops the type filter) is 20261010-2.
+
+### 20261003-39. rewrite-test: more variety in self-references and repeated parents.
+
+These are false passes found in the reviews of 20261003-31. They also happen on main. All are realistic:
+
+- **A self-referencing FK always points at its own row.** So `comments c JOIN comments p ON p.id = c.parent_id WHERE p.user_id = 3` passes as equal to `... WHERE c.user_id = 3`. Likewise `categories p JOIN categories c ON c.parent_id = p.id` passes as equal to its EXISTS form. Comment trees, category trees and manager chains are common. A cheap fix: point the S3 copy's self-reference at the hit row, so some row's parent is a different row.
+- **Two FKs into the same parent get the same free values.** In `messages(sender_id → users, recipient_id → users)`, both users always get the same `name`. So `SELECT s.name, r.name …` passes as equal to `SELECT s.name, s.name …`. Give each parent row reached through a different FK its own free values.
+- **has_one crosses collide.** On a unique FK, such as `profiles.user_id UNIQUE`, the S3 cross row collides with the hit's row, and `RowSet` drops it without saying so. It fails safe, but that case loses the cross row. Pick a parent the unique FK hasn't used yet.
+
+Each needs a wrong rewrite that's disproved and a correct twin that passes, on real Postgres.
+
+- **Depends on:** 20261003-31.
+- **Came from:** The reviews of 20261003-31, 2026-10-03.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261003-39; Opus review, low effort, nothing blocking). S3 gets a self-cross row and, per pooled atom, a failing row pointing at the hit row; two FKs into one parent take the nth distinct free-column value (`FreeValues#value(apart:)`, CHECKs respected); a unique FK gets a childless parent group for its cross row. Probes: a NOT NULL self-FK, a boolean free column, a single-value enum with a UNIQUE column all disprove a wrong twin and pass the correct rewrite. On the unreleased list. Minor findings: 20261010-4. Not checked by the reviewer: composite or CASCADE self-FKs, partitioned tables, exclusion constraints, row counts and runtime for a 10-FK schema.

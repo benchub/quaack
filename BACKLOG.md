@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-57: the redaction re-check reads a jsonb `?` operator correctly (enclave).
 - 20261003-28: `shared_scan_cte` widenings: copies in subqueries and CTE bodies, a nullable copy, GROUP BY on the primary key, ONLY, aliased joins (enclave).
 - 20261004-9: rewrite-test and counterexamples disproofs of a `denormalized_equal` rewrite are reported as rule bugs (enclave; no new fields).
+- 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
 - 20261009-63: a constant conjunct in a rewrite counts as new material in `AtomPosition` (enclave).
 - 20261003-41: rewrite-test crash ordering and refusal reuse (enclave and driver).
@@ -275,20 +276,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-39. rewrite-test: more variety in self-references and repeated parents.
-
-These are false passes found in the reviews of 20261003-31. They also happen on main. All are realistic:
-
-- **A self-referencing FK always points at its own row.** So `comments c JOIN comments p ON p.id = c.parent_id WHERE p.user_id = 3` passes as equal to `... WHERE c.user_id = 3`. Likewise `categories p JOIN categories c ON c.parent_id = p.id` passes as equal to its EXISTS form. Comment trees, category trees and manager chains are common. A cheap fix: point the S3 copy's self-reference at the hit row, so some row's parent is a different row.
-- **Two FKs into the same parent get the same free values.** In `messages(sender_id → users, recipient_id → users)`, both users always get the same `name`. So `SELECT s.name, r.name …` passes as equal to `SELECT s.name, s.name …`. Give each parent row reached through a different FK its own free values.
-- **has_one crosses collide.** On a unique FK, such as `profiles.user_id UNIQUE`, the S3 cross row collides with the hit's row, and `RowSet` drops it without saying so. It fails safe, but that case loses the cross row. Pick a parent the unique FK hasn't used yet.
-
-Each needs a wrong rewrite that's disproved and a correct twin that passes, on real Postgres.
-
-- **Depends on:** 20261003-31.
-- **Came from:** The reviews of 20261003-31, 2026-10-03.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261003-39. rewrite-test: more variety in self-references and repeated parents. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents. Done, see BACKLOG-COMPLETE.md.
 
@@ -1174,4 +1162,15 @@ Seen 2026-10-10 by the builder of 20261004-6: in a full per-commit run (other bu
 - **Depends on:** 20260926-54 (landed in 2b0a675a).
 - **Came from:** The builder of 20261004-6, 2026-10-10.
 - **Design:** none (CLAUDE.md Development).
+- **Status:** todo
+
+### 20261010-4. rewrite-test variety: a unique self-FK, and the cases the review didn't check.
+
+From the review of 20261003-39 (minor, and gaps in the review's coverage).
+- With `parent_id bigint UNIQUE REFERENCES` its own table, a wrong rewrite (a filter on the child instead of the parent) still passes: `childless_parent` excludes self-references, so a unique self-FK's cross gets no fresh target and no distinguishing row. The task didn't promise it. Make the cross target a fresh parent row (a row that has no child) for a unique self-FK too, and add a wrong-twin test that passes today.
+- The review did not check composite self-FKs, ON DELETE CASCADE self-FKs, partitioned tables or exclusion constraints, nor the row counts and runtime for a schema with ten FKs (by reading the code S3 grows linearly: 1 plus one row per pooled atom per self-FK, 2 per unique FK). Probe each with a correct and a wrong rewrite, measure the row count and time for a ten-FK schema (see 20261004-27 about rewrite-test CPU), and file any failures.
+
+- **Depends on:** 20261003-39.
+- **Came from:** The review of 20261003-39, 2026-10-10.
+- **Design:** rewrite-test.
 - **Status:** todo
