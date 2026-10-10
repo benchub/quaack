@@ -1949,7 +1949,8 @@ RSpec.describe Quaack::Driver::Report do
       expect(index_table.scan(%r{<tr[^>]*><th scope="row">[^<]*</th>(.*?)</tr>}).first.first.scan("<td").size).to eq(5)
       %w[index rewrite rewrite-index].each do |id|
         note = burndown_section[%r{</table>\s*<p class="note" id="burndown-#{id}-held-back">(.*?)</p>}m, 1]
-        expect(note).to include("index-dedupe holds back GIN, GiST, and SP-GiST ideas")
+        expect(note).to include("index-dedupe, and the LLM&#39;s rounds of index ideas, hold back GIN, GiST, and " \
+                                "SP-GiST ideas")
         expect(note).to include("index-test holds back").and include("the planner left unused")
         expect(note).to include("real build")
       end
