@@ -27,7 +27,8 @@ module Quaack
         # Deparse allows this depth, so the copy should too.
         DEPTH = Deparse::DEPTH
 
-        attr_reader :tree, :placeholders
+        # numbers is each replaced constant's number, by its location in the text.
+        attr_reader :tree, :placeholders, :numbers
 
         def initialize(parse)
           SupportedSql.check!(parse)
@@ -47,14 +48,14 @@ module Quaack
         def replace
           @notes = []
           visit(@tree)
-          @numbers = numbers
+          @numbers = ranked
           @replacing = true
           visit(@tree)
         end
 
         # Each constant's number: its representative's place in the text,
         # among the representatives (see Sharing).
-        def numbers
+        def ranked
           sharing = Sharing.new(@found)
           @notes.each { sharing.note(it) }
           @representatives = @found.keys.select { sharing.representative(it) == it }.sort

@@ -4,6 +4,7 @@ require "json"
 require "pg_query"
 require "quaack/enclave/deparse"
 require "quaack/enclave/predicate_atoms"
+require "quaack/enclave/redaction"
 
 RSpec.describe Quaack::Enclave::PredicateAtoms do
   def table_name(name, schema: "public") = Quaack::Enclave::TableName.new(schema:, name:)
@@ -771,6 +772,22 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     it "counts constants outside predicates in the numbering" do
       sql = "SELECT 'x', 5 FROM public.orders o WHERE o.status = 9 LIMIT 3"
       expect(shapes(sql)).to eq(["o.status = $3"])
+    end
+
+    it "numbers the way redact numbers the query: a GROUP BY constant stays and takes no number" do
+      sql = "SELECT 1 FROM public.orders o WHERE o.id IN (SELECT i.order_id FROM public.items i GROUP BY 1) " \
+            "AND o.total > 5 ORDER BY 1"
+      redacted = Quaack::Enclave::Redaction.query(PgQuery.parse(sql)).sql
+      expect(redacted).to include("o.total > $2")
+      expect(shapes(sql)).to eq(["o.id IN (SELECT i.order_id FROM public.items i GROUP BY 1)", "o.total > $2"])
+    end
+
+    it "numbers a constant that Postgres requires to match another, once, as redact does" do
+      sql = "SELECT o.status + 1 FROM public.orders o GROUP BY o.status + 1 HAVING o.status + 1 > 0 " \
+            "UNION ALL SELECT 2 FROM public.orders o WHERE o.total > 3"
+      redacted = Quaack::Enclave::Redaction.query(PgQuery.parse(sql)).sql
+      number = redacted[/o\.total > \$(\d+)/, 1]
+      expect(shapes(sql).last).to eq("o.total > $#{number}")
     end
 
     it "replaces every element of an IN list and an array, keeping the count" do

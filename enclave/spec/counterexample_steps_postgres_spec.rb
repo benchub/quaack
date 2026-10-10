@@ -2,6 +2,7 @@
 
 require "securerandom"
 require "quaack/enclave/burndown"
+require "quaack/enclave/steps/report_payload"
 require_relative "support/index_search_run"
 
 # `quaacks rewrite-test`, `counterexample-payload`, and
@@ -128,6 +129,46 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                                          "s1_rows" => message["s1_rows"])
       expect(stored.entry?("rewrite_survived_1")).to be(false)
       expect_no_leaks(sentinels, outcome)
+    end
+
+    # Task 20261004-61: WHERE literals, a text and a number, go through
+    # rewrite-test and a counterexample round to a non-empty covered and the
+    # report payload's checks. Only the conditions' redacted shapes come out.
+    describe "the conditions the report names (vacuity-guard)" do
+      let(:query) do
+        "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
+          "AND o.total >= #{sentinels.number}"
+      end
+      let(:candidate) do
+        "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1 AND o.total >= $3"
+      end
+
+      def checks = Quaack::Enclave::Steps::ReportPayload.checks(stored, "1")
+
+      it "sends the shapes of what it left untested and what a round covered, and never a literal" do
+        # No row can fail o.status = 'held' until the check goes.
+        ready(candidate, status_check: "status = 'held'")
+        tested = step("rewrite-test", "--search", "rewrite_1")
+        expect(stored.read("rewrite_tested_1")).to include("untested" => ["o.status = $2"])
+        arena_exec("ALTER TABLE public.orders DROP CONSTRAINT orders_status_check")
+        covering = round(1, "INSERT INTO public.orders (id, note, status, total) VALUES (1, $1, 'open', $3)")
+
+        expect(lines(covering).first).to include("covered" => ["o.status = $2"])
+        expect(checks).to include("untested_atoms" => ["o.status = $2"], "covered" => ["o.status = $2"])
+        # The query held both sentinels, so the run was exposed to them.
+        expect(store.read("qualified_query")).to include(sentinels.text, sentinels.number.to_s)
+        expect_no_leaks(sentinels, tested, objects: { checks:, tested: stored.read("rewrite_tested_1"),
+                                                      round: stored.read("rewrite_round_1") })
+        expect_no_leaks(sentinels, covering)
+      end
+
+      it "uses a check that sees a literal planted in the conditions" do
+        ready(candidate, status_check: "status = 'held'")
+        step("rewrite-test", "--search", "rewrite_1")
+        planted = checks.merge("covered" => ["o.note = '#{sentinels.text}'", "o.total >= #{sentinels.number}"])
+
+        expect(LeakCheck.findings(sentinels, objects: { checks: planted }).map(&:to_s)).not_to eq([])
+      end
     end
 
     # Task 20260926-42: the report says how many scenario groups a unique

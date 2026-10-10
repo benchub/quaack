@@ -167,6 +167,11 @@ module Quaack
         RedactedQuery.new(sql:, placeholders: redacted.placeholders)
       end
 
+      # The number redact gives each constant it replaces, by the constant's
+      # location in the parse's text. A constant it leaves as written has none.
+      # Raises Error as query does.
+      def numbers(parse) = Query.new(parse).numbers
+
       # explain is the parsed JSON of EXPLAIN (FORMAT JSON), with or without
       # ANALYZE. placeholder_map is RedactedQuery#placeholder_map, or what
       # the store gives back.
