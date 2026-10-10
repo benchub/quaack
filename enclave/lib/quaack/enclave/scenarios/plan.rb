@@ -14,14 +14,15 @@ module Quaack
 
         def scenarios
           hit = group(fresh_key)
-          s1 = [hit] + near_misses
-          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + fan_outs(hit),
+          near = pooled_near_misses
+          s1 = [hit, *near, *join_near_misses]
+          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + fan_outs(hit, near),
             s4: s1 + orphans, s5: s1 + boundaries, s6: [hit] + many + [empty] }
         end
 
         private
 
-        def near_misses = @pooled.map { |i| group(fresh_key, near: i) } + join_near_misses
+        def pooled_near_misses = @pooled.map { |i| group(fresh_key, near: i) }
 
         def nulls = group(fresh_key, mode: :nulls)
 
@@ -29,20 +30,43 @@ module Quaack
 
         # Crosses come first, so that when a unique column's filter leaves
         # one value after the hit's, a cross takes it.
-        def fan_outs(hit) = crosses(hit) + copies(hit)
+        def fan_outs(hit, near) = crosses(hit, near) + copies(hit)
 
         def copies(hit) = order.map { |t| group(hit.key, [t], copy: 1) }
 
         # For each foreign key a row can point across groups (see
         # Topology#crossings), a group whose row points it at the hit's
         # parent, not its own, with no parent of its own that nothing else
-        # needs (see Topology#cross_tables).
-        def crosses(hit)
-          @topology.crossings.map do |table, fk|
-            group(fresh_key, @topology.cross_tables(table, fk),
-                  cross: Cross.new(table:, columns: fk.columns, key: hit.key))
+        # needs (see Topology#cross_tables). A key the table holds unique
+        # can't point at the hit's parent, which has its child, so it
+        # points at a parent of its own group's, with no child (a has_one).
+        # A self-reference points at a row of its own table, and is crossed
+        # with each near miss too: a row that fails the atom, pointing at the
+        # hit's, so a filter on the child and one on its parent differ.
+        def crosses(hit, near)
+          @topology.crossings.flat_map do |table, foreign|
+            parent = childless_parent(table, foreign)
+            plain = cross(table, foreign, parent&.key || hit.key)
+            self_references?(table, foreign) ? [plain] + near_crosses(table, foreign, hit, near) : [*parent, plain]
           end
         end
+
+        def childless_parent(table, foreign)
+          return unless @topology.unique_key?(table, foreign) && !self_references?(table, foreign)
+
+          group(fresh_key, @topology.ancestors(foreign.parent))
+        end
+
+        def near_crosses(table, foreign, hit, near)
+          near.map { |miss| cross(table, foreign, hit.key, near: miss.near) }
+        end
+
+        def cross(table, foreign, target, **)
+          across = Cross.new(table:, columns: foreign.columns, key: target)
+          group(fresh_key, @topology.cross_tables(table, foreign), cross: across, **)
+        end
+
+        def self_references?(table, foreign) = foreign.parent == table
 
         def boundaries = %i[boundary boundary_reversed].map { |mode| group(fresh_key, mode:) }
 

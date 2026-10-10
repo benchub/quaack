@@ -85,15 +85,22 @@ module Quaack
         def keyed?(table, name) = @classes.key?([table, name])
 
         # Each [table, foreign key] whose row can point at another group's
-        # parent: a foreign key to another table, cut or not, that shares
-        # no column with another of the table's foreign keys. A cut one
-        # gives two rows that share a parent, though the hit's row points
-        # at its own group's.
+        # parent: a foreign key, cut or not, that shares no column with
+        # another of the table's foreign keys. A cut one gives two rows that
+        # share a parent, though the hit's row points at its own group's. A
+        # self-reference counts: its row points at another row of its own
+        # table, where in every other group it points at itself.
         def crossings
           @order.flat_map do |t|
-            fks = all_foreign_keys(t).reject { |fk| fk.parent == t }
+            fks = all_foreign_keys(t)
             fks.select { |fk| (fks - [fk]).none? { |o| o.columns.intersect?(fk.columns) } }.map { |fk| [t, fk] }
           end
+        end
+
+        # Whether the foreign key's table holds its columns unique, so a
+        # parent has at most one child through it (has_one).
+        def unique_key?(table, foreign)
+          @schema.constraints(table).uniques.any? { |columns| columns.all? { foreign.columns.include?(it) } }
         end
 
         # The slot a column's value comes from: its key class's root, or

@@ -304,8 +304,14 @@ module Quaack
           return picked unless picked.nil? && (atoms.empty? || !col.nullable)
           return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
 
-          free_values.value(table, col, group.mode)
+          free_values.value(table, col, group.mode, apart: apart(table, group))
         end
+
+        # What tells a cross group's other rows from the hit's: the parent
+        # a cross's foreign key doesn't point at gets values of its own, so
+        # a row reached through one foreign key differs from the hit's
+        # reached through another (a message's sender and its recipient).
+        def apart(table, group) = (group.key if group.cross && group.cross.table != table)
 
         def free_values
           @free_values ||= FreeValues.new(@schema, @topology, @checks, @values,

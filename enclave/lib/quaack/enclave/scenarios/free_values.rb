@@ -31,11 +31,14 @@ module Quaack
           @varying = {}
         end
 
-        def value(table, col, mode)
+        # apart, when given, is a number that tells the row's group from
+        # others: the column takes the type's nth value for it, where it
+        # fits, in place of the typical one.
+        def value(table, col, mode, apart: nil)
           return unique_value(table, col) if varying(table).include?(col.name)
           return :omit if col.default
 
-          plain_value(table, col, mode)
+          plain_value(table, col, mode, apart)
         end
 
         private
@@ -43,15 +46,26 @@ module Quaack
         # UNIQUE, or NULL for a type with no distinct value.
         def unique_value(table, col) = null?(table, col) && !@values.distinct?(col) ? nil : UNIQUE
 
-        def plain_value(table, col, mode)
+        def plain_value(table, col, mode, apart)
           boundaries = generation_input?(table, col) ? [] : Scenarios.boundaries(col.type, mode)
           boundaries = boundaries.select { @values.readable?(col, it) }
           typical = @values.typical(col)
           # A type with no typical value is refused if no CHECK gives one.
-          @checks.satisfying(table, col, boundaries + [typical], (@values.refusal(col, table) unless typical))
+          @checks.satisfying(table, col, [*apart_value(table, col, apart), *boundaries, typical],
+                             (@values.refusal(col, table) unless typical))
         rescue Error
           raise if typical || !null?(table, col)
 
+          nil
+        end
+
+        # A generation input keeps the typical value, as it gets no
+        # boundary value.
+        def apart_value(table, col, apart)
+          return if apart.nil? || generation_input?(table, col)
+
+          @values.nth(col, apart, table:)
+        rescue Error
           nil
         end
 
