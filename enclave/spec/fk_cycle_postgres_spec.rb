@@ -76,6 +76,17 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       expect(run(scenarios[:s1], join_sql).size).to be >= 1
     end
 
+    # The empty group (S6) holds the roots, so it needs the table the cut
+    # edge leaves first, though that table still references courses.
+    it "takes as the only root the table the load order starts with, not one the cut edge points at" do
+      parse = PgQuery.parse(join_sql)
+      schema = Quaack::Enclave::ArenaSchema.load_closure(conn, [tn("accounts"), tn("courses")])
+      atoms = Quaack::Enclave::PredicateAtoms.extract(parse, column_names: schema.column_names)
+      topology = described_class.new(schema, atoms)
+      expect(topology.parents(tn("accounts"))).to eq([tn("courses")])
+      expect(topology.roots).to eq([tn("accounts")])
+    end
+
     it "keeps the kept foreign key tied to its parent's key" do
       s1 = build(join_sql)[:s1]
       expect(values(s1, "courses", "account_id") - values(s1, "accounts", "id")).to eq([])
@@ -409,6 +420,72 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
          "SELECT a.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id ORDER BY a.id"]
       )
       expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :row_count]])
+    end
+
+    # IS [NOT] NULL on the cut column loads, for the correct candidate too.
+    it "tests IS NULL and IS NOT NULL on the cut column, disproving the opposite test" do
+      report = Quaack::Enclave::ScenarioTests.run(
+        conn, "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id",
+        ["SELECT a.id FROM fx.accounts a WHERE NOT (a.course_template_id IS NOT NULL) ORDER BY a.id",
+         "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NOT NULL ORDER BY a.id"]
+      )
+      expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :value]])
+      report = Quaack::Enclave::ScenarioTests.run(
+        conn, "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NOT NULL ORDER BY a.id",
+        ["SELECT a.id FROM fx.accounts a WHERE NOT (a.course_template_id IS NULL) ORDER BY a.id",
+         "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id"]
+      )
+      expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :value]])
+    end
+
+    describe "with accounts and templates owned by the same or by different accounts" do
+      let(:from) { "FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id" }
+      let(:own_courses) { "EXISTS (SELECT 1 FROM fx.courses c WHERE c.account_id = a.id)" }
+
+      def verdicts(sql, candidates)
+        report = Quaack::Enclave::ScenarioTests.run(conn, sql, candidates)
+        report.results.map { |r| [r.passed, r.rule] }
+      end
+
+      it "disproves 'own template' rewritten as 'has a template and has courses'" do
+        expect(verdicts("SELECT a.id #{from} WHERE t.account_id = a.id ORDER BY a.id",
+                        ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
+                         "WHERE a.id = t.account_id ORDER BY a.id",
+                         "SELECT a.id #{from} WHERE #{own_courses} ORDER BY a.id"]))
+          .to eq([[true, nil], [false, :row_count]])
+      end
+
+      it "disproves a template owned by another account rewritten as 'has a template'" do
+        expect(verdicts("SELECT a.id #{from} WHERE t.account_id <> a.id ORDER BY a.id",
+                        ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
+                         "WHERE a.id <> t.account_id ORDER BY a.id",
+                         "SELECT a.id #{from} ORDER BY a.id"]))
+          .to eq([[true, nil], [false, :row_count]])
+      end
+
+      it "disproves 'has a template and own courses' rewritten as 'own template'" do
+        expect(verdicts("SELECT a.id #{from} WHERE #{own_courses} ORDER BY a.id",
+                        ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
+                         "WHERE EXISTS (SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
+                         "SELECT a.id #{from} WHERE t.account_id = a.id ORDER BY a.id"]))
+          .to eq([[true, nil], [false, :row_count]])
+      end
+
+      it "disproves dropping a plain ascending ORDER BY on the cut column" do
+        sql = "SELECT a.id #{from} ORDER BY a.course_template_id, a.id"
+        expect(verdicts(sql, ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
+                              "ORDER BY a.course_template_id, a.id",
+                              "SELECT a.id #{from} ORDER BY a.id"]))
+          .to eq([[true, nil], [false, :value]])
+      end
+
+      it "disproves dropping ORDER BY on the template's name" do
+        sql = "SELECT a.id #{from} ORDER BY t.name, a.id"
+        expect(verdicts(sql, ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
+                              "ORDER BY t.name, a.id",
+                              "SELECT a.id #{from} ORDER BY a.id"]))
+          .to eq([[true, nil], [false, :value]])
+      end
     end
   end
 
