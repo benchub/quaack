@@ -18,6 +18,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261003-43: `fk_cycle` table names are built by the enclave from a stored [schema, name] pair and quoted like `quote_ident`; the enclave and driver shape checks accept bare or quoted parts; the counterexamples round's error line carries only the rule (enclave and driver).
 - 20261003-44: `existence_in_flip` scope check includes unaliased function names; ORDER BY positions out of range are refused; the same capture is refused in `cte_hoist_dedupe` and `union_outer_filter_removal` (enclave).
 - 20261004-61: the `$n` numbers in untested-condition shapes come from the real redaction (`Redaction.numbers`), so a GROUP BY constant keeps no number and a shared constant gets one (enclave).
+- 20261004-92: `quaacks literals` refuses a rerun (`literals_already_used`) once baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (enclave and protocol).
+- 20261004-94: result-comparison edge fixes: LIMIT/OFFSET overflow clamp, NULL offset, a 2,000,000-row cap on full runs, a nil guard, `all_columns?` moved to fixture-compare (enclave).
 - 20261003-39: rewrite-test fixtures: self-cross rows, repeated-parent `apart` values, childless parent for a unique FK (enclave).
 - 20261004-8: rewrite-test fixtures: a cut foreign key's S3 cross row keeps every table, `Topology#roots` uses `load_parents`, S5 builds the reversed boundary group first (enclave).
 - 20261009-58: every DDL string in the index payloads and the report goes through `outbound_ddl`, which re-checks it is redacted (enclave).
@@ -375,18 +377,6 @@ From the builder and review of 20261004-80.
 
 ### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-92. Literal-set values: test gaps, and comparisons by name only elsewhere.
-
-From the review of 20260924-10.
-1. Changing `it&.dup&.freeze` to `it` in the literal-set copy stays green: no spec edits a string in place. Add one.
-2. Making the value comparison ignore order (`transform_values(&:sort)`) stays green, yet values are positional. Add a test with the same values in another order.
-3. Other steps compare measurements from separate processes by literal-set name only: Refinement / index-feedback (stored mechanical results against LLM results) and minimax (`baseline` against `index_baseline`). Their values can differ only if `statistics` or `literals` is rerun partway through a run. Check the values there too (a stored digest would do), or refuse to rerun `literals` once later steps have used it.
-
-- **Depends on:** 20260924-10.
-- **Came from:** The review of 20260924-10.
-- **Design:** index-rank, index-feedback, minimax.
-- **Status:** todo
-
 ### 20261004-94. Result comparison: loose ends of the edge check.
 
 From the reviews of 20260924-7.
@@ -400,6 +390,8 @@ From the reviews of 20260924-7.
 - **Depends on:** 20260924-7.
 - **Came from:** The first and second reviews of 20260924-7.
 - **Design:** fixture-compare, result comparison.
+- **Landed so far:** items 1 to 5, 2026-10-10 (task/20261004-92; Opus review clean). 1: the edge query's LIMIT is `CASE WHEN l IS NULL THEN NULL ELSE LEAST(l, 9223372036854775807 - o) + o END` with bigint casts (verified on Postgres 18 against LIMIT/OFFSET edge cases; negative values error in the original first, so they can't match); 2: `COALESCE(o, 0)` (a NULL offset is 0); 3: a full run over `HashedRuns::FULL_RUN_ROW_CAP` (2,000,000) rows refuses as `unsupported_order` (only inside CutTies' full runs, so it costs candidates on big result sets with a cut tie, never a false match); 4: `through_offset!` raises on a missing LIMIT or OFFSET; 5: `all_columns?` removed from production comparison (dead there) and its guard moved into fixture-compare's `cut_tie`, with the first test that exercises it. On the unreleased list. Item 6 needs a decision from the user (below). Minor findings: 20261010-7.
+- **Item 6, waiting on the user:** reproduced on real Postgres: original `ORDER BY grp DESC LIMIT n` against candidate `ORDER BY grp DESC NULLS LAST, id LIMIT n` passes when the LIMIT cuts a tie (n=3) and fails with `value` when it doesn't (n=4). Two ways to make the paths agree: (a) accept more: when the candidate's tiebreaker runs don't match row for row, fall back to the CutTies layout check, which already accepts these candidates when a tie is cut (correct, since the candidate's rows are a valid result of the original, but it is the risky direction: it makes the comparison accept more); (b) refuse more: refuse with `unsupported_order` when the candidate's order is stricter than the original's and the original's LIMIT doesn't cut a tie, instead of reporting `value` (honest; costs a candidate). Both the builder and the Opus reviewer lean toward accepting-or-refusing only after the user decides; the reviewer recommends (b), failing closed.
 - **Status:** todo
 
 ### 20261004-95. Insert check: clock words, loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -1118,4 +1110,14 @@ From 20261003-43. After the counterexamples round stopped naming a cycle on its 
 - **Depends on:** 20261003-43.
 - **Came from:** 20261003-43's build and review, 2026-10-10.
 - **Design:** What goes out of the enclave.
+- **Status:** todo
+
+### 20261010-7. Result comparison and literals: two small gaps from the review of 20261004-92 and -94.
+
+- The `literals_already_used` pattern (`USERS`) lists the steps that store entries comparing literal sets by name, but `rewrite_prune`, `rewrite_check`, `index_test` and `index_rank` also load `literal_sets` and aren't in it. Harmless today (they write no entries compared across sets); add a spec that fails when a step that writes such an entry isn't listed, or list them.
+- A full-run row-cap refusal is reported with the same rule as a timeout (`unsupported_order`), so the operator can't tell the two apart. Give the report a way to say which (a field or a separate note), if it matters to them.
+
+- **Depends on:** 20261004-92, 20261004-94.
+- **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
+- **Design:** result comparison, literals.
 - **Status:** todo

@@ -9605,3 +9605,16 @@ From the build and review of 20261004-51:
 - **Design:** report, vacuity-guard.
 - **Status:** done
 - **Landed:** 2026-10-10 (task/20261004-61; Opus review clean; the full check passed on `main` just before the merge). Items 1 ("The 1 conditions") and 2 ("No later test checked them") were stale: 20261009-32 and 20261009-40 changed that wording. Item 4: the `$n` numbers in `untested_atoms`, `untested_unchanged` and `covered` shapes now come from `Redaction.numbers` (location to number from `Redaction::Query`), so a GROUP BY constant redact leaves as written takes no number and a constant Postgres needs to match another gets one; if redact refuses the query (own `$n`, an interval with a field qualifier) it falls back to text-order numbering, with no literal surviving. Item 3: a sentinel spec runs the real rewrite-test and counterexample-round and asserts the report's checks hold exactly the shapes, with a planted control. On the unreleased list.
+
+### 20261004-92. Literal-set values: test gaps, and comparisons by name only elsewhere.
+
+From the review of 20260924-10.
+1. Changing `it&.dup&.freeze` to `it` in the literal-set copy stays green: no spec edits a string in place. Add one.
+2. Making the value comparison ignore order (`transform_values(&:sort)`) stays green, yet values are positional. Add a test with the same values in another order.
+3. Other steps compare measurements from separate processes by literal-set name only: Refinement / index-feedback (stored mechanical results against LLM results) and minimax (`baseline` against `index_baseline`). Their values can differ only if `statistics` or `literals` is rerun partway through a run. Check the values there too (a stored digest would do), or refuse to rerun `literals` once later steps have used it.
+
+- **Depends on:** 20260924-10.
+- **Came from:** The review of 20260924-10.
+- **Design:** index-rank, index-feedback, minimax.
+- **Status:** done
+- **Landed:** 2026-10-10 (task/20261004-92; Opus review clean). Two ranking tests (an in-place string edit; value order); `quaacks literals` refuses a rerun with the new rule `literals_already_used` once any of baseline, index_baseline, candidate_runs, result_comparison or index_search_* entries exist (the driver's resume can't trigger it: it skips a step whose output exists, and `literals` stores `literal_sets` last). On the unreleased list. Minor findings: 20261010-7.
