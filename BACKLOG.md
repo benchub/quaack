@@ -1314,3 +1314,12 @@ From the review of 20261009-33 (minor). `Protocol::VacuityDiagnostic` accepts an
 - **Came from:** The review of 20261009-33, 2026-10-09 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261009-47. Progress line: "set aside untested" should say "held back untested".
+
+From the review of 20261009-42 (minor). `driver/lib/quaack/driver/step_summary.rb:56` still prints "N set aside untested" in a progress line, while the report now calls it "held back". Reword the progress line to match, with its spec. Also, the no-sentence hover spec in `driver/spec/report_spec.rb` stubs `StageSentences.for` to return nil; it could pass an unlisted stage name instead (the code uses `COLORS.fetch(stage, BLUE)`), which removes the stub.
+
+- **Depends on:** 20261009-42.
+- **Came from:** The review of 20261009-42, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
