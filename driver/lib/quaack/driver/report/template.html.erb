@@ -57,12 +57,11 @@
   thead th { background: var(--head-bg); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.missing { color: var(--muted); font-style: italic; }
-  tr.stripe-rewrite_new_indexes { --stripe: var(--st-teal); --stripe-bg: var(--sb-teal); }
-  tr.stripe-rewrite_same_indexes { --stripe: var(--st-violet); --stripe-bg: var(--sb-violet); }
-  tr.stripe-original_new_indexes { --stripe: var(--st-brown); --stripe-bg: var(--sb-brown); }
-  tr.kind > th { background: var(--stripe-bg); border-left: 5px solid var(--stripe); padding-top: 0.45rem; padding-bottom: 0.45rem; }
-  tr.rank > td:first-child { border-left: 5px solid var(--stripe); }
-  tr.rank > td:nth-child(2) { padding-left: 1.25rem; }
+  .stripe-rewrite_new_indexes { --stripe: var(--st-teal); --stripe-bg: var(--sb-teal); }
+  .stripe-rewrite_same_indexes { --stripe: var(--st-violet); --stripe-bg: var(--sb-violet); }
+  .stripe-original_new_indexes { --stripe: var(--st-brown); --stripe-bg: var(--sb-brown); }
+  div.kind-group { background: var(--stripe-bg); border-left: 5px solid var(--stripe); padding: 0.1rem 1.25rem 0.75rem; margin: 1.25rem 0; }
+  div.kind-group > h3.kind { margin-top: 0.75rem; }
   tr.baseline td { background: var(--baseline-bg); font-style: italic; }
   table.plan td.step { white-space: nowrap; }
   table.plan .arrow { color: var(--muted); }
@@ -158,9 +157,9 @@
 <tbody>
 <tr class="baseline"><td class="num"></td><td>The original query (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
 <% ranked_by_kind.each do |kind, entries| %>
-<tr class="kind stripe-<%= kind %>"><th scope="rowgroup" colspan="5"><%= h KIND_NAMES.fetch(kind) %></th></tr>
+<tr class="kind"><th scope="rowgroup" colspan="5"><%= h KIND_NAMES.fetch(kind) %></th></tr>
 <% entries.each_with_index do |t, i| %>
-<tr class="rank stripe-<%= kind %>"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
+<tr class="rank"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
 <% end %>
 <% end %>
 </tbody></table>
@@ -181,6 +180,7 @@
 </details>
 <% end %>
 <% ranked_by_kind.each do |kind, entries| %>
+<div class="kind-group stripe-<%= kind %>">
 <h3 class="kind"><%= h KIND_NAMES.fetch(kind) %></h3>
 <% entries.each_with_index do |t, i| %>
 <article class="candidate"><h3><%= i + 1 %>. <%= h describe(t["label"]) %></h3>
@@ -203,6 +203,7 @@
 </tbody></table>
 </article>
 <% end %>
+</div>
 <% end %>
 </section>
 <% if timed_out_count.positive? || !infinite_sets.empty? %>
