@@ -72,7 +72,9 @@ module Quaack
     # when quals reject both sides. A qual is above the join when it's in
     # WHERE, in the ON of an inner join over it, or in the ON of an outer
     # join whose nullable side it's under, with no FULL JOIN between. Only
-    # plainly strict conjuncts reduce (see Strict). Then an outer join
+    # plainly strict conjuncts reduce (see Strict), and a conjunct on a
+    # subquery's column (s.x, by its alias) counts as rejecting the
+    # subquery. Then an outer join
     # makes a table nullable when the table is on its nullable side, at
     # any depth: the right of LEFT, the left of RIGHT, or either side of
     # FULL. Every predicate read here is strict except IS NULL, so an IS
@@ -143,8 +145,9 @@ module Quaack
     # order, only when that makes it covering: every column the query reads
     # from the table (select list, WHERE, JOIN, GROUP BY, HAVING, ORDER BY)
     # is in key or INCLUDE. Then the bare key follows it as a candidate of
-    # its own. Otherwise there's only the bare key. * and t.* mean every
-    # column. WHERE, HAVING, and ORDER BY columns aren't added to INCLUDE.
+    # its own. Otherwise there's only the bare key. *, t.*, and a whole-row
+    # reference (SELECT o, to_jsonb(o)) mean every column. WHERE, HAVING,
+    # and ORDER BY columns aren't added to INCLUDE.
     #
     # BRIN. For each comparison range column (not a prefix LIKE, which BRIN
     # can't serve) whose |correlation| is at least
@@ -286,6 +289,11 @@ module Quaack
       # column uses: the alias, or else the table's own name.
       Table = Struct.new(:refname, :aliased, :name, :stats)
 
+      # A subquery in FROM, as a member of a join's sides. Only join
+      # reduction reads its columns, qualified by its alias (see
+      # Scope#reducible).
+      Derived = Struct.new(:refname)
+
       # One JOIN: its type, its ON clause, the tables under each side, and
       # which of those an outer join below it already made nullable. An
       # outer join's nullable side is the right for LEFT, the left for
@@ -327,7 +335,7 @@ module Quaack
           @join_of = {}.compare_by_identity
           @using = []
           @names = []
-          @opaque = false
+          @derived = {}
           select.from_clause.each { |item| read_item(item) }
           Reduction.new(self, @join_of).run(select)
           @nullable = nullable_tables
@@ -381,6 +389,12 @@ module Quaack
           [:using, name] if name && using.any? { |using_name, _, _| using_name == name }
         end
 
+        # The table or subquery a ColumnRef names for join reduction: its
+        # table, or the subquery that its qualifier is the alias of.
+        def reducible(ref)
+          column(ref)&.first || (@derived[ref.fields.first.string&.sval] if ref.fields.size == 2)
+        end
+
         # Whether the owner column_or_using gave is this table.
         def owns?(owner, table) = owner.equal?(table) || owner == :using
 
@@ -393,8 +407,16 @@ module Quaack
           elsif table?(item.range_var) then [add_table(item.range_var)]
           else
             @opaque = true
-            []
+            derived(item)
           end
+        end
+
+        # The Derived a subquery with an alias stands for, or none.
+        def derived(item)
+          name = item.range_subselect&.alias&.aliasname
+          return [] unless name
+
+          [@derived[name] = Derived.new(name)]
         end
 
         # A plain table: schema qualified, so not a CTE, and with no column
@@ -407,11 +429,14 @@ module Quaack
           node.alias&.aliasname || (node.relname if item.range_var)
         end
 
+        # Each side without its subqueries, which have no columns to USING.
+        def tables_in(*sides) = sides.map { |side| side.grep(Table) }
+
         def read_join(join)
           left = read_item(join.larg)
           right = read_item(join.rarg)
           @joins << (@join_of[join] = Join.new(join.jointype, join.quals, left, right, []))
-          join.using_clause.each { |name| @using << [name.string.sval, left, right] }
+          join.using_clause.each { |name| @using << [name.string.sval, *tables_in(left, right)] }
           left + right
         end
 
@@ -527,7 +552,7 @@ module Quaack
         def rejects?(side, rejected) = side.any? { |t| rejected.any? { |r| r.equal?(t) } }
 
         def rejected(node)
-          Uses.conjuncts(node).flat_map { |c| Strict.columns(c) }.filter_map { |ref| @scope.column(ref)&.first }
+          Uses.conjuncts(node).flat_map { |c| Strict.columns(c) }.filter_map { |ref| @scope.reducible(ref) }
         end
       end
 
@@ -894,7 +919,7 @@ module Quaack
         def covered_columns(select, scope)
           covered = Columns.new
           (select.target_list.to_a + select.group_clause.to_a).each do |node|
-            ColumnRefs.in(node).each { |ref| scope.columns(ref).each { |pair| covered.add(pair) } }
+            ColumnRefs.in(node).each { |ref| WholeRow.columns(scope, ref).each { |pair| covered.add(pair) } }
           end
           covered
         end
@@ -905,7 +930,7 @@ module Quaack
         def read_columns(select, scope)
           read = Columns.new
           refs = refs_outside_with(select) + OuterRefs.in(select, scope.statistics)
-          refs.each { |ref| scope.columns(ref).each { |pair| read.add(pair) } }
+          refs.each { |ref| WholeRow.columns(scope, ref).each { |pair| read.add(pair) } }
           scope.using.each { |name, left, right| add_using(read, name, left + right) }
           read
         end
@@ -917,6 +942,23 @@ module Quaack
         def add_using(read, name, tables)
           tables.each { |t| read.add([t, name]) if t.stats.column_names.include?(name) }
         end
+      end
+
+      # What a ColumnRef reads: Scope#columns, and, for a bare name that no
+      # column of a table here has and that a table here goes by (`o` in
+      # SELECT o, or to_jsonb(o)), every column of that table.
+      module WholeRow
+        module_function
+
+        def columns(scope, ref)
+          found = scope.columns(ref)
+          name = ref.fields.first.string&.sval
+          return found unless found.empty? && ref.fields.one? && name
+
+          scope.tables.select { |t| t.refname == name }.flat_map { |t| every(t) }
+        end
+
+        def every(table) = table.stats.column_names.map { |c| [table, c] }
       end
 
       # Every ColumnRef in an expression, in query order, except inside a
@@ -1245,7 +1287,8 @@ module Quaack
         end
       end
 
-      private_constant :Input, :Table, :Join, :Scope, :Reduction, :Strict, :Keyset, :Columns, :OuterRefs, :Values,
+      private_constant :Input, :Table, :Derived, :Join, :Scope, :Reduction, :Strict, :Keyset, :Columns, :OuterRefs,
+                       :Values, :WholeRow,
                        :Predicates, :Uses, :ColumnRefs, :OrderBy, :GroupBy, :OrderTail, :TableCandidates
     end
   end
