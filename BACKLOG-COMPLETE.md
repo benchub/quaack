@@ -9314,3 +9314,15 @@ From the review of 20261009-43 (minor). The new replay example that checks the f
 - **Design:** report, burndown.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-45 branch; review clean). A skipped replay run must have a non-nil `outcome.error`, and an after-hook asserts at least 6 runs were drawn (skipped under an rspec filter).
+
+### 20261009-52. Use "transform rule" everywhere the report names where a rewrite came from.
+
+From the review of 20261009-31 (minor). The source line now says "transform rule X", but the same rewrite is still "made by QUAACK's own rewrite rule X" in the rule-bug section, the fate list, and the candidates table's "who" cell (all from `Rewrites::RULES`), and the "Rewrites from QUAACK's own rules" row in `words.rb`. A reader sees two phrasings for one thing. Change the candidates "who" cell and the row label to "Transform rule(s) X" (the reviewer's suggestion; the full-sentence uses in the fate list and the rule-bug section read fine and can stay unless the user wants them changed), update README's step 4 and its rule-bug example to match, and the specs that pin the old text. Ask the user whether the progress line ("Applying QUAACK's own rewrite rules to the query") should change too.
+
+- **Depends on:** 20261009-31.
+- **Came from:** The review of 20261009-31, 2026-10-09 (minor).
+- **Design:** report.
+- **Open questions:** Whether the full-sentence uses and the progress line should change too.
+- **Decided by the user (2026-10-09):** change it everywhere: the rule-bug section, the fate list, the candidates table's "who" cell, the row label, README step 4 and its example, and the progress line, so one phrase ("transform rule(s)") is used throughout.
+- **Status:** done
+- **Landed:** 2026-10-09 (task/20261009-52; review clean; merged with a README conflict resolved by keeping 56's sample numbers and the new label). "Transform rule(s)" is used in the candidates "who" cell, the fate list and rule-bug section ("made by transform rule X"), the burndown row ("Transform rule rewrites"), the accountability row ("Transform rules"), the stage sentence, the progress lines and summary, README and DESIGN.md. Left: the LLM prompt text (it would change the recorded corpus), docs/transforms pages, code comments, test names. Minor findings: 20261009-61.

@@ -1180,17 +1180,6 @@ Decide how "the part the rewrite changed" is found, from DESIGN.md's counterexam
 
 ### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-52. Use "transform rule" everywhere the report names where a rewrite came from.
-
-From the review of 20261009-31 (minor). The source line now says "transform rule X", but the same rewrite is still "made by QUAACK's own rewrite rule X" in the rule-bug section, the fate list, and the candidates table's "who" cell (all from `Rewrites::RULES`), and the "Rewrites from QUAACK's own rules" row in `words.rb`. A reader sees two phrasings for one thing. Change the candidates "who" cell and the row label to "Transform rule(s) X" (the reviewer's suggestion; the full-sentence uses in the fate list and the rule-bug section read fine and can stay unless the user wants them changed), update README's step 4 and its rule-bug example to match, and the specs that pin the old text. Ask the user whether the progress line ("Applying QUAACK's own rewrite rules to the query") should change too.
-
-- **Depends on:** 20261009-31.
-- **Came from:** The review of 20261009-31, 2026-10-09 (minor).
-- **Design:** report.
-- **Open questions:** Whether the full-sentence uses and the progress line should change too.
-- **Decided by the user (2026-10-09):** change it everywhere: the rule-bug section, the fate list, the candidates table's "who" cell, the row label, README step 4 and its example, and the progress line, so one phrase ("transform rule(s)") is used throughout.
-- **Status:** todo
-
 ### 20261009-57. Redaction re-check: a jsonb `?` operator in a partial index fails the whole negative result.
 
 From the review of 20261009-50 (minor). `with_params` turns every lexer `?` token into `$1`, so a real partial index `WHERE data ? 'k'` gets the `#ddl` output `data ? ?`. That doesn't parse, so `redacted?` returns false and `NegativeResult` raises for any run that has such an existing or declined index. It fails closed with nothing leaked, but it costs availability for a realistic jsonb schema. Either refuse it cleanly (a documented `unsupported` outcome that drops only that index's DDL from the negative result, not the whole result) or give the mask a spelling that can't collide with an operator (check `?|` and `?&`, which are separate tokens and unaffected). Test with a partial index using each of `?`, `?|`, `?&`. Enclave change: put it on the unreleased list.
@@ -1231,5 +1220,17 @@ From the review of 20261009-45 (minor).
 
 - **Depends on:** None.
 - **Came from:** The review of 20261009-45, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** todo
+
+### 20261009-61. Transform rule wording: pin one sentence, and finish the leftovers.
+
+From the review of 20261009-52 (minor).
+- The rule-bug paragraph in the template ("The transform rules are meant to be sound...") isn't pinned: reverting it to the old wording leaves every spec green. Assert it.
+- The 12 pages under `docs/transforms/` say "It's one of QUAACK's mechanical rewrite rules", and a reader following a rule link from the report lands there. Say "transform rule" there, and check each page's wording against what it describes.
+- `report/stages.rb:68` prints "by the rule key_in_self_join" (the funnel and the rewrite table cell), a third wording; the report's "not kept" note says "for one of QUAACK's own, repeated another". Decide whether to change them to "transform rule" too, and pin them.
+
+- **Depends on:** 20261009-52.
+- **Came from:** The review of 20261009-52, 2026-10-09 (minor).
 - **Design:** report.
 - **Status:** todo
