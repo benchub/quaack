@@ -97,7 +97,7 @@
 <h1>QUAACK report <%= h run_id %></h1>
 <% unless rule_bugs.empty? %>
 <section id="quaack-bugs"><h2>QUAACK bug: a rule made a wrong rewrite</h2>
-<p>QUAACK's own rewrite rules are meant to be sound: a rewrite one makes should return the same rows as the original query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>
+<p>The transform rules are meant to be sound: a rewrite one makes should return the same rows as the original query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>
 <ul><% rule_bugs.each do |b| %><li><%= h bug(b) %></li><% end %></ul>
 </section>
 <% end %>

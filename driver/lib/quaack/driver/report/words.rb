@@ -53,7 +53,7 @@ module Quaack
 
         # The rewrite stages that come before the rewrites' index searches,
         # and the ones that come after.
-        REWRITE_STAGES = { "rewrite-rules" => "Rewrites from QUAACK's own rules",
+        REWRITE_STAGES = { "rewrite-rules" => "Transform rule rewrites",
                            "llm-rewrites" => "Rewrites from the LLM",
                            "operator-rewrites" => "Your own rewrites",
                            "assumption-check" => "Checking what each rewrite assumes",

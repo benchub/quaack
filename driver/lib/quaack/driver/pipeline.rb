@@ -487,7 +487,7 @@ module Quaack
         "llm-index-ideas" => "Getting index ideas from the LLM that the mechanical search missed",
         "llm-index-refine" => "Getting the LLM to improve its index ideas",
         "index-rank" => "Ranking the index ideas",
-        "rewrite-rules" => "Applying QUAACK's own rewrite rules to the query",
+        "rewrite-rules" => "Applying the transform rules to the query",
         "llm-rewrites" => "Asking the LLM for rewrites of the query",
         "operator-rewrites" => "Checking your own rewrites",
         "plan-pruning" => "Searching for indexes for each rewrite",

@@ -1127,7 +1127,7 @@ RSpec.describe Quaack::Driver::Report do
 
       def rows(html = unranked) = html.to_s.scan(%r{<tr>(.*?)</tr>}m).flatten.drop(1)
 
-      def rule = "Made by QUAACK&#39;s own rewrite rule key_in_self_join"
+      def rule = "Made by transform rule key_in_self_join"
 
       # A row of the table: what it was, who proposed it, and why it wasn't ranked.
       def row(what, why, who: rule)
@@ -1143,7 +1143,7 @@ RSpec.describe Quaack::Driver::Report do
                                     %(<th scope="col">Why it didn't make the cut</th></tr></thead>))
         expect(rows).to eq(
           ["<td>Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}</td>" \
-           "<td>Made by QUAACK&#39;s own rewrite rule " \
+           "<td>Made by transform rule " \
            "key_in_self_join</td><td>Read 7,777 blocks on the slow values, against 1,000 for the original query, " \
            "which isn&#39;t more than 5% fewer.</td>"]
         )
@@ -1618,12 +1618,12 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "names each rewrite, the rules that made it, and the test that proved it wrong" do
-      expect(bug_section).to include(esc("<li>Rewrite Smooth Kayak, made by QUAACK's own rewrite rule " \
+      expect(bug_section).to include(esc("<li>Rewrite Smooth Kayak, made by transform rule " \
                                          "key_in_self_join, returned different results on made-up test data.</li>"))
-      expect(bug_section).to include(esc("<li>Rewrite Dainty Bloom, made by QUAACK's own rewrite rules " \
+      expect(bug_section).to include(esc("<li>Rewrite Dainty Bloom, made by transform rules " \
                                          "or_to_union, then key_in_self_join, returned different results on test " \
                                          "data the LLM wrote to break it.</li>"))
-      expect(bug_section).to include(esc("<li>Rewrite Odd Mitten, made by QUAACK's own rewrite rule &lt;b&gt;, " \
+      expect(bug_section).to include(esc("<li>Rewrite Odd Mitten, made by transform rule &lt;b&gt;, " \
                                          "returned different results on the real data.</li>"))
       expect(bug_section).not_to include("<b>")
     end
@@ -1678,7 +1678,7 @@ RSpec.describe Quaack::Driver::Report do
                                   "so it's wrong.</li>"))
       expect(list).to include("<li>Rewrite Dainty Bloom (suggested by the LLM): It returned different results")
       expect(list)
-        .to include(esc("<li>Rewrite Bright Island (made by QUAACK's own rewrite rule key_in_self_join): It passed"))
+        .to include(esc("<li>Rewrite Bright Island (made by transform rule key_in_self_join): It passed"))
       expect(list).to include("<li>Rewrite Trim Falcon (your own rewrite): Postgres plans it exactly as")
       expect(list).to include("<li>Rewrite Wise Slipper (source not recorded): A test on made-up data (empty tables) " \
                               "ended without comparing results")
@@ -1688,7 +1688,7 @@ RSpec.describe Quaack::Driver::Report do
       line = fated(2, "rewrite_test_disproved", scenario: "s3", rule: "multiset", source: "rule",
                                                 rules: %w[or_to_union key_in_self_join])
       list = section(render(negative_payload.merge("rewrites" => [line])), "negative-result")
-      expect(list).to include(esc("<li>Rewrite Smooth Kayak (made by QUAACK's own rewrite rules or_to_union, then " \
+      expect(list).to include(esc("<li>Rewrite Smooth Kayak (made by transform rules or_to_union, then " \
                                   "key_in_self_join): It returned different results from the original query on " \
                                   "made-up " \
                                   "test data (duplicate join keys), so it's wrong.</li>"))
@@ -2198,7 +2198,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows the rewrite stages in words, in order, with their other counts" do
       expect(rewrite_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
-        .to eq(["Rewrites from QUAACK&#39;s own rules", "Rewrites from the LLM", "Your own rewrites",
+        .to eq(["Transform rule rewrites", "Rewrites from the LLM", "Your own rewrites",
                 "Checking what each rewrite assumes",
                 "Checking each rewrite can run differently from the original query",
                 "Testing on made-up edge-case data", "Testing on data the LLM wrote to break them",
@@ -2300,7 +2300,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "shows what each rule made" do
-      expect(rewrite_table).to include(row("Rewrites from QUAACK's own rules", 0, "by the rule key_in_self_join: 2",
+      expect(rewrite_table).to include(row("Transform rule rewrites", 0, "by the rule key_in_self_join: 2",
                                            "the same as another idea: 1", 0, 1, "none"))
     end
 
@@ -2936,7 +2936,7 @@ RSpec.describe Quaack::Driver::Report do
                      "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<details class="fold query" id="',
                      %(<article class="rewrite"><details class="fold query" id="#{escaped}">\n<summary><h3>),
                      %(<span class="note">),
-                     "<code>SELECT ", "rewrite rules ", '<li><code class="sql">',
+                     "<code>SELECT ", "transform rules ", '<li><code class="sql">',
                      '<td class="num">1</td><td>',
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
@@ -2949,7 +2949,7 @@ RSpec.describe Quaack::Driver::Report do
       expect_escaped(rendered(negative_sentinels),
                      '<ul id="negative-rewrites"><li>', %(<tr><td><code class="sql">),
                      "(Postgres error code ", %(#{escaped}</td><td>), "<tbody>\n<tr><td>",
-                     "</td><td>Made by QUAACK&#39;s own rewrite rules ", %(<td><code class="sql">))
+                     "</td><td>Made by transform rules ", %(<td><code class="sql">))
     end
 
     it "escapes what the payload carries in the first report too" do

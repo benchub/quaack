@@ -155,7 +155,7 @@ RSpec.describe "quaack run" do
          "quaack: [3/18] Reading how the index ideas did (llm-index-refine)\n",
          "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",
-         "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
+         "quaack: [5/18] Applying the transform rules to the query (rewrite-rules)\n",
          "quaack: [5/18] No rule applied in Ns (rewrite-rules)\n",
          "quaack: [6/18] Already done, skipping: Asking the LLM for rewrites of the query (llm-rewrites)\n",
          "quaack: [7/18] Searching for indexes for each rewrite (plan-pruning)\n",
@@ -216,7 +216,7 @@ RSpec.describe "quaack run" do
       expect(cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])).to eq(0)
 
       expect(progress).to include("quaack: [5/19] Already done, skipping: " \
-                                  "Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
+                                  "Applying the transform rules to the query (rewrite-rules)\n",
                                   "quaack: [6/19] Asking the LLM for rewrites of the query (llm-rewrites)\n",
                                   "quaack: [6/19] Waiting for anthropic claude-opus-5-5 (llm-rewrites)\n",
                                   "quaack: [7/19] Checking your own rewrites (operator-rewrites)\n",
@@ -244,7 +244,7 @@ RSpec.describe "quaack run" do
       # The skips from rewrite-rules through rewrite-correctness, less plan-pruning's sub-steps.
       lines = progress.grep(%r{\Aquaack: \[([5-9]|10)/19\] (?!Rewrite \w+ \w+: .*\(rewrite-(index|prune))})
       expect(lines).to eq(
-        ["quaack: [5/19] #{skipped} Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
+        ["quaack: [5/19] #{skipped} Applying the transform rules to the query (rewrite-rules)\n",
          "quaack: [6/19] #{skipped} Asking the LLM for rewrites of the query (llm-rewrites)\n",
          "quaack: [7/19] #{skipped} Checking your own rewrites (operator-rewrites)\n",
          "quaack: [8/19] Searching for indexes for each rewrite (plan-pruning)\n",
