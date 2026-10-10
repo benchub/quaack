@@ -21,17 +21,25 @@ module Quaack
       # output name), counts as reading every column. A JOIN ... USING
       # reads the columns it names, and a NATURAL join reads every column.
       # parse may be a list of parses, read by any of them.
+      #
+      # aggregate gives how the query aggregates a column (20261010-36):
+      # :min when only min() reads it, :other when max(), sum(), or avg()
+      # does, and nil when none of them does. A reference counts as it does
+      # for read?, so an unqualified one counts for every table.
       class Reads
+        AGGREGATES = %w[min max sum avg].freeze
+
         def initialize(parse, column_names)
           @names = []
           @qualified = []
+          @aggregated = Hash.new { |h, k| h[k] = [] }
           @all = false
           @whole = []
           known = column_names.values.flatten
           (parse.is_a?(Array) ? parse : [parse]).each do |p|
             tables = Tables.new(p.tree)
             @whole.concat(tables.renamed)
-            walk(p.tree) { |fields| note(fields, known, tables) }
+            walk(p.tree, nil) { |fields, agg| note(fields, known, tables, agg) }
           end
         end
 
@@ -39,12 +47,31 @@ module Quaack
           @all || @whole.include?(table) || @names.include?(name) || @qualified.include?([table, name])
         end
 
+        def aggregate(table, name)
+          found = @aggregated[[table, name]] + @aggregated[[nil, name]]
+          return if found.empty?
+
+          found.uniq == ["min"] ? :min : :other
+        end
+
         private
 
-        def walk(node, &)
-          yield node.fields.to_a if node.is_a?(PgQuery::ColumnRef)
+        # agg is the name of the aggregate the node is an argument of. An
+        # aggregate's FILTER isn't its argument.
+        def walk(node, agg, &)
+          yield node.fields.to_a, agg if node.is_a?(PgQuery::ColumnRef)
           join(node) if node.is_a?(PgQuery::JoinExpr)
-          ValuePools::Sides.children(node).each { walk(it, &) }
+          inner = aggregate_name(node)
+          return ValuePools::Sides.children(node).each { walk(it, agg, &) } unless inner
+
+          node.class.descriptor.each { |field| walk(field.get(node), field.name == "args" ? inner : agg, &) }
+        end
+
+        def aggregate_name(node)
+          return unless node.is_a?(PgQuery::FuncCall)
+
+          name = node.funcname.last&.string&.sval
+          name if AGGREGATES.include?(name)
         end
 
         def join(node)
@@ -52,13 +79,14 @@ module Quaack
           @names.concat(node.using_clause.map { it.string.sval })
         end
 
-        def note(fields, known, tables)
+        def note(fields, known, tables, agg)
           name = fields.last&.string&.sval
           @all = true unless name && known.include?(name)
           return unless name
 
           table = qualifier(fields, tables)
           table ? @qualified << [table, name] : @names << name
+          @aggregated[[table, name]] << agg if agg
         end
 
         def qualifier(fields, tables)
