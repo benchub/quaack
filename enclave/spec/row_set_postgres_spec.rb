@@ -140,5 +140,16 @@ RSpec.describe Quaack::Enclave::Scenarios::RowSet do
       set.add?([a, b, row_in("b", id: "2", a_id: "1")])
       expect(set.parents_of([row_in("c", id: "1", b_id: "1")])).to eq([b, a])
     end
+
+    # 20261010-32: a near miss pinned to the hit's parent key brings its own
+    # parent row of that key. Lifting the hit's parent too would put two
+    # rows with one primary key in its further fixture.
+    it "leaves out a parent here when the group holds its own row of that key" do
+      set = row_set("CREATE TABLE fx.a (id integer PRIMARY KEY, name text);
+                     CREATE TABLE fx.c (id integer PRIMARY KEY, a_id integer NOT NULL REFERENCES fx.a)")
+      set.add?([row_in("a", id: "3", name: "hit")])
+      expect(set.parents_of([row_in("a", id: "3", name: "near"), row_in("c", id: "9", a_id: "3")])).to eq([])
+      expect(set.parents_of([row_in("c", id: "9", a_id: "3")])).to eq([row_in("a", id: "3", name: "hit")])
+    end
   end
 end
