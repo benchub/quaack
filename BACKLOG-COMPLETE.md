@@ -8977,3 +8977,18 @@ The report's verdict section (`<section id="summary">`, headline and table) has 
 - **Open questions:** The exact green and cream (pick ones that sit with the report's violet query sections, and show the user), and whether the verdict table's baseline and warning rows need new shades.
 - **Status:** done
 - **Landed:** 2026-10-09 (task/20261009-26; review clean). `Verdict#headline_kind` picks :substantial, :minor, or :nothing, and both the headline and the section's class come from it. Light/dark: green #e8f5e9 / stripe #2e7d32 and #17291c / #5cb372; cream #fbf5e1 / #b08a1e and #2b2614 / #d1ad4a; "nothing" keeps the blue. Contrast computed in review: text and warning pass AA on every background. Not yet looked at in a browser (see 20261009-30). One minor left: 20261009-36.
+
+### 20261009-30. Report dark theme: check it in a browser, and find why the user saw none.
+
+The user, 2026-10-09: "I thought I saw you'd implemented a dark mode, but I don't see any evidence of that." 20261009-16 (merged f6a12a4a, 2026-10-09) added a dark theme: 26 CSS variables on `:root`, redefined under `@media (prefers-color-scheme: dark)`. Its entry says "Not yet looked at in a browser", and nobody has seen it render. The theme follows only the reader's system setting, so a reader on a light system sees no change, and a report made by a driver older than that merge has none.
+
+1. Render a recorded run's report and open it in a browser with the system (or the browser's emulated `prefers-color-scheme`) set to dark and to light. Capture a screenshot of each, covering the verdict, a table, an SQL block, a query section, and a funnel. Fix anything unreadable.
+2. Find out which driver version the user's report came from, and whether it carried the dark theme. If it did and still showed light, find out why (the system setting, or an embedded viewer that ignores it).
+3. Decide with the user whether the report needs a way to choose a theme (a toggle, or a `--theme` flag on the driver) for readers whose system setting isn't dark. DESIGN.md says the page follows the system setting and that the report runs no script, so a toggle would need CSS only (a `:has()` checkbox) or a driver flag.
+
+- **Depends on:** 20261009-16.
+- **Came from:** The user, 2026-10-09.
+- **Design:** report.
+- **Open questions:** Does the user's system or browser prefer dark? Which `quaack` version made the report? Do they want a manual theme choice?
+- **Status:** dropped
+- **Dropped:** 2026-10-09, by the user. The dark theme shows when the system setting is dark; the user's report was fine, and they didn't ask for a manual theme choice.

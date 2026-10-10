@@ -1161,20 +1161,6 @@ Give the first caveat a target that says which measurement runs timed out: which
 - **Open questions:** Whether the details are a note in the Ranking section or a section of their own; ask the user, with 20261009-28's answer in hand.
 - **Status:** todo
 
-### 20261009-30. Report dark theme: check it in a browser, and find why the user saw none.
-
-The user, 2026-10-09: "I thought I saw you'd implemented a dark mode, but I don't see any evidence of that." 20261009-16 (merged f6a12a4a, 2026-10-09) added a dark theme: 26 CSS variables on `:root`, redefined under `@media (prefers-color-scheme: dark)`. Its entry says "Not yet looked at in a browser", and nobody has seen it render. The theme follows only the reader's system setting, so a reader on a light system sees no change, and a report made by a driver older than that merge has none.
-
-1. Render a recorded run's report and open it in a browser with the system (or the browser's emulated `prefers-color-scheme`) set to dark and to light. Capture a screenshot of each, covering the verdict, a table, an SQL block, a query section, and a funnel. Fix anything unreadable.
-2. Find out which driver version the user's report came from, and whether it carried the dark theme. If it did and still showed light, find out why (the system setting, or an embedded viewer that ignores it).
-3. Decide with the user whether the report needs a way to choose a theme (a toggle, or a `--theme` flag on the driver) for readers whose system setting isn't dark. DESIGN.md says the page follows the system setting and that the report runs no script, so a toggle would need CSS only (a `:has()` checkbox) or a driver flag.
-
-- **Depends on:** 20261009-16.
-- **Came from:** The user, 2026-10-09.
-- **Design:** report.
-- **Open questions:** Does the user's system or browser prefer dark? Which `quaack` version made the report? Do they want a manual theme choice?
-- **Status:** todo
-
 ### 20261009-31. Report: shorten "made by QUAACK's own rewrite rule" to "transform rule".
 
 The user, 2026-10-09. A rewrite's summary reads "Where it came from: made by QUAACK's own rewrite rule key_in_self_join". Shorten it to "Where it came from: transform rule key_in_self_join". The wording comes from `RULES` in `driver/lib/quaack/driver/report/rewrites.rb:14` and the rule-link helper (`rule_links.rb`). README.md (the "Where it came from" bullet, and the example in the section that should never appear) quotes the old phrase; DESIGN.md may too. Update all of them and the report specs, checking that two rules applied in a row are still both named in order and each still links to its page. Sweep the report for other places that say "QUAACK's own rewrite rule" and give the user the list, but change only the "Where it came from" phrase unless the user says otherwise.
