@@ -67,29 +67,55 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
   end
 
   # The shape of a real count query: an IN subquery whose two UNION ALL
-  # branches repeat four tests on assignments. Each branch's own copies of
-  # those tests, and the subquery as a whole, are tested.
+  # branches repeat four tests on assignments, and whose second branch pins
+  # assignments.id, the key submissions join on, to 12 values.
+  def count_subquery
+    "SELECT fx.assignments.id FROM fx.assignments JOIN fx.submissions " \
+      "ON fx.submissions.assignment_id = fx.assignments.id AND fx.submissions.workflow_state <> 'deleted' " \
+      "JOIN fx.content_participations ON fx.content_participations.content_type = 'Submission' " \
+      "AND fx.content_participations.content_id = fx.submissions.id WHERE " \
+      "#{branch("AND (fx.assignments.muted IS NULL OR NOT fx.assignments.muted)")} " \
+      "AND fx.content_participations.user_id = 7 AND fx.content_participations.workflow_state = 'unread' " \
+      "UNION ALL SELECT fx.assignments.id FROM fx.assignments " \
+      "WHERE #{branch("AND fx.assignments.id IN (#{ids(12, 500)})")}"
+  end
+
+  def count_query
+    "SELECT count(*) FROM fx.assignments JOIN fx.submissions " \
+      "ON fx.submissions.assignment_id = fx.assignments.id AND fx.submissions.workflow_state <> 'deleted' " \
+      "WHERE fx.assignments.type = 'Assignment' " \
+      "AND fx.assignments.id IN (#{count_subquery}) AND fx.submissions.user_id = 7 " \
+      "AND fx.submissions.workflow_state <> 'deleted' " \
+      "AND fx.submissions.cached_due_date BETWEEN '2026-01-01' AND '2026-02-01'"
+  end
+
+  # Each branch's own copies of the repeated tests, and the subquery as a
+  # whole, are tested.
   it "tests the repeated branch atoms of a UNION ALL subquery under a count" do
-    sub = "SELECT fx.assignments.id FROM fx.assignments JOIN fx.submissions " \
-          "ON fx.submissions.assignment_id = fx.assignments.id AND fx.submissions.workflow_state <> 'deleted' " \
-          "JOIN fx.content_participations ON fx.content_participations.content_type = 'Submission' " \
-          "AND fx.content_participations.content_id = fx.submissions.id WHERE " \
-          "#{branch("AND (fx.assignments.muted IS NULL OR NOT fx.assignments.muted)")} " \
-          "AND fx.content_participations.user_id = 7 AND fx.content_participations.workflow_state = 'unread' " \
-          "UNION ALL SELECT fx.assignments.id FROM fx.assignments " \
-          "WHERE #{branch("AND fx.assignments.id IN (#{ids(12, 500)})")}"
-    sql = "SELECT count(*) FROM fx.assignments JOIN fx.submissions " \
-          "ON fx.submissions.assignment_id = fx.assignments.id AND fx.submissions.workflow_state <> 'deleted' " \
-          "WHERE fx.assignments.type = 'Assignment' " \
-          "AND fx.assignments.id IN (#{sub}) AND fx.submissions.user_id = 7 " \
-          "AND fx.submissions.workflow_state <> 'deleted' " \
-          "AND fx.submissions.cached_due_date BETWEEN '2026-01-01' AND '2026-02-01'"
     tested = [
       "fx.assignments.workflow_state <> $6", "fx.assignments.context_type = $7",
       "fx.assignments.workflow_state <> $32", "fx.assignments.context_type = $33"
     ]
-    found = untested(sql)
+    found = untested(count_query)
     expect(found & tested).to eq([])
     expect(found.grep(/\Afx\.assignments\.id IN \(SELECT/)).to eq([])
+  end
+
+  # Each group takes its own generated key where that fits (a near miss of
+  # the list, or a masking near miss that fails the list), or else a list
+  # value of its own, so the groups don't all take the first one and
+  # collide on the primary key (20261010-21). What stays untested is
+  # redundant: submissions.workflow_state <> $1 and <> $68 test the same
+  # row the same way, and the three type tests each imply the others
+  # through the subquery. The branch's submissions.workflow_state <> $3 can
+  # be tested only with a second submission for one assignment, which no
+  # group holds.
+  it "tests every atom of the count query but the redundant ones" do
+    redundant = [
+      "fx.submissions.workflow_state <> $1", "fx.submissions.workflow_state <> $68",
+      "fx.assignments.type = $2", "fx.assignments.type = $5", "fx.assignments.type = $31",
+      "fx.submissions.workflow_state <> $3"
+    ]
+    expect(untested(count_query) - redundant).to eq([])
   end
 end

@@ -11,6 +11,7 @@ require_relative "scenarios/checks"
 require_relative "scenarios/free_values"
 require_relative "scenarios/parts"
 require_relative "scenarios/picker"
+require_relative "scenarios/pinned_keys"
 require_relative "scenarios/plan"
 require_relative "scenarios/reads"
 require_relative "scenarios/retries"
@@ -242,6 +243,7 @@ module Quaack
         def start(variants)
           @picker = Picker.new(@pools, probes, @checks, variants, Scenarios.scopes(@atoms))
           @identities = {}
+          @pinned = PinnedKeys.new(@topology, slots, @picker) { |*args| key_value(*args) }
           @built = {}
           @dropped = 0
           @spills = {}
@@ -317,7 +319,7 @@ module Quaack
         # skips the pick and takes the key's own value: only the child holds
         # NULL.
         def bound_value(slot, atoms, group, table, col)
-          picked = @picker.pick_for(atoms, slots.columns(slot), group) if atoms.any?
+          picked = @pinned.value(slot, atoms, group, table, col.name) if atoms.any?
           return picked unless picked.nil? && (atoms.empty? || !col.nullable)
           return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
 
