@@ -56,6 +56,16 @@ module Quaack
             sub.op == :SETOP_UNION && (!sub.all || deduped?(sub.larg) || deduped?(sub.rarg))
           end
 
+          # Whether <> is the negation of = for each pair of the one column
+          # tested and the one a branch selects, so x <> ALL means NOT IN.
+          def negated_equalities?(select, tested, branches, catalog)
+            branches.all? do |sub|
+              tested.zip(sub.target_list).all? do |column, target|
+                catalog.negated_equality?(outer(select, column), inner(sub, target))
+              end
+            end
+          end
+
           # Whether Postgres takes each pair of a row comparison, as it does
           # any one column.
           def row_equalities?(select, tested, branches, catalog)

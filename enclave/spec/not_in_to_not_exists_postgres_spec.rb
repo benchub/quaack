@@ -370,34 +370,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
       %(SELECT u.id FROM public."my users" u WHERE u.id NOT IN (SELECT m.user_id FROM public.memberships m)),
     "it's IN" =>
       "SELECT users.id FROM public.users WHERE users.id IN (SELECT memberships.user_id FROM public.memberships)",
-    "it's <> ALL" =>
-      "SELECT users.id FROM public.users WHERE users.id <> ALL (SELECT memberships.user_id FROM public.memberships)",
     "it's NOT (= ANY)" =>
       "SELECT users.id FROM public.users WHERE NOT (users.id = ANY (SELECT memberships.user_id " \
       "FROM public.memberships))",
     "it's NOT EXISTS already" =>
       "SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT memberships.user_id FROM public.memberships)",
     "it's a NOT IN list" => "SELECT users.id FROM public.users WHERE users.id NOT IN (1, 2)",
-    "the NOT IN is under an OR" =>
-      "SELECT users.id FROM public.users WHERE users.account_id = 2 OR users.id NOT IN " \
-      "(SELECT memberships.user_id FROM public.memberships)",
     "an IN is the first arm of an OR" =>
       "SELECT users.id FROM public.users WHERE users.id IN (SELECT memberships.user_id FROM public.memberships) " \
       "OR users.account_id = 2",
-    "the NOT IN is under another NOT" =>
-      "SELECT users.id FROM public.users WHERE NOT (users.id NOT IN (SELECT memberships.user_id " \
-      "FROM public.memberships))",
-    "the NOT IN is in the select list" =>
-      "SELECT users.id NOT IN (SELECT memberships.user_id FROM public.memberships) FROM public.users",
-    "the NOT IN is in a join's ON" =>
-      "SELECT users.id FROM public.users JOIN public.groups ON users.id NOT IN " \
-      "(SELECT memberships.user_id FROM public.memberships)",
-    "the NOT IN is in a subquery" =>
-      "SELECT g.id FROM public.groups g WHERE EXISTS (SELECT 1 FROM public.users WHERE users.id NOT IN " \
-      "(SELECT memberships.user_id FROM public.memberships))",
-    "the query is a UNION" =>
-      "SELECT users.id FROM public.users WHERE users.id NOT IN (SELECT memberships.user_id FROM public.memberships) " \
-      "UNION ALL SELECT groups.id FROM public.groups",
     "the tested column isn't qualified" =>
       "SELECT users.id FROM public.users WHERE id NOT IN (SELECT memberships.user_id FROM public.memberships)",
     "the tested expression isn't a column" =>

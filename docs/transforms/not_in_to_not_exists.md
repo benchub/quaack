@@ -6,9 +6,15 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 ## What it does.
 
-`t.x NOT IN (SELECT s.y ...)`, a condition the `WHERE` ANDs, becomes `NOT EXISTS (... WHERE x = y)`, with the rest of the subquery as it was. A row works column by column: `(t.a, t.b) NOT IN (SELECT s.x, s.y ...)` becomes `NOT EXISTS (... WHERE a = x AND b = y)`. A `UNION` or `UNION ALL` of such SELECTs, nested any way, becomes one `NOT EXISTS` per branch, ANDed in the `NOT IN`'s place: `t.x NOT IN (SELECT s.y ... UNION SELECT r.z ...)` becomes `NOT EXISTS (... WHERE x = y) AND NOT EXISTS (... WHERE x = z)`. A subquery table under the name of an outer table the `NOT IN` tests gets a fresh alias. These are left alone:
+`t.x NOT IN (SELECT s.y ...)` becomes `NOT EXISTS (... WHERE x = y)`, with the rest of the subquery as it was. A row works column by column: `(t.a, t.b) NOT IN (SELECT s.x, s.y ...)` becomes `NOT EXISTS (... WHERE a = x AND b = y)`. A `UNION` or `UNION ALL` of such SELECTs, nested any way, becomes one `NOT EXISTS` per branch, ANDed in the `NOT IN`'s place: `t.x NOT IN (SELECT s.y ... UNION SELECT r.z ...)` becomes `NOT EXISTS (... WHERE x = y) AND NOT EXISTS (... WHERE x = z)`. A subquery table under the name of an outer table the `NOT IN` tests gets a fresh alias.
 
-- `<> ALL`.
+The `NOT IN` can sit anywhere in a SELECT of the statement: its `WHERE`, `HAVING`, select list, a `CASE`, a join's `ON`, under an `OR` or a `NOT`, in a subquery, a `FROM` subquery, a `WITH`, or in a branch of a `UNION`. It belongs to the nearest SELECT around it, whose `FROM` its columns must name. A `UNION` subquery becomes an `AND` of `NOT EXISTS` where the `NOT IN` was.
+
+`x <> ALL (SELECT y ...)` of one column means the same as `x NOT IN (SELECT y ...)` and gets the same rewrite, when Postgres's `<>` between the two columns is the negator of the `=` it would use. The rule asks the catalog: both operators must be `pg_catalog`'s and take exactly the columns' types, and the two columns must share a collation. A column of a domain type has no operator of its own, so it's refused. These are left alone:
+
+- A `<> ALL` of a row, any other `ALL` operator, and `ANY`.
+- A `NOT IN` in a SELECT with `GROUP BY ROLLUP`, `CUBE`, or `GROUPING SETS`, which fill a grouped column with NULL in the rows that total it.
+- A tested column that isn't a column of a table in the `FROM` of the SELECT the `NOT IN` is in, such as one of an enclosing query.
 - A row whose columns aren't all `name.column`.
 - A subquery, or a `UNION` branch, that selects a different number of columns.
 - A subquery, or a `UNION` branch, that has `GROUP BY`, `LIMIT`, or the like, or is a `VALUES` list.
@@ -20,7 +26,7 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 ## What it rests on.
 
-`x` and `y` not null, and neither table on the nullable side of an outer join. For a row, that's every column on both sides: Postgres compares the rows pair by pair, so a NULL in one pair makes the comparison unknown when the other pairs match. `NOT IN` drops that row and `NOT EXISTS` keeps it. For a `UNION`, it's every branch's selected columns: `x` is in a `UNION` when it's in one of its branches, so with no NULL anywhere, the `NOT EXISTS` of each branch, ANDed, agree with the `NOT IN`. One NULL in any branch makes `NOT IN` give no rows at all.
+`x` and `y` not null, and neither table on the nullable side of an outer join. That is also what makes the position safe. `NOT IN` gives NULL, not false, for a NULL `x`, or a NULL `y` in the subquery when `x` isn't found. A `WHERE` drops NULL and false alike, but a select list, a `CASE`, or `IS NULL` shows the difference, and `NOT EXISTS` gives true. With every column not null the condition is only true or false, so `NOT EXISTS` gives the same value wherever it sits. The exception is a grouping set, which makes a grouped column NULL in some rows, so the rule refuses it. For a row, that's every column on both sides: Postgres compares the rows pair by pair, so a NULL in one pair makes the comparison unknown when the other pairs match. `NOT IN` drops that row and `NOT EXISTS` keeps it. For a `UNION`, it's every branch's selected columns: `x` is in a `UNION` when it's in one of its branches, so with no NULL anywhere, the `NOT EXISTS` of each branch, ANDed, agree with the `NOT IN`. One NULL in any branch makes `NOT IN` give no rows at all.
 
 The rule also checks three things itself, which it doesn't state as assumptions:
 
