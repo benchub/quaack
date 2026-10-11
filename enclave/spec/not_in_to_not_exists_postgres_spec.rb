@@ -1047,4 +1047,34 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     expect(rows(original)).to eq([["7"], ["9"]])
     expect(rows(not_exists)).to eq([["10"], ["7"], ["9"]])
   end
+
+  # 20261010-12: Postgres needs a GROUP BY's, or a DISTINCT ON's and ORDER
+  # BY's, copies of an expression to match, so rewriting one copy of the
+  # NOT IN fails to plan. The rule refuses a NOT IN with a copy there.
+  it "refuses a NOT IN that a GROUP BY repeats" do
+    sql = "SELECT u.id NOT IN (SELECT m.user_id FROM public.memberships m), count(*) FROM public.users u " \
+          "GROUP BY u.id NOT IN (SELECT m.user_id FROM public.memberships m)"
+    expect(rows(sql)).to eq([%w[f 4], %w[t 1]])
+    expect(rewritten(sql)).to eq([])
+  end
+
+  it "refuses a NOT IN that DISTINCT ON and ORDER BY repeat" do
+    sql = "SELECT DISTINCT ON (u.id NOT IN (SELECT m.user_id FROM public.memberships m)) u.id FROM public.users u " \
+          "ORDER BY u.id NOT IN (SELECT m.user_id FROM public.memberships m), u.id"
+    expect(rows(sql)).to eq([["1"], ["5"]])
+    expect(rewritten(sql)).to eq([])
+  end
+
+  it "still rewrites a NOT IN that only a GROUP BY holds" do
+    sql = "SELECT count(*) FROM public.users u GROUP BY u.id NOT IN (SELECT m.user_id FROM public.memberships m)"
+    expect(same_rows(sql, rewritten(sql))).to eq([["1"], ["4"]])
+  end
+
+  it "still rewrites each copy of a NOT IN that no GROUP BY, DISTINCT ON, or ORDER BY holds" do
+    sql = "SELECT u.id, u.id NOT IN (SELECT m.user_id FROM public.memberships m) FROM public.users u " \
+          "WHERE u.id NOT IN (SELECT m.user_id FROM public.memberships m)"
+    rewrites = rewritten(sql)
+    expect(rewrites.size).to eq(2)
+    expect(same_rows(sql, rewrites)).to eq([%w[5 t]])
+  end
 end
