@@ -17,6 +17,7 @@ require_relative "accountability"
 require_relative "plans"
 require_relative "stages"
 require_relative "funnel"
+require_relative "sankey"
 require_relative "providers"
 require_relative "usage"
 require_relative "failed_branches"
@@ -44,6 +45,7 @@ module Quaack
         include Plans
         include Stages
         include Funnel
+        include Sankey
         include Providers
         include Usage
         include FailedBranches
