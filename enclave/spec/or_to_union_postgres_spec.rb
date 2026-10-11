@@ -559,6 +559,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         CREATE TABLE public.pairdefer (a_id int, n int, PRIMARY KEY (a_id, n) DEFERRABLE);
         CREATE TABLE public.pairexpr (a_id int NOT NULL, t text NOT NULL);
         CREATE UNIQUE INDEX pairexpr_key ON public.pairexpr (a_id, pg_catalog.lower(t));
+        -- Without NULLS NOT DISTINCT, the not-null check alone refuses an
+        -- expression column (it has no NOT NULL), so only this reaches indexprs.
+        CREATE TABLE public.pairexprmid (a_id int NOT NULL, n int NOT NULL, t text NOT NULL);
+        CREATE UNIQUE INDEX pairexprmid_key ON public.pairexprmid (a_id, n, pg_catalog.lower(t)) NULLS NOT DISTINCT;
         CREATE DOMAIN public.num AS int;
         CREATE TABLE public.pairdomain (a_id int, n public.num, PRIMARY KEY (a_id, n));
         CREATE EXTENSION citext SCHEMA public;
@@ -632,6 +636,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
       "the only key's index is partial" => "pairpartial",
       "the only key is deferrable" => "pairdefer",
       "the only key's index has an expression" => "pairexpr",
+      "the only key's index has an expression after its columns, though it is NULLS NOT DISTINCT" => "pairexprmid",
       "a column of the only key is of a domain" => "pairdomain",
       "a column of the only key is citext" => "paircitext"
     }.each do |why, table|
