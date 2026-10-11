@@ -463,6 +463,8 @@ RSpec.describe "the statistics input" do
           .to raise_error(ArgumentError, /code/)
         expect { table({}, column_names: %w[id], column_types: { "id" => :int8 }) }
           .to raise_error(ArgumentError, /column_types/)
+        expect { table({}, column_names: %w[id], column_types: { "id" => "" }) }
+          .to raise_error(ArgumentError, /column_types/)
       end
     end
 
