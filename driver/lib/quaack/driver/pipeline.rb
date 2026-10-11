@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/rewrite_budget"
 require_relative "counterexamples"
 require_relative "enclave_error"
 require_relative "generator_three"
@@ -267,13 +268,22 @@ module Quaack
         # Whether the rewrite passed rewrite-test and counterexamples.
         def rewrite(transport, client, args, tested, progress, record) # rubocop:disable Metrics/ParameterLists
           passed = Pipeline.run_step(progress, tested, "rewrite-test") do
-            message(transport.call("rewrite-test", args:), "rewrite_test")["passed"]
+            message(transport.call("rewrite-test", args:), "rewrite_test").tap { out_of_time(progress, it) }["passed"]
           end
           return false unless tested || passed
 
           Pipeline.step(progress, "counterexamples") do
             survives_counterexamples?(transport, client, args, progress, record)
           end
+        end
+
+        # A rewrite whose test ran past its budget (Protocol::RewriteBudget)
+        # was left out, untested, and progress says so under its name.
+        def out_of_time(progress, message)
+          return unless message["rule"] == Protocol::RewriteBudget::RULE
+
+          progress.step_note("rewrite-test", "Couldn't test the rewrite within #{Protocol::RewriteBudget.minutes} " \
+                                             "minutes, so QUAACK left it out")
         end
 
         # Whether no round of counterexamples disproved the rewrite. Each

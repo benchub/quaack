@@ -221,6 +221,7 @@ module Quaack
       # trip (Pipeline), with no savepoint, so a statement costs no more
       # round trips or transaction IDs than it would on its own.
       def statement(sql, params, step:, rule:, index:)
+        Deadline.check!
         refuse_outside_transaction(rule, step, index, [PG::PQTRANS_INTRANS, PG::PQTRANS_INERROR])
         started, outcome = database(rule, step, index) do
           Pipeline.clocked(@connection, sql, params, @statement_timeout_ms)
@@ -282,6 +283,7 @@ module Quaack
   end
 end
 
+require_relative "deadline"
 require_relative "arena_runner/sequences"
 require_relative "arena_runner/transaction_status"
 require_relative "arena_runner/cancel"

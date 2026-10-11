@@ -8,6 +8,7 @@ require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
+require "quaack/protocol/rewrite_budget"
 require_relative "../enclave_error"
 require_relative "error_fields"
 require_relative "lexical"
@@ -183,14 +184,21 @@ module Quaack
         # fields it lists for it. A burndown must also pass
         # Protocol::Burndown.valid?, and a report's plans
         # Protocol::PlanNodes.valid? and its index_sources
-        # Protocol::IndexSources.valid?, as egress checks before sending either.
+        # Protocol::IndexSources.valid?, and a rewrite_test's rule
+        # Protocol::RewriteBudget.rule?, as egress checks before sending each.
         def message?(line)
           fields = FIELDS[line["type"]]
           return false unless fields && (line.keys - ["type"] - fields).empty?
 
+          typed?(line)
+        end
+
+        # The checks a message of line's type gets beyond its fields.
+        def typed?(line)
           case line["type"]
           when "burndown" then Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
           when "report" then report_plans?(line) && report_counts?(line) && hidden_statistics?(line)
+          when "rewrite_test" then Protocol::RewriteBudget.rule?(line["rule"])
           else true
           end
         end

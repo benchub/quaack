@@ -235,6 +235,12 @@ RSpec.describe Quaack::Enclave::Egress do
   end
 
   describe "a rewrite_test message" do
+    it "sends out_of_time, the budget's rule, for a rewrite that ran out of time (20261010-53)" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil,
+                             rule: "out_of_time")
+      expect(JSON.parse(out)).to include("rule" => "out_of_time", "passed" => false)
+    end
+
     it "sends the S1 load rule and row count, and drops other fields" do
       out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: nil, rule: nil,
                              s1_load_rule: "fixture_load_failed", s1_rows: 3, s1_nonzero_rows: 0,
@@ -253,7 +259,10 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a row count just above the cap", { s1_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
       ["a row count of a trillion", { s1_rows: 10**12 }],
       ["a string where the nonzero row count belongs", { s1_nonzero_rows: EGRESS_SENTINEL }],
-      ["a nonzero row count just above the cap", { s1_nonzero_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }]
+      ["a nonzero row count just above the cap",
+       { s1_nonzero_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
+      ["an error message as the rewrite's rule", { rule: "PG::Error: #{EGRESS_SENTINEL}" }],
+      ["a number as the rewrite's rule", { rule: 5 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a vacuity diagnostic"

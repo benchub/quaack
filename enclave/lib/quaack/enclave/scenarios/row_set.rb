@@ -2,6 +2,7 @@
 
 require "pg"
 require "pg_query"
+require_relative "../deadline"
 
 module Quaack
   module Enclave
@@ -73,6 +74,7 @@ module Quaack
         # False when the group collides or lacks a parent, and is left out.
         # Its rows are checked one at a time, each against the ones before.
         def add?(group_rows)
+          Deadline.check!
           fresh = group_rows.reject { |r| @rows.include?(r) }.uniq
           fresh.each_with_index do |r, i|
             next @rows.insert(r) unless collides?(r) || orphan?(r, group_rows)

@@ -42,7 +42,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
   end
   # Progress messages a call hands its block, by subcommand.
   let(:streamed) { {} }
-  # rewrite-test's passed, for each call in turn.
+  # rewrite-test's passed, or its whole message, for each call in turn.
   let(:tests) { [] }
 
   # Stands in for the ssh transport, at the edge. A reply may be a lambda
@@ -52,6 +52,10 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     s = streamed
     e = entries
     t = tests
+    tested = lambda do
+      test = t.shift
+      test.is_a?(Hash) ? test : { "type" => "rewrite_test", "passed" => test, "rule" => PROGRESS_SENTINEL }
+    end
     Class.new do
       define_method(:call) do |subcommand, input: nil, args: {}, **, &progress|
         index = args[:index]
@@ -59,7 +63,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
         messages = case subcommand
                    when "status" then [{ "type" => "status", "entries" => e }]
                    when "rewrite-test"
-                     [{ "type" => "rewrite_test", "passed" => t.shift, "rule" => PROGRESS_SENTINEL }]
+                     [tested.call]
                    else r.fetch(subcommand, []).then { it.respond_to?(:call) ? it.call(input) : it }
                    end
         Data.define(:messages).new(messages:)
@@ -283,6 +287,19 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       first = lines.index { it.end_with?("(#{step})") }
       last = lines.index { it.match?(/ in \d+s \(#{Regexp.escape(step)}\)\z/) }
       lines[first...last]
+    end
+
+    # Task 20261010-53: a rewrite whose test ran past its budget.
+    it "says, under the rewrite's name, that it couldn't be tested within 5 minutes and was left out" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "out_of_time" })
+
+      run
+
+      expect(lines_of("rewrite-correctness"))
+        .to eq(["Testing each rewrite for wrong results (rewrite-correctness)",
+                "#{name}: Testing the rewrite on generated rows (rewrite-test)",
+                "#{name}: Couldn't test the rewrite within 5 minutes, so QUAACK left it out (rewrite-test)"])
     end
 
     it "notes counterexample-payload and each counterexample-round under counterexamples" do
