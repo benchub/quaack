@@ -152,6 +152,24 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       )
     end
 
+    # 20261011-9: Postgres prints `status COLLATE "C" = 'failed'` as
+    # ((status)::text COLLATE "C" = 'failed'::text). A plain key wouldn't
+    # serve a comparison in another collation, so the conjunct is never an
+    # equality key column or a partial predicate, and nothing raises.
+    it "proposes nothing for a filter whose only equality is under COLLATE, and doesn't raise" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND (((status)::text COLLATE \"C\") = 'failed'::text))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([])
+    end
+
+    it "never keys a COLLATE conjunct's column as an equality, or makes the conjunct a partial predicate" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents = 5100) AND (((status)::text COLLATE \"C\") = 'failed'::text))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq(
+        [btree("orders", "total_cents"), btree("orders", "status", " WHERE total_cents = 5100")]
+      )
+    end
+
     it "makes no partial index on a column with no pg_stats row" do
       no_status = orders_stats.with(columns: orders_stats.columns.except("status"))
       stats = enclave::Statistics.new(tables: [no_status, customers_stats])

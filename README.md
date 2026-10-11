@@ -838,6 +838,7 @@ In version 1, QUAACK refuses these, rather than give an answer it can't back up:
 - **Production older than Postgres 17.**
 - **Queries that already use `$1`-style parameters.** Capture the query with its real values.
 - **A shadowed `=` for a `denormalized_equal` assumption.** QUAACK checks that assumption with `pg_catalog`'s `=`. If your application's role has another `=` with the same signature ahead of `pg_catalog` on its `search_path`, such as `public.=(text, text)`, your queries use that one and the check doesn't. QUAACK doesn't look for this setup, so a rewrite could rest on an equality your application never runs.
+- **Index ideas from a plan's `COLLATE` filters.** When the captured plan filters a column with `COLLATE`, such as `WHERE name COLLATE "C" = 'x'`, QUAACK doesn't build an index idea from that condition, since a plain index wouldn't serve a comparison in another collation. It still builds ideas from the query's own text, which reads `COLLATE`, and from the plan's other conditions.
 - **Clock-reading column defaults cast to a domain or an array type.** QUAACK anchors a default such as `now()` or `('today'::text)::date`, so test inserts get the run's time. It doesn't anchor `('today'::text)::public.clock_date` or `('{today}'::text)::date[]`, which still read the wall clock.
 
 Some limits are in the design itself:
