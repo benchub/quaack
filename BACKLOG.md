@@ -17,7 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-50: the vacuity-guard search's only budget is its trial count (150 per atom, 300 per query), never the clock.
 - 20261010-6: the error line no longer carries a `cycle` field (removed from the whitelist, enclave ErrorFilter, and driver ErrorFields/EnclaveError).
 - 20261010-53: each rewrite's rewrite-test has a 5-minute wall-clock budget; a rewrite that runs out of time is left out as `out_of_time` (new protocol `RewriteBudget`).
-- 20261008-57: rewrite-check and rewrite-rules dedupe stored rewrites on SQL and stated assumptions together (pending review).
+- 20261008-57: rewrite-check and rewrite-rules dedupe stored rewrites on SQL and stated assumptions together .
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -488,6 +488,7 @@ Split from 20260924-25, with that task's review findings:
 - **Depends on:** 20261002-2.
 - **Came from:** The build and review of 20261002-2, 2026-10-08.
 - **Design:** rewrite-rules, report.
+- **Landed so far:** items 2, 3 and 4, 2026-10-11 (task/20261008-57; Opus review clean). Item 2: `RewriteStage.run` returns the status entries it read after rewrite-rules, llm-rewrites and operator-rewrites, and the later stages use them (no second `status` call; the guard stays). Item 3: stored rewrites dedupe on the SQL and the stated assumptions together, so the same SQL with different assumptions gets its own entry (DESIGN.md, rewrite-rules). Item 4 was already done. Open: item 1 (needs a counting decision: count a rule rewrite that fails the checks in `failed_checks`, in plan-pruning's drops, or both labelled as overlapping).
 - **Status:** todo
 
 ### 20261008-60. Foreign cancels on BEGIN and ROLLBACK: DESIGN.md and a Postgres test.
@@ -840,4 +841,13 @@ Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized 
 - **Depends on:** 20261010-53 (landed).
 - **Came from:** The review of 20261010-53, 2026-10-11 (minor).
 - **Design:** rewrite-test, burndown.
+- **Status:** todo
+
+### 20261011-11. Rewrite dedupe: normalize the stated assumptions, and say what happens to the same SQL with different assumptions.
+
+From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the stated assumptions as the raw array the LLM sent, so the same assumptions in another order or with trivially different text become a separate entry that gets its own rewrite-test, counterexamples, burndown count and report row (two rewrites that look the same). A rerun of the same input is unaffected. Compare a sorted, normalized form (strip and collapse whitespace, sort) so reordering dedupes. Also say in DESIGN.md whether two entries with the same SQL and really different assumptions are both tested and ranked (extra time and LLM calls, the same SQL twice in the report) or whether the report groups them. Enclave change.
+
+- **Depends on:** 20261008-57 (landed).
+- **Came from:** The review of 20261008-57, 2026-10-11 (minor).
+- **Design:** rewrite-rules, report.
 - **Status:** todo
