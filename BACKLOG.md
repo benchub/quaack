@@ -397,21 +397,6 @@ From the reviews of 20260924-7.
 
 ### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-24. index-from-query: incremental sort, derived-table reduction, and whole-row reads.
-
-The builder of 20260923-21 left these items out:
-
-1. **Incremental sort isn't handled.** This one is large.
-2. **INCLUDE beyond the select list and GROUP BY.** DESIGN.md step 5 limits INCLUDE to those two on purpose, so changing it is a design question for the user.
-3. **No join reduction through derived-table columns.** In `o LEFT JOIN (subquery) s ... WHERE s.x = 1`, the strict WHERE on the subquery's column doesn't reduce the join, because subquery columns aren't tracked.
-4. **Whole-row references.** `SELECT o FROM public.orders o` isn't counted as reading every column, so an INCLUDE could look covering when it isn't.
-
-- **Depends on:** 20260923-21.
-- **Came from:** The builder of 20260923-21, 2026-10-08.
-- **Design:** index-from-query.
-- **Landed so far:** items 3 and 4, 2026-10-10 (task/20261008-24; review clean). Item 3: a FROM subquery with an alias is a member of the join's sides, so a strict conjunct on a column qualified by that alias (a bare column or a COLLATE-wrapped one under a plain operator) counts as rejecting the subquery and reduction cascades through its ON equality (`coalesce`, `IS NULL`, `IS DISTINCT FROM`, OR with another condition, NOT and function calls don't reduce); unqualified subquery columns aren't tracked. Item 4: a whole-row reference (`SELECT o`, `to_jsonb(o)`, `o IS NOT NULL`, GROUP BY o, ORDER BY o) reads every column of that table; a bare name that is a column of a table in the query still reads as the column. On the unreleased list. Still open: item 1 (incremental sort: large, its own task) and item 2 (INCLUDE beyond the select list and GROUP BY: DESIGN.md limits INCLUDE on purpose, so it needs the user's call). Minor finding: 20261010-14.
-- **Status:** todo
-
 ### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-26. NATURAL JOIN marker: minors from 20260923-30. Done, see BACKLOG-COMPLETE.md.
