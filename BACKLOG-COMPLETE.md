@@ -10540,3 +10540,12 @@ Rendering: inline SVG generated in Ruby, like the funnel (no JavaScript or exter
 - **Design:** report, burndown.
 - **Decided by the user (2026-10-11):** the Sankey goes in before the next version bump. Start now.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-45; driver only, two rounds with the user looking at screenshots). Each burndown subsection keeps the funnel and adds, per unit, an inline-SVG Sankey diagram with the exact-numbers table under it: stages run top to bottom; each source of new items is a flat bar in its own lane to the LEFT of the main stack and its ribbon merges into the layer below; consecutive stages that only add (no drops of their own, taking in what the previous sent on) merge into one layer with several sources (the query's text and plan become "Mechanical index ideas"); drops and held-back counts leave as labelled vertical segments on the right; layers carry one fixed label that reads as the state after them with the count at the end (`sankey_layers.rb`), and the "came in / added / went on" text is left to the tooltips and the table. Removing the funnel is a separate later task if the user wants it.
+
+### 20261011-9. Document COLLATE filters as unsupported in v1 for index-from-plan.
+
+From 20261008-21 (the COLLATE half, dropped 2026-10-11 under the narrow v1 profile). An index key on a column compared with `COLLATE` only helps when the index's collation matches the query's, and generator two passes key columns as plain name strings, so a COLLATE filter proposes no index: a clean, safe refusal. Add it to README's "What QUAACK won't do" list and to the matching DESIGN.md index-from-plan text; verify by reading the code (and one quick check through the existing spec or a small one) that a `WHERE col COLLATE "C" = 'x'` filter proposes nothing and doesn't raise. No other code change.
+
+- **Depends on:** None.
+- **Came from:** The decision on 20261008-21, 2026-10-11.
+- **Design:** index-from-plan.
+- **Status:** **done.** Landed 2026-10-11 (task/20261011-9): README's "won't do" list and DESIGN.md's index-from-plan text say a COLLATE filter isn't used as an index key or partial predicate (its conjunct parses as `:other`); two generator-two specs pin that it proposes nothing and doesn't raise (they go red if the code unwraps COLLATE). The docs state the nuance: when the plan's other conditions justify an index, the COLLATE column can still appear as a trailing plain key, a harmless extra candidate that index-test finds unused.
