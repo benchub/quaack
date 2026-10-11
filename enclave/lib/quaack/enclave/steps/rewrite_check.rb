@@ -93,9 +93,11 @@ module Quaack
         # takes them. If it gives nil, nothing is recorded: that's how
         # rewrite-rules, run again, says an earlier call recorded them all.
         #
-        # A survivor whose accepted SQL an earlier call of the same source
-        # already stored (stored) keeps that entry, and nothing new is
-        # written for it. That's how rewrite-rules and rewrite-check, run again
+        # A survivor whose accepted SQL and stated assumptions an earlier call
+        # of the same source already stored (stored) keeps that entry, and
+        # nothing new is written for it. The same SQL with other assumptions
+        # is stored as a rewrite of its own, so no call's assumptions are lost.
+        # That's how rewrite-rules and rewrite-check, run again
         # after a call that died before its marker, store no rewrite twice.
         def check(store, source:, also: ->(*) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
@@ -147,7 +149,7 @@ module Quaack
 
         def outcome(index, rewrite, context)
           sql, types, warnings = checked(index, rewrite, context)
-          name = context[:stored].delete(sql) || save(context, rewrite, sql, types, warnings)
+          name = context[:stored].delete([sql, rewrite["assumptions"]]) || save(context, rewrite, sql, types, warnings)
           [{ type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }, nil]
         rescue RewriteCandidateCheck::Error, ClockAnchoring::Error, Rejected => e
           [rejected(index, e.rule), RewriteBurndown.stage(e)]
@@ -220,7 +222,7 @@ module Quaack
         end
       end
 
-      # { accepted SQL => entry name } for the rewrites of source the store
+      # { [accepted SQL, assumptions] => entry name } for the rewrites of source the store
       # already holds, the earliest of each, for RewriteCheck.check.
       module StoredRewrites
         module_function
@@ -229,7 +231,7 @@ module Quaack
           names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
           names.each_with_object({}) do |name, found|
             entry = store.read(name)
-            found[entry["sql"]] ||= name if entry["source"] == source
+            found[entry.values_at("sql", "assumptions")] ||= name if entry["source"] == source
           end
         end
       end

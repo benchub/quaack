@@ -145,6 +145,8 @@ module Quaack
       # 2. plan-pruning, for each stored rewrite_<n> in order: index-search,
       #    index-rank, and rewrite-prune, each skipped when its output is
       #    stored.
+      # It returns the entries: those status gave after the three, if any ran,
+      # so CounterexampleStage needn't ask status again.
       module RewriteStage
         # Each plan-pruning sub-step's name, its subcommand, and the entry it
         # stores, less the rewrite's number.
@@ -164,6 +166,7 @@ module Quaack
               prune(transport, run_id, entries, number, Pipeline.within(progress, run_id, number))
             end.to_a
           end
+          entries
         end
 
         # entries, asked again if rewrite-rules, llm-rewrites, or operator-rewrites still had to run, after
@@ -234,8 +237,9 @@ module Quaack
         end
       end
 
-      # DESIGN.md rewrite-test and counterexamples, after plan-pruning. If rewrite-rules, llm-rewrites, or
-      # operator-rewrites ran in this run, it asks status again, for the rewrites it stored. For each stored
+      # DESIGN.md rewrite-test and counterexamples, after plan-pruning. It takes the entries RewriteStage
+      # returned, which name the rewrites stored this run; it asks status only if they still say
+      # rewrite-rules, llm-rewrites, or operator-rewrites hasn't run. For each stored
       # rewrite_<n> not yet decided (rewrite_survived_<n>): rewrite-test, unless it's stored (rewrite_tested_<n>),
       # and, if the rewrite passed, the three llm-counterexamples to counterexample-rollback rounds (Counterexamples)
       # on counterexample-payload, each round a numbered counterexample-round. The enclave records survival. It
@@ -579,7 +583,10 @@ module Quaack
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
         set_up(setup, entries)
-        [*STAGES, MeasurementStage].each { it.run(**options(entries)) }
+        [*STAGES, MeasurementStage].each do |stage|
+          ran = stage.run(**options(entries))
+          entries = ran if stage == RewriteStage
+        end
         ReportStage.run(**options(entries))
       end
 
