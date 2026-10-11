@@ -14,6 +14,7 @@ The `NOT IN` can sit anywhere in a SELECT of the statement: its `WHERE`, `HAVING
 
 - A `<> ALL` of a row, any other `ALL` operator, and `ANY`.
 - A `NOT IN` in a SELECT with `GROUP BY ROLLUP`, `CUBE`, or `GROUPING SETS`, which fill a grouped column with NULL in the rows that total it.
+- A `NOT IN` that appears again, identical, in the same SELECT, when a copy sits in its `GROUP BY`, `DISTINCT ON`, or `ORDER BY`. Postgres needs those copies to match (a select list's copy must match the `GROUP BY`'s, and `DISTINCT ON` must match the start of `ORDER BY`), so rewriting one copy would fail to plan. The rule gives one rewrite per copy and doesn't rewrite them together (20261010-12).
 - A tested column that isn't a column of a table in the `FROM` of the SELECT the `NOT IN` is in, such as one of an enclosing query.
 - A row whose columns aren't all `name.column`.
 - A subquery, or a `UNION` branch, that selects a different number of columns.

@@ -151,9 +151,23 @@ module Quaack
         # a tested grouped column NULL in a row of its own. A <> ALL also
         # tests one column, not a row, whose <> is the negation of =.
         def order_proof(found)
-          Tree.find(found.owner.group_clause, PgQuery::GroupingSet).empty? &&
+          Tree.find(found.owner.group_clause, PgQuery::GroupingSet).empty? && !repeated?(found) &&
             (found.link.sub_link_type == :ANY_SUBLINK || tested(found.link).size == 1)
         end
+
+        # Whether the SELECT holds another copy of the NOT IN and one copy
+        # is in its GROUP BY, DISTINCT ON, or ORDER BY, where Postgres needs
+        # the copies to match: rewriting one would make the query fail to plan.
+        def repeated?(found)
+          select = found.owner
+          link = unlocated(found.link)
+          copies = ->(node) { Tree.find_all(node, PgQuery::SubLink).count { unlocated(it) == link } }
+          clauses = [select.group_clause, select.distinct_clause, select.sort_clause]
+          copies.call(select) > 1 && clauses.any? { copies.call(it).positive? }
+        end
+
+        # A copy of node with every location cleared, to compare.
+        def unlocated(node) = Deparse.copy(node).tap { Deparse.clear_locations(it) }
 
         # The rewrite's assumptions, if the catalog proves them and NOT
         # EXISTS compares as NOT IN does, or nil.
