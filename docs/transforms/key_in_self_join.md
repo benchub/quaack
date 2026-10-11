@@ -1,24 +1,24 @@
 # key_in_self_join.
 
-An IN subquery that reads the outer table again by a unique, not-null key becomes that table's own predicates, and an EXISTS on what's left of the subquery.
+The rule changes an IN subquery that reads the outer table again by a unique, not-null key. The result is the predicates of that table, and an EXISTS on what remains of the subquery.
 
 It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 
-`t.k IN (SELECT t2.k FROM t t2 ... WHERE P)`, where the subquery reads the outer table again by a key: drop the inner `t2`, move its predicates to the outer `t`, and leave an `EXISTS` on what's left of the subquery, correlated on `t.k`. With nothing left, only the predicates remain. Each arm of a `UNION ALL` in the subquery is handled on its own, and the arms are joined with `OR`.
+The rule applies to `t.k IN (SELECT t2.k FROM t t2 ... WHERE P)`, where the subquery reads the outer table again by a key. The rule removes the inner `t2`, and moves its predicates to the outer `t`. It keeps an `EXISTS` on what remains of the subquery, correlated on `t.k`. If nothing remains, only the predicates remain. The rule handles each arm of a `UNION ALL` in the subquery separately, and joins the arms with `OR`.
 
 ## What it rests on.
 
-`k` unique and not null. The rule fires only when it can prove this, and it states the catalog facts it relies on as assumptions, which assumption-check checks again like anyone else's.
+The rule needs `k` to be unique and not null. The rule applies only when it can prove this. It states the catalog facts that it relies on as assumptions. assumption-check checks these assumptions again, as it checks all other assumptions.
 
-Here it states: `public.users (id)` is unique; `public.users.id` is not null.
+Here, the rule states: `public.users (id)` is unique; `public.users.id` is not null.
 
 ## Example.
 
-An `IN` subquery that reads `users` again by its primary key. The rule moves the subquery's filter on `users` to the outer `users`, and leaves an `EXISTS` on `enrollments`.
+This example has an `IN` subquery that reads `users` again by its primary key. The rule moves the subquery's filter on `users` to the outer `users`. It keeps an `EXISTS` on `enrollments`.
 
-QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs, so the example shows them that way. The rule made this "after" on Postgres 18, from these tables:
+QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs. Thus the example shows the constants as placeholders. The rule made this "after" on Postgres 18, from these tables:
 
 ```sql
 CREATE TABLE public.users (id bigint PRIMARY KEY, name text, workflow_state text NOT NULL);
