@@ -20,21 +20,64 @@ module Quaack
       # columns, so RowSets that share it, as a build's do, ask Postgres
       # once per distinct value.
       class RowSet
+        # The rows, in an insertion-ordered Hash per table, and each key a
+        # check looks up (a unique key, an expression index's keys, a foreign
+        # key's parent columns) in a Hash from key to the rows that hold it,
+        # built the first time it's needed, so a check costs the same however
+        # many rows there are (task 20261011-4). key computes a row's key of
+        # a kind (a column list or an expression index).
+        class Table
+          def initialize(&key)
+            @key = key
+            @rows = Hash.new { |h, k| h[k] = {} }
+            @indexes = Hash.new { |h, k| h[k] = {} }
+          end
+
+          def include?(row) = @rows[row.table].key?(row)
+
+          def rows(table) = @rows[table].keys
+
+          def insert(row)
+            @rows[row.table][row] = true
+            @indexes[row.table].each { |kind, index| (index[@key.call(row, kind)] ||= {})[row] = true }
+          end
+
+          def remove(row)
+            @rows[row.table].delete(row)
+            @indexes[row.table].each do |kind, index|
+              found = @key.call(row, kind)
+              index[found].delete(row)
+              index.delete(found) if index[found].empty?
+            end
+          end
+
+          # The rows of table whose key of kind is wanted, in the order they
+          # came, or nil when there are none.
+          def holding(table, kind, wanted)
+            index = @indexes[table].fetch(kind) do
+              @indexes[table][kind] = {}.tap do |built|
+                @rows[table].each_key { |r| (built[@key.call(r, kind)] ||= {})[r] = true }
+              end
+            end
+            index[wanted]
+          end
+        end
+
         def initialize(schema, conn, evaluated = {})
           @schema = schema
           @conn = conn
-          @rows = Hash.new { |h, k| h[k] = [] }
+          @rows = Table.new { |row, kind| kind.is_a?(Array) ? values(row, kind) : evaluate(row, kind) }
           @evaluated = evaluated
         end
 
         # False when the group collides or lacks a parent, and is left out.
         # Its rows are checked one at a time, each against the ones before.
         def add?(group_rows)
-          fresh = group_rows.reject { |r| @rows[r.table].include?(r) }.uniq
+          fresh = group_rows.reject { |r| @rows.include?(r) }.uniq
           fresh.each_with_index do |r, i|
-            next @rows[r.table] << r unless collides?(r) || orphan?(r, group_rows)
+            next @rows.insert(r) unless collides?(r) || orphan?(r, group_rows)
 
-            fresh.first(i).each { @rows[it.table].delete(it) }
+            fresh.first(i).each { @rows.remove(it) }
             return false
           end
           true
@@ -60,21 +103,21 @@ module Quaack
         # lifted: a near miss pinned to the hit's parent key brings its own
         # parent of that key, and both can't share a fixture.
         def parents_of(rows)
-          found = []
+          found = {}
+          own = rows.to_h { [it, true] }
           queue = rows.dup
           while (row = queue.shift)
             outside_parents(row, rows).each do |parent|
-              next if found.include?(parent) || rows.include?(parent)
+              next if found.key?(parent) || own.key?(parent)
 
-              found << parent
-              queue << parent
+              queue << found.store(parent, parent)
             end
           end
-          found
+          found.keys
         end
 
         # The rows, table by table.
-        def in_order(tables) = tables.flat_map { |t| @rows[t] }
+        def in_order(tables) = tables.flat_map { @rows.rows(it) }
 
         private
 
@@ -89,7 +132,7 @@ module Quaack
 
         def parent(row, key)
           wanted = values(row, key.columns)
-          @rows[key.parent].find { values(it, key.parent_columns) == wanted } unless wanted.any?(&:nil?)
+          @rows.holding(key.parent, key.parent_columns, wanted)&.first&.first unless wanted.any?(&:nil?)
         end
 
         # A foreign key with a NULL column checks nothing (MATCH SIMPLE).
@@ -104,18 +147,18 @@ module Quaack
         def collides?(row)
           constraints = @schema.constraints(row.table)
           constraints.uniques.any? do |columns|
-            clash?(row, constraints.nulls_not_distinct.include?(columns)) { |r| values(r, columns) }
+            clash?(row, columns, constraints.nulls_not_distinct.include?(columns))
           end || constraints.expressions.any? do |index|
-            clash?(row, index.nulls_not_distinct) { |r| evaluate(r, index) }
+            clash?(row, index, index.nulls_not_distinct)
           end
         end
 
-        def clash?(row, nulls_collide)
-          key = yield(row)
-          return true if key == :error
-          return false if key.any?(&:nil?) && !nulls_collide
+        def clash?(row, kind, nulls_collide)
+          wanted = kind.is_a?(Array) ? values(row, kind) : evaluate(row, kind)
+          return true if wanted == :error
+          return false if wanted.any?(&:nil?) && !nulls_collide
 
-          @rows[row.table].any? { |other| yield(other) == key }
+          !@rows.holding(row.table, kind, wanted).nil?
         end
 
         def values(row, columns) = columns.map { |c| row.columns.index(c)&.then { |i| row.values[i] } }
