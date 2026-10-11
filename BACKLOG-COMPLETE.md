@@ -10429,3 +10429,12 @@ Two decisions that need only documentation. (1) From 20261010-11, the user (2026
 - **Came from:** The review of 20261003-5, 2026-10-09.
 - **Design:** report.
 - **Status:** **done.** Landed 2026-10-11 (task/20261009-3): `IndexSources#ignored` drops the redundant `result["refusal"] ||` clause (a refused result has no plans, so `kept?` is already false; no behavior change, so no unreleased-list entry), and a Postgres spec runs the real `quaacks index-search` on a two-table query with an existing index and checks the existed and ignored counts.
+
+### 20261010-1. `shared_scan_cte` GROUP BY widening: an untested guard.
+
+From the review of 20261003-28 (minor). The `ref.fields.size == 2` check in `Grouping#read_columns` (`enclave/lib/quaack/enclave/rewrite_rules/shared_scan_cte/grouping.rb`) survives mutation: no test covers it. A related case: a nested subquery that reuses the copy's alias can make the rule add that subquery's column to the outer GROUP BY (harmless or refused by the prepare check, but untested). Add a test per case that goes red without the guard, and run both rewrites against Postgres to confirm equal rows. Enclave change: unreleased list.
+
+- **Depends on:** 20261003-28.
+- **Came from:** The review of 20261003-28, 2026-10-10 (minor).
+- **Design:** rewrite-rules.
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-1; spec-only): a spec where a select-list subquery reuses the alias `s` on its own table and reads `s.user_id`; the rows match the original's, and it goes red if the rule skips select-list subqueries when collecting the columns to add. The `ref.fields.size == 2` guard half was dropped: no realistic query reaches it (a bare name matching a copy alias is refused earlier as a whole-row read in `Copies#whole_row?`, and three-field refs are `schema.table.column`). The guard stays as fail-closed defense.

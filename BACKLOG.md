@@ -600,15 +600,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-1. `shared_scan_cte` GROUP BY widening: an untested guard.
-
-From the review of 20261003-28 (minor). The `ref.fields.size == 2` check in `Grouping#read_columns` (`enclave/lib/quaack/enclave/rewrite_rules/shared_scan_cte/grouping.rb`) survives mutation: no test covers it. A related case: a nested subquery that reuses the copy's alias can make the rule add that subquery's column to the outer GROUP BY (harmless or refused by the prepare check, but untested). Add a test per case that goes red without the guard, and run both rewrites against Postgres to confirm equal rows. Enclave change: unreleased list.
-
-- **Depends on:** 20261003-28.
-- **Came from:** The review of 20261003-28, 2026-10-10 (minor).
-- **Design:** rewrite-rules.
-- **Status:** todo
-
 ### 20261010-2. rewrite-test fixtures: a row of another class with the copy set.
 
 From 20261004-9's second paragraph and its review (a "Consider", left out of that task). `polymorphic_key_copy` rewrites a join through a denormalized copy (a column that holds a parent's id for rows of one class). The fixtures keep the copy equal for rows of the class, but nothing adds a row of ANOTHER class with the copy column set, so a twin of the rule that drops the type filter would pass rewrite-test. Make the fixture builder add such a row (a row of another class whose copy column is set, and one with no parent) when the schema has a polymorphic copy, test with a hand-written twin that drops the type filter (it must be disproved) and the real rule (it must pass), keep every row valid under the schema's constraints, and update DESIGN.md. A reviewer noted the fixture UPDATE that restores the copy also fires user triggers on the child table, which could change other columns (an unusual setup): check and note it. Enclave change: unreleased list.
