@@ -1,22 +1,48 @@
 # union_outer_filter_removal.
 
-A WHERE conjunct on a UNION subquery's columns is removed when every arm's WHERE already applies it to the column it outputs.
+The rule removes a WHERE conjunct on the columns of a UNION subquery. It does this when the WHERE of every arm already applies the conjunct to the column that the arm outputs.
 
 It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 
-A top-level `WHERE` conjunct that reads only one `UNION` or `UNION ALL` subquery's output columns, qualified by its alias, is dropped when every arm's top-level `WHERE` holds the same conjunct on the columns that arm outputs in those positions. The literal oracle decides whether two placeholders match; no value is read. Every row an arm outputs passed its `WHERE`, `GROUP BY`, `DISTINCT ON`, `ORDER BY`, and `LIMIT` only pick among those rows, and `UNION` keeps one of each set of equal rows, so the outer conjunct already holds on every row. An arm column must be a qualified column of a table in the catalog, or a `*` it can expand from the catalog, and each position's columns must match in type and collation, so `UNION` casts nothing. It runs after `cte_hoist_dedupe`, so a conjunct's subquery reads the one shared top-level CTE. A conjunct with a subquery matches only if Postgres can analyze it under the top-level `WITH` alone, it writes no bare name that is also the name of a FROM item in it (which reads an outer column of that name in the outer query and another column, or a whole row, in an arm), and no arm's nearer `WITH` hides a CTE it reads. It refuses a conjunct that calls a volatile function, a `LATERAL` or column-aliased `UNION` subquery or arm table, a `UNION` on an outer join's nullable side, an `INTERSECT` or `EXCEPT` anywhere in it, an arm with grouping sets, and an arm column read from a CTE or subquery. Only that conjunct goes, so the outer `GROUP BY` and `HAVING` stay as they were.
+The rule drops a top-level `WHERE` conjunct when these conditions are true:
+
+- The conjunct reads only the output columns of one `UNION` or `UNION ALL` subquery, qualified by the alias of that subquery.
+- The top-level `WHERE` of every arm holds the same conjunct, on the columns that the arm outputs in those positions.
+
+The literal oracle decides whether two placeholders match. The rule reads no value.
+
+Every row that an arm outputs passed the `WHERE` of that arm. `GROUP BY`, `DISTINCT ON`, `ORDER BY`, and `LIMIT` only select among those rows. `UNION` keeps one row from each set of equal rows. Thus the outer conjunct already holds on every row.
+
+Each arm column must be a qualified column of a table in the catalog, or a `*` that the rule can expand from the catalog. The columns in each position must match in type and collation, so that `UNION` casts nothing.
+
+The rule runs after `cte_hoist_dedupe`, so a subquery in a conjunct reads the one shared top-level CTE. A conjunct with a subquery matches only if all of these conditions are true:
+
+- Postgres can analyze the conjunct with only the top-level `WITH`.
+- The conjunct writes no bare name that is also the name of a FROM item in it. Such a name reads an outer column of that name in the outer query, but another column, or a whole row, in an arm.
+- No nearer `WITH` of an arm hides a CTE that the conjunct reads.
+
+The rule refuses:
+
+- a conjunct that calls a volatile function,
+- a `LATERAL` or column-aliased `UNION` subquery or arm table,
+- a `UNION` on the nullable side of an outer join,
+- an `INTERSECT` or `EXCEPT` anywhere in the `UNION` subquery,
+- an arm with grouping sets, and
+- an arm column read from a CTE or subquery.
+
+The rule removes only that conjunct. Thus the outer `GROUP BY` and `HAVING` do not change.
 
 ## What it rests on.
 
-No assumption. Its output returns the same rows as its input on any data the schema allows.
+The rule makes no assumption. Its output returns the same rows as its input, on any data that the schema allows.
 
 ## Example.
 
-A filter on a `UNION` subquery's column that every arm already applies. The three placeholders hold the same literal, so the outer filter goes.
+This example has a filter on a column of a `UNION` subquery, and every arm already applies that filter. The three placeholders hold the same literal, so the rule removes the outer filter.
 
-QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs, so the example shows them that way. The rule made this "after" on Postgres 18, from these tables:
+QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs. Thus the example shows the constants as placeholders. The rule made this "after" on Postgres 18, from these tables:
 
 ```sql
 CREATE TABLE public.users (id bigint PRIMARY KEY, name text, workflow_state text NOT NULL);
