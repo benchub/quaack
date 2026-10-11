@@ -130,8 +130,9 @@ module Quaack
         HOW = {
           "searched" => "QUAACK also tried 150 small made-up databases for it and found none where it changes " \
                         "the result.",
-          "not_searched" => "QUAACK ran out of search time, or the query calls a function whose results change " \
-                            "from run to run, before it tried small made-up databases for it in full."
+          "not_searched" => "QUAACK didn't search small made-up databases for it in full: it ran out of search " \
+                            "time, or the query has a LIMIT or OFFSET, compares a count with a number, or calls a " \
+                            "function whose results change from run to run."
         }.freeze
 
         # The conditions of the original query that rewrite-test's made-up rows never

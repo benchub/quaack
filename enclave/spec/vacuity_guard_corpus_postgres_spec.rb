@@ -12,6 +12,12 @@ require "quaack/enclave/vacuity_guard"
 # must equal its allow-list exactly. Each allowed atom carries why it's
 # allowed: truly redundant, or provably untestable on any fixture.
 #
+# Each shape runs with vacuity-guard's search (20261010-43) behind the
+# rule-based scenarios. closed_by_search names the atoms the rules alone
+# leave untested and the search closes: "closed by the search" pins them
+# with the search off, and the corpus goes red for them if the search stops
+# closing them.
+#
 # PENDING names the shapes that today leave a non-redundant atom untested.
 # Each pins today's untested set exactly, so a fix (or a regression that
 # changes it) turns it red; then move the shape to SHAPES. Each names a
@@ -140,10 +146,12 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "WHERE fx.comments.id IS NOT NULL AND fx.posts.published = true", allowed: {} },
     { name: "correlated scalar subquery, no aggregate",
       sql: "SELECT u.id FROM fx.users u WHERE (SELECT p.score FROM fx.posts p WHERE p.user_id = u.id) > 3",
-      allowed: {} },
+      allowed: {},
+      closed_by_search: ["p.user_id = u.id"] },
     { name: "correlated scalar subquery, no aggregate, equality",
       sql: "SELECT p.id FROM fx.posts p WHERE (SELECT c.user_id FROM fx.comments c WHERE c.post_id = p.id) = 3",
-      allowed: {} },
+      allowed: {},
+      closed_by_search: ["c.post_id = p.id"] },
     { name: "two NOT EXISTS on one parent, child table first",
       sql: "SELECT u.id FROM fx.users u WHERE NOT EXISTS (SELECT 1 FROM fx.posts p WHERE p.user_id = u.id) " \
            "AND NOT EXISTS (SELECT 1 FROM fx.users e WHERE e.manager_id = u.id)", allowed: {} },
@@ -189,7 +197,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "WHERE m.active = true AND e.active = false", allowed: {} },
     { name: "comment author and post author join",
       sql: "SELECT fx.comments.id FROM fx.comments JOIN fx.posts ON fx.posts.id = fx.comments.post_id " \
-           "WHERE fx.comments.user_id = fx.posts.user_id", allowed: {} },
+           "WHERE fx.comments.user_id = fx.posts.user_id", allowed: {},
+      closed_by_search: ["fx.posts.id = fx.comments.post_id", "fx.comments.user_id = fx.posts.user_id"] },
     { name: "join on composite unique",
       sql: "SELECT fx.users.id FROM fx.users JOIN fx.memberships ON fx.memberships.user_id = fx.users.id " \
            "WHERE fx.memberships.group_name = 'g1' AND fx.memberships.kind = 'owner'", allowed: {} },
@@ -221,7 +230,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "WHERE fx.comments.post_id = fx.posts.id)", allowed: {} },
     { name: "scalar subquery in WHERE",
       sql: "SELECT * FROM fx.posts WHERE fx.posts.score > (SELECT avg(p2.score) FROM fx.posts p2 " \
-           "WHERE p2.published = true)", allowed: {} },
+           "WHERE p2.published = true)", allowed: {},
+      closed_by_search: ["p2.published = $1"] },
     { name: "correlated scalar count",
       sql: "SELECT * FROM fx.posts WHERE (SELECT count(*) FROM fx.comments " \
            "WHERE fx.comments.post_id = fx.posts.id) > 2", allowed: {} },
@@ -251,7 +261,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "SELECT fx.posts.id FROM fx.posts JOIN active ON active.id = fx.posts.user_id", allowed: {} },
     { name: "CTE with outer filter",
       sql: "WITH recent AS (SELECT * FROM fx.posts WHERE fx.posts.created_at > '2026-01-01') " \
-           "SELECT recent.id FROM recent WHERE recent.published = true", allowed: {} },
+           "SELECT recent.id FROM recent WHERE recent.published = true", allowed: {},
+      closed_by_search: ["fx.posts.created_at > $1"] },
     { name: "two CTEs",
       sql: "WITH a AS (SELECT fx.users.id FROM fx.users WHERE fx.users.role = 'teacher'), " \
            "b AS (SELECT fx.posts.user_id FROM fx.posts WHERE fx.posts.published = true) " \
@@ -395,7 +406,8 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
       sql: "SELECT count(*) FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id AND fx.posts.kind <> 'c' " \
            "WHERE fx.users.active = true AND fx.users.id IN (SELECT fx.posts.user_id FROM fx.posts " \
            "WHERE fx.posts.kind <> 'c' AND fx.posts.score > 5 UNION ALL SELECT fx.posts.user_id FROM fx.posts " \
-           "WHERE fx.posts.published = true AND fx.posts.score > 9)", allowed: {} },
+           "WHERE fx.posts.published = true AND fx.posts.score > 9)", allowed: {},
+      closed_by_search: ["fx.posts.score > $6"] },
 
     # Shapes with an allowed atom.
     { name: "implied lower bound",
@@ -410,37 +422,12 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
   # name: the untested set, pinned exactly, and a guess at the cause, which
   # isn't confirmed. Each is to become a backlog task pointing at 20261010-27.
   PENDING = {
-    "correlated scalar subquery, no aggregate" => {
-      untested: ["p.user_id = u.id"],
-      cause: "as on main, unconfirmed (a guard against the crash an extra child caused in 20261010-35's build)"
-    },
-    "correlated scalar subquery, no aggregate, equality" => {
-      untested: ["c.post_id = p.id"],
-      cause: "as on main; same as the shape above"
-    },
     "correlated scalar count" => {
       untested: ["fx.comments.post_id = fx.posts.id"],
       cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
              "once more than 2 comments exist in all, and S1 builds 1; building more leaked the threshold " \
-             "(20261010-35's review), deferred to 20261010-48"
-    },
-    "count over join, ON tests one branch's column, both branches test another" => {
-      untested: ["fx.posts.score > $6"],
-      cause: "confirmed (20261010-34): score > 9's near miss gets a sibling, since branch 1 tests score too; " \
-             "the sibling fails published, branch 2's other atom, but passes score > 9, so it passes " \
-             "branch 1's kind <> 'c' AND score > 5, and the parent stays in the IN through branch 1"
-    },
-    "comment author and post author join" => {
-      untested: ["fx.posts.id = fx.comments.post_id", "fx.comments.user_id = fx.posts.user_id"],
-      cause: "a second column-to-column tie between the tables; no row joins on one and not the other"
-    },
-    "CTE with outer filter" => {
-      untested: ["fx.posts.created_at > $1"],
-      cause: "SELECT * in a CTE body with an outer filter; the near miss may fail the outer filter too"
-    },
-    "scalar subquery in WHERE" => {
-      untested: ["p2.published = $1"],
-      cause: "atom in an uncorrelated scalar subquery; its near miss must move avg() across the hit"
+             "(20261010-35's review), deferred to 20261010-48. The search skips a count compared with a " \
+             "number, for the same reason (20261010-43)"
     }
   }.freeze
 
@@ -458,9 +445,9 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
   before { conn.exec(VacuityCorpus::SCHEMA) }
 
-  def untested(sql)
+  def untested(sql, search: true)
     builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
-    described_class.run(runner, builder, sql).untested
+    described_class.run(runner, builder, sql, search:).untested
   end
 
   it "has no shape name twice" do
@@ -475,6 +462,16 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
         found = untested(entry[:sql])
         VacuityCorpus.dump(entry, found)
         expect(found.sort).to eq(entry[:allowed].keys.sort)
+      end
+    end
+  end
+
+  # What the rules alone leave, which the corpus above shows the search
+  # closes.
+  describe "closed by the search" do
+    VacuityCorpus::SHAPES.select { it[:closed_by_search] }.each do |entry|
+      it "leaves to the search, by the rules alone: #{entry[:name]}" do
+        expect(untested(entry[:sql], search: false).sort).to eq(entry[:closed_by_search].sort)
       end
     end
   end
