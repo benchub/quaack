@@ -66,7 +66,7 @@ module Quaack
                      "--enclave-timeout-seconds to quaack run"
 
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients cycle tables parser_major].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
@@ -79,12 +79,12 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, cycle: nil, tables: nil, parser_major: nil,
+                     clients: nil, tables: nil, parser_major: nil,
                      exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
         @timeout_seconds = timeout_seconds
         @rule = rule
-        @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle:, tables:, parser_major: }.freeze
+        @line = { step:, sqlstate:, reason:, function:, column:, clients:, tables:, parser_major: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -103,7 +103,7 @@ module Quaack
       # and a few shape-class fields, so the driver adds the words: its
       # fixed note for the rule (FixedNotes), with any {next} in it as
       # next_step, after what the line named beyond the rule (facts): an
-      # intake refusal's reason, a rewrite-test refusal's column or cycle, a
+      # intake refusal's reason, a rewrite-test refusal's column, a
       # volatile_function refusal's function, or the other clients. A rule
       # on FixedNotes::INTERNAL gets the shared line, after its step.
       # query_unparsable gets a note naming pg_query's grammar, which is
@@ -185,7 +185,7 @@ module Quaack
       end
 
       # What the error line named beyond its rule, for the note: an intake
-      # refusal's reason, a rewrite-test refusal's column or cycle, a
+      # refusal's reason, a rewrite-test refusal's column, a
       # volatile_function refusal's function, or run_server_other_clients's
       # clients. Each was checked for shape (Transport::ErrorFields).
       def facts
@@ -223,22 +223,19 @@ module Quaack
       # The schema and clients the error line named.
       def named_details
         [("column #{described_column}" if column), ("clients #{described_clients}" if clients),
-         ("cycle #{described_cycle}" if cycle), ("tables #{described_tables}" if tables)]
+         ("tables #{described_tables}" if tables)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
-      # The column or cycle a rewrite-test refusal named, or the tables a
+      # The column a rewrite-test refusal named, or the tables a
       # dump_object_unreadable refusal did, or nil.
-      def named_schema = (described_column if column) || (described_cycle if cycle) || (described_tables if tables)
+      def named_schema = (described_column if column) || (described_tables if tables)
 
       # The tables the operator's role can't read, for the operator only.
       def described_tables = tables.join(", ")
 
       def described_column = "#{column["table"]}.#{column["column"]} (#{column["type"]})"
-
-      # An fk_cycle's tables, in the order their foreign keys point.
-      def described_cycle = cycle.join(" -> ")
 
       def described_clients = clients.map { "pid #{it["pid"]} started #{it["backend_start"]}" }.join(", ")
 

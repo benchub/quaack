@@ -72,7 +72,6 @@ module FilterFakes
     end
   end
 
-  # An fk_cycle refusal, which names the cycle's tables.
   # A dump_object_unreadable refusal, which names the tables the role
   # can't read.
   class TablesError < StandardError
@@ -85,14 +84,18 @@ module FilterFakes
     end
   end
 
+  # An fk_cycle refusal that still answers cycle with plain names. No error
+  # line names a cycle (20261010-6), so the filter must never ask it.
   class CycleError < StandardError
-    attr_reader :rule, :cycle
+    attr_reader :rule
 
     def initialize(rule:, cycle:)
       super(ERROR_SENTINEL)
       @rule = rule
-      @cycle = cycle
+      @names = cycle
     end
+
+    def cycle = @names
   end
 
   # An intake unreadable-file refusal, whose reason is an enclave constant.
@@ -388,53 +391,27 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
     end
 
-    describe "an fk_cycle refusal's tables" do
-      let(:cycle) { %w[public.accounts billing.courses public.accounts] }
+    # 20261010-6: no error line names a cycle. A foreign key cycle's tables
+    # go out only in the report payload's rewrite fate (Steps::CycleTables).
+    describe "an fk_cycle refusal" do
+      let(:names) { %w[public.accounts billing.courses public.accounts] }
 
-      def cycle_line(cycle, rule: "fk_cycle")
-        filter.to_egress(FilterFakes::CycleError.new(rule:, cycle:), step: "counterexample-round")
+      it "sends the rule alone, even when the error answers cycle with plain names" do
+        error = FilterFakes::CycleError.new(rule: "fk_cycle", cycle: names)
+        out = filter.to_egress(error, step: "counterexample-round")
+
+        expect(out).to eq(line(step: "counterexample-round", rule: "fk_cycle"))
+        expect(out).not_to include("courses")
       end
 
-      it "sends the cycle's tables, in order, for an fk_cycle refusal" do
-        expect(cycle_line(cycle)).to eq(line(step: "counterexample-round", rule: "fk_cycle", cycle:))
-      end
+      it "sends rewrite-test's Scenarios::Error as its rule alone, with nothing from the cycle" do
+        require "quaack/enclave/scenarios"
+        table = Quaack::Enclave::TableName.new(schema: "public", name: ERROR_SENTINEL)
+        error = Quaack::Enclave::Scenarios::Error.new(:fk_cycle, cycle: [table, table])
+        out = filter.to_egress(error, step: "rewrite-test")
 
-      it "sends a quoted name, as the catalog quotes mixed case, a dot, a keyword, or a doubled quote" do
-        quoted = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', "public.action", '"Sales"."Acc""ounts"']
-        expect(cycle_line(quoted)).to eq(line(step: "counterexample-round", rule: "fk_cycle", cycle: quoted))
-      end
-
-      it "sends no tables for any other rule" do
-        expect(cycle_line(cycle, rule: "complex_check"))
-          .to eq(line(step: "counterexample-round", rule: "complex_check"))
-      end
-
-      sneaky = Class.new(Array) { def to_json(*) = ERROR_SENTINEL.to_json }
-      [
-        ["a sentinel table", ["public.accounts", ERROR_SENTINEL, "public.accounts"]],
-        ["an unqualified table", %w[accounts public.courses accounts]],
-        ["a quoted table with a control character",
-         ["\"Sales\".\"Acc\nounts\"", "public.b", "\"Sales\".\"Acc\nounts\""]],
-        ["a quoted table with an unescaped quote", ['"Sa"les".accounts', "public.b", '"Sa"les".accounts']],
-        ["a quoted table with junk after it", ['"Sales"."Accounts" x', "public.b", '"Sales"."Accounts" x']],
-        ["an empty quoted name", ['"".accounts', "public.b", '"".accounts']],
-        ["a quoted name of more than 126 characters",
-         ["public.\"#{"a" * 127}\"", "public.b", "public.\"#{"a" * 127}\""]],
-        ["a table that's a String subclass", [Class.new(String).new("public.a"), "public.b", "public.a"]],
-        ["a table that isn't a String", [%w[public a], "public.b", %w[public a]]],
-        ["no second table", %w[public.a public.a]],
-        ["an end that isn't its start", %w[public.a public.b public.c]],
-        ["more than 64 tables", [*Array.new(64) { "public.t#{it}" }, "public.t0"]],
-        ["an Array subclass", sneaky.new(%w[public.a public.b public.a])],
-        ["a String", ERROR_SENTINEL],
-        ["nil", nil]
-      ].each do |label, bad|
-        it "drops a cycle with #{label}, and still sends the rule" do
-          out = cycle_line(bad)
-
-          expect(out).to eq(line(step: "counterexample-round", rule: "fk_cycle"))
-          expect(out).not_to include("SENTINEL")
-        end
+        expect(out).to eq(line(step: "rewrite-test", rule: "fk_cycle"))
+        expect(out).not_to include("SENTINEL")
       end
     end
 

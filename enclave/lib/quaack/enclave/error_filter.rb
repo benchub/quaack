@@ -12,7 +12,7 @@ module Quaack
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
     # SQLSTATE if there was one, plus, for some rules, the shape-class detail
-    # below (reason, function, clients, column, cycle, and tables).
+    # below (reason, function, clients, column, and tables).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "fixture-load")
     #   # => '{"type":"error","step":"fixture-load","rule":"internal_error","sqlstate":"23505"}'
@@ -54,22 +54,16 @@ module Quaack
     #   the function; column, one plain name; and type, as format_type
     #   prints it, unquoted, such as numeric(5,2) or bigint[]. Otherwise the
     #   whole field is left out.
-    # - The cycle comes from the error's cycle method, and is sent only
-    #   when the rule is fk_cycle (DESIGN.md's rewrite-test): the tables of a
-    #   foreign key cycle, in the order their foreign keys point, which are
-    #   schema, never a row value. It must be an Array of 3 to 64
-    #   schema.name Strings, each part bare or quoted as the catalog's
-    #   quote_ident writes it (Cycle::NAME), whose last is its first.
-    #   Otherwise the whole field is left out. This file can't see the
-    #   run's schema, so whoever raises the error checks that each is one
-    #   of the run's relations (Steps::CycleTables). Nothing does today
-    #   (20261003-43), so no error line carries one.
+    # - No error line names a foreign key cycle's tables (20261010-6): an
+    #   fk_cycle refusal goes out as its rule alone, whatever the error's
+    #   cycle method gives. Its tables go out only in the report payload,
+    #   each checked to be a relation of the run's (Steps::CycleTables).
     # - The tables come from the error's tables method, and are sent only
     #   when the rule is dump_object_unreadable (DESIGN.md's schema-dump): the
     #   tables the dump needs that the operator's role can't read, which are
     #   schema, never a row value, and go only to the operator, never to the
-    #   LLM. It must be an Array of 1 to 64 plain schema.name Strings, like
-    #   the function. Otherwise the whole field is left out.
+    #   LLM. It must be an Array of 1 to 64 schema.name Strings, each part
+    #   bare or quoted as the catalog's quote_ident writes it (Tables::NAME). Otherwise the whole field is left out.
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
@@ -125,10 +119,9 @@ module Quaack
           **schema_names(exception, rule) }.compact
       end
 
-      # The column, cycle, or tables only one rule's error line has.
+      # The column or tables only some rules' error lines have.
       def schema_names(exception, rule)
         { column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
-          cycle: (Cycle.check(ask(exception, :cycle)) if rule == Cycle::RULE),
           tables: (Tables.check(ask(exception, :tables)) if rule == Tables::RULE) }
       end
 

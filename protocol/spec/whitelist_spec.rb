@@ -26,6 +26,12 @@ RSpec.describe "Quaack::Protocol::WHITELIST" do
     whitelist.each { |type, fields| expect(fields).not_to include(:type), "#{type} lists type" }
   end
 
+  # 20261010-6: nothing in the enclave sends a cycle on an error line, so the
+  # field is gone, and a line that carries one is refused.
+  it "lists no cycle field on the error line" do
+    expect(whitelist.fetch(:error)).not_to include(:cycle)
+  end
+
   it "lists each field once per type" do
     whitelist.each { |type, fields| expect(fields).to eq(fields.uniq), "#{type} repeats a field" }
   end
