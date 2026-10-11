@@ -637,17 +637,6 @@ From 20261003-43. After the counterexamples round stopped naming a cycle on its 
 - **Design:** result comparison, literals.
 - **Status:** todo
 
-### 20261010-10. Index sources: a faithful store fake, and a mixed-label cell.
-
-From the review of 20261004-89 (minor).
-- The store fake in `enclave/spec/outbound_ddl_spec.rb` has an `entry?` that always returns false, so `IndexSources.sources` finds no searches and every entry's sources are `[]` in that spec. Harmless there (the sources path is covered against a real store in `report_payload_step_spec.rb`), but make the fake faithful (`def entry?(name) = data.key?(name)`).
-- If a label mixes indexes with recorded sources and indexes without, the cell lists only the recorded sources and doesn't say some are unrecorded. Only a payload no single enclave version produces does this, so it's cosmetic; say "and others not recorded" or leave it.
-
-- **Depends on:** 20261004-89.
-- **Came from:** The review of 20261004-89, 2026-10-10 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261010-17. Tablespace check: minors from 20261008-38.
 
 The reviews of 20261008-38 found these minor issues:
@@ -877,4 +866,13 @@ From the review of 20261011-2 (minor, usefulness). Since 20261011-2, any query t
 - **Depends on:** 20261011-2 (landed with its fix round).
 - **Came from:** The review of 20261011-2, 2026-10-11 (minor).
 - **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale.
+
+Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized `html` and `ranking` lets make a second `whos` call after mutating the payload return the stale render. The existing example "says not recorded for the indexes of a run that recorded no sources" calls `whos` twice and likely has this weakness in its second half (it may pass whatever the code does). Render fresh for each call (build the report in a helper, not a memoized let), then mutate the code under test to confirm that example goes red. Check the other examples that call a render helper twice.
+
+- **Depends on:** 20261010-10 (landed).
+- **Came from:** The build of 20261010-10, 2026-10-11.
+- **Design:** report.
 - **Status:** todo

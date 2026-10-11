@@ -10493,3 +10493,14 @@ From the review of 20261010-43 (minor). `VacuityGuard::Search` stops after `SECO
 - **Design:** rewrite-test, scenarios.
 - **Decided by the user (2026-10-11):** count attempts, not the clock: the trial count is the only budget. Also warn in `quaack` output when the search (or its requests) is taking a long time; the warning may carry only a duration or a fixed word, nothing from the data. Do it after 20261010-47 lands (same files).
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-50; Opus review clean). Part 1: the vacuity-guard search has no clock; its only budget is its trial count (150 per atom, `MAX_TRIALS` = 300 per query; an atom the cap stops reads `not_searched`); the across-literals spec's 600 s workaround is gone. Part 2: on a terminal a step still running after 5 minutes prints one line, `Still running after 5m00s, longer than usual (<slug>)`, built from the threshold and the slug only (README, DESIGN.md). Minors: a trial that hits the statement timeout under heavy load is still discarded and counted, so results can move toward `not_searched` on a loaded server; a full 300-trial search takes 5 to 13 s, so a rewrite with about 20 guard calls would reach the 5-minute budget of 20261010-53.
+
+### 20261010-10. Index sources: a faithful store fake, and a mixed-label cell.
+
+From the review of 20261004-89 (minor).
+- The store fake in `enclave/spec/outbound_ddl_spec.rb` has an `entry?` that always returns false, so `IndexSources.sources` finds no searches and every entry's sources are `[]` in that spec. Harmless there (the sources path is covered against a real store in `report_payload_step_spec.rb`), but make the fake faithful (`def entry?(name) = data.key?(name)`).
+- If a label mixes indexes with recorded sources and indexes without, the cell lists only the recorded sources and doesn't say some are unrecorded. Only a payload no single enclave version produces does this, so it's cosmetic; say "and others not recorded" or leave it.
+
+- **Depends on:** 20261004-89.
+- **Came from:** The review of 20261004-89, 2026-10-10 (minor).
+- **Design:** report.
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-10): `outbound_ddl_spec.rb`'s store fake now has `entry?` like the real store (a wrong fake hangs `IndexSources.searches`, so it can't pass silently); `Report::IndexProposers` ends a label's list with "and others not recorded" when only some of its indexes have recorded sources (DESIGN.md, the template note and its spec updated). Follow-up in 20261011-8.
