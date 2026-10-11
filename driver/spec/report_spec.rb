@@ -1297,8 +1297,8 @@ RSpec.describe Quaack::Driver::Report do
           "\"indexes:\", to who proposed the new indexes it ran with: generator one, which works from " \
           "the query's text, generator two, which works from its plan, or the LLM. An index that more than " \
           "one of them proposed lists each. It says not recorded where this run didn't record who proposed " \
-          "the indexes, and for a rewrite whose source this run didn't record, or that's missing from " \
-          "what QUAACK's jump server sent.</p>"
+          "the indexes (\"and others not recorded\" when it recorded some of them), and for a rewrite " \
+          "whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>"
         )
       end
 
@@ -1314,6 +1314,23 @@ RSpec.describe Quaack::Driver::Report do
         expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: not recorded", "not recorded"])
         payload["indexes"].each_value { it["sources"] = [] }
         expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: not recorded", "not recorded"])
+      end
+
+      # Task 20261010-10. `html` is memoized, so each case renders afresh.
+      it "says others are not recorded when only some of a label's indexes have recorded sources" do
+        payload["excluded"]["original:top:1"] = "footprint_tie"
+        payload["top"].pop
+        payload["labels"][2]["indexes"] = %w[quaack_a quaack_b]
+        fresh = lambda do |sources|
+          entry = payload["indexes"]["quaack_a"]
+          sources ? entry["sources"] = sources : entry.delete("sources")
+          rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
+            .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
+        end
+        rule = "Made by transform rule key_in_self_join; indexes: generator two"
+        expect(fresh.call(nil)).to eq(["#{rule} and others not recorded", "not recorded"])
+        expect(fresh.call([])).to eq(["#{rule} and others not recorded", "not recorded"])
+        expect(fresh.call(%w[llm])).to eq(["#{rule}, the LLM", "Indexes: the LLM"])
       end
 
       it "shows only the rewrite's source for a label with no new indexes" do
