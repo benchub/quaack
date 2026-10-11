@@ -377,6 +377,53 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # Task 20261011-15: a rewrite whose rewrite-test ran out of time went on
+    # as passed, and the report says so by a boolean, never the stored rule.
+    describe "out_of_time" do
+      it "sends false for a rewrite whose test finished" do
+        expect(rewrite(1)).to include("out_of_time" => false)
+      end
+
+      context "with a test that ran out of time and went on" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("passed" => true,
+                                                                                 "rule" => "out_of_time"))
+          end
+        end
+
+        it "sends true" do
+          expect(rewrite(1)).to include("out_of_time" => true)
+        end
+      end
+
+      context "with a test from before 20261011-15 that ran out of time and was left out" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("passed" => false,
+                                                                                 "rule" => "out_of_time"))
+          end
+        end
+
+        it "sends false, since its fate says it was left out" do
+          expect(rewrite(1)).to include("out_of_time" => false)
+        end
+      end
+
+      context "with a sentinel for a rule" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("passed" => true, "rule" => sentinel))
+          end
+        end
+
+        it "sends false, and nothing of what it held" do
+          expect(rewrite(1)).to include("out_of_time" => false)
+          expect_no_leaks(sentinels, outcome)
+        end
+      end
+    end
+
     context "with an untested_unchanged in rewrite_tested_<n> that isn't a list" do
       let(:outcome) do
         payload_of do |store|
@@ -437,7 +484,7 @@ RSpec.describe "quaacks report-payload" do
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
                                  "untested_atoms" => nil, "untested_unchanged" => nil,
                                  "untested_states" => nil, "covered" => nil,
-                                 "evidence" => nil, "dropped" => nil)
+                                 "evidence" => nil, "dropped" => nil, "out_of_time" => nil)
       end
     end
   end

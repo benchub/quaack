@@ -282,12 +282,19 @@ module Quaack
         end
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)
-        # was left out, untested, and progress says so under its name.
+        # isn't disproved: it goes on (passed, task 20261011-15), and
+        # progress says so under its name. A message from before that task
+        # has passed false: that rewrite was left out.
         def out_of_time(progress, message)
           return unless message["rule"] == Protocol::RewriteBudget::RULE
 
-          progress.step_note("rewrite-test", "Couldn't test the rewrite within #{Protocol::RewriteBudget.minutes} " \
-                                             "minutes, so QUAACK left it out")
+          within = "within #{Protocol::RewriteBudget.minutes} minutes"
+          progress.step_note("rewrite-test", if message["passed"] == true
+                                               "Couldn't finish testing the rewrite #{within}, so QUAACK goes on " \
+                                                 "to check it with the LLM's rows and the real data"
+                                             else
+                                               "Couldn't test the rewrite #{within}, so QUAACK left it out"
+                                             end)
         end
 
         # Whether no round of counterexamples disproved the rewrite. Each

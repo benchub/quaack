@@ -413,8 +413,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                                                             extra: none))
     end
 
-    # Task 20261010-53: a rewrite whose test runs past its budget is left
-    # out as out_of_time, not disproved, and the next rewrite is tested.
+    # Task 20261010-53: a rewrite whose test runs past its budget is
+    # stopped, and the next rewrite is tested. Task 20261011-15: it isn't
+    # disproved, so it goes on to counterexamples and the later stages like
+    # one that passed, with rule out_of_time as its caution.
     describe "the budget per rewrite" do
       let(:rewrite_test) { Quaack::Enclave::Steps::Counterexamples::RewriteTest }
 
@@ -430,30 +432,33 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       def spent = Quaack::Enclave::Deadline.new(0)
 
-      it "reports a rewrite out of time, drops it as out_of_time, calls it no bug, and tests the next one" do
+      it "carries a rewrite out of time on to counterexamples with its caution, calls it no bug, and tests the next" do
         ready(same)
         store.write("rewrite_1", stored.read("rewrite_1").merge("source" => "rule", "rules" => ["key_in_self_join"]))
         store.write("rewrite_2", stored.read("rewrite_1"))
 
         messages = in_process("rewrite_1", spent)
 
-        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: false, scenario: nil,
+        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, scenario: nil,
                                   rule: "out_of_time" }])
         line = Quaack::Enclave::Egress.serialize(messages.first)
-        expect(JSON.parse(line)).to include("rule" => "out_of_time")
-        expect(stored.read("rewrite_tested_1")).to include("passed" => false, "rule" => "out_of_time",
+        expect(JSON.parse(line)).to include("passed" => true, "rule" => "out_of_time")
+        expect(stored.read("rewrite_tested_1")).to include("passed" => true, "rule" => "out_of_time",
                                                            "untested" => [])
         expect(stored.read("rewrite_tested_1")).not_to have_key("refused")
-        expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
+        expect(stored.entry?("rewrite_survived_1")).to be(false)
         expect(stored.entry?("rewrite_test_refusal")).to be(false)
         fate = Quaack::Enclave::Steps::RewriteFate
-        expect(fate.early(fate.steps(stored, "1"), nil)).to include("fate" => "rewrite_test_out_of_time",
-                                                                    "rule" => nil, "scenario" => nil)
+        expect(fate.early(fate.steps(stored, "1"), nil)).to be_nil
+        old = { "tested" => { "passed" => false, "scenario" => nil, "rule" => "out_of_time" } }
+        expect(fate.early(old, nil)).to include("fate" => "rewrite_test_out_of_time")
         expect(Quaack::Enclave::Steps::RuleBugs.call(stored)).to eq([])
         expect(burndown["stages"]["rewrite-test"]["rewrite_1"])
-          .to eq(counted(dropped: { "out_of_time" => 1 }, extra: { "untested_atoms" => 0,
-                                                                   "vacuity_guard_retries" => 0 }))
+          .to eq(counted(out: 1, extra: { "untested_atoms" => 0, "vacuity_guard_retries" => 0,
+                                          "not_tested_in_time" => 1 }))
         expect_no_leaks(sentinels, stdout: line, stderr: JSON.generate(stored.read("rewrite_tested_1")))
+
+        expect(lines(round(1)).first).to include("type" => "counterexample_round")
 
         outcome = step("rewrite-test", "--search", "rewrite_2")
         expect(lines(outcome).first).to include("rewrite" => "rewrite_2", "passed" => true, "rule" => nil)
