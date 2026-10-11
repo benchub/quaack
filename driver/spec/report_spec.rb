@@ -44,6 +44,9 @@ RSpec.describe Quaack::Driver::Report do
     Math.atan2(Math.sqrt(3) * (green - blue), (2 * red) - green - blue).*(180 / Math::PI) % 360
   end
 
+  # A grey (white, black or near one) has no hue: atan2 of nothing gives 0, so a gap to it means nothing.
+  def grey?(hex) = rgb(hex).minmax.then { |lo, hi| hi - lo } < 3
+
   def hue_gap(one, other)
     gap = (hue(one) - hue(other)).abs
     gap > 180 ? 360 - gap : gap
@@ -1151,13 +1154,19 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "tints each kind's heading differently from the page, the panel and the table header, with readable text" do
+      hueless = []
       theme_variables.each do |name, v|
         %w[--sb-teal --sb-violet --sb-brown].each do |tint|
           %w[--bg --panel --head-bg].each do |other|
             expect(v[tint]).not_to eq(v[other]), "#{name} #{tint} matches #{other}"
             expect(distance(v[tint], v[other])).to be >= 15, "#{name} #{tint} against #{other}"
-            # All six tints pass this: the closest hue gap is 21 degrees (light violet against --head-bg).
-            expect(hue_gap(v[tint], v[other])).to be >= 20, "#{name} #{tint} hue against #{other}"
+            # A grey has no hue, so only the distance check above applies to it. Every other pair passes the hue
+            # check: the closest chromatic gap is 39.5 degrees (dark teal against --panel).
+            if grey?(v[other])
+              hueless << [name, tint, other]
+            else
+              expect(hue_gap(v[tint], v[other])).to be >= 20, "#{name} #{tint} hue against #{other}"
+            end
           end
           expect(contrast(v["--text"], v[tint])).to be >= 4.5, "#{name} text on #{tint}"
           # The entries' links sit on the tint now.
@@ -1167,6 +1176,9 @@ RSpec.describe Quaack::Driver::Report do
         end
         expect(v.values_at("--sb-teal", "--sb-violet", "--sb-brown").uniq.size).to eq(3)
       end
+      # Only the light theme's white page and panel have no hue; the tinted --head-bg and the dark greys do.
+      expect(hueless.map { |name, _, other| [name, other] }.uniq).to eq([[:light, "--bg"], [:light, "--panel"]])
+      expect(hueless.size).to eq(6)
     end
 
     it "shows each candidate's blocks and index footprint, right-aligned, with separators and a fitting unit" do

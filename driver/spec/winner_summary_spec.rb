@@ -226,6 +226,8 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       "an IPv4 literal" => "Rewrite Steady Lute reads fewer blocks, see 10.0.0.12 now.",
       "an IPv6 literal" => "Rewrite Steady Lute reads fewer blocks, see fe80::1 now.",
       "a full IPv6 literal" => "Rewrite Steady Lute reads fewer blocks, see 2001:db8:0:0:0:0:0:1 now.",
+      "an IPv4 literal before a period" => "Rewrite Steady Lute reads fewer blocks than it did when it sees 5.10.1.2.",
+      "an IPv6 literal with a mapped tail" => "Rewrite Steady Lute reads fewer blocks, see ::ffff:a00:1 now.",
       "a loopback IPv6 literal" => "Rewrite Steady Lute reads fewer blocks, see ::1 now.",
       "a spaced vbscript link" => "Rewrite Steady Lute reads fewer blocks, see VbScript :msgbox now.",
       "a spaced odd-case javascript link" => "Rewrite Steady Lute reads fewer blocks, see JaVaScRiPt :alert(1) now.",
