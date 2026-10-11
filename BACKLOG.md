@@ -503,6 +503,7 @@ The review of 20260929-22 and -16 found these minor issues:
 - **Depends on:** 20261002-1.
 - **Came from:** The build and review of 20261002-1, 2026-10-08.
 - **Design:** rewrite-rules.
+- **Landed so far:** items 3 and 4, 2026-10-10 (task/20261008-56; spec-only). Items 1 and 2 are open.
 - **Status:** todo
 
 ### 20261008-57. Running the rules: leftovers from 20261002-2.
