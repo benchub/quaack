@@ -10474,3 +10474,12 @@ From the user's profile of the slow step (see 20261010-53) and 20261004-27 item 
 - **Came from:** The user's profile, 2026-10-11. Priority: the version bump waits for it.
 - **Design:** rewrite-test, scenarios.
 - **Status:** **done.** Landed 2026-10-11 (task/20261011-4; Opus review clean, no behavior change): `Scenarios::RowSet` keeps each table's rows in an insertion-ordered Hash and lazily built Hash indexes per unique key, expression index and foreign-key parent key, maintained on insert and on `add?`'s rollback. A reference copy of the old algorithm in `row_set_index_postgres_spec.rb` is compared over 200 seeds x 30 steps; a call-count spec guards the complexity. On a synthetic 19-table fixture, 2000 groups took 0.71 s against 158 s. Not yet measured on the user's real query.
+
+### 20261010-2. rewrite-test fixtures: a row of another class with the copy set.
+
+From 20261004-9's second paragraph and its review (a "Consider", left out of that task). `polymorphic_key_copy` rewrites a join through a denormalized copy (a column that holds a parent's id for rows of one class). The fixtures keep the copy equal for rows of the class, but nothing adds a row of ANOTHER class with the copy column set, so a twin of the rule that drops the type filter would pass rewrite-test. Make the fixture builder add such a row (a row of another class whose copy column is set, and one with no parent) when the schema has a polymorphic copy, test with a hand-written twin that drops the type filter (it must be disproved) and the real rule (it must pass), keep every row valid under the schema's constraints, and update DESIGN.md. A reviewer noted the fixture UPDATE that restores the copy also fires user triggers on the child table, which could change other columns (an unusual setup): check and note it. Enclave change: unreleased list.
+
+- **Depends on:** 20261004-9.
+- **Came from:** 20261004-9's entry and its review, 2026-10-10.
+- **Design:** rewrite-test.
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-2; Opus review clean): the denormalized fixture's load runs three disjoint UPDATEs (class rows get the copy; rows whose parent is another class or untyped get the parent's id, never a NULL; parentless rows get the id of one class parent, first by `ctid`), so a twin that drops the type filter is disproved in rewrite-test and the true rewrite passes. Minor follow-ups in 20261011-5.

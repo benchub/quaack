@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-3: the `name_lookup_function` message for oid-taking type input functions is reworded.
 - 20261009-2: the enclave's `query_unparsable` error line carries `parser_major`; new protocol whitelist field.
 - 20261011-4: `Scenarios::RowSet` uses hash indexes in place of linear scans (performance, no behavior change).
+- 20261010-2: denormalized fixtures set the copy on other-class and parentless rows.
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -596,15 +597,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-2. rewrite-test fixtures: a row of another class with the copy set.
-
-From 20261004-9's second paragraph and its review (a "Consider", left out of that task). `polymorphic_key_copy` rewrites a join through a denormalized copy (a column that holds a parent's id for rows of one class). The fixtures keep the copy equal for rows of the class, but nothing adds a row of ANOTHER class with the copy column set, so a twin of the rule that drops the type filter would pass rewrite-test. Make the fixture builder add such a row (a row of another class whose copy column is set, and one with no parent) when the schema has a polymorphic copy, test with a hand-written twin that drops the type filter (it must be disproved) and the real rule (it must pass), keep every row valid under the schema's constraints, and update DESIGN.md. A reviewer noted the fixture UPDATE that restores the copy also fires user triggers on the child table, which could change other columns (an unusual setup): check and note it. Enclave change: unreleased list.
-
-- **Depends on:** 20261004-9.
-- **Came from:** 20261004-9's entry and its review, 2026-10-10.
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261010-4. rewrite-test variety: a unique self-FK, and the cases the review didn't check.
 
 From the review of 20261003-39 (minor, and gaps in the review's coverage).
@@ -866,4 +858,13 @@ Do: (1) make the fields that depend on a count threshold's value independent of 
 - **Depends on:** 20261010-47 (landed).
 - **Came from:** The review of 20261010-47, 2026-10-11. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown.
+- **Status:** todo
+
+### 20261011-5. Denormalized fixture: a UNIQUE or CHECK on the copy column (minors from 20261010-2).
+
+The review of 20261010-2 found: if the copy column has a UNIQUE (or exclusion) constraint, update 3 gives every parentless row the same class-parent id, and update 2 can repeat ids too, so the load fails (`fixture_load_failed`, a refusal, not a false disproof) where the old single update loaded. A CHECK on the copy column that another class's parent id violates fails the load the same way. A unique denormalized copy such as `course_id` isn't realistic, so both are minor. Possible fix: skip updates 2 and 3, or limit update 3 to one row, when the copy column has a unique index; with a CHECK, skip them too. Postgres-backed tests for each, red first.
+
+- **Depends on:** 20261010-2 (landed).
+- **Came from:** The review of 20261010-2, 2026-10-11 (minor).
+- **Design:** rewrite-test.
 - **Status:** todo
