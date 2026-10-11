@@ -110,10 +110,10 @@ module Quaack
       # inert text, but a block-count summary never needs one, and it looks
       # like a host. A time or ratio such as 3:2 isn't an IPv6 literal.
       IP_LITERAL = Regexp.union(
-        /(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?![\w.])/,
+        /(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?!\w|\.\w)/,
         /(?<![\w:])(?:\h{1,4}:){3,7}\h{1,4}(?![\w:])/,
         /(?<![\w:])(?:\h{1,4}:){0,6}\h{1,4}::(?:\h{1,4}(?![\w:])|(?!\w))/,
-        /(?<![\w:])::\h{1,4}(?![\w:])/
+        /(?<![\w:])::(?:\h{1,4}:){0,6}\h{1,4}(?![\w:])/
       )
       # Advice stated for every query, which the lesson must never be: it
       # holds only under its precondition (20261010-37).
