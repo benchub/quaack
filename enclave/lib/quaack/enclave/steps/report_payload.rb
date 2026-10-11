@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/untested_states"
 require_relative "../burndown"
 require_relative "../candidate_ddl_redaction"
 require_relative "../clock_anchoring"
@@ -186,9 +187,19 @@ module Quaack
           dropped = tested&.fetch("dropped", nil)
           { "untested_atoms" => tested&.fetch("untested"),
             "untested_unchanged" => unchanged_shapes(tested),
+            "untested_states" => untested_states(tested),
             "dropped" => (dropped if dropped.is_a?(Integer) && !dropped.negative?),
             "covered" => NegativeResult.optional(store, "rewrite_round_#{number}")&.fetch("covered", nil),
             "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
+        end
+
+        # How each untested atom stayed unproven: the stored state words, if
+        # they're one fixed word per untested shape, else nil (as an entry
+        # from before 20261010-43 has).
+        def untested_states(tested)
+          states = tested&.dig("untested_states")
+          entry = { "untested_atoms" => tested&.dig("untested"), "untested_states" => states }
+          states if states && Protocol::UntestedStates.valid?([entry])
         end
 
         def unchanged_shapes(tested)

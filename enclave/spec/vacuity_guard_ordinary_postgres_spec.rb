@@ -25,7 +25,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
   def untested(sql)
     builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
-    described_class.run(runner, builder, sql).untested
+    described_class.run(runner, builder, sql, search: false).untested
   end
 
   # Unordered, LIMIT 1 may return the hit whichever atom is loosened.

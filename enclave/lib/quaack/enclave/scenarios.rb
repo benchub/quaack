@@ -214,12 +214,12 @@ module Quaack
       end
 
       # Builds the scenarios for one query.
-      class Builder
+      class Builder # rubocop:disable Metrics/ClassLength
         # dropped counts the groups the last build left out of their
         # scenario's first fixture, over every scenario. spills holds, by
         # scenario, the last build's further fixtures (see Parts): rows the
         # first can't hold beside its own.
-        attr_reader :atoms, :pools, :parse, :dropped, :spills
+        attr_reader :atoms, :pools, :parse, :dropped, :spills, :schema, :topology
 
         UNIQUE = FreeValues::UNIQUE
 
@@ -235,6 +235,9 @@ module Quaack
           @values = Values.new(conn)
           @evaluated = {}
         end
+
+        # Adds fixtures to the scenario's further ones (VacuityGuard::Search's).
+        def add_spills(name, fixtures) = fixtures.empty? || (@spills[name] = [*@spills.fetch(name, []), *fixtures])
 
         def build(variants = {})
           start(variants)

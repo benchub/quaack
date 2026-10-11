@@ -12,6 +12,7 @@ require_relative "protocol/port"
 require_relative "protocol/step_counts"
 require_relative "protocol/vacuity_diagnostic"
 require_relative "protocol/unchanged_atoms"
+require_relative "protocol/untested_states"
 require_relative "protocol/error_rules"
 require_relative "protocol/unreadable_reasons"
 

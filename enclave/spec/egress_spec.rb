@@ -465,6 +465,28 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261010-43: a rewrite's untested_states is one fixed word per
+    # untested atom (Protocol::UntestedStates.valid?).
+    describe "a rewrite's untested_states" do
+      def report_with(entry)
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil, "untested_atoms" => ["o.qty > $2"] }.merge(entry)
+        { type: :report, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
+      end
+
+      it "sends fixed words, one per untested atom" do
+        sent = parsed(report_with("untested_states" => ["searched"]))
+        expect(sent["rewrites"].first).to include("untested_states" => ["searched"])
+      end
+
+      it "refuses a word off the list, without quoting it" do
+        expect { egress.serialize(report_with("untested_states" => [EGRESS_SENTINEL])) }
+          .to raise_error(described_class::Error, "a value in this report message has untested states that " \
+                                                  "aren't fixed words") { |e|
+                expect(e.message).not_to include(EGRESS_SENTINEL)
+              }
+      end
+    end
+
     # Task 20261009-40: a rewrite's untested_unchanged repeats shapes of its
     # untested_atoms and nothing else (Protocol::UnchangedAtoms.valid?).
     describe "a rewrite's untested_unchanged" do

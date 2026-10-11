@@ -7,6 +7,7 @@ require_relative "predicate_atoms"
 require_relative "result_comparison"
 require_relative "scenarios"
 require_relative "vacuity_guard/compared"
+require_relative "vacuity_guard/search"
 
 module Quaack
   module Enclave
@@ -33,7 +34,7 @@ module Quaack
     #
     # Trust boundary: untested holds only the atoms' shapes, which have every
     # literal redacted. scenarios hold real values and stay in the enclave.
-    module VacuityGuard
+    module VacuityGuard # rubocop:disable Metrics/ModuleLength
       RETRIES = 3
 
       # The most fixture-compare runs one guard run makes (Compared).
@@ -42,7 +43,7 @@ module Quaack
       MAX_COMPARISONS = 32
 
       Result = Data.define(:untested, :untested_atoms, :untested_paths, :retries, :variants, :scenarios, :s1_load_rule,
-                           :s1_rows, :s1_nonzero_rows) do
+                           :s1_rows, :s1_nonzero_rows, :untested_states) do
         def inspect = "#<data #{self.class} untested=#{untested} retries=#{retries} scenarios=<redacted>>"
 
         alias_method :to_s, :inspect
@@ -50,16 +51,16 @@ module Quaack
 
       module_function
 
-      def run(runner, builder, sql)
+      def run(runner, builder, sql, search: true, search_options: {}) # rubocop:disable Metrics/AbcSize
         loosened, unreplaceable = loosened_queries(builder)
-        state = new_state
+        state = new_state.merge(search: (search_options if search))
         (0..RETRIES).each do |attempt|
           scenarios = builder.build(state[:variants])
           vacuous = vacuous_atoms(runner, s1_fixtures(builder, scenarios), sql, loosened, state)
-          done = vacuous.empty? || attempt == RETRIES
-          return result(builder, (vacuous + unreplaceable).sort, state, scenarios) if done
+          next retry_atoms(state, vacuous, attempt + 1) unless vacuous.empty? || attempt == RETRIES
 
-          retry_atoms(state, vacuous, attempt + 1)
+          states = Search.close(runner, builder, sql, loosened.slice(*vacuous), scenarios, state[:search])
+          return result(builder, Search.left(vacuous + unreplaceable, states), state, scenarios, states)
         end
       end
 
@@ -75,8 +76,9 @@ module Quaack
         vacuous.each { |i| state[:variants][i] = step }
       end
 
-      def result(builder, untested, state, scenarios)
+      def result(builder, untested, state, scenarios, states)
         Result.new(untested: untested.map { |i| builder.atoms[i].shape }, untested_atoms: untested,
+                   untested_states: untested.map { states.fetch(it, :not_searched) },
                    untested_paths: untested.map { |i| builder.atoms[i].path },
                    retries: state[:retries], variants: state[:variants], scenarios:,
                    s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows],
