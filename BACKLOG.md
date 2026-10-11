@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-36: the statistics read pins DateStyle to ISO, so stored date and timestamp values replay the same in any session.
 - 20261010-13: a plan deeper than PlainData::MAX_DEPTH in measurement or index-build confirm is refused as plan_too_deep; the SingleCandidateTest plan parse is bounded.
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
+- 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
 
 ## How this file works.
@@ -804,7 +805,8 @@ Work out which reported fields can vary with a literal, using the reviewer's exp
 - **Depends on:** 20261010-35 (landed).
 - **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown.
-- **Status:** todo
+- **Landed so far:** 2026-10-11 (task/20261010-47; Opus review: no regression, a strict improvement). `across_literals_postgres_spec.rb` (11 families, byte-identical reports across literal values within one side of a reach boundary); each fixture compare counts as 3 loads and the guard's LIMIT/OFFSET comparisons count none; a group's own pinned key avoids every pooled value. Still open, carried by 20261011-2.
+- **Status:** todo (see 20261011-2)
 
 ### 20261010-48. Untested conditions: a correlated count threshold, built without leaking the threshold.
 
@@ -868,3 +870,13 @@ The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed a
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Decided by the user (2026-10-11):** the budget is 5 minutes per rewrite. The user will profile part 1. The version bump waits until rewrite-test's performance is fixed.
 - **Status:** todo (needs the user)
+
+### 20261011-2. Count thresholds and small LIMIT/OFFSET still show in the report (found in the review of 20261010-47).
+
+The review of 20261010-47 grouped outgoing reports by literal value over 0..10 and found classes that differ: LIMIT {0} {1..10}; ORDER BY LIMIT {0} {1} {2..10}; OFFSET {0} {1} {2..10}; `count(*) > n` {0} {1} {2} {3} {4..10}; `HAVING count() > n` {0} {1} {2..10}; IN list with `count(*) >= n` {0} {1} {2} {3..10}. The differing fields are loads (7/10/16/25 for `count(*) > 0..3`), retries, the untested set, `untested_states` and results (row_count vs pass). It saturates by 4, nothing scales without bound. LIMIT and OFFSET (0, 1, 2+) are a coarse shape fact. **Count thresholds are not**: an observer recovers the exact n for n = 0..3 from `loads` or the untested set, and small thresholds are the common case. This was already so on main before 20261010-47 (the diff only fixed LIMIT and IN-list values). DESIGN says literal values never cross.
+Do: (1) make the fields that depend on a count threshold's value independent of it (bucket, report a fixed value, or compute from shape only; the result classes above are what the guard truly finds, so the likely route is to report, for a query with a count compared to a constant, the same untested set, states, loads and retries for every threshold, for example by treating those atoms as unproven and not counting loads for them), without weakening the guard's honesty; (2) extend `across_literals_postgres_spec.rb` so it passes for thresholds 0..10 and every operator, and add a family that straddles the old 3-row load step (the standing guard doesn't catch a revert of `counted_as` today); (3) fix the DESIGN.md sentence 20261010-47 added so it doesn't imply full independence for thresholds until this lands. Do 20261010-48's work after this (48 needs the spec to pass for thresholds 0..9). Security/Privacy-relevant boundary check: Opus builder and reviewer. Enclave change: unreleased list.
+
+- **Depends on:** 20261010-47 (landed).
+- **Came from:** The review of 20261010-47, 2026-10-11. Priority: trust boundary.
+- **Design:** What goes into the enclave; the burndown.
+- **Status:** todo
