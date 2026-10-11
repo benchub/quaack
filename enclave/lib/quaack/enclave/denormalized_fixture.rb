@@ -26,7 +26,11 @@ module Quaack
     # drops the foreign keys on the copy column, since the copied id need
     # not be a row of the table the key names, and then sets the column to
     # the parent's id column on every row whose parent's type column is the
-    # class, and no other row. Every name goes in as a quoted identifier
+    # class. Then, so a rewrite that drops the type filter or the join is
+    # caught, it sets it to the parent's id on each row whose parent is of
+    # another class (or none), and to a class parent's id on each row with
+    # no parent. arena-setup disables user triggers, so these updates fire
+    # none. Every name goes in as a quoted identifier
     # and the class as a parameter. A statement that fails is a load
     # failure (fixture_load_failed), never a disproof.
     module DenormalizedFixture
@@ -87,10 +91,14 @@ module Quaack
         copies.each_with_index do |copy, index|
           run = ->(sql, params = []) { statement.call(sql, params, step: :load, rule: :fixture_load_failed, index:) }
           child = table_sql(copy.table, quote)
-          run.call(FOREIGN_KEYS, [child, copy.column]).rows.each do |(name)|
-            run.call("ALTER TABLE #{child} DROP CONSTRAINT #{quote.call(name)}")
-          end
-          run.call(update_sql(copy, child, Catalog.new(run, quote), index), [copy.type_value])
+          drop_foreign_keys(run, child, copy.column, quote)
+          updates_sql(copy, child, Catalog.new(run, quote), index).each { run.call(it, [copy.type_value]) }
+        end
+      end
+
+      def drop_foreign_keys(run, child, column, quote)
+        run.call(FOREIGN_KEYS, [child, column]).rows.each do |(name)|
+          run.call("ALTER TABLE #{child} DROP CONSTRAINT #{quote.call(name)}")
         end
       end
 
@@ -98,16 +106,27 @@ module Quaack
       # compares them (AssumptionCheck::DenormalizedEqual), named with
       # their schema, so one planted ahead of it on the search_path can't
       # skip a row, and citext's stays citext's. Columns whose types share
-      # no = fail the load.
-      def update_sql(copy, child, catalog, index)
+      # no = fail the load. The statements are, in order: the class's
+      # rows, another class's rows, and rows with no parent. A NULL parent
+      # id is never copied.
+      def updates_sql(copy, child, catalog, index)
         parent = table_sql(copy.references_table, catalog.quote)
         assumption = copy.to_h.slice(*NAMES.map(&:to_sym)).transform_keys(&:to_s)
-        joined, typed, same = AssumptionCheck::DenormalizedEqual.conditions(assumption, catalog, child, parent)
-        name = ->(key) { catalog.quote_ident(copy.public_send(key)) }
-        "UPDATE #{child} c SET #{name.call(:column)} = p.#{name.call(:id_column)} FROM #{parent} p " \
-          "WHERE #{joined} AND #{typed} AND NOT COALESCE(#{same})"
+        conditions = AssumptionCheck::DenormalizedEqual.conditions(assumption, catalog, child, parent)
+        column, id = %i[column id_column].map { catalog.quote_ident(copy.public_send(it)) }
+        statements([child, column, parent, id], conditions)
       rescue AssumptionCheck::DenormalizedEqual::Unmet
         raise ArenaRunner::Error.new(:fixture_load_failed, step: :load, index:), cause: nil
+      end
+
+      def statements((child, column, parent, id), (joined, typed, same))
+        ["UPDATE #{child} c SET #{column} = p.#{id} FROM #{parent} p " \
+         "WHERE #{joined} AND #{typed} AND NOT COALESCE(#{same})",
+         "UPDATE #{child} c SET #{column} = p.#{id} FROM #{parent} p " \
+         "WHERE #{joined} AND NOT COALESCE(#{typed}, false) AND p.#{id} IS NOT NULL AND NOT COALESCE(#{same})",
+         "UPDATE #{child} c SET #{column} = x.v FROM (SELECT p.#{id} AS v FROM #{parent} p " \
+         "WHERE #{typed} AND p.#{id} IS NOT NULL ORDER BY p.ctid LIMIT 1) x " \
+         "WHERE NOT EXISTS (SELECT 1 FROM #{parent} p WHERE #{joined})"]
       end
 
       def table_sql(table, quote) = [table.schema, table.name].map { quote.call(it) }.join(".")

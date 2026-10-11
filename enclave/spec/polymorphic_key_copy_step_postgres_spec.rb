@@ -214,15 +214,13 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
       expect(outcome(test(twin(rewritten.sub("#{column} = $2", "#{column} = $2 + 1"))))).to include("passed" => false)
     end
 
-    # Rows of another class aren't honoured, so rewrite-test's near misses keep
-    # no copy and the twin matches them; counterexample-compare's insert of such a row with a
-    # copy is what tells them apart.
-    it "disproves in counterexamples a twin that drops the type filter" do
+    # Task 20261010-2: rows of another class get the copy set too, so
+    # rewrite-test's near misses tell them apart, and it never reaches counterexamples.
+    it "disproves in rewrite-test a twin that drops the type filter" do
       ready
       search = twin(rewritten.sub("assignments.context_type = $1 AND ", ""))
 
-      expect(outcome(test(search))).to include("passed" => true)
-      expect(outcome(round(search, 1, inserts))).to include("match" => false)
+      expect(outcome(test(search))).to include("passed" => false)
       expect(stored.read("rewrite_survived_2")).to eq("survived" => false)
     end
 
