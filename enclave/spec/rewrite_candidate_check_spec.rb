@@ -656,6 +656,52 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         .to rejected("unsupported_reg_literal")
     end
 
+    # A type's input or binary input function given a type oid raises for
+    # an oid that names nothing, so it probes whether a type exists
+    # (20261010-16).
+    [
+      "SELECT record_in('(1)'::cstring, 999999, -1) FROM orders",
+      "SELECT pg_catalog.enum_in('a'::cstring, 999999) FROM orders",
+      "SELECT id FROM orders WHERE array_in('{1}'::cstring, 23, -1) IS NULL",
+      "SELECT domain_in('1'::cstring, 999999, -1) FROM orders",
+      "SELECT range_in('[1,2]'::cstring, 999999, -1) FROM orders",
+      "SELECT multirange_in('{}'::cstring, 999999, -1) FROM orders",
+      "SELECT numeric_in('1'::cstring, 999999, -1) FROM orders"
+    ].each do |sql|
+      it "refuses #{sql}, a type input function given an oid" do
+        expect { check(sql) }.to rejected("name_lookup_function")
+      end
+    end
+
+    [
+      ["SELECT date_bin('15 minutes', created_at, now()) FROM orders",
+       "pg_catalog.date_bin('15 minutes', created_at, pg_catalog.now())"],
+      ["SELECT id FROM orders WHERE ST_DWithin(id, id, 3)", "st_dwithin(id, id, 3)"],
+      ["SELECT id FROM orders WHERE is_admin(id, 7)", "is_admin(id, 7)"]
+    ].each do |sql, call|
+      it "doesn't refuse #{sql} as a type input function" do
+        outcome = begin
+          check(sql).sql
+        rescue described_class::Error => e
+          e.rule
+        end
+        expect(%w[unsupported_reg_literal name_lookup_function]).not_to include(outcome)
+        expect(outcome.downcase).to include(call.downcase) if outcome.include?("(")
+      end
+    end
+
+    it "accepts a type input function given an oid that the original makes, as the original makes it" do
+      original = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT numeric_in($1::cstring, 1700, -1) FROM public.orders"
+      )
+      expect(check("SELECT numeric_in($1::cstring, 1700, -1) FROM orders", original:).sql)
+        .to include("numeric_in($1::cstring, 1700, -1)")
+    end
+
+    it "still accepts an ordinary one-argument function whose name ends in in" do
+      expect(check("SELECT min(id) FROM orders").sql).to eq("SELECT pg_catalog.min(id) FROM public.orders")
+    end
+
     # A function added in a later Postgres, or missed, fails here until it's
     # listed in RegValues or reviewed as harmless: one that says nothing
     # about a catalog object from an oid or a name, such as a planner's
@@ -689,17 +735,20 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
           AND p.proargtypes::pg_catalog.oid[] OPERATOR(pg_catalog.&&)
               ARRAY['oid','regclass','regtype','regproc','regprocedure','regoper','regoperator','regnamespace',
                     'regrole','regconfig','regdictionary','regcollation']::pg_catalog.regtype[]::pg_catalog.oid[]
-          AND p.proname !~ '(in|out|send|recv|cmp|larger|smaller)$'
+          AND p.proname !~ '(out|send|cmp|larger|smaller)$'
           AND p.proname !~ '^(oid(eq|ne|lt|le|gt|ge)|hash|bt|btoid)'
           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_operator o WHERE o.oprcode OPERATOR(pg_catalog.=) p.oid)
         ORDER BY 1
       SQL
       values = Quaack::Enclave::RewriteCandidateCheck::RegValues
-      unnamed = found.reject { values.lookup?(it) || values::TS_CONFIG.include?(it) || reviewed.match?(it) }
+      unnamed = found.reject do |f|
+        values.lookup?(f) || values::TS_CONFIG.include?(f) || reviewed.match?(f)
+      end
 
       expect(conn.exec("SHOW server_version_num").getvalue(0, 0)).to start_with("18")
       expect(unnamed).to eq([])
-      expect(found).to include("pg_get_indexdef", "pg_relation_filenode", "pg_stat_get_numscans")
+      expect(found).to include("pg_get_indexdef", "pg_relation_filenode", "pg_stat_get_numscans",
+                               "record_in", "enum_recv")
     end
 
     it "accepts an oid function the original makes, as the original makes it" do

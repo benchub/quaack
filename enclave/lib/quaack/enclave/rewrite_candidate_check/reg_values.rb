@@ -65,6 +65,18 @@ module Quaack
           to_tsvector to_tsquery plainto_tsquery phraseto_tsquery websearch_to_tsquery json_to_tsvector
           jsonb_to_tsvector ts_debug ts_headline ts_lexize
         ].to_set.freeze
+        # pg_catalog's type input and binary input functions, on Postgres 18,
+        # that take a type oid: those whose name ends in in or recv, with an
+        # oid among two or more arguments. Given an oid that names nothing,
+        # one raises, so a call is a lookup (20261010-16). A spec checks
+        # this list against the catalog.
+        OID_TYPE_INPUTS = %w[
+          anycompatiblemultirange_in anycompatiblerange_in anymultirange_in anyrange_in array_in array_recv
+          bit_in bit_recv bpcharin bpcharrecv domain_in domain_recv enum_in enum_recv interval_in
+          interval_recv multirange_in multirange_recv numeric_in numeric_recv range_in range_recv record_in
+          record_recv time_in time_recv timestamp_in timestamp_recv timestamptz_in timestamptz_recv timetz_in
+          timetz_recv varbit_in varbit_recv varcharin varcharrecv
+        ].to_set.freeze
         PRIVILEGE = /\Ahas_[a-z_]+_privilege\z/
         STATS = /\Apg_stat_get_/
 
@@ -107,6 +119,7 @@ module Quaack
 
         def lookup?(name)
           NAME_LOOKUPS.include?(name) || OID_LOOKUPS.include?(name) || INPUT_FUNCTIONS.include?(name) ||
+            OID_TYPE_INPUTS.include?(name) ||
             PRIVILEGE.match?(name.to_s) ||
             STATS.match?(name.to_s)
         end
