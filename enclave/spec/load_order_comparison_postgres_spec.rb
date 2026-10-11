@@ -187,6 +187,42 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
   end
 
+  # A later order's positions read the arena's self-referencing keys, so an
+  # earlier run that ends the comparison must leave that query unrun
+  # (distinct_loads is lazy). The forward order reads none.
+  describe "the later load orders after an earlier run ends the comparison" do
+    let(:key_reads) { [] }
+    let(:scan_order) { "SELECT string_agg(id::text, ',') FROM items" }
+
+    before do
+      allow(runner).to receive(:self_references).and_wrap_original do |original, tables|
+        key_reads << tables
+        original.call(tables)
+      end
+    end
+
+    it "reads no self-referencing keys when the forward run ends it" do
+      verdict = both(scan_order, "SELECT '5,4,3,2,1'")
+
+      expect(fields(verdict)).to include(match: false, load_order: :forward)
+      expect(key_reads).to be_empty
+    end
+
+    it "reads them only for the reverse order when the reverse run ends it" do
+      verdict = both(scan_order, "SELECT '1,2,3,4,5'")
+
+      expect(fields(verdict)).to include(match: false, load_order: :reverse)
+      expect(key_reads.size).to eq(1)
+    end
+
+    it "reads them for the reverse and rotated orders when every run matches" do
+      verdict = both("SELECT count(*) FROM items", "SELECT 5::int8")
+
+      expect(verdict.match?).to be(true)
+      expect(key_reads.size).to eq(2)
+    end
+  end
+
   describe "rewrites that match the forward load only by luck" do
     it "catches a subquery that drops its secondary sort key before a LIMIT" do
       original = "SELECT id, grp FROM (SELECT *, row_number() OVER (ORDER BY grp, id) n FROM items) s " \
