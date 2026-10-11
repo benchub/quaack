@@ -146,7 +146,7 @@ module Quaack
                                             "QUAACK supports.",
 
         # rewrite-test's refusals, when counterexamples meets one. The error
-        # line's column or cycle, when it has one, comes first.
+        # line's column, when it has one, comes first.
         "unsupported_type" => "A column of the query's tables has a type QUAACK can't build test rows for, so " \
                               "it can't test rewrites of this query.",
         "domain_check" => "A column's domain has a CHECK that rejects every value QUAACK tries, so it can't " \

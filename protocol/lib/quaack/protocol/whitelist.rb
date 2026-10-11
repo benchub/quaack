@@ -38,18 +38,17 @@ module Quaack
       # { "table", "column", "type" } of the column rewrite-test can't fill, which
       # are schema names, a schema.name pair, a name, and a type as
       # format_type prints it, never a row value. The enclave's ErrorFilter
-      # sends it only if each is a plain unquoted name of that shape. cycle
-      # is only on an fk_cycle refusal: the tables of a foreign key cycle,
-      # 3 to 64 schema.name Strings in the order their foreign keys point,
-      # the last the first again. They're schema names, each one checked to
-      # be a relation of the run's schema subset, and never a row value.
+      # sends it only if each is a plain unquoted name of that shape. No
+      # error line names a foreign key cycle's tables (20261010-6): an
+      # fk_cycle refusal is its rule alone, and the cycle goes out only in
+      # the report payload's rewrite fate.
       # tables is only on a dump_object_unreadable refusal: 1 to 64
       # schema.name Strings, the tables schema-dump needs that the
       # operator's role can't read. They're schema names, for the operator,
       # and never reach the LLM. parser_major is only on a query_unparsable
       # refusal: the Postgres major of the enclave's pg_query grammar, the
       # enclave's own constant, an Integer from 10 to 99 (ParserMajor).
-      error: %i[step rule sqlstate reason function clients column cycle tables parser_major].freeze,
+      error: %i[step rule sqlstate reason function clients column tables parser_major].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

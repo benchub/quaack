@@ -35,21 +35,16 @@ module Quaack
         COLUMN_KEYS = %w[table column type].freeze
         IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
         TYPE = /\A[a-z_][a-z0-9_ $.,()\[\]]{0,127}\z/
-        # An fk_cycle refusal's tables (DESIGN.md's rewrite-test), as the enclave's
-        # ErrorFilter shapes them: 3 to 64 schema.name Strings (quoted where the
-        # catalog quotes them), the last the first again.
-        CYCLE_RULE = "fk_cycle"
-        CYCLE_SIZES = (3..64)
-        # One part of a cycle's table name, as the catalog's quote_ident writes
-        # it: a bare lowercase name, or a quoted one of printable characters
-        # (no control or format characters) whose quote marks are doubled.
-        CYCLE_PART = /(?:[a-z_][a-z0-9_$]{0,62}|"(?:[^"\p{C}]|""){1,126}")/
-        CYCLE_TABLE = /\A#{CYCLE_PART}\.#{CYCLE_PART}\z/
         # A dump_object_unreadable refusal's tables (DESIGN.md's schema-dump), as
-        # the enclave's ErrorFilter shapes them: 1 to 64 plain schema.name
-        # Strings, for the operator.
+        # the enclave's ErrorFilter shapes them: 1 to 64 schema.name Strings
+        # (quoted where the catalog quotes them), for the operator.
         TABLES_RULE = "dump_object_unreadable"
         TABLES_SIZES = (1..64)
+        # One part of a table's name, as the catalog's quote_ident writes it:
+        # a bare lowercase name, or a quoted one of printable characters (no
+        # control or format characters) whose quote marks are doubled.
+        TABLE_PART = /(?:[a-z_][a-z0-9_$]{0,62}|"(?:[^"\p{C}]|""){1,126}")/
+        TABLE = /\A#{TABLE_PART}\.#{TABLE_PART}\z/
 
         module_function
 
@@ -65,23 +60,16 @@ module Quaack
         def named(rule, error)
           { column: (column(error["column"]) if COLUMN_RULES.include?(rule)),
             clients: (clients(error["clients"]) if rule == CLIENTS_RULE),
-            cycle: (cycle(error["cycle"]) if rule == CYCLE_RULE),
             tables: (tables(error["tables"]) if rule == TABLES_RULE),
             parser_major: (Protocol::ParserMajor.check(error["parser_major"]) if rule == Protocol::ParserMajor::RULE) }
         end
 
         def reason(rule, reason) = (reason if REASON_RULES.include?(rule) && REASONS.include?(reason))
 
-        def cycle(cycle)
-          return unless cycle.instance_of?(Array) && CYCLE_SIZES.cover?(cycle.size) && cycle.first == cycle.last
-
-          cycle if cycle.all? { shaped(it, CYCLE_TABLE) }
-        end
-
         def tables(tables)
           return unless tables.instance_of?(Array) && TABLES_SIZES.cover?(tables.size)
 
-          kept = tables.select { shaped(it, CYCLE_TABLE) }
+          kept = tables.select { shaped(it, TABLE) }
           kept unless kept.empty?
         end
 

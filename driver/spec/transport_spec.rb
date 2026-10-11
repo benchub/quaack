@@ -1191,57 +1191,24 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.parser_major).to be_nil
     end
 
-    it "shows the tables of an fk_cycle refusal, in the order their foreign keys point" do
+    # 20261010-6: no error line names a cycle. An error line is read field
+    # by field (ErrorFields), so a cycle on one (an older enclave's) is
+    # dropped, and the refusal shows its rule alone.
+    it "drops the cycle of an fk_cycle error line that carries one, and shows none of its tables" do
       cycle = %w[public.accounts billing.courses public.accounts]
-      line = { type: "error", step: "counterexample-round", rule: "fk_cycle", cycle: }
-      error = refusal(JSON.generate(line))
+      error = refusal(JSON.generate({ type: "error", step: "counterexample-round", rule: "fk_cycle", cycle: }))
 
-      expect(error.cycle).to eq(cycle)
-      expect(error.rule_with_note).to eq("fk_cycle: public.accounts -> billing.courses -> public.accounts. " \
-                                         "#{Quaack::Driver::FixedNotes.for("fk_cycle", "")}")
-      expect(error.message).to eq("quaacks probe failed: fk_cycle (step counterexample-round, " \
-                                  "cycle public.accounts -> billing.courses -> public.accounts, exit 0)")
+      expect([error.rule, error.step]).to eq(%w[fk_cycle counterexample-round])
+      expect(error.rule_with_note).to eq("fk_cycle: #{Quaack::Driver::FixedNotes.for("fk_cycle", "")}")
+      expect(error.full_message(highlight: false)).not_to include("courses")
     end
 
-    it "shows a cycle's quoted names, as the catalog quotes them" do
-      cycle = ['"Sales"."Acc""ounts"', 'a."b.c"', 'public."user"', "public.action", '"Sales"."Acc""ounts"']
-      error = refusal(JSON.generate({ type: "error", rule: "fk_cycle", cycle: }))
+    it "shows an fk_cycle refusal as its rule and fixed note alone" do
+      error = refusal(%({"type":"error","step":"counterexample-round","rule":"fk_cycle"}))
 
-      expect(error.cycle).to eq(cycle)
-      expect(error.rule_with_note).to start_with(%(fk_cycle: #{cycle.join(" -> ")}. ))
-    end
-
-    [
-      ["a quoted name with a control character", ["\"Sales\".\"Acc\nounts\"", "public.b", "\"Sales\".\"Acc\nounts\""]],
-      ["a quoted name with an unescaped quote", ['"Sa"les".a', "public.b", '"Sa"les".a']],
-      ["a quoted name with junk after it", ['"Sales"."A" SENTINEL', "public.b", '"Sales"."A" SENTINEL']],
-      ["a quoted name with a bidi override", ["\"Sa‮les\".a", "public.b", "\"Sa‮les\".a"]],
-      ["a quoted name with an escape", ["\"Sa\e[31mles\".a", "public.b", "\"Sa\e[31mles\".a"]],
-      ["an empty quoted name", ['"".a', "public.b", '"".a']],
-      ["a quoted name of more than 126 characters", ["public.\"#{"a" * 127}\"", "public.b", "public.\"#{"a" * 127}\""]],
-      ["a sentinel table", %w[public.a SENTINEL public.a]],
-      ["a sentinel after a table", ["public.a SENTINEL", "public.b", "public.a SENTINEL"]],
-      ["an end that isn't its start", %w[public.a public.b public.c]],
-      ["no second table", %w[public.a public.a]],
-      ["more than 64 tables", [*Array.new(64) { "public.t#{it}" }, "public.t0"]],
-      ["a table that isn't a String", [1, "public.b", 1]],
-      ["a String", "SENTINEL"]
-    ].each do |label, cycle|
-      it "drops a cycle with #{label}" do
-        error = refusal(%({"type":"error","rule":"fk_cycle","cycle":#{JSON.generate(cycle)}}))
-
-        expect(error.cycle).to be_nil
-        expect(error.rule_with_note).to eq("fk_cycle: #{Quaack::Driver::FixedNotes.for("fk_cycle", "")}")
-        expect(error.message).to eq("quaacks probe failed: fk_cycle (exit 0)")
-        expect(error.full_message(highlight: false)).not_to include("SENTINEL")
-      end
-    end
-
-    it "drops a cycle on any rule but fk_cycle" do
-      error = refusal(%({"type":"error","rule":"complex_check","cycle":["public.a","public.b","public.a"]}))
-
-      expect(error.cycle).to be_nil
-      expect(error.message).to eq("quaacks probe failed: complex_check (exit 0)")
+      expect(error).not_to respond_to(:cycle)
+      expect(error.rule_with_note).to eq("fk_cycle: #{Quaack::Driver::FixedNotes.for("fk_cycle", "")}")
+      expect(error.message).to eq("quaacks probe failed: fk_cycle (step counterexample-round, exit 0)")
     end
 
     # 20261001-10: the tables the operator's role can't read, for the operator.
