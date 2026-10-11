@@ -10438,3 +10438,12 @@ From the review of 20261003-28 (minor). The `ref.fields.size == 2` check in `Gro
 - **Came from:** The review of 20261003-28, 2026-10-10 (minor).
 - **Design:** rewrite-rules.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-1; spec-only): a spec where a select-list subquery reuses the alias `s` on its own table and reads `s.user_id`; the rows match the original's, and it goes red if the rule skips select-list subqueries when collecting the columns to add. The `ref.fields.size == 2` guard half was dropped: no realistic query reaches it (a bare name matching a copy alias is refused earlier as a whole-row read in `Copies#whole_row?`, and three-field refs are `schema.table.column`). The guard stays as fail-closed defense.
+
+### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
+
+The second review of 20261008-39 found this minor issue: rewrite candidates accept `record_in('(1)'::cstring, 999999, -1)`, `enum_in`, `array_in`, `domain_in`, `range_in`, `multirange_in` and their `*_recv` forms. They're stable, take a type oid, and raise "type with OID ... does not exist" or "cache lookup failed" for one that names nothing, so they probe whether a type oid exists. The completeness spec misses them because its `(in|out|send|recv|...)$` exclusion filters them out. Index DDL isn't affected, since an index expression must be immutable. Refuse a call to any `*_in` or `*_recv` function given an oid argument (or list these names), and narrow the spec's exclusion so they show up. It's exotic SQL that no ORM generates.
+
+- **Depends on:** 20261008-39.
+- **Came from:** The second review of 20261008-39, 2026-10-10.
+- **Design:** What goes into the enclave.
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-16; two Opus reviews, the first found the name pattern too broad). The candidate check refuses calls to the 36 pg_catalog type input and recv functions that take an oid (`RegValues::OID_TYPE_INPUTS`, generated from Postgres 18's pg_proc, with a completeness spec against a real catalog), as `name_lookup_function`, through `lookup?`, so the existing exemption for a call the original makes the same way applies. `date_bin`, unqualified `ST_DWithin`-shaped calls and app functions like `is_admin(uid, org)` are accepted.

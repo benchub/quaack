@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-12: `not_in_to_not_exists` refuses a NOT IN that appears again in the same SELECT when a copy is in its GROUP BY, DISTINCT ON, or ORDER BY.
 - 20261008-36: the statistics read pins DateStyle to ISO, so stored date and timestamp values replay the same in any session.
 - 20261010-13: a plan deeper than PlainData::MAX_DEPTH in measurement or index-build confirm is refused as plan_too_deep; the SingleCandidateTest plan parse is bounded.
+- 20261010-16: the candidate check refuses calls to the oid-taking type input and recv functions of pg_catalog (`name_lookup_function`), unless the original makes the same call.
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -660,15 +661,6 @@ From the review of 20261004-89 (minor).
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
-
-The second review of 20261008-39 found this minor issue: rewrite candidates accept `record_in('(1)'::cstring, 999999, -1)`, `enum_in`, `array_in`, `domain_in`, `range_in`, `multirange_in` and their `*_recv` forms. They're stable, take a type oid, and raise "type with OID ... does not exist" or "cache lookup failed" for one that names nothing, so they probe whether a type oid exists. The completeness spec misses them because its `(in|out|send|recv|...)$` exclusion filters them out. Index DDL isn't affected, since an index expression must be immutable. Refuse a call to any `*_in` or `*_recv` function given an oid argument (or list these names), and narrow the spec's exclusion so they show up. It's exotic SQL that no ORM generates.
-
-- **Depends on:** 20261008-39.
-- **Came from:** The second review of 20261008-39, 2026-10-10.
-- **Design:** What goes into the enclave.
-- **Status:** todo
-
 ### 20261010-17. Tablespace check: minors from 20261008-38.
 
 The reviews of 20261008-38 found these minor issues:
@@ -879,4 +871,13 @@ Do: (1) make the fields that depend on a count threshold's value independent of 
 - **Depends on:** 20261010-47 (landed).
 - **Came from:** The review of 20261010-47, 2026-10-11. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown.
+- **Status:** todo
+
+### 20261011-3. DESIGN.md and message wording for the oid type input functions (minors from 20261010-16).
+
+The `name_lookup_function` paragraph in DESIGN.md (around line 501) doesn't mention the type input and recv functions given an oid (`record_in`, `enum_in`, `array_in`, `domain_in`, `range_in`, `multirange_in` and their `recv` forms; `RegValues::OID_TYPE_INPUTS`): add a clause. The refusal's message says the function "looks up a name", which is slightly off for an oid argument; reword it for both uses if that's cheap. Docs and one string; spec for the string if it's asserted.
+
+- **Depends on:** 20261010-16 (landed).
+- **Came from:** The second review of 20261010-16, 2026-10-11 (minor).
+- **Design:** rewrite-check.
 - **Status:** todo
