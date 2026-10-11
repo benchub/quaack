@@ -60,7 +60,7 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
 
       line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "plan")
 
-      expect(line).to eq('{"type":"error","step":"plan","rule":"query_unparsable"}')
+      expect(line).to eq('{"type":"error","step":"plan","rule":"query_unparsable","parser_major":17}')
       expect(line).not_to include(sentinel)
     end
   end

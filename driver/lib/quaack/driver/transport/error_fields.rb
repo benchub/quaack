@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/parser_major"
 require "quaack/protocol/unreadable_reasons"
 
 module Quaack
@@ -65,7 +66,8 @@ module Quaack
           { column: (column(error["column"]) if COLUMN_RULES.include?(rule)),
             clients: (clients(error["clients"]) if rule == CLIENTS_RULE),
             cycle: (cycle(error["cycle"]) if rule == CYCLE_RULE),
-            tables: (tables(error["tables"]) if rule == TABLES_RULE) }
+            tables: (tables(error["tables"]) if rule == TABLES_RULE),
+            parser_major: (Protocol::ParserMajor.check(error["parser_major"]) if rule == Protocol::ParserMajor::RULE) }
         end
 
         def reason(rule, reason) = (reason if REASON_RULES.include?(rule) && REASONS.include?(reason))

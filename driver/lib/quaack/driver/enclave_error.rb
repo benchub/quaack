@@ -66,7 +66,7 @@ module Quaack
                      "--enclave-timeout-seconds to quaack run"
 
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients cycle tables].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients cycle tables parser_major].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
@@ -79,11 +79,12 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, cycle: nil, tables: nil, exit_status: nil, signal: nil, timeout_seconds: nil)
+                     clients: nil, cycle: nil, tables: nil, parser_major: nil,
+                     exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
         @timeout_seconds = timeout_seconds
         @rule = rule
-        @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle:, tables: }.freeze
+        @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle:, tables:, parser_major: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -148,10 +149,15 @@ module Quaack
 
       private
 
-      # query_unparsable's note, naming pg_query's grammar.
+      # query_unparsable's note, naming the enclave's pg_query grammar, from
+      # the line's parser_major. An older enclave sends none, so the note
+      # then names the driver's own pg_query grammar, which installs from
+      # the same lockfile.
       def unparsable
-        require "pg_query"
-        major = PgQuery::PG_VERSION_NUM / 10_000
+        major = parser_major || begin
+          require "pg_query"
+          PgQuery::PG_VERSION_NUM / 10_000
+        end
         "#{rule} (pg_query parses with the Postgres #{major} grammar; " \
           "Postgres #{major + 1}-only syntax isn't supported yet)"
       end

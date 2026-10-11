@@ -46,8 +46,10 @@ module Quaack
       # tables is only on a dump_object_unreadable refusal: 1 to 64
       # schema.name Strings, the tables schema-dump needs that the
       # operator's role can't read. They're schema names, for the operator,
-      # and never reach the LLM.
-      error: %i[step rule sqlstate reason function clients column cycle tables].freeze,
+      # and never reach the LLM. parser_major is only on a query_unparsable
+      # refusal: the Postgres major of the enclave's pg_query grammar, the
+      # enclave's own constant, an Integer from 10 to 99 (ParserMajor).
+      error: %i[step rule sqlstate reason function clients column cycle tables parser_major].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,
