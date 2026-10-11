@@ -2,11 +2,29 @@
 
 CTEs with the same body, at any depth, become one CTE in the top-level WITH that every reference reads.
 
-It's one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
+It is one of QUAACK's mechanical rewrite rules (see [DESIGN.md's rewrite-rules](../../DESIGN.md#rewrite-rules-mechanical-rules)).
 
 ## What it does.
 
-CTEs at any depth whose bodies, column names, and materialization option all match become one CTE at the front of the top-level `WITH`, and every reference to a copy reads it. The literal oracle decides whether two placeholders match; no value is read. The copies leave their `WITH`s, and a `WITH` left empty goes. The merged CTE keeps the first copy's name unless another CTE or an unrelated table reference uses it; then it's `quaack_cte_<n>`, the first such name the query doesn't use, and each renamed reference keeps its old name as an alias. So a nearer CTE of the same name can never hide it. A merged plain CTE may now be materialized, since it's read more than once; plan-pruning onward decide whether that helps. A copy merges only if Postgres can analyze its body alone, so it isn't correlated, it reads no CTE from outside its body, and it calls no volatile function. It refuses a copy in a `RECURSIVE` `WITH`, and the whole query when the top-level `WITH` is `RECURSIVE` or any CTE modifies data. A copy inside another copy's body moves with it.
+The rule merges CTEs at any depth when all of these match:
+
+- Their bodies.
+- Their column names.
+- Their materialization option.
+
+The merged CTE goes at the front of the top-level `WITH`, and every reference to a copy reads it. The literal oracle decides whether two placeholders match. No value is read. The copies leave their `WITH`s, and the rule removes each `WITH` that becomes empty.
+
+The merged CTE keeps the name of the first copy, unless another CTE or an unrelated table reference uses that name. In that case, the name is `quaack_cte_<n>`, the first such name that the query does not use. Each renamed reference keeps its old name as an alias. Thus a nearer CTE of the same name can never hide the merged CTE.
+
+A merged plain CTE can now be materialized, because the query reads it more than once. plan-pruning and the steps after it decide whether that helps.
+
+A copy merges only if Postgres can analyze its body alone. Thus the copy:
+
+- Is not correlated.
+- Reads no CTE from outside its body.
+- Calls no volatile function.
+
+The rule refuses a copy in a `RECURSIVE` `WITH`. It refuses the whole query when the top-level `WITH` is `RECURSIVE`, or when any CTE modifies data. A copy inside the body of another copy moves with that copy.
 
 ## What it rests on.
 
@@ -14,9 +32,9 @@ No assumption. Its output returns the same rows as its input on any data the sch
 
 ## Example.
 
-Two subqueries, each with its own copy of the same CTE. The rule keeps one copy, at the top, and both subqueries read it. The two placeholders hold the same literal, so the copy keeps the first one's.
+Two subqueries, each with its own copy of the same CTE. The rule keeps one copy, at the top, and both subqueries read it. The two placeholders hold the same literal, so the copy keeps the placeholder of the first copy.
 
-QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs, so the example shows them that way. The rule made this "after" on Postgres 18, from these tables:
+QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs. Thus the example shows the constants as placeholders. The rule made this "after" on Postgres 18, from these tables:
 
 ```sql
 CREATE TABLE public.users (id bigint PRIMARY KEY, name text, workflow_state text NOT NULL);
