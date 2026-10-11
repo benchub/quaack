@@ -813,3 +813,16 @@ The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in 
 - **Design:** rewrite-test, scenarios.
 - **Status:** in progress (branch task/20261011-13)
 
+### 20261011-14. Report formatting: collapsed sections, source wording, and the left stripe only.
+
+From the user, 2026-10-11, three items on the HTML report:
+1. The sections "Indexes the planner wouldn't use" and "Indexes QUAACK thought of that you already have" start opened. Make their initial state collapsed, like "Show the N things QUAACK tried that didn't pan out".
+2. In the "Show the N things QUAACK tried that didn't pan out" section (and anywhere else the report names where an index idea came from), "generator one" and "generator two" mean nothing to a reader. The user doesn't see the value in telling them apart; if we keep the distinction, use the burndown's phrasing: "inspired by the query's text" and "inspired by the query's plan" (the Sankey and funnel use "from the query's text" and "from the query's plan"; check the exact words the burndown uses and match them). The main session's decision: keep the distinction (it says which part of the pipeline had the idea) in the burndown's words.
+3. The light red background of the "Indexes QUAACK thought of that you already have" section is narrower than the section's contents. The solid vertical stripe on the left is as good an indicator, so drop the tinted background and keep only the left stripe. This holds for all collapsible sections: apply it to every collapsible section in the report, light and dark theme (and keep the contrast and dark-theme specs green).
+Test first in `driver/spec/report_spec.rb` (structure: the two sections have no `open` attribute and the same collapsed state as the "tried" section; no "generator one"/"generator two" text in the report; collapsible sections have the left border and no background tint), mutate, update DESIGN.md and the README sample, and render a screenshot in headless Firefox in both themes to check it (save under your scratch directory; the main session will show the user). Driver only.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-11.
+- **Design:** report.
+- **Status:** todo
+
