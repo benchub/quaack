@@ -697,6 +697,7 @@ From the review of 20261007-58 (minor, a requirement question). The denormalized
 - **Depends on:** 20261007-58.
 - **Came from:** The review of 20261007-58, 2026-10-10.
 - **Design:** assumption check, CatalogShadow.
+- **Decided by the user (2026-10-11):** option (a). Document it as a known, unsupported-in-v1 setup (DESIGN.md and README's unsupported list); no code change. Then mark done.
 - **Status:** todo (needs the user)
 
 ### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
@@ -874,6 +875,7 @@ From the review of 20261010-43 (minor). `VacuityGuard::Search` stops after `SECO
 - **Depends on:** 20261010-43 (landed).
 - **Came from:** The review of 20261010-43, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
+- **Decided by the user (2026-10-11):** count attempts, not the clock: the trial count is the only budget. Also warn in `quaack` output when the search (or its requests) is taking a long time; the warning may carry only a duration or a fixed word, nothing from the data. Do it after 20261010-47 lands (same files).
 - **Status:** todo
 
 ### 20261010-51. Vacuity-guard search: loose ends from 20261010-43.
