@@ -15,6 +15,7 @@
     --st-default: #2f6fb3; --st-blue: #1f5fa8; --st-teal: #0f766e; --st-violet: #7b3fb0; --st-brown: #a1561c;
     --st-rose: #b02a5b; --st-green: #4d7c0f; --st-gold: #8a6d00; --st-indigo: #3b5bdb; --st-slate: #334e68;
     --sb-teal: #d6efec; --sb-violet: #ece1f6; --sb-brown: #f6e3d3;
+    --sk-source: #5b6b7f; --sk-drop: #b3402f; --sk-held: #8a6d00;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -30,6 +31,7 @@
       --st-default: #5b9bea; --st-blue: #5b9bea; --st-teal: #2fb5a8; --st-violet: #b07ae0; --st-brown: #d98a4a;
       --st-rose: #e0699a; --st-green: #8cc63f; --st-gold: #d4b030; --st-indigo: #7c93f5; --st-slate: #7fa0c4;
       --sb-teal: #173a38; --sb-violet: #2e2340; --sb-brown: #3b2a1b;
+      --sk-source: #9fb0c4; --sk-drop: #e0816f; --sk-held: #d4b030;
     }
   }
   body { font: 16px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--text); background: var(--bg);
@@ -98,6 +100,12 @@
   svg.funnel text.stage { font-weight: 600; }
   svg.funnel text.counts { font-size: 12px; fill: var(--funnel-count); }
   svg.funnel .unknown text.counts { font-style: italic; }
+  h4 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
+  svg.sankey { display: block; width: 100%; height: auto; margin: 0.5rem 0 0.75rem; }
+  svg.sankey text { font: 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--funnel-count); }
+  svg.sankey text.stage { font-size: 13px; font-weight: 600; fill: var(--funnel-text); }
+  svg.sankey text.counts { fill: var(--funnel-text); }
+  svg.sankey text.flow { fill: var(--funnel-text); }
 </style>
 </head><body>
 <h1>QUAACK report <%= h run_id %></h1>
@@ -378,7 +386,12 @@
 <% [["index", "Index ideas for the original query", index_rows], ["rewrite", "Rewrites", rewrite_rows],
    ["rewrite-index", "Index ideas for the rewrites", rewrite_index_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
+<p class="note compare" id="compare-<%= id %>"><%= h Sankey::NOTE %></p>
+<h4>Funnel</h4>
 <%= funnel(id, title, rows, of_rewrite: id == "rewrite-index") %>
+<h4>Sankey diagram, the same data</h4>
+<%= sankeys(id, title, rows, of_rewrite: id == "rewrite-index") %>
+<h4>Table, with the exact numbers</h4>
 <table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Held back for a real build</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
 <tbody>
 <% rows.each do |name, record, stage| %>
