@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "../name_qualifier"
+require_relative "keyword_reach"
 
 module Quaack
   module Enclave
@@ -35,19 +36,60 @@ module Quaack
         end
 
         # Raises Error if a schema in schemas but pg_catalog has an operator
-        # named in operators.
-        def check!(operators, schemas, connection)
+        # named in operators that the candidate's operands could pick: one
+        # with an argument type the candidate can see, one Postgres casts a
+        # seen type to implicitly, or a pseudo-type, such as anyelement. A
+        # seen type is a column type of a relation parse reads, a type it
+        # casts to, the result type of a function it calls outside
+        # pg_catalog, or a literal's type, each with the base types of its
+        # domains and the element types of its arrays.
+        def check!(operators, schemas, connection, parse)
           return if operators.empty?
 
           others = schemas - ["pg_catalog"]
           return if others.empty?
 
-          found = connection.exec_params(<<~SQL, [array(operators), array(others)]).ntuples
-            SELECT 1 FROM pg_catalog.pg_operator o JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) o.oprnamespace
-            WHERE o.oprname OPERATOR(pg_catalog.=) ANY ($1::pg_catalog.text[])
-              AND n.nspname OPERATOR(pg_catalog.=) ANY ($2::pg_catalog.text[]) LIMIT 1
-          SQL
+          found = connection.exec_params(KeywordReach::SQL, [array(operators), array(others), *seen(parse)]).ntuples
           raise Error.new(RULE, DETAIL) if found.positive?
+        end
+
+        LITERAL_TYPES = %w[pg_catalog.text pg_catalog.int4 pg_catalog.int8 pg_catalog.numeric pg_catalog.bool
+                           pg_catalog.float8].freeze
+
+        # The relations and type names parse names, each as one qualified,
+        # quoted text, and the schemas and names of the functions it calls
+        # outside pg_catalog, as text arrays.
+        def seen(parse)
+          tree = parse.tree
+          functions = functions(tree)
+          lists = [relations(tree), types(tree) + LITERAL_TYPES, functions.map(&:first), functions.map(&:last)]
+          lists.map { array(it) }
+        end
+
+        def relations(tree)
+          nodes(tree, PgQuery::RangeVar).filter_map { quoted([it.schemaname, it.relname]) unless it.schemaname.empty? }
+        end
+
+        def types(tree) = nodes(tree, PgQuery::TypeName).map { |type| quoted(type.names.map { it.string.sval }) }
+
+        def functions(tree)
+          nodes(tree, PgQuery::FuncCall).filter_map do |call|
+            names = call.funcname.map { it.string.sval }
+            names if names.size == 2 && names.first != "pg_catalog"
+          end
+        end
+
+        def quoted(parts) = parts.map { PG::Connection.quote_ident(it) }.join(".")
+
+        # Every node of type in the tree.
+        def nodes(node, type, found = [])
+          found << node if node.is_a?(type)
+          case node
+          when Google::Protobuf::RepeatedField then node.each { nodes(it, type, found) }
+          when PgQuery::Node then nodes(node.inner, type, found)
+          when Google::Protobuf::MessageExts then node.class.descriptor.each { nodes(it.get(node), type, found) }
+          end
+          found
         end
 
         def array(strings) = PG::TextEncoder::Array.new.encode(strings)

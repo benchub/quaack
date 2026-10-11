@@ -147,7 +147,7 @@ module Quaack
         placeholders!(parse, original.placeholders)
         keywords = syntactic!(parse, original.sql)
         accepted = relations!(pinned(sql, parse, original.sql), original.relations, settings, connection)
-        keyword_operators!(keywords, settings, connection)
+        keyword_operators!(keywords, accepted.parse, settings, connection)
         volatility!(accepted.sql, settings, connection)
         RegTypes.check!(accepted.parse, original, connection)
         accepted
@@ -216,10 +216,10 @@ module Quaack
         KeywordOperators.unmade(parse, original_sql)
       end
 
-      def keyword_operators!(operators, settings, connection)
+      def keyword_operators!(operators, parse, settings, connection)
         return if operators.empty?
 
-        KeywordOperators.check!(operators, RelationQualifier.search_path(settings, connection), connection)
+        KeywordOperators.check!(operators, RelationQualifier.search_path(settings, connection), connection, parse)
       rescue RelationQualifier::Error => e
         raise Error.new("bad_search_path", e.message), cause: nil
       end

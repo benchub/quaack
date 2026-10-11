@@ -1163,6 +1163,65 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect(kw_outcome(sql, "public, sales")).to eq(expected)
     end
 
+    context "with citext and hstore in public, as on most production paths" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE EXTENSION citext WITH SCHEMA public; CREATE EXTENSION hstore WITH SCHEMA public;
+          CREATE DOMAIN public.ci_dom AS public.citext;
+          ALTER TABLE sales.items ADD COLUMN code public.citext, ADD COLUMN tags public.hstore;
+          ALTER TABLE public.customers ADD COLUMN codes public.ci_dom[];
+        SQL
+      end
+
+      let(:common) do
+        [
+          "SELECT id FROM orders WHERE id IN ($1, $2)",
+          "SELECT id FROM orders WHERE status IN ('a', 'b')",
+          "SELECT id FROM orders WHERE total_cents BETWEEN 1 AND 3",
+          "SELECT CASE status WHEN 'a' THEN 1 ELSE 0 END FROM orders",
+          "SELECT o.id FROM orders o JOIN orders p USING (status)",
+          "SELECT id FROM orders WHERE 'a' IN ('a', 'b')"
+        ]
+      end
+
+      it "accepts the common rewrites on integer and text columns" do
+        expect(common.map { kw_outcome(it, "public") }).to all(start_with("SELECT"))
+      end
+
+      it "refuses the same forms where a citext or hstore operand can pick public's operator" do
+        refused = [
+          "SELECT id FROM sales.items WHERE code IN ('a', 'b')",
+          "SELECT id FROM sales.items WHERE code BETWEEN 'a' AND 'b'",
+          "SELECT id FROM sales.items WHERE tags IN (tags)",
+          "SELECT id FROM customers WHERE codes[1] IN ('a')"
+        ]
+        expect(refused.map { kw_outcome(it, "public") }).to all(eq(kw_detail))
+      end
+
+      it "refuses a type a seen type casts to implicitly, a pseudo-type, and a function's result type" do
+        conn.exec("CREATE CAST (bigint AS public.citext) WITH INOUT AS IMPLICIT")
+        expect(kw_outcome("SELECT id FROM orders WHERE id IN ($1, $2)", "public")).to eq(kw_detail)
+        conn.exec(<<~SQL)
+          DROP CAST (bigint AS public.citext); CREATE SCHEMA poly;
+          CREATE FUNCTION poly.eq(anyelement, anyelement) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
+          CREATE OPERATOR poly.= (LEFTARG = anyelement, RIGHTARG = anyelement, FUNCTION = poly.eq);
+          CREATE FUNCTION public.ci() RETURNS public.citext LANGUAGE sql IMMUTABLE AS $$SELECT 'a'::public.citext$$;
+        SQL
+        expect(kw_outcome("SELECT id FROM orders WHERE id IN ($1, $2)", "public")).to start_with("SELECT")
+        expect(kw_outcome("SELECT id FROM orders WHERE id IN ($1, $2)", "public, poly")).to eq(kw_detail)
+        with_ci = described_class::Original.new(relations:, placeholders: 3,
+                                                sql: "SELECT public.ci() FROM public.orders")
+        expect(kw_outcome("SELECT id FROM orders WHERE public.ci() IN ('a')", "public", original: with_ci))
+          .to eq(kw_detail)
+      end
+
+      it "still refuses a text column or text literals when a user schema has =(text, text)" do
+        expect(kw_outcome("SELECT 1 WHERE 'a' IN ('a', 'b')", "kw, pg_catalog, public")).to eq(kw_detail)
+        expect(kw_outcome("SELECT id FROM orders WHERE status IN ('a', 'b')", "kw, pg_catalog, public"))
+          .to eq(kw_detail)
+      end
+    end
+
     it "checks keyword operators after relations" do
       expect(kw_outcome("SELECT 1 FROM public.nowhere WHERE 1 IN (2)", "kw, public")).to start_with("unknown_relation")
     end
