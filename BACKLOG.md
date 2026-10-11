@@ -723,6 +723,7 @@ The reviews of 20261008-38 found these minor issues:
 - **Design:** What goes into the enclave.
 - **Landed so far:** items 2, 4 and 5, 2026-10-10 (task/20261010-17). Item 2: `Qualify.tablespaces` counts the tables its query finds and refuses with `unknown_relation` on a shortfall. Item 4: the dispatcher spec's step order. Item 5: the `reply_json_spec` bound is 1 s.
 - **Open, needs the user:** item 1 (compare the run server's tablespaces with production's: how run-server learns the placement, and when to refuse) and item 3 (what to do about TOAST tables; one option is adding `reltoastrelid` to the `used` set).
+- **Decided by the user (2026-10-11):** item 1 is a warning in the report, not a refusal. Item 3: TOAST tables' tablespaces count (a table's TOAST table is part of its storage).
 - **Status:** todo
 
 ### 20261010-18. LLM adapter for the Claude Code CLI.
@@ -819,6 +820,7 @@ Rendering: inline SVG generated in Ruby, like the funnel (no JavaScript or exter
 - **Depends on:** 20261010-20 (landed). Not started: the user asked that no new items be picked up until their next run; they have not said whether this goes before the version bump.
 - **Came from:** The user, 2026-10-10.
 - **Design:** report, burndown.
+- **Decided by the user (2026-10-11):** the Sankey goes in before the next version bump. Start now.
 - **Status:** todo
 
 ### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`).
@@ -903,4 +905,5 @@ The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed a
 - **Depends on:** the user's profile for part 1; the user's go-ahead for part 2.
 - **Came from:** The user's run, 2026-10-10.
 - **Design:** rewrite-test, Where QUAACK runs.
+- **Decided by the user (2026-10-11):** the budget is 5 minutes per rewrite. The user will profile part 1. The version bump waits until rewrite-test's performance is fixed.
 - **Status:** todo (needs the user)
