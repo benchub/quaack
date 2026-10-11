@@ -46,9 +46,19 @@ RSpec.describe Quaack::Driver::Report do
     expect(html.scan(caution).size).to eq(2)
   end
 
-  it "adds the caution after another one" do
+  it "opens with the time caution when there are untested conditions too, never saying every test passed" do
     rewrites.first["untested_atoms"] = ["a < $1"]
-    expect(html).to include("behave the same in the rewrite. Its test on made-up data didn't finish within 5 minutes")
+    name = html[%r{<h3>Rewrite ([^<]+)</h3>}, 1]
+    both = "#{caution} The test data also never made some conditions in a part the rewrite changed both true " \
+           "and false, so the tests cannot show whether those parts behave the same in the rewrite."
+    expect(summary(name)).to include(both)
+    expect(html[%r{<p class="warn body-warn">(.*?)</p>}m, 1]).to eq(both)
+    expect(html).not_to include("every test QUAACK ran passed")
+  end
+
+  it "keeps the usual unproven wording for a rewrite whose test finished" do
+    rewrites.first.merge!("untested_atoms" => ["a < $1"], "out_of_time" => false)
+    expect(html).to include("Read it with care: every test QUAACK ran passed, but the test data never made")
   end
 
   it "counts it in the burndown as not tested in time, gone on, not dropped" do

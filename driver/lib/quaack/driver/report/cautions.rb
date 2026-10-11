@@ -34,8 +34,9 @@ module Quaack
         # and each caution reads once.
         def warning(entry, body: false)
           said = body ? [] : data_caution(entry)
-          said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
+          # UNTIMED comes before the unproven caution, whose first form says every test passed.
           caution(said, UNTIMED) if entry["out_of_time"] == true
+          said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
           caution(said, pairing_warning(entry))
           "Read it with care: #{said.join(" ")}" unless said.empty?
         end
