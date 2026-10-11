@@ -274,10 +274,12 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
            "GROUP BY fx.posts.user_id", allowed: {} },
     { name: "GROUP BY with HAVING",
       sql: "SELECT fx.posts.user_id, count(*) FROM fx.posts GROUP BY fx.posts.user_id HAVING count(*) > 1",
-      allowed: {} },
+      allowed: { "count(*) > $1" => "worst case of a count threshold (20261011-2)" } },
     { name: "GROUP BY with WHERE and HAVING",
       sql: "SELECT fx.posts.user_id, sum(fx.posts.score) FROM fx.posts WHERE fx.posts.published = true " \
-           "GROUP BY fx.posts.user_id HAVING sum(fx.posts.score) > 10", allowed: {} },
+           "GROUP BY fx.posts.user_id HAVING sum(fx.posts.score) > 10",
+      allowed: { "fx.posts.published = $1" => "worst case of a count threshold (20261011-2)",
+                 "sum(fx.posts.score) > $2" => "worst case of a count threshold (20261011-2)" } },
     { name: "count(*) with filter", sql: "SELECT count(*) FROM fx.posts WHERE fx.posts.score > 3", allowed: {} },
     { name: "count DISTINCT",
       sql: "SELECT count(DISTINCT fx.posts.user_id) FROM fx.posts WHERE fx.posts.published = true", allowed: {} },
@@ -423,8 +425,10 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
   # isn't confirmed. Each is to become a backlog task pointing at 20261010-27.
   PENDING = {
     "correlated scalar count" => {
-      untested: ["fx.comments.post_id = fx.posts.id"],
-      cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
+      untested: ["(SELECT count(*) FROM fx.comments WHERE fx.comments.post_id = fx.posts.id) > $1",
+                 "fx.comments.post_id = fx.posts.id"],
+      cause: "the count atom by the threshold's worst case (20261011-2); the other confirmed " \
+             "(20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
              "once more than 2 comments exist in all, and S1 builds 1; building more leaked the threshold " \
              "(20261010-35's review), deferred to 20261010-48. The search skips a count compared with a " \
              "number, for the same reason (20261010-43)"

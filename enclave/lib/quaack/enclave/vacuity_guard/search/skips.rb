@@ -28,6 +28,10 @@ module Quaack
 
           def literal_bound?(sql) = nodes(PgQuery.parse(sql).tree).any? { cut?(it) || threshold?(it) }
 
+          # Whether the query compares an aggregate with a constant anywhere
+          # (VacuityGuard.worst_case).
+          def threshold_bound?(sql) = nodes(PgQuery.parse(sql).tree).any? { threshold?(it) }
+
           def nodes(node, found = [])
             found << node
             ValuePools::Sides.children(node).each { nodes(it, found) }
