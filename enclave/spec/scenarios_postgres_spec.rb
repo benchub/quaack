@@ -212,6 +212,14 @@ RSpec.describe Quaack::Enclave::Scenarios do
     loads_every_scenario(scenarios, "fx.u")
   end
 
+  # Only a generated column the index reads refuses it.
+  it "accepts an expression unique index beside a generated column it doesn't read" do
+    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL, qty integer,
+                 norm text GENERATED ALWAYS AS (upper(email)) STORED);
+               CREATE UNIQUE INDEX u_email ON fx.u (lower(email))")
+    loads_every_scenario(build("SELECT id FROM fx.u WHERE qty <> 5"), "fx.u")
+  end
+
   it "refuses an expression unique index that calls a function outside pg_catalog" do
     conn.exec("CREATE FUNCTION fx.norm(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT lower($1)';
                CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL);
