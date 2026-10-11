@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
 require_relative "relations"
+require_relative "rewrite_candidate_check/keyword_operators"
 require_relative "rewrite_candidate_check/names"
 require_relative "rewrite_candidate_check/reg_types"
 require_relative "rewrite_candidate_check/reg_values"
@@ -84,6 +85,10 @@ module Quaack
     #    Deparse). So Accepted's parse is the candidate's own parse with
     #    schemas added, and checks 2 to 5 hold for it without being run
     #    again.
+    #    Then unknown_name, with KeywordOperators' message, if the
+    #    candidate writes a keyword form (IN, LIKE, BETWEEN, and the like)
+    #    the original doesn't, and a schema on the stored path other than
+    #    pg_catalog has an operator of its name (20261011-12).
     # 7. volatile_function (or bad_search_path): volatility's VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
@@ -140,9 +145,9 @@ module Quaack
         parse = parse(sql)
         supported!(parse)
         placeholders!(parse, original.placeholders)
-        RegValues.syntactic!(parse, original.sql)
-        sql = pinned(sql, parse, original.sql)
-        accepted = relations!(sql, original.relations, settings, connection)
+        keywords = syntactic!(parse, original.sql)
+        accepted = relations!(pinned(sql, parse, original.sql), original.relations, settings, connection)
+        keyword_operators!(keywords, settings, connection)
         volatility!(accepted.sql, settings, connection)
         RegTypes.check!(accepted.parse, original, connection)
         accepted
@@ -202,6 +207,21 @@ module Quaack
       # the candidate wrote, never the descendant.
       def descendant_refusal(error)
         Error.new("unknown_relation", "dropping ONLY from #{error.table} takes in a relation the original doesn't read")
+      end
+
+      # RegValues' refusals, then the operator names of the keyword forms
+      # the original doesn't write, from the parse before Names pins it.
+      def syntactic!(parse, original_sql)
+        RegValues.syntactic!(parse, original_sql)
+        KeywordOperators.unmade(parse, original_sql)
+      end
+
+      def keyword_operators!(operators, settings, connection)
+        return if operators.empty?
+
+        KeywordOperators.check!(operators, RelationQualifier.search_path(settings, connection), connection)
+      rescue RelationQualifier::Error => e
+        raise Error.new("bad_search_path", e.message), cause: nil
       end
 
       def volatility!(sql, settings, connection)
