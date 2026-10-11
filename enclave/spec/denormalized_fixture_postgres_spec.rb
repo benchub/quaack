@@ -39,7 +39,8 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
   end
 
   # Assignment 1 is a Course's and assignment 2 an Account's, both with
-  # context 50; each submission keeps course 1.
+  # context 50; each submission keeps course 1. Submission 4 has no
+  # assignment.
   let(:context_id) { 50 }
   let(:course_id) { 1 }
   let(:rows) do
@@ -48,7 +49,8 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
      row("assignments", { "id" => 2, "context_type" => "Account", "context_id" => context_id }),
      row("submissions", { "id" => 1, "assignment_id" => 1, "course_id" => course_id }),
      row("submissions", { "id" => 2, "assignment_id" => 2, "course_id" => course_id }),
-     row("submissions", { "id" => 3, "assignment_id" => 1, "course_id" => nil })]
+     row("submissions", { "id" => 3, "assignment_id" => 1, "course_id" => nil }),
+     row("submissions", { "id" => 4, "assignment_id" => nil, "course_id" => nil })]
   end
 
   def copies(runner)
@@ -63,12 +65,25 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
   end
 
   describe Quaack::Enclave::DenormalizedFixture::Runner do
-    it "sets the copy on the class's rows only, in spite of the copy's foreign key, and rolls it all back" do
+    # Task 20261010-2: a row of another class, and one with no parent, get
+    # the copy set too (to its own parent's id, or a class parent's), so a
+    # rewrite that drops the type filter or the join is caught.
+    it "sets the copy on the class's rows, on another class's, and on a parentless row, in spite of the " \
+       "copy's foreign key, and rolls it all back" do
       honoured = copies(described_class.new(conn, [copy]))
 
-      expect(honoured).to eq([%w[1 50], %w[2 1], %w[3 50]])
+      expect(honoured).to eq([%w[1 50], %w[2 50], %w[3 50], %w[4 50]])
       expect(foreign_keys).to eq(2)
       expect(conn.exec("SELECT count(*) FROM cv.submissions").getvalue(0, 0)).to eq("0")
+    end
+
+    it "leaves another class's row alone when its parent's id is NULL, so a NOT NULL copy still loads" do
+      conn.exec("ALTER TABLE cv.assignments ALTER context_id DROP NOT NULL")
+      conn.exec("ALTER TABLE cv.submissions ALTER course_id SET NOT NULL")
+      rows.replace([*rows.first(3), row("assignments", { "id" => 3, "context_type" => "Account", "context_id" => nil }),
+                    row("submissions", { "id" => 1, "assignment_id" => 3, "course_id" => course_id })])
+
+      expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 1]])
     end
 
     # Task 20261007-31: the copy's comparisons are its columns' types' own
@@ -77,14 +92,16 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
       CatalogShadow.plant(conn, :operators)
       conn.exec("SET search_path = public, pg_catalog")
 
-      expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 1], %w[3 50]])
+      expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 50], %w[3 50], %w[4 50]])
     end
 
     it "matches the class with the type column's own =, as citext's case-insensitive one" do
       conn.exec("CREATE EXTENSION citext SCHEMA public")
       conn.exec("ALTER TABLE cv.assignments ALTER COLUMN context_type TYPE public.citext")
 
-      expect(copies(described_class.new(conn, [copy.with(type_value: "COURSE")]))).to eq([%w[1 50], %w[2 1], %w[3 50]])
+      expect(copies(described_class.new(conn,
+                                        [copy.with(type_value: "COURSE")]))).to eq([%w[1 50], %w[2 50], %w[3 50],
+                                                                                    %w[4 50]])
     end
 
     it "fails the load when the copy and the parent's id share no =, as bigint and numeric don't" do
@@ -110,7 +127,7 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
             ALTER TABLE cv.assignments ALTER context_id TYPE #{type} USING NULL;
           SQL
 
-          expect(copies(described_class.new(conn, [copy]))).to eq([["1", id], ["2", own], ["3", id]])
+          expect(copies(described_class.new(conn, [copy]))).to eq([["1", id], ["2", id], ["3", id], ["4", id]])
         end
       end
     end
@@ -139,7 +156,7 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
     end
 
     it "leaves the fixture as built without a copy to honour" do
-      expect(copies(described_class.new(conn, []))).to eq([%w[1 1], %w[2 1], ["3", nil]])
+      expect(copies(described_class.new(conn, []))).to eq([%w[1 1], %w[2 1], ["3", nil], ["4", nil]])
     end
 
     it "refuses copies that aren't Copies" do
@@ -167,6 +184,12 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
 
     it "passes the rule's rewrite on fixtures that honour its assumption, and disproves wrong twins" do
       expect(run(rewritten, rewritten.sub("s.course_id = 50", "s.course_id = 51")).map(&:first)).to eq([true, false])
+    end
+
+    # Task 20261010-2.
+    it "disproves a twin that drops the type filter, and passes the rule's rewrite" do
+      untyped = rewritten.sub("a.context_type = 'Course' AND ", "")
+      expect(run(rewritten, untyped).map(&:first)).to eq([true, false])
     end
 
     it "disproves the same rewrite on fixtures that don't honour the assumption" do
