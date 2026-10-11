@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261011-13: rewrite-test speed: spills lift each group's parents once, the group's own rows are indexed (`Scenarios::Held`), one setval per load, the shared slot value is memoized, fixture rows keep their hash; no change to any reported field.
 - 20261011-15: rewrite-test `out_of_time` now passed true and goes on; burndown extra `not_tested_in_time`; report payload `out_of_time` Boolean.
 
 ## How this file works.
@@ -811,7 +812,10 @@ The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in 
 - **Depends on:** 20261011-4 (landed), 20261010-53 (landed).
 - **Came from:** The user's run, 2026-10-11. Priority: high, the pipeline can't test rewrites on the real schema.
 - **Design:** rewrite-test, scenarios.
-- **Status:** in progress (branch task/20261011-13)
+- **Landed so far:** 2026-10-11 (task/20261011-13; Opus review: no blocking findings, the full report byte-identical on main and the branch for 40 and 580 tables, with and without an extra join). `Parts#spill?` no longer re-runs `parents_of` for every fixture each try is offered to (it was cubic: 3.3M calls became 55k); a new `Scenarios::Held` index replaces `RowSet`'s group scans in `parents_of` and `orphan?`; `Sequences.advance` sends one statement per load (`json_to_recordset`) instead of one `setval` per integer column; `Values#shared_nth` is memoized; `FixtureRow` keeps its hash. On the synthetic 580-table schema with a joined table whose FK parent closure reaches 20 tables: 300.7 s to 21.7 s; 34 tables: at least 207 s to 105 s; 168 tables: still minutes. Not yet measured on the user's real schema.
+- **Still open:** the parent closure itself (a joined table that reaches dozens of tables through foreign keys makes every group lift hundreds of parents, times the guard's up-to-4 rebuilds, times many spilled fixtures). Option: set a nullable foreign key to a table outside the query to NULL when neither the query nor the candidate reads that column, so no parent is lifted. It changes which rows the fixtures contain, so it needs the user's go (20261011-18).
+- **Minors:** nothing tests multi-try spill order in `Parts` (changing `lifted`'s `if i == done.size` to `if done.empty?` leaves 584 examples green): add a spec; no spec compares a whole scenario build, with loaded rows dumped, between the old and the new code: add a reference spec.
+- **Status:** in progress (closure narrowing, 20261011-18)
 
 ### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Needs the user's go.
 
@@ -822,3 +826,13 @@ The user, 2026-10-11, expected a stage that runs every rewrite through hundreds 
 - **Design:** rewrite-test, scenarios.
 - **Spike result (2026-10-11, scratchpad `spike-20261011-16/results.md`):** 57 hand-built cases on one 3-table schema (16 sound controls, 41 hand-written mutants; the repo's own twins and planted runs weren't mined, so the corpus is small and unrepresentative). The oracle (3000 random databases per case, up to 3 rows a table) marked 36 wrong. Caught: A scenario rewrite-test 33, B one realistic large database 33, C class-covering test 33 exhaustive (only feasible up to about 3 tables: a 6-table ORM query has about 1.9e17 combinations) and 20 pairwise; no false positives anywhere. A or B together catch 35, all three 36. C's only unique catch was a NULL corner (a LEFT JOIN anti-join on a nullable non-key column); it also needs generator fixes (half its databases hit foreign-key rejects). The cheap variant (a few hundred seeded random small databases from the search's trial generator, with FK-aware parents, 3 rows a table, NULL-biased nullable columns, classes for literals compared to aggregates) found every wrong case, but that is circular (the oracle was the same kind of search). Decision: do not build the class-covering stage as specified. The cheap random variant stays parked as an optional backstop for rewrites whose scenario test times out (20261011-15); revisit after 20261011-13 shows how slow the scenario test is on the real schema.
 - **Status:** dropped as specified (cheap random variant parked, needs the user's go)
+
+### 20261011-18. rewrite-test: narrow the foreign-key parent closure (nullable keys to tables outside the query).
+
+From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables makes every group lift all those parents' rows into every fixture (and the guard rebuilds up to four times, across many spilled fixtures), which is the remaining cost at the user's scale (583 tables; 168-table closures still take minutes). Idea: when a foreign key column is nullable, the table it points at isn't one the query or the candidate reads, and the column itself isn't read by the query or the candidate (select list, join, filter, group, order, a function, a window; use the existing read-column analysis in `scenarios/reads.rb`), set it to NULL instead of lifting a parent; a NOT NULL key still needs its parent. Soundness: the fixtures then hold NULL in a column nobody reads, so no query result can depend on it; check for CHECKs, unique and exclusion constraints, generated columns and triggers (disabled in the arena) that read it, and cascades. Measure on the synthetic 580-table schema (`scratchpad/build-20261011-13/gen.rb`): expect the 168-table case to drop from minutes to seconds. Reported values must stay identical where the closure was unnecessary; add a reference build-level spec comparing fixtures and reports old versus new on several schema shapes (also the review's minors: a multi-try spill order spec, a whole-build reference spec with loaded rows dumped). Opus builder and reviewer. Needs the user's go because fixtures change.
+
+- **Depends on:** 20261011-13 (landed).
+- **Came from:** 20261011-13's builder and review, 2026-10-11.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo (needs the user's go)
+
