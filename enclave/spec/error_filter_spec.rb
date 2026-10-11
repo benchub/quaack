@@ -362,6 +362,32 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
     end
 
+    # 20261009-2: the driver's note names the enclave's grammar.
+    describe "a query_unparsable refusal's parser major" do
+      def unparsable_line(rule: "query_unparsable")
+        filter.to_egress(FilterFakes::RuledError.new(rule:), step: "intake")
+      end
+
+      it "sends the enclave's pg_query major, 17, for query_unparsable" do
+        expect(unparsable_line).to eq(line(step: "intake", rule: "query_unparsable", parser_major: 17))
+      end
+
+      it "sends no parser major for any other rule" do
+        expect(unparsable_line(rule: "query_unreadable")).to eq(line(step: "intake", rule: "query_unreadable"))
+      end
+
+      [["a sentinel String", ERROR_SENTINEL], ["a major above 99", 100],
+       ["a numeric String", "17"]].each do |label, bad|
+        it "drops a planted major that's #{label}, and still sends the rule" do
+          stub_const("Quaack::Enclave::ParserVersion::MAJOR", bad)
+          out = unparsable_line
+
+          expect(out).to eq(line(step: "intake", rule: "query_unparsable"))
+          expect(out).not_to include("SENTINEL")
+        end
+      end
+    end
+
     describe "an fk_cycle refusal's tables" do
       let(:cycle) { %w[public.accounts billing.courses public.accounts] }
 

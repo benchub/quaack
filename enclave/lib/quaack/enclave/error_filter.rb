@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/parser_major"
 require "quaack/protocol/unreadable_reasons"
 require_relative "egress"
+require_relative "parser_version"
 require_relative "error_filter/named_tables"
 
 module Quaack
@@ -119,6 +121,7 @@ module Quaack
           reason: (reason(ask(exception, :reason)) if UNREADABLE_RULES.include?(rule)),
           function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
           clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE),
+          parser_major: (Protocol::ParserMajor.check(ParserVersion::MAJOR) if rule == Protocol::ParserMajor::RULE),
           **schema_names(exception, rule) }.compact
       end
 

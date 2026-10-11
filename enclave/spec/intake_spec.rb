@@ -55,6 +55,7 @@ RSpec.describe "quaacks intake" do
   def error_line(rule, reason: nil)
     fields = { "type" => "error", "step" => "intake", "rule" => rule }
     fields["reason"] = reason if reason
+    fields["parser_major"] = 17 if rule == "query_unparsable"
     "#{JSON.generate(fields)}\n"
   end
 

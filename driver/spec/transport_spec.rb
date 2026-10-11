@@ -1154,6 +1154,43 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.column).to be_nil
     end
 
+    # 20261009-2: the note names the enclave's grammar, not the driver's.
+    def unparsable_note(major)
+      "query_unparsable (pg_query parses with the Postgres #{major} grammar; " \
+        "Postgres #{major + 1}-only syntax isn't supported yet)"
+    end
+
+    it "names the enclave's parser major in a query_unparsable note" do
+      error = refusal('{"type":"error","step":"intake","rule":"query_unparsable","parser_major":16}')
+
+      expect(error.parser_major).to eq(16)
+      expect(error.rule_with_note).to eq(unparsable_note(16))
+    end
+
+    it "falls back to its own pg_query's major, 17, for an older enclave's line with no parser major" do
+      error = refusal('{"type":"error","step":"intake","rule":"query_unparsable"}')
+
+      expect(error.parser_major).to be_nil
+      expect(error.rule_with_note).to eq(unparsable_note(17))
+    end
+
+    [["a sentinel String", '"SENTINEL-8c21"'], ["a numeric String", '"16"'], ["a Float", "16.0"],
+     ["a major above 99", "100"], ["a major below 10", "9"]].each do |label, bad|
+      it "drops a parser major that's #{label}, and falls back to its own" do
+        error = refusal(%({"type":"error","rule":"query_unparsable","parser_major":#{bad}}))
+
+        expect(error.parser_major).to be_nil
+        expect(error.rule_with_note).to eq(unparsable_note(17))
+        expect(error.full_message(highlight: false)).not_to include("SENTINEL")
+      end
+    end
+
+    it "drops a parser major on any rule but query_unparsable" do
+      error = refusal('{"type":"error","rule":"query_unreadable","parser_major":16}')
+
+      expect(error.parser_major).to be_nil
+    end
+
     it "shows the tables of an fk_cycle refusal, in the order their foreign keys point" do
       cycle = %w[public.accounts billing.courses public.accounts]
       line = { type: "error", step: "counterexample-round", rule: "fk_cycle", cycle: }
