@@ -436,6 +436,31 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
       expect(described_class::RULES).to include(*option_rules)
     end
 
+    # Task 20261010-8: the scan reads only double-quoted rule names, so an
+    # Error.new whose first argument is anything else (a single-quoted rule,
+    # a variable, a constant) fails here unless it's one of the known
+    # dynamic forms: the REFUSED_OPTIONS loop's rule, and SupportedSql's
+    # messages, whose error has a fixed rule.
+    dynamic = {
+      "index_ddl_check" => ["rule"],
+      "supported_sql" => ["type", "\"\#{type} \#{detail}\""]
+    }
+    unread = lambda do |name, source|
+      args = source.scan(/Error\.new\b(\(\s*[^,)]*)?/).flatten.map { it.to_s.delete_prefix("(").strip }
+      args.reject { it.match?(/\A"[a-z_]+"\z/) || dynamic.fetch(name, []).include?(it) }
+    end
+
+    it "reads the rule of every Error.new in its files, bar the known dynamic ones" do
+      expect(files.to_h { |name, source| [name, unread.call(name, source)] }.reject { _2.empty? }).to eq({})
+    end
+
+    it "catches an Error.new whose rule it can't read" do
+      planted = "raise Error.new('single', 'x')\nraise Error.new(RULE, 'x')\nraise Error.new rule, 'x'\n"
+
+      expect(unread.call("deparse", planted)).to eq(["'single'", "RULE", ""])
+      expect(unread.call("deparse", 'raise Error.new(rule, "x")')).to eq(["rule"])
+    end
+
     it "catches a rule planted in one of the files" do
       planted = files.values.flat_map(&scan).uniq + scan.call('raise Error.new("brand_new", "x")')
 
