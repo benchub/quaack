@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-13: a plan deeper than PlainData::MAX_DEPTH in measurement or index-build confirm is refused as plan_too_deep; the SingleCandidateTest plan parse is bounded.
 - 20261010-16: the candidate check refuses calls to the oid-taking type input and recv functions of pg_catalog (`name_lookup_function`), unless the original makes the same call.
 - 20261011-3: the `name_lookup_function` message for oid-taking type input functions is reworded.
+- 20261009-2: the enclave's `query_unparsable` error line carries `parser_major`; new protocol whitelist field.
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -540,15 +541,6 @@ Carried from 20260927-28. As of 2026-10-08 the lockfile has pg_query 6.2.3 and t
 - **Came from:** 20260927-28.
 - **Design:** none.
 - **Status:** blocked
-
-### 20261009-2. Have the enclave send its parser major for `query_unparsable`.
-
-Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the driver's own pg_query, so if the two sides' pg_query differ, the note names the wrong grammar. The fix touches all three gems: a new field in the protocol whitelist's error-line fields; `ErrorFilter` emitting it only for `query_unparsable`, as a small integer (raised in `intake/query.rb` and the qualifier's `Unparsable`); and the driver reading it. It adds a value to enclave output, so test it with sentinels. Both sides install from one lockfile, so this only matters if they drift.
-
-- **Depends on:** 20260927-28.
-- **Came from:** The build of 20260927-28, 2026-10-08.
-- **Design:** none.
-- **Status:** todo
 
 ### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it. Done, see BACKLOG-COMPLETE.md.
 

@@ -10456,3 +10456,12 @@ The `name_lookup_function` paragraph in DESIGN.md (around line 501) doesn't ment
 - **Came from:** The second review of 20261010-16, 2026-10-11 (minor).
 - **Design:** rewrite-check.
 - **Status:** **done.** Landed 2026-10-11 (task/20261011-3): DESIGN.md names the 36 oid-taking type input and recv functions; the `name_lookup_function` message for them reads "looks up a catalog name or oid, and the original doesn't make the same call" (three spec assertions updated).
+
+### 20261009-2. Have the enclave send its parser major for `query_unparsable`.
+
+Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the driver's own pg_query, so if the two sides' pg_query differ, the note names the wrong grammar. The fix touches all three gems: a new field in the protocol whitelist's error-line fields; `ErrorFilter` emitting it only for `query_unparsable`, as a small integer (raised in `intake/query.rb` and the qualifier's `Unparsable`); and the driver reading it. It adds a value to enclave output, so test it with sentinels. Both sides install from one lockfile, so this only matters if they drift.
+
+- **Depends on:** 20260927-28.
+- **Came from:** The build of 20260927-28, 2026-10-08.
+- **Design:** none.
+- **Status:** **done.** Landed 2026-10-11 (task/20261009-2; review clean): the enclave's `query_unparsable` error line carries `parser_major` (an Integer 10..99 from `ParserVersion::MAJOR`, checked by `Protocol::ParserMajor.check` on both sides, in the whitelist's error-line fields only for that rule); the driver's note uses it and falls back to its own pg_query major when absent. A new enclave's line to an old driver is rejected as a protocol mismatch, which is fine since the two deploy together.
