@@ -7,8 +7,8 @@
     --summary-bg: #eef4fb; --warn: #8a5a00; --bug-bg: #fdecec; --bug-edge: #c0392b;
     --head-bg: #f3f5f8; --code-bg: #f3f5f8; --muted: #5c6674; --note: #515b69;
     --baseline-bg: #f7f8fa; --differs-bg: #fff4d6;
-    --query-bg: #f4effb; --query-edge: #7b4bb3; --query-accent: #5b3a8a;
-    --rose-bg: #fcedf2; --rose-edge: #b02a5b; --rose-accent: #8e1f48;
+    --query-edge: #7b4bb3; --query-accent: #5b3a8a;
+    --rose-edge: #b02a5b; --rose-accent: #8e1f48;
     --funnel-text: #1c2430; --funnel-count: #515b69;
     --uncounted-fill: #eef0f3; --uncounted-stroke: #8a929d; --known-line: #5b6470; --hatch: #b5bcc6;
     --good-bg: #e8f5e9; --good-edge: #2e7d32; --minor-bg: #fbf5e1; --minor-edge: #9a7615;
@@ -23,8 +23,8 @@
       --summary-bg: #1a2738; --warn: #e5b04a; --bug-bg: #3a1c1c; --bug-edge: #e0675a;
       --head-bg: #252c37; --code-bg: #252c37; --muted: #9aa5b4; --note: #a9b3c1;
       --baseline-bg: #1c222b; --differs-bg: #3d3216;
-      --query-bg: #251d33; --query-edge: #a37ad6; --query-accent: #c4a3ee;
-      --rose-bg: #33202a; --rose-edge: #e0699a; --rose-accent: #f2a3c4;
+      --query-edge: #a37ad6; --query-accent: #c4a3ee;
+      --rose-edge: #e0699a; --rose-accent: #f2a3c4;
       --funnel-text: #e6eaf0; --funnel-count: #a9b3c1;
       --uncounted-fill: #232932; --uncounted-stroke: #7d8794; --known-line: #9aa5b4; --hatch: #4a5463;
       --good-bg: #17291c; --good-edge: #5cb372; --minor-bg: #2b2614; --minor-edge: #d1ad4a;
@@ -88,10 +88,10 @@
   /* ::details-content needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section. */
   details.fold:target::details-content { content-visibility: visible; }
   details.fold:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }
-  details.query { --fold-bg: var(--query-bg); --fold-edge: var(--query-edge); --fold-accent: var(--query-accent); }
-  details.rose { --fold-bg: var(--rose-bg); --fold-edge: var(--rose-edge); --fold-accent: var(--rose-accent); }
-  details.fold { background: var(--fold-bg); border-left: 5px solid var(--fold-edge); padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
-  details.fold > summary { position: sticky; top: 0; z-index: 1; background: var(--fold-bg); padding: 0.5rem 7rem 0.5rem 0; }
+  details.query { --fold-edge: var(--query-edge); --fold-accent: var(--query-accent); }
+  details.rose { --fold-edge: var(--rose-edge); --fold-accent: var(--rose-accent); }
+  details.fold { border-left: 5px solid var(--fold-edge); padding: 0 1.25rem 0.5rem; scroll-margin-top: 0.5rem; }
+  details.fold > summary { position: sticky; top: 0; z-index: 1; background: var(--bg); padding: 0.5rem 7rem 0.5rem 0; }
   details.fold > summary::after { content: "\25BC  Expand"; position: absolute; top: 0.5rem; right: 0; color: var(--fold-accent); font-weight: 600; }
   details.fold[open] > summary::after { content: "\25B2  Collapse"; }
   details.fold > pre.sql, details.fold > table, details.fold > ul { margin-top: 0.5rem; }
@@ -184,7 +184,7 @@
 <tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
 <% end %>
 </tbody></table>
-<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to who proposed the new indexes it ran with: generator one, which works from the query's text, generator two, which works from its plan, or the LLM. An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indexes ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
+<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to where the new indexes it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indexes ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
 </details>
 <% end %>
 <% ranked_by_kind.each do |kind, entries| %>
@@ -274,7 +274,7 @@
 </details>
 <% end %>
 <% if negative %>
-<details class="fold rose" id="ideas-declined" open>
+<details class="fold rose" id="ideas-declined">
 <summary><h3>Indexes the planner wouldn't use</h3></summary>
 <% if negative["declined"].empty? %>
 <p>The planner would have used every index QUAACK thought of.</p>
@@ -288,7 +288,7 @@
 </tbody></table>
 <% end %>
 </details>
-<details class="fold rose" id="ideas-existing" open>
+<details class="fold rose" id="ideas-existing">
 <summary><h3>Indexes QUAACK thought of that you already have</h3></summary>
 <% if negative["existing"].empty? %>
 <p>None of the indexes QUAACK thought of already existed.</p>

@@ -71,8 +71,8 @@ module Quaack
 
         def index_account
           proposals = [added("index-from-query"), added("index-from-plan"), added(*LLM_ROUNDS)]
-          [["Generator one, from the query's text", proposals[0], *by_source("generator_one")],
-           ["Generator two, from the query's plan", proposals[1], *by_source("generator_two")],
+          [["From the query's text", proposals[0], *by_source("generator_one")],
+           ["From the query's plan", proposals[1], *by_source("generator_two")],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),
             dropped(LLM_ROUNDS, COULDNT_TRY), *built_by("llm")], *llm_index_rows(proposals[2]),
            ["All sources together", (proposals.sum if proposals.all?), *index_totals]]

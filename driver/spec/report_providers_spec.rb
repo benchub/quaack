@@ -173,8 +173,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "splits the LLM's indexes row by provider for what the record counts, and says not recorded for the rest" do
       counted = rows("accountability-indexes")
-      expect(counted.keys.take(5)).to eq([esc("Generator one, from the query's text"),
-                                          esc("Generator two, from the query's plan"), "The LLM", "The LLM: groq",
+      expect(counted.keys.take(5)).to eq([esc("From the query's text"),
+                                          esc("From the query's plan"), "The LLM", "The LLM: groq",
                                           "The LLM: opus"])
       missing = ["not recorded"] * 4
       expect(counted["The LLM: groq"]).to eq(%w[4 1] + missing)
