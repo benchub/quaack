@@ -70,6 +70,19 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       .to eq([false, true, true, true, true])
   end
 
+  # Task 20261008-56: a chain of legacy children. Rows of the grandchild
+  # show up in a scan of the root, and of the middle table, so neither's
+  # unique index covers a scan; only the table with no child does.
+  it "doesn't meet a unique set on a legacy inheritance root or middle table, but does on the grandchild" do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.root (id int PRIMARY KEY);
+      CREATE TABLE public.mid (PRIMARY KEY (id)) INHERITS (public.root);
+      CREATE TABLE public.grand (PRIMARY KEY (id)) INHERITS (public.mid);
+    SQL
+
+    expect(%w[root mid grand].map { met?(unique("public.#{it}", "id")) }).to eq([false, false, true])
+  end
+
   it "meets a foreign key only when a validated one matches its columns and referenced table" do
     expect([met?(fk("customer_id")), met?(fk("seller_id")), met?(fk("customer_id", ["public.orders", "id"]))])
       .to eq([true, false, false])

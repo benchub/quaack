@@ -8,11 +8,20 @@ require "rbconfig"
 RSpec.describe "A rewrite rule file required alone" do
   lib = File.expand_path("../lib", __dir__)
   shared = %w[rewrite_rules/literals rewrite_rules/rewrite]
+  helpers = %w[rewrite_rules/catalog rewrite_rules/tree]
   rules = File.read(File.join(lib, "quaack/enclave/rewrite_rules.rb"))
               .scan(%r{require_relative "(rewrite_rules/[a-z_]+)"}).flatten - shared
 
-  it "covers every rule the generator requires" do
-    expect(rules.size).to eq(12)
+  # Derived, so a new rule file is covered without editing this spec. The
+  # directory listing is a second source: a rule the generator forgot to
+  # require, or a require this spec's scan no longer matches, shows as a
+  # difference. The helpers are the files the rules share, which the
+  # generator doesn't require itself.
+  it "covers every rule file in the rewrite_rules directory" do
+    on_disk = Dir.children(File.join(lib, "quaack/enclave/rewrite_rules"))
+                 .grep(/\.rb\z/).map { "rewrite_rules/#{it.delete_suffix(".rb")}" } - shared - helpers
+    expect(rules).not_to be_empty
+    expect(rules.sort).to eq(on_disk.sort)
   end
 
   rules.each do |file|
