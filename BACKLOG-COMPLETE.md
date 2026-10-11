@@ -10211,3 +10211,26 @@ The user asked, looking at the original query's index burndown: "Ideas from the 
 - **Came from:** the user, 2026-10-10.
 - **Design:** report, burndown.
 - **Status:** done. Landed 2026-10-10 (enclave and driver; no protocol change): every stage's `in` is the earlier stage's `out` (index-from-plan takes index-from-query's count; llm-index-ideas and llm-index-refine take the earlier round's out and carry the pool once per search; rewrite arrivals take the nearest earlier arrival stage's out; a skipped refine passes the pool through; held-back ideas stay in index-test's set_aside and never reach index-rank). The funnel draws three widths per later band (came in, came in plus added as a lighter dashed slice, went on). Minors: 20261010-44.
+
+### 20261010-35. Unmatched groups: LATERAL, effectively-inner LEFT JOINs, and the correlated aggregate threshold.
+
+From the review of 20261010-30:
+1. **LATERAL** (`LEFT JOIN LATERAL (SELECT ... FROM orders o WHERE o.user_id = u.id) s ON true`) gets no unmatched group: the innermost step is join_expr/rarg, not quals or sub_link. Conservative, not unsound. Add the group and move a corpus shape out of PENDING.
+2. **A LEFT JOIN that WHERE makes inner** (`WHERE o.status = 'x'` on the optional side) still gets unmatched groups. They cost rows and can't change a verdict. Skip them when the WHERE rejects NULLs on the optional side, measure, and keep the soundness rule.
+3. **The correlated scalar count** (`(SELECT count(*) FROM comments WHERE comments.post_id = posts.id) > 2`) stays untested: loosening its join atom only matters once more than 2 comments exist in total, and S1 builds 1. Build a group with enough children to cross the threshold (read it from the atom), and move the shape out of PENDING.
+4. A correlated self-reference under another alias is treated as not correlated (compares table names, not aliases); rare.
+5. No composite-FK case was run.
+
+- **Depends on:** 20261010-30 (landed).
+- **Came from:** The review and build of 20261010-30, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done, except the correlated count threshold. Landed 2026-10-10: LATERAL subselects get an unmatched group; an effectively-inner LEFT JOIN skips its unmatched groups when the join's own WHERE has a bare null-rejecting test on the child (`IS NOT NULL` and `<> ALL` keep them); child and parent are told apart by alias, with self-reference unmatched groups; composite-FK spec; unmatched entries keyed by child and cross tables; `s1_rows` and `s1_nonzero_rows` are bucketed to 0 or 1. The count-threshold children were removed because the second review found the threshold leaked through `fixture_loads`: see 20261010-47 and 20261010-48. Minors: 20261010-49.
+
+### 20261010-23. Untested conditions: an OR of four or more equality arms on one column plus another arm.
+
+Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... OR fx.users.age = 4 OR fx.users.state = 'z'` leaves every atom untested. Two or three arms on one column work. The cause isn't found; likely the pool or the `also` selection finds no value that fails all the arms. ORMs usually emit `IN` here, so it's rare. Find the cause, fix it without weakening the guard, and test it.
+
+- **Depends on:** 20261010-19.
+- **Came from:** The review of 20261010-19, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** done. Landed 2026-10-10: when the arm-at-a-time pass finds no masking near miss (four or more equality arms on one column), a second pass pairs each pick with the first atom of every later arm (`Branches` look-ahead).

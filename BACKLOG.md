@@ -19,6 +19,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-31: S1 gets a near-misses-only fixture for a top-level LIMIT without ORDER BY (enclave).
 - 20261010-22: `s1_nonzero_rows` in the rewrite_test message, the whitelist and `Protocol::VacuityDiagnostic` (enclave and protocol).
 - 20261010-20: each burndown stage's `in` carries the earlier stage's `out` (index-from-plan, the LLM rounds, the rewrite arrival stages) (enclave).
+- 20261010-35 (without the count-threshold children) and 20261010-23: LATERAL unmatched groups, the effectively-inner LEFT JOIN skip, alias-based self-reference groups, `s1_rows`/`s1_nonzero_rows` bucketed to 0 or 1, and the Branches look-ahead (enclave).
 
 ## How this file works.
 
@@ -868,33 +869,6 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Status:** todo
 
 
-### 20261010-23. Untested conditions: an OR of four or more equality arms on one column plus another arm.
-
-Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... OR fx.users.age = 4 OR fx.users.state = 'z'` leaves every atom untested. Two or three arms on one column work. The cause isn't found; likely the pool or the `also` selection finds no value that fails all the arms. ORMs usually emit `IN` here, so it's rare. Find the cause, fix it without weakening the guard, and test it.
-
-- **Depends on:** 20261010-19.
-- **Came from:** The review of 20261010-19, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-
-
-
-### 20261010-35. Unmatched groups: LATERAL, effectively-inner LEFT JOINs, and the correlated aggregate threshold.
-
-From the review of 20261010-30:
-1. **LATERAL** (`LEFT JOIN LATERAL (SELECT ... FROM orders o WHERE o.user_id = u.id) s ON true`) gets no unmatched group: the innermost step is join_expr/rarg, not quals or sub_link. Conservative, not unsound. Add the group and move a corpus shape out of PENDING.
-2. **A LEFT JOIN that WHERE makes inner** (`WHERE o.status = 'x'` on the optional side) still gets unmatched groups. They cost rows and can't change a verdict. Skip them when the WHERE rejects NULLs on the optional side, measure, and keep the soundness rule.
-3. **The correlated scalar count** (`(SELECT count(*) FROM comments WHERE comments.post_id = posts.id) > 2`) stays untested: loosening its join atom only matters once more than 2 comments exist in total, and S1 builds 1. Build a group with enough children to cross the threshold (read it from the atom), and move the shape out of PENDING.
-4. A correlated self-reference under another alias is treated as not correlated (compares table names, not aliases); rare.
-5. No composite-FK case was run.
-
-- **Depends on:** 20261010-30 (landed).
-- **Came from:** The review and build of 20261010-30, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-
 
 ### 20261010-38. Aggregated columns: untested CHECK guard and the `MIN_APART` wrap.
 
@@ -1035,5 +1009,17 @@ Work out which reported fields can vary with a literal, using the reviewer's exp
 
 - **Depends on:** 20261010-47, 20261010-35.
 - **Came from:** The reviews of 20261010-35, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-49. Minors from 20261010-35 and -23.
+
+1. The across-thresholds spec in `scenarios_unmatched_postgres_spec.rb` doesn't compare `untested_atoms` (its size goes to the burndown, its indices to counterexamples), `s1_load_rule` or `results`; add them.
+2. In `vacuity_guard_postgres_spec.rb` (around line 47) "records no load failure and the original's row count on S1" asserts `eq([expected, 2].min)`; the cap is now 1: use `REPORTED_ROWS`.
+3. `Protocol::VacuityDiagnostic.valid?` still accepts any Integer up to `MAX_ROWS` for `s1_rows` and `s1_nonzero_rows`: tighten to nil, 0 or 1 (defense in depth; also in 20261010-48).
+4. A weak test for the Branches look-ahead (`.map(&:first)` vs `.map(&:last)` survived before the fix round; check it is now killed).
+
+- **Depends on:** 20261010-35 (landed).
+- **Came from:** The reviews of 20261010-35 and -23, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
