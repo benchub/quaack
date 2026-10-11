@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-16: the candidate check refuses calls to the oid-taking type input and recv functions of pg_catalog (`name_lookup_function`), unless the original makes the same call.
 - 20261011-3: the `name_lookup_function` message for oid-taking type input functions is reworded.
 - 20261009-2: the enclave's `query_unparsable` error line carries `parser_major`; new protocol whitelist field.
+- 20261011-4: `Scenarios::RowSet` uses hash indexes in place of linear scans (performance, no behavior change).
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -865,13 +866,4 @@ Do: (1) make the fields that depend on a count threshold's value independent of 
 - **Depends on:** 20261010-47 (landed).
 - **Came from:** The review of 20261010-47, 2026-10-11. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown.
-- **Status:** todo
-
-### 20261011-4. `Scenarios::RowSet`: replace the linear scans with hash indexes (the hour-long step).
-
-From the user's profile of the slow step (see 20261010-53) and 20261004-27 item 2. `RowSet#add?` checks each new row against every row already in its table, and recomputes keys each time: `@rows[r.table].include?(r)` (deep row compare), `clash?` (`@rows[...].any? { yield(other) == key }`, which recomputes `values(other, columns)` and `columns.index(c)` for every row on every check), `parent` (`@rows[key.parent].find { values(...) == wanted }`), `outside_parents`/`parents_of` (`rows.any?`, `found.include?`, `rows.include?`) and `orphan?`. With many rows per table that is quadratic or worse, and `Parts#add` and the retries call it for every group in every fixture (`parts.rb:46-47`, `retries.rb`). About 92% of the profile's 51,667 samples were in it. Fix it with indexes that keep every result identical: a set of rows per table (Row needs `hash`/`eql?` by table and values), per table and unique column list a hash of key to row (for `clash?`, with the NULLS NOT DISTINCT rule and the `:error` key handled as now), per table and foreign-key parent columns a hash of key to row (for `parent`/`orphan?`), and a precomputed column-index map for `values`. Keep the delete in `add?`'s rollback (remove from every index). Test first: a spec that builds a RowSet with a few thousand rows over a table with a unique key, a composite unique key, an expression index and a foreign key, and asserts the work is near linear by counting calls (for example the number of `values`/`evaluate` computations is below a bound that grows linearly, not quadratically; wall-clock bounds are flaky), red against today's code; plus a behavior-equality spec that runs the same adds on the old algorithm (kept in the spec as a slow reference) and the new one over random small cases and compares what `add?`, `add_any?`, `parents_of` and `in_order` return and leave. The across-literals spec (`across_literals_postgres_spec.rb`) and the corpus must stay green, byte for byte. Mutate (drop a delete from an index, key a NULL as equal, ignore `nulls_not_distinct`) and confirm red. Then run the user's kind of query again: the step should be seconds, not an hour; say what a 19-table fixture measures before and after (20261004-23 measured about 3 s).
-
-- **Depends on:** 20261004-23, 20261010-53 (profile).
-- **Came from:** The user's profile, 2026-10-11. Priority: the version bump waits for it.
-- **Design:** rewrite-test, scenarios.
 - **Status:** todo
