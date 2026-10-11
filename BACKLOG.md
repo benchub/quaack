@@ -417,15 +417,6 @@ From the reviews of 20260924-7.
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-44. Qualifying overloaded names: keyword forms (part 2 of 20261007-21).
-
-Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, and USING and NATURAL joins have no qualified spelling. When several schemas on the path define the operator they use, rewrite each one into an equivalent explicit form that can be qualified, or refuse it cleanly, and list it as unsupported in v1. This also covers item 1 of 20261008-41 (keyword operators LIKE, IN, IS DISTINCT FROM, NULLIF resolving through the search path).
-
-- **Depends on:** 20261007-21.
-- **Came from:** The split of 20261007-21, 2026-10-08.
-- **Design:** qualify.
-- **Status:** todo
-
 ### 20261008-47. Scenario loading: minors from 20260927-18. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-50. Orphan index-build notes: advice that's moot after teardown. Done, see BACKLOG-COMPLETE.md.
@@ -835,4 +826,13 @@ From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the s
 - **Depends on:** 20261008-57 (landed).
 - **Came from:** The review of 20261008-57, 2026-10-11 (minor).
 - **Design:** rewrite-rules, report.
+- **Status:** todo
+
+### 20261011-12. Keyword operators in candidates: refuse an ambiguous one the original doesn't use (and document the original's behavior).
+
+From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyword operators (IN, BETWEEN, NOT BETWEEN, LIKE, ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, USING, NATURAL) stay bare and resolve through the stored `search_path`, which every racetrack and arena connection sets, so they behave on the run server as in production given the same dump. A rewrite candidate (LLM or rule) could add a keyword form the original doesn't use whose operator resolves differently on the path (more than one usable schema on the path defines the operator, such as citext or hstore next to pg_catalog). Fix in the candidate name lockdown: refuse a candidate whose keyword operator is ambiguous on the path unless the original uses the same keyword form (mirror `unmade_lookup`'s exemption); reuse an existing rule code if one fits (a new rule code needs the protocol `ErrorRules` and driver text). Add a DESIGN.md paragraph saying how keyword operators resolve and what is refused. Postgres-backed tests with a user schema defining a same-signature `=`/`~~`/`LIKE`-family operator placed ahead of or beside pg_catalog on the path (red first, mutate), and one that shows an ordinary query with IN, BETWEEN and LIKE and no ambiguity still passes. Enclave change; trust boundary (Opus builder and reviewer).
+
+- **Depends on:** 20261008-41 (landed), 20261007-21 (landed).
+- **Came from:** The builder of 20261008-44, 2026-10-11.
+- **Design:** qualify, rewrite-check.
 - **Status:** todo
