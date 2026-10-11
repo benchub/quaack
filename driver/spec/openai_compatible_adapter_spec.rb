@@ -52,6 +52,37 @@ RSpec.describe "the OpenAI-compatible adapter" do
       .to eq("used" => 3, "reported" => 1, "input" => 1, "output" => 1)
   end
 
+  # Task 20261008-68: a details block that isn't an object is not reported.
+  it "leaves out cached and reasoning tokens when their details aren't objects, and keeps input and output" do
+    fake.raw("llm-rewrites", completion_with({ prompt_tokens: 40, completion_tokens: 9,
+                                               prompt_tokens_details: "x", completion_tokens_details: 7 }))
+    expect(ask("llm-rewrites", provider: "p")).to eq("ok")
+
+    expect(burndown.llm_usage.fetch("p").except("seconds"))
+      .to eq("used" => 1, "reported" => 1, "input" => 40, "output" => 9)
+  end
+
+  # Task 20261008-68: only a whole, non-negative count is a count.
+  it "counts a cached or reasoning tokens value only if it's a whole, non-negative number" do
+    [["7", 1], [2.5, 2], [-3, 3]].each do |bad, n|
+      fake.raw("llm-rewrites", completion_with({ prompt_tokens: 10, completion_tokens: 4,
+                                                 prompt_tokens_details: { cached_tokens: bad },
+                                                 completion_tokens_details: { reasoning_tokens: bad } }))
+      ask("llm-rewrites", provider: "p#{n}")
+      expect(burndown.llm_usage.fetch("p#{n}").except("seconds"))
+        .to eq("used" => 1, "reported" => 1, "input" => 10, "output" => 4), bad.inspect
+    end
+  end
+
+  it "records input or output tokens that aren't whole, non-negative numbers as not reported" do
+    [["7", 4], [2.5, 4], [-3, 4], [10, "4"], [10, 1.5], [10, -1]].each_with_index do |(input, output), i|
+      fake.raw("llm-rewrites", completion_with({ prompt_tokens: input, completion_tokens: output }))
+      ask("llm-rewrites", provider: "q#{i}")
+      expect(burndown.llm_usage.fetch("q#{i}").except("seconds"))
+        .to eq("used" => 1, "reported" => 0), [input, output].inspect
+    end
+  end
+
   it "records a completion with no usage as not reported" do
     fake.raw("llm-rewrites", completion_with(nil))
     ask("llm-rewrites", provider: "p")
