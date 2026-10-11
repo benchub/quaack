@@ -6,22 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261010-12: `not_in_to_not_exists` refuses a NOT IN that appears again in the same SELECT when a copy is in its GROUP BY, DISTINCT ON, or ORDER BY.
-- 20261008-36: the statistics read pins DateStyle to ISO, so stored date and timestamp values replay the same in any session.
-- 20261010-13: a plan deeper than PlainData::MAX_DEPTH in measurement or index-build confirm is refused as plan_too_deep; the SingleCandidateTest plan parse is bounded.
-- 20261010-16: the candidate check refuses calls to the oid-taking type input and recv functions of pg_catalog (`name_lookup_function`), unless the original makes the same call.
-- 20261011-3: the `name_lookup_function` message for oid-taking type input functions is reworded.
-- 20261009-2: the enclave's `query_unparsable` error line carries `parser_major`; new protocol whitelist field.
-- 20261011-4: `Scenarios::RowSet` uses hash indexes in place of linear scans (performance, no behavior change).
-- 20261010-2: denormalized fixtures set the copy on other-class and parentless rows.
-- 20261010-50: the vacuity-guard search's only budget is its trial count (150 per atom, 300 per query), never the clock.
-- 20261010-6: the error line no longer carries a `cycle` field (removed from the whitelist, enclave ErrorFilter, and driver ErrorFields/EnclaveError).
-- 20261010-53: each rewrite's rewrite-test has a 5-minute wall-clock budget; a rewrite that runs out of time is left out as `out_of_time` (new protocol `RewriteBudget`).
-- 20261008-57: rewrite-check and rewrite-rules dedupe stored rewrites on SQL and stated assumptions together .
-- 20261011-2: a count compared with a constant (also through a derived table or CTE with an aggregate) reports the vacuity guard's worst case (every atom untested, fixed retries and loads, no S1 row counts).
-- 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
-- 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
-- 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
+(none. Closed at 0.1.33.)
 
 ## How this file works.
 
