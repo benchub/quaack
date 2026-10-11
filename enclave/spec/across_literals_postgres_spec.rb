@@ -96,6 +96,28 @@ RSpec.describe "Reports across literals" do
       }]]
     end,
     operators.to_h do |op|
+      ["derived count #{op} threshold", [thresholds, lambda { |n|
+        inner = "SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id"
+        q = "SELECT t.uid FROM (#{inner}) t WHERE t.k #{op} #{n}"
+        [q, "#{q} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
+      ["CTE count #{op} threshold", [thresholds, lambda { |n|
+        cte = "WITH t AS (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id) "
+        q = "#{cte}SELECT t.uid FROM t WHERE #{n} #{op} t.k"
+        [q, "#{q} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
+      ["nested derived count #{op} threshold", [thresholds, lambda { |n|
+        inner = "SELECT u.uid, u.k FROM (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts " \
+                "GROUP BY fx.posts.user_id) u"
+        q = "SELECT t.uid FROM (#{inner}) t WHERE t.k #{op} #{n}"
+        [q, "#{q} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
       ["HAVING count() #{op} threshold", [thresholds, lambda { |n|
         join = "SELECT fx.users.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
                "GROUP BY fx.users.id HAVING count(fx.posts.id) #{op} #{n}"

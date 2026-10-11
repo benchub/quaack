@@ -22,7 +22,7 @@ module Quaack
 
           module_function
 
-          def skip?(sql) = volatile?(sql) || literal_bound?(sql)
+          def skip?(sql) = volatile?(sql) || literal_bound?(sql) || threshold_bound?(sql)
 
           def volatile?(sql) = PgQuery.parse(sql).functions.intersect?(VOLATILE)
 
@@ -30,7 +30,36 @@ module Quaack
 
           # Whether the query compares an aggregate with a constant anywhere
           # (VacuityGuard.worst_case).
-          def threshold_bound?(sql) = nodes(PgQuery.parse(sql).tree).any? { threshold?(it) }
+          #
+          # It also counts a constant compared with a column when a derived
+          # table or CTE holds an aggregate or window call,
+          # since that column can carry the aggregate out a layer or more
+          # (t.k > 2 over a GROUP BY's count(*) AS k). It doesn't trace which
+          # column is which, so it fails closed: any such comparison counts.
+          def threshold_bound?(sql)
+            all = nodes(PgQuery.parse(sql).tree)
+            all.any? { threshold?(it) } || (all.any? { fed_layer?(it) } && all.any? { column_compared?(it) })
+          end
+
+          # A derived table's or CTE's SELECT whose select list holds an
+          # aggregate or window call anywhere (failing closed: not only its
+          # select list).
+          def fed_layer?(node)
+            select = (node.subquery if node.is_a?(PgQuery::RangeSubselect)) ||
+                     (node.ctequery if node.is_a?(PgQuery::CommonTableExpr))
+            select && nodes(select).any? { it.is_a?(PgQuery::FuncCall) && (aggregate_call?(it) || it.over) }
+          end
+
+          # A constant, or a list of them (IN, BETWEEN), compared with a
+          # column, either side.
+          def column_compared?(node)
+            return false unless node.is_a?(PgQuery::A_Expr) && node.lexpr && node.rexpr
+
+            sides = [node.lexpr, node.rexpr]
+            sides.any?(&:column_ref) && sides.any? { constant?(it) || constants?(it) }
+          end
+
+          def constants?(node) = !!node.list && node.list.items.any? { constant?(it) }
 
           def nodes(node, found = [])
             found << node
