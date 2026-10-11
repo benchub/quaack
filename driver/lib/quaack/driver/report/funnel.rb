@@ -268,12 +268,12 @@ module Quaack
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
         end
 
-        # What a band's label adds after its counts: how many it held back,
+        # What a band's label adds after its counts: how many it set aside,
         # and how many went on untested in time (Funnel.untimed).
         def funnel_held_and_untimed(record)
           held = record["set_aside"].to_i
           untimed = Funnel.untimed(record)
-          (held.positive? ? ", #{Format.number(held)} held back" : "") +
+          (held.positive? ? ", #{Format.number(held)} set aside for testing during ranking" : "") +
             (untimed ? ", #{Format.number(untimed)} not tested in time, carried on" : "")
         end
 

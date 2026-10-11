@@ -11,9 +11,16 @@ module Quaack
     module Report
       # What a Sankey diagram draws for each stage (see Sankey): a node from
       # the stage's record, a source for each name in its added, and a sink
-      # for each of its drop reasons and what it held back. Its words are the
-      # funnel's and the table's.
+      # for each of its drop reasons and what it set aside for testing during
+      # ranking. Its words are the funnel's and the table's. A stage that adds
+      # always shows its source, with a zero when it added nothing (ZERO).
       module SankeyStages
+        SET_ASIDE = "Set aside for testing during ranking"
+        # Each adding stage's source, by the name its added counts it under.
+        ZERO = { "index-from-query" => "generator_one", "index-from-plan" => "generator_two",
+                 "llm-index-ideas" => "llm", "llm-index-refine" => "llm", "index-rank" => "combinations",
+                 "rewrite-rules" => "rules", "llm-rewrites" => "llm", "operator-rewrites" => "operator" }.freeze
+
         private
 
         def sankey_stage(index, name, record, stage, of_rewrite)
@@ -21,9 +28,9 @@ module Quaack
           state = sankey_state(inn, out)
           sentence = StageSentences.for(stage, of_rewrite:)
           sources, sinks = state == :unknown ? [[], []] : sankey_flows(record, stage, sentence)
-          SankeyLayout::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:, sinks:,
-                                  color: Funnel::COLORS.fetch(stage, Funnel::BLUE), keys: [stage],
-                                  sentences: [sentence, Funnel.untimed_note(record)].compact)
+          SankeyParts::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:, sinks:,
+                                 color: Funnel::COLORS.fetch(stage, Funnel::BLUE), keys: [stage],
+                                 sentences: [sentence, Funnel.untimed_note(record)].compact)
         end
 
         # Whether the run counted all, only what came in, or none of the stage.
@@ -31,19 +38,6 @@ module Quaack
           return :unknown if inn.nil?
 
           out.nil? ? :partial : :full
-        end
-
-        # A layer's label, its hover, and its ribbon's hover.
-        def sankey_words(node)
-          node.line = sankey_label(node)
-          node.tip = sankey_tip(node)
-          node.carry_tip = if node.state == :full
-                             [*node.sentences,
-                              "#{Format.number(node.out)} went on."].join(" ")
-                           else
-                             node.tip
-                           end
-          node
         end
 
         # The node's hover: a note for a stage the run didn't fully record,
@@ -58,7 +52,8 @@ module Quaack
         def sankey_numbers(node)
           held, dropped = node.sinks.partition { it.kind == :held }
           counts = { "came in" => node.inn, "added" => node.sources.sum(&:amount),
-                     "dropped" => dropped.sum(&:amount), "held back" => held.sum(&:amount), "went on" => node.out }
+                     "dropped" => dropped.sum(&:amount), "set aside for testing during ranking" => held.sum(&:amount),
+                     "went on" => node.out }
           told = counts.select { |word, count| sankey_shown?(word, count) }
           told.map { |word, count| "#{Format.number(count)} #{word}." }
         end
@@ -71,21 +66,27 @@ module Quaack
           [sankey_sources(record, stage, sentence), sankey_sinks(record, stage, sentence)]
         end
 
-        # A source for each name in a record's added, in order.
+        # A source for each name in a record's added, in order, or the stage's own
+        # source at zero if it has one and added nothing.
         def sankey_sources(record, stage, sentence)
-          sankey_counted(record["added"]).map do |name, count|
-            words = counted_as(name, stage == "rewrite-rules", stage)
-            sankey_flow(words.sub(/\A./, &:upcase), count, :source, sentence)
-          end
+          counted = sankey_counted(record["added"])
+          counted = { ZERO[stage] => 0 } if counted.empty? && ZERO.key?(stage)
+          counted.map { |name, count| sankey_flow(sankey_source_words(name, stage, count), count, :source, sentence) }
         end
 
-        # A sink for each drop reason, then one for what the stage held back.
+        def sankey_source_words(name, stage, count)
+          rules = stage == "rewrite-rules"
+          words = rules && count.zero? ? "from the transform rules" : counted_as(name, rules, stage)
+          Words.upper(words)
+        end
+
+        # A sink for each drop reason, then one for what the stage set aside.
         def sankey_sinks(record, stage, sentence)
           sinks = sankey_counted(record["dropped"]).map do |name, count|
             sankey_flow("Dropped, #{counted_as(name, false, stage)}", count, :drop, sentence)
           end
           held = sankey_counted({ "held" => record["set_aside"] }).fetch("held", 0)
-          sinks << sankey_flow("Held back for a real build", held, :held, sentence) if held.positive?
+          sinks << sankey_flow(SET_ASIDE, held, :held, sentence) if held.positive?
           sinks
         end
 
@@ -94,7 +95,7 @@ module Quaack
 
         def sankey_flow(label, amount, kind, sentence)
           text = "#{label}: #{Format.number(amount)}"
-          SankeyLayout::Flow.new(label: text, amount:, kind:, tip: [sentence, "#{text}."].compact.join(" "))
+          SankeyParts::Flow.new(label: text, amount:, kind:, tip: [sentence, "#{text}."].compact.join(" "))
         end
       end
     end
