@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-(none. Closed at 0.1.33.)
+- 20261011-15: rewrite-test `out_of_time` now passed true and goes on; burndown extra `not_tested_in_time`; report payload `out_of_time` Boolean.
 
 ## How this file works.
 
@@ -812,15 +812,6 @@ The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in 
 - **Came from:** The user's run, 2026-10-11. Priority: high, the pipeline can't test rewrites on the real schema.
 - **Design:** rewrite-test, scenarios.
 - **Status:** in progress (branch task/20261011-13)
-
-### 20261011-15. A rewrite that rewrite-test couldn't finish isn't disproved: don't drop it.
-
-From the user, 2026-10-11, reading a run where all four slow rewrites hit the 5-minute budget and were left out: the mechanical tests can only disprove a rewrite, never allow one, so a timeout isn't a disproof and the rewrite shouldn't be dropped for it. 20261010-53 (my design, never confirmed with the user beyond the 5-minute figure) made `out_of_time` drop the rewrite: fate `rewrite_test_out_of_time`, `passed` false, `Counterexamples.survived(..., false)`, so it skipped counterexamples and everything after. Change it: a rewrite whose rewrite-test ran out of time continues to counterexamples (the LLM's rows) and on to result-comparison on the real data and the rest, exactly like one that passed, but carries a fixed caution through the protocol and into the report: its mechanical test didn't finish within 5 minutes, so it was checked only by the LLM's counterexamples and on the real data (say so in plain words, in the report beside the rewrite and in the burndown: not a drop; a stage note "not tested in time", count carried on; the Sankey and funnel must show it flowing on, with the note). Reuse the existing `unproven` caution mechanism if it fits. It must not count as a disproof or a rule bug, and the fate/word lists in the protocol stay fixed lists. Check selection: an untested rewrite should rank below tested ones with equal results, or at least show the caution wherever the rewrite appears (say what you chose). Test first (an out-of-time rewrite is still sent to counterexamples and result-comparison; the report and burndown wording; sentinel/trust-boundary checks; old messages valid), mutate, update DESIGN.md (the rewrite-test budget paragraph, the burndown, the report) and the README sample. Enclave, protocol and driver change; Opus builder and reviewer.
-
-- **Depends on:** 20261010-53 (landed).
-- **Came from:** The user, 2026-10-11. Priority: high, the whole pipeline lost its rewrites to a timeout.
-- **Design:** rewrite-test, burndown, report.
-- **Status:** todo
 
 ### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Needs the user's go.
 
