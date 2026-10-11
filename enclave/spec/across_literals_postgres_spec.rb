@@ -24,12 +24,7 @@ RSpec.describe "Reports across literals" do
   schema = File.read(File.join(__dir__, "vacuity_guard_corpus_postgres_spec.rb"))[/SCHEMA = <<~SQL\n(.*?)\n  SQL\n/m, 1]
                .gsub(/^    /, "")
 
-  # The search's wall clock (Search::SECONDS) can stop it before its trials
-  # run out, which changes its state words with the machine's speed, not the
-  # literals (20261010-50). A clock that never runs out leaves only the
-  # trial budget, which is fixed.
   before do
-    stub_const("Quaack::Enclave::VacuityGuard::Search::SECONDS", 600)
     conn.exec(schema)
   end
 

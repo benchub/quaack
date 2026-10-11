@@ -138,6 +138,22 @@ RSpec.describe Quaack::Driver::Progress do
       expect(Thread.list.size).to eq(before)
     end
 
+    it "warns once, with the step's ID and the threshold only, when a step runs past five minutes" do
+      live.step("rewrite-test", "Testing the rewrites") do
+        now[0] = 299.0
+        wait_for(terminal, "(rewrite-test) 4m59s")
+        expect(terminal.string).not_to include("longer than usual")
+        now[0] = 300.0
+        wait_for(terminal, "longer than usual (rewrite-test) 5m00s")
+        now[0] = 400.0
+        wait_for(terminal, "longer than usual (rewrite-test) 6m40s")
+      end
+
+      expect(terminal.string.scan("\nquaack: [1/3] Still running").size).to eq(1)
+      expect(terminal.string)
+        .to include("(rewrite-test) 5m00s\nquaack: [1/3] Still running after 5m00s, longer than usual (rewrite-test)")
+    end
+
     it "puts no clock on a line that ends within the step's first second, and ends whole lines between steps" do
       live.skip("index-search", "Searching for indexes")
       live.step("llm-index-ideas", "Asking the LLM for index ideas") do

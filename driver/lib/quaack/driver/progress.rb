@@ -61,10 +61,17 @@ module Quaack
     # ends the progress lines quietly, the clock's redraws with them, and
     # every step still runs to its own result or exception (QuietStream).
     #
+    # On a terminal, a step still running after SLOW seconds also gets one
+    # warning line, "Still running after 5m00s, longer than usual" and the
+    # step's ID, and the clock goes on counting on it. Its only content is
+    # the fixed threshold and the step's name (20261010-50). Elsewhere, the
+    # closing line's time says as much.
+    #
     # clock answers seconds and interval is the redraw's period, so specs
     # pass a fake clock and a short interval.
-    class Progress
+    class Progress # rubocop:disable Metrics/ClassLength
       MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+      SLOW = 300
 
       def initialize(io:, total:, clock: MONOTONIC, interval: 1)
         @io = QuietStream.wrap(io)
@@ -164,7 +171,7 @@ module Quaack
         @own = Repeat.new(description, name)
         return yield unless @tty
 
-        timer = redrawing(start, stop = Queue.new)
+        timer = redrawing(start, name, stop = Queue.new)
         yield
       ensure
         stopping(stop, timer)
@@ -179,9 +186,13 @@ module Quaack
         @lock.synchronize { @start = @own = nil }
       end
 
-      def redrawing(start, stop)
+      def redrawing(start, name, stop)
         Thread.new do
-          @lock.synchronize { draw(@clock.call - start) if @line } while stop.pop(timeout: @interval).nil?
+          slow = Slow.new(SLOW, name)
+          while stop.pop(timeout: @interval).nil?
+            @lock.synchronize { draw(@clock.call - start) if @line }
+            slow.line(@clock.call - start)&.then { say(it) }
+          end
         end
       end
 
@@ -350,6 +361,25 @@ module Quaack
       end
 
       NULL = Null
+    end
+
+    # The slow-step warning (20261010-50).
+    class Progress
+      # The one warning line for a step still running after seconds, the
+      # first time line is asked with elapsed past it, then nil.
+      class Slow
+        def initialize(seconds, name)
+          @seconds = seconds
+          @name = name
+        end
+
+        def line(elapsed)
+          return if @warned || elapsed < @seconds
+
+          @warned = true
+          "Still running after #{Duration.call(@seconds)}, longer than usual (#{@name})"
+        end
+      end
     end
   end
 end
