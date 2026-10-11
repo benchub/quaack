@@ -81,6 +81,14 @@ RSpec.describe Quaack::Enclave::Scenarios do
       refused(ddl, "SELECT s.id FROM fx.slots s WHERE s.status = 'open'")
     end
 
+    it "refuses an overlap exclusion on a range over a user type named like a stepped one" do
+      ddl = "CREATE SCHEMA other; CREATE TYPE other.int4 AS ENUM ('a', 'b', 'c'); " \
+            "CREATE TYPE fx.fakerange AS RANGE (subtype = other.int4); " \
+            "CREATE TABLE fx.slots (id integer PRIMARY KEY, during fx.fakerange NOT NULL, status text NOT NULL, " \
+            "EXCLUDE USING gist (during WITH &&))"
+      refused(ddl, "SELECT s.id FROM fx.slots s WHERE s.status = 'open'")
+    end
+
     it "refuses an overlap exclusion on a multirange" do
       ddl = "CREATE TABLE fx.slots (id integer PRIMARY KEY, during int4multirange NOT NULL, status text NOT NULL, " \
             "EXCLUDE USING gist (during WITH &&))"
