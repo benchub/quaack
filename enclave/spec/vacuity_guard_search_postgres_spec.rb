@@ -60,9 +60,24 @@ RSpec.describe Quaack::Enclave::VacuityGuard::Search do
     expect(result.untested_states).to eq([:searched])
   end
 
-  it "says an atom the clock stopped it before searching in full wasn't searched" do
-    result, = run(redundant, search_options: { seconds: 0 })
-    expect(result.untested_states).to eq([:not_searched])
+  it "says an atom the per-query trial cap stopped it before searching in full wasn't searched" do
+    builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(redundant))
+    outcome = search_for(builder, redundant, trials_per_atom: 9, max_trials: 4)
+    expect(outcome.trials).to eq(4)
+    expect(outcome.states.values).to eq([:not_searched])
+  end
+
+  # 20261010-50: the trial count is the only budget, so a slow machine (here
+  # a clock that jumps a minute at every reading) gets the same result.
+  it "gives the same states, trials and kept fixtures however slow the machine" do
+    fast = [run(tie).last.spills, run(redundant, search_options: { trials_per_atom: 20 }).first.untested_states]
+    now = 0.0
+    allow(Process).to receive(:clock_gettime).and_wrap_original do |orig, id, *rest|
+      id == Process::CLOCK_MONOTONIC ? (now += 60.0) : orig.call(id, *rest)
+    end
+    slow = [run(tie).last.spills, run(redundant, search_options: { trials_per_atom: 20 }).first.untested_states]
+    expect(slow).to eq(fast)
+    expect(slow.last).to eq([:searched])
   end
 
   it "never searches without the flag, and says so" do

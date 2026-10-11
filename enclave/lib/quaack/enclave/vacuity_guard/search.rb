@@ -25,20 +25,23 @@ module Quaack
       # subquery with two rows, the statement timeout) is discarded: it
       # tests nothing, and still counts against the budget.
       #
-      # The budget is TRIALS_PER_ATOM trials for each atom searched, and
-      # SECONDS in all. An atom left when the trials run out was searched
-      # with no difference found; one left when the clock or the cap on kept
-      # trials (MAX_FIXTURES) stops the search wasn't searched in full.
-      # Neither ever counts an atom tested. A kept trial closed an atom no
-      # earlier one did. A query Skips names isn't searched. The generator is
-      # seeded with SEED, so a run is reproducible.
+      # The budget is TRIALS_PER_ATOM trials for each atom searched, and at
+      # most MAX_TRIALS in all. The trial count is the only budget, never the
+      # clock (20261010-50), so the same seed and query give the same result
+      # on any machine and under any load. An atom left when its trials run
+      # out was searched with no difference found; one left when MAX_TRIALS
+      # or the cap on kept trials (MAX_FIXTURES) stops the search wasn't
+      # searched in full. Neither ever counts an atom tested. A kept trial
+      # closed an atom no earlier one did. A query Skips names isn't
+      # searched. The generator is seeded with SEED, so a run is
+      # reproducible.
       #
       # Trust boundary: the trial rows hold made-up values (and the query's
       # literals, through the pools) and stay in the enclave. Only the atoms
       # closed and their state words leave.
       class Search
         TRIALS_PER_ATOM = 150
-        SECONDS = 5
+        MAX_TRIALS = 300
         MAX_FIXTURES = 3
         SEED = 20_261_010
         MAX_ROWS = 4
@@ -76,14 +79,13 @@ module Quaack
 
         # rubocop:disable Metrics/ParameterLists
         def initialize(runner, schema, order, sql, value_rows, pools, trials_per_atom: TRIALS_PER_ATOM,
-                       seconds: SECONDS, seed: SEED, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+                       max_trials: MAX_TRIALS, seed: SEED)
           # rubocop:enable Metrics/ParameterLists
           @runner = runner
           @sql = sql
           @trials = Trials.new(schema, order, value_rows, pools, Random.new(seed))
           @trials_per_atom = trials_per_atom
-          @seconds = seconds
-          @clock = clock
+          @max_trials = max_trials
         end
 
         def run(loosened)
@@ -100,9 +102,9 @@ module Quaack
         end
 
         def search(left, budget)
-          run = { left:, kept: [], trials: 0, discarded: 0, started: @clock.call,
-                  compared: Compared.new(MAX_COMPARISONS) }
-          trial(run, budget) while going?(run, budget)
+          run = { left:, kept: [], trials: 0, discarded: 0, compared: Compared.new(MAX_COMPARISONS) }
+          cap = [budget, @max_trials].min
+          trial(run, budget) while going?(run, cap)
           state = run[:trials] >= budget ? :searched : :not_searched
           outcome(run[:kept], run[:left].keys, state, run[:trials], run[:discarded])
         end
@@ -118,10 +120,7 @@ module Quaack
           run[:left] = run[:left].except(*hit)
         end
 
-        def going?(run, budget)
-          run[:left].any? && run[:trials] < budget && run[:kept].size < MAX_FIXTURES &&
-            @clock.call - run[:started] < @seconds
-        end
+        def going?(run, cap) = run[:left].any? && run[:trials] < cap && run[:kept].size < MAX_FIXTURES
 
         # The atoms the trial tells apart, or nil when it's discarded.
         def test(rows, left, compared)
