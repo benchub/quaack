@@ -3,6 +3,7 @@
 require "pg"
 require "pg_query"
 require_relative "../deadline"
+require_relative "held"
 
 module Quaack
   module Enclave
@@ -76,8 +77,9 @@ module Quaack
         def add?(group_rows)
           Deadline.check!
           fresh = group_rows.reject { |r| @rows.include?(r) }.uniq
+          held = held(group_rows)
           fresh.each_with_index do |r, i|
-            next @rows.insert(r) unless collides?(r) || orphan?(r, group_rows)
+            next @rows.insert(r) unless collides?(r) || orphan?(r, held)
 
             fresh.first(i).each { @rows.remove(it) }
             return false
@@ -109,7 +111,7 @@ module Quaack
           own = rows.to_h { [it, true] }
           queue = rows.dup
           while (row = queue.shift)
-            outside_parents(row, rows).each do |parent|
+            outside_parents(row, held ||= held(rows)).each do |parent|
               next if found.key?(parent) || own.key?(parent)
 
               queue << found.store(parent, parent)
@@ -123,10 +125,12 @@ module Quaack
 
         private
 
-        def outside_parents(row, rows)
+        def held(rows) = Held.new(rows) { |r, columns| values(r, columns) }
+
+        def outside_parents(row, held)
           @schema.constraints(row.table).foreign_keys.filter_map do |key|
             wanted = values(row, key.columns)
-            next if rows.any? { |r| r.table == key.parent && values(r, key.parent_columns) == wanted }
+            next if held.held?(key.parent, key.parent_columns, wanted)
 
             parent(row, key)
           end
@@ -138,11 +142,11 @@ module Quaack
         end
 
         # A foreign key with a NULL column checks nothing (MATCH SIMPLE).
-        def orphan?(row, group_rows)
+        def orphan?(row, held)
           @schema.constraints(row.table).foreign_keys.any? do |fk|
             key = values(row, fk.columns)
             key.none?(&:nil?) && parent(row, fk).nil? &&
-              group_rows.none? { |r| r.table == fk.parent && values(r, fk.parent_columns) == key }
+              !held.held?(fk.parent, fk.parent_columns, key)
           end
         end
 

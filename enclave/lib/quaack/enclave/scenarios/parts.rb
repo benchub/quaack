@@ -42,8 +42,22 @@ module Quaack
 
         private
 
+        # Each try with the rows it points at in every fixture, worked out
+        # lazily and once a spill, though each fixture it tries reads them
+        # again (task 20261011-13). No fixture changes before one takes the
+        # group, so they'd come out the same.
+        def lifted(tries)
+          done = []
+          Enumerator.new do |out|
+            tries.each_with_index do |try, i|
+              done << try&.then { |rows| @sets.flat_map { |set| set.parents_of(rows) }.uniq + rows } if i == done.size
+              out << done[i]
+            end
+          end
+        end
+
         def spill?(tries)
-          lifted = tries.lazy.map { it&.then { |rows| @sets.flat_map { |set| set.parents_of(rows) }.uniq + rows } }
+          lifted = lifted(tries)
           return true if @sets.drop(1).any? { it.add_any?(lifted) }
 
           spare = RowSet.new(@schema, @conn, @evaluated)
