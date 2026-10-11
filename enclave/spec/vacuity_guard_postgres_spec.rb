@@ -246,11 +246,13 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
   end
 
   it "keeps an atom a retry exercises, with other pool values" do
-    # The first near miss for qty > 2 is 2, and its group key, so its
-    # customer_id, is 2 too, so qty <> customer_id filters it out anyway.
+    # The first near miss for qty > 2 is 2, and its status takes the text
+    # type's typical value, two characters long, so qty <> length(status)
+    # filters it out anyway. (A group's own key used to serve here, but it
+    # now steers clear of pooled values, 20261010-47.)
     # The next pool value, 1, gets through once qty > 2 is TRUE. The
     # two-column test has no pool, so no rebuild helps it.
-    builder, result = guard("SELECT o.id FROM fx.orders o WHERE o.qty > 2 AND o.qty <> o.customer_id")
+    builder, result = guard("SELECT o.id FROM fx.orders o WHERE o.qty > 2 AND o.qty <> length(o.status)")
     expect(result.untested).to eq([builder.atoms[1].shape])
     expect(result.retries).to eq(4)
     expect(result.variants).to eq({ 0 => 1, 1 => 3 })

@@ -60,7 +60,16 @@ module Quaack
       # run's verdict that isn't a match, with load_order set to that run's
       # load order. That includes an unsupported_order refusal: if any run
       # refuses, the whole comparison does, and later runs don't run.
+      #
+      # It counts as LOAD_ORDERS.size loads (ArenaRunner#counted_as) however
+      # many it ran: which orders it skips follows how many rows each table
+      # run holds, and through them the query's literals (a LIMIT's value),
+      # which mustn't reach the burndown's fixture loads (20261010-47).
       def compare_in_load_orders(runner, rows, original:, candidate:, inserts: [])
+        runner.counted_as(LOAD_ORDERS.size) { load_order_runs(runner, rows, original:, candidate:, inserts:) }
+      end
+
+      def load_order_runs(runner, rows, original:, candidate:, inserts:)
         verdict = nil
         distinct_loads(rows, runner).each do |load_order, positions|
           verdict = load_order_run(runner, positions.map { rows[it] }, inserts, load_order, positions) do |tx|
