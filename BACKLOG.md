@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261010-12: `not_in_to_not_exists` refuses a NOT IN that appears again in the same SELECT when a copy is in its GROUP BY, DISTINCT ON, or ORDER BY.
+- 20261008-36: the statistics read pins DateStyle to ISO, so stored date and timestamp values replay the same in any session.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
 
 ## How this file works.
@@ -429,19 +430,6 @@ The builder of 20260923-21 left these items out:
 ### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-36. Cast placeholders in literals: minors from 20260924-28.
-
-The review of 20260924-28 found these minor issues:
-
-1. **Older entries.** (Done in the 20261008-35 batch.) No test covers a statistics entry stored before `column_types` existed.
-2. **DateStyle.** A picked date or timestamp value goes through its cast as text, in the DateStyle that was active when statistics read it. A replay session with another DateStyle could misread the value or fail to bind it. Pin the DateStyle, for example to ISO, wherever the statistics are read and replayed.
-3. **Shadowed type names.** (Done.) A bare cast like `$1::timestamptz` matches the pg_catalog type by name only, so a type of the same name earlier on the search_path would match too. The worst case is a bind error, not a leak.
-
-- **Depends on:** 20260924-28.
-- **Came from:** The review of 20260924-28, 2026-10-08.
-- **Design:** literals.
-- **Status:** todo. Only item 2 (DateStyle) is left.
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
 

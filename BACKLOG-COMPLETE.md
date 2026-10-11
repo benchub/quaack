@@ -10340,3 +10340,16 @@ From the second review of 20261008-63:
 - **Came from:** The second review of 20261008-63, 2026-10-08.
 - **Design:** report, LLM providers.
 - **Status:** **done.** Landed 2026-10-10 (task/20261008-68): a `*_tokens_details` that isn't an object leaves out cached and reasoning tokens (`Usage.detail`); `count?`'s type check is tested with a string, float and negative count.
+
+### 20261008-36. Cast placeholders in literals: minors from 20260924-28.
+
+The review of 20260924-28 found these minor issues:
+
+1. **Older entries.** (Done in the 20261008-35 batch.) No test covers a statistics entry stored before `column_types` existed.
+2. **DateStyle.** A picked date or timestamp value goes through its cast as text, in the DateStyle that was active when statistics read it. A replay session with another DateStyle could misread the value or fail to bind it. Pin the DateStyle, for example to ISO, wherever the statistics are read and replayed.
+3. **Shadowed type names.** (Done.) A bare cast like `$1::timestamptz` matches the pg_catalog type by name only, so a type of the same name earlier on the search_path would match too. The worst case is a bind error, not a leak.
+
+- **Depends on:** 20260924-28.
+- **Came from:** The review of 20260924-28, 2026-10-08.
+- **Design:** literals.
+- **Status:** **done.** Landed 2026-10-10 (task/20261008-36): the statistics read (`PlannerStatistics.run`) sets DateStyle to `ISO, MDY` for its own read-only transaction (`set_config(..., true)`), so stored date and timestamp values replay the same in any session. Only the read is pinned: ISO text parses the same under any DateStyle.
