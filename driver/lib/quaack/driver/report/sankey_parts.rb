@@ -33,6 +33,14 @@ module Quaack
 
           def span = [upper, lower]
         end
+        # A source's flat bar, in its own lane on the row where it arrives, with its label
+        # above it. Its ribbon runs down from the bar and merges into its stage's flow, whose
+        # top edge it meets at edge_x.
+        Source = Struct.new(:id, :flow, :thickness, :bar_x, :edge_x, :bar_y, :label_y) do
+          def bar_edge = [bar_x, bar_x + thickness]
+
+          def edge = [edge_x, edge_x + thickness]
+        end
         # A ribbon down the middle, from one node to the next, wide a at the top, b at the bottom.
         Carry = Struct.new(:from, :into, :wide_a, :wide_b, :amount, :grey) do
           # The [left, right] x of the ribbon at the top, and at the bottom.

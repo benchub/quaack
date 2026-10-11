@@ -4,6 +4,7 @@ require "erb"
 require_relative "format"
 require_relative "sankey_layout"
 require_relative "sankey_paths"
+require_relative "sankey_labels"
 
 module Quaack
   module Driver
@@ -19,11 +20,10 @@ module Quaack
       # only what came in, but its way in is drawn as counted. A ribbon whose
       # two ends differ in width (a count that doesn't join up) tapers.
       class SankeyDrawing
+        include SankeyLabels
+
         Layout = SankeyLayout
-        VIEW_WIDTH = 940
         NODE_WIDTH = 8.0
-        TEXT_X = 314
-        LABEL_MAX = 88
         GREY = 'style="fill: var(--uncounted-fill); stroke: var(--uncounted-stroke)" stroke-dasharray="4 3"'
         KIND_COLOR = { source: "var(--sk-source)", drop: "var(--sk-drop)", held: "var(--sk-held)" }.freeze
         Ribbon = Struct.new(:kind, :path, :from, :to, :amount, :tip, :style)
@@ -44,8 +44,6 @@ module Quaack
         private
 
         def nodes = @layout.nodes
-
-        def text(value) = ERB::Util.html_escape(value.to_s.delete(Format::MARKS))
 
         def title(tip) = tip.to_s.empty? ? "" : "<title>#{text(tip)}</title>"
 
@@ -70,10 +68,10 @@ module Quaack
           end
         end
 
-        def source_ribbon(node, placed)
-          path = SankeyPaths.source(placed.edge, node.y, Layout::NODE_X, *placed.span)
-          flow = placed.flow
-          ribbon_tag(Ribbon.new("source", path, placed.id, node.id, flow.amount, flow.tip, paint(color_of(node))))
+        def source_ribbon(node, source)
+          path = SankeyPaths.carry(source.bar_y + Layout::FLAT, node.y, source.bar_edge, source.edge)
+          flow = source.flow
+          ribbon_tag(Ribbon.new("source", path, source.id, node.id, flow.amount, flow.tip, paint(color_of(node))))
         end
 
         def sink_ribbon(node, placed)
@@ -92,7 +90,9 @@ module Quaack
         def attrs(pairs) = pairs.compact.map { |name, value| %(#{name}="#{value}") }.join(" ")
 
         def bars
-          nodes.flat_map { |node| [stage_bar(node), *(node.above + node.below).map { flow_bar(node, it) }] }
+          nodes.flat_map do |node|
+            [stage_bar(node), *node.above.map { source_bar(node, it) }, *node.below.map { flow_bar(node, it) }]
+          end
         end
 
         def stage_bar(node)
@@ -115,30 +115,22 @@ module Quaack
         # What a node counted going on, or nil if it didn't count it.
         def counted(node) = node.kind == :end ? node.came_in : node.went_on
 
-        # A source's or sink's node, in the column beside the stage it belongs to.
+        # A source's flat bar, in its lane, as wide as its count.
+        def source_bar(node, source)
+          flow = source.flow
+          attributes = { class: "node source", "data-id": source.id, "data-stage": text(node.name),
+                         "data-count": flow.amount, x: source.bar_x.round(2), y: source.bar_y,
+                         width: source.thickness.round(2), height: Layout::FLAT }
+          %(<rect #{attrs(attributes)} style="fill: #{KIND_COLOR[:source]}">#{title(flow.tip)}</rect>)
+        end
+
+        # A sink's node, in the column beside the stage it belongs to.
         def flow_bar(node, placed)
           flow = placed.flow
           attributes = { class: "node #{flow.kind}", "data-id": placed.id, "data-stage": text(node.name),
                          "data-count": flow.amount, x: Layout::NODE_X, y: placed.upper.round(2),
                          width: NODE_WIDTH, height: placed.thickness.round(2) }
           %(<rect #{attrs(attributes)} style="fill: #{KIND_COLOR.fetch(flow.kind)}">#{title(flow.tip)}</rect>)
-        end
-
-        def words
-          nodes.flat_map do |node|
-            [*stage_words(node), *(node.above + node.below).map { line("flow", it.centre + 4, it.flow.label) }]
-          end
-        end
-
-        def stage_words(node)
-          return [line("flow", node.y + 15, node.line)] unless node.kind == :stage
-
-          [line("stage", node.y + 15, node.name), line("counts", node.y + 31, node.line)]
-        end
-
-        def line(kind, height, words)
-          shown = words.length > LABEL_MAX ? "#{words[0, LABEL_MAX - 1]}…" : words
-          %(<text class="#{kind}" x="#{TEXT_X}" y="#{height.round(2)}">#{text(shown)}</text>)
         end
       end
     end

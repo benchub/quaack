@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "sankey_parts"
+require_relative "sankey_lanes"
 
 module Quaack
   module Driver
@@ -16,15 +17,18 @@ module Quaack
       # sink; a stage that counted nothing is still a node, MIN_THICKNESS wide.
       #
       # A stage is a bar. What carried on from the stage above, then each
-      # source of its added, enter its top edge, from the left. What carries
-      # on, then each drop reason and the held back count, leave its bottom
-      # edge, the carry first. The sources come from nodes in the column at
-      # NODE_X, in the gap above the bar; the sinks go to nodes in the same
-      # column, in the gap below it. A gap is as tall as the rows it holds, one
-      # row (SLOT tall, or its node's thickness) for each source or sink, so
+      # source of its added, enter its top edge, from the left, so its width is
+      # what came in plus what was added. Each source is a flat bar of its own
+      # in a lane to the right (LANE_X on, a LANE_GAP apart) on the stage's
+      # row, above the bar, with its label on a line of its own over it; its
+      # ribbon runs down and merges into the bar's top edge. What carries on,
+      # then each drop reason and the held back count, leave its bottom edge,
+      # the carry first, and go down and then right to nodes in the column at
+      # NODE_X, in the gap below it. A gap is as tall as the rows it holds, so
       # no two labels meet.
       class SankeyLayout
         include SankeyParts
+        include SankeyLanes
 
         SPINE_MAX = 240.0
         MIN_THICKNESS = 2.0
@@ -82,15 +86,13 @@ module Quaack
         end
 
         # The room above the first node for its sources, when it has any.
-        def lead = rows(@nodes.first.sources).then { it.zero? ? 0 : it + (2 * PAD) }
+        def lead = block(@nodes.first.sources).then { it.zero? ? 0 : it + PAD }
 
         def gap_after(index)
           nxt = @nodes[index + 1]
           below = rows(@nodes[index].sinks)
-          above = nxt ? rows(nxt.sources) : 0
-          need = below + above
-          need += 2 * PAD unless need.zero?
-          need += 8 if below.positive? && above.positive?
+          above = nxt ? block(nxt.sources) : 0
+          need = (below.zero? ? 0 : below + (2 * PAD)) + (above.zero? ? 0 : above + PAD)
           nxt ? [MIN_GAP, need].max : need
         end
 
@@ -104,15 +106,11 @@ module Quaack
 
         # Where the node's sources, above it, and sinks, below it, go. Their ribbons meet
         # its edges side by side, after what carries on. The sinks, which go down and then
-        # right, meet the bottom edge last first, so no ribbons cross.
+        # right, meet the bottom edge last first, so no ribbons cross; the sources' bars
+        # are in the same order as where they meet, so theirs don't either.
         def place_flows(node, index)
           place_above(node)
           place_below(node, index)
-        end
-
-        def place_above(node)
-          node.above = placed(node.sources, node.y - PAD - rows(node.sources), "#{node.id}-in")
-          line_up(node.above, thick(node.inn))
         end
 
         def place_below(node, index)

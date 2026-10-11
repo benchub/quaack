@@ -35,14 +35,6 @@ module Quaack
           band([[left, y_edge], [left, lerp(y_edge, lower, 0.6)], [lerp(left, x_node, 0.4), lower], [x_node, lower]],
                [[x_node, upper], [lerp(right, x_node, 0.4), upper], [right, lerp(y_edge, upper, 0.6)], [right, y_edge]])
         end
-
-        # From a source's node at x, left and then down to a stage's top edge, at y. The
-        # upper side goes to the edge's left end.
-        def source(edge, y_edge, x_node, upper, lower)
-          left, right = edge
-          band([[x_node, upper], [lerp(left, x_node, 0.6), upper], [left, lerp(y_edge, upper, 0.6)], [left, y_edge]],
-               [[right, y_edge], [right, lerp(y_edge, lower, 0.6)], [lerp(right, x_node, 0.6), lower], [x_node, lower]])
-        end
       end
     end
   end

@@ -3069,6 +3069,7 @@ RSpec.describe Quaack::Driver::Report do
 
   describe "the burndown Sankey diagrams" do
     sankey_module = Quaack::Driver::Report::Sankey
+    layout_module = Quaack::Driver::Report::SankeyLayout
 
     def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
       { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,
@@ -3200,9 +3201,10 @@ RSpec.describe Quaack::Driver::Report do
       svg = sankey("rewrite", 1)
       rules = nodes(svg, "source").select { it["data-stage"] == named("rewrite-rules") }
       expect(rules.map { it["data-count"].to_i }).to eq([3, 1])
+      sources = texts(svg).select { it[:kind] == "source" }.map { it[:text] }
+      expect(sources).to include("By the transform rule key_in_self_join: 3", "By the transform rule or_to_union: 1",
+                                 "From the LLM: 5", "From you: 1")
       labels = texts(svg).select { it[:kind] == "flow" }.map { it[:text] }
-      expect(labels).to include("By the transform rule key_in_self_join: 3", "By the transform rule or_to_union: 1",
-                                "From the LLM: 5", "From you: 1")
       expect(labels).to include("Dropped, the same as another idea: 2",
                                 "Dropped, failed the checks on what goes in: 1")
       held = nodes(sankey("index", 1), "held")
@@ -3281,15 +3283,54 @@ RSpec.describe Quaack::Driver::Report do
       expect(nums[8] - nums[6]).to be_within(0.05).of(scale * 7)
     end
 
-    it "orders the sources' ribbons so none cross: the top source enters the stage's top edge first" do
+    it "draws each source as a flat bar of its own in its own lane on its stage's row, as wide as its count" do
+      svg = sankey("rewrite", 1)
+      scale = sankey_module::SPINE_MAX / 7.0
+      stage = stage_nodes(svg).find { it["data-stage"] == named("rewrite-rules") }
+      bars = nodes(svg, "source").select { it["data-stage"] == named("rewrite-rules") }
+      expect(bars.map { it["width"].to_f }.zip([3, 1])).to all(satisfy { |wide, n|
+        (wide - [scale * n, 2.0].max).abs < 0.05
+      })
+      expect(bars.map { it["y"] }.uniq.size).to eq(1)
+      expect(bars.first["y"].to_f + bars.first["height"].to_f).to be <= stage["y"].to_f
+      expect(stage["y"].to_f - bars.first["y"].to_f).to be <= layout_module::MERGE + layout_module::FLAT
+      lanes = bars.map { [it["x"].to_f, it["x"].to_f + it["width"].to_f] }
+      expect(lanes.each_cons(2).map { |(_, right), (left, _)| left - right }).to all(be_positive)
+      expect(lanes.first.first).to be > stage["x"].to_f + stage["width"].to_f
+    end
+
+    it "merges a stage's sources into its flow: its bar is in plus added wide, and each source's ribbon reaches it" do
+      svg = sankey("rewrite", 1)
+      scale = sankey_module::SPINE_MAX / 7.0
+      stage = stage_nodes(svg).find { it["data-stage"] == named("llm-rewrites") }
+      expect(stage["width"].to_f).to be_within(0.05).of(scale * (2 + 5))
+      ends = ribbons(svg, "source").select { it["data-to"] == stage["data-id"] }.map { numbers(it["d"]) }
+      expect(ends.size).to eq(1)
+      lands = ends.first.values_at(6, 7, 8)
+      expect(lands[1]).to be_within(0.01).of(stage["y"].to_f)
+      expect(lands[0]).to be_within(0.05).of(stage["x"].to_f + (scale * 2))
+      expect(lands[2] - lands[0]).to be_within(0.05).of(scale * 5)
+      expect(ends.first[-2] - ends.first[0]).to be_within(0.05).of(scale * 5)
+      carry = ribbons(svg, "carry").find { it["data-to"] == stage["data-id"] }
+      expect(carry["data-count"]).to eq("2")
+    end
+
+    it "makes a stage's bar as wide as what came in plus what it added, even when its counts don't add up" do
+      stages["llm-rewrites"] = { "rewrites" => rec(2, 3, added: { "llm" => 5 }) }
+      svg = sankey("rewrite", 1)
+      stage = stage_nodes(svg).find { it["data-stage"] == named("llm-rewrites") }
+      expect(stage["width"].to_f).to be_within(0.05).of(sankey_module::SPINE_MAX)
+    end
+
+    it "orders the sources' bars and ribbons so none cross: the first bar's ribbon meets the stage's edge first" do
       svg = sankey("rewrite", 1)
       stage = stage_nodes(svg).find { it["data-stage"] == named("rewrite-rules") }
-      rect_y = ->(id) { nodes(svg).find { it["data-id"] == id }["y"].to_f }
       sources = ribbons(svg, "source").select { it["data-to"] == stage["data-id"] }
       expect(sources.size).to eq(2)
-      by_node = sources.sort_by { rect_y.call(it["data-from"]) }
-      expect(by_node.map { numbers(it["d"])[6] }).to eq(by_node.map { numbers(it["d"])[6] }.sort)
-      expect(by_node.map { numbers(it["d"])[6] }.uniq.size).to eq(2)
+      by_bar = sources.sort_by { numbers(it["d"])[0] }
+      lands = by_bar.map { numbers(it["d"])[6] }
+      expect(lands).to eq(lands.sort)
+      expect(lands.uniq.size).to eq(2)
     end
 
     it "orders the sinks' ribbons so none cross: the top sink leaves the stage's bottom edge last" do
@@ -3340,13 +3381,18 @@ RSpec.describe Quaack::Driver::Report do
         [1, 2].each do |n|
           svg = sankey(id, n)
           height = svg[/viewBox="0 0 \d+ (\d+)"/, 1].to_f
-          words = texts(svg)
-          expect(words.map { it[:x] }.uniq.size).to eq(1)
-          ys = words.map { it[:y] }.sort
-          expect(ys.each_cons(2).map { |a, b| b - a }).to all(be >= 14.0)
-          expect(ys.first).to be >= 10
-          expect(ys.last + 6).to be <= height
-          slots = (nodes(svg, "source") + nodes(svg, "drop") + nodes(svg, "held"))
+          boxes = texts(svg).map do |word|
+            [word[:x], word[:y] - 11, word[:x] + (word[:text].length * 6.5), word[:y] + 3]
+          end
+          expect(boxes.map(&:first).min).to be >= 0
+          expect(boxes.map { it[2] }.max).to be <= 940
+          expect(boxes.map { it[1] }.min).to be >= 0
+          expect(boxes.map { it[3] }.max).to be <= height
+          boxes.combination(2).each do |one, other|
+            apart = one[2] <= other[0] || other[2] <= one[0] || one[3] <= other[1] || other[3] <= one[1]
+            expect(apart).to be(true), "labels meet: #{one} #{other}"
+          end
+          slots = (nodes(svg, "drop") + nodes(svg, "held"))
                   .map { [it["y"].to_f, it["y"].to_f + it["height"].to_f] }.sort
           expect(slots.each_cons(2).map { |(_, above), (below, _)| below - above }).to all(be >= 0)
         end
