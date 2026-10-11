@@ -93,7 +93,7 @@ module Quaack
           return unless lookup
 
           raise Error.new("name_lookup_function",
-                          "#{name(lookup)} looks up a name, and the original doesn't make the same call")
+                          "#{name(lookup)} looks up a catalog name or oid, and the original doesn't make the same call")
         end
 
         # The first name lookup the original doesn't make, or nil.
