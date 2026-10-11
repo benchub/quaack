@@ -6,11 +6,11 @@ require_relative "format"
 module Quaack
   module Driver
     module Report
-      # The words of a Sankey diagram (see SankeyDrawing): a layer's label and each
-      # sink's label in one column, at TEXT_X, each in a row of its own, and each
-      # source's label on a line of its own over its bar. No layer says how many came
-      # in or were added: the ribbons show that, and the tooltips and the table have
-      # the numbers.
+      # The words of a Sankey diagram (see SankeyDrawing): each layer's label, each
+      # step's words, and each drop's label in one column, at TEXT_X, each in a row of
+      # its own, and each source's label over its bar. No layer says how many came in
+      # or were added: the ribbons show that, and the tooltips and the table have the
+      # numbers.
       module SankeyLabels
         VIEW_WIDTH = 1040
         TEXT_X = 624
@@ -21,15 +21,20 @@ module Quaack
         private
 
         def words
-          nodes.flat_map do |node|
-            [stage_words(node), *node.above.map { source_label(it) },
-             *node.below.map { sink_label(it) }]
-          end
+          [*layers.map { tag("layer", TEXT_X, it.y + 15, cut(it.line, LABEL_MAX)) },
+           *steps.flat_map { step_words(it) },
+           *layers.flat_map { |layer| layer.above.map { source_label(it) } }]
+        end
+
+        # A step's words, then its drops' labels, each in a row of its own.
+        def step_words(step)
+          line = tag("step", TEXT_X, step.from.bottom + SankeyLayout::PAD + 12, cut(step.line, LABEL_MAX)) if step.line
+          [line, *step.below.map { sink_label(it) }].compact
         end
 
         # A source's label, over its bar.
         def source_label(source)
-          left, room, anchor = source_anchor(source)
+          left, room, anchor = source.room ? [source.bar_x, (source.room / CHAR).floor] : source_anchor(source)
           tag("source", left, source.label_y, cut(source.flow.label, room), anchor)
         end
 
@@ -49,10 +54,6 @@ module Quaack
         def label_end(source)
           needs = LEFT_EDGE + (source.flow.label.length * CHAR)
           needs.clamp(source.right, SankeyParts::LEFT - 8)
-        end
-
-        def stage_words(node)
-          tag(node.kind == :stage ? "stage" : "flow", TEXT_X, node.y + 15, cut(node.line, LABEL_MAX))
         end
 
         def sink_label(placed) = tag("flow", TEXT_X, placed.centre + 4, cut(placed.flow.label, LABEL_MAX))

@@ -5,25 +5,44 @@ module Quaack
     module Report
       # The parts of a Sankey diagram's layout (see SankeyLayout).
       module SankeyParts
-        # Where the flow down the middle starts: the lanes of sources are to its left.
+        # Where the layers start: the lanes of later sources, and the column to the
+        # set-aside layer, are to the left.
         LEFT = 330.0
+        BAR_HEIGHT = 22
 
         # One source or sink: its words, count, kind (:source, :drop, :held), and hover.
         Flow = Struct.new(:label, :amount, :kind, :tip, keyword_init: true)
-        # One node down the middle. kind is :start, :stage, or :end; state is
-        # :full, :partial (counted what came in only), or :unknown. The rest
-        # (y, height, width, above, below) is the layout's.
-        Stage = Struct.new(:id, :kind, :name, :state, :inn, :out, :sources, :sinks, :color, :line, :tip,
-                           :carry_tip, :sentences, :keys, :y, :height, :width, :above, :below, keyword_init: true) do
-          # What it counted going on, and coming in, or nil if it didn't count it.
-          def went_on = state == :full ? out : nil
+        # One stage, or a run of stages that only add, from the stage records (see
+        # SankeyStages). kind is :start or :stage; state is :full, :partial (counted
+        # what came in only), or :unknown.
+        Stage = Struct.new(:id, :kind, :name, :state, :inn, :out, :sources, :sinks, :color, :tip,
+                           :sentences, :keys, keyword_init: true) do
+          def added = sources.sum(&:amount)
 
-          def came_in = state == :unknown ? nil : inn
+          def drops = sinks.reject { it.kind == :held }
 
-          def bottom = y + height
+          def held = sinks.select { it.kind == :held }
         end
-        # A source or sink with its place: where its node's centre is, how
-        # thick, and where its ribbon meets the bar's edge (x).
+        # A layer: a state, drawn as a bar as wide as its count (nil when it wasn't
+        # counted). role is :start (what the diagram above sent), :merge (what came in
+        # plus what a stage added, fed by its sources), :after (what went on after a
+        # stage's drops), or :held (what the diagram set aside for testing during
+        # ranking). spread is whether its sources span the whole picture. The rest
+        # (y, x, width, above) is the layout's.
+        Layer = Struct.new(:id, :role, :name, :state, :total, :line, :tip, :color, :sources, :spread,
+                           :y, :x, :width, :above, keyword_init: true) do
+          def bottom = y + BAR_HEIGHT
+
+          def grey? = state != :full
+        end
+        # A transition from one layer into the next. line is its step's words (nil for a
+        # carry into a merge layer); top and bottom are the carry's counts at each end
+        # (nil when not counted); drops and held are the step's sinks. The layout sets
+        # carry, below (the drops' places), and aside (the set-aside ribbons' places).
+        Step = Struct.new(:id, :from, :into, :line, :top, :bottom, :drops, :held, :tip, :carry_tip, :grey,
+                          :carry, :below, :aside, keyword_init: true)
+        # A sink with its place: where its node's centre is, how thick, and where its
+        # ribbon meets the bar's edge (x).
         Placed = Struct.new(:id, :flow, :centre, :thickness, :x) do
           def edge = [x, x + thickness]
 
@@ -33,26 +52,22 @@ module Quaack
 
           def span = [upper, lower]
         end
-        # A source's flat bar, in its own lane (left of the flow) on the row where it arrives, with
-        # its label above it. Its ribbon runs down from the bar and merges into its stage's flow, whose
-        # top edge it meets at edge_x.
-        Source = Struct.new(:id, :flow, :thickness, :bar_x, :edge_x, :bar_y, :label_y) do
+        # A source's flat bar with its label above it. Its ribbon runs down from the bar into
+        # its layer, whose top edge it meets at edge_x, wide as its count (none for zero).
+        Source = Struct.new(:id, :flow, :thickness, :bar_x, :edge_x, :bar_y, :label_y, :room) do
           def right = bar_x + thickness
 
           def bar_edge = [bar_x, right]
 
-          def edge = [edge_x, edge_x + thickness]
-        end
-        # A ribbon down the middle, from one node to the next, wide a at the top, b at the
-        # bottom, which meets the next node's top edge after its sources, shift in.
-        Carry = Struct.new(:from, :into, :wide_a, :wide_b, :amount, :grey, :shift) do
-          # The [left, right] x of the ribbon at the top, and at the bottom.
-          def from_edge = [LEFT, LEFT + wide_a]
+          def wide = flow.amount.positive? ? thickness : 0.0
 
-          def into_edge = [LEFT + shift, LEFT + shift + wide_b]
-
-          def kind = grey ? "carry unknown" : "carry"
+          def edge = [edge_x, edge_x + wide]
         end
+        # A carry from one layer to the next: its [left, right] x at the top, and at the bottom.
+        Carry = Struct.new(:from_edge, :into_edge, :amount)
+        # What a step set aside: its ribbon leaves the layer's bottom edge, turns left to its
+        # column, and runs down to the set-aside layer.
+        Aside = Struct.new(:id, :flow, :edge, :column, :turn)
       end
     end
   end

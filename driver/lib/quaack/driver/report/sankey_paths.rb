@@ -28,6 +28,15 @@ module Quaack
                [[into_edge[1], into_y], [into_edge[1], middle], [from_edge[1], middle], [from_edge[1], from_y]])
         end
 
+        # From a layer's bottom edge, at from_y, turning left to a column by turn_y, then straight
+        # down to into_y. edge and column are each [left, right] x.
+        def aside(edge, from_y, column, turn_y, into_y)
+          middle = (from_y + turn_y) / 2.0
+          band([[edge[0], from_y], [edge[0], middle], [column[0], middle], [column[0], turn_y]],
+               [[column[1], turn_y], [column[1], middle], [edge[1], middle], [edge[1], from_y]])
+            .sub(" L", " L#{point([column[0], into_y])} L#{point([column[1], into_y])} L")
+        end
+
         # From a stage's bottom edge, at y, down and then right to a sink's node at x, whose
         # ribbon is upper to lower. The edge's left end goes to the lower side.
         def sink(edge, y_edge, x_node, upper, lower)

@@ -16,7 +16,9 @@ module Quaack
           "llm-index-ideas" => "The LLM suggests indexes that QUAACK's own search missed.",
           "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
           "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
-                          "dropping, up to three.",
+                          "dropping, up to three. It doesn't try every combination: it pairs the best single " \
+                          "index with each of the others, then tries triples the same way, so n ideas take about " \
+                          "n - 1 pairs and up to n - 2 triples.",
           "rewrite-rules" => "The transform rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
           "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
                             "its checks or go over the limit of five.",
@@ -35,12 +37,18 @@ module Quaack
                            "data, and chooses the best."
         }.freeze
 
+        # What the rewrites' ranking adds to its sentence: its counts are every rewrite's, added up.
+        SUMMED = "Each rewrite has its own search, and the counts here add up every rewrite's."
+
         # A stage's sentence, or nil for none. The rewrites' own index
         # searches run the index stages on a rewrite, so for those
         # (of_rewrite) it says "the rewrite" where the sentence says "the original query".
         def self.for(stage, of_rewrite: false)
           sentence = TABLE[stage]
-          of_rewrite && sentence ? sentence.sub("the original query", "the rewrite") : sentence
+          return sentence unless of_rewrite && sentence
+
+          sentence = sentence.sub("the original query", "the rewrite")
+          stage == "index-rank" ? "#{sentence} #{SUMMED}" : sentence
         end
       end
     end

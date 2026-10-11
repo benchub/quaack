@@ -247,7 +247,9 @@ module Quaack
         def funnel_label(record, stage, went_on = "#{Format.number(record["out"])} went on", added: false)
           counts = went_on
           counts = "#{Format.number(funnel_added_count(record))} added, #{counts}" if added
-          counts += ", #{Format.number(record["set_aside"])} held back" if record["set_aside"].to_i.positive?
+          if record["set_aside"].to_i.positive?
+            counts += ", #{Format.number(record["set_aside"])} set aside for testing during ranking"
+          end
           dropped = breakdown(record["dropped"].to_h, stage:)
           line = dropped == "none" ? counts : "#{counts} · dropped: #{dropped}"
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
