@@ -16,6 +16,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-2: denormalized fixtures set the copy on other-class and parentless rows.
 - 20261010-50: the vacuity-guard search's only budget is its trial count (150 per atom, 300 per query), never the clock.
 - 20261010-6: the error line no longer carries a `cycle` field (removed from the whitelist, enclave ErrorFilter, and driver ErrorFields/EnclaveError).
+- 20261010-53: each rewrite's rewrite-test has a 5-minute wall-clock budget; a rewrite that runs out of time is left out as `out_of_time` (new protocol `RewriteBudget`).
+- 20261008-57: rewrite-check and rewrite-rules dedupe stored rewrites on SQL and stated assumptions together (pending review).
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -785,17 +787,6 @@ From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, 
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261010-53. rewrite-test ran a whole hour on one rewrite and killed the run.
-
-The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed at step 9 of 18 (`rewrite-test`): one rewrite took 4 s, the next took 1h00m04s and hit the driver's 3600 s step cap (`Transport::Base::DEFAULT_TIMEOUT`), which failed the whole run. Nothing bounds one rewrite's test except the 10 s statement timeout per statement. Two parts: (1) find why that rewrite was slow (needs the user's profile: rerun the step by hand with `QUAACKS_PROFILE`, README "profile it on the jump server"; same data 20261004-27 item 1 waits for); (2) give rewrite-test a wall-clock budget per rewrite, so a rewrite that can't be tested in time is reported as "could not be tested" and dropped, not fatal. Part 2 is a design change: confirm with the user (budget size, wording in the report) before building.
-
-- **Depends on:** the user's profile for part 1; the user's go-ahead for part 2.
-- **Came from:** The user's run, 2026-10-10.
-- **Design:** rewrite-test, Where QUAACK runs.
-- **Decided by the user (2026-10-11):** the budget is 5 minutes per rewrite. The user will profile part 1. The version bump waits until rewrite-test's performance is fixed.
-- **Profile (user, 2026-10-11, quaacks 0.1.32, ran 51,667 samples before the user interrupted it):** about 92% of the samples are in `Scenarios::RowSet` (`row_set.rb:48` `add?` through `parts.rb:46-47` and `scenarios.rb:282`), under `vacuity_guard.rb:56-57` and `scenario_tests.rb:70`, reached from `steps/counterexamples.rb`. Self time sits in `row_set.rb:121` (`values`, 12.5k), `:84` and `:67` (the `parent` find and `include?`, 11k and 9k), `:92` (`clash?` scan, 4.6k) and `parts.rb:46` (2.5k): the linear scans of 20261004-27 item 2. Part 1 is answered; the fix is 20261011-4. Part 2 (the budget) still stands.
-- **Status:** todo (needs the user)
-
 ### 20261011-2. Count thresholds and small LIMIT/OFFSET still show in the report (found in the review of 20261010-47).
 
 The review of 20261010-47 grouped outgoing reports by literal value over 0..10 and found classes that differ: LIMIT {0} {1..10}; ORDER BY LIMIT {0} {1} {2..10}; OFFSET {0} {1} {2..10}; `count(*) > n` {0} {1} {2} {3} {4..10}; `HAVING count() > n` {0} {1} {2..10}; IN list with `count(*) >= n` {0} {1} {2} {3..10}. The differing fields are loads (7/10/16/25 for `count(*) > 0..3`), retries, the untested set, `untested_states` and results (row_count vs pass). It saturates by 4, nothing scales without bound. LIMIT and OFFSET (0, 1, 2+) are a coarse shape fact. **Count thresholds are not**: an observer recovers the exact n for n = 0..3 from `loads` or the untested set, and small thresholds are the common case. This was already so on main before 20261010-47 (the diff only fixed LIMIT and IN-list values). DESIGN says literal values never cross.
@@ -840,4 +831,13 @@ Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized 
 - **Depends on:** 20261010-10 (landed).
 - **Came from:** The build of 20261010-10, 2026-10-11.
 - **Design:** report.
+- **Status:** todo
+
+### 20261011-10. Rewrite budget: minors from 20261010-53.
+
+(1) DESIGN.md's budget sentence doesn't say a running statement can overrun the deadline by up to its 10 s `statement_timeout`: add one clause. (2) An out-of-time rewrite-test records an empty report, so the burndown loses the fixture loads and retries it really used and under-counts the work done; carry the counts the test had reached into the burndown (as fixed small counts, not literals; check 20261011-2's worst-case rules and 20261010-47's across-literals spec so the count doesn't vary with a literal), or say in DESIGN.md that out-of-time rewrites count as 0. (3) Counterexample rounds have no overall budget (only the 10 s per statement); say in DESIGN.md why that's fine (they load only the LLM's inserts), or add one if rounds can pile up.
+
+- **Depends on:** 20261010-53 (landed).
+- **Came from:** The review of 20261010-53, 2026-10-11 (minor).
+- **Design:** rewrite-test, burndown.
 - **Status:** todo
