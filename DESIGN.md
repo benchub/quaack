@@ -876,7 +876,7 @@ Each problem pattern in the plan points to a potentially-helpful index:
 - **Sort or Hash feeding an aggregate:** an index on the `GROUP BY` keys.
 - **Heap Fetches on an Index Only Scan:** this isn't an index problem, so skip it.
 
-Generator two reads a condition's text with pg_query. Postgres prints an InitPlan's output as `(InitPlan 1).col1`, which isn't SQL, so the generator reads each one as a parameter, found with pg_query's scanner so the same text inside a string literal stays a literal. A column equal to one is a key column and never a partial predicate, as with `$1`. A condition with a `COLLATE` still proposes nothing (see 20261008-21), since a plain key wouldn't serve a comparison in another collation.
+Generator two reads a condition's text with pg_query. Postgres prints an InitPlan's output as `(InitPlan 1).col1`, which isn't SQL, so the generator reads each one as a parameter, found with pg_query's scanner so the same text inside a string literal stays a literal. A column equal to one is a key column and never a partial predicate, as with `$1`. Unsupported in v1: a condition with a `COLLATE`, such as `name COLLATE "C" = 'x'`. Generator two never makes it an equality key column or a partial predicate, since a plain key wouldn't serve a comparison in another collation and its key columns are plain name strings, so a Filter whose only equality is under `COLLATE` proposes nothing, and nothing raises. Its column can still come in as a trailing plain key of an index the plan's other conditions justify. The collation-aware version (key columns with a collation, and a decision on how a `COLLATE` predicate passes index-dedupe) was dropped on 2026-10-11 (20261008-21, 20261011-9).
 
 ### index-dedupe. Dedupe and filter.
 
