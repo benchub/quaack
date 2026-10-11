@@ -60,4 +60,39 @@ RSpec.describe Quaack::Driver::Report do
     expect(sankey).to include("1 not tested in time on made-up data went on, checked only on the LLM's test " \
                               "data and the real data.")
   end
+
+  describe "a later fate" do
+    lead = "Its test on made-up data didn't finish within 5 minutes, so QUAACK checked it only on test data " \
+           "the LLM wrote to break it and on the real data"
+    short = "Its test on made-up data didn't finish within 5 minutes"
+    {
+      ["production_mismatch", nil] =>
+        ["#{lead}, and it returned different results from the original query on the real data, so it's wrong.",
+         "It passed the tests on made-up data, but returned different results"],
+      ["production_timed_out", nil] => ["#{lead}, and it timed out when QUAACK compared",
+                                        "It passed the tests on made-up data, but timed out"],
+      ["production_not_compared", nil] => ["#{lead}, but QUAACK couldn't compare its results",
+                                           "It passed the tests on made-up data, but QUAACK couldn't"],
+      ["below_top_three", nil] => ["#{lead}, and it beat the original query, but three others",
+                                   "It passed every test and beat the original query, but three"],
+      ["footprint_tie", nil] => ["#{lead}, and it beat the original query, but tied",
+                                 "It passed every test and beat the original query, but tied"],
+      ["measurement_timed_out", nil] => ["#{lead}, but every measurement run of it timed out.",
+                                         "It passed every test, but every measurement run"],
+      ["not_better", nil] => ["#{lead}, then QUAACK measured it on the real data, where it",
+                              "It passed every test, then QUAACK measured it"],
+      %w[unfinished rewrite-test] => ["#{short}, and the run ended before going further.",
+                                      "It passed the tests on made-up data, and the run ended"],
+      %w[unfinished counterexamples] => ["#{short}, it passed the LLM's test data, and the run ended before " \
+                                         "measuring it.", "It passed every test, and the run ended"]
+    }.each do |(fate, after), (untimed, normal)|
+      it "says what happened for #{fate} #{after}, and keeps the usual words when out_of_time isn't true" do
+        rewrites.replace([fated(1, fate, after:, out_of_time: true), fated(2, fate, after:, out_of_time: "true")])
+        sentences = html.scan(%r{<span class="fate">What became of it: (.*?)</span>}m).flatten
+        expect(sentences.first).to include(untimed)
+        expect(sentences.first).not_to match(/passed (the tests on made-up data|every test)/)
+        expect(sentences.last).to include(normal)
+      end
+    end
+  end
 end
