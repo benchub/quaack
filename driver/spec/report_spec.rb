@@ -784,6 +784,28 @@ RSpec.describe Quaack::Driver::Report do
         expect(queries).not_to include("never made these conditions")
       end
 
+      # Task 20261010-43: how each one stayed unproven, from vacuity-guard's search.
+      def with_states(atoms, states)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "untested_states" => states, "covered" => nil)
+        section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
+      end
+
+      it "says after each condition whether QUAACK's search tried it in full" do
+        out = with_states(["a < $1", "t.b IS NULL"], %w[searched not_searched])
+        expect(out.scan(%r{<li>.*?</li>})).to eq(
+          [%(<li><code class="sql">a &lt; $1</code> <span class="how">#{esc(described_class::Rewrites::HOW["searched"])}</span></li>),
+           %(<li><code class="sql">t.b IS NULL</code> <span class="how">#{esc(described_class::Rewrites::HOW["not_searched"])}</span></li>)]
+        )
+        expect(described_class::Rewrites::HOW["searched"]).to include("150 small made-up databases")
+      end
+
+      it "says nothing more when the states are missing, off the list, or don't line up" do
+        [nil, %w[searched], %w[bogus searched], "searched"].each do |states|
+          out = with_states(["a < $1", "t.b IS NULL"], states)
+          expect(out).not_to include('class="how"'), states.inspect
+        end
+      end
+
       it "never lists a value that isn't a condition's SQL, such as an atom's index" do
         out = conditions([0, "a < $1", { "shape" => "b = $2" }, 13], nil)
         expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])

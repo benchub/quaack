@@ -23,8 +23,10 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
     SQL
   end
 
+  # Which rule-based scenario disproves each, so without vacuity-guard's
+  # search, whose fixtures run under S1.
   def verdicts(original, *candidates)
-    described_class.run(conn, original, candidates).results.map { |r| [r.passed, r.scenario] }
+    described_class.run(conn, original, candidates, search: false).results.map { |r| [r.passed, r.scenario] }
   end
 
   # tags.name is unique, and taggings' key is its two foreign keys.

@@ -56,18 +56,22 @@ module Quaack
       # nil when it doesn't apply (and both nil on a refusal).
       # untested_paths are the untested atoms' paths into the original's parse
       # (PredicateAtoms::Atom#path), for AtomPosition; they stay in the enclave.
+      # untested_states says, per untested atom, how it stayed unproven
+      # (VacuityGuard::Search's state words).
       Report = Data.define(:results, :untested, :untested_atoms, :untested_paths, :retries, :dropped, :refused,
-                           :cycle, :loads, :s1_load_rule, :s1_rows, :s1_nonzero_rows) do
-        def initialize(untested_paths: [], **fields) = super
+                           :cycle, :loads, :s1_load_rule, :s1_rows, :s1_nonzero_rows, :untested_states) do
+        def initialize(untested_paths: [], untested_states: [], **fields) = super
       end
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
 
-      def run(conn, sql, candidates, statement_timeout_ms: 10_000, honour: [])
+      # search: false leaves out vacuity-guard's search (VacuityGuard::Search),
+      # for a spec of the rule-based scenarios alone.
+      def run(conn, sql, candidates, statement_timeout_ms: 10_000, honour: [], search: true)
         runner = DenormalizedFixture::Runner.new(conn, honour, statement_timeout_ms:)
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
-        guard = VacuityGuard.run(runner, builder, sql)
+        guard = VacuityGuard.run(runner, builder, sql, search:)
         results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }
         tested(guard, builder, results, runner.loads)
       rescue Scenarios::Error => e
@@ -77,7 +81,8 @@ module Quaack
       # The report of candidates tested on the guard's scenarios.
       def tested(guard, builder, results, loads)
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms,
-                   untested_paths: guard.untested_paths, retries: guard.retries,
+                   untested_paths: guard.untested_paths, untested_states: guard.untested_states,
+                   retries: guard.retries,
                    dropped: builder.dropped, refused: nil, cycle: nil, loads:, s1_load_rule: guard.s1_load_rule,
                    s1_rows: guard.s1_rows, s1_nonzero_rows: guard.s1_nonzero_rows)
       end

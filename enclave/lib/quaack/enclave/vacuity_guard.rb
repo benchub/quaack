@@ -7,6 +7,7 @@ require_relative "predicate_atoms"
 require_relative "result_comparison"
 require_relative "scenarios"
 require_relative "vacuity_guard/compared"
+require_relative "vacuity_guard/search"
 
 module Quaack
   module Enclave
@@ -42,7 +43,7 @@ module Quaack
       MAX_COMPARISONS = 32
 
       Result = Data.define(:untested, :untested_atoms, :untested_paths, :retries, :variants, :scenarios, :s1_load_rule,
-                           :s1_rows, :s1_nonzero_rows) do
+                           :s1_rows, :s1_nonzero_rows, :untested_states) do
         def inspect = "#<data #{self.class} untested=#{untested} retries=#{retries} scenarios=<redacted>>"
 
         alias_method :to_s, :inspect
@@ -50,17 +51,33 @@ module Quaack
 
       module_function
 
-      def run(runner, builder, sql)
+      def run(runner, builder, sql, search: true, search_options: {})
         loosened, unreplaceable = loosened_queries(builder)
         state = new_state
         (0..RETRIES).each do |attempt|
           scenarios = builder.build(state[:variants])
           vacuous = vacuous_atoms(runner, s1_fixtures(builder, scenarios), sql, loosened, state)
-          done = vacuous.empty? || attempt == RETRIES
-          return result(builder, (vacuous + unreplaceable).sort, state, scenarios) if done
+          next retry_atoms(state, vacuous, attempt + 1) unless vacuous.empty? || attempt == RETRIES
 
-          retry_atoms(state, vacuous, attempt + 1)
+          states = search ? searched(runner, builder, sql, loosened.slice(*vacuous), scenarios, search_options) : {}
+          return result(builder, (vacuous + unreplaceable - states.keys.select { states[it] == :tested }).sort,
+                        state, scenarios, states)
         end
+      end
+
+      # The search's verdict on the atoms the rules left vacuous (Search),
+      # by atom: :tested, :searched or :not_searched. The trials that told
+      # an atom apart join S1's further fixtures, so rewrite-test replays
+      # them for every candidate. Its trials aren't counted as loads: how
+      # many it ran follows the data, and through it the query's literals.
+      def searched(runner, builder, sql, vacuous, scenarios, options)
+        return {} if vacuous.empty?
+
+        rows = [*scenarios.values, *builder.spills.values.flatten(1)].flatten
+        search = Search.new(runner, builder.schema, builder.topology.order, sql, rows, builder.pools, **options)
+        outcome = runner.uncounted { search.run(vacuous) }
+        builder.add_spills(:s1, outcome.fixtures)
+        outcome.states.merge(outcome.found.to_h { [it, :tested] })
       end
 
       def s1_fixtures(builder, scenarios) = [scenarios[:s1], *builder.spills.fetch(:s1, [])]
@@ -75,8 +92,9 @@ module Quaack
         vacuous.each { |i| state[:variants][i] = step }
       end
 
-      def result(builder, untested, state, scenarios)
+      def result(builder, untested, state, scenarios, states)
         Result.new(untested: untested.map { |i| builder.atoms[i].shape }, untested_atoms: untested,
+                   untested_states: untested.map { states.fetch(it, :not_searched) },
                    untested_paths: untested.map { |i| builder.atoms[i].path },
                    retries: state[:retries], variants: state[:variants], scenarios:,
                    s1_load_rule: state[:s1_load_rule], s1_rows: state[:s1_rows],

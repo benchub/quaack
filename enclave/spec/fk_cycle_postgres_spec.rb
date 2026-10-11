@@ -184,10 +184,11 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
           conn, anti_sql,
           ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
            "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
-           "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"]
+           "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"],
+          search: false
         )
         expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :row_count]])
-        # The same as without the cycle's other edge.
+        # The same as without the cycle's other edge, by the rules alone.
         expect(report.untested).to eq(["c.account_id = a.id"])
       end
 

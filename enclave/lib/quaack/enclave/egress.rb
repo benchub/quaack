@@ -10,6 +10,7 @@ require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/step_counts"
 require "quaack/protocol/unchanged_atoms"
+require "quaack/protocol/untested_states"
 require "quaack/protocol/vacuity_diagnostic"
 require_relative "plain_data"
 
@@ -171,6 +172,7 @@ module Quaack
 
         check_ranking(fields)
         check_unchanged_atoms(fields["rewrites"])
+        check_untested_states(fields["rewrites"])
         check_suggested_drops(fields["labels"])
         return if !fields.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(fields["hidden_statistics"])
 
@@ -184,6 +186,14 @@ module Quaack
         return if Protocol::UnchangedAtoms.valid?(rewrites)
 
         raise Error, "a value in this report message has unchanged atoms that aren't among the untested atoms"
+      end
+
+      # Each rewrite's untested_states, if it has one, must be one fixed
+      # word per untested atom (see Protocol::UntestedStates.valid?).
+      def check_untested_states(rewrites)
+        return if Protocol::UntestedStates.valid?(rewrites)
+
+        raise Error, "a value in this report message has untested states that aren't fixed words"
       end
 
       # Each label's suggested_drops, if it has one, must pass

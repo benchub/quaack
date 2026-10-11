@@ -35,6 +35,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
   end
 
   # status_check, if given, becomes a CHECK on status in the arena, and
+  # makes it NOT NULL, so no row fails a status the CHECK pins (a NULL
+  # status would, and vacuity-guard's search would find it), and
   # extra, if given, runs there after.
   def make_arena(status_check = nil, extra = nil)
     production.server.admin.exec(%(CREATE DATABASE "#{arena_name}"))
@@ -42,7 +44,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     conn = PG.connect(host: server.host, port: server.port, dbname: arena_name, user: TestPostgres::USER,
                       password: TestPostgres::PASSWORD)
     conn.exec("CREATE TABLE public.orders (id int PRIMARY KEY, note text, " \
-              "status text#{" CHECK (#{status_check})" if status_check}, total int, created_at timestamptz)")
+              "status text#{" NOT NULL CHECK (#{status_check})" if status_check}, total int, created_at timestamptz)")
     conn.exec(extra) if extra
   ensure
     conn&.close
@@ -209,22 +211,26 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     # Task 20261009-40: which untested atoms the rewrite left unchanged, by
     # position, as a subset of the shapes already stored under untested.
     describe "untested_unchanged" do
+      let(:held) { "status = 'held'" }
+
       def tested = stored.read("rewrite_tested_1")
 
       it "lists an untested atom of a rewrite that left it alone, and sends it on no message" do
         # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
-        ready(same, status_check: "status = 'held'")
+        ready(same, status_check: held)
 
         outcome = step("rewrite-test", "--search", "rewrite_1")
 
         expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => ["o.status = $2"])
+        # The search spent its budget on it, with no difference to find.
+        expect(tested).to include("untested_states" => ["searched"])
         expect(lines(outcome).first.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows
                                                    s1_nonzero_rows])
         expect_no_leaks(sentinels, outcome)
       end
 
       it "leaves out an untested atom the rewrite dropped, and one it moved under a subquery" do
-        ready(looser, status_check: "status = 'held'")
+        ready(looser, status_check: held)
         step("rewrite-test", "--search", "rewrite_1")
         expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => [])
 
@@ -243,7 +249,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
         it "calls an atom changed when the rewrite gave it the other placeholder" do
           swapped = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $2 AND o.status = $1"
-          ready(swapped, status_check: "status = 'held'")
+          ready(swapped, status_check: held)
 
           step("rewrite-test", "--search", "rewrite_1")
 
@@ -335,7 +341,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                       "scenario" => nil, "rule" => "complex_check" }, { "type" => "done" }])
       expect(stored.read("rewrite_tested_1"))
         .to eq("passed" => false, "scenario" => nil, "rule" => "complex_check", "refused" => true,
-               "untested" => [], "untested_atoms" => [], "untested_unchanged" => [])
+               "untested" => [], "untested_atoms" => [], "untested_states" => [], "untested_unchanged" => [])
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
       expect_no_leaks(sentinels, outcome)
     end

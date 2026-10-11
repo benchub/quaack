@@ -236,6 +236,13 @@ module Quaack
           @evaluated = {}
         end
 
+        attr_reader :schema, :topology
+
+        # Adds fixtures to the scenario's further ones (VacuityGuard::Search's).
+        def add_spills(name, fixtures)
+          @spills[name] = [*@spills.fetch(name, []), *fixtures] unless fixtures.empty?
+        end
+
         def build(variants = {})
           start(variants)
           ties = tie_groups

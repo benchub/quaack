@@ -114,6 +114,15 @@ module Quaack
       # While it runs, it drops every notice on the connection, since a
       # notice can carry a real value and libpq's default receiver prints it
       # on stderr. It puts the previous receiver back when it's done.
+      # Runs the block, then puts loads back as it was, for loads whose
+      # number mustn't leave the enclave (VacuityGuard::Search's trials).
+      def uncounted
+        before = @loads
+        yield
+      ensure
+        @loads = before
+      end
+
       def with_fixture(rows = [], inserts: [], index_scans: true, &)
         check_fixture(rows, inserts, index_scans)
         refuse_unless_idle

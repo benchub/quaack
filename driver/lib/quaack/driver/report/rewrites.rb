@@ -125,10 +125,31 @@ module Quaack
                    "and they are in a part the rewrite changed, so they can't show the rewrite handles them the " \
                    "same way:"
 
+        # How a condition stayed unproven, by vacuity-guard's search state
+        # (Protocol::UntestedStates::WORDS; the budget is DESIGN.md's).
+        HOW = {
+          "searched" => "QUAACK also tried 150 small made-up databases for it and found none where it changes " \
+                        "the result.",
+          "not_searched" => "QUAACK ran out of search time, or the query calls a function whose results change " \
+                            "from run to run, before it tried small made-up databases for it in full."
+        }.freeze
+
         # The conditions of the original query that rewrite-test's made-up rows never
         # exercised (vacuity-guard), by their redacted shapes. Anything else
         # the payload holds there, such as an atom's index, isn't one.
         def atoms(entry) = Array(entry["untested_atoms"]).grep(String).uniq
+
+        # What HOW says for the atom, or nil when the entry's untested_states
+        # isn't one known word per untested atom (or it's missing, as in a
+        # message from before the search).
+        def how(entry, atom)
+          states = entry["untested_states"]
+          list = entry["untested_atoms"]
+          return unless states.is_a?(Array) && list.is_a?(Array) && states.size == list.size
+          return unless states.all? { HOW.key?(it) }
+
+          HOW[states[list.index(atom)]]
+        end
 
         # Those a counterexample round's rows exercised afterwards.
         def checked_later(entry) = atoms(entry) & Array(entry["covered"]).grep(String)

@@ -26,7 +26,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
   def guard(sql)
     builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
-    [builder, described_class.run(runner, builder, sql)]
+    [builder, described_class.run(runner, builder, sql, search: false)]
   end
 
   it "passes a fixture that exercises every atom, with no retries" do
@@ -124,7 +124,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
   def guard_with(runner)
     sql = "SELECT o.id FROM fx.orders o WHERE o.status = 'open' AND o.qty > 2"
     builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
-    described_class.run(runner, builder, sql)
+    described_class.run(runner, builder, sql, search: false)
   end
 
   it "records :other for a load failure with a rule off the fixed list, and the wire message carries \"other\"" do
@@ -267,7 +267,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
         variants.empty? ? scenarios : scenarios.merge(s1: [])
       end
     end.new(real)
-    result = described_class.run(runner, rebuilds, sql)
+    result = described_class.run(runner, rebuilds, sql, search: false)
     expect(result.untested_atoms).to eq([0])
     expect(result.retries).to eq(3)
   end

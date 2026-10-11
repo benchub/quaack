@@ -343,6 +343,40 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # Task 20261010-43: how each untested atom stayed unproven, one fixed
+    # word per untested shape, or nothing when the stored list isn't that.
+    describe "untested_states" do
+      it "sends nil for a stored entry from before the search" do
+        expect(rewrite(1)).to include("untested_states" => nil)
+      end
+
+      context "with one fixed word per untested shape" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1",
+                        store.read("rewrite_tested_1").merge("untested_states" => %w[searched not_searched]))
+          end
+        end
+
+        it "sends them as they are" do
+          expect(rewrite(1)["untested_states"]).to eq(%w[searched not_searched])
+        end
+      end
+
+      context "with a word off the list, or one too few" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("untested_states" => [sentinel, "x"]))
+          end
+        end
+
+        it "sends nil, and nothing of what it held" do
+          expect(rewrite(1)["untested_states"]).to be_nil
+          expect_no_leaks(sentinels, outcome)
+        end
+      end
+    end
+
     context "with an untested_unchanged in rewrite_tested_<n> that isn't a list" do
       let(:outcome) do
         payload_of do |store|
@@ -401,7 +435,7 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
+                                 "untested_atoms" => nil, "untested_unchanged" => nil, "untested_states" => nil, "covered" => nil,
                                  "evidence" => nil, "dropped" => nil)
       end
     end

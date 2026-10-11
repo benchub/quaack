@@ -161,7 +161,7 @@ module Quaack
               **(report.refused ? { "refused" => true } : diagnostic(report)),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
               "untested" => report.untested, "untested_atoms" => report.untested_atoms,
-              "untested_unchanged" => unchanged }
+              "untested_states" => report.untested_states.map(&:to_s), "untested_unchanged" => unchanged }
           end
         end
 
