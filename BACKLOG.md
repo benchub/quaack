@@ -861,6 +861,7 @@ The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed a
 - **Came from:** The user's run, 2026-10-10.
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Decided by the user (2026-10-11):** the budget is 5 minutes per rewrite. The user will profile part 1. The version bump waits until rewrite-test's performance is fixed.
+- **Profile (user, 2026-10-11, quaacks 0.1.32, ran 51,667 samples before the user interrupted it):** about 92% of the samples are in `Scenarios::RowSet` (`row_set.rb:48` `add?` through `parts.rb:46-47` and `scenarios.rb:282`), under `vacuity_guard.rb:56-57` and `scenario_tests.rb:70`, reached from `steps/counterexamples.rb`. Self time sits in `row_set.rb:121` (`values`, 12.5k), `:84` and `:67` (the `parent` find and `include?`, 11k and 9k), `:92` (`clash?` scan, 4.6k) and `parts.rb:46` (2.5k): the linear scans of 20261004-27 item 2. Part 1 is answered; the fix is 20261011-4. Part 2 (the budget) still stands.
 - **Status:** todo (needs the user)
 
 ### 20261011-2. Count thresholds and small LIMIT/OFFSET still show in the report (found in the review of 20261010-47).
@@ -880,4 +881,13 @@ The `name_lookup_function` paragraph in DESIGN.md (around line 501) doesn't ment
 - **Depends on:** 20261010-16 (landed).
 - **Came from:** The second review of 20261010-16, 2026-10-11 (minor).
 - **Design:** rewrite-check.
+- **Status:** todo
+
+### 20261011-4. `Scenarios::RowSet`: replace the linear scans with hash indexes (the hour-long step).
+
+From the user's profile of the slow step (see 20261010-53) and 20261004-27 item 2. `RowSet#add?` checks each new row against every row already in its table, and recomputes keys each time: `@rows[r.table].include?(r)` (deep row compare), `clash?` (`@rows[...].any? { yield(other) == key }`, which recomputes `values(other, columns)` and `columns.index(c)` for every row on every check), `parent` (`@rows[key.parent].find { values(...) == wanted }`), `outside_parents`/`parents_of` (`rows.any?`, `found.include?`, `rows.include?`) and `orphan?`. With many rows per table that is quadratic or worse, and `Parts#add` and the retries call it for every group in every fixture (`parts.rb:46-47`, `retries.rb`). About 92% of the profile's 51,667 samples were in it. Fix it with indexes that keep every result identical: a set of rows per table (Row needs `hash`/`eql?` by table and values), per table and unique column list a hash of key to row (for `clash?`, with the NULLS NOT DISTINCT rule and the `:error` key handled as now), per table and foreign-key parent columns a hash of key to row (for `parent`/`orphan?`), and a precomputed column-index map for `values`. Keep the delete in `add?`'s rollback (remove from every index). Test first: a spec that builds a RowSet with a few thousand rows over a table with a unique key, a composite unique key, an expression index and a foreign key, and asserts the work is near linear by counting calls (for example the number of `values`/`evaluate` computations is below a bound that grows linearly, not quadratically; wall-clock bounds are flaky), red against today's code; plus a behavior-equality spec that runs the same adds on the old algorithm (kept in the spec as a slow reference) and the new one over random small cases and compares what `add?`, `add_any?`, `parents_of` and `in_order` return and leave. The across-literals spec (`across_literals_postgres_spec.rb`) and the corpus must stay green, byte for byte. Mutate (drop a delete from an index, key a NULL as equal, ignore `nulls_not_distinct`) and confirm red. Then run the user's kind of query again: the step should be seconds, not an hour; say what a 19-table fixture measures before and after (20261004-23 measured about 3 s).
+
+- **Depends on:** 20261004-23, 20261010-53 (profile).
+- **Came from:** The user's profile, 2026-10-11. Priority: the version bump waits for it.
+- **Design:** rewrite-test, scenarios.
 - **Status:** todo
