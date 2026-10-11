@@ -6,20 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261008-48, 20261008-52, 20261008-53 (items 5, 6): schema dump names, exclusion cap and `unknown_extra_dump_schema` and `dump_exclusions_too_long` rules (protocol), pg_inherits walk, `--exclude-schema=*` when no schema is left, `plan_too_deep` from egress (enclave, protocol and driver). Landed after the 0.1.31 bump.
-- 20261010-19: per-scope near misses in the Picker, and masking near-miss groups for OR arms and UNION branches, placed last in S1 to S5 (enclave).
-- 20261010-21: a pinned join key (an atom such as `id IN (...)` on a key) gives each group its own key value, so near misses stop colliding (enclave).
-- 20261010-25: the vacuity guard runs fixture-compare for a top-level LIMIT/OFFSET condition, checks every S1 fixture, gives near-miss rows their own values in read columns, adds enum labels to the candidate values, and ranks pinned keys per scenario (enclave).
-- 20261010-26: the vacuity guard skips fixture-compare on an empty cut result, remembers no-mismatch comparisons, and caps them at 32 per run (enclave).
-- 20261010-24: sibling rows for near misses on a column that another scope also tests (enclave).
-- 20261010-30: groups with a parent and no child where an outer join or a correlated subquery makes the child optional (enclave).
-- 20261010-32: a boolean test on a plain column gets a value pool, and a spill fixture skips a parent the group already brings (enclave).
-- 20261010-36: a bare boolean in an aggregate FILTER gets a value pool; near misses get distinguishing values of aggregated columns (enclave).
-- 20261010-34: `Plan#scope_mate`, a sibling fails one other pooled atom of the near miss's scope on the same table (enclave).
-- 20261010-31: S1 gets a near-misses-only fixture for a top-level LIMIT without ORDER BY (enclave).
-- 20261010-22: `s1_nonzero_rows` in the rewrite_test message, the whitelist and `Protocol::VacuityDiagnostic` (enclave and protocol).
-- 20261010-20: each burndown stage's `in` carries the earlier stage's `out` (index-from-plan, the LLM rounds, the rewrite arrival stages) (enclave).
-- 20261010-35 (without the count-threshold children) and 20261010-23: LATERAL unmatched groups, the effectively-inner LEFT JOIN skip, alias-based self-reference groups, `s1_rows`/`s1_nonzero_rows` bucketed to 0 or 1, and the Branches look-ahead (enclave).
+(none. Closed at 0.1.32.)
 
 ## How this file works.
 
