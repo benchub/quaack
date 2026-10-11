@@ -24,7 +24,8 @@ module Quaack
           @schema = schema
           @conn = conn
           @evaluated = evaluated
-          @sets = [RowSet.new(schema, conn, evaluated)]
+          @held = {}.compare_by_identity
+          @sets = [RowSet.new(schema, conn, evaluated, @held)]
           @dropped = 0
         end
 
@@ -60,7 +61,7 @@ module Quaack
           lifted = lifted(tries)
           return true if @sets.drop(1).any? { it.add_any?(lifted) }
 
-          spare = RowSet.new(@schema, @conn, @evaluated)
+          spare = RowSet.new(@schema, @conn, @evaluated, @held)
           spare.add_any?(lifted) && (@sets << spare)
         end
       end

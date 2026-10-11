@@ -44,4 +44,20 @@ RSpec.describe Quaack::Enclave::Scenarios::Parts do
     end
     expect(counts[1]).to be < counts[0] * 5
   end
+
+  # Each fixture's RowSet#parents_of reads the same group, so the group's
+  # own keys (Scenarios::Held) are gathered once a try, not once a fixture.
+  it "gathers a try's own keys once, however many fixtures it lifts parents from" do
+    counts = [10, 20].map do |n|
+      built = 0
+      allow(Quaack::Enclave::Scenarios::Held).to(receive(:new).and_wrap_original do |o, *a, &b|
+        (built += 1) && o.call(*a, &b)
+      end)
+      parts = described_class.new(schema, conn)
+      n.times { parts.add([[group(it)].each]) }
+      expect(parts.in_order(tables).size).to eq(n)
+      built
+    end
+    expect(counts[1]).to be < counts[0] * 3
+  end
 end

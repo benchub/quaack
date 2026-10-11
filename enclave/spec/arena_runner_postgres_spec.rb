@@ -181,6 +181,23 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect(rows).to eq([%w[1], %w[5], %w[6]])
     end
 
+    # A wide fixture has an integer in nearly every table's every key, and
+    # a round trip each cost the load more than the rows (task 20261011-13).
+    it "moves every sequence in one statement, however many integer columns the fixture holds" do
+      setvals = 0
+      allow(described_class::Pipeline).to receive(:clocked).and_wrap_original do |original, *args|
+        setvals += 1 if args[1].include?("setval")
+        original.call(*args)
+      end
+      inserts = ['INSERT INTO "Fixture Space".counters (label) VALUES (\'x\')']
+      fixture = [parent(1, "a", qty: 3), parent(2, "b", qty: 4), row(counters, { "id" => "7" })]
+      rows = runner.with_fixture(fixture, inserts:) do |tx|
+        tx.query('SELECT id FROM "Fixture Space".counters ORDER BY id').rows
+      end
+
+      expect([setvals, rows]).to eq([1, [%w[7], %w[8]]])
+    end
+
     it "keeps the sequence within its bounds when the fixture's value is below its minimum" do
       inserts = ['INSERT INTO "Fixture Space".counters (label) VALUES (\'x\')']
       rows = runner.with_fixture([row(counters, { "id" => "-5", "label" => "a" })], inserts:) do |tx|
@@ -1582,13 +1599,13 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         [:exec, 2] => [:begin_failed, :begin, nil],
         # Each statement sends the server's clock, itself, and the timeout's
         # reset.
-        [:send_query_params, 10] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
-        [:send_query_params, 11] => [:fixture_load_failed, :load, 1],
-        [:send_query_params, 12] => [:fixture_load_failed, :load, 1],
+        [:send_query_params, 7] => [:fixture_load_failed, :load, 1], # after one setval (id and qty at once)
+        [:send_query_params, 8] => [:fixture_load_failed, :load, 1],
+        [:send_query_params, 9] => [:fixture_load_failed, :load, 1],
         # Each statement reads the transaction status before it's sent and
-        # after it's run: after two setvals, the first row's.
-        [:transaction_status, 6] => [:fixture_load_failed, :load, 0],
-        [:transaction_status, 7] => [:fixture_load_failed, :load, 0]
+        # after it's run: after the one setval, the first row's.
+        [:transaction_status, 4] => [:fixture_load_failed, :load, 0],
+        [:transaction_status, 5] => [:fixture_load_failed, :load, 0]
       }
 
       cases.each do |(method, call), expected|

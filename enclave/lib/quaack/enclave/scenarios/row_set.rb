@@ -65,7 +65,11 @@ module Quaack
           end
         end
 
-        def initialize(schema, conn, evaluated = {})
+        # held keeps each group's Held by the group's Array, so RowSets that
+        # share it, as a Parts' do, gather a group's keys once (task
+        # 20261011-13). A group's Array never changes.
+        def initialize(schema, conn, evaluated = {}, held = {}.compare_by_identity)
+          @held = held
           @schema = schema
           @conn = conn
           @rows = Table.new { |row, kind| kind.is_a?(Array) ? values(row, kind) : evaluate(row, kind) }
@@ -125,7 +129,7 @@ module Quaack
 
         private
 
-        def held(rows) = Held.new(rows) { |r, columns| values(r, columns) }
+        def held(rows) = @held[rows] ||= Held.new(rows) { |r, columns| values(r, columns) }
 
         def outside_parents(row, held)
           @schema.constraints(row.table).foreign_keys.filter_map do |key|

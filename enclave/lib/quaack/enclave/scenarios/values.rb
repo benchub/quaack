@@ -39,6 +39,7 @@ module Quaack
           @conn = conn
           @types = Types.new(conn)
           @readable = {}
+          @shared = {}.compare_by_identity
         end
 
         # nil when the type reads none of them, as for a domain whose CHECK
@@ -62,8 +63,14 @@ module Quaack
 
         # The nth value of the first of columns ([table, Column] pairs, such
         # as a key slot's) that every one of them reads, so a smallint and
-        # an integer joined take a value both hold.
+        # an integer joined take a value both hold. Kept by the columns' Array
+        # and number, since a slot over a wide schema holds a column a table
+        # and every row asks again (task 20261011-13).
         def shared_nth(columns, number)
+          (@shared[columns] ||= {}).fetch(number) { @shared[columns][number] = first_shared(columns, number) }
+        end
+
+        def first_shared(columns, number)
           values = columns.map { |table, col| nth(col, number, table:) }
           values.find { |v| columns.all? { |_, col| readable?(col, v) } } || values.first
         end
