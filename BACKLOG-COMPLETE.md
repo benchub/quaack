@@ -10353,3 +10353,18 @@ The review of 20260924-28 found these minor issues:
 - **Came from:** The review of 20260924-28, 2026-10-08.
 - **Design:** literals.
 - **Status:** **done.** Landed 2026-10-10 (task/20261008-36): the statistics read (`PlannerStatistics.run`) sets DateStyle to `ISO, MDY` for its own read-only transaction (`set_config(..., true)`), so stored date and timestamp values replay the same in any session. Only the read is pinned: ISO text parses the same under any DateStyle.
+
+### 20261008-54. system_relation and PgBouncer docs: minors from 20260929-22 and -16.
+
+The review of 20260929-22 and -16 found these minor issues:
+
+1. **No test pins a `pg`-prefixed app schema.** Add a schema like `pgapp` that resolves and passes, so a mutation to `start_with?("pg")` goes red.
+2. **`toast_relation` is unreachable.** Every TOAST table is in `pg_toast`, so `system_relation` now catches them first. Remove the rule and its fixed note, or document them as a backstop.
+3. **`KILL` leaves the database paused.** PgBouncer's `KILL` pauses new client connections to that database until `RESUME`, and the docs don't say so. Add "then `RESUME <db>`", or recommend `RECONNECT` first.
+4. **`TestPostgres::PgBouncer.stop` can hang.** Its wait loop has no timeout. Bound it.
+5. **The "fails partway" spec ignores a failed restart.** Its `ensure` runs `start` again without checking the result.
+
+- **Depends on:** 20260929-22, 20260929-16.
+- **Came from:** The review of 20260929-22 and -16, 2026-10-08.
+- **Design:** qualify, run-server.
+- **Status:** **done.** Landed 2026-10-10 (task/20261008-54): a `pgapp` schema spec (red when `start_with?("pg_")` becomes `start_with?("pg")`); `toast_relation` kept and documented as a backstop (comment and DESIGN.md); DESIGN.md and README say `KILL <db>` pauses new connections until `RESUME <db>` (or use `RECONNECT`); `TestPostgres::PgBouncer.stop` bounded by `STOP_TIMEOUT` (10 s); the "fails partway" spec checks the restart.

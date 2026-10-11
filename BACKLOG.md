@@ -464,21 +464,6 @@ Split from 20260924-25, with that task's review findings:
 - **Design:** redact.
 - **Status:** todo. Items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil) landed 2026-10-10. Items 1 to 4 are open; 1 and 2 need design decisions, 3 and 4 are refactors to split.
 
-### 20261008-54. system_relation and PgBouncer docs: minors from 20260929-22 and -16.
-
-The review of 20260929-22 and -16 found these minor issues:
-
-1. **No test pins a `pg`-prefixed app schema.** Add a schema like `pgapp` that resolves and passes, so a mutation to `start_with?("pg")` goes red.
-2. **`toast_relation` is unreachable.** Every TOAST table is in `pg_toast`, so `system_relation` now catches them first. Remove the rule and its fixed note, or document them as a backstop.
-3. **`KILL` leaves the database paused.** PgBouncer's `KILL` pauses new client connections to that database until `RESUME`, and the docs don't say so. Add "then `RESUME <db>`", or recommend `RECONNECT` first.
-4. **`TestPostgres::PgBouncer.stop` can hang.** Its wait loop has no timeout. Bound it.
-5. **The "fails partway" spec ignores a failed restart.** Its `ensure` runs `start` again without checking the result.
-
-- **Depends on:** 20260929-22, 20260929-16.
-- **Came from:** The review of 20260929-22 and -16, 2026-10-08.
-- **Design:** qualify, run-server.
-- **Status:** todo
-
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-56. Rule generator: leftovers from 20261002-1.
