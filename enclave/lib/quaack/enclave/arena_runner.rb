@@ -118,9 +118,7 @@ module Quaack
       # number mustn't leave the enclave (VacuityGuard::Search's trials).
       def uncounted
         before = @loads
-        yield
-      ensure
-        @loads = before
+        yield.tap { @loads = before }
       end
 
       def with_fixture(rows = [], inserts: [], index_scans: true, &)

@@ -9,7 +9,7 @@ module Quaack
       # Only the disproved fates and production_mismatch say a rewrite is
       # wrong. A test that failed, timed out, or never ran compared
       # nothing, and its sentence says so instead.
-      module Rewrites
+      module Rewrites # rubocop:disable Metrics/ModuleLength -- report wording, one sentence per entry
         SOURCES = { "llm" => "suggested by the LLM", "operator" => "your own rewrite" }.freeze
         RULES = "made by transform"
 

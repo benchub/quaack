@@ -34,7 +34,7 @@ module Quaack
     #
     # Trust boundary: untested holds only the atoms' shapes, which have every
     # literal redacted. scenarios hold real values and stay in the enclave.
-    module VacuityGuard
+    module VacuityGuard # rubocop:disable Metrics/ModuleLength
       RETRIES = 3
 
       # The most fixture-compare runs one guard run makes (Compared).
@@ -51,33 +51,17 @@ module Quaack
 
       module_function
 
-      def run(runner, builder, sql, search: true, search_options: {})
+      def run(runner, builder, sql, search: true, search_options: {}) # rubocop:disable Metrics/AbcSize
         loosened, unreplaceable = loosened_queries(builder)
-        state = new_state
+        state = new_state.merge(search: (search_options if search))
         (0..RETRIES).each do |attempt|
           scenarios = builder.build(state[:variants])
           vacuous = vacuous_atoms(runner, s1_fixtures(builder, scenarios), sql, loosened, state)
           next retry_atoms(state, vacuous, attempt + 1) unless vacuous.empty? || attempt == RETRIES
 
-          states = search ? searched(runner, builder, sql, loosened.slice(*vacuous), scenarios, search_options) : {}
-          return result(builder, (vacuous + unreplaceable - states.keys.select { states[it] == :tested }).sort,
-                        state, scenarios, states)
+          states = Search.close(runner, builder, sql, loosened.slice(*vacuous), scenarios, state[:search])
+          return result(builder, Search.left(vacuous + unreplaceable, states), state, scenarios, states)
         end
-      end
-
-      # The search's verdict on the atoms the rules left vacuous (Search),
-      # by atom: :tested, :searched or :not_searched. The trials that told
-      # an atom apart join S1's further fixtures, so rewrite-test replays
-      # them for every candidate. Its trials aren't counted as loads: how
-      # many it ran follows the data, and through it the query's literals.
-      def searched(runner, builder, sql, vacuous, scenarios, options)
-        return {} if vacuous.empty?
-
-        rows = [*scenarios.values, *builder.spills.values.flatten(1)].flatten
-        search = Search.new(runner, builder.schema, builder.topology.order, sql, rows, builder.pools, **options)
-        outcome = runner.uncounted { search.run(vacuous) }
-        builder.add_spills(:s1, outcome.fixtures)
-        outcome.states.merge(outcome.found.to_h { [it, :tested] })
       end
 
       def s1_fixtures(builder, scenarios) = [scenarios[:s1], *builder.spills.fetch(:s1, [])]

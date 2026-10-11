@@ -435,7 +435,8 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "untested_unchanged" => nil, "untested_states" => nil, "covered" => nil,
+                                 "untested_atoms" => nil, "untested_unchanged" => nil,
+                                 "untested_states" => nil, "covered" => nil,
                                  "evidence" => nil, "dropped" => nil)
       end
     end

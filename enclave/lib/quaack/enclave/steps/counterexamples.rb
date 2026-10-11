@@ -160,7 +160,13 @@ module Quaack
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
               **(report.refused ? { "refused" => true } : diagnostic(report)),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
-              "untested" => report.untested, "untested_atoms" => report.untested_atoms,
+              **untested(report, unchanged) }
+          end
+
+          # The untested atoms' shapes, indexes, and state words, and the
+          # shapes the rewrite left unchanged.
+          def untested(report, unchanged)
+            { "untested" => report.untested, "untested_atoms" => report.untested_atoms,
               "untested_states" => report.untested_states.map(&:to_s), "untested_unchanged" => unchanged }
           end
         end

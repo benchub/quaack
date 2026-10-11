@@ -78,12 +78,14 @@ RSpec.describe Quaack::Enclave::VacuityGuard::Search do
   end
 
   def search_for(builder, sql, **)
-    scenarios = builder.build
-    rows = scenarios.values.flatten
+    rows = builder.build.values.flatten
     loosened, = guard.loosened_queries(builder)
     untested = guard.run(runner, builder, sql, search: false).untested_atoms
+    searcher(builder, sql, rows, **).run(loosened.slice(*untested))
+  end
+
+  def searcher(builder, sql, rows, **)
     described_class.new(runner, builder.schema, builder.topology.order, sql, rows, builder.pools, **)
-                   .run(loosened.slice(*untested))
   end
 
   it "discards a trial that breaks a constraint, never counting it a difference" do
@@ -107,7 +109,8 @@ RSpec.describe Quaack::Enclave::VacuityGuard::Search do
     spy = Class.new(Quaack::Enclave::ArenaRunner) do
       define_method(:with_fixture) do |rows = [], **kw, &blk|
         super(rows, **kw) do |tx|
-          seen << tx.query("SELECT count(*) FROM fx.posts").rows.first.first.to_i - rows.count { it.table.name == "posts" }
+          loaded = rows.count { |row| row.table.name == "posts" }
+          seen << (tx.query("SELECT count(*) FROM fx.posts").rows.first.first.to_i - loaded)
           blk.call(tx)
         end
       end
@@ -166,7 +169,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard::Search do
 
   it "searches a scalar subquery compared with a number when it isn't an aggregate" do
     sql = "SELECT fx.users.id FROM fx.users WHERE (SELECT p.score FROM fx.posts p WHERE p.user_id = fx.users.id) > 3"
-    expect(described_class.literal_bound?(sql)).to be(false)
+    expect(described_class::Skips.literal_bound?(sql)).to be(false)
   end
 
   # Trust boundary: the trials' rows stay in the enclave. A sentinel

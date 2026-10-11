@@ -68,7 +68,7 @@ module Quaack
 
       # search: false leaves out vacuity-guard's search (VacuityGuard::Search),
       # for a spec of the rule-based scenarios alone.
-      def run(conn, sql, candidates, statement_timeout_ms: 10_000, honour: [], search: true)
+      def run(conn, sql, candidates, statement_timeout_ms: 10_000, honour: [], search: true) # rubocop:disable Metrics/ParameterLists
         runner = DenormalizedFixture::Runner.new(conn, honour, statement_timeout_ms:)
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql, search:)
