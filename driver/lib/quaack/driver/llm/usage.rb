@@ -28,8 +28,8 @@ module Quaack
           return unless raw.is_a?(Hash)
 
           whole({ "input" => raw[:prompt_tokens], "output" => raw[:completion_tokens],
-                  **kept("cached" => raw.dig(:prompt_tokens_details, :cached_tokens),
-                         "reasoning" => raw.dig(:completion_tokens_details, :reasoning_tokens)) })
+                  **kept("cached" => detail(raw[:prompt_tokens_details], :cached_tokens),
+                         "reasoning" => detail(raw[:completion_tokens_details], :reasoning_tokens)) })
         end
 
         # value, with every model in it turned into a Hash, read without
@@ -39,6 +39,9 @@ module Quaack
 
           value.to_h.transform_values { plain(it) }
         end
+
+        # details' key, or nil if details isn't a Hash.
+        def detail(details, key) = (details[key] if details.is_a?(Hash))
 
         def kept(counts) = counts.select { |_, n| count?(n) }
 
