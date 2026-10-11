@@ -10584,3 +10584,13 @@ Split from 20261007-21. IN, BETWEEN and NOT BETWEEN, LIKE and ILIKE, IS DISTINCT
 - **Came from:** The split of 20261007-21, 2026-10-08.
 - **Design:** qualify.
 - **Status:** **done.** Decided 2026-10-11 (the main session, on the builder's evidence and the narrow v1 profile; the user can overrule): option (b). The original query has no correctness gap today: a keyword form's operator stays bare (`NameQualifier::OPERATOR_KINDS`), and since 20261007-21 every racetrack and arena connection sets the plan's stored `search_path`, so a bare IN, LIKE or BETWEEN resolves on the run server as it did in production; `UnqualifiedNames` counts these operators for `ambiguous_user_schema`. Rewriting each keyword form into a qualifiable one (IN to ANY(ARRAY) or OR chains, IS DISTINCT FROM, NULLIF, simple CASE, USING and NATURAL joins) changes type resolution and is easy to get subtly wrong, and refusing would reject ordinary citext or hstore queries that work today. The candidate side, item 1 of 20261008-41, is 20261011-12.
+
+### 20261009-66. Tint hue check and IP guard: small gaps from the review of 20261009-64 and -65.
+
+- The Ranking tint hue check compares hue against white `--bg` and `--panel` in the light theme, where hue is undefined (atan2 gives 0), so the brown tint's 27 degree gap there means nothing. Skip hue for backgrounds with near-zero saturation (and say so in the spec), and fix the spec's comment: it says the closest hue gap is "21 degrees (light violet against `--head-bg`)", but the real chromatic minimum is 39.5 degrees (light violet against `--head-bg` is 55).
+- The IP rule refuses `bad::cafe`, `a::b`, `1::`, `12:30:45:10` and `2:3:4:5` (unlikely in a block-count summary) and misses `::ffff:a00:1` and an IPv4 literal followed by a period ("sees 5.10.1.2."): inert text. Tighten if real answers ever trip it.
+
+- **Depends on:** 20261009-64, 20261009-65.
+- **Came from:** The reviews of 20261009-64 and -65, 2026-10-09 (minor).
+- **Design:** report.
+- **Status:** **done.** Landed 2026-10-11 (task/20261009-66; driver and spec only). Item 1: the dark-theme hue check skips greys (`grey?`, RGB spread under 3) and keeps their distance check; the spec asserts the skipped set is exactly the light theme's --bg and --panel; red when the threshold changes. Item 2: the winner summary's IP rule now refuses an IPv4 literal followed by a period and a mapped IPv6 tail (`::ffff:a00:1`); two new refusal examples, red first. The false positives (`bad::cafe`, `a::b`, `1::`, `12:30:45:10`, `2:3:4:5`) were left: no real answer has tripped them, and telling them from real IPv6 literals needs a design decision; it fails closed (refuses), so it stays as it is.

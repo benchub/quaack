@@ -555,16 +555,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom. Done, see BACKLOG-COMPLETE.md.
 
-### 20261009-66. Tint hue check and IP guard: small gaps from the review of 20261009-64 and -65.
-
-- The Ranking tint hue check compares hue against white `--bg` and `--panel` in the light theme, where hue is undefined (atan2 gives 0), so the brown tint's 27 degree gap there means nothing. Skip hue for backgrounds with near-zero saturation (and say so in the spec), and fix the spec's comment: it says the closest hue gap is "21 degrees (light violet against `--head-bg`)", but the real chromatic minimum is 39.5 degrees (light violet against `--head-bg` is 55).
-- The IP rule refuses `bad::cafe`, `a::b`, `1::`, `12:30:45:10` and `2:3:4:5` (unlikely in a block-count summary) and misses `::ffff:a00:1` and an IPv4 literal followed by a period ("sees 5.10.1.2."): inert text. Tighten if real answers ever trip it.
-
-- **Depends on:** 20261009-64, 20261009-65.
-- **Came from:** The reviews of 20261009-64 and -65, 2026-10-09 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261010-4. rewrite-test variety: a unique self-FK, and the cases the review didn't check.
 
 From the review of 20261003-39 (minor, and gaps in the review's coverage).
