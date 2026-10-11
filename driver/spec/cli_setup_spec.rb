@@ -137,8 +137,9 @@ RSpec.describe "quaack setup" do
 
     expect(cli.run(["setup", "--run", run_id])).to eq(1)
 
-    expect(errors).to eq("quaack setup failed: run_from_older_version: An older version of QUAACK started this run, " \
-                         "and this version can't resume it. Start a new run with quaack start\n")
+    expect(errors).to eq("quaack setup failed: run_from_older_version: This version of QUAACK can't resume this run: " \
+                         "an older version started it, or its saved state is damaged or was edited by hand. " \
+                         "Start a new run with quaack start\n")
   end
 
   it "says where the run server comes from when run-server was given none" do

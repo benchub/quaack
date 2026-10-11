@@ -812,7 +812,7 @@ Common rules:
 | `driver_error` | The driver itself, not `quaacks`, hit an error while tearing the run down, such as a bug in QUAACK. The message names only the rule, never the error, and gives the teardown command to run: under `quaack run`, it's `ssh -- <jump> quaacks teardown --run <ID>`, to run from your laptop. The run's files and the run server may still be there. If the run itself had finished, QUAACK prints the report's path, and the message says to tear the run down as the line before it says. If the run had failed, the line after it shows the run's own error. | Run the teardown command the message gives. It's safe to run even if teardown got partway. See [step 5](#step-5-clean-up). |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
 | `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
-| `run_from_older_version` | An older version of QUAACK started this run, and its store means something else to this version. | Start a new run with `quaack start`. `quaack teardown` still works on the old run. |
+| `run_from_older_version` | This version can't resume this run: an older version of QUAACK started it, or its store is damaged or was edited by hand, such as an inventory missing `TimeZone`. | Start a new run with `quaack start`. `quaack teardown` still works on the old run. |
 | A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |
 
 ### A step is slow.
