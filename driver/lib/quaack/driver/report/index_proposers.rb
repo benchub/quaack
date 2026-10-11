@@ -18,8 +18,9 @@ module Quaack
         # who is the rewrite's source in words, or nil for the original
         # query or a rewrite whose source isn't recorded. The cell says
         # nothing more for a label with no new indexes, or one the payload
-        # doesn't list. Where none of the label's indexes has a recorded
-        # source, as in a run from an older enclave, the indexes are "not
+        # doesn't list. Where only some of the label's indexes have a
+        # recorded source, the cell ends "and others not recorded". Where none
+        # of them has one, as in a run from an older enclave, the indexes are "not
         # recorded", and a cell with nothing else is nil, which the table
         # shows as not recorded.
         def proposers(label, who)
@@ -27,9 +28,15 @@ module Quaack
           return who && Words.upper(who) if names.to_a.empty?
 
           found = index_sources_of(names)
-          return Words.upper([who, "indexes: #{found.join(", ")}"].compact.join("; ")) unless found.empty?
+          return Words.upper([who, "indexes: #{listed(found, names)}"].compact.join("; ")) unless found.empty?
 
           who && Words.upper("#{who}; indexes: #{Words::MISSING}")
+        end
+
+        # The found sources, then "and others not recorded" if any named index has none recorded.
+        def listed(found, names)
+          unrecorded = names.any? { Array(indexes.dig(it, "sources")).empty? }
+          unrecorded ? "#{found.join(", ")} and others #{Words::MISSING}" : found.join(", ")
         end
 
         # The sources of the named indexes, in words, once each, in the protocol's order.
