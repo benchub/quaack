@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/rewrite_budget"
+
 module Quaack
   module Driver
     module Report
@@ -23,6 +25,7 @@ module Quaack
         # A hint for a rewrite's summary line, so a collapsed section still
         # shows that it holds a warning: what the rewrite rests on in the
         # data, conditions no test exercised, even later, or a
+        # test on made-up data that didn't finish in time (UNTIMED), or a
         # counterexample pairing that wasn't met or couldn't be checked
         # (pairing_warning). nil if none.
         #
@@ -31,10 +34,16 @@ module Quaack
         # and each caution reads once.
         def warning(entry, body: false)
           said = body ? [] : data_caution(entry)
+          # UNTIMED comes before the unproven caution, whose first form says every test passed.
+          caution(said, UNTIMED) if entry["out_of_time"] == true
           said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
-          paired = pairing_warning(entry)
-          said << (said.empty? ? paired : paired.sub(/\A./, &:upcase)) if paired
+          caution(said, pairing_warning(entry))
           "Read it with care: #{said.join(" ")}" unless said.empty?
+        end
+
+        # Adds text to said, capitalized when it isn't first, unless it's nil.
+        def caution(said, text)
+          said << (said.empty? ? text : text.sub(/\A./, &:upcase)) if text
         end
 
         def data_caution(entry) = empirical(entry) ? ["it relies on what your data holds today."] : []
@@ -44,6 +53,11 @@ module Quaack
                          "parts behave the same in the rewrite."
         UNPROVEN_AFTER = "The test data also never made some conditions in a part the rewrite changed both true " \
                          "and false, so the tests cannot show whether those parts behave the same in the rewrite."
+
+        # A rewrite whose rewrite-test ran out of time and went on (task
+        # 20261011-15): the payload's out_of_time is true.
+        UNTIMED = "its test on made-up data didn't finish within #{Protocol::RewriteBudget.minutes} minutes, so " \
+                  "QUAACK checked it only on test data the LLM wrote to break it and on the real data.".freeze
 
         # The summary's warning about a rewrite's pairing, when it wasn't
         # met or couldn't be checked, or nil.

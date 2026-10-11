@@ -77,6 +77,21 @@ module Quaack
         # Words, escaped for the SVG, with any SQL marks dropped.
         def self.text(value) = ERB::Util.html_escape(value.to_s.delete(Format::MARKS))
 
+        # How many rewrites a stage's record carried on though their test
+        # didn't finish in time (task 20261011-15's extra
+        # not_tested_in_time), or nil for none.
+        def self.untimed(record)
+          count = record.is_a?(Hash) && record["extra"].is_a?(Hash) ? record["extra"]["not_tested_in_time"] : nil
+          count if count.is_a?(Integer) && count.positive?
+        end
+
+        # The note a stage with untimed rewrites gets in its hover, or nil.
+        def self.untimed_note(record)
+          count = untimed(record) or return
+          "#{Format.number(count)} not tested in time on made-up data went on, checked only on the LLM's test " \
+            "data and the real data."
+        end
+
         # A funnel's SVG, for rows as Stages gives them.
         def funnel(id, title, rows, of_rewrite: false)
           name = Funnel.text("#{title}, stage by stage. The table below has the exact numbers.")
@@ -247,12 +262,19 @@ module Quaack
         def funnel_label(record, stage, went_on = "#{Format.number(record["out"])} went on", added: false)
           counts = went_on
           counts = "#{Format.number(funnel_added_count(record))} added, #{counts}" if added
-          if record["set_aside"].to_i.positive?
-            counts += ", #{Format.number(record["set_aside"])} set aside for testing during ranking"
-          end
+          counts += funnel_held_and_untimed(record)
           dropped = breakdown(record["dropped"].to_h, stage:)
           line = dropped == "none" ? counts : "#{counts} · dropped: #{dropped}"
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
+        end
+
+        # What a band's label adds after its counts: how many it set aside,
+        # and how many went on untested in time (Funnel.untimed).
+        def funnel_held_and_untimed(record)
+          held = record["set_aside"].to_i
+          untimed = Funnel.untimed(record)
+          (held.positive? ? ", #{Format.number(held)} set aside for testing during ranking" : "") +
+            (untimed ? ", #{Format.number(untimed)} not tested in time, carried on" : "")
         end
 
         # A band's <title>, or nothing when there's no text to show.

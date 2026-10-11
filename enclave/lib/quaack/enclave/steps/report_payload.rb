@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/untested_states"
 require_relative "../burndown"
 require_relative "../candidate_ddl_redaction"
@@ -190,7 +191,15 @@ module Quaack
             "untested_states" => untested_states(tested),
             "dropped" => (dropped if dropped.is_a?(Integer) && !dropped.negative?),
             "covered" => NegativeResult.optional(store, "rewrite_round_#{number}")&.fetch("covered", nil),
-            "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
+            "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true),
+            "out_of_time" => out_of_time(tested) }
+        end
+
+        # Whether rewrite-test ran out of time and the rewrite went on
+        # (task 20261011-15), as a Boolean, or nil with no test. Only the
+        # comparison goes out, never the stored rule.
+        def out_of_time(tested)
+          tested && tested["passed"] == true && tested["rule"] == Protocol::RewriteBudget::RULE
         end
 
         # How each untested atom stayed unproven: the stored state words, if

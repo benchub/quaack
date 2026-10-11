@@ -55,6 +55,30 @@ module Quaack
                        "counterexamples" => "It passed every test, and the run ended before measuring it.",
                        "measurement" => "It was measured, and the run ended before QUAACK judged it." }.freeze
 
+        # A rewrite whose rewrite-test ran out of time and went on (task
+        # 20261011-15) never passed the tests on made-up data, so its later
+        # fate's opening says what happened instead, by the first of these
+        # that matches.
+        UNTIMED_SHORT = "Its test on made-up data didn't finish within " \
+                        "#{Protocol::RewriteBudget.minutes} minutes".freeze
+        UNTIMED_LEAD = "#{UNTIMED_SHORT}, so QUAACK checked it only on test data the LLM wrote to break it and on " \
+                       "the real data".freeze
+        UNTIMED = [["It passed the tests on made-up data, and the run ended", "#{UNTIMED_SHORT}, and the run ended"],
+                   ["It passed every test, and the run ended",
+                    "#{UNTIMED_SHORT}, it passed the LLM's test data, and the run ended"],
+                   ["It passed the tests on made-up data, but QUAACK", "#{UNTIMED_LEAD}, but QUAACK"],
+                   ["It passed the tests on made-up data, but", "#{UNTIMED_LEAD}, and it"],
+                   ["It passed every test and beat", "#{UNTIMED_LEAD}, and it beat"],
+                   ["It passed every test,", "#{UNTIMED_LEAD},"]].freeze
+
+        # text, reworded by UNTIMED when entry's test ran out of time.
+        def untimed(entry, text)
+          return text unless entry["out_of_time"] == true
+
+          from, to = UNTIMED.find { text.start_with?(it.first) }
+          from ? text.sub(from, to) : text
+        end
+
         # A rewrite or rule_bugs entry as "Rewrite" and the name Report.named
         # gave it, or by its number without one.
         def called(entry) = entry["name"] ? "Rewrite #{entry["name"]}" : Words.numbered(entry["rewrite"])
@@ -87,9 +111,9 @@ module Quaack
 
         # What became of a rewrite, as a sentence.
         def fate(entry)
-          return UNFINISHED.fetch(entry["after"], UNFINISHED[nil]) if entry["fate"] == "unfinished"
+          return untimed(entry, UNFINISHED.fetch(entry["after"], UNFINISHED[nil])) if entry["fate"] == "unfinished"
 
-          text = fate_text(entry) or return "#{Words::MISSING}."
+          text = untimed(entry, fate_text(entry) || (return "#{Words::MISSING}."))
           format(text, percent: NotBetterFate::PERCENT, scenario: bracket(Words::SCENARIOS[entry["scenario"]]),
                        round: bracket(entry["round"] && "round #{entry["round"]}"), **because(entry))
         end

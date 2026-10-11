@@ -87,11 +87,14 @@ module Quaack
         # pairs, for the report; it isn't sent here.
         #
         # deadline is the rewrite's budget (Deadline, five minutes from the
-        # call). A test that runs past it is stopped, and the rewrite is left
-        # out with rule out_of_time (Protocol::RewriteBudget): not passed,
-        # nothing untested, not a refusal, so the next rewrite is tested as
-        # usual, and RewriteFate calls it rewrite_test_out_of_time, never
-        # disproved. The step still ends cleanly.
+        # call). A test that runs past it is stopped. The mechanical test can
+        # only disprove a rewrite, so one it didn't finish isn't disproved: it
+        # goes on to counterexamples and the later stages as passed, with rule
+        # out_of_time (Protocol::RewriteBudget) as its caution, nothing
+        # untested, not a refusal, and the next rewrite is tested as usual.
+        # (An entry from before task 20261011-15 has passed false, and
+        # RewriteFate calls it rewrite_test_out_of_time.) The step still
+        # ends cleanly.
         module RewriteTest
           module_function
 
@@ -148,7 +151,9 @@ module Quaack
             result = outcome(report, unchanged(store, search, report))
             result.tap { RewriteBurndown.record_test(store, search, it, report) }
           rescue Deadline::Expired
-            untried(Protocol::RewriteBudget::RULE).tap { RewriteBurndown.record_test(store, search, it, empty_report(nil)) }
+            gone_on = untried(Protocol::RewriteBudget::RULE).merge("passed" => true)
+            RewriteBurndown.record_test(store, search, gone_on, empty_report(nil))
+            gone_on
           ensure
             connection&.close
           end

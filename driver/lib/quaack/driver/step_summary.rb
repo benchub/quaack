@@ -81,11 +81,15 @@ module Quaack
         "Checked your #{count(result.rewrites.size, "rewrite")}, #{kept(result.outcomes)} kept"
       end
 
-      # rewrite-correctness', from whether each rewrite tested passed.
+      # rewrite-correctness', from whether each rewrite tested passed: true,
+      # false, or :untimed for one that went on though its test on made-up
+      # data didn't finish in time (task 20261011-15).
       def tested(passed)
         return "No rewrites left to test" if passed.empty?
 
-        "Tested #{count(passed.size, "rewrite")}, #{passed.count(true)} passed"
+        untimed = passed.count(:untimed)
+        "Tested #{count(passed.size, "rewrite")}, #{passed.count(true)} passed" \
+          "#{", #{untimed} went on though not tested in time" if untimed.positive?}"
       end
 
       # A step that went through each rewrite, from whether it did anything

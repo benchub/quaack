@@ -84,6 +84,8 @@ module Quaack
                    "unmet_assumption" => "assumed something your data doesn't hold",
                    "operator_warnings" => "warnings on your own rewrites",
                    "vacuity_guard_retries" => "retries to make sure every condition mattered",
+                   "not_tested_in_time" => "not tested in time, so checked only on the LLM's test data and the " \
+                                           "real data",
                    "atoms_covered" => "untested conditions the LLM's data exercised",
                    "production_mismatch" => "wrong on the real data",
                    "production_timed_out" => "timed out on the real data",

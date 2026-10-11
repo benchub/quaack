@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/protocol/burndown"
+require "quaack/protocol/rewrite_budget"
 require_relative "burndown"
 require_relative "rewrite_candidate_check"
 require_relative "steps/index_search"
@@ -27,7 +28,7 @@ module Quaack
     #                       rewrite-prune; no record when there are none
     # The rules are all code constants. One that isn't a burndown name is
     # counted as inbound_check or failed_checks.
-    module RewriteBurndown
+    module RewriteBurndown # rubocop:disable Metrics/ModuleLength -- one recorder per stage
       ARRIVAL = { "llm" => "llm-rewrites", "operator" => "operator-rewrites" }.freeze
       # The stage each of RewriteCheck's own rules rejects in.
       OWN = { "too_many" => :arrival, "bad_assumption" => :arrival, "unmet_assumption" => :assumption }.freeze
@@ -90,16 +91,23 @@ module Quaack
       # Records rewrite-test's burndown for search, rewrite_<n> (Burndown.record_latest): in 1,
       # out 1 if it passed, or dropped by why it didn't (test_drop), with
       # extra untested_atoms and vacuity_guard_retries, and the fixtures it
-      # loaded as the total fixture_loads. result is the rewrite_tested_<n>
-      # entry, and report the ScenarioTests::Report.
+      # loaded as the total fixture_loads. A rewrite whose test ran out of
+      # time goes on (out 1) with extra not_tested_in_time 1. result is the
+      # rewrite_tested_<n> entry, and report the ScenarioTests::Report.
       def record_test(store, search, result, report)
         passed = result["passed"]
         Burndown.record_latest(
           store, [["rewrite-test", search.to_sym,
                    { in: 1, dropped: passed ? {} : { test_drop(result) => 1 }, out: passed ? 1 : 0,
-                     extra: { untested_atoms: report.untested_atoms.size, vacuity_guard_retries: report.retries } }]],
+                     extra: test_extra(result, report) }]],
           totals: { fixture_loads: report.loads }
         )
+      end
+
+      def test_extra(result, report)
+        untimed = result["passed"] && result["rule"] == Protocol::RewriteBudget::RULE
+        { untested_atoms: report.untested_atoms.size, vacuity_guard_retries: report.retries,
+          **({ not_tested_in_time: 1 } if untimed) }
       end
 
       # Why rewrite-test dropped a rewrite: the scenario that got different

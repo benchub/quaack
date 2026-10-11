@@ -302,6 +302,36 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 "#{name}: Couldn't test the rewrite within 5 minutes, so QUAACK left it out (rewrite-test)"])
     end
 
+    # Task 20261011-15: a test that didn't finish in time isn't a disproof,
+    # so the rewrite goes on to counterexamples.
+    it "says a rewrite whose test ran out of time goes on, and sends it to counterexamples" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => "out_of_time" })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness").first(4))
+        .to eq(["Testing each rewrite for wrong results (rewrite-correctness)",
+                "#{name}: Testing the rewrite on generated rows (rewrite-test)",
+                "#{name}: Couldn't finish testing the rewrite within 5 minutes, so QUAACK goes on to check it " \
+                "with the LLM's rows and the real data (rewrite-test)",
+                "#{name}: Trying to break the rewrite with rows from the LLM (counterexamples)"])
+      expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 0 passed, 1 went on though not tested in time"])
+    end
+
+    it "counts several rewrites not tested in time apart from those that passed" do
+      entries.merge!(rewrite(1, rewrite_survived: false), rewrite(2, rewrite_survived: false),
+                     rewrite(3, rewrite_survived: false))
+      untimed = { "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => "out_of_time" }
+      tests.push(untimed, untimed, true)
+      9.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(closing("rewrite-correctness")).to eq(["Tested 3 rewrites, 1 passed, 2 went on though not tested in time"])
+    end
+
     it "notes counterexample-payload and each counterexample-round under counterexamples" do
       entries.merge!(rewrite(1, rewrite_survived: false))
       tests.push(true)

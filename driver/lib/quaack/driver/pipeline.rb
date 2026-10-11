@@ -271,23 +271,34 @@ module Quaack
 
         # Whether the rewrite passed rewrite-test and counterexamples.
         def rewrite(transport, client, args, tested, progress, record) # rubocop:disable Metrics/ParameterLists
+          untimed = false
           passed = Pipeline.run_step(progress, tested, "rewrite-test") do
-            message(transport.call("rewrite-test", args:), "rewrite_test").tap { out_of_time(progress, it) }["passed"]
+            untimed = went_on_untimed?(progress, reply = message(transport.call("rewrite-test", args:), "rewrite_test"))
+            reply["passed"]
           end
           return false unless tested || passed
 
-          Pipeline.step(progress, "counterexamples") do
+          survived = Pipeline.step(progress, "counterexamples") do
             survives_counterexamples?(transport, client, args, progress, record)
           end
+          survived && untimed ? :untimed : survived
         end
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)
-        # was left out, untested, and progress says so under its name.
-        def out_of_time(progress, message)
-          return unless message["rule"] == Protocol::RewriteBudget::RULE
+        # isn't disproved: it goes on (passed, task 20261011-15), and
+        # progress says so under its name. A message from before that task
+        # has passed false: that rewrite was left out. Whether it went on so.
+        def went_on_untimed?(progress, message)
+          return false unless message["rule"] == Protocol::RewriteBudget::RULE
 
-          progress.step_note("rewrite-test", "Couldn't test the rewrite within #{Protocol::RewriteBudget.minutes} " \
-                                             "minutes, so QUAACK left it out")
+          within = "within #{Protocol::RewriteBudget.minutes} minutes"
+          progress.step_note("rewrite-test", if message["passed"] == true
+                                               "Couldn't finish testing the rewrite #{within}, so QUAACK goes on " \
+                                                 "to check it with the LLM's rows and the real data"
+                                             else
+                                               "Couldn't test the rewrite #{within}, so QUAACK left it out"
+                                             end)
+          message["passed"] == true
         end
 
         # Whether no round of counterexamples disproved the rewrite. Each
