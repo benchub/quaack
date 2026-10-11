@@ -837,6 +837,8 @@ In version 1, QUAACK refuses these, rather than give an answer it can't back up:
 - **Less common SQL:** `GROUPING SETS`, `ROLLUP`, `CUBE`, `TABLESAMPLE`, `SIMILAR TO`, `JSON_TABLE` and the SQL/JSON functions, XML functions, `CYCLE` and `SEARCH` on recursive CTEs, and a few others. Joins, subqueries, CTEs, `UNION`, `CASE`, aggregates, window functions, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL` all work.
 - **Production older than Postgres 17.**
 - **Queries that already use `$1`-style parameters.** Capture the query with its real values.
+- **A shadowed `=` for a `denormalized_equal` assumption.** QUAACK checks that assumption with `pg_catalog`'s `=`. If your application's role has another `=` with the same signature ahead of `pg_catalog` on its `search_path`, such as `public.=(text, text)`, your queries use that one and the check doesn't. QUAACK doesn't look for this setup, so a rewrite could rest on an equality your application never runs.
+- **Clock-reading column defaults cast to a domain or an array type.** QUAACK anchors a default such as `now()` or `('today'::text)::date`, so test inserts get the run's time. It doesn't anchor `('today'::text)::public.clock_date` or `('{today}'::text)::date[]`, which still read the wall clock.
 
 Some limits are in the design itself:
 
