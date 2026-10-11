@@ -3137,8 +3137,13 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     def texts(svg)
-      svg.scan(%r{<text class="([^"]*)" x="([\d.]+)" y="([\d.]+)">(.*?)</text>}m)
-         .map { |kind, x, y, text| { kind:, x: x.to_f, y: y.to_f, text: } }
+      svg.scan(%r{<text class="([^"]*)" x="([\d.]+)" y="([\d.]+)"(?: text-anchor="(\w+)")?>(.*?)</text>}m)
+         .map { |kind, x, y, anchor, text| { kind:, x: x.to_f, y: y.to_f, anchor:, text: } }
+    end
+
+    # What a diagram's layers say, top to bottom.
+    def layers(id, number, html = out)
+      texts(sankey(id, number, html)).select { it[:kind] == "stage" }.map { it[:text] }
     end
 
     def stage_nodes(svg) = nodes(svg, "stage")
@@ -3163,12 +3168,20 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "draws one diagram per unit, each with a caption naming its unit, and keeps each stage in its own" do
-      stage_names = ->(id, n) { texts(sankey(id, n)).select { it[:kind] == "stage" }.map { it[:text] } }
-      words = Quaack::Driver::Report::Words
-      expect(stage_names.call("index", 1)).to eq(words::INDEX_STAGES.except("index-rank").values.map { esc(it) })
-      expect(stage_names.call("index", 2)).to eq([esc(words::INDEX_STAGES.fetch("index-rank"))])
-      expect(stage_names.call("rewrite", 1)).to eq(words::REWRITE_STAGES.values.map { esc(it) })
-      expect(stage_names.call("rewrite", 2)).to eq(words::LATE_STAGES.values.map { esc(it) })
+      expect(layers("index", 1)).to eq(
+        ["Mechanical index ideas: 9", "After removing duplicates and indexes you already have: 8",
+         "After testing for planner utility: 6", "Combined with new ideas from the LLM: 8",
+         "After the LLM&#39;s second round of ideas: 9"]
+      )
+      expect(layers("index", 2)).to eq(["After trying indexes together: 4"])
+      expect(layers("rewrite", 1)).to eq(
+        ["Rewrites from the transform rules: 2", "Combined with rewrites from the LLM: 6",
+         "Combined with your own rewrites: 7", "After checking what each rewrite assumes: 6",
+         "After checking each rewrite runs differently: 5", "After testing on made-up edge-case data: 4",
+         "After testing on data the LLM wrote to break them: 3"]
+      )
+      expect(layers("rewrite", 2)).to eq(["Candidates after choosing indexes for each rewrite: 3",
+                                          "Candidates after measuring on the real data: 2"])
       burndown = section(out, "burndown")
       captions = %w[index-1 index-2 rewrite-1 rewrite-2 rewrite-index-1 rewrite-index-2].to_h do |key|
         [key, burndown[%r{<p class="note unit" id="sankey-#{key}-unit">(.*?)</p>}m, 1]]
@@ -3182,18 +3195,18 @@ RSpec.describe Quaack::Driver::Report do
       expect(captions.values).to all(be_a(String))
     end
 
-    it "draws one stage node per row of its table, in the table's order, each carrying the stage's went-on count" do
+    it "draws one layer node per stage, or per run of stages that only add, in the table's order" do
       %w[index rewrite].each do |id|
         table = section(out, "burndown")[%r{<table id="burndown-#{id}">.*?</table>}m]
         rows = table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten
-        names = [1, 2].flat_map { |n| texts(sankey(id, n)).select { it[:kind] == "stage" }.map { it[:text] } }
+        names = [1, 2].flat_map { |n| stage_nodes(sankey(id, n)).flat_map { it["data-stage"].split("; ") } }
         expect(names).to eq(rows)
       end
       first = stage_nodes(sankey("rewrite", 1))
       expect(first.map { it["data-stage"] }).to eq(Quaack::Driver::Report::Words::REWRITE_STAGES.keys.map { named(it) })
       expect(first.map { it["data-count"].to_i }).to eq([2, 6, 7, 6, 5, 4, 3])
       expect(stage_nodes(sankey("rewrite", 2)).map { it["data-count"].to_i }).to eq([3, 2])
-      expect(stage_nodes(sankey("index", 1)).map { it["data-count"].to_i }).to eq([7, 9, 8, 6, 8, 9])
+      expect(stage_nodes(sankey("index", 1)).map { it["data-count"].to_i }).to eq([9, 8, 6, 8, 9])
       expect(stage_nodes(sankey("index", 2)).map { it["data-count"].to_i }).to eq([4])
     end
 
@@ -3262,7 +3275,7 @@ RSpec.describe Quaack::Driver::Report do
       svg = sankey("index", 1)
       peak = 11.0
       scale = sankey_module::SPINE_MAX / peak
-      carry = ribbons(svg, "carry").find { it["data-from"] == stage_nodes(svg)[2]["data-id"] }
+      carry = ribbons(svg, "carry").find { it["data-from"] == stage_nodes(svg)[1]["data-id"] }
       start_x = numbers(carry["d"])
       expect(start_x[-2] - start_x[0]).to be_within(0.05).of(scale * 8)
       expect(start_x[8] - start_x[6]).to be_within(0.05).of(scale * 8)
@@ -3275,7 +3288,7 @@ RSpec.describe Quaack::Driver::Report do
     it "tapers a ribbon whose two ends don't join up, so a mismatch shows in the picture as well as the table" do
       stages["index-test"] = { "original" => rec(7, 5, dropped: { "never_used" => 2 }) }
       svg = sankey("index", 1)
-      carry = ribbons(svg, "carry").find { it["data-from"] == stage_nodes(svg)[2]["data-id"] }
+      carry = ribbons(svg, "carry").find { it["data-from"] == stage_nodes(svg)[1]["data-id"] }
       scale = sankey_module::SPINE_MAX / 11.0
       nums = numbers(carry["d"])
       expect([nums[-2] - nums[0], nums[8] - nums[6]]).to all(be_positive)
@@ -3296,7 +3309,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(stage["y"].to_f - bars.first["y"].to_f).to be <= layout_module::MERGE + layout_module::FLAT
       lanes = bars.map { [it["x"].to_f, it["x"].to_f + it["width"].to_f] }
       expect(lanes.each_cons(2).map { |(_, right), (left, _)| left - right }).to all(be_positive)
-      expect(lanes.first.first).to be > stage["x"].to_f + stage["width"].to_f
+      expect(lanes.last.last).to be < stage["x"].to_f
     end
 
     it "merges a stage's sources into its flow: its bar is in plus added wide, and each source's ribbon reaches it" do
@@ -3308,11 +3321,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(ends.size).to eq(1)
       lands = ends.first.values_at(6, 7, 8)
       expect(lands[1]).to be_within(0.01).of(stage["y"].to_f)
-      expect(lands[0]).to be_within(0.05).of(stage["x"].to_f + (scale * 2))
+      expect(lands[0]).to be_within(0.05).of(stage["x"].to_f)
       expect(lands[2] - lands[0]).to be_within(0.05).of(scale * 5)
       expect(ends.first[-2] - ends.first[0]).to be_within(0.05).of(scale * 5)
       carry = ribbons(svg, "carry").find { it["data-to"] == stage["data-id"] }
       expect(carry["data-count"]).to eq("2")
+      expect(numbers(carry["d"])[6]).to be_within(0.05).of(stage["x"].to_f + (scale * 5))
     end
 
     it "makes a stage's bar as wide as what came in plus what it added, even when its counts don't add up" do
@@ -3382,10 +3396,12 @@ RSpec.describe Quaack::Driver::Report do
           svg = sankey(id, n)
           height = svg[/viewBox="0 0 \d+ (\d+)"/, 1].to_f
           boxes = texts(svg).map do |word|
-            [word[:x], word[:y] - 11, word[:x] + (word[:text].length * 6.5), word[:y] + 3]
+            wide = word[:text].length * 6.5
+            left = word[:anchor] == "end" ? word[:x] - wide : word[:x]
+            [left, word[:y] - 11, left + wide, word[:y] + 3]
           end
           expect(boxes.map(&:first).min).to be >= 0
-          expect(boxes.map { it[2] }.max).to be <= 940
+          expect(boxes.map { it[2] }.max).to be <= 1040
           expect(boxes.map { it[1] }.min).to be >= 0
           expect(boxes.map { it[3] }.max).to be <= height
           boxes.combination(2).each do |one, other|
@@ -3448,11 +3464,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(unknown["style"]).to include("var(--uncounted-fill)").and include("var(--uncounted-stroke)")
       expect(unknown).not_to have_key("data-count")
       expect(unknown["title"]).to include("not recorded").and include(esc("doesn't mean none"))
-      expect(texts(svg).select { it[:kind] == "counts" }.map { it[:text] }).to include("not recorded")
+      expect(texts(svg).select { it[:kind] == "stage" }.map { it[:text] })
+        .to include("After testing for planner utility: not recorded")
       grey = ribbons(svg).select { it["class"].split.include?("unknown") }
       expect(grey.map { [it["data-from"], it["data-to"]] })
-        .to include([unknown["data-id"], stage_nodes(svg)[4]["data-id"]],
-                    [stage_nodes(svg)[2]["data-id"], unknown["data-id"]])
+        .to include([unknown["data-id"], stage_nodes(svg)[3]["data-id"]],
+                    [stage_nodes(svg)[1]["data-id"], unknown["data-id"]])
     end
 
     it "draws a stage that counted only what came in with its in-flow, and a grey way on" do
@@ -3462,7 +3479,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(partial["class"]).to eq("node stage partial")
       expect(inflow(svg, partial["data-id"])).to eq(8)
       expect(ribbons(svg).find { it["data-from"] == partial["data-id"] }["class"]).to include("unknown")
-      expect(texts(svg).map { it[:text] }).to include("8 came in, went on not recorded")
+      expect(texts(svg).map { it[:text] }).to include("After testing for planner utility: not recorded")
     end
 
     it "draws diagrams for a run that recorded no burndown, every stage not recorded and no ribbons" do
@@ -3496,6 +3513,87 @@ RSpec.describe Quaack::Driver::Report do
       expect(burndown.scan('<svg id="sankey-').size).to eq(6)
       expect(burndown.scan('<table id="burndown-').size).to eq(3)
       expect(burndown.rindex(%(<svg id="sankey-rewrite-2"))).to be < burndown.index(%(<table id="burndown-rewrite">))
+    end
+
+    it "joins stages that only add into one layer with several sources, and keeps a stage with its own sinks apart" do
+      svg = sankey("index", 1)
+      layer = stage_nodes(svg).first
+      query = named("index-from-query")
+      plan = named("index-from-plan")
+      expect(layer["data-stage"]).to eq("#{query}; #{plan}")
+      bars = nodes(svg, "source").select { it["data-id"].start_with?("#{layer["data-id"]}-in") }
+      expect(bars.map { it["data-count"] }).to eq(%w[7 2])
+      scale = sankey_module::SPINE_MAX / 11.0
+      expect(layer["width"].to_f).to be_within(0.05).of(scale * 9)
+      expect(inflow(svg, layer["data-id"])).to eq(9)
+      expect(outflow(svg, layer["data-id"])).to eq(9)
+      expect(stage_nodes(svg).map { it["data-stage"] }).not_to include(plan)
+      expect(texts(svg).select { it[:kind] == "source" }.first(2).map { it[:text] })
+        .to eq(["From the query&#39;s text: 7", "From the query&#39;s plan: 2"])
+      tip = Quaack::Driver::Report::StageSentences::TABLE.values_at("index-from-query", "index-from-plan").map { esc(it) }
+      expect(layer["title"]).to eq("#{tip.join(" ")} 9 added. 9 went on.")
+      rules, llm = %w[rewrite-rules llm-rewrites].map { named(it) }
+      expect(stage_nodes(sankey("rewrite", 1)).map { it["data-stage"] }).to include(rules, llm)
+    end
+
+    it "joins every rewrite stage that only adds into one layer, and a stage that drops anything stays apart" do
+      stages["rewrite-rules"] = { "rewrites" => rec(0, 3, added: { "key_in_self_join" => 3 }) }
+      stages["llm-rewrites"] = { "rewrites" => rec(3, 8, added: { "llm" => 5 }) }
+      stages["operator-rewrites"] = { "rewrites" => rec(8, 9, added: { "operator" => 1 }) }
+      stages["assumption-check"] = { "rewrites" => rec(9, 8, dropped: { "unmet_assumption" => 1 }) }
+      svg = sankey("rewrite", 1)
+      expect(layers("rewrite", 1).first(2)).to eq(["Rewrites from every source: 9",
+                                                   "After checking what each rewrite assumes: 8"])
+      layer = stage_nodes(svg).first
+      expect(nodes(svg, "source").select { it["data-stage"] == layer["data-stage"] }.map { it["data-count"] })
+        .to eq(%w[3 5 1])
+      expect(layer["width"].to_f).to be_within(0.05).of(sankey_module::SPINE_MAX)
+      expect(inflow(svg, layer["data-id"])).to eq(9)
+    end
+
+    it "never joins a stage that has its own drops, even after a stage that only adds" do
+      stages["rewrite-rules"] = { "rewrites" => rec(0, 3, added: { "key_in_self_join" => 3 }) }
+      stages["llm-rewrites"] = { "rewrites" => rec(3, 7, added: { "llm" => 5 }, dropped: { "inbound_check" => 1 }) }
+      stages["operator-rewrites"] = { "rewrites" => rec(7, 8, added: { "operator" => 1 }) }
+      expect(layers("rewrite", 1).first(3)).to eq(
+        ["Rewrites from the transform rules: 3", "Combined with rewrites from the LLM: 7",
+         "Combined with your own rewrites: 8"]
+      )
+    end
+
+    it "never joins a stage that holds ideas back, even after a stage that only adds" do
+      stages["index-from-plan"] = { "original" => rec(7, 8, added: { "generator_two" => 2 }, dropped: {},
+                                                            set_aside: 1) }
+      expect(layers("index", 1).first(2)).to eq(["Index ideas from the query&#39;s text: 7",
+                                                 "Index ideas from the query&#39;s text and plan: 8"])
+    end
+
+    it "keeps stages apart when what one sends on isn't what the next takes in" do
+      stages["index-from-plan"] = { "original" => rec(6, 8, added: { "generator_two" => 2 }) }
+      svg = sankey("index", 1)
+      apart = stage_nodes(svg).first(2).map { it["data-stage"] }
+      expect(apart).to eq([named("index-from-query"), named("index-from-plan")])
+    end
+
+    it "puts every source in a lane to the left of the flow it joins, and every sink to its right" do
+      %w[index rewrite].each do |id|
+        svg = sankey(id, 1)
+        flow_x = stage_nodes(svg).first["x"].to_f
+        expect(nodes(svg, "source").map { it["x"].to_f + it["width"].to_f }).to all(be < flow_x)
+        expect(nodes(svg, "drop").map { it["x"].to_f }).to all(be > flow_x + sankey_module::SPINE_MAX)
+      end
+    end
+
+    it "says nothing in the picture about what came in, was added, or went on: only labels, sources, and sinks" do
+      %w[index rewrite rewrite-index].each do |id|
+        [1, 2].each do |n|
+          words = texts(sankey(id, n)).map { it[:text] }
+          expect(words.grep(/came in|\d+ added|\d+ went on|, went on/)).to eq([])
+          expect(words).to all(satisfy { |word| word.match?(/: (\d[\d,]*|not recorded)\z/) })
+        end
+      end
+      llm = stage_nodes(sankey("rewrite", 1)).find { it["data-stage"] == named("llm-rewrites") }
+      expect(llm["title"]).to end_with("2 came in. 5 added. 1 dropped. 6 went on.")
     end
 
     it "escapes its words and sets no SQL apart" do

@@ -4,13 +4,13 @@ module Quaack
   module Driver
     module Report
       # Where a stage's sources go (see SankeyLayout). Each is a flat bar of its
-      # own in a lane, the lanes side by side from LANE_X, LANE_GAP apart, on the
-      # row above the stage's bar, with its label on a line of its own above it,
-      # the first source's highest. The ribbons run down through MERGE and
-      # meet the stage's top edge in the same order, after what carried on.
+      # own in a lane to the left of the flow, the lanes side by side up to LANE_RIGHT,
+      # about LANE_GAP apart, on the row above the stage's bar, with its label on a line
+      # of its own above it. The ribbons run down through MERGE and meet the stage's top
+      # edge from its left, in the same order, before what carried on.
       module SankeyLanes
-        LANE_X = SankeyParts::LEFT + 240.0 + 30
-        LANE_GAP = 16.0
+        LANE_RIGHT = SankeyParts::LEFT - 30
+        LANE_GAP = 10.0
         FLAT = 10
         MERGE = 44
         LABEL_LINE = 16
@@ -24,15 +24,23 @@ module Quaack
 
         # The node's sources' bars, in their lanes, and where their ribbons meet its top edge.
         def place_above(node)
-          bar_x = LANE_X
-          edge_x = SankeyParts::LEFT + thick(node.inn)
-          node.above = node.sources.each_with_index.map do |flow, k|
-            wide = thick(flow.amount)
-            lane_source(node, flow, k, bar_x, edge_x).tap do
-              bar_x += wide + LANE_GAP
-              edge_x += wide
-            end
-          end
+          bars, edges = lane_starts(node.sources.map { thick(it.amount) })
+          node.above = node.sources.each_with_index.map { |flow, k| lane_source(node, flow, k, bars[k], edges[k]) }
+        end
+
+        # Where each width's bar starts in the lanes, and where its ribbon meets the top edge.
+        def lane_starts(wide)
+          gap = lane_gap(wide)
+          [starts(wide, LANE_RIGHT - wide.sum - (gap * (wide.size - 1)), gap), starts(wide, SankeyParts::LEFT, 0)]
+        end
+
+        # Where each of the widths starts, side by side from first, gap apart.
+        def starts(wide, first, gap) = wide.each_index.map { first + wide.first(it).sum + (gap * it) }
+
+        # The gap between lanes: LANE_GAP, less if the bars leave no room for it.
+        def lane_gap(wide)
+          room = (LANE_RIGHT - 10 - wide.sum) / [wide.size - 1, 1].max
+          room.clamp(2.0, LANE_GAP)
         end
 
         def lane_source(node, flow, index, bar_x, edge_x)

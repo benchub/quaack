@@ -3,6 +3,7 @@
 require_relative "format"
 require_relative "funnel"
 require_relative "sankey_stages"
+require_relative "sankey_layers"
 require_relative "sankey_drawing"
 
 module Quaack
@@ -31,6 +32,7 @@ module Quaack
       # table draw), with the same stage sentences and words.
       module Sankey
         include SankeyStages
+        include SankeyLayers
 
         SPINE_MAX = SankeyLayout::SPINE_MAX
         MIN_THICKNESS = SankeyLayout::MIN_THICKNESS
@@ -71,13 +73,15 @@ module Quaack
 
         # One diagram under its caption. around is whether there's a diagram before it, and one after.
         def sankey_figure(key, title, segment, of_rewrite, around)
-          stages = segment.each_with_index.map do |(name, record, stage), i|
-            sankey_stage(i, name, record, stage, of_rewrite)
-          end
+          stages = sankey_layers(sankey_stages(segment, of_rewrite))
           words = "#{title}, stage by stage, as a Sankey diagram. The table below has the exact numbers."
           sankey_caption(key, segment.first[2], of_rewrite) +
             SankeyDrawing.new(id: key, title: words, start: sankey_start(stages.first, before: around[0]), stages:,
                               finish: sankey_finish(stages.last, after: around[1])).svg
+        end
+
+        def sankey_stages(segment, of_rewrite)
+          segment.each_with_index.map { |(name, record, stage), i| sankey_stage(i, name, record, stage, of_rewrite) }
         end
 
         def sankey_caption(key, stage, of_rewrite)
@@ -91,7 +95,7 @@ module Quaack
         def sankey_start(first, before:)
           return unless first.came_in.to_i.positive?
 
-          sankey_edge(:start, first.inn, before ? "Carried in from the diagram above" : "Came in",
+          sankey_edge(:start, first.inn, before ? "Carried in from the diagram above" : "Carried in",
                       "#{Format.number(first.inn)} came in.")
         end
 

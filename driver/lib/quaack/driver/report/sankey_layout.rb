@@ -17,11 +17,11 @@ module Quaack
       # sink; a stage that counted nothing is still a node, MIN_THICKNESS wide.
       #
       # A stage is a bar. What carried on from the stage above, then each
-      # source of its added, enter its top edge, from the left, so its width is
-      # what came in plus what was added. Each source is a flat bar of its own
-      # in a lane to the right (LANE_X on, a LANE_GAP apart) on the stage's
-      # row, above the bar, with its label on a line of its own over it; its
-      # ribbon runs down and merges into the bar's top edge. What carries on,
+      # source of its added, enter its top edge, so its width is what came in plus
+      # what was added: the sources, from the left, and then what carried on. Each
+      # source is a flat bar of its own in a lane to the left of the flow (see
+      # SankeyLanes) on the stage's row, above the bar, with its label on a line of
+      # its own over it; its ribbon runs down and merges into the bar's top edge. What carries on,
       # then each drop reason and the held back count, leave its bottom edge,
       # the carry first, and go down and then right to nodes in the column at
       # NODE_X, in the gap below it. A gap is as tall as the rows it holds, so
@@ -33,9 +33,9 @@ module Quaack
         SPINE_MAX = 240.0
         MIN_THICKNESS = 2.0
         UNKNOWN_WIDTH = SPINE_MAX * 0.3
-        NODE_X = 300.0
+        NODE_X = LEFT + SPINE_MAX + 40
         TOP = 8
-        BAR_HEIGHT = 36
+        BAR_HEIGHT = 22
         EDGE_HEIGHT = 22
         SLOT = 18
         MIN_GAP = 28
@@ -130,7 +130,7 @@ module Quaack
           return if wide.all?(&:zero?)
 
           Carry.new(from:, into:, wide_a: wide[0], wide_b: wide[1], amount: amounts[0],
-                    grey: from.state != :full || into.state == :unknown)
+                    grey: from.state != :full || into.state == :unknown, shift: thick_sum(into.sources))
         end
 
         def carried(from, into)

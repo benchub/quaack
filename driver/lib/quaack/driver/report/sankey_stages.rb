@@ -21,9 +21,9 @@ module Quaack
           state = sankey_state(inn, out)
           sentence = StageSentences.for(stage, of_rewrite:)
           sources, sinks = state == :unknown ? [[], []] : sankey_flows(record, stage, sentence)
-          color = Funnel::COLORS.fetch(stage, Funnel::BLUE)
-          sankey_words(SankeyLayout::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:,
-                                               sinks:, color:), record, sentence)
+          SankeyLayout::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:, sinks:,
+                                  color: Funnel::COLORS.fetch(stage, Funnel::BLUE), keys: [stage],
+                                  sentences: [sentence].compact)
         end
 
         # Whether the run counted all, only what came in, or none of the stage.
@@ -33,42 +33,32 @@ module Quaack
           out.nil? ? :partial : :full
         end
 
-        # A node's counts under its name, its hover, and its ribbon's hover.
-        def sankey_words(node, record, sentence)
-          node.line = sankey_line(node)
-          node.tip = sankey_tip(node, sentence, record)
+        # A layer's label, its hover, and its ribbon's hover.
+        def sankey_words(node)
+          node.line = sankey_label(node)
+          node.tip = sankey_tip(node)
           node.carry_tip = if node.state == :full
-                             [sentence,
-                              "#{Format.number(node.out)} went on."].compact.join(" ")
+                             [*node.sentences,
+                              "#{Format.number(node.out)} went on."].join(" ")
                            else
                              node.tip
                            end
           node
         end
 
-        def sankey_line(node)
-          return Words::MISSING if node.state == :unknown
-
-          added = node.sources.sum(&:amount)
-          went = node.state == :partial ? "went on #{Words::MISSING}" : "#{Format.number(node.out)} went on"
-          [*("#{Format.number(node.inn)} came in" if node.inn.positive?),
-           *("#{Format.number(added)} added" if added.positive?), went].join(", ")
-        end
-
         # The node's hover: a note for a stage the run didn't fully record,
         # then the stage's sentence, then the stage's own numbers.
-        def sankey_tip(node, sentence, record)
+        def sankey_tip(node)
           note = { unknown: "#{node.name}: #{Words::MISSING}. #{Funnel::NOT_NONE}",
                    partial: "How many went on: #{Words::MISSING}. #{Funnel::NOT_NONE}" }[node.state]
-          numbers = node.state == :unknown ? [] : sankey_numbers(node, record)
-          [note, sentence, *numbers].compact.join(" ")
+          numbers = node.state == :unknown ? [] : sankey_numbers(node)
+          [note, *node.sentences, *numbers].compact.join(" ")
         end
 
-        def sankey_numbers(node, record)
+        def sankey_numbers(node)
           held, dropped = node.sinks.partition { it.kind == :held }
-          counts = { "came in" => record["in"], "added" => node.sources.sum(&:amount),
-                     "dropped" => dropped.sum(&:amount), "held back" => held.sum(&:amount),
-                     "went on" => record["out"] }
+          counts = { "came in" => node.inn, "added" => node.sources.sum(&:amount),
+                     "dropped" => dropped.sum(&:amount), "held back" => held.sum(&:amount), "went on" => node.out }
           told = counts.select { |word, count| sankey_shown?(word, count) }
           told.map { |word, count| "#{Format.number(count)} #{word}." }
         end
