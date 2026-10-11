@@ -10234,3 +10234,74 @@ Found in the review of 20261010-19, and on `main` too: `fx.users.age = 1 OR ... 
 - **Came from:** The review of 20261010-19, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** done. Landed 2026-10-10: when the arm-at-a-time pass finds no masking near miss (four or more equality arms on one column), a second pass pairs each pick with the first atom of every later arm (`Branches` look-ahead).
+
+### 20261008-64. `or_to_union`: the expression-index test misses its guard.
+
+From the review of 20261008-18 and -20. The "the only key's index has an expression" test stays green when `i.indexprs IS NULL` is removed from `assumption_check.rb`, because `Catalog::Keys` already drops the expression column first. Add a test on an index like `(a_id, n, lower(t))`, which reaches the `indexprs` guard.
+
+- **Depends on:** 20261008-18.
+- **Came from:** The review of 20261008-18, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** **done.** Landed 2026-10-10 (task/20261008-64; review clean): a test on a `NULLS NOT DISTINCT` unique index with an expression column (`(a_id, n, lower(t))`), the only index shape that reaches the `i.indexprs IS NULL` guard. A plain unique index with an expression is also refused by the NULL check, so it never reached it.
+
+### 20261009-25. `counterexample_steps_postgres_spec.rb` fails when run alone.
+
+Found in the build of 20261004-3. Run by itself, the spec file fails with a LeakCheck load error, but it passes under `rake`, so it depends on load order. Add the missing `require` so it runs alone.
+
+- **Depends on:** none.
+- **Came from:** The build of 20261004-3, 2026-10-09.
+- **Design:** none (test infrastructure).
+- **Status:** **dropped.** 2026-10-10: stale. Run from `enclave/` the way rake runs it (`--options .rspec`, which requires `spec_helper`, which requires `support/leak_check`), the spec passes (47 examples). It fails only with `.rspec` skipped or from the repo root, and a one-line `require` can't fix those.
+
+### 20261010-12. `not_in_to_not_exists`: the same NOT IN twice in one SELECT.
+
+From the review of 20261008-4 (minor). When the same NOT IN appears twice in one SELECT and Postgres needs the two copies to match, rewriting only one copy breaks the query: `SELECT x NOT IN (...), count(*) ... GROUP BY x NOT IN (...)` fails with "subquery uses ungrouped column" / "must appear in the GROUP BY clause", and `DISTINCT ON (x NOT IN ...) ... ORDER BY x NOT IN ...` fails with "DISTINCT ON expressions must match initial ORDER BY expressions". The rewrite errors instead of returning different rows, and plan-pruning discards a rewrite that fails to plan (`failed_to_plan`), so nothing wrong is recommended: it only wastes a candidate. Fix by rewriting every identical copy together, or refuse a condition that also appears in the same SELECT's GROUP BY, DISTINCT ON or ORDER BY. Add Postgres-backed tests for both queries and a note in docs/transforms/not_in_to_not_exists.md and DESIGN.md. Enclave change: unreleased list.
+
+- **Depends on:** 20261008-4.
+- **Came from:** The review of 20261008-4, 2026-10-10 (minor).
+- **Design:** rewrite-rules.
+- **Status:** **done.** Landed 2026-10-10 (task/20261010-12; review clean): the rule refuses a NOT IN that appears again in the same SELECT when a copy is in GROUP BY, DISTINCT ON or ORDER BY (clean refusal, not rewriting every copy). Notes in docs/transforms/not_in_to_not_exists.md and DESIGN.md.
+
+### 20261010-14. `TableStatistics#type_map`: an empty type string isn't tested.
+
+From the review of 20261008-24 and -25 (minor). Removing the `!v.empty?` check from `TableStatistics#type_map` leaves every spec green. It doesn't affect soundness (the value is only compared with `"bpchar"`), but add `column_types: { "id" => "" }` to the "rejects a type for a column that isn't in the list, and a type that isn't a name" example in `statistics_spec.rb`, and confirm it goes red without the check.
+
+- **Depends on:** 20261008-25.
+- **Came from:** The review of 20261008-24 and -25, 2026-10-10 (minor).
+- **Design:** index-from-query.
+- **Status:** **done.** Landed 2026-10-10 (task/20261010-14): the empty-type case in the `type_map` rejection example; goes red without `!v.empty?`.
+
+### 20261010-15. Load-order dedupe: test the laziness.
+
+From the review of 20261008-33 (minor). Removing `.lazy` from `distinct_loads` leaves the load-order and counterexample specs green: the comment says a later order's `self_references` query isn't run when an earlier run ends the comparison, but no test shows it. Add a spec with a runner that counts calls (an earlier run that ends the comparison must leave the later orders' queries unrun) and confirm it goes red without `.lazy`.
+
+- **Depends on:** 20261008-33.
+- **Came from:** The review of 20261008-33, 2026-10-10 (minor).
+- **Design:** fixture-compare.
+- **Status:** **done.** Landed 2026-10-10 (task/20261010-15): a spec wrapping the real runner's `self_references` and counting calls (a forward mismatch reads none, a reverse mismatch once, a full match twice); goes red without `.lazy`.
+
+### 20261010-43. Vacuity guard: a bounded search for a distinguishing database, behind the rule-based scenarios.
+
+The user, 2026-10-10, approved trying this. **Context.** The vacuity guard (`enclave/lib/quaack/enclave/vacuity_guard.rb`, `vacuity_guard/compared.rb`) reports an atom of the original query as "untested" when no scenario fixture makes the query return something different with that atom replaced by TRUE. Scenario rows are built by hand-written rules (`enclave/lib/quaack/enclave/scenarios*.rb`, `scenarios/plan.rb`, `picker.rb`, `pinned_keys.rb`, `branches.rb`, `siblings.rb`, `unmatched.rb`, `value_pools*.rb`). Every new query shape the corpus (`enclave/spec/vacuity_guard_corpus_postgres_spec.rb`, 120 shapes, a `PENDING` list) turns up has needed another rule (20261010-19, -21, -24, -25, -30, -31, -32, -34, -35, -36). This is whack-a-mole, and "untested" erodes trust in the whole report. Equivalence of arbitrary SQL is undecidable, so some atoms will always stay undecided; the goal is to shrink that set a lot and say honestly why an atom is unproven.
+
+**The idea.** For each atom still untested after the rule-based scenarios, search for a tiny database where the query with the atom and the query with the atom replaced by TRUE return different results (the guard's existing test of "tested"). Use Postgres itself as the oracle, on the existing arena database: one database, one schema, one transaction per trial: `BEGIN`, insert the trial's rows (parents first; reuse `Scenarios::Topology` load order and the value pools), run both queries, compare (reuse the guard's multiset comparison and, for LIMIT/OFFSET shapes, the fixture-compare path in `vacuity_guard/compared.rb`), `ROLLBACK`. No new databases or schemas. A trial that fails to load (constraint violation) or times out (the existing 10 s statement timeout) is discarded and counted against the budget.
+
+**Trial generation (small-scope hypothesis).** 1 to 4 rows per table touched by the query (more for a table whose atom needs a threshold, as `Children::MAX` does); per column, values drawn from the column's pool (`ValuePools`: values that satisfy and fail each atom, boundaries, NULL for nullable columns, enum labels, a few plain values); foreign keys pick among the parent rows present (or NULL when nullable); unique and composite keys get distinct values; CHECKs are respected as the pools already do. Use a seeded generator (seed recorded so a run is reproducible), try an exhaustive pass over very small cases before random ones, and guide the search by the atom: prefer rows that satisfy every other atom and fail this one (near miss), then relax. Per-query budget: at most N trials and T seconds in total (start with N = 300 per untested atom and 20 s per query, measure, tune), like `VacuityGuard::MAX_COMPARISONS`; hitting the budget leaves the atom untested, never "tested".
+
+**What a found instance becomes.** The rows (not a database) become one more fixture in the list the guard, rewrite-test, fixture-compare and counterexamples already replay for every candidate in a `BEGIN`/insert/compare/`ROLLBACK` cycle, in every load order. This is the same soundness argument as 20261010-31's near-misses-only fixture: an atom counts as tested only when a fixture's result really differs, and a rewrite that dropped that atom is compared on the same fixture, so it would be caught. Keep the smallest set: pick instances greedily until every found atom is covered, drop the rest, and cap the extra fixtures (each one is replayed for every candidate). The rows are synthetic and stay in the enclave; only atom shapes and counts leave. Add a sentinel test for that.
+
+**Reporting.** Replace the single "untested" with three states per atom: tested; **searched and no difference found** (budget spent, with the budget stated in DESIGN.md; if the exhaustive pass over the small scope finished, call it "no difference within the search bound"); **not searched** (budget or caps hit before this atom). This touches the egress shape of `untested_atoms` (a fixed state word per atom, from a fixed list in the protocol whitelist), the counterexample payload, and the driver's wording where the caution is shown (`unproven` caution text, the untested-conditions note under a rewrite, 20261004-51): the user wants the report to say how an atom stayed unproven, not just that it did. Keep old messages valid. This is an enclave, protocol and driver change.
+
+**Build in steps.**
+1. A spike (spec-only or a script in the scratchpad) on the corpus's `PENDING` shapes and the real count-query shape (`vacuity_guard_scopes_postgres_spec.rb`): how many atoms does a search with N trials close, how many trials and seconds does it take, and are there shapes it can't close that the rules do? Report the numbers before building the rest. If it runs slower than a few seconds per query, or closes few atoms, stop and report.
+2. The search as a fallback after the rule-based scenarios for atoms still untested (never replacing them: the rule-based fixtures stay as the explainable first pass), with the greedy fixture selection and the budget.
+3. The three-state reporting end to end (enclave, protocol, driver, report), with sentinel and shape checks.
+4. Corpus: run every shape with the search enabled, add a column for which atoms the search closed, and move closed shapes out of `PENDING`; make a regression spec that goes red if the search is disabled.
+Tests: red first for the right reason; mutate (drop the TRUE comparison, count a discarded trial as a difference, skip the rollback so state leaks between trials, use an unseeded generator, ignore the budget) and confirm red; check the arena is empty after a search (no leaked rows) and that a trial that violates a constraint is discarded, not counted.
+
+**Risks to check.** Runtime on queries slow even on tiny data (rely on the statement timeout, count a timeout as no difference); queries with volatile functions, `now()`, sequences or random() (a search must not trust a difference that comes from nondeterminism: run both queries twice in the transaction and discard unstable results, or skip such queries); aggregates and LIMIT without ORDER BY (nondeterministic row choice: reuse the guard's existing subset/multiset rules); search reproducibility across runs (seed); extra fixtures slowing rewrite-test (cap and greedy selection); the 20261010-22 `s1_nonzero_rows` flag and the diagnostic fields stay as they are.
+
+- **Depends on:** 20261010-19 to -36 (landed); do it after the version bump and the user's next run, when the user says to pick up new work.
+- **Came from:** The user, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** **done.** Landed 2026-10-10 (task/20261010-43; review clean, Opus): steps 1 to 4. A seeded search (`vacuity_guard/search.rb`, `search/trials.rb`, `search/skips.rb`; 150 trials per atom, 5 s per query) runs after the rules for atoms still untested, keeps at most 3 trial fixtures as extra S1 fixtures, and reports `searched` or `not_searched` per untested atom (`Protocol::UntestedStates`, `untested_states` in `rewrite_tested`, the report payload and the driver). Six corpus shapes closed. It skips queries with LIMIT/OFFSET, volatile functions, or an aggregate compared with a constant. Not done: `untested_states` in the counterexample payload, a separate "no difference within the search bound" word, the README sample. Follow-ups: 20261010-50 and -51; 20261010-47 gains the state words.

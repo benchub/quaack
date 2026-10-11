@@ -6,7 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-(none. Closed at 0.1.32.)
+- 20261010-12: `not_in_to_not_exists` refuses a NOT IN that appears again in the same SELECT when a copy is in its GROUP BY, DISTINCT ON, or ORDER BY.
+- 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
 
 ## How this file works.
 
@@ -544,15 +545,6 @@ The review of 20261008-55 found two gaps:
 
 ### 20261008-63. Report: calls, wait time, and tokens for each LLM model. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-64. `or_to_union`: the expression-index test misses its guard.
-
-From the review of 20261008-18 and -20. The "the only key's index has an expression" test stays green when `i.indexprs IS NULL` is removed from `assumption_check.rb`, because `Catalog::Keys` already drops the expression column first. Add a test on an index like `(a_id, n, lower(t))`, which reaches the `indexprs` guard.
-
-- **Depends on:** 20261008-18.
-- **Came from:** The review of 20261008-18, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
 ### 20261008-66. Exclusion keys: two untested checks from 20261008-47.
 
 From the review of 20261008-47:
@@ -622,15 +614,6 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Depends on:** 20261003-5.
 - **Came from:** The review of 20261003-5, 2026-10-09.
 - **Design:** report.
-- **Status:** todo
-
-### 20261009-25. `counterexample_steps_postgres_spec.rb` fails when run alone.
-
-Found in the build of 20261004-3. Run by itself, the spec file fails with a LeakCheck load error, but it passes under `rake`, so it depends on load order. Add the missing `require` so it runs alone.
-
-- **Depends on:** none.
-- **Came from:** The build of 20261004-3, 2026-10-09.
-- **Design:** none (test infrastructure).
 - **Status:** todo
 
 ### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it. Done, see BACKLOG-COMPLETE.md.
@@ -784,15 +767,6 @@ From the review of 20261007-58 (minor, a requirement question). The denormalized
 - **Design:** assumption check, CatalogShadow.
 - **Status:** todo (needs the user)
 
-### 20261010-12. `not_in_to_not_exists`: the same NOT IN twice in one SELECT.
-
-From the review of 20261008-4 (minor). When the same NOT IN appears twice in one SELECT and Postgres needs the two copies to match, rewriting only one copy breaks the query: `SELECT x NOT IN (...), count(*) ... GROUP BY x NOT IN (...)` fails with "subquery uses ungrouped column" / "must appear in the GROUP BY clause", and `DISTINCT ON (x NOT IN ...) ... ORDER BY x NOT IN ...` fails with "DISTINCT ON expressions must match initial ORDER BY expressions". The rewrite errors instead of returning different rows, and plan-pruning discards a rewrite that fails to plan (`failed_to_plan`), so nothing wrong is recommended: it only wastes a candidate. Fix by rewriting every identical copy together, or refuse a condition that also appears in the same SELECT's GROUP BY, DISTINCT ON or ORDER BY. Add Postgres-backed tests for both queries and a note in docs/transforms/not_in_to_not_exists.md and DESIGN.md. Enclave change: unreleased list.
-
-- **Depends on:** 20261008-4.
-- **Came from:** The review of 20261008-4, 2026-10-10 (minor).
-- **Design:** rewrite-rules.
-- **Status:** todo
-
 ### 20261010-13. Deep EXPLAIN plans: one unbounded parse, and untested refusals.
 
 From the review of 20261008-22 (minor).
@@ -802,24 +776,6 @@ From the review of 20261008-22 (minor).
 - **Depends on:** 20261008-22.
 - **Came from:** The review of 20261008-22, 2026-10-10 (minor).
 - **Design:** index-from-plan, measurement.
-- **Status:** todo
-
-### 20261010-14. `TableStatistics#type_map`: an empty type string isn't tested.
-
-From the review of 20261008-24 and -25 (minor). Removing the `!v.empty?` check from `TableStatistics#type_map` leaves every spec green. It doesn't affect soundness (the value is only compared with `"bpchar"`), but add `column_types: { "id" => "" }` to the "rejects a type for a column that isn't in the list, and a type that isn't a name" example in `statistics_spec.rb`, and confirm it goes red without the check.
-
-- **Depends on:** 20261008-25.
-- **Came from:** The review of 20261008-24 and -25, 2026-10-10 (minor).
-- **Design:** index-from-query.
-- **Status:** todo
-
-### 20261010-15. Load-order dedupe: test the laziness.
-
-From the review of 20261008-33 (minor). Removing `.lazy` from `distinct_loads` leaves the load-order and counterexample specs green: the comment says a later order's `self_references` query isn't run when an earlier run ends the comparison, but no test shows it. Add a spec with a runner that counts calls (an earlier run that ends the comparison must leave the later orders' queries unrun) and confirm it goes red without `.lazy`.
-
-- **Depends on:** 20261008-33.
-- **Came from:** The review of 20261008-33, 2026-10-10 (minor).
-- **Design:** fixture-compare.
 - **Status:** todo
 
 ### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
@@ -917,32 +873,6 @@ From the review of 20261010-22. Only NULL and numeric zeros (regex `/\A[-+]?(0+(
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261010-43. Vacuity guard: a bounded search for a distinguishing database, behind the rule-based scenarios.
-
-The user, 2026-10-10, approved trying this. **Context.** The vacuity guard (`enclave/lib/quaack/enclave/vacuity_guard.rb`, `vacuity_guard/compared.rb`) reports an atom of the original query as "untested" when no scenario fixture makes the query return something different with that atom replaced by TRUE. Scenario rows are built by hand-written rules (`enclave/lib/quaack/enclave/scenarios*.rb`, `scenarios/plan.rb`, `picker.rb`, `pinned_keys.rb`, `branches.rb`, `siblings.rb`, `unmatched.rb`, `value_pools*.rb`). Every new query shape the corpus (`enclave/spec/vacuity_guard_corpus_postgres_spec.rb`, 120 shapes, a `PENDING` list) turns up has needed another rule (20261010-19, -21, -24, -25, -30, -31, -32, -34, -35, -36). This is whack-a-mole, and "untested" erodes trust in the whole report. Equivalence of arbitrary SQL is undecidable, so some atoms will always stay undecided; the goal is to shrink that set a lot and say honestly why an atom is unproven.
-
-**The idea.** For each atom still untested after the rule-based scenarios, search for a tiny database where the query with the atom and the query with the atom replaced by TRUE return different results (the guard's existing test of "tested"). Use Postgres itself as the oracle, on the existing arena database: one database, one schema, one transaction per trial: `BEGIN`, insert the trial's rows (parents first; reuse `Scenarios::Topology` load order and the value pools), run both queries, compare (reuse the guard's multiset comparison and, for LIMIT/OFFSET shapes, the fixture-compare path in `vacuity_guard/compared.rb`), `ROLLBACK`. No new databases or schemas. A trial that fails to load (constraint violation) or times out (the existing 10 s statement timeout) is discarded and counted against the budget.
-
-**Trial generation (small-scope hypothesis).** 1 to 4 rows per table touched by the query (more for a table whose atom needs a threshold, as `Children::MAX` does); per column, values drawn from the column's pool (`ValuePools`: values that satisfy and fail each atom, boundaries, NULL for nullable columns, enum labels, a few plain values); foreign keys pick among the parent rows present (or NULL when nullable); unique and composite keys get distinct values; CHECKs are respected as the pools already do. Use a seeded generator (seed recorded so a run is reproducible), try an exhaustive pass over very small cases before random ones, and guide the search by the atom: prefer rows that satisfy every other atom and fail this one (near miss), then relax. Per-query budget: at most N trials and T seconds in total (start with N = 300 per untested atom and 20 s per query, measure, tune), like `VacuityGuard::MAX_COMPARISONS`; hitting the budget leaves the atom untested, never "tested".
-
-**What a found instance becomes.** The rows (not a database) become one more fixture in the list the guard, rewrite-test, fixture-compare and counterexamples already replay for every candidate in a `BEGIN`/insert/compare/`ROLLBACK` cycle, in every load order. This is the same soundness argument as 20261010-31's near-misses-only fixture: an atom counts as tested only when a fixture's result really differs, and a rewrite that dropped that atom is compared on the same fixture, so it would be caught. Keep the smallest set: pick instances greedily until every found atom is covered, drop the rest, and cap the extra fixtures (each one is replayed for every candidate). The rows are synthetic and stay in the enclave; only atom shapes and counts leave. Add a sentinel test for that.
-
-**Reporting.** Replace the single "untested" with three states per atom: tested; **searched and no difference found** (budget spent, with the budget stated in DESIGN.md; if the exhaustive pass over the small scope finished, call it "no difference within the search bound"); **not searched** (budget or caps hit before this atom). This touches the egress shape of `untested_atoms` (a fixed state word per atom, from a fixed list in the protocol whitelist), the counterexample payload, and the driver's wording where the caution is shown (`unproven` caution text, the untested-conditions note under a rewrite, 20261004-51): the user wants the report to say how an atom stayed unproven, not just that it did. Keep old messages valid. This is an enclave, protocol and driver change.
-
-**Build in steps.**
-1. A spike (spec-only or a script in the scratchpad) on the corpus's `PENDING` shapes and the real count-query shape (`vacuity_guard_scopes_postgres_spec.rb`): how many atoms does a search with N trials close, how many trials and seconds does it take, and are there shapes it can't close that the rules do? Report the numbers before building the rest. If it runs slower than a few seconds per query, or closes few atoms, stop and report.
-2. The search as a fallback after the rule-based scenarios for atoms still untested (never replacing them: the rule-based fixtures stay as the explainable first pass), with the greedy fixture selection and the budget.
-3. The three-state reporting end to end (enclave, protocol, driver, report), with sentinel and shape checks.
-4. Corpus: run every shape with the search enabled, add a column for which atoms the search closed, and move closed shapes out of `PENDING`; make a regression spec that goes red if the search is disabled.
-Tests: red first for the right reason; mutate (drop the TRUE comparison, count a discarded trial as a difference, skip the rollback so state leaks between trials, use an unseeded generator, ignore the budget) and confirm red; check the arena is empty after a search (no leaked rows) and that a trial that violates a constraint is discarded, not counted.
-
-**Risks to check.** Runtime on queries slow even on tiny data (rely on the statement timeout, count a timeout as no difference); queries with volatile functions, `now()`, sequences or random() (a search must not trust a difference that comes from nondeterminism: run both queries twice in the transaction and discard unstable results, or skip such queries); aggregates and LIMIT without ORDER BY (nondeterministic row choice: reuse the guard's existing subset/multiset rules); search reproducibility across runs (seed); extra fixtures slowing rewrite-test (cap and greedy selection); the 20261010-22 `s1_nonzero_rows` flag and the diagnostic fields stay as they are.
-
-- **Depends on:** 20261010-19 to -36 (landed); do it after the version bump and the user's next run, when the user says to pick up new work.
-- **Came from:** The user, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
 ### 20261010-44. Burndown: minors from 20261010-20.
 
 1. **index-rank's added slice counts combinations, not ideas.** "Trying indexes together" adds 6 combinations (`added: {combinations: 6}`), which the funnel now draws as a lighter slice on top of the 9 ideas it takes in (widest point 15) and then narrows to 4 that went on. That mixes units, and it is the kind of "output wider than input" picture the user objected to. Leave index-rank out of the added slice, or draw it as a separate kind of mark, and word its label so it doesn't read as added ideas.
@@ -985,6 +915,7 @@ Found by the second review of 20261010-35, pre-existing on `main`. Reported coun
 - The cause of the loads steps: `ResultComparison::LoadOrders.distinct_loads` skips the rotated run when a table run has fewer than 3 rows (the same mechanism that carried the count threshold in the rejected 20261010-35 extra-children feature).
 Work out which reported fields can vary with a literal, using the reviewer's experiment as the starting point (scratchpad `review-20261010-35-r2/` of that session: a spec that runs `ScenarioTests.run` per query family varying only the literal, comparing every outgoing field: results, untested shapes, retries, dropped, loads, s1 diagnostics, spills; rebuild it as a committed spec), then make each reported count independent of literal values: bucket it, report a value that doesn't depend on the data, or compute it from shape only (for example count a fixed number of load orders per comparison). The `(a, b, c)` values of an IN list are values; the number of elements is shape. Add the across-literals spec for LIMIT, OFFSET, IN-list values, BETWEEN bounds and count thresholds, as a standing guard (byte-identical outgoing messages when only literals change). This is a Security/Privacy-relevant boundary check; have an Opus reviewer.
 
+- **Also cover (from the review of 20261010-43, 2026-10-10):** the vacuity-guard search's pools hold IN-list values and BETWEEN bounds, so which atoms stay untested, and their `untested_states` words, can change when only those literals change. Extend the across-literals spec to the untested set and `untested_states`.
 - **Depends on:** 20261010-35 (landed).
 - **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown.
@@ -1010,3 +941,43 @@ Work out which reported fields can vary with a literal, using the reviewer's exp
 - **Came from:** The reviews of 20261010-35 and -23, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
+
+### 20261010-50. Vacuity-guard search: the wall clock decides the state word.
+
+From the review of 20261010-43 (minor). `VacuityGuard::Search` stops after `SECONDS = 5` per query, and every atom left then reads `not_searched`. The same query can report `searched` on one machine or load and `not_searched` on another, and which atoms close can differ. No literal value leaks, but the task asked for a search that is reproducible from its seed. Make the trial count the only budget (and size it so a query stays within a few seconds), or keep the clock only as a hard abort that refuses the search instead of changing a word. Test first: the same seed and query give the same states under a slow runner.
+
+- **Depends on:** 20261010-43 (landed).
+- **Came from:** The review of 20261010-43, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
+
+### 20261010-51. Vacuity-guard search: loose ends from 20261010-43.
+
+1. The search skips every query with a LIMIT or OFFSET (it made the threshold-invariance spec fail). That leaves out ORM `find_by ... LIMIT 1` queries. Find a way to search them without letting the result vary with the LIMIT value (do 20261010-47 first).
+2. `untested_states` isn't in the counterexample payload.
+3. There's no separate word for "no difference within the search bound" (the exhaustive small pass finished). Add one only if the report can say it truthfully.
+4. The README sample doesn't show the state sentence.
+5. `Search::Trials` treats each column of a composite unique key as unique on its own (`uniques.flatten`). That wastes trials and is safe; make only the whole key unique.
+
+- **Depends on:** 20261010-43 (landed), 20261010-47 for item 1.
+- **Came from:** The build and review of 20261010-43, 2026-10-10.
+- **Design:** rewrite-test, scenarios, report.
+- **Status:** todo
+
+### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling.
+
+From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, ...)`, which probably also counts copies in nested subqueries and CTEs of the same SELECT, so a copy in another scope plus one in GROUP BY or ORDER BY refuses a rewrite that would have worked (untested). Copies written differently (another alias, an added cast) aren't detected and fall back to `failed_to_plan`, which is safe but wastes a candidate; list that in docs/transforms/not_in_to_not_exists.md. Test the nested-scope case and either count only this SELECT's own copies or document the extra refusal.
+
+- **Depends on:** 20261010-12 (landed).
+- **Came from:** The review of 20261010-12, 2026-10-10.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261010-53. rewrite-test ran a whole hour on one rewrite and killed the run.
+
+The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed at step 9 of 18 (`rewrite-test`): one rewrite took 4 s, the next took 1h00m04s and hit the driver's 3600 s step cap (`Transport::Base::DEFAULT_TIMEOUT`), which failed the whole run. Nothing bounds one rewrite's test except the 10 s statement timeout per statement. Two parts: (1) find why that rewrite was slow (needs the user's profile: rerun the step by hand with `QUAACKS_PROFILE`, README "profile it on the jump server"; same data 20261004-27 item 1 waits for); (2) give rewrite-test a wall-clock budget per rewrite, so a rewrite that can't be tested in time is reported as "could not be tested" and dropped, not fatal. Part 2 is a design change: confirm with the user (budget size, wording in the report) before building.
+
+- **Depends on:** the user's profile for part 1; the user's go-ahead for part 2.
+- **Came from:** The user's run, 2026-10-10.
+- **Design:** rewrite-test, Where QUAACK runs.
+- **Status:** todo (needs the user)
