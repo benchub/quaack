@@ -517,17 +517,6 @@ The review of 20260929-22 and -16 found these minor issues:
 - **Design:** rewrite-rules, report.
 - **Status:** todo
 
-### 20261008-59. Correlated-subquery read columns: minors from 20260927-17.
-
-1. **Set-operation arms are untested.** The `larg`/`rarg` branch in `OuterRefs.select` can be replaced with `return []` and every spec stays green. Add a test with a correlated `EXISTS (SELECT … UNION SELECT …)`.
-2. **Two behaviors have no spec.** No spec covers an inner alias that shadows an outer one. None checks that a unique index on `lower(email)` is accepted when `email` isn't generated.
-3. **`OuterRefs.in` reaches too far.** It also walks the WITH clause and FROM subqueries, which can add extra read columns. That's conservative, but limit it to the WHERE, select-list, and other SubLinks of the query itself.
-
-- **Depends on:** 20260927-17.
-- **Came from:** The review of 20260927-17, 2026-10-08.
-- **Design:** index-from-query.
-- **Status:** todo
-
 ### 20261008-60. Foreign cancels on BEGIN and ROLLBACK: DESIGN.md and a Postgres test.
 
 The review of 20261008-55 found two gaps:
@@ -545,18 +534,6 @@ The review of 20261008-55 found two gaps:
 
 ### 20261008-63. Report: calls, wait time, and tokens for each LLM model. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-66. Exclusion keys: two untested checks from 20261008-47.
-
-From the review of 20261008-47:
-
-1. **The btree strategy-3 condition is untested.** Changing it to `AND true` keeps every spec green. Add a test with an exclusion over a non-equality btree operator, such as `WITH <`.
-2. **The subtype namespace check is untested.** `sn.nspname = 'pg_catalog'` can be removed and every spec stays green. Add a test with a user range over a user type named like a stepped one, such as `other.int4`.
-
-- **Depends on:** 20261008-47.
-- **Came from:** The review of 20261008-47, 2026-10-08.
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
 
 1. **A dead guard (second review of 20261008-61).** The `|| select[:larg]` guard in `InnerCuts.sole_table` never fires, since a set-operation node has no `from_clause`. Remove it.
@@ -565,18 +542,6 @@ From the review of 20261008-47:
 - **Depends on:** 20261008-61.
 - **Came from:** The build and second review of 20261008-61, 2026-10-08.
 - **Design:** fixture-compare.
-- **Status:** todo
-
-### 20261008-68. LLM usage parsing: minors from 20261008-63.
-
-From the second review of 20261008-63:
-
-1. **A malformed `*_tokens_details` still raises.** If `prompt_tokens_details` or `completion_tokens_details` isn't an object (for example `"x"`), `Usage.openai` raises a TypeError. Treat it as not reported.
-2. **`count?`'s type check is untested.** Add a test with a string, float, or negative count in usage.
-
-- **Depends on:** 20261008-63.
-- **Came from:** The second review of 20261008-63, 2026-10-08.
-- **Design:** report, LLM providers.
 - **Status:** todo
 
 ### 20261008-72. `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.

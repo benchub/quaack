@@ -10305,3 +10305,38 @@ Tests: red first for the right reason; mutate (drop the TRUE comparison, count a
 - **Came from:** The user, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
 - **Status:** **done.** Landed 2026-10-10 (task/20261010-43; review clean, Opus): steps 1 to 4. A seeded search (`vacuity_guard/search.rb`, `search/trials.rb`, `search/skips.rb`; 150 trials per atom, 5 s per query) runs after the rules for atoms still untested, keeps at most 3 trial fixtures as extra S1 fixtures, and reports `searched` or `not_searched` per untested atom (`Protocol::UntestedStates`, `untested_states` in `rewrite_tested`, the report payload and the driver). Six corpus shapes closed. It skips queries with LIMIT/OFFSET, volatile functions, or an aggregate compared with a constant. Not done: `untested_states` in the counterexample payload, a separate "no difference within the search bound" word, the README sample. Follow-ups: 20261010-50 and -51; 20261010-47 gains the state words.
+
+### 20261008-59. Correlated-subquery read columns: minors from 20260927-17.
+
+1. **Set-operation arms are untested.** The `larg`/`rarg` branch in `OuterRefs.select` can be replaced with `return []` and every spec stays green. Add a test with a correlated `EXISTS (SELECT … UNION SELECT …)`.
+2. **Two behaviors have no spec.** No spec covers an inner alias that shadows an outer one. None checks that a unique index on `lower(email)` is accepted when `email` isn't generated.
+3. **`OuterRefs.in` reaches too far.** It also walks the WITH clause and FROM subqueries, which can add extra read columns. That's conservative, but limit it to the WHERE, select-list, and other SubLinks of the query itself.
+
+- **Depends on:** 20260927-17.
+- **Came from:** The review of 20260927-17, 2026-10-08.
+- **Design:** index-from-query.
+- **Status:** **done.** Landed 2026-10-10 (task/20261008-59): tests for set-operation arms, an inner alias that shadows an outer one, and a `lower(email)` unique index beside a generated column. Item 3 dropped: narrowing `OuterRefs.in` could miss a LATERAL subquery whose SubLink reads an outer column (`ColumnRefs.in` skips SubLinks), and narrowing only the WITH clause gains little. It stays intentionally conservative.
+
+### 20261008-66. Exclusion keys: two untested checks from 20261008-47.
+
+From the review of 20261008-47:
+
+1. **The btree strategy-3 condition is untested.** Changing it to `AND true` keeps every spec green. Add a test with an exclusion over a non-equality btree operator, such as `WITH <`.
+2. **The subtype namespace check is untested.** `sn.nspname = 'pg_catalog'` can be removed and every spec stays green. Add a test with a user range over a user type named like a stepped one, such as `other.int4`.
+
+- **Depends on:** 20261008-47.
+- **Came from:** The review of 20261008-47, 2026-10-08.
+- **Design:** rewrite-test.
+- **Status:** **done.** Landed 2026-10-10 (task/20261008-66): item 2, a range over an enum named `other.int4` with an `&&` exclusion must be refused (red without the `sn.nspname = 'pg_catalog'` check). Item 1 can't be tested and was dropped: Postgres refuses an exclusion over a non-commutative operator (`WITH <`), and the only commutative btree operators are equalities, so the strategy-3 condition never changes a result. It stays as defensive code.
+
+### 20261008-68. LLM usage parsing: minors from 20261008-63.
+
+From the second review of 20261008-63:
+
+1. **A malformed `*_tokens_details` still raises.** If `prompt_tokens_details` or `completion_tokens_details` isn't an object (for example `"x"`), `Usage.openai` raises a TypeError. Treat it as not reported.
+2. **`count?`'s type check is untested.** Add a test with a string, float, or negative count in usage.
+
+- **Depends on:** 20261008-63.
+- **Came from:** The second review of 20261008-63, 2026-10-08.
+- **Design:** report, LLM providers.
+- **Status:** **done.** Landed 2026-10-10 (task/20261008-68): a `*_tokens_details` that isn't an object leaves out cached and reasoning tokens (`Usage.detail`); `count?`'s type check is tested with a string, float and negative count.
