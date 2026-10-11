@@ -1015,3 +1015,25 @@ From the review of 20261010-35, pre-existing on `main` and the branch: `(SELECT 
 - **Came from:** The review of 20261010-35, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo
+
+### 20261010-47. Trust boundary: counts that leave the enclave vary with query literals (LIMIT, IN-list values).
+
+Found by the second review of 20261010-35, pre-existing on `main`. Reported counts depend on literal values, which must not cross the boundary (DESIGN: shapes, counts and fixed names cross, never values):
+- `fixture_loads` (the burndown total, via `ScenarioTests::Report` `loads`) varies with the LIMIT value at equal untested sets: with no ORDER BY, `LIMIT 1` gives 26 and `LIMIT >= 2` gives 22; with ORDER BY, `LIMIT 0` gives 23 and `LIMIT 1` gives 47.
+- `dropped`, `fixture_loads` and the spills vary with IN-list values (not just their count): `user_id IN (7,10,16)` gives dropped 3 and an extra S5 spill; `(1,4,10)`, `(2,5,11)` and `(100,103,109)` give 2.
+- The cause of the loads steps: `ResultComparison::LoadOrders.distinct_loads` skips the rotated run when a table run has fewer than 3 rows (the same mechanism that carried the count threshold in the rejected 20261010-35 extra-children feature).
+Work out which reported fields can vary with a literal, using the reviewer's experiment as the starting point (scratchpad `review-20261010-35-r2/` of that session: a spec that runs `ScenarioTests.run` per query family varying only the literal, comparing every outgoing field: results, untested shapes, retries, dropped, loads, s1 diagnostics, spills; rebuild it as a committed spec), then make each reported count independent of literal values: bucket it, report a value that doesn't depend on the data, or compute it from shape only (for example count a fixed number of load orders per comparison). The `(a, b, c)` values of an IN list are values; the number of elements is shape. Add the across-literals spec for LIMIT, OFFSET, IN-list values, BETWEEN bounds and count thresholds, as a standing guard (byte-identical outgoing messages when only literals change). This is a Security/Privacy-relevant boundary check; have an Opus reviewer.
+
+- **Depends on:** 20261010-35 (landed).
+- **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
+- **Design:** What goes into the enclave; the burndown.
+- **Status:** todo
+
+### 20261010-48. Untested conditions: a correlated count threshold, built without leaking the threshold.
+
+20261010-35 built n+1 children for a correlated scalar count compared to an integer literal (so `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > 2` is fully tested), but its second review found the threshold leaked through `fixture_loads` (`distinct_loads` steps at 3 rows), and the feature was removed before landing. Rebuild it so that no reported count depends on the threshold (do 20261010-47 first or together: the standing across-literals spec must pass for thresholds 0..9 and every operator), with these findings from the reviews: children only for count(*)/count(x) with no GROUP BY, window and a single target (a non-aggregate scalar subquery returning several rows crashed the guard: `(SELECT p.score FROM posts p WHERE p.user_id = u.id) > 3`); also a count sharing its child table with a non-count scalar subquery crashed S1 (`count(*) > 1 AND (SELECT p2.score ...) > 3`); the child count follows the operator and its side (n+1 for `>`, n for `>=`, `=` and `<=`, n-1 for `<`, 2 for `<> 1` else 1, within 1..10); `count > n` vs `count >= n` rewrites pass rewrite-test for n = 2 and 4..9 because no parent has exactly n children (main misses it too): add a boundary parent with exactly n children and one with n+1; near misses of other atoms under a count threshold keep their children (20261010-46); tighten `Protocol::VacuityDiagnostic.valid?` to nil, 0 or 1 for `s1_rows` and `s1_nonzero_rows` (defense in depth). The rejected branch's code is in git history (task/20261010-35's earlier commits c556f60e and 950568a2).
+
+- **Depends on:** 20261010-47, 20261010-35.
+- **Came from:** The reviews of 20261010-35, 2026-10-10. Priority: the untested conditions.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo
