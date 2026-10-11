@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-6: the error line no longer carries a `cycle` field (removed from the whitelist, enclave ErrorFilter, and driver ErrorFields/EnclaveError).
 - 20261010-53: each rewrite's rewrite-test has a 5-minute wall-clock budget; a rewrite that runs out of time is left out as `out_of_time` (new protocol `RewriteBudget`).
 - 20261008-57: rewrite-check and rewrite-rules dedupe stored rewrites on SQL and stated assumptions together .
+- 20261011-2: a count compared with a constant (also through a derived table or CTE with an aggregate) reports the vacuity guard's worst case (every atom untested, fixed retries and loads, no S1 row counts).
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -752,16 +753,6 @@ From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, 
 - **Depends on:** 20261010-12 (landed).
 - **Came from:** The review of 20261010-12, 2026-10-10.
 - **Design:** rewrite-rules.
-- **Status:** todo
-
-### 20261011-2. Count thresholds and small LIMIT/OFFSET still show in the report (found in the review of 20261010-47).
-
-The review of 20261010-47 grouped outgoing reports by literal value over 0..10 and found classes that differ: LIMIT {0} {1..10}; ORDER BY LIMIT {0} {1} {2..10}; OFFSET {0} {1} {2..10}; `count(*) > n` {0} {1} {2} {3} {4..10}; `HAVING count() > n` {0} {1} {2..10}; IN list with `count(*) >= n` {0} {1} {2} {3..10}. The differing fields are loads (7/10/16/25 for `count(*) > 0..3`), retries, the untested set, `untested_states` and results (row_count vs pass). It saturates by 4, nothing scales without bound. LIMIT and OFFSET (0, 1, 2+) are a coarse shape fact. **Count thresholds are not**: an observer recovers the exact n for n = 0..3 from `loads` or the untested set, and small thresholds are the common case. This was already so on main before 20261010-47 (the diff only fixed LIMIT and IN-list values). DESIGN says literal values never cross.
-Do: (1) make the fields that depend on a count threshold's value independent of it (bucket, report a fixed value, or compute from shape only; the result classes above are what the guard truly finds, so the likely route is to report, for a query with a count compared to a constant, the same untested set, states, loads and retries for every threshold, for example by treating those atoms as unproven and not counting loads for them), without weakening the guard's honesty; (2) extend `across_literals_postgres_spec.rb` so it passes for thresholds 0..10 and every operator, and add a family that straddles the old 3-row load step (the standing guard doesn't catch a revert of `counted_as` today); (3) fix the DESIGN.md sentence 20261010-47 added so it doesn't imply full independence for thresholds until this lands. Do 20261010-48's work after this (48 needs the spec to pass for thresholds 0..9). Security/Privacy-relevant boundary check: Opus builder and reviewer. Enclave change: unreleased list.
-
-- **Depends on:** 20261010-47 (landed).
-- **Came from:** The review of 20261010-47, 2026-10-11. Priority: trust boundary.
-- **Design:** What goes into the enclave; the burndown.
 - **Status:** todo
 
 ### 20261011-5. Denormalized fixture: a UNIQUE or CHECK on the copy column (minors from 20261010-2).
