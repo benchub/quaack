@@ -65,11 +65,18 @@ module Quaack
           to_tsvector to_tsquery plainto_tsquery phraseto_tsquery websearch_to_tsquery json_to_tsvector
           jsonb_to_tsvector ts_debug ts_headline ts_lexize
         ].to_set.freeze
-        # A type's input or binary input function, such as record_in,
-        # enum_recv, or numeric_in. Given its second argument, a type oid,
-        # one raises for an oid that names nothing (20261010-16). A call to
-        # one with two or more arguments is refused, whatever they are.
-        TYPE_INPUT = /(in|recv)\z/
+        # pg_catalog's type input and binary input functions, on Postgres 18,
+        # that take a type oid: those whose name ends in in or recv, with an
+        # oid among two or more arguments. Given an oid that names nothing,
+        # one raises, so a call is a lookup (20261010-16). A spec checks
+        # this list against the catalog.
+        OID_TYPE_INPUTS = %w[
+          anycompatiblemultirange_in anycompatiblerange_in anymultirange_in anyrange_in array_in array_recv
+          bit_in bit_recv bpcharin bpcharrecv domain_in domain_recv enum_in enum_recv interval_in
+          interval_recv multirange_in multirange_recv numeric_in numeric_recv range_in range_recv record_in
+          record_recv time_in time_recv timestamp_in timestamp_recv timestamptz_in timestamptz_recv timetz_in
+          timetz_recv varbit_in varbit_recv varcharin varcharrecv
+        ].to_set.freeze
         PRIVILEGE = /\Ahas_[a-z_]+_privilege\z/
         STATS = /\Apg_stat_get_/
 
@@ -81,10 +88,6 @@ module Quaack
         # doesn't make, argument for argument.
         def syntactic!(parse, original_sql)
           raise Error.new("unsupported_reg_literal", REG_DETAIL) if casts?(parse) || reg_calls?(parse)
-
-          if type_input_calls?(parse)
-            raise Error.new("unsupported_reg_literal", "a type's input function given a type oid is unsupported in v1")
-          end
 
           lookup = unmade_lookup(parse, original_sql)
           return unless lookup
@@ -105,10 +108,6 @@ module Quaack
           end
         end
 
-        def type_input_calls?(parse)
-          calls(parse.tree).any? { TYPE_INPUT.match?(name(it).to_s) && it.args.size >= 2 }
-        end
-
         def reg_calls?(parse) = calls(parse.tree).any? { TYPES.include?(name(it)) }
 
         # Whether a text search call's first argument holds an integer
@@ -120,6 +119,7 @@ module Quaack
 
         def lookup?(name)
           NAME_LOOKUPS.include?(name) || OID_LOOKUPS.include?(name) || INPUT_FUNCTIONS.include?(name) ||
+            OID_TYPE_INPUTS.include?(name) ||
             PRIVILEGE.match?(name.to_s) ||
             STATS.match?(name.to_s)
         end

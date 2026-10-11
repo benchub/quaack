@@ -669,8 +669,33 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       "SELECT numeric_in('1'::cstring, 999999, -1) FROM orders"
     ].each do |sql|
       it "refuses #{sql}, a type input function given an oid" do
-        expect { check(sql) }.to rejected("unsupported_reg_literal")
+        expect { check(sql) }.to rejected("name_lookup_function")
       end
+    end
+
+    [
+      ["SELECT date_bin('15 minutes', created_at, now()) FROM orders",
+       "pg_catalog.date_bin('15 minutes', created_at, pg_catalog.now())"],
+      ["SELECT id FROM orders WHERE ST_DWithin(id, id, 3)", "st_dwithin(id, id, 3)"],
+      ["SELECT id FROM orders WHERE is_admin(id, 7)", "is_admin(id, 7)"]
+    ].each do |sql, call|
+      it "doesn't refuse #{sql} as a type input function" do
+        outcome = begin
+          check(sql).sql
+        rescue described_class::Error => e
+          e.rule
+        end
+        expect(%w[unsupported_reg_literal name_lookup_function]).not_to include(outcome)
+        expect(outcome.downcase).to include(call.downcase) if outcome.include?("(")
+      end
+    end
+
+    it "accepts a type input function given an oid that the original makes, as the original makes it" do
+      original = described_class::Original.new(
+        relations:, placeholders: 1, sql: "SELECT numeric_in($1::cstring, 1700, -1) FROM public.orders"
+      )
+      expect(check("SELECT numeric_in($1::cstring, 1700, -1) FROM orders", original:).sql)
+        .to include("numeric_in($1::cstring, 1700, -1)")
     end
 
     it "still accepts an ordinary one-argument function whose name ends in in" do
@@ -717,7 +742,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       SQL
       values = Quaack::Enclave::RewriteCandidateCheck::RegValues
       unnamed = found.reject do |f|
-        values.lookup?(f) || values::TS_CONFIG.include?(f) || values::TYPE_INPUT.match?(f) || reviewed.match?(f)
+        values.lookup?(f) || values::TS_CONFIG.include?(f) || reviewed.match?(f)
       end
 
       expect(conn.exec("SHOW server_version_num").getvalue(0, 0)).to start_with("18")
