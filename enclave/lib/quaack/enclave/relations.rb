@@ -68,6 +68,8 @@ module Quaack
     # A relation in a system schema, such as pg_catalog.pg_class or a
     # pg_toast table, is refused as system_relation before its relkind is
     # read.
+    # That catches every toast table first, since they all live in pg_toast,
+    # so toast_relation is a backstop that no query reaches today.
     #
     # The other refusals: parse_error, unsupported_construct, bad_search_path
     # (the Settings' search_path doesn't read), ambiguous_user_schema (see
