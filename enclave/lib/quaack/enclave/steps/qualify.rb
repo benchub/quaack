@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require_relative "../inventory/production"
 require_relative "../plan_tables"
 require_relative "../relations"
@@ -65,6 +66,9 @@ module Quaack
         # The tablespaces of tables $1 (schemas) and $2 (names) and of their
         # indexes, by name, sorted. A relation with none of its own is in the
         # database's default tablespace, which stands under its own name.
+        # The first column counts the tables found, so a scanned relation
+        # missing from pg_class refuses (fails closed) instead of dropping
+        # out of the needed set.
         TABLESPACES_SQL = <<~SQL
           WITH tables AS (
             SELECT c.oid
@@ -78,21 +82,27 @@ module Quaack
             UNION
             SELECT indexrelid FROM pg_catalog.pg_index WHERE indrelid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT oid FROM tables))
           )
-          SELECT DISTINCT s.spcname
-          FROM used
-          JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) used.oid
-          JOIN pg_catalog.pg_tablespace s ON s.oid OPERATOR(pg_catalog.=) CASE
-            WHEN c.reltablespace OPERATOR(pg_catalog.=) 0::pg_catalog.oid
-            THEN (SELECT dattablespace FROM pg_catalog.pg_database
-                  WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database())
-            ELSE c.reltablespace END
-          ORDER BY s.spcname
+          SELECT (SELECT pg_catalog.count(DISTINCT oid) FROM tables), pg_catalog.array_to_json(ARRAY(
+            SELECT DISTINCT s.spcname
+            FROM used
+            JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) used.oid
+            JOIN pg_catalog.pg_tablespace s ON s.oid OPERATOR(pg_catalog.=) CASE
+              WHEN c.reltablespace OPERATOR(pg_catalog.=) 0::pg_catalog.oid
+              THEN (SELECT dattablespace FROM pg_catalog.pg_database
+                    WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database())
+              ELSE c.reltablespace END
+            ORDER BY s.spcname))
         SQL
 
         def tablespaces(scanned, connection)
-          connection.exec_params(TABLESPACES_SQL, [RelationQualifier.text_array(scanned.map(&:schema)),
-                                                   RelationQualifier.text_array(scanned.map(&:name))])
-                    .column_values(0)
+          found, names = connection.exec_params(TABLESPACES_SQL,
+                                                [RelationQualifier.text_array(scanned.map(&:schema)),
+                                                 RelationQualifier.text_array(scanned.map(&:name))]).values.first
+          if Integer(found) < scanned.map { [it.schema, it.name] }.uniq.size
+            raise Relations::Error.new("unknown_relation", "a scanned table isn't in pg_class"), cause: nil
+          end
+
+          JSON.parse(names)
         end
 
         # The schemas of path $1, in order, but those that exist and the

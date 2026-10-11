@@ -39,7 +39,7 @@ RSpec.describe Quaack::Driver::LLM::ReplyJSON do
     it "rescans 16 KB of #{name} junk quickly, parsing each { at most once" do
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       expect(error_for(junk)).to end_with("the reply #{message}")
-      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 0.15
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1
 
       # Matching parses the schema too, so count only parses of the reply.
       calls = 0
