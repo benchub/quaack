@@ -6,8 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261011-13: rewrite-test speed: spills lift each group's parents once, the group's own rows are indexed (`Scenarios::Held`), one setval per load, the shared slot value is memoized, fixture rows keep their hash; no change to any reported field.
-- 20261011-15: rewrite-test `out_of_time` now passed true and goes on; burndown extra `not_tested_in_time`; report payload `out_of_time` Boolean.
+(none. Closed at 0.1.34.)
 
 ## How this file works.
 
