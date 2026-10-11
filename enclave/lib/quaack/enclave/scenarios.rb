@@ -155,6 +155,7 @@ module Quaack
       GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil, shift: 0, also: [].freeze }.freeze
       SPLIT_KEY = 100_000
       COPY_KEY = 200_000
+      AVOID_KEY = 10_000_000
 
       # A foreign key of table, on columns, whose row points at the parent
       # row in the group with key (the hit, which S3 holds).
@@ -378,7 +379,22 @@ module Quaack
         # The key's value (see Group#key_for), one every column of the slot
         # reads.
         def key_value(slot, group, table, name)
-          @values.shared_nth(slots.columns(slot), group.key_for(table, name, own: @topology.own_key?(table, name)))
+          columns = slots.columns(slot)
+          number = group.key_for(table, name, own: @topology.own_key?(table, name))
+          (0..).lazy.map { @values.shared_nth(columns, number + (AVOID_KEY * it)) }.find { !pooled_value?(it) }
+        end
+
+        # A group's own key steers clear of every value a pool holds: the
+        # query's literals and the values beside them. Else whether a
+        # group's own key happens to be a list's value (a.id IN (1, 4, 10)
+        # holds the first group's key, IN (7, 10, 16) doesn't) would decide
+        # whether it takes its own key or a list value, and so which groups
+        # collide, and dropped, the spills and the fixture loads would carry
+        # the list's values out of the enclave (20261010-47). A clash moves
+        # the key by AVOID_KEY until it's clear.
+        def pooled_value?(value)
+          @pooled_values ||= @pools.values.flat_map { [*it.satisfying, *it.failing, *it.boundaries] }.to_set(&:to_s)
+          @pooled_values.include?(value.to_s)
         end
 
         # Unique columns get a value per distinct row: rows alike in every

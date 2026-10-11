@@ -150,6 +150,25 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
       expect(loads.size).to eq(1)
     end
 
+    # How many it skips follows the rows, and through them the query's
+    # literals, so the burndown's count is the same whatever runs (20261010-47).
+    it "counts every comparison as three loads, however many it skips" do
+      counts = [runs(1, 3), runs(2, 1, 2), runs(1, 1, 1)].map do |rows|
+        before = runner.loads
+        same(rows)
+        runner.loads - before
+      end
+
+      expect(counts).to eq([3, 3, 3])
+    end
+
+    it "counts three loads when a comparison ends early on a mismatch" do
+      before = runner.loads
+      described_class.compare_in_load_orders(runner, runs(1, 1), original: "SELECT 1", candidate: "SELECT 2")
+
+      expect(runner.loads - before).to eq(3)
+    end
+
     it "still runs the first load when there are no rows" do
       same([])
 

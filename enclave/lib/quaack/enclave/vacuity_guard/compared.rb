@@ -39,8 +39,14 @@ module Quaack
 
         private
 
+        # Its loads aren't counted (ArenaRunner#uncounted): whether equal
+        # rows leave an atom vacuous follows the LIMIT's value (LIMIT 1
+        # hides a loosened atom, LIMIT 2 doesn't), so how many comparisons
+        # run does too (20261010-47).
         def compare(runner, rows, sql, query, inserts)
-          verdict = ResultComparison.compare_in_load_orders(runner, rows, original: sql, candidate: query, inserts:)
+          verdict = runner.uncounted do
+            ResultComparison.compare_in_load_orders(runner, rows, original: sql, candidate: query, inserts:)
+          end
           ResultComparator::MISMATCHES.include?(verdict.rule)
         rescue ArenaRunner::Error
           false

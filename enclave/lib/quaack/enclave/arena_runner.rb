@@ -6,6 +6,32 @@ require_relative "arena_fixture"
 
 module Quaack
   module Enclave
+    # ArenaRunner's count of fixture loads.
+    module LoadCount
+      # How many fixtures with_fixture has started to load, one that failed
+      # included: the burndown's fixture loads.
+      attr_reader :loads
+
+      # Runs the block, then puts loads back as it was, for loads whose
+      # number mustn't leave the enclave (VacuityGuard::Search's trials).
+      def uncounted
+        before = @loads
+        yield
+      ensure
+        @loads = before
+      end
+
+      # Runs the block, then counts it as count loads however many it ran,
+      # and however it ended, for loads whose number follows the data
+      # (ResultComparison.compare_in_load_orders).
+      def counted_as(count)
+        before = @loads
+        yield
+      ensure
+        @loads = before + count
+      end
+    end
+
     # fixture-open, fixture-load, and fixture-rollback, reused by counterexample-compare and counterexample-rollback:
     # open a transaction on arena with statement_timeout, load a fixture, run queries, and always roll back, so arena
     # stays empty between tests.
@@ -66,9 +92,7 @@ module Quaack
 
       DEFAULT_STATEMENT_TIMEOUT_MS = 10_000
 
-      # How many fixtures with_fixture has started to load, one that failed
-      # included: the burndown's fixture loads.
-      attr_reader :loads
+      include LoadCount
 
       # What index_scans: false sets for the transaction. It's a fixed list
       # the runner owns, so no caller's SQL runs a SET.
@@ -114,13 +138,6 @@ module Quaack
       # While it runs, it drops every notice on the connection, since a
       # notice can carry a real value and libpq's default receiver prints it
       # on stderr. It puts the previous receiver back when it's done.
-      # Runs the block, then puts loads back as it was, for loads whose
-      # number mustn't leave the enclave (VacuityGuard::Search's trials).
-      def uncounted
-        before = @loads
-        yield.tap { @loads = before }
-      end
-
       def with_fixture(rows = [], inserts: [], index_scans: true, &)
         check_fixture(rows, inserts, index_scans)
         refuse_unless_idle

@@ -483,8 +483,9 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         "rewrite-test" => { "rewrite_1" => counted(out: 1, extra: { "untested_atoms" => 1,
                                                                     "vacuity_guard_retries" => 3 }) }
       )
-      # A load that repeats an earlier one isn't run or counted (20261008-33).
-      expect(burndown["totals"]).to eq("fixture_loads" => 21)
+      # A load that repeats an earlier one isn't run (20261008-33), but each comparison counts as
+      # its three load orders however many it runs (20261010-47).
+      expect(burndown["totals"]).to eq("fixture_loads" => 25)
     end
 
     it "drops a disproved rewrite by its scenario, and an untested one by the refusal's rule" do
@@ -553,7 +554,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(burndown).to eq("stages" => { "counterexamples" => { "rewrite_1" => counted(
         dropped: { "round_2" => 1 }, extra: { "atoms_covered" => 0 }
-      ) } }, "totals" => { "fixture_loads" => 3 })
+      ) } }, "totals" => { "fixture_loads" => 7 })
     end
 
     # RewriteFate calls this counterexamples_failed, not a disproof, so the
@@ -580,7 +581,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       first = burndown
       expect(first).to eq("stages" => { "counterexamples" => { "rewrite_1" => counted(
         out: 1, extra: { "atoms_covered" => 1 }
-      ) } }, "totals" => { "fixture_loads" => 4 })
+      ) } }, "totals" => { "fixture_loads" => 10 })
       remove("rewrite_survived_1")
 
       [note_row, dup_rows, dup_rows].each.with_index(1) { |insert, number| round(number, insert) }
@@ -663,7 +664,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       # The round's rule is stored, so the report can tell a mismatch from
       # a candidate that failed to run (20261001-17).
       expect(stored.read("rewrite_round_1"))
-        .to eq("round" => 1, "evidence" => true, "rule" => "row_count", "covered" => [], "fixture_loads" => 2)
+        .to eq("round" => 1, "evidence" => true, "rule" => "row_count", "covered" => [], "fixture_loads" => 4)
       expect_no_leaks(sentinels, outcome)
     end
 
@@ -751,7 +752,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(1, note_row)).first).to include("match" => true)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
       expect(stored.read("rewrite_round_1"))
-        .to eq("round" => 1, "evidence" => true, "rule" => nil, "covered" => [], "fixture_loads" => 2)
+        .to eq("round" => 1, "evidence" => true, "rule" => nil, "covered" => [], "fixture_loads" => 4)
       round(2, dup_rows)
       round(3, dup_rows)
       expect(stored.read("rewrite_survived_1")).to eq("survived" => true, "evidence" => true)
