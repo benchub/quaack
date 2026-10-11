@@ -826,3 +826,21 @@ Test first in `driver/spec/report_spec.rb` (structure: the two sections have no 
 - **Design:** report.
 - **Status:** todo
 
+### 20261011-15. A rewrite that rewrite-test couldn't finish isn't disproved: don't drop it.
+
+From the user, 2026-10-11, reading a run where all four slow rewrites hit the 5-minute budget and were left out: the mechanical tests can only disprove a rewrite, never allow one, so a timeout isn't a disproof and the rewrite shouldn't be dropped for it. 20261010-53 (my design, never confirmed with the user beyond the 5-minute figure) made `out_of_time` drop the rewrite: fate `rewrite_test_out_of_time`, `passed` false, `Counterexamples.survived(..., false)`, so it skipped counterexamples and everything after. Change it: a rewrite whose rewrite-test ran out of time continues to counterexamples (the LLM's rows) and on to result-comparison on the real data and the rest, exactly like one that passed, but carries a fixed caution through the protocol and into the report: its mechanical test didn't finish within 5 minutes, so it was checked only by the LLM's counterexamples and on the real data (say so in plain words, in the report beside the rewrite and in the burndown: not a drop; a stage note "not tested in time", count carried on; the Sankey and funnel must show it flowing on, with the note). Reuse the existing `unproven` caution mechanism if it fits. It must not count as a disproof or a rule bug, and the fate/word lists in the protocol stay fixed lists. Check selection: an untested rewrite should rank below tested ones with equal results, or at least show the caution wherever the rewrite appears (say what you chose). Test first (an out-of-time rewrite is still sent to counterexamples and result-comparison; the report and burndown wording; sentinel/trust-boundary checks; old messages valid), mutate, update DESIGN.md (the rewrite-test budget paragraph, the burndown, the report) and the README sample. Enclave, protocol and driver change; Opus builder and reviewer.
+
+- **Depends on:** 20261010-53 (landed).
+- **Came from:** The user, 2026-10-11. Priority: high, the whole pipeline lost its rewrites to a timeout.
+- **Design:** rewrite-test, burndown, report.
+- **Status:** todo
+
+### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Needs the user's go.
+
+The user, 2026-10-11, expected a stage that runs every rewrite through hundreds of small random datasets, independent of the scenario-based rewrite-test. No such stage exists: the vacuity-guard search (20261010-43, up to 150 trials per atom and 300 per query) only looks for fixtures that expose an untested atom of the ORIGINAL query, keeps at most 3, and replays them inside rewrite-test, so when rewrite-test doesn't run (out of time) nothing from it runs either. Build one: reuse the search's trial generator (`vacuity_guard/search/trials.rb`: 1 to 4 rows per table, pool values, boundaries, NULLs, seeded) to load a tiny random database in an arena transaction, run the original and the rewrite on it, compare results with the existing multiset/ordering rules, rollback, repeat for N trials per rewrite (budget by trial count, never the clock, plus the same per-rewrite wall-clock deadline as rewrite-test); any difference disproves the rewrite (a counterexample the report can show as shape only, never values). It would run for every rewrite not already disproved, including the ones whose scenario test timed out (20261011-15). Decide with the user: N, where it sits in the order (between rewrite-test and counterexamples), whether a pass strengthens the report's wording ("also survived N random small databases"), the cost at 583 tables (same RowSet and scenario costs as 20261011-13). Trust boundary: trial rows are synthetic and stay in the enclave; only counts and fixed words leave.
+
+- **Depends on:** 20261011-15, 20261011-13.
+- **Came from:** The user, 2026-10-11.
+- **Design:** rewrite-test, scenarios.
+- **Status:** todo (needs the user)
+
