@@ -103,7 +103,8 @@
   h4 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
   svg.sankey { display: block; width: 100%; height: auto; margin: 0.5rem 0 0.75rem; }
   svg.sankey text { font: 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--funnel-count); }
-  svg.sankey text.stage { font-size: 13px; font-weight: 600; fill: var(--funnel-text); }
+  svg.sankey text.layer { font-size: 13px; font-weight: 600; fill: var(--funnel-text); }
+  svg.sankey text.step { font-style: italic; }
   svg.sankey text.counts { fill: var(--funnel-text); }
   svg.sankey text.flow { fill: var(--funnel-text); }
 </style>
@@ -392,13 +393,13 @@
 <h4>Sankey diagram, the same data</h4>
 <%= sankeys(id, title, rows, of_rewrite: id == "rewrite-index") %>
 <h4>Table, with the exact numbers</h4>
-<table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Held back for a real build</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
+<table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside for testing during ranking</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
 <tbody>
 <% rows.each do |name, record, stage| %>
 <tr<%= stage_tip(stage, of_rewrite: id == "rewrite-index") %>><th scope="row"><%= h name %></th><%= stage_cells(record, stage) %></tr>
 <% end %>
 </tbody></table>
-<p class="note" id="burndown-<%= id %>-held-back">Held back for a real build means QUAACK kept the idea instead of dropping it, so it can try building it. index-dedupe, and the LLM&#39;s rounds of index ideas, hold back GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test holds back B-tree ideas on columns with few distinct values that the planner left unused.</p>
+<p class="note" id="burndown-<%= id %>-held-back">Set aside for testing during ranking means QUAACK kept the idea instead of dropping it, so it can test it by building it while it ranks the indexes. index-dedupe, and the LLM&#39;s rounds of index ideas, set aside GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test sets aside B-tree ideas on columns with few distinct values that the planner left unused.</p>
 <% end %>
 <h3>LLM calls</h3>
 <% if call_rows.empty? %>

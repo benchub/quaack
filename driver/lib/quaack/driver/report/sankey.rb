@@ -13,19 +13,18 @@ module Quaack
       # Sankey diagrams beside its funnel, from the same stage records.
       #
       # The funnel keeps one width for everything in the pipe. A Sankey
-      # shows where each part came from and where it went: each stage is a
-      # node, what carries on from one stage to the next is a ribbon, each
-      # source in a stage's "added" is its own named input, and each drop
-      # reason, and what the stage held back for a real build, is its own
-      # named sink. Nothing widens out of nowhere.
+      # shows where each part came from and where it went: each state is a
+      # layer (see SankeyLayers), each source in a stage's "added" is its own
+      # named input, each drop reason is its own named sink, and what a stage
+      # set aside for testing during ranking flows into a layer of its own.
+      # Nothing widens out of nowhere.
       #
       # The units change along the way, and a diagram's widths mean one
       # unit, so each table is cut into one diagram per unit (UNITS), each
       # with a caption naming it. The cut is by stage (STAGE_UNIT): a
       # table's rows stay in order, and a diagram ends where the unit
-      # changes. The ribbon that leaves a diagram's last stage ends at a
-      # node that says it went on to the diagram below, and the next
-      # diagram begins with a node that says what the one above sent.
+      # changes. A diagram's last layer is what it hands on, and the next
+      # diagram begins with a layer that says what the one above sent.
       #
       # SankeyDrawing does the layout and the SVG; SankeyStages builds what
       # it draws from the rows Stages gives (the same rows the funnel and the
@@ -58,6 +57,12 @@ module Quaack
                       "this diagram counts candidates."
         }.freeze
 
+        # Why the ranking tries as many combinations as it does (index-rank is greedy).
+        COMBINATIONS = "Why this many combinations: QUAACK doesn't try every combination. It takes the " \
+                       "best single index and pairs it with each of the others, then tries triples the same way, " \
+                       "keeping an addition only while it lowers the cost, up to three indexes. So n ideas take " \
+                       "about n - 1 pairs and up to n - 2 triples."
+
         # The Sankey diagrams for a table's rows, as Stages gives them, one
         # per unit, each under a caption naming its unit.
         def sankeys(id, title, rows, of_rewrite: false)
@@ -73,44 +78,46 @@ module Quaack
 
         # One diagram under its caption. around is whether there's a diagram before it, and one after.
         def sankey_figure(key, title, segment, of_rewrite, around)
-          stages = sankey_layers(sankey_stages(segment, of_rewrite))
+          stages = sankey_stages(segment, of_rewrite)
+          layers, steps = sankey_states(stages, sankey_start(stages.first, before: around[0]), after: around[1])
           words = "#{title}, stage by stage, as a Sankey diagram. The table below has the exact numbers."
-          sankey_caption(key, segment.first[2], of_rewrite) +
-            SankeyDrawing.new(id: key, title: words, start: sankey_start(stages.first, before: around[0]), stages:,
-                              finish: sankey_finish(stages.last, after: around[1])).svg
+          sankey_caption(key, segment, of_rewrite) +
+            SankeyDrawing.new(id: key, title: words, layers:, steps:).svg
         end
 
         def sankey_stages(segment, of_rewrite)
           segment.each_with_index.map { |(name, record, stage), i| sankey_stage(i, name, record, stage, of_rewrite) }
         end
 
-        def sankey_caption(key, stage, of_rewrite)
+        def sankey_caption(key, segment, of_rewrite)
+          stage = segment.first[2]
           unit = sankey_unit(stage)
           unit = :rewrite_ideas if unit == :ideas && of_rewrite
-          %(<p class="note unit" id="#{key}-unit">#{Funnel.text(UNITS.fetch(unit))}</p>\n)
+          words = [UNITS.fetch(unit), (sankey_combinations(of_rewrite) if unit == :sets)].compact.join(" ")
+          %(<p class="note unit" id="#{key}-unit">#{Funnel.text(words)}</p>\n)
+        end
+
+        # Why the ranking tried as many combinations as it did, and for the rewrites, how many
+        # each rewrite's own search tried.
+        def sankey_combinations(of_rewrite)
+          return COMBINATIONS unless of_rewrite
+
+          tried = burndown["stages"].fetch("index-rank", {}).except("original")
+          each = tried.map do |name, record|
+            "#{Format.number(record.dig("added", "combinations").to_i)} for #{Words.rewrite(name, run_id)}"
+          end
+          "#{COMBINATIONS} Each rewrite has its own index search, so the count here adds them up across " \
+            "#{Words.count(tried.size, "rewrite")}: #{each.join(", ")}."
         end
 
         # What the diagram above sent on, or what came in before the first
         # stage, when the first stage counted it.
         def sankey_start(first, before:)
-          return unless first.came_in.to_i.positive?
+          return unless first.state != :unknown && first.inn.to_i.positive?
 
-          sankey_edge(:start, first.inn, before ? "Carried in from the diagram above" : "Carried in",
-                      "#{Format.number(first.inn)} came in.")
-        end
-
-        # What the last stage sent on, if it counted it and it isn't none.
-        def sankey_finish(last, after:)
-          return unless last.state == :full && last.out.positive?
-
-          sankey_edge(:end, last.out, after ? "Went on to the diagram below" : "Went on",
-                      "#{Format.number(last.out)} went on.")
-        end
-
-        def sankey_edge(kind, count, label, tip)
-          SankeyLayout::Stage.new(id: kind.to_s, kind:, state: :full, inn: kind == :end ? count : 0,
-                                  out: kind == :end ? nil : count, sources: [], sinks: [],
-                                  line: "#{label}: #{Format.number(count)}", carry_tip: tip)
+          words = "#{before ? "Carried in from the diagram above" : "Carried in"}: #{Format.number(first.inn)}"
+          SankeyParts::Layer.new(id: "start", role: :start, name: words, state: :full, total: first.inn, line: words,
+                                 tip: "#{Format.number(first.inn)} came in.", sources: [], spread: false)
         end
       end
     end

@@ -2387,7 +2387,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "names the columns in words" do
       expect(index_table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
-        .to eq(["Stage", "Added", "Dropped", "Held back for a real build", "Went on", "Also counted"])
+        .to eq(["Stage", "Added", "Dropped", "Set aside for testing during ranking", "Went on", "Also counted"])
     end
 
     it "has no Came in column or cell, and a note under each table says which stages hold ideas back" do
@@ -2395,10 +2395,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(index_table.scan(%r{<tr[^>]*><th scope="row">[^<]*</th>(.*?)</tr>}).first.first.scan("<td").size).to eq(5)
       %w[index rewrite rewrite-index].each do |id|
         note = burndown_section[%r{</table>\s*<p class="note" id="burndown-#{id}-held-back">(.*?)</p>}m, 1]
-        expect(note).to include("index-dedupe, and the LLM&#39;s rounds of index ideas, hold back GIN, GiST, and " \
+        expect(note).to start_with("Set aside for testing during ranking means")
+        expect(note).to include("index-dedupe, and the LLM&#39;s rounds of index ideas, set aside GIN, GiST, and " \
                                 "SP-GiST ideas")
-        expect(note).to include("index-test holds back").and include("the planner left unused")
-        expect(note).to include("real build")
+        expect(note).to include("index-test sets aside").and include("the planner left unused")
+        expect(note).not_to include("held back")
+        expect(note).not_to include("real build")
       end
     end
 
@@ -2694,7 +2696,9 @@ RSpec.describe Quaack::Driver::Report do
         "llm-index-ideas" => "The LLM suggests indexes that QUAACK's own search missed.",
         "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
         "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
-                        "dropping, up to three.",
+                        "dropping, up to three. It doesn't try every combination: it pairs the best single " \
+                        "index with each of the others, then tries triples the same way, so n ideas take about " \
+                        "n - 1 pairs and up to n - 2 triples.",
         "rewrite-rules" => "The transform rules rewrite the query, and QUAACK drops rewrites that fail its checks.",
         "llm-rewrites" => "The LLM suggests rewrites of the original query, and QUAACK drops any that fail " \
                           "its checks or go over the limit of five.",
@@ -2847,10 +2851,10 @@ RSpec.describe Quaack::Driver::Report do
       expect(counts(bands(funnel("index"))[2]).length).to eq(Quaack::Driver::Report::Funnel::LINE)
     end
 
-    it "says what a stage held back beside its band, and not in its tooltip" do
+    it "says what a stage set aside for testing during ranking beside its band, and not in its tooltip" do
       stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1200)
       band = bands(funnel("index"))[2]
-      expect(counts(band)).to eq("3 went on, 1,200 held back · dropped: the same as another idea: 2")
+      expect(counts(band)).to start_with("3 went on, 1,200 set aside for testing during ranking · dropped")
       expect(band[%r{<title>.*?</title>}m]).not_to include("1,200")
     end
 
@@ -3208,10 +3212,17 @@ RSpec.describe Quaack::Driver::Report do
 
     # What a diagram's layers say, top to bottom.
     def layers(id, number, html = out)
-      texts(sankey(id, number, html)).select { it[:kind] == "stage" }.map { it[:text] }
+      texts(sankey(id, number, html)).select { it[:kind] == "layer" }.map { it[:text] }
     end
 
-    def stage_nodes(svg) = nodes(svg, "stage")
+    def stage_nodes(svg) = nodes(svg, "layer")
+
+    # A layer's label, for the layer rect: the text on the layer's row.
+    def layer_named(svg, words) = stage_nodes(svg).find { |node| layer_text(svg, node) == words }
+
+    def layer_text(svg, node)
+      texts(svg).find { it[:kind] == "layer" && (it[:y] - node["y"].to_f - 15).abs < 0.01 }&.fetch(:text)
+    end
 
     # A node's id's stage count, and the flows in and out of it, from the ribbons.
     def inflow(svg, id) = ribbons(svg).select { it["data-to"] == id }.sum { it["data-count"].to_i }
@@ -3219,6 +3230,8 @@ RSpec.describe Quaack::Driver::Report do
     def outflow(svg, id) = ribbons(svg).select { it["data-from"] == id }.sum { it["data-count"].to_i }
 
     def numbers(path) = path.scan(/-?\d+(?:\.\d+)?/).map(&:to_f)
+
+    def steps(id, number, html = out) = texts(sankey(id, number, html)).select { it[:kind] == "step" }.map { it[:text] }
 
     it "draws a Sankey diagram under each funnel and over its table, and says they show the same data" do
       burndown = section(out, "burndown")
@@ -3232,192 +3245,206 @@ RSpec.describe Quaack::Driver::Report do
         .to include("same counts").and include("funnel").and include("Sankey")
     end
 
-    it "draws one diagram per unit, each with a caption naming its unit, and keeps each stage in its own" do
+    it "draws one layer per state, in order: a stage that adds and drops is a merge layer and the layer after it" do
       expect(layers("index", 1)).to eq(
         ["Mechanical index ideas: 9", "After removing duplicates and indexes you already have: 8",
-         "After testing for planner utility: 6", "Combined with new ideas from the LLM: 8",
-         "After the LLM&#39;s second round of ideas: 9"]
+         "After testing for planner utility: 6", "Combined with new ideas from the LLM: 11",
+         "After testing the LLM&#39;s ideas: 8", "Combined with the LLM&#39;s second round of ideas: 10",
+         "After the LLM&#39;s second round of ideas: 9", "Set aside for testing during ranking: 1"]
       )
-      expect(layers("index", 2)).to eq(["After trying indexes together: 4"])
+      expect(layers("index", 2)).to eq(["Carried in from the diagram above: 9", "Index sets to try: 15",
+                                        "After trying indexes together: 4"])
       expect(layers("rewrite", 1)).to eq(
-        ["Rewrites from the transform rules: 2", "Combined with rewrites from the LLM: 6",
+        ["Rewrites from the transform rules: 4", "After removing duplicate rule rewrites: 2",
+         "Combined with rewrites from the LLM: 7", "After checking the LLM&#39;s rewrites: 6",
          "Combined with your own rewrites: 7", "After checking what each rewrite assumes: 6",
          "After checking each rewrite runs differently: 5", "After testing on made-up edge-case data: 4",
          "After testing on data the LLM wrote to break them: 3"]
       )
-      expect(layers("rewrite", 2)).to eq(["Candidates after choosing indexes for each rewrite: 3",
+      expect(layers("rewrite", 2)).to eq(["Carried in from the diagram above: 3",
+                                          "Candidates after choosing indexes for each rewrite: 3",
                                           "Candidates after measuring on the real data: 2"])
-      burndown = section(out, "burndown")
-      captions = %w[index-1 index-2 rewrite-1 rewrite-2 rewrite-index-1 rewrite-index-2].to_h do |key|
-        [key, burndown[%r{<p class="note unit" id="sankey-#{key}-unit">(.*?)</p>}m, 1]]
+      %w[index rewrite rewrite-index].each do |id|
+        [1, 2].each do |n|
+          svg = sankey(id, n)
+          expect(layers(id, n).uniq).to eq(layers(id, n))
+          expect(stage_nodes(svg).size).to eq(layers(id, n).size)
+          expect(svg).not_to include("Went on")
+          expect(nodes(svg, "end")).to eq([])
+        end
       end
-      expect(captions["index-1"]).to start_with("Unit: index ideas.")
-      expect(captions["index-2"]).to start_with("Unit: index sets.")
-      expect(captions["rewrite-1"]).to start_with("Unit: rewrites.")
-      expect(captions["rewrite-2"]).to start_with("Unit: candidates.")
-      expect(captions["rewrite-index-1"]).to start_with("Unit: index ideas")
-      expect(captions["rewrite-index-2"]).to start_with("Unit: index sets.")
-      expect(captions.values).to all(be_a(String))
     end
 
-    it "draws one layer node per stage, or per run of stages that only add, in the table's order" do
-      %w[index rewrite].each do |id|
-        table = section(out, "burndown")[%r{<table id="burndown-#{id}">.*?</table>}m]
-        rows = table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten
-        names = [1, 2].flat_map { |n| stage_nodes(sankey(id, n)).flat_map { it["data-stage"].split("; ") } }
-        expect(names).to eq(rows)
-      end
-      first = stage_nodes(sankey("rewrite", 1))
-      expect(first.map { it["data-stage"] }).to eq(Quaack::Driver::Report::Words::REWRITE_STAGES.keys.map { named(it) })
-      expect(first.map { it["data-count"].to_i }).to eq([2, 6, 7, 6, 5, 4, 3])
-      expect(stage_nodes(sankey("rewrite", 2)).map { it["data-count"].to_i }).to eq([3, 2])
-      expect(stage_nodes(sankey("index", 1)).map { it["data-count"].to_i }).to eq([9, 8, 6, 8, 9])
-      expect(stage_nodes(sankey("index", 2)).map { it["data-count"].to_i }).to eq([4])
+    it "draws each layer as wide as its state: in plus added for a merge layer, what went on for the next" do
+      svg = sankey("index", 1)
+      scale = sankey_module::SPINE_MAX / 11.0
+      merge = layer_named(svg, "Combined with new ideas from the LLM: 11")
+      after = layer_named(svg, "After testing the LLM&#39;s ideas: 8")
+      expect(merge["width"].to_f).to be_within(0.05).of(scale * 11)
+      expect(after["width"].to_f).to be_within(0.05).of(scale * 8)
+      expect([merge["data-count"], after["data-count"]]).to eq(%w[11 8])
+      expect(inflow(svg, merge["data-id"])).to eq(11)
+      expect(inflow(svg, after["data-id"])).to eq(8)
+      expect(outflow(svg, merge["data-id"])).to eq(11)
+      carry = ribbons(svg, "carry").find { it["data-to"] == merge["data-id"] }
+      expect(carry["data-count"]).to eq("6")
+      expect(numbers(carry["d"])[6]).to be_within(0.05).of(merge["x"].to_f + (scale * 5))
+      lands = ribbons(svg, "source").find { it["data-to"] == merge["data-id"] }
+      expect(numbers(lands["d"])[6]).to be_within(0.05).of(merge["x"].to_f)
     end
 
-    it "gives each source in a stage's added its own named input, and each drop and held-back count its own sink" do
+    it "labels each transition with its step, and sends each drop off to the right with its own label" do
+      names = Quaack::Driver::Report::Words::INDEX_STAGES
+      expect(steps("index", 1)).to eq(names.values_at("index-dedupe", "index-test", "llm-index-ideas",
+                                                      "llm-index-refine").map { esc(it) })
+      expect(steps("index", 2)).to eq([names["index-rank"]])
+      expect(steps("rewrite-index", 2)).to eq([names["index-rank"]])
+      svg = sankey("index", 1)
+      step = texts(svg).find { it[:text] == names["index-test"] }
+      above = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      below = layer_named(svg, "After testing for planner utility: 6")
+      expect(step[:y]).to be > above["y"].to_f + 22
+      expect(step[:y]).to be < below["y"].to_f
+      drop = nodes(svg, "drop").find { it["data-stage"] == esc(names["index-test"]) }
+      expect(drop["y"].to_f).to be > step[:y]
+      expect(drop["y"].to_f).to be < below["y"].to_f
+      expect(nodes(svg, "drop").map { it["x"].to_f }).to all(be > layout_module::LEFT + sankey_module::SPINE_MAX)
+      expect(texts(svg).select { it[:kind] == "flow" }.map { it[:text] })
+        .to include("Dropped, never used by the planner: 1", "Dropped, the same as another idea: 1")
+    end
+
+    it "lays a layer's bottom edge out as what was set aside, then what carried on, then the drops, side by side" do
+      svg = sankey("index", 1)
+      from = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      carry = numbers(ribbons(svg, "carry").find { it["data-from"] == from["data-id"] }["d"])
+      held = numbers(ribbons(svg, "held").first["d"])
+      drop = numbers(ribbons(svg, "drop").find { it["data-from"] == from["data-id"] }["d"])
+      expect(held[0]).to be_within(0.01).of(from["x"].to_f)
+      expect(carry[0]).to be_within(0.01).of(held[-2])
+      expect(drop[0]).to be_within(0.01).of(carry[-2])
+      expect(drop[-2]).to be <= from["x"].to_f + from["width"].to_f + 0.01
+    end
+
+    it "spreads the first layer's sources across the whole picture, and keeps later sources in lanes on the left" do
       svg = sankey("rewrite", 1)
-      rules = nodes(svg, "source").select { it["data-stage"] == named("rewrite-rules") }
-      expect(rules.map { it["data-count"].to_i }).to eq([3, 1])
-      sources = texts(svg).select { it[:kind] == "source" }.map { it[:text] }
-      expect(sources).to include("By the transform rule key_in_self_join: 3", "By the transform rule or_to_union: 1",
-                                 "From the LLM: 5", "From you: 1")
-      labels = texts(svg).select { it[:kind] == "flow" }.map { it[:text] }
-      expect(labels).to include("Dropped, the same as another idea: 2",
-                                "Dropped, failed the checks on what goes in: 1")
-      held = nodes(sankey("index", 1), "held")
-      expect(held.map { [it["data-stage"], it["data-count"].to_i] }).to eq([[named("index-test"), 1]])
-      expect(texts(sankey("index", 1)).map { it[:text] }).to include("Held back for a real build: 1")
-      expect(nodes(svg, "drop").size).to eq(6)
-      expect(nodes(svg, "source").size).to eq(4)
+      first = stage_nodes(svg).first
+      spread = nodes(svg, "source").select { it["data-id"].start_with?("#{first["data-id"]}-in") }
+      expect(spread.map { it["data-count"] }).to eq(%w[3 1])
+      expect(spread.first["x"].to_f).to be < 20
+      expect(spread.last["x"].to_f).to be > layout_module::LEFT
+      labels = texts(svg).select { it[:kind] == "source" }
+      expect(labels.first(2).map { it[:text] }).to eq(["By the transform rule key_in_self_join: 3",
+                                                       "By the transform rule or_to_union: 1"])
+      expect(labels.first(2).map { it[:y] }.uniq.size).to eq(1)
+      later = nodes(svg, "source") - spread
+      expect(later.map { it["data-count"] }).to eq(%w[5 1])
+      expect(later.map { it["x"].to_f + it["width"].to_f }).to all(be < layout_module::LEFT)
+      combos = nodes(sankey("index", 2), "source")
+      expect(combos.map { it["x"].to_f + it["width"].to_f }).to all(be < layout_module::LEFT)
     end
 
-    it "carries a stage's out into the next stage's in as a ribbon, and nothing appears out of nowhere" do
-      svg = sankey("rewrite", 1)
-      carries = ribbons(svg, "carry")
-      expect(carries.map { it["data-count"].to_i }).to eq([2, 6, 7, 6, 5, 4, 3])
-      ids = stage_nodes(svg).map { it["data-id"] }
-      expect(carries.first(6).map { [it["data-from"], it["data-to"]] }).to eq(ids.each_cons(2).to_a)
-      expect(carries.last["data-to"]).to eq("end")
-      expect(nodes(svg, "end").first["data-count"]).to eq("3")
-      expect(nodes(svg, "start")).to eq([])
+    it "draws what a stage set aside as a transition into its own layer at the bottom left" do
+      svg = sankey("index", 1)
+      held = nodes(svg, "held").find { it["class"].split.include?("layer") }
+      expect(held["data-count"]).to eq("1")
+      expect(held["x"].to_f + held["width"].to_f).to be < layout_module::LEFT
+      expect(held["y"].to_f).to be > stage_nodes(svg).reject { it == held }.map { it["y"].to_f }.max
+      ribbon = ribbons(svg, "held").first
+      from = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      expect([ribbon["data-from"], ribbon["data-to"],
+              ribbon["data-count"]]).to eq([from["data-id"], held["data-id"], "1"])
+      expect(svg).not_to include("Held back")
     end
 
-    it "keeps every stage's flows whole: what goes into a node equals what comes out of it" do
+    it "shows every source a unit has, with a zero when it added nothing" do
+      stages["llm-index-refine"] = { "original" => rec(8, 8, extra: { "nothing_fell_short" => 1 }) }
+      stages["operator-rewrites"] = { "rewrites" => rec(6, 6) }
+      svg = sankey("index", 1)
+      zero = nodes(svg, "source").find { it["data-stage"] == named("llm-index-refine") }
+      expect(zero["data-count"]).to eq("0")
+      expect(zero["width"].to_f).to be_within(0.01).of(sankey_module::MIN_THICKNESS)
+      expect(texts(svg).map { it[:text] }).to include("From the LLM: 0")
+      expect(ribbons(svg).map { it["data-count"].to_i }).to all(be_positive)
+      expect(layers("index", 1)).to include("Combined with the LLM&#39;s second round of ideas: 8")
+      rewrite = sankey("rewrite", 1)
+      expect(texts(rewrite).map { it[:text] }).to include("From you: 0")
+      expect(nodes(rewrite, "source").find { it["data-stage"] == named("operator-rewrites") }["data-count"]).to eq("0")
+    end
+
+    it "draws a run with no rewrites at all as zero sources and zero layers, never an empty stack" do
+      Quaack::Driver::Report::Words::REWRITE_STAGES.each_key { stages[it] = { "rewrites" => rec(0, 0) } }
+      %w[assumption-check plan-pruning rewrite-test counterexamples].each { stages[it] = { "rewrites" => rec(0, 0) } }
+      words = texts(sankey("rewrite", 1)).map { it[:text] }
+      expect(words).to include("From the transform rules: 0", "From the LLM: 0", "From you: 0")
+      expect(words).to include("Rewrites from the transform rules: 0")
+    end
+
+    it "keeps a layer's flows whole: what came into it is its count, and what leaves is the same" do
       %w[index rewrite rewrite-index].each do |id|
         [1, 2].each do |n|
           svg = sankey(id, n)
           stage_nodes(svg).each do |node|
-            next if node["class"].include?("unknown")
+            next if node["class"].include?("unknown") || node["class"].include?("start")
 
-            expect(inflow(svg, node["data-id"])).to eq(outflow(svg, node["data-id"])),
-                                                    "#{id}-#{n} #{node["data-stage"]}: in != out"
+            expect(inflow(svg, node["data-id"])).to eq(node["data-count"].to_i), "#{id}-#{n} #{node["data-id"]}: in"
+            leaves = outflow(svg, node["data-id"])
+            expect(leaves).to eq(node["data-count"].to_i), "#{id}-#{n} #{node["data-id"]}: out" if leaves.positive?
           end
         end
       end
     end
 
-    it "starts a later diagram with what the diagram above sent on, and ends an earlier one the same way" do
-      expect(nodes(sankey("index", 1), "end").first["data-count"]).to eq("9")
-      expect(texts(sankey("index", 1)).map { it[:text] }).to include("Went on to the diagram below: 9")
+    it "carries the last layer of an earlier diagram into the first of the next, and says so in its hover" do
+      last = stage_nodes(sankey("index", 1)).reject { it["class"].include?("held") }.last
+      expect(last["title"]).to include("9 went on to the diagram below.")
       start = nodes(sankey("index", 2), "start").first
       expect(start["data-count"]).to eq("9")
       expect(ribbons(sankey("index", 2), "carry").first["data-from"]).to eq("start")
-      words = texts(sankey("index", 2)).map { it[:text] }
-      expect(words).to include("Carried in from the diagram above: 9", "Went on: 4")
-      expect(nodes(sankey("rewrite", 2), "start").first["data-count"]).to eq("3")
     end
 
-    it "keeps the ranking stage's combinations apart from ideas, as sets tried, never as added ideas" do
-      svg = sankey("index", 2)
-      expect(nodes(svg, "source").map { it["data-count"].to_i }).to eq([6])
-      expect(texts(svg).map { it[:text] }).to include("Combinations tried: 6")
-      expect(inflow(svg, stage_nodes(svg).first["data-id"])).to eq(15)
-      expect(outflow(svg, stage_nodes(svg).first["data-id"])).to eq(15)
+    it "explains why the ranking tried as many combinations as it did, in the sets caption and its hover" do
+      burndown = section(out, "burndown")
+      caption = burndown[%r{<p class="note unit" id="sankey-index-2-unit">(.*?)</p>}m, 1]
+      expect(caption).to include("best single").and include("pairs").and include("triples")
+      expect(caption).to include("doesn&#39;t try every combination")
+      rewrites = burndown[%r{<p class="note unit" id="sankey-rewrite-index-2-unit">(.*?)</p>}m, 1]
+      expect(rewrites).to include("across 1 rewrite: 1 for Rewrite")
+      tip = Quaack::Driver::Report::StageSentences.for("index-rank")
+      expect(tip).to include("pairs").and include("triples")
+      expect(sankey("index", 2)).to include(esc(tip))
+      summed = Quaack::Driver::Report::StageSentences.for("index-rank", of_rewrite: true)
+      expect(summed).to end_with("the counts here add up every rewrite&#39;s.".gsub("&#39;", "'"))
+      expect(sankey("rewrite-index", 2)).to include(esc(summed))
+      expect(sankey("index", 2)).not_to include("add up every rewrite")
     end
 
-    it "draws widths on one scale per diagram: a ribbon is as thick as its count, against the diagram's widest node" do
+    it "draws widths on one scale per diagram, against the diagram's widest layer" do
       svg = sankey("index", 1)
-      peak = 11.0
-      scale = sankey_module::SPINE_MAX / peak
-      carry = ribbons(svg, "carry").find { it["data-from"] == stage_nodes(svg)[1]["data-id"] }
-      start_x = numbers(carry["d"])
-      expect(start_x[-2] - start_x[0]).to be_within(0.05).of(scale * 8)
-      expect(start_x[8] - start_x[6]).to be_within(0.05).of(scale * 8)
+      scale = sankey_module::SPINE_MAX / 11.0
       widest = stage_nodes(svg).map { it["width"].to_f }.max
       expect(widest).to be_within(0.05).of(sankey_module::SPINE_MAX)
       sink = nodes(svg, "drop").find { it["data-count"] == "2" }
       expect(sink["height"].to_f).to be_within(0.05).of(scale * 2)
     end
 
-    it "tapers a ribbon whose two ends don't join up, so a mismatch shows in the picture as well as the table" do
+    it "tapers a carry whose two ends don't join up, so a mismatch shows in the picture as well as the table" do
       stages["index-test"] = { "original" => rec(7, 5, dropped: { "never_used" => 2 }) }
       svg = sankey("index", 1)
-      carry = ribbons(svg, "carry").find { it["data-from"] == stage_nodes(svg)[1]["data-id"] }
+      from = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      carry = ribbons(svg, "carry").find { it["data-from"] == from["data-id"] }
       scale = sankey_module::SPINE_MAX / 11.0
       nums = numbers(carry["d"])
-      expect([nums[-2] - nums[0], nums[8] - nums[6]]).to all(be_positive)
-      expect(nums[-2] - nums[0]).to be_within(0.05).of(scale * 8)
-      expect(nums[8] - nums[6]).to be_within(0.05).of(scale * 7)
+      expect(nums[-2] - nums[0]).to be_within(0.05).of(scale * 6)
+      expect(nums[8] - nums[6]).to be_within(0.05).of(scale * 5)
     end
 
-    it "draws each source as a flat bar of its own in its own lane on its stage's row, as wide as its count" do
-      svg = sankey("rewrite", 1)
-      scale = sankey_module::SPINE_MAX / 7.0
-      stage = stage_nodes(svg).find { it["data-stage"] == named("rewrite-rules") }
-      bars = nodes(svg, "source").select { it["data-stage"] == named("rewrite-rules") }
-      expect(bars.map { it["width"].to_f }.zip([3, 1])).to all(satisfy { |wide, n|
-        (wide - [scale * n, 2.0].max).abs < 0.05
-      })
-      expect(bars.map { it["y"] }.uniq.size).to eq(1)
-      expect(bars.first["y"].to_f + bars.first["height"].to_f).to be <= stage["y"].to_f
-      expect(stage["y"].to_f - bars.first["y"].to_f).to be <= layout_module::MERGE + layout_module::FLAT
-      lanes = bars.map { [it["x"].to_f, it["x"].to_f + it["width"].to_f] }
-      expect(lanes.each_cons(2).map { |(_, right), (left, _)| left - right }).to all(be_positive)
-      expect(lanes.last.last).to be < stage["x"].to_f
-    end
-
-    it "merges a stage's sources into its flow: its bar is in plus added wide, and each source's ribbon reaches it" do
-      svg = sankey("rewrite", 1)
-      scale = sankey_module::SPINE_MAX / 7.0
-      stage = stage_nodes(svg).find { it["data-stage"] == named("llm-rewrites") }
-      expect(stage["width"].to_f).to be_within(0.05).of(scale * (2 + 5))
-      ends = ribbons(svg, "source").select { it["data-to"] == stage["data-id"] }.map { numbers(it["d"]) }
-      expect(ends.size).to eq(1)
-      lands = ends.first.values_at(6, 7, 8)
-      expect(lands[1]).to be_within(0.01).of(stage["y"].to_f)
-      expect(lands[0]).to be_within(0.05).of(stage["x"].to_f)
-      expect(lands[2] - lands[0]).to be_within(0.05).of(scale * 5)
-      expect(ends.first[-2] - ends.first[0]).to be_within(0.05).of(scale * 5)
-      carry = ribbons(svg, "carry").find { it["data-to"] == stage["data-id"] }
-      expect(carry["data-count"]).to eq("2")
-      expect(numbers(carry["d"])[6]).to be_within(0.05).of(stage["x"].to_f + (scale * 5))
-    end
-
-    it "makes a stage's bar as wide as what came in plus what it added, even when its counts don't add up" do
-      stages["llm-rewrites"] = { "rewrites" => rec(2, 3, added: { "llm" => 5 }) }
-      svg = sankey("rewrite", 1)
-      stage = stage_nodes(svg).find { it["data-stage"] == named("llm-rewrites") }
-      expect(stage["width"].to_f).to be_within(0.05).of(sankey_module::SPINE_MAX)
-    end
-
-    it "orders the sources' bars and ribbons so none cross: the first bar's ribbon meets the stage's edge first" do
-      svg = sankey("rewrite", 1)
-      stage = stage_nodes(svg).find { it["data-stage"] == named("rewrite-rules") }
-      sources = ribbons(svg, "source").select { it["data-to"] == stage["data-id"] }
-      expect(sources.size).to eq(2)
-      by_bar = sources.sort_by { numbers(it["d"])[0] }
-      lands = by_bar.map { numbers(it["d"])[6] }
-      expect(lands).to eq(lands.sort)
-      expect(lands.uniq.size).to eq(2)
-    end
-
-    it "orders the sinks' ribbons so none cross: the top sink leaves the stage's bottom edge last" do
+    it "orders the sinks' ribbons so none cross: the top sink leaves the layer's bottom edge last" do
       stages["rewrite-test"] = { "rewrites" => rec(5, 2, dropped: { "s2" => 1, "s3" => 1, "s4" => 1 }) }
       svg = sankey("rewrite", 1)
       rect_y = ->(id) { nodes(svg).find { it["data-id"] == id }["y"].to_f }
-      node = stage_nodes(svg).find { it["data-stage"] == named("rewrite-test") }
-      sinks = ribbons(svg).select { it["data-from"] == node["data-id"] && it["class"].include?("drop") }
+      to = layer_named(svg, "After testing on made-up edge-case data: 2")
+      from = stage_nodes(svg)[stage_nodes(svg).index(to) - 1]
+      sinks = ribbons(svg, "drop").select { it["data-from"] == from["data-id"] }
       expect(sinks.size).to eq(3)
       ys = sinks.to_h { |sink| [numbers(sink["d"])[0], rect_y.call(sink["data-to"])] }
       expect(ys.sort.map(&:last)).to eq(ys.values.sort.reverse)
@@ -3431,12 +3458,10 @@ RSpec.describe Quaack::Driver::Report do
       one = nodes(svg, "drop").find { it["data-count"] == "1" }
       expect(one["height"].to_f).to be >= sankey_module::MIN_THICKNESS
       expect(ribbons(svg).map { it["data-count"].to_i }).to all(be_positive)
-      expect(nodes(svg, "source").map { it["data-count"].to_i }).not_to include(0)
       expect(svg).not_to match(/NaN|Infinity/)
-      expect(ribbons(svg, "carry")[1]["data-count"]).to eq("12000")
     end
 
-    it "draws a diagram whose every count is zero without ribbons, with each stage still a visible node" do
+    it "draws a diagram whose every count is zero without ribbons, with each layer still visible" do
       stages.each_value { |by| by.each_key { |search| by[search] = rec(0, 0) } }
       %w[index rewrite].each do |id|
         [1, 2].each do |n|
@@ -3471,34 +3496,20 @@ RSpec.describe Quaack::Driver::Report do
           expect(boxes.map { it[3] }.max).to be <= height
           boxes.combination(2).each do |one, other|
             apart = one[2] <= other[0] || other[2] <= one[0] || one[3] <= other[1] || other[3] <= one[1]
-            expect(apart).to be(true), "labels meet: #{one} #{other}"
+            expect(apart).to be(true), "labels meet in #{id}-#{n}: #{one} #{other}"
           end
-          slots = (nodes(svg, "drop") + nodes(svg, "held"))
-                  .map { [it["y"].to_f, it["y"].to_f + it["height"].to_f] }.sort
-          expect(slots.each_cons(2).map { |(_, above), (below, _)| below - above }).to all(be >= 0)
+          bars = nodes(svg).map { [it["y"].to_f, it["y"].to_f + it["height"].to_f, it["x"].to_f] }
+          drops = nodes(svg, "drop").map { [it["y"].to_f, it["y"].to_f + it["height"].to_f] }.sort
+          expect(drops.each_cons(2).map { |(_, above), (below, _)| below - above }).to all(be >= 0)
+          expect(bars.map(&:first)).to all(be >= 0)
         end
       end
-    end
-
-    it "draws a skipped refine as a stage that carries the pool straight through, and no LLM rewrites as no source" do
-      stages["llm-index-refine"] = { "original" => rec(8, 8, extra: { "nothing_fell_short" => 1 }) }
-      stages["llm-rewrites"] = { "rewrites" => rec(2, 2, extra: { "no_ideas_tested" => 0 }) }
-      stages["operator-rewrites"] = { "rewrites" => rec(2, 2) }
-      refine = stage_nodes(sankey("index", 1)).last
-      expect(refine["data-count"]).to eq("8")
-      svg = sankey("index", 1)
-      expect([inflow(svg, refine["data-id"]), outflow(svg, refine["data-id"])]).to eq([8, 8])
-      others = nodes(svg).select { it["data-stage"] == named("llm-index-refine") && it["class"] != "node stage" }
-      expect(others).to eq([])
-      rewrite = sankey("rewrite", 1)
-      expect(nodes(rewrite, "source").map { it["data-stage"] }.uniq).to eq([named("rewrite-rules")])
-      expect(nodes(rewrite, "drop").map { it["data-stage"] }).not_to include(named("llm-rewrites"))
     end
 
     it "gives each ribbon and node a hover of the stage's sentence and its own numbers, and nothing else" do
       svg = sankey("rewrite", 1)
       sentence = esc(Quaack::Driver::Report::StageSentences::TABLE.fetch("llm-rewrites"))
-      node = stage_nodes(svg).find { it["data-stage"] == named("llm-rewrites") }
+      node = layer_named(svg, "Combined with rewrites from the LLM: 7")
       expect(node["title"]).to eq("#{sentence} 2 came in. 5 added. 1 dropped. 6 went on.")
       source = nodes(svg, "source").find { it["data-stage"] == named("llm-rewrites") }
       expect(source["title"]).to eq("#{sentence} From the LLM: 5.")
@@ -3508,7 +3519,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(ribbon["title"]).to eq(drop["title"])
       carry = ribbons(svg, "carry").find { it["data-from"] == node["data-id"] }
       expect(carry["title"]).to eq("#{sentence} 6 went on.")
-      expect(svg.scan(%r{<title>(.*?)</title>}m).flatten.grep(/Also counted|Set aside|Held/)).to eq([])
+      expect(svg.scan(%r{<title>(.*?)</title>}m).flatten.grep(/Also counted|Held/)).to eq([])
     end
 
     it "says 'the rewrite' in the rewrites' index searches' hovers, and the original query's in the original's" do
@@ -3521,30 +3532,27 @@ RSpec.describe Quaack::Driver::Report do
       expect(sankey("rewrite-index", 1)).not_to include(esc(tip))
     end
 
-    it "draws a stage the run didn't record as a grey dashed node that says so, never as a count" do
+    it "draws a stage the run didn't record as a grey dashed layer that says so, never as a count" do
       stages.delete("index-test")
       svg = sankey("index", 1)
       unknown = stage_nodes(svg).find { it["data-stage"] == named("index-test") }
-      expect(unknown["class"]).to eq("node stage unknown")
+      expect(unknown["class"]).to eq("node layer after unknown")
       expect(unknown["style"]).to include("var(--uncounted-fill)").and include("var(--uncounted-stroke)")
       expect(unknown).not_to have_key("data-count")
       expect(unknown["title"]).to include("not recorded").and include(esc("doesn't mean none"))
-      expect(texts(svg).select { it[:kind] == "stage" }.map { it[:text] })
-        .to include("After testing for planner utility: not recorded")
+      expect(layers("index", 1)).to include("After testing for planner utility: not recorded")
       grey = ribbons(svg).select { it["class"].split.include?("unknown") }
-      expect(grey.map { [it["data-from"], it["data-to"]] })
-        .to include([unknown["data-id"], stage_nodes(svg)[3]["data-id"]],
-                    [stage_nodes(svg)[1]["data-id"], unknown["data-id"]])
+      expect(grey.map { it["data-from"] }).to include(unknown["data-id"])
+      expect(grey.map { it["data-to"] }).to include(unknown["data-id"])
     end
 
-    it "draws a stage that counted only what came in with its in-flow, and a grey way on" do
+    it "draws a stage that counted only what came in with its way in, and a grey way on" do
       stages["index-test"] = { "original" => rec(8, 0).except("out") }
       svg = sankey("index", 1)
       partial = stage_nodes(svg).find { it["data-stage"] == named("index-test") }
-      expect(partial["class"]).to eq("node stage partial")
-      expect(inflow(svg, partial["data-id"])).to eq(8)
-      expect(ribbons(svg).find { it["data-from"] == partial["data-id"] }["class"]).to include("unknown")
-      expect(texts(svg).map { it[:text] }).to include("After testing for planner utility: not recorded")
+      expect(partial["class"]).to eq("node layer after partial")
+      expect(ribbons(svg).find { it["data-to"] == partial["data-id"] }["class"]).to include("unknown")
+      expect(layers("index", 1)).to include("After testing for planner utility: not recorded")
     end
 
     it "draws diagrams for a run that recorded no burndown, every stage not recorded and no ribbons" do
@@ -3553,7 +3561,7 @@ RSpec.describe Quaack::Driver::Report do
         [1, 2].each do |n|
           svg = sankey(id, n, html)
           expect(ribbons(svg)).to eq([])
-          expect(stage_nodes(svg).map { it["class"] }.uniq).to eq(["node stage unknown"])
+          expect(stage_nodes(svg).map { it["class"].split.last }.uniq).to eq(["unknown"])
         end
       end
       expect(sankey("rewrite-index", 1, html)).to include("not recorded")
@@ -3583,82 +3591,27 @@ RSpec.describe Quaack::Driver::Report do
     it "joins stages that only add into one layer with several sources, and keeps a stage with its own sinks apart" do
       svg = sankey("index", 1)
       layer = stage_nodes(svg).first
-      query = named("index-from-query")
-      plan = named("index-from-plan")
-      expect(layer["data-stage"]).to eq("#{query}; #{plan}")
+      expect(layer["data-stage"]).to eq("#{named("index-from-query")}; #{named("index-from-plan")}")
       bars = nodes(svg, "source").select { it["data-id"].start_with?("#{layer["data-id"]}-in") }
       expect(bars.map { it["data-count"] }).to eq(%w[7 2])
-      scale = sankey_module::SPINE_MAX / 11.0
-      expect(layer["width"].to_f).to be_within(0.05).of(scale * 9)
-      expect(inflow(svg, layer["data-id"])).to eq(9)
-      expect(outflow(svg, layer["data-id"])).to eq(9)
-      expect(stage_nodes(svg).map { it["data-stage"] }).not_to include(plan)
       expect(texts(svg).select { it[:kind] == "source" }.first(2).map { it[:text] })
         .to eq(["From the query&#39;s text: 7", "From the query&#39;s plan: 2"])
-      tip = Quaack::Driver::Report::StageSentences::TABLE.values_at("index-from-query", "index-from-plan").map { esc(it) }
-      expect(layer["title"]).to eq("#{tip.join(" ")} 9 added. 9 went on.")
-      rules, llm = %w[rewrite-rules llm-rewrites].map { named(it) }
-      expect(stage_nodes(sankey("rewrite", 1)).map { it["data-stage"] }).to include(rules, llm)
     end
 
-    it "joins every rewrite stage that only adds into one layer, and a stage that drops anything stays apart" do
-      stages["rewrite-rules"] = { "rewrites" => rec(0, 3, added: { "key_in_self_join" => 3 }) }
-      stages["llm-rewrites"] = { "rewrites" => rec(3, 8, added: { "llm" => 5 }) }
-      stages["operator-rewrites"] = { "rewrites" => rec(8, 9, added: { "operator" => 1 }) }
-      stages["assumption-check"] = { "rewrites" => rec(9, 8, dropped: { "unmet_assumption" => 1 }) }
-      svg = sankey("rewrite", 1)
-      expect(layers("rewrite", 1).first(2)).to eq(["Rewrites from every source: 9",
-                                                   "After checking what each rewrite assumes: 8"])
-      layer = stage_nodes(svg).first
-      expect(nodes(svg, "source").select { it["data-stage"] == layer["data-stage"] }.map { it["data-count"] })
-        .to eq(%w[3 5 1])
-      expect(layer["width"].to_f).to be_within(0.05).of(sankey_module::SPINE_MAX)
-      expect(inflow(svg, layer["data-id"])).to eq(9)
-    end
-
-    it "never joins a stage that has its own drops, even after a stage that only adds" do
-      stages["rewrite-rules"] = { "rewrites" => rec(0, 3, added: { "key_in_self_join" => 3 }) }
-      stages["llm-rewrites"] = { "rewrites" => rec(3, 7, added: { "llm" => 5 }, dropped: { "inbound_check" => 1 }) }
-      stages["operator-rewrites"] = { "rewrites" => rec(7, 8, added: { "operator" => 1 }) }
-      expect(layers("rewrite", 1).first(3)).to eq(
-        ["Rewrites from the transform rules: 3", "Combined with rewrites from the LLM: 7",
-         "Combined with your own rewrites: 8"]
-      )
-    end
-
-    it "never joins a stage that holds ideas back, even after a stage that only adds" do
-      stages["index-from-plan"] = { "original" => rec(7, 8, added: { "generator_two" => 2 }, dropped: {},
-                                                            set_aside: 1) }
+    it "never joins a stage that sets ideas aside, even after a stage that only adds" do
+      stages["index-from-plan"] = { "original" => rec(7, 8, added: { "generator_two" => 2 }, set_aside: 1) }
       expect(layers("index", 1).first(2)).to eq(["Index ideas from the query&#39;s text: 7",
-                                                 "Index ideas from the query&#39;s text and plan: 8"])
+                                                 "Index ideas from the query&#39;s text and plan: 9"])
     end
 
-    it "keeps stages apart when what one sends on isn't what the next takes in" do
-      stages["index-from-plan"] = { "original" => rec(6, 8, added: { "generator_two" => 2 }) }
-      svg = sankey("index", 1)
-      apart = stage_nodes(svg).first(2).map { it["data-stage"] }
-      expect(apart).to eq([named("index-from-query"), named("index-from-plan")])
-    end
-
-    it "puts every source in a lane to the left of the flow it joins, and every sink to its right" do
-      %w[index rewrite].each do |id|
-        svg = sankey(id, 1)
-        flow_x = stage_nodes(svg).first["x"].to_f
-        expect(nodes(svg, "source").map { it["x"].to_f + it["width"].to_f }).to all(be < flow_x)
-        expect(nodes(svg, "drop").map { it["x"].to_f }).to all(be > flow_x + sankey_module::SPINE_MAX)
-      end
-    end
-
-    it "says nothing in the picture about what came in, was added, or went on: only labels, sources, and sinks" do
+    it "says nothing in the picture about what came in or went on: only layers, steps, sources, and sinks" do
       %w[index rewrite rewrite-index].each do |id|
         [1, 2].each do |n|
-          words = texts(sankey(id, n)).map { it[:text] }
+          words = texts(sankey(id, n)).reject { it[:kind] == "step" }.map { it[:text] }
           expect(words.grep(/came in|\d+ added|\d+ went on|, went on/)).to eq([])
           expect(words).to all(satisfy { |word| word.match?(/: (\d[\d,]*|not recorded)\z/) })
         end
       end
-      llm = stage_nodes(sankey("rewrite", 1)).find { it["data-stage"] == named("llm-rewrites") }
-      expect(llm["title"]).to end_with("2 came in. 5 added. 1 dropped. 6 went on.")
     end
 
     it "escapes its words and sets no SQL apart" do
