@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261010-12: `not_in_to_not_exists` refuses a NOT IN that appears again in the same SELECT when a copy is in its GROUP BY, DISTINCT ON, or ORDER BY.
 - 20261008-36: the statistics read pins DateStyle to ISO, so stored date and timestamp values replay the same in any session.
+- 20261010-13: a plan deeper than PlainData::MAX_DEPTH in measurement or index-build confirm is refused as plan_too_deep; the SingleCandidateTest plan parse is bounded.
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
 
@@ -697,17 +698,6 @@ From the review of 20261007-58 (minor, a requirement question). The denormalized
 - **Came from:** The review of 20261007-58, 2026-10-10.
 - **Design:** assumption check, CatalogShadow.
 - **Status:** todo (needs the user)
-
-### 20261010-13. Deep EXPLAIN plans: one unbounded parse, and untested refusals.
-
-From the review of 20261008-22 (minor).
-- `single_candidate_test.rb` (`parse_plan`, ~line 269) still parses EXPLAIN JSON with `max_nesting: false`, which is unbounded; it doesn't crash at depth 100, but it's inconsistent with the new `PlainData::MAX_DEPTH` bound and a very deep plan could exhaust the stack before the parse fails. Use the same bound.
-- In `Measurement.measure_set` and `IndexBuild.confirm`, a plan deeper than 3000 raises `JSON::NestingError`. Trace what the callers do with it: it must become a clean refusal (a fixed rule, no message), and add a test for a plan deeper than the bound in each path.
-
-- **Depends on:** 20261008-22.
-- **Came from:** The review of 20261008-22, 2026-10-10 (minor).
-- **Design:** index-from-plan, measurement.
-- **Status:** todo
 
 ### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
 
