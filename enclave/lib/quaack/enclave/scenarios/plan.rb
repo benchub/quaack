@@ -16,7 +16,7 @@ module Quaack
           @pooled = pooled
           @masked = masked
           @siblings = siblings
-          @unmatched = tree ? Unmatched.new(tree, atoms, topology).tables : []
+          @unmatched = tree ? Unmatched.new(tree, atoms, topology).entries : []
           @alone = tree ? Plan.uncut_limit?(tree) : false
           @next_key = 0
         end
@@ -31,7 +31,7 @@ module Quaack
           near = pooled_near_misses
           base = [hit, *near, *join_near_misses]
           extras = { s1: [], s2: [nulls], s3: fan_outs(hit, near), s4: orphans, s5: boundaries }
-          last = last_groups(near)
+          last = last_groups(hit, near)
           { s0: [], **extras.transform_values { base + it + last }, s6: [hit] + many + [empty] }
         end
 
@@ -48,10 +48,10 @@ module Quaack
 
         # The masking near misses, then the near misses' siblings, then the
         # unmatched groups. Sets near_misses_alone too.
-        def last_groups(near)
+        def last_groups(hit, near)
           masking = masking_near_misses
           @near_misses_alone = @alone ? near + @joins + masking : []
-          masking + siblings(near + masking) + unmatched
+          masking + siblings(near + masking) + unmatched(hit)
         end
 
         # For each parent an outer or anti join can leave unmatched, a group
@@ -60,11 +60,20 @@ module Quaack
         # tables, so an atom on the parent changes which unmatched parents
         # the query returns. Last, after the masking near misses, so their
         # keys come after every other group's.
-        def unmatched
-          @unmatched.flat_map do |tables|
+        def unmatched(hit)
+          @unmatched.flat_map do |entry|
+            tables = entry.tables
             near = @pooled.select { |i| @atoms[i].columns.all? { tables.include?(it.table) } }
-            [group(fresh_key, tables), *near.map { |i| group(fresh_key, tables, near: i) }]
+            next unreferenced(entry, hit, near) if entry.cross
+
+            [nil, *near].map { |i| group(fresh_key, tables, near: i) }
           end
+        end
+
+        # A self-reference's unmatched row: a cross that points at the
+        # hit's row, so no row points at it, and one per pooled near miss.
+        def unreferenced(entry, hit, near)
+          [nil, *near].map { |i| cross(entry.child, entry.cross, hit.key, near: i) }
         end
 
         # A near miss whose atom's column is tested in another scope too

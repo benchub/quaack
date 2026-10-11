@@ -28,12 +28,7 @@ module Quaack
           options = masks(@atoms[index].path)
           return if options.nil? || options.empty?
 
-          options.each_with_object([]) do |option, chosen|
-            pick = option.find { |j| fits.call(chosen + [j]) }
-            return nil unless pick
-
-            chosen << pick
-          end
+          choose(options, fits, ahead: false) || choose(options, fits, ahead: true)
         end
 
         # Each pooled atom's also atoms, for the atoms an OR or UNION masks:
@@ -46,6 +41,21 @@ module Quaack
         end
 
         private
+
+        # One atom per arm, each the first that fits beside those chosen
+        # before it. A partial choice must satisfy the arms not yet chosen,
+        # which can't be done when two of them are equalities on one column
+        # (a = 1 OR a = 2 OR a = 3 OR ...), so when that finds none, ahead
+        # tries each pick beside the first atom of every later arm too.
+        def choose(options, fits, ahead:)
+          options.each_with_index.with_object([]) do |(option, k), chosen|
+            later = ahead ? options.drop(k + 1).map(&:first) : []
+            pick = option.find { |j| fits.call(chosen + [j] + later) }
+            return nil unless pick
+
+            chosen << pick
+          end
+        end
 
         def dig(path) = path.reduce(@tree) { |node, step| node[step] }
 

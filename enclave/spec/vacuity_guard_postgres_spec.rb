@@ -44,7 +44,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expected = runner.with_fixture(result.scenarios[:s1]) { |tx| tx.query(sql).rows.size }
 
     expect(result.s1_load_rule).to be_nil
-    expect(result.s1_rows).to eq(expected)
+    expect(result.s1_rows).to eq([expected, 2].min)
     expect(result.s1_rows).to be_positive
   end
 
@@ -147,7 +147,7 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
     expect(result.retries).to be_positive
     expect(result.s1_load_rule).to be_nil
-    expect(result.s1_rows).to eq(4)
+    expect(result.s1_rows).to eq(1)
   end
 
   it "records the last attempt: a load that worked early and failed later has the rule and no row count" do
@@ -157,18 +157,28 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.s1_rows).to be_nil
   end
 
-  it "records the last attempt's row count, not the first's" do
-    result = guard_with(faked_runner([nil, nil, nil, nil], rows: [4, 4, 7, 9]))
+  # 20261010-35: S1's rows can follow the query's literals, so both counts
+  # go out as 0, or 1 for one or more, never the count itself.
+  it "reports S1's counts as 0 or 1, whatever the number of rows" do
+    reported = [0, 1, 2, 3, 7, 1000].map do |rows|
+      result = guard_with(faked_runner([nil] * 4, rows:))
+      [result.s1_rows, result.s1_nonzero_rows]
+    end
+    expect(reported).to eq([[0, 0], [1, 0], [1, 1], [1, 1], [1, 1], [1, 1]])
+  end
 
-    expect(result.s1_rows).to eq(9)
-    expect(result.s1_nonzero_rows).to eq(8)
+  it "records the last attempt's row count, not the first's" do
+    result = guard_with(faked_runner([nil, nil, nil, nil], rows: [4, 4, 4, 0]))
+
+    expect(result.s1_rows).to eq(0)
+    expect(result.s1_nonzero_rows).to eq(0)
   end
 
   it "records the later count when the first attempt loaded, an intermediate one failed, and the last loaded" do
-    result = guard_with(faked_runner([nil, :fixture_load_failed, :fixture_load_failed, nil], rows: [4, 0, 0, 9]))
+    result = guard_with(faked_runner([nil, :fixture_load_failed, :fixture_load_failed, nil], rows: [0, 0, 0, 2]))
 
     expect(result.s1_load_rule).to be_nil
-    expect(result.s1_rows).to eq(9)
+    expect(result.s1_rows).to eq(1)
   end
 
   it "records the last failure's rule, not the first's" do

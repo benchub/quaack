@@ -129,6 +129,41 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     { name: "left join with ON filter",
       sql: "SELECT fx.users.id, fx.posts.id FROM fx.users LEFT JOIN fx.posts " \
            "ON fx.posts.user_id = fx.users.id AND fx.posts.published = true", allowed: {} },
+    { name: "OR of four equality arms on one column and another arm",
+      sql: "SELECT * FROM fx.posts WHERE fx.posts.score = 1 OR fx.posts.score = 2 OR fx.posts.score = 3 " \
+           "OR fx.posts.score = 4 OR fx.posts.title = 'z'", allowed: {} },
+    { name: "left join, child key IS NOT NULL",
+      sql: "SELECT fx.posts.id FROM fx.posts LEFT OUTER JOIN fx.comments ON fx.comments.post_id = fx.posts.id " \
+           "WHERE fx.comments.id IS NOT NULL", allowed: {} },
+    { name: "left join, child key IS NOT NULL, parent filter",
+      sql: "SELECT fx.posts.id FROM fx.posts LEFT OUTER JOIN fx.comments ON fx.comments.post_id = fx.posts.id " \
+           "WHERE fx.comments.id IS NOT NULL AND fx.posts.published = true", allowed: {} },
+    { name: "correlated scalar subquery, no aggregate",
+      sql: "SELECT u.id FROM fx.users u WHERE (SELECT p.score FROM fx.posts p WHERE p.user_id = u.id) > 3",
+      allowed: {} },
+    { name: "correlated scalar subquery, no aggregate, equality",
+      sql: "SELECT p.id FROM fx.posts p WHERE (SELECT c.user_id FROM fx.comments c WHERE c.post_id = p.id) = 3",
+      allowed: {} },
+    { name: "two NOT EXISTS on one parent, child table first",
+      sql: "SELECT u.id FROM fx.users u WHERE NOT EXISTS (SELECT 1 FROM fx.posts p WHERE p.user_id = u.id) " \
+           "AND NOT EXISTS (SELECT 1 FROM fx.users e WHERE e.manager_id = u.id)", allowed: {} },
+    { name: "two NOT EXISTS on one parent, self-reference first",
+      sql: "SELECT u.id FROM fx.users u WHERE NOT EXISTS (SELECT 1 FROM fx.users e WHERE e.manager_id = u.id) " \
+           "AND NOT EXISTS (SELECT 1 FROM fx.posts p WHERE p.user_id = u.id)", allowed: {} },
+    { name: "left join made inner by WHERE",
+      sql: "SELECT fx.users.id, fx.posts.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
+           "WHERE fx.posts.kind = 'x' AND fx.users.active = true", allowed: {} },
+    { name: "LATERAL anti join",
+      sql: "SELECT fx.users.id FROM fx.users LEFT JOIN LATERAL (SELECT o.id FROM fx.posts o " \
+           "WHERE o.user_id = fx.users.id) s ON true WHERE s.id IS NULL", allowed: {} },
+    { name: "LATERAL latest per parent",
+      sql: "SELECT fx.users.id, s.id FROM fx.users LEFT JOIN LATERAL (SELECT o.id FROM fx.posts o " \
+           "WHERE o.user_id = fx.users.id ORDER BY o.created_at DESC LIMIT 1) s ON true", allowed: {} },
+    { name: "self-reference NOT EXISTS under another alias",
+      sql: "SELECT u.id FROM fx.users u WHERE NOT EXISTS (SELECT 1 FROM fx.users e WHERE e.manager_id = u.id)",
+      allowed: {} },
+    { name: "self-reference LEFT JOIN",
+      sql: "SELECT u.id, e.id FROM fx.users u LEFT JOIN fx.users e ON e.manager_id = u.id", allowed: {} },
     { name: "right join",
       sql: "SELECT fx.users.id, fx.posts.id FROM fx.posts RIGHT JOIN fx.users ON fx.users.id = fx.posts.user_id " \
            "WHERE fx.users.role = 'admin'", allowed: {} },
@@ -375,6 +410,20 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
   # name: the untested set, pinned exactly, and a guess at the cause, which
   # isn't confirmed. Each is to become a backlog task pointing at 20261010-27.
   PENDING = {
+    "correlated scalar subquery, no aggregate" => {
+      untested: ["p.user_id = u.id"],
+      cause: "as on main, unconfirmed (a guard against the crash an extra child caused in 20261010-35's build)"
+    },
+    "correlated scalar subquery, no aggregate, equality" => {
+      untested: ["c.post_id = p.id"],
+      cause: "as on main; same as the shape above"
+    },
+    "correlated scalar count" => {
+      untested: ["fx.comments.post_id = fx.posts.id"],
+      cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
+             "once more than 2 comments exist in all, and S1 builds 1; building more leaked the threshold " \
+             "(20261010-35's review), deferred to 20261010-48"
+    },
     "count over join, ON tests one branch's column, both branches test another" => {
       untested: ["fx.posts.score > $6"],
       cause: "confirmed (20261010-34): score > 9's near miss gets a sibling, since branch 1 tests score too; " \
@@ -388,11 +437,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     "CTE with outer filter" => {
       untested: ["fx.posts.created_at > $1"],
       cause: "SELECT * in a CTE body with an outer filter; the near miss may fail the outer filter too"
-    },
-    "correlated scalar count" => {
-      untested: ["fx.comments.post_id = fx.posts.id"],
-      cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
-             "once more than 2 comments exist in all, and S1 builds 1"
     },
     "scalar subquery in WHERE" => {
       untested: ["p2.published = $1"],
