@@ -10368,3 +10368,12 @@ The review of 20260929-22 and -16 found these minor issues:
 - **Came from:** The review of 20260929-22 and -16, 2026-10-08.
 - **Design:** qualify, run-server.
 - **Status:** **done.** Landed 2026-10-10 (task/20261008-54): a `pgapp` schema spec (red when `start_with?("pg_")` becomes `start_with?("pg")`); `toast_relation` kept and documented as a backstop (comment and DESIGN.md); DESIGN.md and README say `KILL <db>` pauses new connections until `RESUME <db>` (or use `RECONNECT`); `TestPostgres::PgBouncer.stop` bounded by `STOP_TIMEOUT` (10 s); the "fails partway" spec checks the restart.
+
+### 20261010-8. Index refusal rules: two gaps in the source scan.
+
+From the review of 20261004-81 (minor). The scan only matches double-quoted literals, so (a) a rule written in single quotes, or built from a variable or constant (`Error.new(rule_var, ...)` outside the existing REFUSED_OPTIONS loop), would slip past it; add a guard that fails when an `Error.new(` in those files has a first argument that is neither a double-quoted literal nor one of the known dynamic forms. (b) The spec compares rule NAMES only: it doesn't check that each rule appears in a sample statement in `index_ddl_check_spec.rb` (the entry's `samples`), so a rule with no test of its own passes; add that check.
+
+- **Depends on:** 20261004-81.
+- **Came from:** The review of 20261004-81, 2026-10-10 (minor).
+- **Design:** report, llm-index-ideas.
+- **Status:** **done.** Landed 2026-10-10 (task/20261010-8; spec-only): the source scan in `index_ddl_check_spec.rb` now fails on any `Error.new` whose rule isn't a double-quoted `[a-z_]+` literal or a known dynamic form (catches single quotes, constants and calls without parentheses), with a planted-case example. The other item was stale: the samples test already forces every rule into `RULES`.

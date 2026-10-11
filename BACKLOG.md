@@ -665,15 +665,6 @@ From 20261003-43. After the counterexamples round stopped naming a cycle on its 
 - **Design:** result comparison, literals.
 - **Status:** todo
 
-### 20261010-8. Index refusal rules: two gaps in the source scan.
-
-From the review of 20261004-81 (minor). The scan only matches double-quoted literals, so (a) a rule written in single quotes, or built from a variable or constant (`Error.new(rule_var, ...)` outside the existing REFUSED_OPTIONS loop), would slip past it; add a guard that fails when an `Error.new(` in those files has a first argument that is neither a double-quoted literal nor one of the known dynamic forms. (b) The spec compares rule NAMES only: it doesn't check that each rule appears in a sample statement in `index_ddl_check_spec.rb` (the entry's `samples`), so a rule with no test of its own passes; add that check.
-
-- **Depends on:** 20261004-81.
-- **Came from:** The review of 20261004-81, 2026-10-10 (minor).
-- **Design:** report, llm-index-ideas.
-- **Status:** todo
-
 ### 20261010-9. Clock anchoring: small follow-ups from the review of 20261006-6.
 
 (minor)
