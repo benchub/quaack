@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-4: `Scenarios::RowSet` uses hash indexes in place of linear scans (performance, no behavior change).
 - 20261010-2: denormalized fixtures set the copy on other-class and parentless rows.
 - 20261010-50: the vacuity-guard search's only budget is its trial count (150 per atom, 300 per query), never the clock.
+- 20261010-6: the error line no longer carries a `cycle` field (removed from the whitelist, enclave ErrorFilter, and driver ErrorFields/EnclaveError).
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -616,15 +617,6 @@ From the review of 20261004-8 (minor). With `course_template_id bigint UNIQUE` (
 - **Depends on:** 20261004-8, 20261003-39.
 - **Came from:** The review of 20261004-8, 2026-10-10 (minor).
 - **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261010-6. Delete the producer-less error-line `cycle` field.
-
-From 20261003-43. After the counterexamples round stopped naming a cycle on its error line, nothing in the enclave sends an error-line `cycle` field: `ErrorFilter::Cycle`, the driver's `ErrorFields.cycle`, `EnclaveError`'s cycle rendering, and the whitelist field are producer-less (the reviewer confirmed: the only exception that still has `cycle`, `Scenarios::Error` from the topology step, carries `TableName` structs and `shaped?` refuses them). They're harmless and kept as defense, but dead code on a trust boundary is a liability: delete them (a protocol change: unreleased list), or keep them and add a spec that pins why. Decide with the reviewer's view of whether a future producer is likely.
-
-- **Depends on:** 20261003-43.
-- **Came from:** 20261003-43's build and review, 2026-10-10.
-- **Design:** What goes out of the enclave.
 - **Status:** todo
 
 ### 20261010-7. Result comparison and literals: two small gaps from the review of 20261004-92 and -94.

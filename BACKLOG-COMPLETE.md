@@ -10504,3 +10504,12 @@ From the review of 20261004-89 (minor).
 - **Came from:** The review of 20261004-89, 2026-10-10 (minor).
 - **Design:** report.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-10): `outbound_ddl_spec.rb`'s store fake now has `entry?` like the real store (a wrong fake hangs `IndexSources.searches`, so it can't pass silently); `Report::IndexProposers` ends a label's list with "and others not recorded" when only some of its indexes have recorded sources (DESIGN.md, the template note and its spec updated). Follow-up in 20261011-8.
+
+### 20261010-6. Delete the producer-less error-line `cycle` field.
+
+From 20261003-43. After the counterexamples round stopped naming a cycle on its error line, nothing in the enclave sends an error-line `cycle` field: `ErrorFilter::Cycle`, the driver's `ErrorFields.cycle`, `EnclaveError`'s cycle rendering, and the whitelist field are producer-less (the reviewer confirmed: the only exception that still has `cycle`, `Scenarios::Error` from the topology step, carries `TableName` structs and `shaped?` refuses them). They're harmless and kept as defense, but dead code on a trust boundary is a liability: delete them (a protocol change: unreleased list), or keep them and add a spec that pins why. Decide with the reviewer's view of whether a future producer is likely.
+
+- **Depends on:** 20261003-43.
+- **Came from:** 20261003-43's build and review, 2026-10-10.
+- **Design:** What goes out of the enclave.
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-6): the error-line `cycle` field is gone from the whitelist, the enclave's `ErrorFilter` and the driver's `ErrorFields` and `EnclaveError` (the only producer of a cycle now is the report payload's rewrite fate, `Steps::CycleTables`, which stays); an fk_cycle refusal goes out as its rule alone, and a sentinel test pins that table names never appear. The driver drops an unknown `cycle` field on an error line instead of refusing it (an old enclave's line shows as plain fk_cycle); changing that to refuse as `unexpected_output` would be a separate task.
