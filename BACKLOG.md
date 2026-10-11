@@ -793,6 +793,7 @@ Work out which reported fields can vary with a literal, using the reviewer's exp
 - **Depends on:** 20261010-47, 20261010-35.
 - **Came from:** The reviews of 20261010-35, 2026-10-10. Priority: the untested conditions.
 - **Design:** rewrite-test, scenarios.
+- **Also (review of 20261011-2, 2026-10-11):** `loads` follow a candidate's verdict, not the fixed worst case: with a non-equivalent candidate, results flip between n <= 1 (S1 row_count fail) and n >= 2 (pass), and loads flip 10 vs 25 with them, because testing stops at the first failing scenario. About one bit (whether n is at or below S1's reach) is recoverable. Include `loads` and the verdict in the work.
 - **Status:** todo
 
 ### 20261010-49. Minors from 20261010-35 and -23.
@@ -867,4 +868,22 @@ The review of 20261010-2 found: if the copy column has a UNIQUE (or exclusion) c
 - **Depends on:** 20261010-2 (landed).
 - **Came from:** The review of 20261010-2, 2026-10-11 (minor).
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261011-6. Duplicate IN-list values leak whether two literals are equal.
+
+From the reviews of 20261011-2 and its builder. `email IN ('a','a')` and `('x','x')` report dropped 9 and loads 49, while `('a','b')` reports 5 and 34, so the fact that two literals are equal crosses the boundary (not the values). Duplicates are rare in app SQL. Dedupe the IN-list values (or refuse a duplicate) before the scenarios are built, so the report doesn't depend on it, and add a family to `across_literals_postgres_spec.rb`: `IN ('a','a')`, `('a','b')`, `('x','y')`, red first. Enclave change.
+
+- **Depends on:** 20261010-47 (landed).
+- **Came from:** The review of 20261011-2, 2026-10-11 (minor, trust boundary).
+- **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261011-7. A count threshold makes every atom of the query untested; keep the atoms outside the aggregate's scope.
+
+From the review of 20261011-2 (minor, usefulness). Since 20261011-2, any query that compares an aggregate with a constant reports every atom as untested, including atoms unrelated to the count (`published = true` next to `HAVING count(*) > 5`). That is common in reporting and ORM SQL, so the guard says nothing useful for those queries. Keep the real result for atoms outside the aggregate's scope (WHERE atoms of the grouped query whose S1 reach doesn't depend on the threshold); only the threshold atom, and atoms inside its correlated subquery, get the worst case. It needs its own across-literals proof (thresholds 0..10, all operators, every outgoing field identical, with the other atoms' states real), red first, and the corpus HAVING entries then expect the other atoms tested again. Opus builder and reviewer.
+
+- **Depends on:** 20261011-2 (landed with its fix round).
+- **Came from:** The review of 20261011-2, 2026-10-11 (minor).
+- **Design:** rewrite-test, scenarios.
 - **Status:** todo
