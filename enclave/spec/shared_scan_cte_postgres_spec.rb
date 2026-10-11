@@ -580,6 +580,16 @@ RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do
       )
     end
 
+    it "adds a column a nested subquery's own copy of the alias reads, which splits no group" do
+      expect_rewrites(
+        "SELECT s.id, (SELECT max(s.user_id) FROM public.submissions s WHERE s.id = 1) AS m, count(*) #{from} " \
+        "GROUP BY s.id",
+        "#{cte.sub("$1, $2", "$2, $3")}SELECT s.id, " \
+        "(SELECT max(s.user_id) FROM public.submissions s WHERE s.id = $1) AS m, count(*) " \
+        "#{shared_from} GROUP BY s.id, s.user_id"
+      )
+    end
+
     it "refuses when inheritance children can repeat the key" do
       conn.exec(<<~SQL)
         CREATE TABLE public.kids (id int PRIMARY KEY, v text);
