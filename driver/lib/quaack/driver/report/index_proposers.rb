@@ -9,11 +9,11 @@ module Quaack
       # from each entry's sources in the payload's indexes.
       #
       #   proposers("rewrite_1:top:1", "made by transform rule x")
-      #   # => "Made by transform rule x; indexes: generator one, the LLM"
+      #   # => "Made by transform rule x; indexes: from the query's text, from the LLM"
       module IndexProposers
         # How each index source reads, by the names Protocol::IndexSources::SOURCES gives it.
-        INDEX_SOURCES = { "generator_one" => "generator one", "generator_two" => "generator two",
-                          "llm" => "the LLM" }.freeze
+        INDEX_SOURCES = { "generator_one" => "from the query's text", "generator_two" => "from the query's plan",
+                          "llm" => "from the LLM" }.freeze
 
         # who is the rewrite's source in words, or nil for the original
         # query or a rewrite whose source isn't recorded. The cell says

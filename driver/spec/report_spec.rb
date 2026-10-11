@@ -183,10 +183,10 @@ RSpec.describe Quaack::Driver::Report do
       it "uses only variables that :root defines" do
         used = (style + html[%r{</style>.*}m]).scan(/var\((--[a-z-]+)\)/).flatten.uniq
         # Set per fold color by details.query and details.rose, and per kind by .stripe-*.
-        folds = %w[--fold-bg --fold-edge --fold-accent --stripe --stripe-bg]
+        folds = %w[--fold-edge --fold-accent --stripe --stripe-bg]
         expect(used - names - folds).to eq([])
-        expect(style.scan(/^  details\.(?:query|rose) \{ --fold-bg: var/).size).to eq(2)
-        expect(names).to include("--rose-bg", "--rose-edge", "--rose-accent")
+        expect(style.scan(/^  details\.(?:query|rose) \{ --fold-edge: var/).size).to eq(2)
+        expect(names).to include("--rose-edge", "--rose-accent")
       end
 
       it "gives every funnel color and the funnel's grey a variable that :root defines" do
@@ -281,7 +281,7 @@ RSpec.describe Quaack::Driver::Report do
 
     describe "links" do
       let(:backgrounds) do
-        %w[--bg --panel --head-bg --code-bg --summary-bg --good-bg --minor-bg --bug-bg --rose-bg --query-bg
+        %w[--bg --panel --head-bg --code-bg --summary-bg --good-bg --minor-bg --bug-bg
            --baseline-bg --differs-bg --sb-teal --sb-violet --sb-brown]
       end
 
@@ -333,6 +333,14 @@ RSpec.describe Quaack::Driver::Report do
         theme_variables.each_value do |v|
           expect(contrast(v["--minor-edge"], v["--minor-bg"])).to be >= 3.0
           expect(contrast(v["--minor-edge"], v["--bg"])).to be >= 3.0
+        end
+      end
+
+      # Task 20261011-14 item 3: the fold's Expand/Collapse label and stripe sit on the page, not on a tint.
+      it "keeps each fold's label at 4.5:1 and its stripe at 3:1 against the page, in both themes" do
+        theme_variables.each do |name, v|
+          %w[--query-accent --rose-accent].each { |c| expect(contrast(v[c], v["--bg"])).to be >= 4.5, "#{name} #{c}" }
+          %w[--query-edge --rose-edge].each { |c| expect(contrast(v[c], v["--bg"])).to be >= 3.0, "#{name} #{c}" }
         end
       end
 
@@ -691,16 +699,27 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).to include("details.fold:target::details-content { content-visibility: visible; }")
     end
 
-    it "styles each fold with a stripe and background from its color, violet for a query, unlike the blue verdict" do
-      expect(html).to include("details.query { --fold-bg: var(--query-bg); --fold-edge: var(--query-edge); " \
-                              "--fold-accent: var(--query-accent); }")
-      expect(html).to include("details.fold { background: var(--fold-bg); border-left: 5px solid var(--fold-edge);")
+    it "styles each fold with a stripe from its color, violet for a query, unlike the blue verdict" do
+      expect(html).to include("details.query { --fold-edge: var(--query-edge); --fold-accent: var(--query-accent); }")
+      expect(html).to include("details.fold { border-left: 5px solid var(--fold-edge);")
       expect(html).to include("scroll-margin-top: 0.5rem; }")
     end
 
-    it "pins an open fold's summary bar to the top of the window, in the section's background" do
+    # Task 20261011-14 item 3: the tint was narrower than the section's contents, so the stripe alone marks it.
+    it "tints no fold's background, in the light or the dark theme, and keeps only the stripe" do
+      style = html[%r{<style>(.*?)</style>}m, 1]
+      fold = style[/^  details\.fold \{[^}]*\}/]
+      expect(fold).to include("border-left: 5px solid var(--fold-edge)")
+      expect(fold).not_to include("background")
+      expect(style[/^  details\.query \{[^}]*\}/]).not_to match(/background|-bg/)
+      expect(style[/^  details\.rose \{[^}]*\}/]).not_to match(/background|-bg/)
+      expect(style).not_to match(/--fold-bg|--rose-bg|--query-bg/)
+      expect(style.scan(/--(?:rose|query)-(?:edge|accent):/).size).to eq(8)
+    end
+
+    it "pins an open fold's summary bar to the top of the window, in the page's background" do
       expect(html).to include("details.fold > summary { position: sticky; top: 0; z-index: 1;")
-      expect(html).to include("background: var(--fold-bg); padding: 0.5rem 7rem 0.5rem 0;")
+      expect(html).to include("background: var(--bg); padding: 0.5rem 7rem 0.5rem 0;")
     end
 
     it "labels the bar Collapse while open and Expand while closed, with no script" do
@@ -713,11 +732,10 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).to include("details.fold:target { outline: 2px solid var(--accent); outline-offset: 0.25rem; }")
     end
 
-    it "colors the not-ranked and index-idea folds rose, with its own light and dark values" do
-      expect(html).to include("details.rose { --fold-bg: var(--rose-bg); --fold-edge: var(--rose-edge); " \
-                              "--fold-accent: var(--rose-accent); }")
-      expect(html).to include("--rose-bg: #fcedf2; --rose-edge: #b02a5b; --rose-accent: #8e1f48;")
-      expect(html).to include("--rose-bg: #33202a; --rose-edge: #e0699a; --rose-accent: #f2a3c4;")
+    it "colors the not-ranked and index-idea fold stripes rose, with its own light and dark values" do
+      expect(html).to include("details.rose { --fold-edge: var(--rose-edge); --fold-accent: var(--rose-accent); }")
+      expect(html).to include("--rose-edge: #b02a5b; --rose-accent: #8e1f48;")
+      expect(html).to include("--rose-edge: #e0699a; --rose-accent: #f2a3c4;")
     end
 
     it "shows SQL that pg_query can't parse as it was sent, escaped" do
@@ -1277,8 +1295,8 @@ RSpec.describe Quaack::Driver::Report do
 
       def rows(html = unranked) = html.to_s.scan(%r{<tr>(.*?)</tr>}m).flatten.drop(1)
 
-      # The source of rewrite 1 with quaack_b, which generator two proposed.
-      def rule = "Made by transform rule key_in_self_join; indexes: generator two"
+      # The source of rewrite 1 with quaack_b, which the query's plan inspired.
+      def rule = "Made by transform rule key_in_self_join; indexes: from the query&#39;s plan"
 
       # A row of the table: what it was, who proposed it, and why it wasn't ranked.
       def row(what, why, who: rule)
@@ -1295,8 +1313,8 @@ RSpec.describe Quaack::Driver::Report do
         expect(rows).to eq(
           ["<td>Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}</td>" \
            "<td>Made by transform rule " \
-           "key_in_self_join; indexes: generator two</td><td>Read 7,777 blocks on the slow values, against " \
-           "1,000 for the original query, which isn&#39;t more than 5% fewer.</td>"]
+           "key_in_self_join; indexes: from the query&#39;s plan</td><td>Read 7,777 blocks on the slow values, " \
+           "against 1,000 for the original query, which isn&#39;t more than 5% fewer.</td>"]
         )
       end
 
@@ -1308,21 +1326,32 @@ RSpec.describe Quaack::Driver::Report do
         payload["excluded"]["original:top:1"] = "footprint_tie"
         payload["top"].pop
         payload["excluded"]["rewrite_1:none"] = "below_top_three"
-        expect(whos).to eq(["Suggested by the LLM; indexes: generator two", "Indexes: generator one, the LLM",
-                            "Suggested by the LLM"])
+        expect(whos).to eq(["Suggested by the LLM; indexes: from the query&#39;s plan",
+                            "Indexes: from the query&#39;s text, from the LLM", "Suggested by the LLM"])
         expect(section(render(payload), "ranking")).to include(
           "Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after " \
-          "\"indexes:\", to who proposed the new indexes it ran with: generator one, which works from " \
-          "the query's text, generator two, which works from its plan, or the LLM. An index that more than " \
+          "\"indexes:\", to where the new indexes it ran with came from: \"from the query's text\", " \
+          "\"from the query's plan\", or \"from the LLM\". An index that more than " \
           "one of them proposed lists each. It says not recorded where this run didn't record who proposed " \
           "the indexes (\"and others not recorded\" when it recorded some of them), and for a rewrite " \
           "whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>"
         )
       end
 
+      # Task 20261011-14 item 2: the report says where an index idea came from in the burndown's words.
+      it "never says generator one or generator two, anywhere in the report, and names the burndown's words instead" do
+        payload["labels"][2]["indexes"] = %w[quaack_b quaack_a]
+        out = render(payload)
+        expect(out).not_to match(/generator[ _-]?(one|two)/i)
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: from the query&#39;s text, " \
+                            "from the query&#39;s plan, from the LLM"])
+        expect(section(out, "accountability")).to include(">From the query&#39;s text<", ">From the query&#39;s plan<")
+      end
+
       it "lists a source once, in the protocol's order, when several of a label's indexes share it" do
         payload["labels"][2]["indexes"] = %w[quaack_b quaack_a]
-        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: generator one, generator two, the LLM"])
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: from the query&#39;s text, " \
+                            "from the query&#39;s plan, from the LLM"])
       end
 
       it "says not recorded for the indexes of a run that recorded no sources, and never says none" do
@@ -1345,10 +1374,10 @@ RSpec.describe Quaack::Driver::Report do
           rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
             .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
         end
-        rule = "Made by transform rule key_in_self_join; indexes: generator two"
+        rule = "Made by transform rule key_in_self_join; indexes: from the query&#39;s plan"
         expect(fresh.call(nil)).to eq(["#{rule} and others not recorded", "not recorded"])
         expect(fresh.call([])).to eq(["#{rule} and others not recorded", "not recorded"])
-        expect(fresh.call(%w[llm])).to eq(["#{rule}, the LLM", "Indexes: the LLM"])
+        expect(fresh.call(%w[llm])).to eq(["#{rule}, from the LLM", "Indexes: from the LLM"])
       end
 
       it "shows only the rewrite's source for a label with no new indexes" do
@@ -1425,7 +1454,7 @@ RSpec.describe Quaack::Driver::Report do
                                "timed_out" => true, "measurements" => nil, "verdicts" => nil }
         expect(unranked).to include(row("Rewrite Vivid Cove with a new index on #{sq("public.t (created_at)")}",
                                         "Timed out while QUAACK measured it.",
-                                        who: "#{rule[/\A.*?(?=;)/]}; indexes: generator one, the LLM"))
+                                        who: "#{rule[/\A.*?(?=;)/]}; indexes: from the query&#39;s text, from the LLM"))
       end
 
       it "lists a label once, by why it was left out, when one of its sets also timed out" do
@@ -1458,8 +1487,8 @@ RSpec.describe Quaack::Driver::Report do
       expect(ranking).to include("Nothing beat the original query, so there is no ranking.")
       expect(ranking.sub(%r{#{opening}.*?</details>}m, "")).not_to include("<tr")
       expect(ranking).to include("<tr><td>The original query with a new index on #{sq("public.t (created_at)")}</td>" \
-                                 "<td>Indexes: generator one, the LLM</td><td>Read 990 blocks on the " \
-                                 "slow values, against 1,000 for the original query, which isn&#39;t more than " \
+                                 "<td>Indexes: from the query&#39;s text, from the LLM</td><td>Read 990 blocks on " \
+                                 "the slow values, against 1,000 for the original query, which isn&#39;t more than " \
                                  "5% fewer.</td></tr>")
     end
 
@@ -1854,11 +1883,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).not_to include("negative-result")
     end
 
-    it "makes the rewrites, declined, and existing lists rose folds that start open" do
-      folds = why.scan(%r{<details class="fold rose" id="([a-z-]+)" open>\s*<summary><h3>(.*?)</h3></summary>})
-      expect(folds).to eq([["ideas-rewrites", "The rewrites"],
-                           ["ideas-declined", "Indexes the planner wouldn't use"],
-                           ["ideas-existing", "Indexes QUAACK thought of that you already have"]])
+    it "makes the rewrites, declined, and existing lists rose folds, the last two starting collapsed" do
+      folds = why.scan(%r{<details class="fold rose" id="([a-z-]+)"( open)?>\s*<summary><h3>(.*?)</h3></summary>})
+      expect(folds).to eq([["ideas-rewrites", " open", "The rewrites"],
+                           ["ideas-declined", nil, "Indexes the planner wouldn't use"],
+                           ["ideas-existing", nil, "Indexes QUAACK thought of that you already have"]])
       expect(why.scan("<details").size).to eq(3)
       expect(why.scan("</details>").size).to eq(3)
       expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m]).to include('<ul id="negative-rewrites">')
@@ -1981,10 +2010,10 @@ RSpec.describe Quaack::Driver::Report do
       expect(ideas).to include("<td>#{sq("t_c_d_idx")}<br>")
     end
 
-    it "makes the declined and existing lists rose folds that start open and that a link opens" do
-      folds = ideas.scan(%r{<details class="fold rose" id="([a-z-]+)" open>\s*<summary><h3>(.*?)</h3></summary>})
-      expect(folds).to eq([["ideas-declined", "Indexes the planner wouldn't use"],
-                           ["ideas-existing", "Indexes QUAACK thought of that you already have"]])
+    it "makes the declined and existing lists rose folds that start collapsed, and that a link opens" do
+      folds = ideas.scan(%r{<details class="fold rose" id="([a-z-]+)"( open)?>\s*<summary><h3>(.*?)</h3></summary>})
+      expect(folds).to eq([["ideas-declined", nil, "Indexes the planner wouldn't use"],
+                           ["ideas-existing", nil, "Indexes QUAACK thought of that you already have"]])
       expect(ideas.scan("<details").size).to eq(2)
       expect(ideas.scan("</details>").size).to eq(2)
       expect(ideas[%r{<details[^>]*id="ideas-declined".*?</details>}m]).to include('<table id="declined-indexes">')
@@ -2092,7 +2121,7 @@ RSpec.describe Quaack::Driver::Report do
           .to eq(["Source", "Proposed", "Already existed", "Planner ignored or couldn&#39;t try", "Built and measured",
                   "Not better", "Ranked"])
         expect(rows(html, "indexes").keys)
-          .to eq(["Generator one, from the query&#39;s text", "Generator two, from the query&#39;s plan", "The LLM",
+          .to eq(["From the query&#39;s text", "From the query&#39;s plan", "The LLM",
                   "All sources together"])
       end
 
@@ -2130,8 +2159,8 @@ RSpec.describe Quaack::Driver::Report do
 
         it "fills in each source's built, not better, and ranked from the payload's index sources" do
           counted = rows(sourced, "indexes")
-          expect(counted["Generator one, from the query&#39;s text"].last(3)).to eq(%w[1 0 1])
-          expect(counted["Generator two, from the query&#39;s plan"].last(3)).to eq(%w[0 0 0])
+          expect(counted["From the query&#39;s text"].last(3)).to eq(%w[1 0 1])
+          expect(counted["From the query&#39;s plan"].last(3)).to eq(%w[0 0 0])
           expect(counted["The LLM"].last(3)).to eq(%w[2 1 1])
         end
 
@@ -2139,10 +2168,10 @@ RSpec.describe Quaack::Driver::Report do
         # ignored candidates. The LLM's come from its rounds' burndown.
         it "fills in each generator's already existed and planner ignored from the payload's index sources" do
           counted = rows(sourced, "indexes")
-          expect(counted["Generator one, from the query&#39;s text"][1, 2]).to eq(%w[3 4])
-          expect(counted["Generator two, from the query&#39;s plan"][1, 2]).to eq(%w[0 5])
+          expect(counted["From the query&#39;s text"][1, 2]).to eq(%w[3 4])
+          expect(counted["From the query&#39;s plan"][1, 2]).to eq(%w[0 5])
           expect(counted["The LLM"][1, 2]).to eq(rows(html, "indexes")["The LLM"][1, 2])
-          expect(rows(html, "indexes")["Generator one, from the query&#39;s text"][1, 2])
+          expect(rows(html, "indexes")["From the query&#39;s text"][1, 2])
             .to eq(["not recorded", "not recorded"])
         end
 
@@ -2300,8 +2329,8 @@ RSpec.describe Quaack::Driver::Report do
           "llm-index-refine" => { "original" => rec(0, 0, added: { "llm" => 1 }, dropped: { "never_used" => 1 }) }
         )
         counted = rows(accountable, "indexes")
-        expect(counted["Generator one, from the query&#39;s text"]).to eq(["5"] + (["not recorded"] * 5))
-        expect(counted["Generator two, from the query&#39;s plan"]).to eq(["4"] + (["not recorded"] * 5))
+        expect(counted["From the query&#39;s text"]).to eq(["5"] + (["not recorded"] * 5))
+        expect(counted["From the query&#39;s plan"]).to eq(["4"] + (["not recorded"] * 5))
         expect(counted["The LLM"]).to eq(["7", "2", "3", "not recorded", "not recorded", "not recorded"])
         expect(counted["All sources together"].first).to eq("16")
       end

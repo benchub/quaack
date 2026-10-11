@@ -619,7 +619,7 @@ Under the table, a short "⚠" line warns about each of these, with a **Details*
 
 ### The queries.
 
-The original query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each query sits in a violet box. While one is open, its line stays at the top of the window, with a "Collapse" label on its right ("Expand" when it's closed), so you can close a long query from anywhere in it. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
+The original query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each query has a violet stripe on its left. While one is open, its line stays at the top of the window, with a "Collapse" label on its right ("Expand" when it's closed), so you can close a long query from anywhere in it. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
 
 ```sql
 SELECT id, kind, created_at
@@ -670,15 +670,15 @@ The first row, with no rank, is the original query, so you can see how far each 
 
 Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks than the original query, and *no worse* on every other value set, meaning no more than 5% more blocks.
 
-**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, in a rose box that behaves like the queries' boxes, behind a line such as "Show the 3 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
+**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, with a rose stripe on its left, and behaves like the queries' sections, behind a line such as "Show the 3 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
 
 | What it was | Who proposed it | Why it didn't make the cut |
 | --- | --- | --- |
-| The original query with a new index on public.events (kind) | Indexes: generator one | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
+| The original query with a new index on public.events (kind) | Indexes: from the query's text | Read 498 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
 | Rewrite Silver Fox with no new indexes | Suggested by the LLM | Read 503 blocks on the slow values, against 509 for the original query, which isn't more than 5% fewer. |
-| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM; indexes: the LLM | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
+| Rewrite Silver Fox with a new index on public.events (account_id, created_at, kind) | Suggested by the LLM; indexes: from the LLM | Beat the original query, but tied with a candidate whose new indexes take less disk space. |
 
-Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to who proposed the new indexes it ran with: generator one, which works from the query's text, generator two, which works from its plan, or the LLM. An index that more than one of them proposed lists each. It says not recorded where an older run didn't record who proposed the indexes, and for a rewrite whose source the run didn't record.
+Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to where the new indexes it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says not recorded where an older run didn't record who proposed the indexes, and for a rewrite whose source the run didn't record.
 
 A candidate can also be left out because it tied with one whose indexes take less space, because three others did better, because its measurement timed out, or because the rewrite was dropped on the real data.
 
@@ -730,7 +730,7 @@ This section appears only when no candidate won. It has:
 - **Indexes the planner wouldn't use:** a table of each index QUAACK thought of and the planner never chose, even when trying it cost nothing, and why not.
 - **Indexes QUAACK thought of that you already have:** each one, your index that covers it (its name and its definition, with any partial index's constants hidden), and that index's size. If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.
 
-Each of these three starts open, in a rose box. When something did beat the original query, the last two appear in a section of their own, **Index ideas that went nowhere**, without the rewrites.
+The rewrites start open. The other two start collapsed. All three have a rose stripe on the left. When something did beat the original query, the last two appear in a section of their own, **Index ideas that went nowhere**, without the rewrites.
 
 "Nothing helps" is a real answer. It often means the query is already as good as its indexes allow, and the fix is in the app: fetch less, or cache it.
 
@@ -761,7 +761,7 @@ Two tables say where each idea came from and what became of it. Each has a row p
 
 A rewrite **not kept** is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, ten from the transform rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, from a transform rule, repeated another. **Stopped for another reason** counts the rewrites whose tests failed or timed out without comparing anything, the ones that beat the original query and still weren't ranked, and the ones the run never finished. None of those was shown to be wrong.
 
-**Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try also counts the ideas HypoPG couldn't create, so the planner was never asked about them. It counts only each idea's first test, not an index the planner ignored or HypoPG refused when ranking tested it again. An index counts as **not better** only if no candidate that ran with it beat the original query. A built index whose candidate beat the original query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
+**Indexes** has a row for the ideas from the query's text, one for the ideas from the query's plan, one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored or couldn't try, built and measured, not better, and ranked. Planner ignored or couldn't try also counts the ideas HypoPG couldn't create, so the planner was never asked about them. It counts only each idea's first test, not an index the planner ignored or HypoPG refused when ranking tested it again. An index counts as **not better** only if no candidate that ran with it beat the original query. A built index whose candidate beat the original query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
 
 Proposed, already existed, and planner ignored or couldn't try count the ideas of each search, for the original query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once. QUAACK counts how many indexes each source proposed, how many already existed, and how many the planner ignored or QUAACK couldn't try; a run that didn't record these says not recorded in those cells. For each index it built, QUAACK knows every source that proposed it, so an index that more than one source proposed, such as an LLM idea that repeats a generator's, counts in each of their rows. The rows by source can then add up to more than all sources together, which counts each index once, and a note under the table says so.
 
