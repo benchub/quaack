@@ -119,7 +119,8 @@ RSpec.describe Quaack::Driver::Pipeline do
     # The status replies in order: the first for the run, the rest after llm-rewrites.
     let(:transport) do
       replies = { "index-payload" => [payload], "index-feedback" => [feedback], "rewrite-payload" => [rewrite_payload],
-                  "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 1, "outcome" => "accepted" }] }
+                  "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 1, "outcome" => "accepted" }],
+                  "rewrite-test" => [{ "type" => "rewrite_test", "passed" => false }] }
       queue = statuses
       Class.new do
         attr_reader :calls
@@ -155,10 +156,22 @@ RSpec.describe Quaack::Driver::Pipeline do
       run
 
       expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check status] +
-                                        (%w[index-search index-rank rewrite-prune] * 2) + %w[status status])
-      expect(transport.calls.last(8).first(6).map { it.last[:args][:search] })
+                                        (%w[index-search index-rank rewrite-prune] * 2) + %w[status])
+      expect(transport.calls.last(7).first(6).map { it.last[:args][:search] })
         .to eq(%w[rewrite_1 rewrite_1 rewrite_1 rewrite_2 rewrite_2 rewrite_2])
       expect(fake.asks.map(&:step)).to eq(["llm-rewrites"])
+    end
+
+    it "tests the rewrites the status after llm-rewrites names, without asking status again for rewrite-correctness" do
+      fake.reply("llm-rewrites", { "rewrites" => [] })
+      untested = rewrite(1, "index_search_rewrite_", "index_ranking_rewrite_", "rewrite_pruned_")
+                 .merge("rewrite_survived_1" => false, "rewrite_tested_1" => false)
+      statuses.push(done.merge("rewrites_generated" => false), done.merge("rewrites_generated" => true, **untested))
+
+      run
+
+      expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check status rewrite-test status])
+      expect(transport.calls[-2].last[:args]).to eq(run: "RUN", search: "rewrite_1")
     end
 
     def run_with(rewrites) = described_class.new(transport:, client:, run_id: "RUN", rewrites:).run
@@ -174,7 +187,7 @@ RSpec.describe Quaack::Driver::Pipeline do
         run
 
         expect(subcommands.drop(2)).to eq(%w[rewrite-rules rewrite-payload rewrite-check status] +
-                                          (%w[index-search index-rank rewrite-prune] * 2) + %w[status status])
+                                          (%w[index-search index-rank rewrite-prune] * 2) + %w[status])
         expect(transport.calls[2]).to eq(["rewrite-rules", { args: { run: "RUN" } }])
         expect(fake.asks.map(&:step)).to eq(["llm-rewrites"])
       end
@@ -185,7 +198,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
         run
 
-        expect(subcommands.drop(2)).to eq(%w[rewrite-rules status index-search index-rank rewrite-prune status status])
+        expect(subcommands.drop(2)).to eq(%w[rewrite-rules status index-search index-rank rewrite-prune status])
         expect(fake.asks).to eq([])
       end
 
@@ -196,7 +209,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
         run_with(["SELECT 3"])
 
-        expect(subcommands.drop(2)).to eq(%w[rewrite-rules rewrite-payload rewrite-check status status status])
+        expect(subcommands.drop(2)).to eq(%w[rewrite-rules rewrite-payload rewrite-check status status])
         expect(fake.asks.map(&:step)).to eq(["operator-rewrites"])
       end
 
@@ -230,7 +243,7 @@ RSpec.describe Quaack::Driver::Pipeline do
       run_with(["SELECT 3"])
 
       expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check rewrite-check status
-                                           index-search index-rank rewrite-prune status status])
+                                           index-search index-rank rewrite-prune status])
       expect(transport.calls[4].last[:input]).to eq("rewrites" => [{ "sql" => "SELECT 3", "transformation" => "t",
                                                                      "assumptions" => [] }], "inferred" => true)
       expect(fake.asks.map(&:step)).to eq(%w[llm-rewrites operator-rewrites])
@@ -251,7 +264,7 @@ RSpec.describe Quaack::Driver::Pipeline do
                     done.merge("rewrites_generated" => true, "operator_rewrites_checked" => true))
 
       run_with(["SELECT 3"])
-      expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check status status status])
+      expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check status status])
 
       transport.calls.clear
       run_with(["SELECT 3"])

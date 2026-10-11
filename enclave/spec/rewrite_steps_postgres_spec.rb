@@ -154,6 +154,21 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(stored.entry?("rewrites_generated")).to be(true)
     end
 
+    # Task 20261008-57: dedupe keys on the SQL and the stated assumptions
+    # together, so a later call can't drop assumptions the earlier entry lacks.
+    it "stores a later rewrite with the same SQL but other assumptions as a rewrite of its own" do
+      ready
+      rewrite_check(rewrites(rewrite(same, [])))
+      FileUtils.rm_f(File.join(stored.path, "rewrites_generated.json"))
+
+      outcome = rewrite_check(rewrites(rewrite(same, [not_null_id])))
+
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_2"), { "type" => "done" }])
+      expect(stored.read("rewrite_1")["assumptions"]).to eq([])
+      expect(stored.read("rewrite_2").slice("sql", "assumptions"))
+        .to eq("sql" => stored.read("rewrite_1")["sql"], "assumptions" => [not_null_id])
+    end
+
     # Task 20261007-30: the racetrack connects as another role than
     # qualify did, so the plan's path would give another "$user" there.
     # The stored path is the one qualify resolved the original through.
