@@ -461,8 +461,9 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string, errors]).to eq(
-      [1, "", "#{torn}quaack run failed: run_from_older_version: An older version of QUAACK started this run, " \
-              "and this version can't resume it. Start a new run with quaack start\n"]
+      [1, "", "#{torn}quaack run failed: run_from_older_version: This version of QUAACK can't resume this run: " \
+              "an older version started it, or its saved state is damaged or was edited by hand. " \
+              "Start a new run with quaack start\n"]
     )
   end
 

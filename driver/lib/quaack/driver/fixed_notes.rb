@@ -22,8 +22,9 @@ module Quaack
 
       BY_RULE = {
         # The run's store and the jump server's setup.
-        "run_from_older_version" => "An older version of QUAACK started this run, and this version can't " \
-                                    "resume it. Start a new run with quaack start.",
+        "run_from_older_version" => "This version of QUAACK can't resume this run: an older version " \
+                                    "started it, or its saved state is damaged or was edited by hand. " \
+                                    "Start a new run with quaack start.",
         "bad_run" => "The jump server has no usable directory for this run under ~/.quaack/runs: it's missing, " \
                      "or it isn't a directory QUAACK made, such as a symlink, so QUAACK left it alone. Check " \
                      "the run ID.",

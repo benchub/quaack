@@ -2,6 +2,7 @@
 
 require "json"
 require "quaack/enclave/clock_anchoring"
+require "quaack/enclave/racetrack"
 require "quaack/enclave/redaction"
 
 # Each replacement has to keep the original's type, precision, and value,
@@ -284,6 +285,29 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
       }
     ensure
       conn.exec("RESET search_path")
+    end
+  end
+
+  describe "with the real quaack.clock_anchor()" do
+    # The anchored current_time is clock_anchor()::timetz, which only means
+    # what now()::timetz means if clock_anchor() returns timestamptz too.
+    before do
+      literal = Quaack::Enclave::Racetrack.anchor_literal("2026-09-23T22:15:00.123456Z")
+      Quaack::Enclave::Racetrack.create_clock_anchor(conn, literal)
+      conn.exec("SET TimeZone = 'Pacific/Chatham'")
+    end
+
+    after { conn.exec("RESET TimeZone") }
+
+    it "returns timestamptz, like now()" do
+      types = conn.exec("SELECT pg_typeof(quaack.clock_anchor())::text a, pg_typeof(now())::text n").first
+      expect(types).to eq("a" => "timestamp with time zone", "n" => "timestamp with time zone")
+    end
+
+    it "gives the anchor's own zone-shifted time of day when cast to timetz" do
+      row = conn.exec("SELECT quaack.clock_anchor()::timetz::text t, " \
+                      "pg_typeof(quaack.clock_anchor()::timetz(3))::text p").first
+      expect(row).to eq("t" => "11:00:00.123456+12:45", "p" => "time with time zone")
     end
   end
 end
