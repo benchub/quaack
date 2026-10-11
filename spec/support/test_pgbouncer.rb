@@ -10,6 +10,8 @@ module TestPostgres
   module PgBouncer
     DIR = "/tmp/pgbouncer"
     PORT = 6432
+    # Seconds stop waits for PgBouncer to exit after TERM.
+    STOP_TIMEOUT = 10
     CONFIG = <<~INI.freeze
       [databases]
       * = host=/var/run/postgresql port=5432
@@ -46,15 +48,25 @@ module TestPostgres
       raise
     end
 
-    # Kills the PgBouncer the pidfile names, if any, waits for it to exit,
-    # and removes the pidfile. It sends TERM, which PgBouncer exits 0 on,
+    # Kills the PgBouncer the pidfile names, if any, waits up to STOP_TIMEOUT
+    # seconds for it to exit, and removes the pidfile. If it's still running
+    # then, this raises, and leaves the pidfile. It sends TERM, which PgBouncer exits 0 on,
     # never KILL: Postgres is the container's pid 1, so it reaps PgBouncer,
     # and a child killed by a signal makes it restart every backend.
     def stop(container_id)
-      TestPostgres.docker("exec", "-u", "postgres", container_id, "sh", "-c", <<~SH)
+      TestPostgres.docker("exec", "-u", "postgres", container_id, "sh", "-c", stop_script)
+    end
+
+    def stop_script
+      <<~SH
         pid=$(cat #{DIR}/pgbouncer.pid 2>/dev/null) || exit 0
         kill -TERM "$pid" 2>/dev/null
-        while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
+        tries=#{STOP_TIMEOUT * 10}
+        while kill -0 "$pid" 2>/dev/null; do
+          tries=$((tries - 1))
+          [ "$tries" -gt 0 ] || { echo "PgBouncer (pid $pid) didn't exit within #{STOP_TIMEOUT}s" >&2; exit 1; }
+          sleep 0.1
+        done
         rm -f #{DIR}/pgbouncer.pid
       SH
     end

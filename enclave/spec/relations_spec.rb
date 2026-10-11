@@ -169,6 +169,12 @@ RSpec.describe Quaack::Enclave::Relations do
         .to rejected("system_relation", "system_relation: #{schema}.scratch is in a system schema")
     end
 
+    it "passes a table in an app schema whose name only starts with pg, since system schemas start with pg_" do
+      conn.exec("CREATE SCHEMA pgapp; CREATE TABLE pgapp.events (id int)")
+
+      expect(check("SELECT id FROM pgapp.events").relations).to eq([table_name("pgapp", "events")])
+    end
+
     it "is system_relation before another kind's rule, when the system relation comes first" do
       expect { check("SELECT 1 FROM pg_catalog.pg_class, public.order_view") }.to rejected("system_relation")
     end

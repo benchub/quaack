@@ -450,6 +450,13 @@ RSpec.describe TestPostgres do
       out.split
     end
 
+    # True while the stand-in for a stuck PgBouncer, a sh with a sleep 5,
+    # still runs in the container.
+    def pgbouncer_pids_like_sleep?(container_id)
+      system("docker", "exec", container_id, "sh", "-c", "grep -lx sleep /proc/[0-9]*/comm >/dev/null 2>&1",
+             out: File::NULL, err: File::NULL)
+    end
+
     # A start that failed partway, such as on the readiness timeout, leaves
     # PgBouncer running and the port unknown, so the next call starts again.
     it "starts again cleanly when an earlier start left one running" do
@@ -466,14 +473,38 @@ RSpec.describe TestPostgres do
 
     it "stops the PgBouncer it started when the start fails partway" do
       server = TestPostgres.server
-      server.pgbouncer_port
+      port = server.pgbouncer_port
       allow(TestPostgres::PgBouncer).to receive(:wait_until_ready).and_raise("not ready")
 
       expect { TestPostgres::PgBouncer.start(server.container_id) }.to raise_error("not ready")
       expect(pgbouncer_pids(server.container_id)).to eq([])
     ensure
       RSpec::Mocks.space.proxy_for(TestPostgres::PgBouncer).reset
-      TestPostgres::PgBouncer.start(server.container_id)
+      restarted = TestPostgres::PgBouncer.start(server.container_id)
+      expect([restarted, pgbouncer_pids(server.container_id).size]).to eq([port, 1])
+    end
+
+    # A process that ignores TERM, as the pidfile's pid, stands in for a
+    # PgBouncer that won't exit. It exits by itself after a few seconds, so
+    # the container is left clean without a KILL, which Postgres, as pid 1,
+    # would answer by restarting every backend.
+    it "gives up with an error when the PgBouncer it stops won't exit" do
+      server = TestPostgres.server
+      port = server.pgbouncer_port
+      id = server.container_id
+      TestPostgres::PgBouncer.stop(id)
+      TestPostgres.docker("exec", "-d", "-u", "postgres", id, "sh", "-c",
+                          "echo $$ > #{TestPostgres::PgBouncer::DIR}/pgbouncer.pid; trap '' TERM; sleep 5")
+      stub_const("TestPostgres::PgBouncer::STOP_TIMEOUT", 1)
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      expect { TestPostgres::PgBouncer.stop(id) }
+        .to raise_error(RuntimeError, /PgBouncer \(pid \d+\) didn't exit within 1s/)
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 4
+    ensure
+      sleep 0.2 while pgbouncer_pids_like_sleep?(id)
+      TestPostgres.docker("exec", "-u", "postgres", id, "rm", "-f", "#{TestPostgres::PgBouncer::DIR}/pgbouncer.pid")
+      expect(TestPostgres::PgBouncer.start(id)).to eq(port)
     end
 
     it "keeps a closed client's server backend in its pool" do
