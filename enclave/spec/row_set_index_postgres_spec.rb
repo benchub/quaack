@@ -182,4 +182,28 @@ RSpec.describe Quaack::Enclave::Scenarios::RowSet do
     end
     expect(counts[1]).to be < counts[0] * 5
   end
+  # A group holds one row per table of the fixture, which reaches every
+  # table the query names by foreign key, so a group over a wide Rails
+  # schema is large. Finding a row's parent among its own group once
+  # scanned the whole group per foreign key (task 20261011-13).
+  it "computes a near-linear number of keys as one group grows" do
+    counts = [300, 1200].map do |n|
+      calls = 0
+      counter = Module.new do
+        define_method(:values) { |*a| (calls += 1) && super(*a) }
+        private :values
+      end
+      set = described_class.new(schema, conn)
+      set.singleton_class.prepend(counter)
+      group = (0...n).flat_map do |i|
+        [fixture_row("p", id: i.to_s, t: "1", code: "c#{i}"),
+         fixture_row("c", id: i.to_s, p_id: i.to_s, t: "1", a: i.to_s, b: "0", email: "e#{i}"),
+         fixture_row("g", id: i.to_s, c_id: i.to_s, k: i.to_s)]
+      end
+      expect(set.parents_of(group)).to eq([])
+      expect(set.add?(group)).to be(true)
+      calls
+    end
+    expect(counts[1]).to be < counts[0] * 5
+  end
 end

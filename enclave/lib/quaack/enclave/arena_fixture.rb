@@ -78,9 +78,16 @@ module Quaack
         def initialize(table:, columns:, values:, deferred: [])
           self.class.check(table, columns, values, deferred)
           # nil.dup is nil, so a NULL stays nil.
-          super(table:, columns: columns.map { |c| c.dup.freeze }.freeze,
-                values: values.map { |v| v.dup.freeze }.freeze, deferred: deferred.dup.freeze)
+          fields = { table:, columns: columns.map { |c| c.dup.freeze }.freeze,
+                     values: values.map { |v| v.dup.freeze }.freeze, deferred: deferred.dup.freeze }
+          @hash = [self.class, *fields.values].hash
+          super(**fields)
         end
+
+        # Rows are Hash keys all through a build (Scenarios::RowSet), so the
+        # hash of their fields, which never change, is worked out once
+        # (task 20261011-13). Equal rows still hash alike.
+        attr_reader :hash
 
         def self.check(table, columns, values, deferred)
           problem, = FIXTURE_ROW_CHECKS.find { |_, ok| !ok.call(table, columns, values) }
