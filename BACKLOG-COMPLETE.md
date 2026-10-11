@@ -10388,3 +10388,15 @@ From the review of 20261008-22 (minor).
 - **Came from:** The review of 20261008-22, 2026-10-10 (minor).
 - **Design:** index-from-plan, measurement.
 - **Status:** **done.** Landed 2026-10-10 (task/20261010-13): `SingleCandidateTest.parse_plan` parses with `max_nesting: PlainData::MAX_DEPTH` (a deeper plan is `explain_failed`); `IndexBuild.confirm` and `Measurement` refuse a plan deeper than that as `plan_too_deep`, with no cause and nothing from the plan. `deep_plan_refusal_spec.rb` checks the egress line is exactly the error rule, with a sentinel at depth 3010.
+
+### 20261010-9. Clock anchoring: small follow-ups from the review of 20261006-6.
+
+(minor)
+- The `current_time` anchor was checked against `now()::timetz` on Postgres 18 (including `current_time(3)` and a non-UTC TimeZone), but not against `quaack.clock_anchor()` itself: confirm `clock_anchor()` returns `timestamptz` like `now()` so `clock_anchor()::timetz` has the same semantics, with a spec.
+- The driver's note for `run_from_older_version` (`driver/lib/quaack/driver/fixed_notes.rb`) says an older version started the run; for a corrupt or hand-edited inventory (now also refused with that rule when `TimeZone` is missing) that is slightly misleading. Word it to cover both, or add a rule (a protocol and driver change).
+- Domain-typed and array casts in column defaults (`('today'::text)::public.clock_date`, `('{today}'::text)::date[]`) still read the wall clock: listed unsupported in v1. Decide whether to refuse such a default instead of letting it read the clock.
+
+- **Depends on:** 20261006-6.
+- **Came from:** The review of 20261006-6, 2026-10-10 (minor).
+- **Design:** clock anchoring, arena setup.
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-9): items 1 and 2. A spec builds the real `quaack.clock_anchor()` under Pacific/Chatham and checks it returns `timestamptz` like `now()`, with `::timetz` and `::timetz(3)` values (red when the return type becomes `timestamp`); the driver's `run_from_older_version` note, README and DESIGN.md now say an older version started the run or its saved state is damaged or edited by hand. Item 3 (domain-typed and array-cast column defaults that read the clock) is carried by 20261011-1, documented as unsupported in v1.

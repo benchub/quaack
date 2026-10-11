@@ -667,18 +667,6 @@ From 20261003-43. After the counterexamples round stopped naming a cycle on its 
 - **Design:** result comparison, literals.
 - **Status:** todo
 
-### 20261010-9. Clock anchoring: small follow-ups from the review of 20261006-6.
-
-(minor)
-- The `current_time` anchor was checked against `now()::timetz` on Postgres 18 (including `current_time(3)` and a non-UTC TimeZone), but not against `quaack.clock_anchor()` itself: confirm `clock_anchor()` returns `timestamptz` like `now()` so `clock_anchor()::timetz` has the same semantics, with a spec.
-- The driver's note for `run_from_older_version` (`driver/lib/quaack/driver/fixed_notes.rb`) says an older version started the run; for a corrupt or hand-edited inventory (now also refused with that rule when `TimeZone` is missing) that is slightly misleading. Word it to cover both, or add a rule (a protocol and driver change).
-- Domain-typed and array casts in column defaults (`('today'::text)::public.clock_date`, `('{today}'::text)::date[]`) still read the wall clock: listed unsupported in v1. Decide whether to refuse such a default instead of letting it read the clock.
-
-- **Depends on:** 20261006-6.
-- **Came from:** The review of 20261006-6, 2026-10-10 (minor).
-- **Design:** clock anchoring, arena setup.
-- **Status:** todo
-
 ### 20261010-10. Index sources: a faithful store fake, and a mixed-label cell.
 
 From the review of 20261004-89 (minor).
@@ -909,3 +897,12 @@ The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed a
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Decided by the user (2026-10-11):** the budget is 5 minutes per rewrite. The user will profile part 1. The version bump waits until rewrite-test's performance is fixed.
 - **Status:** todo (needs the user)
+
+### 20261011-1. Document two setups as unsupported in v1: a same-signature `=` outside `pg_catalog`, and clock-reading domain or array-cast column defaults.
+
+Two decisions that need only documentation. (1) From 20261010-11, the user (2026-10-11) chose to leave it: the denormalized-equality check names `OPERATOR(pg_catalog.=)`, but the application's bare `=` resolves through the search path, so an application role that sees a different `=` with the same signature could make a rewrite rest on an equality the app never uses. It takes a hostile or very unusual setup. (2) From 20261010-9 item 3, by the default for rare shapes (the lean review loop): a column default that casts to a domain or array type and reads the clock (`('today'::text)::public.clock_date`, `('{today}'::text)::date[]`) still reads the wall clock. Add both to README's "What QUAACK won't do" list and to the matching DESIGN.md paragraphs (the 20261007-9 equality text, the clock-anchoring text). No code change, and no test beyond whatever spec checks the README list against DESIGN.md, if one exists. When it lands, mark 20261010-11 done too.
+
+- **Depends on:** None.
+- **Came from:** The user's decision on 20261010-11, 2026-10-11; 20261010-9 item 3.
+- **Design:** assumption check, clock anchoring.
+- **Status:** todo
