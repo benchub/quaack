@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261010-12: `not_in_to_not_exists` refuses a NOT IN that appears again in the same SELECT when a copy is in its GROUP BY, DISTINCT ON, or ORDER BY.
 - 20261008-36: the statistics read pins DateStyle to ISO, so stored date and timestamp values replay the same in any session.
+- 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
 
 ## How this file works.
@@ -730,6 +731,8 @@ The reviews of 20261008-38 found these minor issues:
 - **Depends on:** 20261008-38.
 - **Came from:** The reviews of 20261008-38, 2026-10-10.
 - **Design:** What goes into the enclave.
+- **Landed so far:** items 2, 4 and 5, 2026-10-10 (task/20261010-17). Item 2: `Qualify.tablespaces` counts the tables its query finds and refuses with `unknown_relation` on a shortfall. Item 4: the dispatcher spec's step order. Item 5: the `reply_json_spec` bound is 1 s.
+- **Open, needs the user:** item 1 (compare the run server's tablespaces with production's: how run-server learns the placement, and when to refuse) and item 3 (what to do about TOAST tables; one option is adding `reltoastrelid` to the `used` set).
 - **Status:** todo
 
 ### 20261010-18. LLM adapter for the Claude Code CLI.
