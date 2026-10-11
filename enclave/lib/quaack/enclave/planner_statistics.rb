@@ -115,10 +115,17 @@ module Quaack
 
       ENTRY = "statistics"
 
+      # pg_stats prints dates and timestamps in the session's DateStyle, and
+      # a picked value is later replayed as text through a cast, in another
+      # session. ISO reads back the same under any DateStyle, so the read
+      # pins it, for its own transaction only.
+      DATE_STYLE_SQL = "SELECT pg_catalog.set_config('DateStyle', 'ISO, MDY', true)"
+
       module_function
 
       def run(store:, relations:, connection:, query: nil)
         data = Inventory::Production.read_only(connection) do
+          connection.exec(DATE_STYLE_SQL)
           { "tables" => relations.map { Catalog.table(it, connection, query) } }
         end
         store.write(ENTRY, data)

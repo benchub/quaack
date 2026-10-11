@@ -75,6 +75,16 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(status["avg_width"]).to be_a(Integer).and be_positive
     end
 
+    it "reads dates and timestamps in ISO DateStyle whatever the session's, and leaves the session's alone" do
+      conn.exec("SET DateStyle = 'SQL, DMY'")
+      run
+      bounds = stored_table("orders")["columns"]["created_at"]["histogram_bounds"]
+
+      expect(bounds).not_to be_empty
+      expect(bounds).to all(match(/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/))
+      expect(conn.exec("SHOW DateStyle").getvalue(0, 0)).to eq("SQL, DMY")
+    end
+
     it "has histogram bounds as pg_stats prints them, from the lowest value to the highest" do
       run
       total = stored_table("orders")["columns"]["total_cents"]
