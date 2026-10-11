@@ -10419,3 +10419,13 @@ Two decisions that need only documentation. (1) From 20261010-11, the user (2026
 - **Came from:** The user's decision on 20261010-11, 2026-10-11; 20261010-9 item 3.
 - **Design:** assumption check, clock anchoring.
 - **Status:** **done.** Landed 2026-10-11 (task/20261011-1; README only): both setups are bullets in "What QUAACK won't do". DESIGN.md already said both.
+
+### 20261009-3. Index sources: leftovers from 20261003-5.
+
+- **`IndexSources#ignored`'s `result["refusal"] ||` clause is untested.** The fixture's refused result also has unused plans. Drop the clause or test a refused result with a used plan.
+- **`existed` and `ignored` are tested only on hand-built store entries.** Add one Postgres spec that runs a real index-dedupe and index-test pass with an existing index on a 2-table query and checks the counts.
+
+- **Depends on:** 20261003-5.
+- **Came from:** The review of 20261003-5, 2026-10-09.
+- **Design:** report.
+- **Status:** **done.** Landed 2026-10-11 (task/20261009-3): `IndexSources#ignored` drops the redundant `result["refusal"] ||` clause (a refused result has no plans, so `kept?` is already false; no behavior change, so no unreleased-list entry), and a Postgres spec runs the real `quaacks index-search` on a two-table query with an existing index and checks the existed and ignored counts.

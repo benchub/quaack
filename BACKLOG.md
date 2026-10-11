@@ -547,16 +547,6 @@ Carried from 20260927-28. `EnclaveError#unparsable` builds the note from the dri
 - **Design:** none.
 - **Status:** todo
 
-### 20261009-3. Index sources: leftovers from 20261003-5.
-
-- **`IndexSources#ignored`'s `result["refusal"] ||` clause is untested.** The fixture's refused result also has unused plans. Drop the clause or test a refused result with a used plan.
-- **`existed` and `ignored` are tested only on hand-built store entries.** Add one Postgres spec that runs a real index-dedupe and index-test pass with an existing index on a 2-table query and checks the counts.
-
-- **Depends on:** 20261003-5.
-- **Came from:** The review of 20261003-5, 2026-10-09.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them. Done, see BACKLOG-COMPLETE.md.
