@@ -391,19 +391,6 @@ From the reviews of 20260924-7.
 
 ### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-21. index-from-plan: `(InitPlan 1).col1` conditions and COLLATE filters.
-
-Split from 20260923-24, whose builder found both larger than a loose end:
-
-1. **`(InitPlan 1).col1` conditions are dropped whole, because pg_query can't parse them.** A fix would rewrite those tokens as a parameter before parsing. It should use pg_query's scanner, so a match inside a string literal is left alone.
-2. **COLLATE filters propose nothing.** A plain key would be a wasted candidate, since Postgres uses a btree for the comparison only when the index's collation matches the query's. A real fix needs two things: collation-aware key columns from the plan, and a decision on how a `COLLATE` predicate passes through index-dedupe.
-
-- **Depends on:** 20260923-24.
-- **Came from:** The builder of 20260923-24, 2026-10-08.
-- **Design:** index-from-plan.
-- **Landed so far:** the InitPlan half, 2026-10-10 (task/20261008-21; Opus review clean): `InitPlanOutput` rewrites each `(InitPlan n).colm` as `$1` using `PgQuery.scan` token spans (the same text inside a string literal, dollar-quoted string, comment or quoted identifier stays as it was; a reference without a column or unscannable text goes through and is refused as before), so a column equal to an InitPlan output becomes a constant equality key column and never a partial predicate. On the unreleased list. Open: the COLLATE half. A real fix needs collation-aware key columns from the plan and a decision on how a `COLLATE` predicate passes through index-dedupe (key columns are plain name strings throughout generator two); today a COLLATE filter proposes nothing, a clean safe refusal. Needs the user's call: do it, or drop it.
-- **Status:** todo
-
 ### 20261008-22. Live EXPLAIN JSON parses with JSON's default nesting limit. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24. Done, see BACKLOG-COMPLETE.md.
@@ -867,4 +854,13 @@ Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized 
 - **Depends on:** 20261010-10 (landed).
 - **Came from:** The build of 20261010-10, 2026-10-11.
 - **Design:** report.
+- **Status:** todo
+
+### 20261011-9. Document COLLATE filters as unsupported in v1 for index-from-plan.
+
+From 20261008-21 (the COLLATE half, dropped 2026-10-11 under the narrow v1 profile). An index key on a column compared with `COLLATE` only helps when the index's collation matches the query's, and generator two passes key columns as plain name strings, so a COLLATE filter proposes no index: a clean, safe refusal. Add it to README's "What QUAACK won't do" list and to the matching DESIGN.md index-from-plan text; verify by reading the code (and one quick check through the existing spec or a small one) that a `WHERE col COLLATE "C" = 'x'` filter proposes nothing and doesn't raise. No other code change.
+
+- **Depends on:** None.
+- **Came from:** The decision on 20261008-21, 2026-10-11.
+- **Design:** index-from-plan.
 - **Status:** todo

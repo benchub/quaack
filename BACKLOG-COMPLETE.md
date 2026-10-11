@@ -10513,3 +10513,16 @@ From 20261003-43. After the counterexamples round stopped naming a cycle on its 
 - **Came from:** 20261003-43's build and review, 2026-10-10.
 - **Design:** What goes out of the enclave.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-6): the error-line `cycle` field is gone from the whitelist, the enclave's `ErrorFilter` and the driver's `ErrorFields` and `EnclaveError` (the only producer of a cycle now is the report payload's rewrite fate, `Steps::CycleTables`, which stays); an fk_cycle refusal goes out as its rule alone, and a sentinel test pins that table names never appear. The driver drops an unknown `cycle` field on an error line instead of refusing it (an old enclave's line shows as plain fk_cycle); changing that to refuse as `unexpected_output` would be a separate task.
+
+### 20261008-21. index-from-plan: `(InitPlan 1).col1` conditions and COLLATE filters.
+
+Split from 20260923-24, whose builder found both larger than a loose end:
+
+1. **`(InitPlan 1).col1` conditions are dropped whole, because pg_query can't parse them.** A fix would rewrite those tokens as a parameter before parsing. It should use pg_query's scanner, so a match inside a string literal is left alone.
+2. **COLLATE filters propose nothing.** A plain key would be a wasted candidate, since Postgres uses a btree for the comparison only when the index's collation matches the query's. A real fix needs two things: collation-aware key columns from the plan, and a decision on how a `COLLATE` predicate passes through index-dedupe.
+
+- **Depends on:** 20260923-24.
+- **Came from:** The builder of 20260923-24, 2026-10-08.
+- **Design:** index-from-plan.
+- **Landed so far:** the InitPlan half, 2026-10-10 (task/20261008-21; Opus review clean): `InitPlanOutput` rewrites each `(InitPlan n).colm` as `$1` using `PgQuery.scan` token spans (the same text inside a string literal, dollar-quoted string, comment or quoted identifier stays as it was; a reference without a column or unscannable text goes through and is refused as before), so a column equal to an InitPlan output becomes a constant equality key column and never a partial predicate. On the unreleased list. Open: the COLLATE half. A real fix needs collation-aware key columns from the plan and a decision on how a `COLLATE` predicate passes through index-dedupe (key columns are plain name strings throughout generator two); today a COLLATE filter proposes nothing, a clean safe refusal. Needs the user's call: do it, or drop it.
+- **Status:** **done.** InitPlan half landed 2026-10-10. COLLATE half dropped 2026-10-11 under the narrow v1 profile (explicit COLLATE in a WHERE clause is rare in app and ORM SQL; a COLLATE filter proposes nothing today, a clean safe refusal): documented as unsupported in v1 by 20261011-9.
