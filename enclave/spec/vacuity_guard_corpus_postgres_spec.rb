@@ -144,13 +144,6 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
     { name: "correlated scalar subquery, no aggregate, equality",
       sql: "SELECT p.id FROM fx.posts p WHERE (SELECT c.user_id FROM fx.comments c WHERE c.post_id = p.id) = 3",
       allowed: {} },
-    { name: "correlated count = 1 and a filter",
-      sql: "SELECT * FROM fx.posts WHERE (SELECT count(*) FROM fx.comments " \
-           "WHERE fx.comments.post_id = fx.posts.id) = 1 AND fx.posts.published", allowed: {} },
-    { name: "correlated count = 1 and two filters",
-      sql: "SELECT * FROM fx.posts WHERE (SELECT count(*) FROM fx.comments " \
-           "WHERE fx.comments.post_id = fx.posts.id) = 1 AND fx.posts.title = 'x' AND fx.posts.score > 3",
-      allowed: {} },
     { name: "two NOT EXISTS on one parent, child table first",
       sql: "SELECT u.id FROM fx.users u WHERE NOT EXISTS (SELECT 1 FROM fx.posts p WHERE p.user_id = u.id) " \
            "AND NOT EXISTS (SELECT 1 FROM fx.users e WHERE e.manager_id = u.id)", allowed: {} },
@@ -419,17 +412,17 @@ module VacuityCorpus # rubocop:disable Metrics/ModuleLength -- a data table; one
   PENDING = {
     "correlated scalar subquery, no aggregate" => {
       untested: ["p.user_id = u.id"],
-      cause: "as on main, unconfirmed (20261010-35 adds no children here: more would make the subquery " \
-             "return several rows and the query fail)"
+      cause: "as on main, unconfirmed (a guard against the crash an extra child caused in 20261010-35's build)"
     },
     "correlated scalar subquery, no aggregate, equality" => {
       untested: ["c.post_id = p.id"],
       cause: "as on main; same as the shape above"
     },
-    "correlated count = 1 and a filter" => {
-      untested: ["(SELECT count(*) FROM fx.comments WHERE fx.comments.post_id = fx.posts.id) = $1",
-                 "fx.comments.post_id = fx.posts.id"],
-      cause: "as on main, unconfirmed: S1 may hold only the hit's one comment, so the loosened count is 1 too"
+    "correlated scalar count" => {
+      untested: ["fx.comments.post_id = fx.posts.id"],
+      cause: "confirmed (20261010-30): S1 holds a post with no comment, but count(*) > 2 changes only " \
+             "once more than 2 comments exist in all, and S1 builds 1; building more leaked the threshold " \
+             "(20261010-35's review), deferred to 20261010-48"
     },
     "count over join, ON tests one branch's column, both branches test another" => {
       untested: ["fx.posts.score > $6"],

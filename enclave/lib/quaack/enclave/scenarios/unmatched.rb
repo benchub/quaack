@@ -22,21 +22,19 @@ module Quaack
       # change. Neither does an outer join whose WHERE never passes the
       # child's NULLs (see Unmatched::Rejects).
       #
-      # A correlated count compared to an integer,
-      # (SELECT count(*) FROM o WHERE o.user_id = u.id) > 2, gives the hit's
-      # parent as many children as pass the comparison (see
-      # Unmatched::Children): with fewer in all, the loosened count can't
-      # cross it either.
+      # A correlated count's threshold, (SELECT count(*) ...) > 2, gets no
+      # more children in v1, so its join atom may stay untested: how many
+      # children the fixtures held would follow the literal, and so would
+      # what rewrite-test reports (the fixtures it loads).
       #
       #   Unmatched.new(parse.tree, atoms, topology).entries
-      #   # => [Entry(tables: [users], child: posts, children: 1, cross: nil)]
+      #   # => [Entry(tables: [users], child: posts, cross: nil)]
       class Unmatched
         OUTER = { JOIN_LEFT: %w[rarg], JOIN_RIGHT: %w[larg], JOIN_FULL: %w[larg rarg] }.freeze
 
-        # An unmatched parent's tables, the child's table, how many children
-        # the hit's parent gets in all, and a self-reference's foreign key
-        # (nil for any other).
-        Entry = Data.define(:tables, :child, :children, :cross)
+        # An unmatched parent's tables, the child's table, and a
+        # self-reference's foreign key (nil for any other).
+        Entry = Data.define(:tables, :child, :cross)
 
         def initialize(tree, atoms, topology)
           @tree = tree
@@ -44,13 +42,10 @@ module Quaack
           @topology = topology
         end
 
-        # One per parent's tables and child, with the most children any of
-        # its atoms asks for: a parent with two optional children (its posts
-        # and the users who report to it) gets one for each.
-        def entries
-          found = @atoms.filter_map { |atom| entry(atom) if Topology.equality_join?(atom) }
-          found.group_by { [it.tables, it.child, it.cross] }.map { |_, same| same.max_by(&:children) }
-        end
+        # One per parent's tables and child: a parent with two optional
+        # children (its posts and the users who report to it) gets one for
+        # each.
+        def entries = @atoms.filter_map { |atom| entry(atom) if Topology.equality_join?(atom) }.uniq
 
         private
 
@@ -59,11 +54,10 @@ module Quaack
           return unless child && optional?(atom, child, parent)
 
           table = child.table
-          return Entry.new(tables: [table], child: table, children: 1, cross:) if cross
+          return Entry.new(tables: [table], child: table, cross:) if cross
 
           found = @topology.ancestors(parent.table)
-          Entry.new(tables: found, child: table, children: Children.count(@tree, atom.path), cross:) unless
-            found.include?(table)
+          Entry.new(tables: found, child: table, cross:) unless found.include?(table)
         end
 
         # The child's column, the parent's, and for a self-reference its
@@ -179,74 +173,6 @@ module Quaack
                 dig(path[0...(start + (3 * n))]).bool_expr.boolop == :AND_EXPR
             end
           end
-        end
-
-        # How many children the hit's parent gets in all, for a join atom in
-        # a correlated count(*) or count(x) compared to an integer,
-        # (SELECT count(*) ... ) > 2: a count that passes the comparison, so
-        # the hit's parent passes and an unmatched one (0) doesn't, while
-        # with the join atom loosened every parent counts them all. Only a
-        # count with no GROUP BY, which returns one row however many
-        # children there are: another subquery (SELECT o.score ...) would
-        # return several and fail the query. 1, the hit's own child, for
-        # anything else, or when the count would pass MAX.
-        module Children
-          MAX = 10
-          # The count that passes count <op> n, for each operator.
-          PASSING = {
-            ">" => ->(n) { n + 1 }, ">=" => ->(n) { n }, "=" => ->(n) { n }, "<=" => ->(n) { n },
-            "<" => ->(n) { n - 1 }, "<>" => ->(n) { n == 1 ? 2 : 1 }
-          }.freeze
-          # The same test with the count on the right: n < count is count > n.
-          MIRRORED = { ">" => "<", ">=" => "<=", "<" => ">", "<=" => ">=", "=" => "=", "<>" => "<>" }.freeze
-
-          module_function
-
-          def count(tree, path)
-            k = path.rindex("sub_link")
-            return 1 unless compared?(tree, path, k)
-
-            wanted = passing(dig(tree, path[0...(k - 1)]), path[k - 1])
-            wanted&.between?(1, MAX) ? wanted : 1
-          end
-
-          # Whether the step at k is the atom's innermost scope, a scalar
-          # count that's one side of an operator.
-          def compared?(tree, path, step)
-            return false unless step && step >= 2 && path[step - 2] == "a_expr"
-
-            link = dig(tree, path[0..step])
-            !path[step..].intersect?(%w[join_expr range_subselect]) && link.sub_link_type == :EXPR_SUBLINK &&
-              count?(link.subselect.select_stmt)
-          end
-
-          def count?(select)
-            return false unless select && select.group_clause.empty? && select.target_list.size == 1
-
-            call = select.target_list[0].res_target.val&.func_call
-            call && names(call) == ["count"] && call.over.nil?
-          end
-
-          def names(call) = call.funcname.map { it.string.sval }
-
-          # The count that passes, when the other side is an integer.
-          def passing(expr, side)
-            op = operator(expr)
-            op = MIRRORED[op] if side == "rexpr"
-            return unless expr.kind == :AEXPR_OP && PASSING.key?(op)
-
-            value = integer(side == "lexpr" ? expr.rexpr : expr.lexpr)
-            PASSING.fetch(op).call(value) if value&.>=(0)
-          end
-
-          def integer(node)
-            ival = node&.a_const&.ival
-            ival&.ival
-          end
-
-          def operator(expr) = expr.name.size == 1 ? expr.name[0].string.sval : nil
-
-          def dig(tree, path) = path.reduce(tree) { |node, step| node[step] }
         end
       end
     end

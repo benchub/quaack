@@ -48,20 +48,6 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.s1_rows).to be_positive
   end
 
-  # 20261010-35: S1's rows depend on the query's literals (a count's
-  # threshold gives the hit's parent that many children), so both counts go
-  # out as 0 or 1, for one or more, never the threshold.
-  [[">", 0..9], ["=", 1..9], [">=", 1..9], ["<=", 1..9]].each do |op, range|
-    it "reports the same S1 counts whatever a count's threshold, for #{op}" do
-      reported = range.map do |n|
-        _, result = guard("SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id " \
-                          "WHERE (SELECT count(*) FROM fx.orders o2 WHERE o2.customer_id = c.id) #{op} #{n}")
-        [result.s1_rows, result.s1_nonzero_rows]
-      end
-      expect(reported.uniq).to eq([[1, 1]])
-    end
-  end
-
   # 20261010-22: s1_rows is 1 for any aggregate, so s1_nonzero_rows counts
   # the rows of the original's S1 result with a value that's neither NULL nor
   # a numeric zero: 0 means S1 matched nothing, whatever the aggregate.
@@ -169,6 +155,16 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
 
     expect(result.s1_load_rule).to eq(:statement_timeout)
     expect(result.s1_rows).to be_nil
+  end
+
+  # 20261010-35: S1's rows can follow the query's literals, so both counts
+  # go out as 0, or 1 for one or more, never the count itself.
+  it "reports S1's counts as 0 or 1, whatever the number of rows" do
+    reported = [0, 1, 2, 3, 7, 1000].map do |rows|
+      result = guard_with(faked_runner([nil] * 4, rows:))
+      [result.s1_rows, result.s1_nonzero_rows]
+    end
+    expect(reported).to eq([[0, 0], [1, 0], [1, 1], [1, 1], [1, 1], [1, 1]])
   end
 
   it "records the last attempt's row count, not the first's" do

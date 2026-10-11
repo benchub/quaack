@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "quaack/enclave/scenarios"
+require "quaack/enclave/scenario_tests"
 
 # Unmatched groups (20261010-30): a parent with no child, for a join atom an
 # outer join or a correlated subquery leaves the child optional to.
@@ -121,63 +122,25 @@ RSpec.describe Quaack::Enclave::Scenarios do
     ].each { |sql| expect(childless_users(sql).size).to be >= 1, sql }
   end
 
-  it "gives some user more posts than a correlated count's threshold" do
-    sql = "SELECT fx.users.id FROM fx.users WHERE (SELECT count(*) FROM fx.posts " \
-          "WHERE fx.posts.user_id = fx.users.id) > 2"
-    expect(rows(sql, "posts").map { it["user_id"] }.tally.values.max).to eq(3)
-    expect(childless_users(sql).size).to eq(1)
-    both = "#{sql} AND NOT EXISTS (SELECT 1 FROM fx.posts WHERE fx.posts.user_id = fx.users.id AND fx.posts.score > 5)"
-    expect(rows(both, "posts").map { it["user_id"] }.tally.values.max).to eq(3)
-  end
-
-  it "builds no extra posts for a threshold past the bound" do
-    far = "SELECT fx.users.id FROM fx.users WHERE (SELECT count(*) FROM fx.posts " \
-          "WHERE fx.posts.user_id = fx.users.id) > 50"
-    expect(rows(far, "posts").map { it["user_id"] }.tally.values.max).to eq(1)
-  end
-
+  # 20261010-35: a correlated count's threshold builds no extra children in
+  # v1 (they made the fixtures, and so the fixtures loaded, follow the
+  # literal). What rewrite-test reports must not step with the threshold.
   count = "(SELECT count(*) FROM fx.posts WHERE fx.posts.user_id = fx.users.id)"
-  # The count the hit's user gets: one that passes the comparison, from 1
-  # (the hit's own post) up to Unmatched::Children::MAX.
   {
-    "#{count} > 9" => 10, "#{count} > 10" => 1, "#{count} >= 3" => 3, "#{count} = 2" => 2, "#{count} = 1" => 1,
-    "#{count} <= 2" => 2, "#{count} < 3" => 2, "#{count} < 1" => 1, "#{count} <> 1" => 2, "#{count} <> 3" => 1,
-    "2 < #{count}" => 3, "4 >= #{count}" => 4, "3 = #{count}" => 3
-  }.each do |test, posts|
-    it "gives the hit's user #{posts} posts for #{test.sub(count, "count")}" do
-      expect(most_posts("SELECT fx.users.id FROM fx.users WHERE #{test}")).to eq(posts)
+    "#{count} = n" => 2..9, "#{count} <= n" => 1..9, "n < #{count}" => 1..9, "#{count} < n" => 2..9,
+    "#{count} > n, joined" => 1..9
+  }.each do |test, range|
+    it "reports the same loads, drops, spills and diagnostic for every n, for #{test.sub(count, "count")}" do
+      reported = range.map do |n|
+        where = test.sub(", joined", "").sub(/\bn\b/, n.to_s)
+        from = test.end_with?("joined") ? "fx.users JOIN fx.posts p ON p.user_id = fx.users.id" : "fx.users"
+        sql = "SELECT fx.users.id FROM #{from} WHERE #{where}"
+        report = Quaack::Enclave::ScenarioTests.run(conn, sql, [sql])
+        report.to_h.slice(:loads, :dropped, :retries, :untested, :s1_rows, :s1_nonzero_rows)
+      end
+      expect(reported.uniq.size).to eq(1), reported.uniq.inspect
+      expect(most_posts("SELECT fx.users.id FROM fx.users WHERE #{count} > 2")).to eq(1)
     end
-  end
-
-  it "gives no extra posts for a count beside other columns, or a subquery that's no count" do
-    [
-      "SELECT fx.users.id FROM fx.users WHERE (SELECT fx.posts.score FROM fx.posts " \
-      "WHERE fx.posts.user_id = fx.users.id) > 3",
-      "SELECT fx.users.id FROM fx.users WHERE (SELECT max(fx.posts.score) FROM fx.posts " \
-      "WHERE fx.posts.user_id = fx.users.id) > 3",
-      "SELECT fx.users.id FROM fx.users WHERE (SELECT count(*) FROM fx.posts " \
-      "WHERE fx.posts.user_id = fx.users.id GROUP BY fx.posts.score) > 3"
-    ].each { |sql| expect(most_posts(sql)).to eq(1), sql }
-  end
-
-  # dropped goes out in the report, so it mustn't follow the threshold: a
-  # has_one child's extra rows always collide on its unique key.
-  it "counts no extra child that's left out as dropped, or spills it, whatever the threshold" do
-    conn.exec("CREATE TABLE fx.profiles (id bigint PRIMARY KEY, user_id bigint NOT NULL UNIQUE REFERENCES fx.users)")
-    dropped = (0..9).map do |n|
-      sql = "SELECT fx.users.id FROM fx.users WHERE (SELECT count(*) FROM fx.profiles " \
-            "WHERE fx.profiles.user_id = fx.users.id) > #{n}"
-      builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
-      built = builder.build
-      [builder.dropped, builder.spills.transform_values(&:size), built.transform_values(&:size)]
-    end
-    expect(dropped.uniq.size).to eq(1)
-  end
-
-  it "keeps the extra posts apart from S3's copy of the hit's post" do
-    sql = "SELECT fx.users.id FROM fx.users WHERE (SELECT count(*) FROM fx.posts " \
-          "WHERE fx.posts.user_id = fx.users.id) > 2"
-    expect(most_posts(sql, :s3)).to eq(4)
   end
 
   it "builds an a with no b for a LEFT JOIN on a composite foreign key" do

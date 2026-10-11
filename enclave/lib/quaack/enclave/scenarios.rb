@@ -155,9 +155,6 @@ module Quaack
       GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil, shift: 0, also: [].freeze }.freeze
       SPLIT_KEY = 100_000
       COPY_KEY = 200_000
-      # The first copy number of a count's extra children (see
-      # Plan#more_children), past S3's copy 1 and S6's 2.
-      MORE_CHILDREN_COPY = 3
 
       # A foreign key of table, on columns, whose row points at the parent
       # row in the group with key (the hit, which S3 holds).
@@ -280,16 +277,11 @@ module Quaack
           first.tap { @spills[name] = rest unless rest.empty? }
         end
 
-        # A count's extra children (see Plan#more_children) that don't fit
-        # the first fixture are left out, not counted as dropped or spilled
-        # into further fixtures: how many there are follows the query's
-        # literal, and dropped and the fixtures loaded go out in the report
-        # and the burndown.
         def fill(groups, tie_rows, counted: true)
           parts = Parts.new(@schema, @conn, @evaluated)
-          groups.filter_map { |g| retries.for(g)&.then { [it, g.copy < MORE_CHILDREN_COPY] } }
-                .each { |chains, kept| parts.add(chains, kept:) }.then { tie_rows.each { parts.add([[it]]) } }
-          parts.in_order(@topology.order).tap { @dropped += parts.dropped if counted }
+          (groups.filter_map { retries.for(it) } + tie_rows.map { [[it]] }).each { parts.add(it) }
+          @dropped += parts.dropped if counted
+          parts.in_order(@topology.order)
         end
 
         def retries = @retries ||= Retries.new(@pools.keys) { build_group(it) }

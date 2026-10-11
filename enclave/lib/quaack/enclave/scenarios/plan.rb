@@ -59,23 +59,15 @@ module Quaack
         # every atom satisfied, and a near miss for each pooled atom on those
         # tables, so an atom on the parent changes which unmatched parents
         # the query returns. Last, after the masking near misses, so their
-        # keys come after every other group's. A count's threshold gives the
-        # hit's parent more children (see more_children).
+        # keys come after every other group's.
         def unmatched(hit)
           @unmatched.flat_map do |entry|
             tables = entry.tables
             near = @pooled.select { |i| @atoms[i].columns.all? { tables.include?(it.table) } }
             next unreferenced(entry, hit, near) if entry.cross
 
-            [*more_children(entry, hit), *[nil, *near].map { |i| group(fresh_key, tables, near: i) }]
+            [nil, *near].map { |i| group(fresh_key, tables, near: i) }
           end
-        end
-
-        # Copies of the hit's child row, numbered from MORE_CHILDREN_COPY,
-        # past S3's and S6's copies, so they don't collide with them, and
-        # Builder#fill can leave them out of dropped.
-        def more_children(entry, hit)
-          (1...entry.children).map { group(hit.key, [entry.child], copy: MORE_CHILDREN_COPY + it - 1) }
         end
 
         # A self-reference's unmatched row: a cross that points at the
