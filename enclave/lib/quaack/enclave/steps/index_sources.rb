@@ -73,10 +73,11 @@ module Quaack
         def ignored(entry)
           set_aside = entry.fetch("set_aside", []).map { IndexStore.candidate(it) }
           (entry.fetch("results", []) + entry.fetch("llm_results", [])).filter_map do |result|
-            names(result["candidate"]) if result["refusal"] || !kept?(result, set_aside)
+            names(result["candidate"]) unless kept?(result, set_aside)
           end
         end
 
+        # A refused result has no plans, so it's never kept.
         def kept?(result, set_aside)
           used = result["plans"].to_h.values.any? { it["used"] }
           used || set_aside.include?(IndexStore.candidate(result["candidate"]))

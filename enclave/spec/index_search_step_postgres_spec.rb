@@ -160,6 +160,58 @@ RSpec.describe "quaacks index-search, against a real server" do
     end
   end
 
+  # Task 20261009-3: index_sources' existed and ignored counts, from the entry a real index-dedupe and
+  # index-test pass saved, on a two-table query with one index already there.
+  context "when a two-table query already has an index on its join column" do
+    let(:customers) { Quaack::Enclave::TableName.new(schema: "public", name: "customers") }
+    let(:query) do
+      "SELECT o.note, c.name FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
+        "WHERE o.status = 'held' AND c.region = 'north'"
+    end
+
+    def seed(conn)
+      conn.exec(<<~SQL)
+        CREATE TABLE public.customers (id int PRIMARY KEY, region text, name text);
+        INSERT INTO public.customers SELECT i, (ARRAY['north', 'south', 'east', 'west'])[i % 4 + 1], 'c' || i
+        FROM generate_series(1, 2000) AS i;
+        CREATE TABLE public.orders (id int PRIMARY KEY, customer_id int, note text, status text);
+        INSERT INTO public.orders SELECT i, i % 2000 + 1, 'n' || i, (ARRAY['open', 'held', 'shipped'])[i % 3 + 1]
+        FROM generate_series(1, 20000) AS i;
+        CREATE INDEX orders_customer_id_idx ON public.orders (customer_id);
+        ANALYZE public.customers, public.orders;
+      SQL
+    end
+
+    def capture_and_classify(conn, explain)
+      store.write("plan", explain)
+      store.write("qualified_query", query)
+      store.write("relations", [{ "schema" => "public", "name" => "customers" },
+                                { "schema" => "public", "name" => "orders" }])
+      Quaack::Enclave::PlannerStatistics.run(store:, relations: [customers, orders], connection: conn)
+      Quaack::Enclave::PiiClassification.run(store:, config: Quaack::Enclave::Config.new({}))
+    end
+
+    it "counts, by source, the proposals covered by an existing index and the tested ones the planner ignored" do
+      require "quaack/enclave/steps/index_sources"
+      prepare
+
+      index_search
+
+      entry = stored.read("index_search_original")
+      covered = entry["dedupe"]["drops"].select { it["reason"] == "covered_by_existing" }
+      expect(covered.map { [it["candidate"]["table"]["name"], it["covered_by"]["existing"]] }).to contain_exactly(
+        %w[orders orders_customer_id_idx], %w[customers customers_pkey]
+      )
+      # Generator one proposed all of them and generator two none, so every count falls under generator one.
+      expect(entry["results"].map { it["candidate"]["sources"] }.uniq).to eq([%w[parse]])
+      drops = Quaack::Enclave::Steps::IndexSources.drops(stored)
+      expect(drops.transform_values(&:tally)).to eq("existed" => { %w[generator_one] => 2 },
+                                                    "ignored" => { %w[generator_one] => 4 })
+      expect(Quaack::Enclave::Steps::IndexSources.tally(drops, "generator_one")).to eq("existed" => 2, "ignored" => 4)
+      expect(Quaack::Enclave::Steps::IndexSources.tally(drops, "generator_two")).to eq("existed" => 0, "ignored" => 0)
+    end
+  end
+
   it "stores each plan redacted through redact, with placeholders where the sentinel literal was" do
     prepare
     index_search
