@@ -1440,7 +1440,7 @@ RSpec.describe "quaacks report-payload" do
           dup = { "reason" => "duplicate", "candidate" => plain(id, :plan), "covered_by" => {} }
           original = store.read("index_search_original")
           tested = [{ "candidate" => plain(id, :plan), "plans" => unused },
-                    { "candidate" => plain(note, :parse), "plans" => unused,
+                    { "candidate" => plain(note, :parse), "plans" => {}, "size" => nil,
                       "refusal" => { "rule" => "hypopg_refused", "sqlstate" => "42P01" } },
                     { "candidate" => plain(proposed["quaack_b"], :plan), "plans" => used },
                     { "candidate" => plain(proposed["quaack_c"], :plan), "plans" => unused }]
