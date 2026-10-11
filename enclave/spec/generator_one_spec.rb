@@ -1463,6 +1463,26 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(generate(own, stats).select { |c| c.table == orders }).to include(btree(orders, %w[b], %w[a]))
     end
 
+    it "counts an outer column read only in one arm of a correlated set operation" do
+      stats = statistics(table(orders, { "a" => column(10), "b" => column(20) }, extra: %w[id total region]),
+                         table(customers, { "id" => column(1000) }, extra: %w[region]))
+      sql = "SELECT a FROM public.orders o WHERE a = 1 AND b = 2 " \
+            "AND EXISTS (SELECT 1 FROM public.customers c WHERE c.id = 5 " \
+            "UNION SELECT 1 FROM public.customers c WHERE c.id = o.total)"
+
+      expect(generate(sql, stats).select { |c| c.table == orders })
+        .to eq([btree(orders, %w[b]), btree(orders, %w[b a])])
+    end
+
+    it "doesn't count a column of an inner alias that shadows the outer one" do
+      stats = statistics(table(orders, { "a" => column(10), "b" => column(20) }, extra: %w[id total region]),
+                         table(customers, { "id" => column(1000) }, extra: %w[region]))
+      sql = "SELECT a FROM public.orders o WHERE a = 1 AND b = 2 " \
+            "AND EXISTS (SELECT 1 FROM public.customers o WHERE o.id = 5 AND o.region = 'x')"
+
+      expect(generate(sql, stats).select { |c| c.table == orders }).to include(btree(orders, %w[b], %w[a]))
+    end
+
     it "also proposes the INCLUDE columns moved into the key when the leading column is low-cardinality (e2e 055)" do
       stats = statistics(table(orders, { "status" => column(4), "total_cents" => column(5000) }, extra: %w[id]))
       sql = "SELECT sum(total_cents) FROM public.orders WHERE status = 'shipped'"
