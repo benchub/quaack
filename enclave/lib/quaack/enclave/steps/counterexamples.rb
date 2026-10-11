@@ -5,6 +5,7 @@ require_relative "../rewrite_entry"
 require_relative "../arena_runner"
 require_relative "../atom_position"
 require_relative "../counterexamples"
+require_relative "../deadline"
 require_relative "../denormalized_fixture"
 require_relative "../redaction"
 require_relative "../rewrite_burndown"
@@ -84,13 +85,20 @@ module Quaack
         # Sends one rewrite_test: rewrite, passed, scenario, rule. An
         # fk_cycle refusal also stores cycle, the cycle's [schema, name]
         # pairs, for the report; it isn't sent here.
+        #
+        # deadline is the rewrite's budget (Deadline, five minutes from the
+        # call). A test that runs past it is stopped, and the rewrite is left
+        # out with rule out_of_time (Protocol::RewriteBudget): not passed,
+        # nothing untested, not a refusal, so the next rewrite is tested as
+        # usual, and RewriteFate calls it rewrite_test_out_of_time, never
+        # disproved. The step still ends cleanly.
         module RewriteTest
           module_function
 
-          def call(store:, options:, **)
+          def call(store:, options:, deadline: Deadline.new, **)
             search = options.fetch("search")
             number = Counterexamples.search!(store, search, "rewrite_test")
-            result = discarded?(store, number) ? discarded : test(store, search)
+            result = discarded?(store, number) ? discarded : test(store, search, deadline)
             # Survival first: a crash between the two writes leaves the
             # rewrite untested, so a resumed run tests it again.
             Counterexamples.survived(store, number, false) unless result["passed"]
@@ -104,37 +112,50 @@ module Quaack
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]
           end
 
-          def discarded
-            { "passed" => false, "scenario" => nil, "rule" => "discarded", "untested" => [], "untested_atoms" => [],
+          def discarded = untried("discarded")
+
+          def untried(rule)
+            { "passed" => false, "scenario" => nil, "rule" => rule, "untested" => [], "untested_atoms" => [],
               "untested_unchanged" => [] }
           end
 
           # The result, once its burndown is recorded (RewriteBurndown.record_test).
           # A refusal comes from the query, not the rewrite, so the first one
           # is kept as rewrite_test_refusal and every later rewrite gets it.
-          def test(store, search)
+          def test(store, search, deadline)
             Counterexamples.arena!(store, "rewrite_test")
             return refusal(store, search) if store.entry?("rewrite_test_refusal")
 
-            run(store, search).tap { store.write("rewrite_test_refusal", it) if it["refused"] }
+            run(store, search, deadline).tap { store.write("rewrite_test_refusal", it) if it["refused"] }
           end
 
           def refusal(store, search)
             result = store.read("rewrite_test_refusal")
-            report = ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
-                                               refused: result["rule"], cycle: nil, loads: 0, s1_load_rule: nil,
-                                               s1_rows: nil, s1_nonzero_rows: nil)
-            result.tap { RewriteBurndown.record_test(store, search, it, report) }
+            result.tap { RewriteBurndown.record_test(store, search, it, empty_report(result["rule"])) }
           end
 
-          def run(store, search)
+          def empty_report(refused)
+            ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
+                                      refused:, cycle: nil, loads: 0, s1_load_rule: nil, s1_rows: nil,
+                                      s1_nonzero_rows: nil)
+          end
+
+          # The arena transaction an Expired interrupts has rolled back
+          # (ArenaRunner), and the connection closes here.
+          def run(store, search, deadline)
             connection = Enclave::RunServer.connect(store, :arena)
-            original, candidate = Counterexamples.queries(store, search)
-            report = ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search))
+            report = Deadline.within(deadline) { scenario_tests(connection, store, search) }
             result = outcome(report, unchanged(store, search, report))
             result.tap { RewriteBurndown.record_test(store, search, it, report) }
+          rescue Deadline::Expired
+            untried(Protocol::RewriteBudget::RULE).tap { RewriteBurndown.record_test(store, search, it, empty_report(nil)) }
           ensure
             connection&.close
+          end
+
+          def scenario_tests(connection, store, search)
+            original, candidate = Counterexamples.queries(store, search)
+            ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search))
           end
 
           # The redacted shapes of the untested atoms the rewrite left

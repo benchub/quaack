@@ -3,6 +3,10 @@
 require "securerandom"
 require "quaack/enclave/burndown"
 require "quaack/enclave/steps/report_payload"
+require "quaack/enclave/steps/counterexamples"
+require "quaack/enclave/steps/rule_bugs"
+require "quaack/enclave/egress"
+require "quaack/enclave/deadline"
 require_relative "support/index_search_run"
 
 # `quaacks rewrite-test`, `counterexample-payload`, and
@@ -407,6 +411,65 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       none = { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }
       expect(burndown["stages"]["rewrite-test"]["rewrite_2"]).to eq(counted(dropped: { "complex_check" => 1 },
                                                                             extra: none))
+    end
+
+    # Task 20261010-53: a rewrite whose test runs past its budget is left
+    # out as out_of_time, not disproved, and the next rewrite is tested.
+    describe "the budget per rewrite" do
+      let(:rewrite_test) { Quaack::Enclave::Steps::Counterexamples::RewriteTest }
+
+      # rewrite-test in this process, as the CLI calls it, with libpq_env's
+      # credentials, under deadline.
+      def in_process(search, deadline)
+        saved = ENV.to_h
+        libpq_env.each { |name, value| value.nil? ? ENV.delete(name) : ENV.store(name, value) }
+        rewrite_test.call(store: stored, options: { "search" => search }, deadline:)
+      ensure
+        ENV.replace(saved)
+      end
+
+      def spent = Quaack::Enclave::Deadline.new(0)
+
+      it "reports a rewrite out of time, drops it as out_of_time, calls it no bug, and tests the next one" do
+        ready(same)
+        store.write("rewrite_1", stored.read("rewrite_1").merge("source" => "rule", "rules" => ["key_in_self_join"]))
+        store.write("rewrite_2", stored.read("rewrite_1"))
+
+        messages = in_process("rewrite_1", spent)
+
+        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: false, scenario: nil,
+                                  rule: "out_of_time" }])
+        line = Quaack::Enclave::Egress.serialize(messages.first)
+        expect(JSON.parse(line)).to include("rule" => "out_of_time")
+        expect(stored.read("rewrite_tested_1")).to include("passed" => false, "rule" => "out_of_time",
+                                                           "untested" => [])
+        expect(stored.read("rewrite_tested_1")).not_to have_key("refused")
+        expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
+        expect(stored.entry?("rewrite_test_refusal")).to be(false)
+        fate = Quaack::Enclave::Steps::RewriteFate
+        expect(fate.early(fate.steps(stored, "1"), nil)).to include("fate" => "rewrite_test_out_of_time",
+                                                                    "rule" => nil, "scenario" => nil)
+        expect(Quaack::Enclave::Steps::RuleBugs.call(stored)).to eq([])
+        expect(burndown["stages"]["rewrite-test"]["rewrite_1"])
+          .to eq(counted(dropped: { "out_of_time" => 1 }, extra: { "untested_atoms" => 0,
+                                                                   "vacuity_guard_retries" => 0 }))
+        expect_no_leaks(sentinels, stdout: line, stderr: JSON.generate(stored.read("rewrite_tested_1")))
+
+        outcome = step("rewrite-test", "--search", "rewrite_2")
+        expect(lines(outcome).first).to include("rewrite" => "rewrite_2", "passed" => true, "rule" => nil)
+      end
+
+      it "leaves the arena with no row and no session open after a rewrite runs out of time partway" do
+        ready(same)
+        calls = 0
+        partway = Quaack::Enclave::Deadline.new(1, clock: -> { (calls += 1) > 40 ? 1_000.0 : 0.0 })
+
+        expect(in_process("rewrite_1", partway).first).to include(rule: "out_of_time")
+        expect(calls).to be > 40
+        expect(arena_exec("SELECT count(*) FROM public.orders").getvalue(0, 0)).to eq("0")
+        expect(arena_exec("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() " \
+                          "AND pid <> pg_backend_pid()").getvalue(0, 0)).to eq("0")
+      end
     end
 
     it "skips a rewrite plan-pruning discarded, without connecting to the arena" do

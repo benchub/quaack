@@ -789,6 +789,18 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Egress sends a rewrite_test only if its rule passes
+    # Protocol::RewriteBudget.rule? (20261010-53), so the driver checks the same.
+    it "reads a rewrite_test whose rule is out_of_time, and refuses one whose rule is free text" do
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"out_of_time"})
+      result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first).to include("type" => "rewrite_test", "rule" => "out_of_time")
+      error = refusal(%({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"rule":"#{sentinel} x"}))
+      expect(error.rule).to eq("unexpected_output")
+      expect(error.full_message(highlight: false)).not_to include(sentinel)
+    end
+
     # Egress sends a report only if its plans pass Protocol::PlanNodes.valid?,
     # so the driver checks the same.
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do

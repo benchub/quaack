@@ -1151,6 +1151,8 @@ rewrite-test and counterexamples together make up rewrite-correctness, which run
 
 The enclave script runs all of rewrite-test. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
 
+Each rewrite gets 5 minutes of wall-clock time for its test (`Protocol::RewriteBudget`, task 20261010-53). The 10-second `statement_timeout` bounds one statement, not a whole test, and a profile showed the time going to Ruby's scenario building, not to Postgres. So the enclave checks a deadline before each arena statement, which covers every load, query, and scenario, and in the scenario builder's row loop (`Scenarios::RowSet`). Past it, the test stops: the arena transaction it was in rolls back, the connection closes, and `rewrite-test` ends cleanly with `passed` false and `rule` `out_of_time` on its `rewrite_test` message. The rewrite is left out, untested, like any other rewrite that couldn't be tested. Its fate is `rewrite_test_out_of_time`, it's never a disproof or a rule bug, the burndown drops it as `out_of_time`, and the next rewrite is tested as usual. The driver says, under the rewrite's name, that QUAACK couldn't test it within 5 minutes and left it out. A `rewrite_test` message's `rule` must be nil or a lowercase word (`Protocol::RewriteBudget.rule?`), which egress and the driver both check. Counterexample rounds load only the LLM's inserts and have no such budget.
+
 #### fixture-scenarios. Scenarios.
 
 From the pg_query parse, pull out every predicate atom:

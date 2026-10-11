@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/rewrite_budget"
+
 require_relative "../rewrite_names"
 
 module Quaack
@@ -24,7 +26,9 @@ module Quaack
         # statement that failed on the test database.
         FAILURES = { "unsupported_order" => "the order of the original query's rows can't be checked",
                      "statement_timeout" => "a statement timed out",
-                     "statement_canceled" => "a statement was canceled" }.freeze
+                     "statement_canceled" => "a statement was canceled",
+                     Protocol::RewriteBudget::RULE => "its test didn't finish within " \
+                                                      "#{Protocol::RewriteBudget.minutes} minutes" }.freeze
         FAILED = "a statement failed on the test database"
 
         # Why rewrite-test couldn't make up test data for the query, by its rule.

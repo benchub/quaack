@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/rewrite_budget"
 require_relative "../arena_fixture"
 require_relative "../result_comparator"
 require_relative "../scenarios"
@@ -34,6 +35,9 @@ module Quaack
       #                            results (the original's order can't be
       #                            checked, or a statement failed in arena);
       #                            with the scenario and the rule
+      #   rewrite_test_out_of_time  rewrite-test ran past its budget per rewrite
+      #                            (rule out_of_time, Protocol::RewriteBudget),
+      #                            so the rewrite was left out untested
       #   counterexamples_disproved         a counterexample-compare round got different results; with
       #                            the round and the rule
       #   counterexamples_failed            a counterexample-compare round ended without comparing
@@ -72,6 +76,7 @@ module Quaack
       # cycle with any other value goes out as nil.
       module RewriteFate
         FATES = %w[ranked same_plans rewrite_test_disproved rewrite_test_untested rewrite_test_failed
+                   rewrite_test_out_of_time
                    counterexamples_disproved counterexamples_failed production_mismatch production_timed_out
                    production_not_compared below_top_three footprint_tie not_better measurement_timed_out
                    unfinished].freeze
@@ -87,6 +92,10 @@ module Quaack
         # Scenarios::Error's rules: why rewrite-test couldn't build scenarios.
         REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
                       domain_check exclusion_constraint].freeze
+
+        # The rules rewrite-test drops a rewrite by when it tested nothing: a
+        # failure, a refusal, or the budget's out_of_time (Protocol::RewriteBudget).
+        UNTESTED = [*FAILURES, *REFUSALS, Protocol::RewriteBudget::RULE].freeze
 
         # result-comparison's failing rules that compare nothing.
         PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
@@ -154,6 +163,7 @@ module Quaack
 
         def rewrite_test(tested, context)
           return untested(tested, context) if tested["refused"] == true
+          return fate("rewrite_test_out_of_time") if tested["rule"] == Protocol::RewriteBudget::RULE
 
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])

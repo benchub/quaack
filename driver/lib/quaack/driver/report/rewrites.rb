@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/rewrite_budget"
+
 module Quaack
   module Driver
     module Report
@@ -30,6 +32,9 @@ module Quaack
           "rewrite_test_untested" => "QUAACK couldn't make up test data for the original query%<refusal>s, so it " \
                                      "never tested this rewrite and won't recommend it. That says nothing about " \
                                      "whether it's right.",
+          Protocol::RewriteBudget::FATE => "QUAACK couldn't test it within #{Protocol::RewriteBudget.minutes} " \
+                                           "minutes, so it left it out and won't recommend it. That says nothing " \
+                                           "about whether it's right.",
           "production_mismatch" => "#{PASSED} returned different results from the original query on the real " \
                                    "data, so it's wrong.",
           "production_timed_out" => "#{PASSED} timed out when QUAACK compared its results with the original query's " \

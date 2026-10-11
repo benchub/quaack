@@ -8,6 +8,7 @@ require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
+require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
 require "quaack/protocol/unchanged_atoms"
 require "quaack/protocol/untested_states"
@@ -146,9 +147,10 @@ module Quaack
       # A rewrite_test message's s1_load_rule must be nil or a rule from the
       # fixed list and its s1_rows and s1_nonzero_rows each nil or a count (see
       # Protocol::VacuityDiagnostic.valid?), so no error message or value
-      # rides out in them.
+      # rides out in them. Its rule must be nil or a lowercase word, such as
+      # the budget's out_of_time (Protocol::RewriteBudget.rule?).
       def check_rewrite_test(fields)
-        return if Protocol::VacuityDiagnostic.valid?(fields)
+        return if Protocol::VacuityDiagnostic.valid?(fields) && Protocol::RewriteBudget.rule?(fields["rule"])
 
         raise Error, "a value in this rewrite_test message isn't a vacuity diagnostic"
       end

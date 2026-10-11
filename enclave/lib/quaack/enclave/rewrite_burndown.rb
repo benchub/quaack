@@ -104,13 +104,14 @@ module Quaack
 
       # Why rewrite-test dropped a rewrite: the scenario that got different
       # results, s0 to s6, or the rule of a scenario that compared nothing or
-      # of a refusal to build scenarios, each a constant of RewriteFate's.
+      # of a refusal to build scenarios, each a constant of RewriteFate's, or
+      # out_of_time for a test that ran past its budget (Protocol::RewriteBudget).
       # Anything else is failed.
       def test_drop(result)
         scenario, rule = result.values_at("scenario", "rule")
         return scenario.to_sym if Steps::RewriteFate::MISMATCHES.include?(rule) &&
                                   Steps::RewriteFate::SCENARIOS.include?(scenario)
-        return rule.to_sym if (Steps::RewriteFate::FAILURES + Steps::RewriteFate::REFUSALS).include?(rule)
+        return rule.to_sym if Steps::RewriteFate::UNTESTED.include?(rule)
 
         :failed
       end

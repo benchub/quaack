@@ -972,6 +972,12 @@ RSpec.describe Quaack::Driver::Report do
           .to include("ended without comparing results, because a statement failed on the test database, so")
       end
 
+      it "says a rewrite whose test ran past its budget was left out, not that it's wrong (20261010-53)" do
+        expect(fate("rewrite_test_out_of_time"))
+          .to eq(esc("QUAACK couldn't test it within 5 minutes, so it left it out and won't recommend it. That " \
+                     "says nothing about whether it's right."))
+      end
+
       it "says a rewrite was never tested when rewrite-test couldn't build test data, and why, by rule" do
         expect(fate("rewrite_test_untested", rule: "complex_check"))
           .to eq(esc("QUAACK couldn't make up test data for the original query, because a CHECK constraint on its " \
@@ -2424,8 +2430,9 @@ RSpec.describe Quaack::Driver::Report do
     # Task 20261004-69: rewrite-test's never-tested reasons in the fates'
     # own words, and a counterexamples round that failed to run said so.
     it "says why rewrite-test never tested a rewrite, and which round failed to run, in words" do
-      untested = { "s2" => 1, "complex_check" => 1, "statement_timeout" => 1, "query_failed" => 1, "failed" => 1 }
-      stages = { "rewrite-test" => { "rewrite_1" => rec(5, 0, dropped: untested) },
+      untested = { "s2" => 1, "complex_check" => 1, "statement_timeout" => 1, "query_failed" => 1, "failed" => 1,
+                   "out_of_time" => 1 }
+      stages = { "rewrite-test" => { "rewrite_1" => rec(6, 0, dropped: untested) },
                  "counterexamples" => { "rewrite_1" => rec(2, 0, dropped: { "round_1" => 1,
                                                                             "failed_in_round_3" => 1 }) } }
       html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }))
@@ -2434,8 +2441,8 @@ RSpec.describe Quaack::Driver::Report do
       tested = "wrong on NULLs: 1; never tested, because a CHECK constraint on its tables is too complex for " \
                "QUAACK to satisfy: 1; never tested, because a statement timed out: 1; never tested, because a " \
                "statement failed on the test database: 1; never tested, because a statement failed on the test " \
-               "database: 1"
-      expect(table).to include(row("Testing on made-up edge-case data", 5, "none", esc(tested), 0, 0, "none"))
+               "database: 1; never tested, because its test didn't finish within 5 minutes: 1"
+      expect(table).to include(row("Testing on made-up edge-case data", 6, "none", esc(tested), 0, 0, "none"))
       expect(table).to include(row("Testing on data the LLM wrote to break them", 2, "none",
                                    "wrong in round 1: 1; failed to run in round 3: 1", 0, 0, "none"))
       expect(table).to include(esc("dropped: wrong on NULLs: 1; never tested, because a CHECK"))
