@@ -10447,3 +10447,12 @@ The second review of 20261008-39 found this minor issue: rewrite candidates acce
 - **Came from:** The second review of 20261008-39, 2026-10-10.
 - **Design:** What goes into the enclave.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-16; two Opus reviews, the first found the name pattern too broad). The candidate check refuses calls to the 36 pg_catalog type input and recv functions that take an oid (`RegValues::OID_TYPE_INPUTS`, generated from Postgres 18's pg_proc, with a completeness spec against a real catalog), as `name_lookup_function`, through `lookup?`, so the existing exemption for a call the original makes the same way applies. `date_bin`, unqualified `ST_DWithin`-shaped calls and app functions like `is_admin(uid, org)` are accepted.
+
+### 20261011-3. DESIGN.md and message wording for the oid type input functions (minors from 20261010-16).
+
+The `name_lookup_function` paragraph in DESIGN.md (around line 501) doesn't mention the type input and recv functions given an oid (`record_in`, `enum_in`, `array_in`, `domain_in`, `range_in`, `multirange_in` and their `recv` forms; `RegValues::OID_TYPE_INPUTS`): add a clause. The refusal's message says the function "looks up a name", which is slightly off for an oid argument; reword it for both uses if that's cheap. Docs and one string; spec for the string if it's asserted.
+
+- **Depends on:** 20261010-16 (landed).
+- **Came from:** The second review of 20261010-16, 2026-10-11 (minor).
+- **Design:** rewrite-check.
+- **Status:** **done.** Landed 2026-10-11 (task/20261011-3): DESIGN.md names the 36 oid-taking type input and recv functions; the `name_lookup_function` message for them reads "looks up a catalog name or oid, and the original doesn't make the same call" (three spec assertions updated).
