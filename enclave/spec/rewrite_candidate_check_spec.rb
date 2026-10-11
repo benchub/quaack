@@ -504,7 +504,8 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       it "refuses a call to #{function} the same way whatever it names" do
         expect(same_outcome(sql)).to eq(
           ["name_lookup_function",
-           "name_lookup_function: #{function} looks up a name, and the original doesn't make the same call", nil]
+           "name_lookup_function: #{function} looks up a catalog name or oid, " \
+           "and the original doesn't make the same call", nil]
         )
       end
     end
@@ -574,7 +575,9 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       it "refuses a call to #{name} with an oid" do
         expect { check("SELECT id FROM orders WHERE #{call} IS NULL") }.to raise_error(described_class::Error) { |e|
           expect([e.rule, e.cause]).to eq(["name_lookup_function", nil])
-          expect(e.message).to match(/\Aname_lookup_function: \S+ looks up a name, and the original doesn't make/)
+          expect(e.message).to match(
+            /\Aname_lookup_function: \S+ looks up a catalog name or oid, and the original doesn't make/
+          )
         }
       end
     end
@@ -590,7 +593,8 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         it "refuses #{type}'s input function #{spelling}, the same way whatever it names" do
           expect(same_outcome("SELECT id FROM orders WHERE #{call} IS NULL")).to eq(
             ["name_lookup_function",
-             "name_lookup_function: #{call[/\w+(?=\()/]} looks up a name, and the original doesn't make the same call",
+             "name_lookup_function: #{call[/\w+(?=\()/]} looks up a catalog name or oid, " \
+             "and the original doesn't make the same call",
              nil]
           )
         end
