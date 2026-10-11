@@ -218,7 +218,7 @@ RSpec.describe Quaack::Enclave::CLI do
         name if out.string == error_line(name, "run_from_older_version")
       end
 
-      opening = %w[inventory run-server qualify schema-dump statistics volatility classify redact literals
+      opening = %w[inventory qualify run-server schema-dump statistics volatility classify redact literals
                    clock-anchor racetrack-setup arena-setup index-search index-payload index-feedback index-rank
                    status index-test rewrite-payload rewrite-rules rewrite-check rewrite-prune rewrite-test
                    counterexample-payload counterexample-round index-build baseline index-baseline candidate-runs

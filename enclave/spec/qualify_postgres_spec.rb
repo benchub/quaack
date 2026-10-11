@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 require "quaack/enclave/store"
+require "quaack/enclave/steps/qualify"
 require_relative "support/production_server"
 require_relative "support/catalog_shadow"
 
@@ -316,6 +317,17 @@ RSpec.describe "quaacks qualify, against a real server" do
       store.write("query", "SELECT id FROM ONLY sales.orders")
       expect(qualify.stdout).to eq(done)
       expect(stored.read("relation_tablespaces")).to eq(spaces.values_at("index", "table").sort)
+    end
+
+    # Task 20261010-17: a scanned relation missing from pg_class would drop
+    # out of the needed set, so the step refuses on a shortfall instead.
+    it "refuses when a scanned relation isn't in pg_class" do
+      scanned = [Struct.new(:schema, :name).new("sales", "orders"), Struct.new(:schema, :name).new("sales", "gone")]
+      conn = production.connect
+      expect { Quaack::Enclave::Steps::Qualify.tablespaces(scanned, conn) }
+        .to raise_error(Quaack::Enclave::Relations::Error) { expect(it.rule).to eq("unknown_relation") }
+    ensure
+      conn&.close
     end
   end
 
