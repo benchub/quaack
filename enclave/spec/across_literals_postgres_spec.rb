@@ -38,6 +38,9 @@ RSpec.describe "Reports across literals" do
                                               spills: builder.spills.transform_values(&:size))
   end
 
+  thresholds = (0..10).to_a.freeze
+  operators = %w[> >= = < <= <>].freeze
+
   count = ->(child, parent, key) { "(SELECT count(*) FROM fx.#{child} WHERE fx.#{child}.#{key} = fx.#{parent}.id)" }
   posts = "SELECT fx.posts.id FROM fx.posts WHERE"
   users = "SELECT fx.users.id FROM fx.users WHERE"
@@ -72,25 +75,51 @@ RSpec.describe "Reports across literals" do
       list = "(#{n}, #{n + 3}, #{n + 9})"
       ["#{posts} fx.posts.score IN #{list} AND fx.posts.score IN #{list}", "#{posts} fx.posts.score IN #{list}"]
     }],
-    "count(*) > threshold" => [[4, 5, 7, 10], lambda { |n|
-      c = count.call("posts", "users", "user_id")
-      ["#{users} #{c} > #{n}", "#{users} #{c} >= #{n}"]
-    }],
-    "count(*) = threshold" => [[2, 3, 7, 11], lambda { |n|
-      c = count.call("posts", "users", "user_id")
-      ["#{users} #{c} = #{n}", "#{users} #{c} = #{n} AND true"]
-    }],
-    "IN list and count(*) >= threshold" => [[3, 4, 7, 10], lambda { |n|
+    "IN list and count(*) >= threshold" => [thresholds, lambda { |n|
       c = count.call("comments", "posts", "post_id")
       ["#{posts} fx.posts.user_id IN (1, 2) AND #{c} >= #{n}",
-       "#{posts} fx.posts.user_id IN (1, 2) AND #{c} > #{n} - 1"]
-    }],
-    "HAVING count() > threshold" => [[2, 3, 4], lambda { |n|
-      join = "SELECT fx.users.id FROM fx.users %s JOIN fx.posts ON fx.posts.user_id = fx.users.id GROUP BY fx.users.id"
-      ["#{format(join, "LEFT")} HAVING count(fx.posts.id) > #{n}",
-       "#{format(join, "")} HAVING count(fx.posts.id) > #{n}"]
+       "#{posts} fx.posts.user_id IN (1, 2) AND #{c} >= #{n} AND true"]
     }]
-  }.freeze
+  }.merge(
+    # A count compared with a constant, for every operator and threshold
+    # (20261011-2): no scenario has more than one child per parent, so what
+    # the guard can reach follows the threshold, and nothing outgoing may.
+    operators.to_h do |op|
+      ["count(*) #{op} threshold", [thresholds, lambda { |n|
+        c = count.call("posts", "users", "user_id")
+        ["#{users} #{c} #{op} #{n}", "#{users} #{c} #{op} #{n} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
+      ["derived count #{op} threshold", [thresholds, lambda { |n|
+        inner = "SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id"
+        q = "SELECT t.uid FROM (#{inner}) t WHERE t.k #{op} #{n}"
+        [q, "#{q} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
+      ["CTE count #{op} threshold", [thresholds, lambda { |n|
+        cte = "WITH t AS (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id) "
+        q = "#{cte}SELECT t.uid FROM t WHERE #{n} #{op} t.k"
+        [q, "#{q} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
+      ["nested derived count #{op} threshold", [thresholds, lambda { |n|
+        inner = "SELECT u.uid, u.k FROM (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts " \
+                "GROUP BY fx.posts.user_id) u"
+        q = "SELECT t.uid FROM (#{inner}) t WHERE t.k #{op} #{n}"
+        [q, "#{q} AND true"]
+      }]]
+    end,
+    operators.to_h do |op|
+      ["HAVING count() #{op} threshold", [thresholds, lambda { |n|
+        join = "SELECT fx.users.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
+               "GROUP BY fx.users.id HAVING count(fx.posts.id) #{op} #{n}"
+        [join, "#{join} AND true"]
+      }]]
+    end
+  ).freeze
 
   families.each do |name, (values, make)|
     it "reports the same for every #{name} value" do
@@ -98,7 +127,20 @@ RSpec.describe "Reports across literals" do
       # A repeated condition is redundant, so it stays untested and the
       # search runs on it.
       expect(by_value.values.first[:untested_states]).not_to be_empty if name.end_with?("(the search)")
-      expect(by_value.values.uniq.size).to eq(1), by_value.map { |n, report| "#{n}: #{report}" }.join("\n")
+      classes = by_value.group_by { |_, report| report }.map { |report, pairs| "#{pairs.map(&:first)}: #{report}" }
+      expect(by_value.values.uniq.size).to eq(1), classes.join("\n")
     end
+  end
+  # The worst case a count threshold reports (VacuityGuard.worst_case), even
+  # at a threshold S1 reaches: count(*) > 0 exercises both atoms, and still
+  # neither is reported tested. Loads count each of S1's four attempts, so
+  # they don't follow how many the guard needed, and S1's row counts stay
+  # in.
+  it "reports a count threshold's worst case, never an atom tested" do
+    c = count.call("posts", "users", "user_id")
+    report = outgoing("#{users} #{c} > 0", ["#{users} #{c} > 0 AND true"])
+    expect(report).to include(untested: ["#{c} > $1", "fx.posts.user_id = fx.users.id"],
+                              untested_states: %i[not_searched not_searched], retries: 6,
+                              s1_rows: nil, s1_nonzero_rows: nil, loads: 25)
   end
 end

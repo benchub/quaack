@@ -51,7 +51,36 @@ module Quaack
 
       module_function
 
-      def run(runner, builder, sql, search: true, search_options: {}) # rubocop:disable Metrics/AbcSize
+      def run(runner, builder, sql, search: true, search_options: {})
+        return attempts(runner, builder, sql, search, search_options) unless Search::Skips.threshold_bound?(sql)
+
+        worst_case(runner, builder) { attempts(runner, builder, sql, search, search_options) }
+      end
+
+      # For a query with an aggregate compared with a constant (a count
+      # threshold), whether S1 reaches an atom follows the threshold, since
+      # no scenario holds more than one child a parent: count(*) > 0 is
+      # reachable and count(*) > 3 isn't. So what the guard found there
+      # would carry the threshold out of the enclave (20261011-2). It still
+      # runs, so the scenarios keep the variants that exercise what it can,
+      # but its report is the worst case, the same for every threshold:
+      # every atom untested and not searched (the search skips such a query),
+      # every replaceable one retried RETRIES times, S1's loads counted as
+      # every attempt's, and no S1 row counts. No atom is reported tested.
+      def worst_case(runner, builder, &)
+        found = runner.uncounted(&)
+        runner.counted_as((RETRIES + 1) * s1_fixtures(builder, found.scenarios).size) { nil }
+        found.with(**all_untested(builder), retries: loosened_queries(builder).first.size * RETRIES,
+                                            s1_rows: nil, s1_nonzero_rows: nil)
+      end
+
+      def all_untested(builder)
+        atoms = builder.atoms
+        { untested: atoms.map(&:shape), untested_atoms: atoms.each_index.to_a, untested_paths: atoms.map(&:path),
+          untested_states: atoms.map { :not_searched } }
+      end
+
+      def attempts(runner, builder, sql, search, search_options) # rubocop:disable Metrics/AbcSize
         loosened, unreplaceable = loosened_queries(builder)
         state = new_state.merge(search: (search_options if search))
         (0..RETRIES).each do |attempt|
