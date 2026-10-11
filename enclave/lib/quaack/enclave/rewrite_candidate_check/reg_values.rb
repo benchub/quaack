@@ -65,6 +65,11 @@ module Quaack
           to_tsvector to_tsquery plainto_tsquery phraseto_tsquery websearch_to_tsquery json_to_tsvector
           jsonb_to_tsvector ts_debug ts_headline ts_lexize
         ].to_set.freeze
+        # A type's input or binary input function, such as record_in,
+        # enum_recv, or numeric_in. Given its second argument, a type oid,
+        # one raises for an oid that names nothing (20261010-16). A call to
+        # one with two or more arguments is refused, whatever they are.
+        TYPE_INPUT = /(in|recv)\z/
         PRIVILEGE = /\Ahas_[a-z_]+_privilege\z/
         STATS = /\Apg_stat_get_/
 
@@ -76,6 +81,10 @@ module Quaack
         # doesn't make, argument for argument.
         def syntactic!(parse, original_sql)
           raise Error.new("unsupported_reg_literal", REG_DETAIL) if casts?(parse) || reg_calls?(parse)
+
+          if type_input_calls?(parse)
+            raise Error.new("unsupported_reg_literal", "a type's input function given a type oid is unsupported in v1")
+          end
 
           lookup = unmade_lookup(parse, original_sql)
           return unless lookup
@@ -94,6 +103,10 @@ module Quaack
           walk(parse.tree, PgQuery::TypeCast).any? do |cast|
             TYPES.include?(bare(cast.type_name.names)) && !cast.arg&.param_ref
           end
+        end
+
+        def type_input_calls?(parse)
+          calls(parse.tree).any? { TYPE_INPUT.match?(name(it).to_s) && it.args.size >= 2 }
         end
 
         def reg_calls?(parse) = calls(parse.tree).any? { TYPES.include?(name(it)) }

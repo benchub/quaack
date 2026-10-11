@@ -656,6 +656,27 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         .to rejected("unsupported_reg_literal")
     end
 
+    # A type's input or binary input function given a type oid raises for
+    # an oid that names nothing, so it probes whether a type exists
+    # (20261010-16).
+    [
+      "SELECT record_in('(1)'::cstring, 999999, -1) FROM orders",
+      "SELECT pg_catalog.enum_in('a'::cstring, 999999) FROM orders",
+      "SELECT id FROM orders WHERE array_in('{1}'::cstring, 23, -1) IS NULL",
+      "SELECT domain_in('1'::cstring, 999999, -1) FROM orders",
+      "SELECT range_in('[1,2]'::cstring, 999999, -1) FROM orders",
+      "SELECT multirange_in('{}'::cstring, 999999, -1) FROM orders",
+      "SELECT numeric_in('1'::cstring, 999999, -1) FROM orders"
+    ].each do |sql|
+      it "refuses #{sql}, a type input function given an oid" do
+        expect { check(sql) }.to rejected("unsupported_reg_literal")
+      end
+    end
+
+    it "still accepts an ordinary one-argument function whose name ends in in" do
+      expect(check("SELECT min(id) FROM orders").sql).to eq("SELECT pg_catalog.min(id) FROM public.orders")
+    end
+
     # A function added in a later Postgres, or missed, fails here until it's
     # listed in RegValues or reviewed as harmless: one that says nothing
     # about a catalog object from an oid or a name, such as a planner's
@@ -689,17 +710,20 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
           AND p.proargtypes::pg_catalog.oid[] OPERATOR(pg_catalog.&&)
               ARRAY['oid','regclass','regtype','regproc','regprocedure','regoper','regoperator','regnamespace',
                     'regrole','regconfig','regdictionary','regcollation']::pg_catalog.regtype[]::pg_catalog.oid[]
-          AND p.proname !~ '(in|out|send|recv|cmp|larger|smaller)$'
+          AND p.proname !~ '(out|send|cmp|larger|smaller)$'
           AND p.proname !~ '^(oid(eq|ne|lt|le|gt|ge)|hash|bt|btoid)'
           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_operator o WHERE o.oprcode OPERATOR(pg_catalog.=) p.oid)
         ORDER BY 1
       SQL
       values = Quaack::Enclave::RewriteCandidateCheck::RegValues
-      unnamed = found.reject { values.lookup?(it) || values::TS_CONFIG.include?(it) || reviewed.match?(it) }
+      unnamed = found.reject do |f|
+        values.lookup?(f) || values::TS_CONFIG.include?(f) || values::TYPE_INPUT.match?(f) || reviewed.match?(f)
+      end
 
       expect(conn.exec("SHOW server_version_num").getvalue(0, 0)).to start_with("18")
       expect(unnamed).to eq([])
-      expect(found).to include("pg_get_indexdef", "pg_relation_filenode", "pg_stat_get_numscans")
+      expect(found).to include("pg_get_indexdef", "pg_relation_filenode", "pg_stat_get_numscans",
+                               "record_in", "enum_recv")
     end
 
     it "accepts an oid function the original makes, as the original makes it" do
