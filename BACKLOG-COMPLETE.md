@@ -10400,3 +10400,22 @@ From the review of 20261008-22 (minor).
 - **Came from:** The review of 20261006-6, 2026-10-10 (minor).
 - **Design:** clock anchoring, arena setup.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-9): items 1 and 2. A spec builds the real `quaack.clock_anchor()` under Pacific/Chatham and checks it returns `timestamptz` like `now()`, with `::timetz` and `::timetz(3)` values (red when the return type becomes `timestamp`); the driver's `run_from_older_version` note, README and DESIGN.md now say an older version started the run or its saved state is damaged or edited by hand. Item 3 (domain-typed and array-cast column defaults that read the clock) is carried by 20261011-1, documented as unsupported in v1.
+
+### 20261010-11. Equality check: refuse when a same-signature `=` exists outside `pg_catalog`? (needs the user)
+
+From the review of 20261007-58 (minor, a requirement question). The denormalized-equality check names its operator `OPERATOR(pg_catalog.=)`, so a planted `public.=(bigint, bigint)` can't change what the check reads (20261007-9's deliberate behavior; three specs depend on it). But the application's own queries use the bare `=`, which resolves through the search path: if the application's role sees a different `=` with the same signature, a rewrite could rest on an equality the application never uses. It takes a hostile or very unusual setup. Decide: (a) leave it (documented unsupported in v1), or (b) refuse the assumption when a same-signature `=` exists outside `pg_catalog` on the operand types, and update the three 20261007-9 specs and DESIGN.md's text for 20261007-9. Ask the user before building (b).
+
+- **Depends on:** 20261007-58.
+- **Came from:** The review of 20261007-58, 2026-10-10.
+- **Design:** assumption check, CatalogShadow.
+- **Decided by the user (2026-10-11):** option (a). Document it as a known, unsupported-in-v1 setup (DESIGN.md and README's unsupported list); no code change. Then mark done.
+- **Status:** **done.** Decided 2026-10-11: option (a), documented as unsupported in v1 by 20261011-1. No code change.
+
+### 20261011-1. Document two setups as unsupported in v1: a same-signature `=` outside `pg_catalog`, and clock-reading domain or array-cast column defaults.
+
+Two decisions that need only documentation. (1) From 20261010-11, the user (2026-10-11) chose to leave it: the denormalized-equality check names `OPERATOR(pg_catalog.=)`, but the application's bare `=` resolves through the search path, so an application role that sees a different `=` with the same signature could make a rewrite rest on an equality the app never uses. It takes a hostile or very unusual setup. (2) From 20261010-9 item 3, by the default for rare shapes (the lean review loop): a column default that casts to a domain or array type and reads the clock (`('today'::text)::public.clock_date`, `('{today}'::text)::date[]`) still reads the wall clock. Add both to README's "What QUAACK won't do" list and to the matching DESIGN.md paragraphs (the 20261007-9 equality text, the clock-anchoring text). No code change, and no test beyond whatever spec checks the README list against DESIGN.md, if one exists. When it lands, mark 20261010-11 done too.
+
+- **Depends on:** None.
+- **Came from:** The user's decision on 20261010-11, 2026-10-11; 20261010-9 item 3.
+- **Design:** assumption check, clock anchoring.
+- **Status:** **done.** Landed 2026-10-11 (task/20261011-1; README only): both setups are bullets in "What QUAACK won't do". DESIGN.md already said both.

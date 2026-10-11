@@ -678,16 +678,6 @@ From the review of 20261004-89 (minor).
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-11. Equality check: refuse when a same-signature `=` exists outside `pg_catalog`? (needs the user)
-
-From the review of 20261007-58 (minor, a requirement question). The denormalized-equality check names its operator `OPERATOR(pg_catalog.=)`, so a planted `public.=(bigint, bigint)` can't change what the check reads (20261007-9's deliberate behavior; three specs depend on it). But the application's own queries use the bare `=`, which resolves through the search path: if the application's role sees a different `=` with the same signature, a rewrite could rest on an equality the application never uses. It takes a hostile or very unusual setup. Decide: (a) leave it (documented unsupported in v1), or (b) refuse the assumption when a same-signature `=` exists outside `pg_catalog` on the operand types, and update the three 20261007-9 specs and DESIGN.md's text for 20261007-9. Ask the user before building (b).
-
-- **Depends on:** 20261007-58.
-- **Came from:** The review of 20261007-58, 2026-10-10.
-- **Design:** assumption check, CatalogShadow.
-- **Decided by the user (2026-10-11):** option (a). Document it as a known, unsupported-in-v1 setup (DESIGN.md and README's unsupported list); no code change. Then mark done.
-- **Status:** todo (needs the user)
-
 ### 20261010-16. Candidate check: stable `*_in` and `*_recv` functions given a type oid.
 
 The second review of 20261008-39 found this minor issue: rewrite candidates accept `record_in('(1)'::cstring, 999999, -1)`, `enum_in`, `array_in`, `domain_in`, `range_in`, `multirange_in` and their `*_recv` forms. They're stable, take a type oid, and raise "type with OID ... does not exist" or "cache lookup failed" for one that names nothing, so they probe whether a type oid exists. The completeness spec misses them because its `(in|out|send|recv|...)$` exclusion filters them out. Index DDL isn't affected, since an index expression must be immutable. Refuse a call to any `*_in` or `*_recv` function given an oid argument (or list these names), and narrow the spec's exclusion so they show up. It's exotic SQL that no ORM generates.
@@ -897,12 +887,3 @@ The user's run 20261011T031856Z-b92bbf95 (2026-10-10, main at 75cd879e) failed a
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Decided by the user (2026-10-11):** the budget is 5 minutes per rewrite. The user will profile part 1. The version bump waits until rewrite-test's performance is fixed.
 - **Status:** todo (needs the user)
-
-### 20261011-1. Document two setups as unsupported in v1: a same-signature `=` outside `pg_catalog`, and clock-reading domain or array-cast column defaults.
-
-Two decisions that need only documentation. (1) From 20261010-11, the user (2026-10-11) chose to leave it: the denormalized-equality check names `OPERATOR(pg_catalog.=)`, but the application's bare `=` resolves through the search path, so an application role that sees a different `=` with the same signature could make a rewrite rest on an equality the app never uses. It takes a hostile or very unusual setup. (2) From 20261010-9 item 3, by the default for rare shapes (the lean review loop): a column default that casts to a domain or array type and reads the clock (`('today'::text)::public.clock_date`, `('{today}'::text)::date[]`) still reads the wall clock. Add both to README's "What QUAACK won't do" list and to the matching DESIGN.md paragraphs (the 20261007-9 equality text, the clock-anchoring text). No code change, and no test beyond whatever spec checks the README list against DESIGN.md, if one exists. When it lands, mark 20261010-11 done too.
-
-- **Depends on:** None.
-- **Came from:** The user's decision on 20261010-11, 2026-10-11; 20261010-9 item 3.
-- **Design:** assumption check, clock anchoring.
-- **Status:** todo
