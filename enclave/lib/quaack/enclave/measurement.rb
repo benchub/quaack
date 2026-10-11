@@ -48,6 +48,10 @@ module Quaack
       HIT = ["Shared Hit Blocks", "Local Hit Blocks"].freeze
       READ = ["Shared Read Blocks", "Local Read Blocks", "Temp Read Blocks", "Temp Written Blocks"].freeze
 
+      # A refusal with a fixed rule, such as plan_too_deep. Its message is
+      # its rule, which ErrorFilter sends out.
+      Error = Class.new(StandardError) { def rule = message }
+
       module_function
 
       def measure(connection:, store:, sql:, combination:, timeout_ms:)
@@ -66,10 +70,18 @@ module Quaack
           run = RunDiscipline.run(connection:, sql:, params:, timeout_ms:)
           return { "timed_out" => true, "ran" => i + 1 } if run.timed_out
 
-          # A deep plan nests past JSON's default limit of 100 (two levels a node).
-          JSON.parse(run.result.getvalue(0, 0), max_nesting: PlainData::MAX_DEPTH)
+          parse(run.result.getvalue(0, 0))
         end
         summarize(runs, map)
+      end
+
+      # A deep plan nests past JSON's default limit of 100 (two levels a
+      # node), so the bound is PlainData::MAX_DEPTH. Past it is a refusal
+      # that carries nothing from the plan.
+      def parse(json)
+        JSON.parse(json, max_nesting: PlainData::MAX_DEPTH)
+      rescue JSON::NestingError
+        raise Error, "plan_too_deep", cause: nil
       end
 
       # How many EXPLAIN ANALYZE runs measure's { set name => measurement }

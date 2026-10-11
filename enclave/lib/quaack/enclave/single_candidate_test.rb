@@ -3,6 +3,7 @@
 require "json"
 require_relative "canonical_plan"
 require_relative "index_candidate"
+require_relative "plain_data"
 require_relative "plan_node"
 require_relative "redaction"
 require_relative "single_candidate_test/hypopg"
@@ -263,10 +264,11 @@ module Quaack
       end
 
       # The parsed EXPLAIN JSON, deep-frozen. A deep plan nests past JSON's
-      # default limit of 100, since each node takes two levels, so there's
-      # no limit. Unreadable output is an Error that quotes none of it.
+      # default limit of 100, since each node takes two levels, so the bound
+      # is PlainData::MAX_DEPTH, as elsewhere. Too deep or unreadable output
+      # is an Error that quotes none of it.
       def parse_plan(json)
-        deep_freeze(JSON.parse(json, max_nesting: false))
+        deep_freeze(JSON.parse(json, max_nesting: PlainData::MAX_DEPTH))
       rescue JSON::ParserError
         raise Error, :explain_failed, cause: nil
       end

@@ -146,10 +146,17 @@ module Quaack
         # Each plan node nests two levels, so a deep plan passes JSON's
         # default limit of 100. The server wrote this, so only the stack
         # bounds it, as it does for the store (see PlainData::MAX_DEPTH).
-        used = index_names(JSON.parse(plan, max_nesting: PlainData::MAX_DEPTH))
+        used = index_names(parse_plan(plan))
         raise Error, "index_build_hidden_index_used" if used.intersect?(hidden)
 
         raise Error, "index_build_wrong_set_hidden" unless valid_names(connection, build) == visible.sort
+      end
+
+      # Past PlainData::MAX_DEPTH is a refusal that carries nothing from the plan.
+      def parse_plan(plan)
+        JSON.parse(plan, max_nesting: PlainData::MAX_DEPTH)
+      rescue JSON::NestingError
+        raise Error, "plan_too_deep", cause: nil
       end
 
       # The names of build's indexes that are valid, matched on schema and name.
