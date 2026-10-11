@@ -10483,3 +10483,13 @@ From 20261004-9's second paragraph and its review (a "Consider", left out of tha
 - **Came from:** 20261004-9's entry and its review, 2026-10-10.
 - **Design:** rewrite-test.
 - **Status:** **done.** Landed 2026-10-11 (task/20261010-2; Opus review clean): the denormalized fixture's load runs three disjoint UPDATEs (class rows get the copy; rows whose parent is another class or untyped get the parent's id, never a NULL; parentless rows get the id of one class parent, first by `ctid`), so a twin that drops the type filter is disproved in rewrite-test and the true rewrite passes. Minor follow-ups in 20261011-5.
+
+### 20261010-50. Vacuity-guard search: the wall clock decides the state word.
+
+From the review of 20261010-43 (minor). `VacuityGuard::Search` stops after `SECONDS = 5` per query, and every atom left then reads `not_searched`. The same query can report `searched` on one machine or load and `not_searched` on another, and which atoms close can differ. No literal value leaks, but the task asked for a search that is reproducible from its seed. Make the trial count the only budget (and size it so a query stays within a few seconds), or keep the clock only as a hard abort that refuses the search instead of changing a word. Test first: the same seed and query give the same states under a slow runner.
+
+- **Depends on:** 20261010-43 (landed).
+- **Came from:** The review of 20261010-43, 2026-10-10.
+- **Design:** rewrite-test, scenarios.
+- **Decided by the user (2026-10-11):** count attempts, not the clock: the trial count is the only budget. Also warn in `quaack` output when the search (or its requests) is taking a long time; the warning may carry only a duration or a fixed word, nothing from the data. Do it after 20261010-47 lands (same files).
+- **Status:** **done.** Landed 2026-10-11 (task/20261010-50; Opus review clean). Part 1: the vacuity-guard search has no clock; its only budget is its trial count (150 per atom, `MAX_TRIALS` = 300 per query; an atom the cap stops reads `not_searched`); the across-literals spec's 600 s workaround is gone. Part 2: on a terminal a step still running after 5 minutes prints one line, `Still running after 5m00s, longer than usual (<slug>)`, built from the threshold and the slug only (README, DESIGN.md). Minors: a trial that hits the statement timeout under heavy load is still discarded and counted, so results can move toward `not_searched` on a loaded server; a full 300-trial search takes 5 to 13 s, so a rewrite with about 20 guard calls would reach the 5-minute budget of 20261010-53.

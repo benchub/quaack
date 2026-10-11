@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261009-2: the enclave's `query_unparsable` error line carries `parser_major`; new protocol whitelist field.
 - 20261011-4: `Scenarios::RowSet` uses hash indexes in place of linear scans (performance, no behavior change).
 - 20261010-2: denormalized fixtures set the copy on other-class and parentless rows.
+- 20261010-50: the vacuity-guard search's only budget is its trial count (150 per atom, 300 per query), never the clock.
 - 20261010-17: qualify refuses (`unknown_relation`) when a scanned relation is missing from its tablespace query.
 - 20261010-47: fixture loads count 3 per comparison and skip the guard's LIMIT comparisons; pinned own keys avoid pooled values.
 - 20261010-43: vacuity-guard search for a distinguishing database; `untested_states` (`searched`/`not_searched`) in `rewrite_tested`, the report payload and the driver report.
@@ -806,16 +807,6 @@ Work out which reported fields can vary with a literal, using the reviewer's exp
 - **Depends on:** 20261010-35 (landed).
 - **Came from:** The reviews of 20261010-35 and -23, 2026-10-10.
 - **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-### 20261010-50. Vacuity-guard search: the wall clock decides the state word.
-
-From the review of 20261010-43 (minor). `VacuityGuard::Search` stops after `SECONDS = 5` per query, and every atom left then reads `not_searched`. The same query can report `searched` on one machine or load and `not_searched` on another, and which atoms close can differ. No literal value leaks, but the task asked for a search that is reproducible from its seed. Make the trial count the only budget (and size it so a query stays within a few seconds), or keep the clock only as a hard abort that refuses the search instead of changing a word. Test first: the same seed and query give the same states under a slow runner.
-
-- **Depends on:** 20261010-43 (landed).
-- **Came from:** The review of 20261010-43, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Decided by the user (2026-10-11):** count attempts, not the clock: the trial count is the only budget. Also warn in `quaack` output when the search (or its requests) is taking a long time; the warning may carry only a duration or a fixed word, nothing from the data. Do it after 20261010-47 lands (same files).
 - **Status:** todo
 
 ### 20261010-51. Vacuity-guard search: loose ends from 20261010-43.
