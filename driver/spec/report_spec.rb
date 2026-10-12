@@ -2913,16 +2913,20 @@ RSpec.describe Quaack::Driver::Report do
     def steps(id, number, html = out) = texts(sankey(id, number, html)).select { it[:kind] == "step" }.map { it[:text] }
 
     # DESIGN.md: each stage has its own color from a fixed palette, so it keeps its color
-    # in every diagram. [diagram, stage, fill] for each colored layer, by its first stage.
+    # in every diagram. [diagram, stage, fill] for every stage's layer (merge or after), named
+    # by its first stage, whatever its fill.
     def painted_layers(html)
       key_of = stage_keys_by_name
       section(html, "burndown").scan(%r{<svg id="sankey-.*?</svg>}m).flat_map do |svg|
-        stage_nodes(svg).filter_map do |node|
-          fill = node["style"].to_s[/fill: (var\(--st-[a-z]+\))/, 1] or next
-          [svg[/id="sankey-([\w-]+)-\d+"/, 1], key_of.fetch(node["data-stage"].split("; ").first), fill]
+        stage_nodes(svg).select { stage_layer?(it) }.map do |node|
+          [svg[/id="sankey-([\w-]+)-\d+"/, 1], key_of.fetch(node["data-stage"].split("; ").first),
+           node["style"].to_s[/fill: ([^;"]+)/, 1]]
         end
       end
     end
+
+    # A stage's own layer, not the layer a diagram starts from or the set-aside one.
+    def stage_layer?(node) = node["class"].split.intersect?(%w[merge after])
 
     # Each stage's key, by the name its layers carry, including the rewrites' index searches.
     def stage_keys_by_name
@@ -2937,9 +2941,9 @@ RSpec.describe Quaack::Driver::Report do
     it "paints each stage's layers in the stage's own palette color, the same in every diagram" do
       colors = Quaack::Driver::Report::StageStyle::COLORS
       painted = painted_layers(out)
-      expect(painted).to eq(painted.map { |diagram, stage, _| [diagram, stage, colors.fetch(stage)] })
-      expect(painted.map { it[1] }.uniq).to include("index-dedupe", "index-test", "llm-index-ideas", "index-rank",
-                                                    "rewrite-rules", "llm-rewrites", "rewrite-test", "measurement")
+      expect(painted.reject { |_, stage, fill| fill == colors.fetch(stage) }).to eq([])
+      # Every stage the fixture records, but index-from-plan, which joins index-from-query's layer.
+      expect(painted.map { it[1] }.uniq.sort).to eq((colors.keys - ["index-from-plan"]).sort)
       dedupe = painted.select { it[1] == "index-dedupe" }
       expect(dedupe.map(&:first).uniq).to eq(%w[index rewrite-index])
       expect(dedupe.map(&:last).uniq).to eq(["var(--st-violet)"])
