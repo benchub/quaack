@@ -8,12 +8,23 @@ module Quaack
     module Fuzz
       # The queries' constants dictionary for one column: each constant the
       # column's type can read, and its near neighbours at the type's
-      # resolution (STEPS), finer than ValuePools'. Each step comes with its
-      # negation, so a neighbour is always the value plus a step.
+      # resolution, finer than ValuePools'. A neighbour is the value plus a
+      # step of STEPS, each with its negation, and for a numeric category,
+      # also the value's next step either side: the smallest power of ten
+      # from FINEST up that the column's type doesn't round away, so a
+      # numeric(10,2) steps 0.01 and a real near 1000 about 0.0001.
       class Dictionary
-        STEPS = { "N" => ["1", "-1", "0.000001", "-0.000001"],
+        STEPS = { "N" => ["1", "-1"],
                   "D" => ["1", "-1", "interval '1 second'", "interval '-1 second'", "interval '1 day'",
                           "interval '-1 day'", "interval '1 microsecond'", "interval '-1 microsecond'"] }.freeze
+        FINEST = %w[0.000001 0.00001 0.0001 0.001 0.01 0.1 1].freeze
+        FINE_SQL = <<~SQL
+          SELECT (CAST($1 AS %<type>s) OPERATOR(pg_catalog.+) $2::pg_catalog.numeric * p)::%<type>s::pg_catalog.text
+          FROM pg_catalog.unnest($3::pg_catalog.numeric[]) WITH ORDINALITY AS steps (p, n)
+          WHERE (CAST($1 AS %<type>s) OPERATOR(pg_catalog.+) $2::pg_catalog.numeric * p)::%<type>s
+                OPERATOR(pg_catalog.<>) CAST($1 AS %<type>s)
+          ORDER BY n LIMIT 1
+        SQL
 
         def initialize(conn, constants)
           @conn = conn
@@ -38,9 +49,20 @@ module Quaack
         end
 
         def neighbours(col, value)
-          STEPS.fetch(category(col), []).filter_map do |step|
+          steps = STEPS.fetch(category(col), []).filter_map do |step|
             sql = "SELECT (CAST($1 AS #{col.type}) OPERATOR(pg_catalog.+) #{step})::#{col.type}::pg_catalog.text"
             @conn.exec_params(sql, [value]).getvalue(0, 0)
+          rescue PG::Error
+            nil
+          end
+          category(col) == "N" ? steps + finest(col, value) : steps
+        end
+
+        # The value's nearest neighbour either side that col's type keeps.
+        def finest(col, value)
+          sql = format(FINE_SQL, type: col.type)
+          %w[1 -1].filter_map do |sign|
+            @conn.exec_params(sql, [value, sign, PG::TextEncoder::Array.new.encode(FINEST)]).values.dig(0, 0)
           rescue PG::Error
             nil
           end

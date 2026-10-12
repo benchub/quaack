@@ -51,6 +51,22 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(outcome.trials).to be >= 150
   end
 
+  it "draws a numeric column's neighbours one step of its scale away, so a value between two constants turns up" do
+    conn.exec("CREATE TABLE s.invoices (id integer PRIMARY KEY, total numeric(10,2) NOT NULL)")
+
+    outcome = fuzz("SELECT id FROM s.invoices WHERE total > 10", "SELECT id FROM s.invoices WHERE total >= 11")
+
+    expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
+  end
+
+  it "draws a real column's neighbours at its resolution near the constant, not a fixed step it rounds away" do
+    conn.exec("CREATE TABLE s.readings (id integer PRIMARY KEY, level real NOT NULL)")
+
+    outcome = fuzz("SELECT id FROM s.readings WHERE level > 1000", "SELECT id FROM s.readings WHERE level >= 1001")
+
+    expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
+  end
+
   it "searches with the footprint's outside foreign keys dropped, and leaves the arena as it was" do
     fuzz("SELECT id FROM s.orders WHERE total > 1", "SELECT id FROM s.orders WHERE total >= 1")
 
