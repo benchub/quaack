@@ -1061,3 +1061,31 @@ Some cases need rows that relate to each other in ways a value pool can't plan, 
 - **Design:** report, burndown.
 - **Status:** todo
 
+### 20261012-15. fuzz: minors from the review of 20261012-2.
+
+1. **A counterexample found just as the deadline expires turns into a pass** (`fuzz.rb`: the deadline rescue near the shrink and lift, and `ended`). If the rewrite's deadline expires while a counterexample is being shrunk or lifted, the counterexample is dropped and `ended` returns passed. ScenarioTests then expires at once, and the fuzz pass replaces its `out_of_time`, so the "not tested in time" caution is lost. The fix: a deadline that expires mid-shrink or mid-lift leaves fuzz undecided, so the rewrite goes on as `out_of_time` would.
+2. **`QUAACKS_FUZZ_TRIALS` isn't confined to specs** (`fuzz/stop_rule.rb`). Set on a jump server, it quietly weakens the search, and 0 turns it off. Say so when it's set: a line on stderr, or a count in the fuzz burndown record, so a weakened run can't pass for a normal one.
+3. **Egress doesn't cap a disproof's sizes.** A size is never more than 4, the generator's most rows per table, but `FuzzResult.size?` accepts any positive count. Cap it at the generator's maximum. A shrunk size or a trial count can vary with a query's literal, such as a LIMIT or HAVING threshold. The user asked for both fields, and 20261010-47 is the precedent for counts like these. A cap narrows what a size can carry.
+4. **No spec checks that fuzz never disproves a sound replayed rewrite.** The replay specs check only that each planted wrong rewrite is disproved. Assert that no rewrite outside a run's `outcome.wrong` gets `fuzz_disproved`.
+5. **The INTERSECT ALL versus INTERSECT trap (e2e case 100) isn't caught at the spec setting.** It needs 4 rows sharing one key. It was missed at 378 and 3,000 trials and found at 5,285, well inside the 30 s production floor, so production catches it. A spec at 40 trials can't show that. Either add a spec at a trial count that catches it, or note in the fuzz spec why it's left out.
+
+- **Depends on:** 20261012-2.
+- **Came from:** The review of 20261012-2, 2026-10-12 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY.
+
+The review of 20261012-2 found that `SELECT id, total FROM p.orders ORDER BY total LIMIT 2` against the same query with `ORDER BY total, id LIMIT 2` is disproved with rule `value`. It happened on the first trial, on 2 orders that tie on `total`. The rewrite is sound: its rows, in its order, are an answer the original could give. LLMs often add a tiebreak like this.
+
+Why: DESIGN.md's result-comparison section, "`ORDER BY` that doesn't give a total order", adds a tiebreaker to both queries and runs them ascending and descending. "When the original returns the same rows both ways, the candidate must match it row for row in both runs." In the descending run, the original's tied rows come back reversed. The candidate's own `, id` comes before the added tiebreaker, so its order doesn't change, and the two runs can't both match.
+
+The same probably happens without a LIMIT; check. The flaw predates 20261012-2 and is shared by ScenarioTests and the counterexample rounds. Fuzz meets it on almost any data with a tie, and the report then calls the rewrite wrong on a random small database.
+
+The fix: within each of the original's tied groups, accept the candidate's rows in any order, as long as the ascending and descending runs show the same group boundaries. That's the rule already used when a LIMIT cuts through a group: rows in the group must come from the group. A candidate whose own ORDER BY leaves ties keeps today's check. Update DESIGN.md's section to match.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-2, 2026-10-12 (minor there, since it predates that task).
+- **Design:** result-comparison, rewrite-test, llm-counterexamples.
+- **Status:** todo
+
