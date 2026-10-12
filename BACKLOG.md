@@ -808,23 +808,15 @@ From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyw
 
 The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in rewrite-correctness; the first took 2 s and the other four each hit the 5-minute budget (`out_of_time`, "Couldn't test the rewrite within 5 minutes"), so 0 of 5 passed in 20m15s. The budget works as designed, but it hides that testing is still far too slow. The RowSet fix (20261011-4) removed one quadratic cost, and something else dominates at this table count. Reproduce on a synthetic ~580-table schema, profile, fix the top hot spots test-first without changing any reported field (across-literals spec and corpus stay green). Also get the user's own profile from a by-hand run of `quaacks rewrite-test --search rewrite_N` on 0.1.33 (the per-rewrite deadline now ends the step and the profile is written at the end).
 
-- **Depends on:** 20261011-4 (landed), 20261010-53 (landed).
+- **Depends on:** 20261011-4 (landed), 20261010-53 (landed), 20261012-2.
 - **Came from:** The user's run, 2026-10-11. Priority: high, the pipeline can't test rewrites on the real schema.
 - **Design:** rewrite-test, scenarios.
 - **Landed so far:** 2026-10-11 (task/20261011-13; Opus review: no blocking findings, the full report byte-identical on main and the branch for 40 and 580 tables, with and without an extra join). `Parts#spill?` no longer re-runs `parents_of` for every fixture each try is offered to (it was cubic: 3.3M calls became 55k); a new `Scenarios::Held` index replaces `RowSet`'s group scans in `parents_of` and `orphan?`; `Sequences.advance` sends one statement per load (`json_to_recordset`) instead of one `setval` per integer column; `Values#shared_nth` is memoized; `FixtureRow` keeps its hash. On the synthetic 580-table schema with a joined table whose FK parent closure reaches 20 tables: 300.7 s to 21.7 s; 34 tables: at least 207 s to 105 s; 168 tables: still minutes. Not yet measured on the user's real schema.
-- **Still open:** the parent closure itself (a joined table that reaches dozens of tables through foreign keys makes every group lift hundreds of parents, times the guard's up-to-4 rebuilds, times many spilled fixtures). Option: set a nullable foreign key to a table outside the query to NULL when neither the query nor the candidate reads that column, so no parent is lifted. It changes which rows the fixtures contain, so it needs the user's go (20261011-18).
+- **Still open:** the parent closure itself (a joined table that reaches dozens of tables through foreign keys makes every group lift hundreds of parents, times the guard's up-to-4 rebuilds, times many spilled fixtures). Option: set a nullable foreign key to a table outside the query to NULL when neither the query nor the candidate reads that column, so no parent is lifted. It changes which rows the fixtures contain, so it needs the user's go (20261011-18). The user, 2026-10-12, chose instead to replace ScenarioTests with a disproof search that fills only the queries' own tables (20261012-2, 20261012-4), and deprioritized 20261011-18. Close this task once 20261012-2 has been measured on the user's real schema.
 - **Minors:** nothing tests multi-try spill order in `Parts` (changing `lifted`'s `if i == done.size` to `if done.empty?` leaves 584 examples green): add a spec; no spec compares a whole scenario build, with loaded rows dumped, between the old and the new code: add a reference spec.
-- **Status:** in progress (closure narrowing, 20261011-18)
+- **Status:** in progress (the rest waits on 20261012-2)
 
-### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Needs the user's go.
-
-The user, 2026-10-11, expected a stage that runs every rewrite through hundreds of small random datasets, independent of the scenario-based rewrite-test. No such stage exists: the vacuity-guard search (20261010-43, up to 150 trials per atom and 300 per query) only looks for fixtures that expose an untested atom of the ORIGINAL query, keeps at most 3, and replays them inside rewrite-test, so when rewrite-test doesn't run (out of time) nothing from it runs either. Build one: reuse the search's trial generator (`vacuity_guard/search/trials.rb`: 1 to 4 rows per table, pool values, boundaries, NULLs, seeded) to load a tiny random database in an arena transaction, run the original and the rewrite on it, compare results with the existing multiset/ordering rules, rollback, repeat for N trials per rewrite (budget by trial count, never the clock, plus the same per-rewrite wall-clock deadline as rewrite-test); any difference disproves the rewrite (a counterexample the report can show as shape only, never values). It would run for every rewrite not already disproved, including the ones whose scenario test timed out (20261011-15). Decide with the user: N, where it sits in the order (between rewrite-test and counterexamples), whether a pass strengthens the report's wording ("also survived N random small databases"), the cost at 583 tables (same RowSet and scenario costs as 20261011-13). Trust boundary: trial rows are synthetic and stay in the enclave; only counts and fixed words leave.
-
-- **Depends on:** 20261011-15, 20261011-13.
-- **Came from:** The user, 2026-10-11.
-- **Design:** rewrite-test, scenarios.
-- **Spike result (2026-10-11, scratchpad `spike-20261011-16/results.md`):** 57 hand-built cases on one 3-table schema (16 sound controls, 41 hand-written mutants; the repo's own twins and planted runs weren't mined, so the corpus is small and unrepresentative). The oracle (3000 random databases per case, up to 3 rows a table) marked 36 wrong. Caught: A scenario rewrite-test 33, B one realistic large database 33, C class-covering test 33 exhaustive (only feasible up to about 3 tables: a 6-table ORM query has about 1.9e17 combinations) and 20 pairwise; no false positives anywhere. A or B together catch 35, all three 36. C's only unique catch was a NULL corner (a LEFT JOIN anti-join on a nullable non-key column); it also needs generator fixes (half its databases hit foreign-key rejects). The cheap variant (a few hundred seeded random small databases from the search's trial generator, with FK-aware parents, 3 rows a table, NULL-biased nullable columns, classes for literals compared to aggregates) found every wrong case, but that is circular (the oracle was the same kind of search). Decision: do not build the class-covering stage as specified. The cheap random variant stays parked as an optional backstop for rewrites whose scenario test times out (20261011-15); revisit after 20261011-13 shows how slow the scenario test is on the real schema.
-- **Status:** dropped as specified (cheap random variant parked, needs the user's go)
+### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261011-18. rewrite-test: narrow the foreign-key parent closure (nullable keys to tables outside the query).
 
@@ -833,5 +825,111 @@ From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables m
 - **Depends on:** 20261011-13 (landed).
 - **Came from:** 20261011-13's builder and review, 2026-10-11.
 - **Design:** rewrite-test, scenarios.
-- **Status:** todo (needs the user's go)
+- **Status:** todo (deprioritized by the user, 2026-10-12: 20261012-2's search fills only the queries' own tables, so it needs no closure; drop this when 20261012-4 removes ScenarioTests)
+
+### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal, so rewrite-test refuses the query as `unsatisfiable_check`.
+
+Postgres prints `status IN ('a', 'b')` on a `character varying` column as `((status)::text = ANY ((ARRAY['a'::character varying, 'b'::character varying])::text[]))`. `ValuePools::Sides.sides` unwraps a list or a bare `ARRAY[...]`, but not an `ARRAY[...]` under a type cast, so `Sides.literals` casts the whole array to the column's type and gets the one candidate `{a,b}`. It fails the CHECK, `Scenarios::Checks#own_values` comes back empty, and `Checks#satisfying` raises `unsatisfiable_check`: every query whose fixtures need a row in that table is refused, and its rewrites are left out untested (`rewrite_test_untested`). Rails makes string columns `character varying` and writes an inclusion CHECK as an IN list, so this is common: on the disproof spike's synthetic 582-table Canvas-like schema it refused 22 of 62 rewrites, 10 of them sound. Fix it test first against a real Postgres CHECK on a varchar column: unwrap a type cast around `ARRAY[...]` in `Sides.sides` (the elements' own casts already evaluate). Check the other readers of `= ANY` sides too, such as the vacuity guard's atoms and a query predicate written as `col = ANY (ARRAY[...]::text[])`. A quick win for the current rewrite-test, and still needed after 20261012-4 if the new search reuses `Checks` and `ValuePools`.
+
+- **Depends on:** None.
+- **Came from:** The disproof spike, 2026-10-12 (reproduced with psql on postgres:18).
+- **Design:** fixture-scenarios.
+- **Status:** todo
+
+### 20261012-2. rewrite-test: a disproof search over small random databases on the queries' own tables.
+
+The user, 2026-10-12: rewrite-test still hits its 5-minute budget on the 583-table schema, and the LLM counterexamples that follow are weak evidence when they find nothing. A spike (`scratch/spike-disproof/` in the main checkout, git-ignored; results in its `RESULTS.md`) built three non-LLM disproof searches and compared them with today's ScenarioTests on four corpora whose labels the searches didn't make: the e2e cases' 14 planted traps and 33 sound queries; 208 mutants of those sound queries (152 wrong, 53 hand-checked equivalent, 3 errors); an 18-query, 62-rewrite hand-labelled corpus on a synthetic 582-table Canvas-like schema; and 121 real LLM rewrites from the recorded runs. The swarm search caught every wrong rewrite (14/14 traps, 152/152 mutants, 34/34 Canvas) with no false disproof, in a 10 to 15 s budget, with a median time to a counterexample of 0.02 s and a maximum of 4.3 s. ScenarioTests caught 10/14, 92/152 and 16/34; on one Canvas query it took about 75 s per rewrite even with the full 5 minutes, and it left out 14 of the 28 sound Canvas rewrites (10 refused by 20261012-1, 4 when a fixture failed to load). This supersedes 20261011-16.
+
+Build it in the enclave, near `vacuity_guard/search/` and `scenario_tests.rb`, called from `Steps::Counterexamples::RewriteTest` before ScenarioTests: a counterexample disproves the rewrite and ScenarioTests doesn't run; a pass goes on to ScenarioTests as today, until 20261012-4 removes it. How it works:
+
+- Footprint: rows go only into the tables the original or the rewrite reads. Inside the arena's rolled-back transaction, the foreign keys from a footprint table to a table outside it are dropped, so no world needs the parent closure. Foreign keys between footprint tables stay enforced.
+- Values: per column, the queries' own constants (a dictionary of every literal in either query, offered to each column of a compatible type, since atoms miss columns read through a CTE or subquery output), their neighbours (one step of the column's type either side), NULL for a nullable column, duplicates, the type's boundaries, and a few typical values. Join and FK columns share a small typed key pool, so joins match.
+- Search: each trial loads a random world of 0 to 4 rows per footprint table under a savepoint, runs both queries, compares them cheaply first and with the official `ResultComparison` on any difference, then rolls back to the savepoint. Seeded, so a run can be repeated by hand.
+- Lift: a candidate counterexample is reloaded in a fresh transaction with every constraint enforced, plus generated parent rows for each out-of-footprint reference (nullable foreign keys on those parents set to NULL), and compared again. Only a lifted counterexample disproves, so no disproof rests on a dropped constraint. The user gave the go for this on 2026-10-12. It amends DESIGN.md's "never bypass constraints" for the search, as rewrite-test's `denormalized_equal` handling already does: update DESIGN.md.
+- Assumptions: honour a rule's `denormalized_equal`, and any other assumption the rewrite states, in every world, as ScenarioTests does.
+- Budget: the existing 5-minute per-rewrite deadline (`Protocol::RewriteBudget`) is the cap. The user, 2026-10-12: 300 s is fine "assuming it's not wasted work; some rewrites will be huge". So stop early once the search has saturated, and use the whole cap only while it keeps reaching new ground.
+- Trust boundary: the worlds hold real literals and never leave the enclave. Only the rule (row_count, multiset, order), counts, and fixed words go to the driver, as for ScenarioTests now. Sentinel tests for both.
+- Burndown (the user, 2026-10-12): the search is its own burndown stage, between plan-pruning and rewrite-test, so the report shows what it caught apart from ScenarioTests and the LLM counterexamples. Its record has `in`, `out`, drops by the comparison's rule, and the trials it ran as an extra. That means a row in DESIGN.md's burndown table, and everything in the driver's report that knows `rewrite-test` by name: the Sankey layer, its color and its unit (`sankey.rb`, `sankey_layers.rb`, and the colors that lived in `report/funnel.rb` before 20261012-6), the stage sentence (`stage_sentences.rb`), the words (`words.rb`, `stages.rb`), and the spec that checks that the recorded stages join up. Also the step's progress line (`pipeline.rb`), a fate of its own in `RewriteFate` with its wording in the rewrite's section (`report/rewrites.rb`), and `rule_bugs`, since a rule-made rewrite the search disproves is a rule bug. A run from before the stage existed must still render.
+
+Spike lessons the build must keep (each one caused a missed disproof or a false refusal there):
+- Key pools are typed: a `timestamptz` join key needs `timestamptz` keys.
+- Never use `ON CONFLICT DO NOTHING`. It silently drops a row that collides on a unique column the query reads; fix the collision instead.
+- Typical values cover `bit(n)`, `money`, `tsvector`, `point`, and a long text (an `overlay(... FOR 13)` needed 19 characters).
+- Steps follow the type: 1 microsecond for a timestamp, 0.000001 for a numeric of scale 6.
+- Expression unique indexes need handling, and a CHECKed unique column cycles through the CHECK's values.
+- Whether a world is legal is decided per query: don't merge the two queries' verdicts.
+
+Open questions: the saturation rule (such as K trials with no new coverage signature, with K from the spike's data); whether the `rewrite_test` message gets new fields (trials, the search's name) and what egress checks on them; how a counterexample's shape shows in the report.
+
+- **Depends on:** 20261011-15 (landed), 20261012-6.
+- **Came from:** The user and the disproof spike, 2026-10-12.
+- **Design:** rewrite-test, fixture-scenarios, llm-counterexamples.
+- **Status:** todo
+
+### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says.
+
+From 20261012-2. A random search's pass says only that N random databases didn't differ. The spike's algorithm B enumerates worlds instead. It reduces each row to a kind, a tuple of value classes per column drawn from the same value domains, and tries every world in order of total rows, so a pass can say "no database of at most w rows over these value classes differs". In the spike, in 15 s, w reached 8 to 12 on single-table queries, 4 to 8 on two tables, and 4 on four tables. It caught 151 of 152 wrong mutants (it missed one that needs 4 orders per customer) and 32 of 34 wrong Canvas rewrites (two 4-table queries need more than 4 rows). Run it when the random search finds nothing, within the same per-rewrite cap and saturation rule. Like the search (20261012-2), it's its own burndown stage, between the search and rewrite-test (the user, 2026-10-12). It gets a record with drops by rule, the worlds it tried, and the bound w it finished as extras, plus everything that stage needs in the Sankey, the table, the stage sentence, the fates, and `rule_bugs`. Decide with the user how a pass is worded (such as "survived N random small databases and every database of up to w rows over its value classes"), where it shows (the rewrite's section and the burndown), and how the counts leave the enclave (integers only).
+
+- **Depends on:** 20261012-2.
+- **Came from:** The user and the disproof spike, 2026-10-12.
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-4. rewrite-test: replace ScenarioTests with the disproof search.
+
+The user, 2026-10-12: replace ScenarioTests entirely, not just run the search before it. Once 20261012-2 and 20261012-3 have landed and been measured on the user's real schema, remove the scenario builder from rewrite-test and everything that names it:
+- `ScenarioTests` and `Scenarios`, keeping whatever the search reuses, such as `Checks` and `ValuePools`.
+- The vacuity guard's replay of its fixtures into scenarios.
+- RewriteFate's `SCENARIOS` and the fates' `scenario` field.
+- The burndown's `rewrite-test` stage, with its per-scenario reasons (s0 to s6), and its Sankey layer, sentence and words in the driver. The search's and the enumeration's stages, added by 20261012-2 and 20261012-3, stay in the burndown and take its place (the user, 2026-10-12), so rewrite-correctness still shows what each mechanical stage caught.
+- The report's untested shapes and dropped scenario groups.
+- `rule_bugs`' scenario rules.
+- DESIGN.md's fixture-scenarios and vacuity-guard sections.
+- The specs and recorded pipeline replays that pin all of these.
+
+Stored entries and messages from older versions must still read, as `out_of_time` ones from before 20261011-15 do. A fixture that fails to load stops being a rewrite-level failure: today it leaves the rewrite out as `rewrite_test_failed` (4 sound Canvas rewrites in the spike), but in the search it's just an illegal world. Decide with the user:
+- What replaces the vacuity guard's guarantee that every atom of the original was exercised. The search can report which atoms came out both true and false across its trials, and caution or refuse when one never did.
+- What replaces a scenario's name where the report and burndown say why a rewrite was disproved.
+
+- **Depends on:** 20261012-2, 20261012-3.
+- **Came from:** The user, 2026-10-12.
+- **Design:** rewrite-test, fixture-scenarios, vacuity-guard.
+- **Status:** todo
+
+### 20261012-5. Measure what the LLM counterexamples catch that the mechanical search and enumeration don't; drop them if nothing.
+
+The user, 2026-10-12: the LLM counterexamples (llm-counterexamples, up to 3 rounds of LLM-written inserts) have the same goal as the search (20261012-2) and the enumeration (20261012-3), but come at it differently. Keep them only if they catch wrong rewrites the two mechanical stages miss. If they add nothing, drop them. Nobody has measured them yet: the disproof spike's 121 "real LLM rewrites" were rewrites the LLM wrote, not its counterexamples.
+
+The spike's corpora can't answer this alone. The swarm caught every wrong rewrite in them, so the LLM can't show a catch of its own there. Build a hard corpus of wrong rewrites where an LLM's knowledge of the world might beat a search over the queries' own constants and their neighbours, such as:
+- one that differs only with many rows (a LIMIT 50, a HAVING count(*) > 20, a window over 10 rows);
+- values in no query: collation and case folding, Unicode, an empty string against NULL, NaN and infinity, numeric overflow, integer division, February 29, DST edges, time zones;
+- relations between columns (starts_at < ends_at), and the contents of JSON or arrays;
+- realistic ORM shapes on the synthetic 582-table schema.
+
+Label every case by hand or with an oracle the stages don't share, as the spike did. Then, on the hard corpus, the e2e traps, the mutants and the Canvas corpus, run the search and the enumeration, and separately the LLM counterexamples alone. Use real LLM calls, each provider the pipeline uses, every reply recorded so the measurement can be replayed. For each corpus, report:
+- what each catches, alone and together;
+- what only one of them catches;
+- false disproofs;
+- time and LLM calls.
+
+Report to the user with the cases only the LLM caught, if any. If there are none, propose a task to remove llm-counterexamples: the step, its burndown stage, its protocol messages, the report's wording, and DESIGN.md's counterexamples section. If there are some, propose teaching the mechanical search those value classes, and say what the LLM would still add after that.
+
+- **Depends on:** 20261012-2, 20261012-3. The hard corpus can be built before they land.
+- **Came from:** The user, 2026-10-12.
+- **Design:** llm-counterexamples, rewrite-test.
+- **Status:** todo
+
+### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them.
+
+The user, 2026-10-12: the Sankey diagrams are better, so stop spending work on the funnels. Remove every funnel from the report's burndown:
+- the original query's indexes, the rewrites, and the rewrites' index searches;
+- `report/funnel.rb`'s drawing, the template's `<h4>Funnel</h4>` and `svg.funnel` styles, and the note that says the funnel and the Sankey show the same counts;
+- the specs that pin funnels, such as `report_spec.rb`, `report_out_of_time_spec.rb`, and `pipeline_replay_spec.rb`'s first-band checks from 20261009-43 and 20261009-53.
+
+What the Sankey uses from `Funnel` stays, under a name of its own: the stage colors (`COLORS`, `BLUE`), `text`, `untimed` and `untimed_note`, `NOT_NONE`, and the counting helpers (`funnel_counted`). Rename the `--funnel-text` and `--funnel-count` CSS variables, which the Sankey also uses, and keep their dark values. Each section then reads Sankey diagrams, then the table. The table keeps every exact number, and the recorded-runs spec still checks that the stage records join up. Anything a funnel showed that no Sankey or table shows must not be lost, such as the not-recorded and partial stages, and the "went on though not tested in time" note: check that the Sankey or the table carries each one. Update DESIGN.md's burndown section, dropping the funnel paragraph and the "may be replaced by the Sankey later" aside, and the README sample. Driver only, so it doesn't go on the unreleased enclave list.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-12. Do it before 20261012-2 and 20261012-3, so their new burndown stages need no funnel work.
+- **Design:** burndown, report.
+- **Status:** todo
 
