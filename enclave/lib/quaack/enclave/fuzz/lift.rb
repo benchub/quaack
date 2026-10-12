@@ -60,21 +60,32 @@ module Quaack
         private
 
         # The built parents in load order: by table, each table after the
-        # tables it references, and in a table, each row after the rows
+        # tables its rows reference, and in a table, each row after the rows
         # built for it, which are its parents. A cycle among them loads in
         # the order found, and fails to load if it must.
         def loaded(built)
           by_table = built.group_by(&:table)
-          table_order(by_table.keys).flat_map { by_table.fetch(it).reverse }
+          table_order(by_table).flat_map { by_table.fetch(it).reverse }
         end
 
-        def table_order(tables)
+        def table_order(by_table)
+          tables = by_table.keys
           order = []
           until tables.empty?
-            ready = tables.find { |t| @catalog.foreign_keys(t).none? { it.parent != t && tables.include?(it.parent) } }
+            ready = tables.find { |t| !referenced(t, by_table.fetch(t)).intersect?(tables) }
             order << tables.delete(ready || tables.first)
           end
           order
+        end
+
+        # The other tables rows reference, through a foreign key none of
+        # whose columns they leave NULL.
+        def referenced(table, rows)
+          @catalog.foreign_keys(table).filter_map do |reference|
+            next if reference.parent == table
+
+            reference.parent if rows.any? { tuple(reference, it.columns.zip(it.values).to_h) }
+          end
         end
 
         # Every world row is known before any parent is built, so a world

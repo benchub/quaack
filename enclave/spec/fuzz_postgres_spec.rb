@@ -172,4 +172,30 @@ RSpec.describe Quaack::Enclave::Fuzz do
       expect(lift.call([copy]).call(world, original: pair[0], candidate: pair[1])).to be_nil
     end
   end
+
+  context "with parents whose tables reference each other through a nullable foreign key" do
+    # Canvas's shape: accounts.course_template_id points at courses, and
+    # courses.account_id at accounts. The built account leaves its
+    # course_template_id NULL, so it must load before the course.
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA cy;
+        CREATE TABLE cy.accounts (id bigint PRIMARY KEY, course_template_id bigint);
+        CREATE TABLE cy.courses (id bigint PRIMARY KEY, account_id bigint NOT NULL REFERENCES cy.accounts);
+        ALTER TABLE cy.accounts ADD FOREIGN KEY (course_template_id) REFERENCES cy.courses;
+        CREATE TABLE cy.sections (id bigint PRIMARY KEY, course_id bigint NOT NULL REFERENCES cy.courses);
+      SQL
+    end
+
+    it "loads each built parent after the parents its row references" do
+      pair = ["SELECT id FROM cy.sections WHERE id > 1", "SELECT id FROM cy.sections WHERE id >= 1"]
+      sections = Quaack::Enclave::TableName.new(schema: "cy", name: "sections")
+      catalog = Quaack::Enclave::Fuzz::Catalog.new(conn, [sections])
+      domains = Quaack::Enclave::Fuzz::Domains.new(conn, catalog, pair)
+      world = [Quaack::Enclave::Fuzz::Generator::Row.new(sections, { "id" => "1", "course_id" => "7" })]
+      lift = Quaack::Enclave::Fuzz::Lift.new(conn, catalog, domains, honour: [], statement_timeout_ms: 5000)
+
+      expect(lift.call(world, original: pair[0], candidate: pair[1])).to eq(:row_count)
+    end
+  end
 end
