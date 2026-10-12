@@ -980,3 +980,14 @@ Fix it test first. A round where the original fails says nothing about the candi
 - **Design:** llm-counterexamples.
 - **Status:** todo
 
+### 20261012-11. rewrite-test crashes when the original query fails on a scenario's data.
+
+Found by 20261012-5's corpus work (2026-10-12). On the Canvas schema, `ScenarioTests.run` raises `ArenaRunner::Error` (`query_failed`) for `SELECT s.id FROM public.submissions s JOIN public.assignments a ON a.id = s.assignment_id WHERE s.course_id = 1 AND (s.score / a.points_possible) >= 0.9`, even with no candidates. A scenario row has `points_possible = 0`, the original divides by it, and VacuityGuard re-raises any runner error that isn't a load (`vacuity_guard.rb`, `loaded_exercised_atoms` and `spill_exercised_atoms`). Nothing in the rewrite-test step (`steps/counterexamples.rb`, `run`) rescues it, so the step fails for the whole query and no rewrite of it is tested. Dividing by a column that can hold 0 is ordinary SQL, and a column's typical values include 0. (Reproduce: `scratch/corpus-20261012-5/` in the main checkout, case `cv_score_ratio`.)
+
+Fix it test first, on a realistic query like this one. A fixture on which the original fails says nothing about a rewrite, the way a fixture that won't load says nothing: treat it like a load failure in the guard (its atoms stay vacuous and are retried) and in the scenario comparison (that scenario is skipped, not a disproof), and test the rewrite on the other scenarios. Say so in DESIGN.md where it says scenarios never crash rewrite-test. Check that 20261012-10 (counterexamples) and the disproof search (20261012-2) follow the same rule: an original that fails disproves nothing.
+
+- **Depends on:** None.
+- **Came from:** 20261012-5's phase 2, 2026-10-12.
+- **Design:** rewrite-test, vacuity-guard, fixture-scenarios.
+- **Status:** todo
+
