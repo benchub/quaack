@@ -484,7 +484,8 @@ RSpec.describe "quaacks report-payload" do
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
                                  "untested_atoms" => nil, "untested_unchanged" => nil,
                                  "untested_states" => nil, "covered" => nil,
-                                 "evidence" => nil, "dropped" => nil, "out_of_time" => nil)
+                                 "evidence" => nil, "dropped" => nil, "out_of_time" => nil,
+                                 "trials" => nil, "sizes" => nil)
       end
     end
   end
@@ -658,6 +659,54 @@ RSpec.describe "quaacks report-payload" do
            { "fate" => "counterexamples_disproved", "rule" => "multiset" }, { "fate" => "production_not_compared" },
            { "fate" => "not_better" }]
         )
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    # Task 20261012-2: fuzz decided rewrite-test. A disproof's sizes are
+    # table names, which go out only if one of the queries names the table,
+    # and row counts; trials is a count.
+    context "when fuzz decided rewrite-test" do
+      def fuzzed(passed, rule, trials, sizes)
+        tested(passed, nil, rule).merge("stage" => "fuzz", "trials" => trials, "sizes" => sizes)
+      end
+
+      let(:sql) { "SELECT o.id FROM public.orders o JOIN billing.accounts a ON a.id = o.id" }
+      let(:outcome) do
+        payload_of do |store|
+          store.write("schema_subset", "tables" => [%w[public orders], %w[billing accounts], %w[billing secrets]],
+                                       "ddl" => "")
+          sizes = [["billing", "accounts", 1], ["public", "orders", 2]]
+          stored(store, 2, tested: fuzzed(false, "row_count", 120, sizes), survived: false)
+          store.write("rewrite_2", "sql" => sql, "source" => "llm")
+          stored(store, 3, tested: fuzzed(false, "value", 7, [["public", sentinel, 1]]), survived: false)
+          stored(store, 4, tested: fuzzed(false, "multiset", 7, [["billing", "secrets", 1]]), survived: false)
+          stored(store, 5, tested: fuzzed(false, "multiset", sentinel, [["public", "orders", "#{sentinel} rows"]]),
+                           survived: false)
+          stored(store, 6, tested: tested(true).merge("stage" => "fuzz", "trials" => 41_200))
+          stored(store, 7, tested: fuzzed(false, REPORT_WORD_SENTINEL, 3, []), survived: false)
+        end
+      end
+
+      it "says fuzz disproved it, with the rule, the rows per table, and the trials" do
+        expect(rewrite(2)).to include("fate" => "fuzz_disproved", "rule" => "row_count", "scenario" => nil,
+                                      "trials" => 120,
+                                      "sizes" => [["billing", "accounts", 1], ["public", "orders", 2]])
+      end
+
+      it "sends no sizes that name a table neither query names, or aren't counts, and no trials that aren't" do
+        expect([3, 4, 5].map { rewrite(it).slice("fate", "sizes") })
+          .to all(include("fate" => "fuzz_disproved", "sizes" => nil))
+        expect([3, 4, 5].map { rewrite(it)["trials"] }).to eq([7, 7, nil])
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "sends a fuzz pass's trials, with no sizes" do
+        expect(rewrite(6)).to include("trials" => 41_200, "sizes" => nil)
+      end
+
+      it "claims no disproof for a rule that isn't the comparison's" do
+        expect(fate(7)).to eq("fate" => "rewrite_test_failed")
         expect_no_leaks(sentinels, outcome)
       end
     end
@@ -910,6 +959,20 @@ RSpec.describe "quaacks report-payload" do
         it "still names it" do
           expect(report["top"]).to eq([])
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "rewrite-test",
+                                               "rules" => %w[key_in_self_join key_in_self_join] }])
+        end
+      end
+
+      context "with a rule-made rewrite fuzz disproved" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "row_count").merge("stage" => "fuzz", "trials" => 12, "sizes" => []),
+                      false)
+          end
+        end
+
+        it "names fuzz as the step that disproved it" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "fuzz",
                                                "rules" => %w[key_in_self_join key_in_self_join] }])
         end
       end

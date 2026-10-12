@@ -451,6 +451,37 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect_no_leaks(sentinels, outcome, objects: { tested:, burndown: })
       end
 
+      # The query's own literals are sentinels, and fuzz offers them to
+      # every compatible column, so the counterexample it lifts holds them.
+      context "with sentinel literals in the query" do
+        let(:query) do
+          "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
+            "AND o.total >= #{sentinels.number}"
+        end
+        let(:candidate) { "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND o.total >= $3" }
+
+        def payload_fields
+          Quaack::Enclave::Steps::ReportPayload.fuzz(stored, "rewrite_1", store.read("qualified_query"), candidate)
+        end
+
+        it "disproves the rewrite and sends none of them in the message, the store entry, the burndown, or the " \
+           "report's fields" do
+          ready(candidate)
+
+          outcome = fuzz_step
+
+          expect(lines(outcome).first).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
+          expect(store.read("qualified_query")).to include(sentinels.text, sentinels.number.to_s)
+          expect(payload_fields).to include("sizes" => [["public", "orders", 1]])
+          expect_no_leaks(sentinels, outcome, objects: { tested:, burndown:, payload: payload_fields })
+        end
+
+        it "uses a check that sees a sentinel planted in the sizes" do
+          planted = { "sizes" => [["public", "orders #{sentinels.text}", 1]], "trials" => sentinels.number }
+          expect(LeakCheck.findings(sentinels, objects: { payload: planted }).map(&:to_s)).not_to eq([])
+        end
+      end
+
       it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials" do
         ready(same)
 

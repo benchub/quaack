@@ -37,9 +37,9 @@ module Quaack
         end.uniq
       end
 
-      # sizes, if every one is a table of tables, or nil.
+      # sizes, if it's a list whose every entry is a table of tables, or nil.
       def check(sizes, tables)
-        sizes if Protocol::FuzzResult.sizes?(sizes) && sizes.all? { tables.include?(it.take(2)) }
+        sizes if sizes.is_a?(Array) && Protocol::FuzzResult.sizes?(sizes) && sizes.all? { tables.include?(it.take(2)) }
       end
 
       # Whether a report's rewrites each carry sizes check passes against

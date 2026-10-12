@@ -24,6 +24,9 @@ module Quaack
       #   ranked                   selection ranked one of its labels
       #   same_plans               plan-pruning found it plans as the original
       #                            does, so it was never tested
+      #   fuzz_disproved           rewrite-test's fuzz search (task 20261012-2)
+      #                            found a small database where the results
+      #                            differ; with the rule
       #   rewrite_test_disproved          a rewrite-test scenario got different results;
       #                            with the scenario and the rule
       #   rewrite_test_untested           rewrite-test couldn't build scenarios for the
@@ -75,7 +78,7 @@ module Quaack
       # each the schema_subset entry's own (the catalog's relations). A
       # cycle with any other value goes out as nil.
       module RewriteFate
-        FATES = %w[ranked same_plans rewrite_test_disproved rewrite_test_untested rewrite_test_failed
+        FATES = %w[ranked same_plans fuzz_disproved rewrite_test_disproved rewrite_test_untested rewrite_test_failed
                    rewrite_test_out_of_time
                    counterexamples_disproved counterexamples_failed production_mismatch production_timed_out
                    production_not_compared below_top_three footprint_tie not_better measurement_timed_out
@@ -167,6 +170,7 @@ module Quaack
 
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
+          return fate("fuzz_disproved", rule: mismatch) if mismatch && tested["stage"] == "fuzz"
           return fate("rewrite_test_disproved", scenario:, rule: mismatch) if mismatch
 
           fate("rewrite_test_failed", scenario:, rule: known(FAILURES, tested["rule"]))

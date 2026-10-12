@@ -14,7 +14,8 @@ module Quaack
       #   RuleBugs.call(store)
       #   # => [{ "rewrite" => "rewrite_1", "rules" => ["key_in_self_join"], "step" => "rewrite-test" }]
       #
-      # step is what disproved it: rewrite-test, counterexamples, or result-comparison. rewrite-test and
+      # step is what disproved it: fuzz (rewrite-test's fuzz search, task 20261012-2), rewrite-test,
+      # counterexamples, or result-comparison. fuzz, rewrite-test and
       # counterexamples disprove it only with a result mismatch, as RewriteFate reads
       # rewrite_tested_<n> and rewrite_round_<n>. A rewrite plan-pruning
       # pruned for planning as the original does was never tested: its
@@ -44,7 +45,7 @@ module Quaack
         # query_failed, statement_timeout, and the rest of RewriteFate's
         # FAILURES) is rewrite_test_failed or counterexamples_failed, and
         # says nothing about the rewrite.
-        TEST_DISPROOFS = { "rewrite_test_disproved" => "rewrite-test",
+        TEST_DISPROOFS = { "fuzz_disproved" => "fuzz", "rewrite_test_disproved" => "rewrite-test",
                            "counterexamples_disproved" => "counterexamples" }.freeze
 
         module_function
