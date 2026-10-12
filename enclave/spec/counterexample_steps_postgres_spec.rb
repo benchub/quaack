@@ -1020,10 +1020,38 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(4, note_row)).first["rule"]).to eq("counterexample_round_bad_round")
     end
 
-    # rewrite-test refuses an fk_cycle first, and a round builds the same
-    # scenarios, so a round meets one only if the arena changed after it
-    # (20261003-43: that's the only way, so the round doesn't name the cycle).
-    # Its error line is the bare rule, and never has a row of the tables'.
+    # Task 20261012-2: a fuzz pass tests a rewrite whose query ScenarioTests
+    # refuses, so its rounds run on a query rewrite-test built no atoms for.
+    # They need none: it left no untested atom to cover.
+    it "runs a round for a rewrite fuzz passed on a query ScenarioTests refused as complex_check" do
+      ready(looser, status_check: "status = 'open' OR status = 'closed'")
+      store.write("rewrite_tested_1", "passed" => true, "stage" => "fuzz", "untested" => [], "untested_atoms" => [])
+
+      outcome = round(1, note_row)
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => false, "rule" => "row_count", "load_failed" => false,
+                                              "covered" => [])
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    it "fails to load inserts that need a parent row on a table whose CHECK rewrite-test refuses, by complex_check" do
+      ready(looser, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY, lo int, hi int CHECK (hi >= lo));
+                                ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
+      store.write("rewrite_tested_1", "passed" => true, "stage" => "fuzz", "untested" => [], "untested_atoms" => [])
+
+      outcome = round(1, "INSERT INTO public.orders (id, note, status, customer_id) VALUES (1, $1, 'open', 7)")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => nil, "rule" => "complex_check", "load_failed" => true)
+      expect(stored.entry?("rewrite_survived_1")).to be(false)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # A fuzz pass also tests a rewrite whose query's tables reach a NOT NULL
+    # foreign key cycle, which no insert can load into: each round's
+    # inserts fail to load, by fk_cycle, which disproves nothing. The round
+    # never names the cycle, and never has a row of the tables'.
     context "when the arena's foreign keys make a NOT NULL cycle" do
       let(:rows) { LeakCheck::Sentinels.new }
 
@@ -1033,12 +1061,16 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
       end
 
-      it "ends the round with the rule alone, even when the cycle's tables are in the schema subset" do
+      it "fails to load the round's inserts, by fk_cycle, even when the cycle's tables are in the schema subset" do
         cycle_ready([%w[public orders], %w[public accounts]])
 
         outcome = round(1, note_row)
 
-        expect(lines(outcome).first).to eq("type" => "error", "step" => "counterexample-round", "rule" => "fk_cycle")
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+        expect(lines(outcome).first).to eq("type" => "counterexample_round", "match" => nil, "rule" => "fk_cycle",
+                                           "load_order" => nil, "covered" => [], "refused" => [],
+                                           "load_failed" => true)
+        expect(stored.read("rewrite_round_1")).to include("evidence" => false, "rule" => "fk_cycle")
         expect_no_leaks(rows, outcome)
         expect_no_leaks(sentinels, outcome)
       end

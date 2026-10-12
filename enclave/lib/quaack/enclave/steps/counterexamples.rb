@@ -265,16 +265,26 @@ module Quaack
             inserts
           end
 
-          # The round's outcome, and how many fixtures it loaded.
+          # The round's outcome, and how many fixtures it loaded. A fuzz pass
+          # lets a round meet a query rewrite-test refused (task 20261012-2),
+          # so inserts whose parent rows rewrite-test's rules can't build,
+          # such as in a NOT NULL foreign key cycle, fail to load, by the
+          # refusal's rule, which disproves nothing.
           def run(store, search, number, inserts)
             connection = Enclave::RunServer.connect(store, :arena)
             prepared = prepare(connection, store, inserts, Counterexamples.queries(store, search))
             runner = DenormalizedFixture::Runner.new(connection, Counterexamples.honour(store, search))
             round = compare(runner, connection, prepared, store, search, number)
-            [{ match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
-               refused: prepared.refused, load_failed: round.load_failed }, runner.loads]
+            [outcome(round, prepared.refused), runner.loads]
+          rescue Scenarios::Error => e
+            [{ match: nil, rule: e.rule.to_s, load_order: nil, covered: [], refused: [], load_failed: true }, 0]
           ensure
             connection&.close
+          end
+
+          def outcome(round, refused)
+            { match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
+              refused:, load_failed: round.load_failed }
           end
 
           def prepare(connection, store, inserts, queries)
@@ -283,10 +293,12 @@ module Quaack
                                                                   settings: Enclave::RunServer.plan_settings(store))
           end
 
+          # The original's atoms are built only to cover untested ones, so a
+          # query ScenarioTests refused, which left none, needs no Builder.
           def compare(runner, connection, prepared, store, search, number) # rubocop:disable Metrics/ParameterLists
             original, candidate = Counterexamples.queries(store, search)
             untested = store.read("rewrite_tested_#{number}")["untested_atoms"]
-            atoms = Scenarios::Builder.new(connection, PgQuery.parse(original)).atoms
+            atoms = untested.empty? ? [] : Scenarios::Builder.new(connection, PgQuery.parse(original)).atoms
             Enclave::Counterexamples.compare(runner, prepared,
                                              original:, candidate:, atoms:, untested:)
           end

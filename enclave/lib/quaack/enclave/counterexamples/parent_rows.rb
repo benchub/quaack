@@ -27,16 +27,23 @@ module Quaack
         attr_reader :rows
 
         def initialize(conn, schema, accepted, reads = nil)
+          @conn = conn
           @schema = schema
           @values = Scenarios::Values.new(conn)
-          @checks = Scenarios::Checks.new(conn, schema)
-          @nulls = Scenarios::Nulls.new(schema, @values, @checks, reads) if reads
+          @reads = reads
           @counter = FIRST
           @rows = []
           fill_all(accepted.map { |a| [a.table, a.rows] })
         end
 
         private
+
+        # Built at the first parent row, so a schema whose CHECKs rewrite-test
+        # refuses (complex_check) refuses only inserts that need a parent.
+        # varying asks first, outside free_value's rescue.
+        def checks = @checks ||= Scenarios::Checks.new(@conn, @schema)
+
+        def nulls = @nulls ||= Scenarios::Nulls.new(@schema, @values, checks, @reads)
 
         def fill_all(evaluated)
           @present = Hash.new { |h, k| h[k] = [] }
@@ -130,21 +137,21 @@ module Quaack
         # The columns pairs doesn't set that need a distinct value per row.
         def varying(table, pairs)
           free = @schema.columns(table).reject { |col| pairs.key?(col.name) || col.default == "generated" }
-          @schema.constraints(table).varying(free) { [@values.rank(it), @checks.checked?(table, it) ? 1 : 0] }
+          @schema.constraints(table).varying(free) { [@values.rank(it), checks.checked?(table, it) ? 1 : 0] }
         end
 
         def free_value(table, col, varying)
           return @values.nth(col, @counter += 1, table:) if unique?(varying, col)
 
           typical = @values.typical(col)
-          @checks.satisfying(table, col, [typical], (@values.refusal(col, table) unless typical))
+          checks.satisfying(table, col, [typical], (@values.refusal(col, table) unless typical))
         rescue Scenarios::Error
           raise if typical || !null?(table, col)
 
           nil
         end
 
-        def null?(table, col) = @nulls&.allowed?(table, col)
+        def null?(table, col) = @reads && nulls.allowed?(table, col)
       end
     end
   end

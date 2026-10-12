@@ -160,14 +160,30 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
 
   # Runs query through intake, setup, and the Pipeline once, with variant's
   # replies. An EnclaveError or LLM::Error ends the run cleanly and comes
-  # back in the outcome; anything else raises.
-  def run(server, query, variant)
+  # back in the outcome; anything else raises. fuzz false turns
+  # rewrite-test's fuzz search off for the run (without_fuzz).
+  def run(server, query, variant, fuzz: true)
     Dir.mktmpdir("quaack-replay") do |home|
       prod, racetrack = PromptPack.databases(server, query)
-      PromptPack.with_env(home, server, prod) { start(home, server, query, prod, racetrack, variant) }
+      PromptPack.with_env(home, server, prod) do
+        replay = -> { start(home, server, query, prod, racetrack, variant) }
+        fuzz ? replay.call : without_fuzz(&replay)
+      end
     ensure
       drop(server, [prod, racetrack, "#{racetrack}_arena"].compact)
     end
+  end
+
+  # Runs the block with rewrite-test's fuzz search off in every quaacks
+  # child it starts (QUAACKS_FUZZ_TRIALS 0), for a run whose subject is a
+  # stage fuzz would now reach first: the LLM's counterexamples, or a
+  # ScenarioTests refusal that leaves a rewrite untested.
+  def without_fuzz
+    saved = ENV.fetch("QUAACKS_FUZZ_TRIALS", nil)
+    ENV["QUAACKS_FUZZ_TRIALS"] = "0"
+    yield
+  ensure
+    ENV["QUAACKS_FUZZ_TRIALS"] = saved
   end
 
   def start(home, server, query, prod, racetrack, variant) # rubocop:disable Metrics/ParameterLists
@@ -239,11 +255,11 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     transport.call("report-payload", args: { run: run_id }).messages.find { it["type"] == "report" }
   end
 
-  # One run per query and variant in a spec process, shared by its
+  # One run per query, variant, and fuzz in a spec process, shared by its
   # examples. It prints how many asks were replayed and how many fell back.
-  def cached(server, query, variant)
+  def cached(server, query, variant, fuzz: true)
     @cached ||= {}
-    @cached[[query.name, variant]] ||= run(server, query, variant).tap { puts summary(query, variant, it) }
+    @cached[[query.name, variant, fuzz]] ||= run(server, query, variant, fuzz:).tap { puts summary(query, variant, it) }
   end
 
   def summary(query, variant, outcome)
