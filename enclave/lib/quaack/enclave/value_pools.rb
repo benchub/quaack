@@ -251,15 +251,22 @@ module Quaack
           end
         end
 
-        # A list or an ARRAY[...] gives each element.
+        # A list or an ARRAY[...] gives each element. So does an ARRAY under
+        # casts that = ANY or <> ALL reads: Postgres prints IN on a varchar
+        # column as = ANY ((ARRAY['a'::character varying])::text[]). A cast
+        # ARRAY that = compares with an array column stays whole.
         def sides(expr)
+          quantified = %i[AEXPR_OP_ANY AEXPR_OP_ALL].include?(expr.kind)
           [expr.lexpr, expr.rexpr].compact.flat_map do |s|
+            array = (quantified ? uncast(s) : s).a_array_expr
             if s.list then s.list.items.to_a
-            elsif s.a_array_expr then s.a_array_expr.elements.to_a
+            elsif array then array.elements.to_a
             else [s]
             end
           end
         end
+
+        def uncast(node) = node.type_cast ? uncast(node.type_cast.arg) : node
 
         def select_of(expr)
           tree = PgQuery.parse("SELECT 1").tree
