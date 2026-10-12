@@ -6,7 +6,7 @@ module Quaack
       # The burndown's stage sentences, in plain words.
       module StageSentences
         # One plain sentence per stage, from DESIGN.md's description of it,
-        # for the hover on a funnel band and the tooltip on a table row.
+        # for the hover on a Sankey node and the tooltip on a table row.
         TABLE = {
           "index-from-query" => "QUAACK reads the original query and suggests indexes for the tables, columns, " \
                                 "and conditions it uses.",

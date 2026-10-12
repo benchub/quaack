@@ -34,14 +34,6 @@ RSpec.describe PipelineReplay do
     end
   end
 
-  # The drawn first band of a funnel: its top and bottom widths, from the
-  # trapezoid's corners (top left, top right, bottom right, bottom left).
-  def first_band_widths(view, rows)
-    svg = view.funnel("x", "x", rows)
-    points = svg[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").first.to_f }
-    [points[1] - points[0], points[2] - points[3]]
-  end
-
   # Whether the record's in is the width in the pipe. Not strict, an LLM
   # index round may carry less, never more.
   def burndown_joins?(record, running, stage, strict:)
@@ -50,16 +42,16 @@ RSpec.describe PipelineReplay do
     !strict && %w[llm-index-ideas llm-index-refine].include?(stage) && record["in"] < running
   end
 
-  # The runs whose first funnel band was drawn and checked (task 20261009-53),
-  # so the check after the last run can see the example didn't skip most of them.
-  rectangle_runs = []
+  # The runs whose burndown stages were checked to join up, so the check
+  # after the last run can see the example didn't skip most of them.
+  joined_runs = []
 
   replays do
     # Only when every run was asked for: a filtered run checks fewer.
     after(:context) do
       next unless RSpec.configuration.filter_manager.inclusions.empty?
 
-      expect(rectangle_runs.size).to be >= 6
+      expect(joined_runs.size).to be >= 6
     end
 
     PromptPack::QUERIES.each do |query|
@@ -87,32 +79,21 @@ RSpec.describe PipelineReplay do
             expect(missing).to eq([]) if outcome.report
           end
 
-          # Task 20261009-4: the burndown funnels draw what's in the pipe, so a
-          # stage's count of what came in is what the stages before it left.
-          # A stage that adds (in 0) starts from the width before it.
+          # Task 20261009-4: a stage's count of what came in is what the
+          # stages before it left. A stage that adds (in 0) starts from the
+          # width before it.
           it "counts what each burndown stage came in with as what the stages before it left" do
-            next unless outcome.report
-
-            view = Quaack::Driver::Report::View.new(outcome.report, "run")
-            gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
-                   burndown_gaps(view.rewrite_index_rows)
-            expect(gaps).to eq([])
-          end
-
-          # Task 20261009-43: the first band of each funnel is a rectangle.
-          it "draws the first band of each burndown funnel as wide at its top as at its bottom" do
-            # A run that ended in an error has no report to draw. Say that is why it is skipped.
+            # A run that ended in an error has no report to check. Say that is why it is skipped.
             unless outcome.report
               expect(outcome.error).not_to be_nil
               next
             end
 
-            rectangle_runs << [query.name, variant]
+            joined_runs << [query.name, variant]
             view = Quaack::Driver::Report::View.new(outcome.report, "run")
-            %i[index_rows rewrite_rows rewrite_index_rows].each do |rows|
-              top, bottom = first_band_widths(view, view.public_send(rows))
-              expect(top).to eq(bottom)
-            end
+            gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
+                   burndown_gaps(view.rewrite_index_rows)
+            expect(gaps).to eq([])
           end
 
           it "sends each replayed ask the prompt its reply answered" do

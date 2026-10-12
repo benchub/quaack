@@ -189,16 +189,30 @@ RSpec.describe Quaack::Driver::Report do
         expect(names).to include("--rose-edge", "--rose-accent")
       end
 
-      it "gives every funnel color and the funnel's grey a variable that :root defines" do
-        funnel = Quaack::Driver::Report::Funnel
-        vars = (funnel::COLORS.values + [funnel::BLUE, funnel::KNOWN_GREY, funnel::UNCOUNTED]).flat_map do |v|
+      it "gives every stage color and the Sankey's grey a variable that :root defines" do
+        style_module = Quaack::Driver::Report::StageStyle
+        grey = Quaack::Driver::Report::SankeyDrawing::GREY
+        vars = (style_module::COLORS.values + [style_module::BLUE, grey]).flat_map do |v|
           v.scan(/var\((--[a-z-]+)\)/).flatten
         end
-        expect(funnel::COLORS.values).to all(match(/\Avar\(--st-[a-z]+\)\z/))
+        expect(style_module::COLORS.values).to all(match(/\Avar\(--st-[a-z]+\)\z/))
         expect(vars.uniq - names).to eq([])
       end
 
-      it "paints the funnel from variables, with no hex color in the body" do
+      # Task 20261012-6: the Sankey's text colors, once the funnel's, keep their values in both themes.
+      it "gives the Sankey's text its own variables, with the same light and dark values the funnel's had" do
+        expect(light).to include("--sankey-text: #1c2430; --sankey-count: #515b69;")
+        expect(dark).to include("--sankey-text: #e6eaf0; --sankey-count: #a9b3c1;")
+        expect(style).not_to include("--funnel-")
+        expect(style).not_to include("--known-line")
+        expect(style).not_to include("--hatch")
+        expect(style).to include("svg.sankey text { font: 12px -apple-system, \"Segoe UI\", Helvetica, Arial, " \
+                                 "sans-serif; fill: var(--sankey-count); }")
+        expect(style).to include("svg.sankey text.layer { font-size: 13px; font-weight: 600; " \
+                                 "fill: var(--sankey-text); }")
+      end
+
+      it "paints the Sankey diagrams from variables, with no hex color in the body" do
         body = html[%r{</style>.*}m]
         expect(body).not_to match(/#\h{6}\b/)
         expect(render(negative_payload)).to include("<style>")
@@ -2505,7 +2519,8 @@ RSpec.describe Quaack::Driver::Report do
       expect(table).to include(row("Testing on made-up edge-case data", 6, "none", esc(tested), 0, 0, "none"))
       expect(table).to include(row("Testing on data the LLM wrote to break them", 2, "none",
                                    "wrong in round 1: 1; failed to run in round 3: 1", 0, 0, "none"))
-      expect(table).to include(esc("dropped: wrong on NULLs: 1; never tested, because a CHECK"))
+      expect(table).to include(esc("Dropped, never tested, because a CHECK constraint on its tables is too " \
+                                   "complex for QUAACK to satisfy: 1"))
     end
 
     # Task 20261001-20: the names the enclave's index stages record.
@@ -2611,7 +2626,9 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
-  describe "the burndown funnels" do
+  # Task 20261012-6: the Sankey diagrams replaced the funnels. What a funnel
+  # said about a stage, the Sankey diagrams and the table say now.
+  describe "the burndown's pictures and words" do
     def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
       { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,
         "extra" => extra }
@@ -2639,40 +2656,40 @@ RSpec.describe Quaack::Driver::Report do
 
     let(:out) { render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })) }
 
-    # The funnel's SVG, failing the example on the spot if there's none,
-    # so a missing funnel fails on that, not on a nil further on.
-    def funnel(id, html = out)
-      svg = section(html, "burndown")[%r{<svg id="funnel-#{id}".*?</svg>}m]
-      expect(svg).not_to be_nil, %(expected the burndown section to hold <svg id="funnel-#{id}">, but it has none)
-      svg
+    def table(id, html = out) = section(html, "burndown")[%r{<table id="burndown-#{id}">.*?</table>}m]
+
+    # Every Sankey diagram of a table, together.
+    def sankeys(id, html = out) = section(html, "burndown").scan(%r{<svg id="sankey-#{id}-\d+".*?</svg>}m).join
+
+    # A stage's layer in its table's Sankey diagrams: its rect's attributes and hover.
+    def layer(id, stage, html = out)
+      words = Quaack::Driver::Report::Words
+      name = ERB::Util.html_escape([words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES]
+        .reduce(:merge).fetch(stage))
+      found = sankeys(id, html).scan(%r{<rect ([^>]*)>(?:<title>(.*?)</title>)?}m).find do |attrs, _|
+        attrs.include?(%(data-stage="#{esc(name)}"))
+      end
+      expect(found).not_to be_nil, "expected a layer for #{stage} in the #{id} Sankey diagrams"
+      { "class" => found[0][/class="([^"]*)"/, 1], "title" => found[1].to_s }
     end
 
-    def bands(svg) = svg.scan(%r{<g class="band[^"]*">.*?</g>}m)
-
-    def stage(band) = band[%r{<text class="stage"[^>]*>(.*?)</text>}, 1]
-
-    def counts(band) = band[%r{<text class="counts"[^>]*>(.*?)</text>}, 1]
-
-    # A band's width at its top and at its bottom, from its trapezoid's
-    # corners: top left, top right, bottom right, bottom left.
-    def widths(band)
-      left, right = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").first.to_f }.each_slice(2).to_a
-      [(left[1] - left[0]).round(2), (right[0] - right[1]).round(2)]
-    end
-
-    def width(count, largest) = (Quaack::Driver::Report::Funnel::WIDTH * count / largest).round(1)
-
-    it "draws each funnel just above its table, as an image with a name" do
+    it "reads Sankey diagrams, then the table, in each section, with no funnel and no note comparing them" do
       burndown = section(out, "burndown")
       %w[index rewrite rewrite-index].each do |id|
-        expect(funnel(id))
-          .to start_with(%(<svg id="funnel-#{id}" class="funnel" role="img" aria-labelledby="funnel-#{id}-title"))
-        expect(burndown.index(%(<svg id="funnel-#{id}"))).to be < burndown.index(%(<table id="burndown-#{id}">))
+        expect(burndown.index(%(<svg id="sankey-#{id}-1"))).to be < burndown.index(%(<table id="burndown-#{id}">))
       end
-      expect(burndown.index('<table id="burndown-index">')).to be < burndown.index('<svg id="funnel-rewrite"')
-      expect(funnel("index"))
-        .to include(%(<title id="funnel-index-title">Index ideas for the original query, stage by stage))
-      expect(funnel("rewrite")).to include(%(<title id="funnel-rewrite-title">Rewrites, stage by stage))
+      expect(burndown.scan(%r{<h4>(.*?)</h4>}).flatten)
+        .to eq(["Sankey diagrams", "Table, with the exact numbers"] * 3)
+      expect(out).not_to match(/funnel/i)
+      expect(burndown).not_to include('class="note compare"')
+      expect(burndown).not_to include("Both pictures")
+    end
+
+    it "keeps no funnel drawing in the driver" do
+      expect(Quaack::Driver::Report::View.new(payload, "run")).not_to respond_to(:funnel)
+      expect(Quaack::Driver::Report.const_defined?(:Funnel, false)).to be(false)
+      expect(Quaack::Driver::Report::StageStyle::COLORS).to include("index-dedupe" => "var(--st-violet)")
+      expect(Quaack::Driver::Report::StageStyle::BLUE).to eq("var(--st-default)")
     end
 
     it "has one plain sentence for every stage the burndown can show" do
@@ -2718,7 +2735,7 @@ RSpec.describe Quaack::Driver::Report do
       )
     end
 
-    it "says 'the rewrite' in the rewrites' index table and funnel, and 'the original query' in the original's" do
+    it "says 'the rewrite' in the rewrites' index table, and 'the original query' in the original's" do
       tips = Quaack::Driver::Report::StageSentences::TABLE
       html = render(payload.merge("burndown" => { "stages" => stages.merge(
         "index-from-query" => { "original" => rec(0, 4), "rewrite_1" => rec(0, 2) }
@@ -2726,413 +2743,75 @@ RSpec.describe Quaack::Driver::Report do
       original = tips.fetch("index-from-query")
       rewrote = original.sub("the original query", "the rewrite")
       expect(rewrote).not_to eq(original)
-      burndown = section(html, "burndown")
-      index_table = burndown[%r{<table id="burndown-index">.*?</table>}m]
-      rewrite_table = burndown[%r{<table id="burndown-rewrite-index">.*?</table>}m]
-      expect(index_table).to include(%(<tr title="#{esc(original)}">))
-      expect(rewrite_table).to include(%(<tr title="#{esc(rewrote)}">))
-      expect(rewrite_table).not_to include(esc(original))
-      expect(bands(funnel("index", html)).join).to include(esc(original))
-      rewrite_bands = bands(funnel("rewrite-index", html)).join
-      expect(rewrite_bands).to include(esc(rewrote))
-      expect(rewrite_bands).not_to include(esc(original))
+      expect(table("index", html)).to include(%(<tr title="#{esc(original)}">))
+      expect(table("rewrite-index", html)).to include(%(<tr title="#{esc(rewrote)}">))
+      expect(table("rewrite-index", html)).not_to include(esc(original))
     end
 
-    it "says what the stage does in each band's hover and in each table row's tooltip" do
+    it "says what each stage does in its Sankey hover and in its table row's tooltip" do
       words = Quaack::Driver::Report::Words
-      names = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].reduce(:merge)
-      names.each do |stage, name|
-        sentence = ERB::Util.html_escape(Quaack::Driver::Report::StageSentences::TABLE.fetch(stage))
-        band = %w[index rewrite].flat_map { bands(funnel(it)) }.find { stage(it) == ERB::Util.html_escape(name) }
-        expect(band).to match(%r{<title>[^<]*#{Regexp.escape(sentence)}[^<]*</title>}), "no hover for #{stage}"
-        expect(section(out, "burndown"))
-          .to include(%(<tr title="#{sentence}"><th scope="row">#{ERB::Util.html_escape(name)}</th>))
-      end
+      { "index" => words::INDEX_STAGES, "rewrite" => words::REWRITE_STAGES.merge(words::LATE_STAGES) }
+        .each do |id, names|
+          names.each do |stage, name|
+            sentence = ERB::Util.html_escape(Quaack::Driver::Report::StageSentences::TABLE.fetch(stage))
+            expect(sankeys(id)).to match(%r{<title>[^<]*#{Regexp.escape(sentence)}[^<]*</title>}),
+                                   "no Sankey hover for #{stage}"
+            expect(table(id)).to include(%(<tr title="#{sentence}"><th scope="row">#{ERB::Util.html_escape(name)}</th>))
+          end
+        end
     end
 
-    it "draws one band per stage, in the table's order" do
-      %w[index rewrite rewrite-index].each do |id|
-        table = section(out, "burndown")[%r{<table id="burndown-#{id}">.*?</table>}m]
-        expect(bands(funnel(id)).map { stage(it) }).to eq(table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
-      end
-      expect(bands(funnel("rewrite")).size).to eq(9)
+    it "shows a stage the run didn't count as not recorded, never as zero, in the Sankey and the table" do
+      name = esc(ERB::Util.html_escape(Quaack::Driver::Report::Words::INDEX_STAGES.fetch("index-test")))
+      unknown = layer("index", "index-test")
+      expect(unknown["class"]).to end_with(" unknown")
+      expect(unknown["title"]).to start_with("#{name}: not recorded. " \
+                                             "This run didn&#39;t count it, which doesn&#39;t mean none.")
+      missing = '<td colspan="5" class="missing">not recorded</td>'
+      expect(table("index")).to include(%(<th scope="row">#{name}</th>#{missing}))
     end
 
-    it "sizes every band on one scale, the funnel's largest count, narrowing within a band by what it dropped" do
-      rewrite = bands(funnel("rewrite")).map { widths(it) }
-      expected = [[2, 2], [2, 6], [6, 8], [8, 7], [7, 5], [5, 4], [4, 3], [3, 3], [3, 2]]
-      expect(rewrite).to eq(expected.map { |inn, out| [width(inn, 8), width(out, 8)] })
-      expect(rewrite[3][0]).to eq(Quaack::Driver::Report::Funnel::WIDTH)
-      expect(rewrite[4][1]).to be < rewrite[4][0]
-    end
-
-    it "labels each band with its stage, what went on, and why the rest dropped out, never what came in" do
-      band = bands(funnel("index"))[2]
-      expect(stage(band)).to eq("Removing duplicates and indexes you already have")
-      expect(counts(band)).to eq("3 went on · dropped: the same as another idea: 2; " \
-                                 "already covered by an index you have: 1")
-    end
-
-    it "keeps only the stage's sentence in a band's hover, none of the table's counts" do
-      band = bands(funnel("index"))[2]
-      sentence = Quaack::Driver::Report::StageSentences.for("index-dedupe", of_rewrite: false)
-      expect(band).to include("<title>#{esc(sentence)}</title>")
-      expect(band).not_to match(/came in|Added:|Dropped:|Set aside|went on\.|Also counted|What it does/)
-    end
-
-    it "gives a band for a stage with no sentence no hover when everything was recorded" do
-      expect(Quaack::Driver::Report::StageSentences.for("no-such-stage")).to be_nil
-      rows = [["A stage", rec(2, 1, dropped: { "r" => 1 }), "no-such-stage"]]
-      svg = Quaack::Driver::Report::View.new(payload, "run").funnel("x", "x", rows)
-      expect(bands(svg).size).to eq(1)
-      expect(bands(svg).first).not_to include("<title>")
-    end
-
-    it "shows a stage the run didn't count as not recorded, never as zero, outside the scale" do
-      index = bands(funnel("index"))
-      unknown = index.values_at(3, 4, 5)
-      expect(unknown).to all(start_with('<g class="band unknown">'))
-      expect(unknown.map { counts(it) }).to all(eq("not recorded"))
-      expect(unknown.join).not_to match(/\b0 (in|out|went on)\b|came in/)
-      expect(unknown).to all(include('<path class="hatch" d="M'))
-      expect(index.values_at(0, 1, 2, 6).join).not_to include('class="hatch"')
-      expect(index.map { widths(it) }.values_at(0, 1, 2, 6))
-        .to eq([[4, 4], [4, 6], [6, 3], [3, 1]].map { |inn, out| [width(inn, 6), width(out, 6)] })
-      expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
-    end
-
-    it "draws a stage the run didn't count at a visible width after a stage that let nothing through" do
-      stages["index-rank"] = { "original" => rec(2, 0, dropped: { "never_used" => 2 }) }
-      stages["index-test"] = { "original" => rec(3, 0, dropped: { "never_used" => 3 }) }
-      index = bands(funnel("index"))
-      expect(widths(index[3])).to eq([width(3, 6), 0])
-      expect(index.values_at(4, 5).map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
-      expect(Quaack::Driver::Report::Funnel::UNKNOWN).to be >= Quaack::Driver::Report::Funnel::WIDTH / 4
-    end
-
-    it "draws a stage the run didn't count no narrower than its minimum after a tiny count" do
-      stages["index-from-plan"] = { "original" => rec(4, 1000, added: { "generator_two" => 996 }) }
-      stages["index-dedupe"]["original"] = rec(1000, 3, dropped: { "duplicate" => 997 })
-      index = bands(funnel("index"))
-      expect(width(3, 1000)).to be < Quaack::Driver::Report::Funnel::UNKNOWN
-      expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
-    end
-
-    it "shows a stage that counted zero as counted, at the width that's in the pipe" do
-      stages["index-test"] = { "original" => rec(0, 0) }
-      band = bands(funnel("index"))[3]
-      expect(band).to start_with('<g class="band">')
-      expect(counts(band)).to eq("0 went on")
-      expect(widths(band)).to eq([width(3, 6)] * 2)
-    end
-
-    it "draws every band as unknown when the payload has no burndown" do
-      index = bands(funnel("index", html))
-      expect(index.size).to eq(7)
-      expect(index).to all(start_with('<g class="band unknown">'))
-      expect(index.map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
-      expect(funnel("rewrite", html)).not_to match(/\d+ (in|out)\b/)
-    end
-
-    it "cuts a long label short beside its band, and keeps the whole of it in the tooltip" do
-      stages["index-dedupe"]["original"]["dropped"] = (1..12).to_h { ["reason_number_#{it}", it] }
-      band = bands(funnel("index"))[2]
-      whole = "3 went on · dropped: #{(1..12).map { "reason number #{it}: #{it}" }.join("; ")}"
-      expect(whole).to include("reason number 1: 1; ").and include("reason number 12: 12")
-      expect(whole.length).to be > Quaack::Driver::Report::Funnel::LINE
-      expect(counts(band)).to eq("#{whole[0, Quaack::Driver::Report::Funnel::LINE - 1]}…")
-    end
-
-    it "leaves a label that just fits whole" do
-      prefix = "3 went on · dropped: "
-      name = "x" * (Quaack::Driver::Report::Funnel::LINE - prefix.length - ": 1".length)
-      stages["index-dedupe"]["original"]["dropped"] = { name => 1 }
-      expect(counts(bands(funnel("index"))[2])).to eq("#{prefix}#{name}: 1")
-      expect(counts(bands(funnel("index"))[2]).length).to eq(Quaack::Driver::Report::Funnel::LINE)
-    end
-
-    it "says what a stage set aside for testing during ranking beside its band, and not in its tooltip" do
-      stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1200)
-      band = bands(funnel("index"))[2]
-      expect(counts(band)).to start_with("3 went on, 1,200 set aside for testing during ranking · dropped")
-      expect(band[%r{<title>.*?</title>}m]).not_to include("1,200")
-    end
-
-    it "takes the scale's largest count from what went on, too" do
-      stages["operator-rewrites"] = { "rewrites" => rec(6, 9, added: { "operator" => 3 }) }
-      rewrite = bands(funnel("rewrite")).map { widths(it) }
-      expected = [[2, 2], [2, 6], [6, 9], [9, 8], [8, 6], [6, 5], [5, 4], [4, 4], [4, 3]]
-      expect(rewrite).to eq(expected.map { |inn, out| [width(inn, 9), width(out, 9)] })
-      expect(rewrite[2][1]).to eq(Quaack::Driver::Report::Funnel::WIDTH)
-    end
-
-    it "draws a funnel whose every count is zero as zero wide, and its unknown stages at their minimum" do
-      stages.transform_values! { |records| records.transform_values { rec(0, 0) } }
-      index = bands(funnel("index"))
-      expect(index.values_at(0, 1, 2, 6).map { widths(it) }).to all(eq([0, 0]))
-      expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
-      expect(bands(funnel("rewrite")).map { widths(it) }).to all(eq([0, 0]))
-    end
-
-    # The solid line along a partly counted band's top, as its x's and y's.
-    def known_top(band)
-      line = band.match(/<line class="known" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/)
-      expect(line).not_to be_nil, "expected a solid line along the band's top, but it has none"
-      line.captures.map(&:to_f)
-    end
-
-    it "draws what's known of a stage that counted what came in but not what went on" do
+    it "shows a stage that counted what came in but not what went on, in the Sankey's hover and the table" do
       stages["index-test"] = { "original" => rec(3, 1, dropped: { "never_used" => 1 }).except("out") }
-      index = bands(funnel("index"))
-      band = index[3]
-      top = rows_y(band).first
-      expect(band).to start_with('<g class="band partial">')
-      expect(known_top(band)).to eq([80.0, top, 240.0, top])
-      expect(widths(band)).to eq([width(3, 6), width(3, 6)])
-      expect(band).to include('<path class="hatch" d="M')
-      expect(counts(band)).to eq("went on not recorded · dropped: never used by the planner: 1")
-      sentence = Quaack::Driver::Report::StageSentences.for("index-test", of_rewrite: false)
-      expect(band).to include("<title>How many went on: not recorded. " \
-                              "This run didn&#39;t count it, which doesn&#39;t mean none. #{esc(sentence)}</title>")
-      expect(band).not_to match(/\b\d+ (out|went on)\b|came in/)
-      expect(index.values_at(4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
+      partial = layer("index", "index-test")
+      expect(partial["class"]).to end_with(" partial")
+      expect(partial["title"]).to start_with("How many went on: not recorded. " \
+                                             "This run didn&#39;t count it, which doesn&#39;t mean none.")
+      expect(table("index")).to include("<td>never used by the planner: 1</td>" \
+                                        '<td class="num">0</td><td class="missing">not recorded</td>')
+      expect(sankeys("index")).to include("Dropped, never used by the planner: 1")
     end
 
-    it "draws a partly counted stage at the width that's in the pipe, whatever it says came in" do
-      stages["index-test"] = { "original" => rec(12, 0).except("out") }
-      expect(known_top(bands(funnel("index"))[3]).values_at(0, 2)).to eq([80.0, 240.0])
-      expect(widths(bands(funnel("index"))[2])).to eq([width(6, 6), width(3, 6)])
+    it "shows a stage that counted what went on but not what came in as not recorded in the Sankey" do
+      stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 3 }).except("in")
+      expect(layer("index", "index-dedupe")["class"]).to end_with(" unknown")
     end
 
-    it "draws a partly counted stage's unknown part no narrower than its minimum" do
-      stages["index-test"] = { "original" => rec(1, 0).except("out") }
-      stages["index-dedupe"]["original"] = rec(6, 1, dropped: { "duplicate" => 5 })
-      band = bands(funnel("index"))[3]
-      known = known_top(band)
-      expect((known[2] - known[0]).round(1)).to eq(width(1, 6))
-      expect(widths(band)).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
-      expect(bands(funnel("index")).values_at(4, 5).map { widths(it) })
-        .to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
+    it "shows a stage with a negative count as not recorded in the Sankey, never as that count" do
+      stages["index-dedupe"]["original"] = rec(-1, 3)
+      stages["index-rank"]["original"] = rec(3, -2)
+      expect(layer("index", "index-dedupe")["class"]).to end_with(" unknown")
+      expect(sankeys("index").scan(/>([^<]*)</).join(" ")).not_to match(/-[12]\b/)
     end
 
-    # A band's hatch's leftmost and rightmost x.
-    def hatch_span(band)
-      xs = band[/<path class="hatch" d="([^"]+)"/, 1].scan(/[ML]([\d.]+),/).flatten.map(&:to_f)
-      xs.minmax
-    end
-
-    it "paints a partly counted stage and an uncounted one grey, never the color of a counted band" do
-      stages["index-test"] = { "original" => rec(3, 1).except("out") }
-      index = bands(funnel("index"))
-      grey = Quaack::Driver::Report::Funnel::UNCOUNTED
-      expect(index.values_at(3, 4).map { it[/<polygon [^>]*>/] }).to all(end_with(%( #{grey}/>)))
-      colors = Quaack::Driver::Report::Funnel::COLORS
-      expect(index.values_at(3, 4).join).not_to include(%(fill: #{colors["index-dedupe"]};))
-      expect(index[2][/<polygon [^>]*>/]).to include(%(fill: #{colors["index-dedupe"]};))
-    end
-
-    it "gives each stage its own color, the same in every funnel" do
-      funnel_module = Quaack::Driver::Report::Funnel
-      expect(funnel_module::COLORS.values.uniq.size).to be >= 9
-      keys = Quaack::Driver::Report::Words::INDEX_STAGES.keys + Quaack::Driver::Report::Words::REWRITE_STAGES.keys +
-             Quaack::Driver::Report::Words::LATE_STAGES.keys
-      expect(keys - funnel_module::COLORS.keys).to eq([])
-      fills = bands(funnel("rewrite")).filter_map { it[/<polygon [^>]*style="fill: (var\(--st-[a-z]+\))/, 1] }
-      expect(fills.uniq).to eq(fills)
-      expect(bands(funnel("rewrite-index")).first[/<polygon [^>]*style="fill: (var\(--st-[a-z]+\))/, 1])
-        .to eq(funnel_module::COLORS["index-dedupe"])
-    end
-
-    it "starts every band as wide as the one before it ended, whatever a record says came in" do
-      stages["assumption-check"]["rewrites"]["in"] = 4
-      rewrite = bands(funnel("rewrite")).map { widths(it) }
-      expect(rewrite.each_cons(2).map { |above, below| below.first - above.last }).to all(eq(0.0))
-    end
-
-    it "draws the first band as a rectangle when its stage adds items, and every later band joins the one above" do
-      %w[index rewrite rewrite-index].each do |id|
-        first, *rest = bands(funnel(id)).map { widths(it) }
-        expect(first.first.positive?).to be(true)
-        expect(first.first).to eq(first.last)
-        expect(rest.first.first).to eq(first.last) if rest.any?
-      end
-      expect(widths(bands(funnel("index"))[1])).to eq([width(4, 6), width(6, 6)])
-    end
-
-    # Task 20261010-20: three widths per band: what came in at its top, what it added at its
-    # middle, as a lighter slice on each side, and what went on at its bottom.
-    def added_slices(band)
-      band.scan(/<polygon class="added" points="([^"]+)"/).map { it.first.split.map { it.split(",").map(&:to_f) } }
-    end
-
-    it "draws what a later stage added as a lighter slice on each side, out to in plus added at the band's middle" do
-      band = bands(funnel("rewrite"))[1]
-      top = rows_y(band).first
-      slices = added_slices(band)
-      expect(slices.size).to eq(2)
-      middle = Quaack::Driver::Report::Funnel::WIDTH / 2
-      peaks = slices.map { |points| points.find { it.last == top + (Quaack::Driver::Report::Funnel::HEIGHT / 2) } }
-      expect(peaks.map { (it.first - middle).abs.round(1) }).to all(eq((width(2 + 5, 8) / 2).round(1)))
-      came_in, went_on = widths(band)
-      expect([came_in, went_on]).to eq([width(2, 8), width(6, 8)])
-      expect(band[/<polygon class="added"[^>]*>/]).to include('fill-opacity="0.35"')
-    end
-
-    it "draws no added slice on a band that added nothing, nor on the first band, whose width is what it added" do
-      rewrite = bands(funnel("rewrite"))
-      expect(added_slices(rewrite[0])).to eq([])
-      expect(added_slices(rewrite[3])).to eq([])
-    end
-
-    it "draws the added slice on a band that added and dropped nothing, so it widens to what went on" do
-      band = bands(funnel("rewrite"))[2]
-      expect(added_slices(band).map { it[1].first.round(1) })
-        .to eq([(160 - (width(8, 8) / 2)).round(1), (160 + (width(8, 8) / 2)).round(1)])
-    end
-
-    it "says beside a later band how many its stage added" do
-      expect(counts(bands(funnel("rewrite"))[1])).to start_with("5 added, 6 went on")
-      expect(counts(bands(funnel("rewrite"))[0])).to start_with("2 went on")
-    end
-
-    it "sets the scale by a band's widest point, where what came in and what it added meet" do
-      stages["llm-rewrites"]["rewrites"] = rec(2, 6, added: { "llm" => 14 }, dropped: { "inbound_check" => 10 })
-      expect(widths(bands(funnel("rewrite"))[1])).to eq([width(2, 16), width(6, 16)])
-    end
-
-    it "keeps a first band that added nothing at zero width" do
-      stages["index-from-query"] = { "original" => rec(0, 0) }
-      expect(widths(bands(funnel("index")).first)).to eq([0, 0])
-    end
-
-    it "draws a first band the run didn't record as a rectangle 0.3 of the full width wide" do
-      stages.delete("index-from-query")
-      first = widths(bands(funnel("index")).first)
-      expect(first).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
-      expect(first.first).to eq((Quaack::Driver::Report::Funnel::WIDTH * 0.3).round(2))
-    end
-
-    it "keeps a stage's counts out of its tooltip, since the table has them" do
-      stages["rewrite-test"] = { "rewrites" => rec(5, 3, dropped: { "s2" => 1 }, set_aside: 1,
-                                                         extra: { "untested_atoms" => 4 }) }
-      band = bands(funnel("rewrite"))[5]
-      expect(band).to include("<title>")
-      expect(band).not_to match(/Also counted|Set aside|came in|never exercised/)
-    end
-
-    it "centres a partly counted stage's solid top, and hatches the whole band, when it came in under the minimum" do
-      stages["index-test"] = { "original" => rec(1, 0).except("out") }
-      stages["index-dedupe"]["original"] = rec(6, 1, dropped: { "duplicate" => 5 })
-      band = bands(funnel("index"))[3]
-      middle = Quaack::Driver::Report::Funnel::WIDTH / 2
-      known = known_top(band)
-      expect([known[0], known[2]]).to eq([(middle - (width(1, 6) / 2)).round(2), (middle + (width(1, 6) / 2)).round(2)])
-      unknown = Quaack::Driver::Report::Funnel::UNKNOWN
-      expect(hatch_span(band)).to eq([middle - (unknown / 2), middle + (unknown / 2)])
-    end
-
-    it "names a partly counted stage's drops in that stage's own words beside its band" do
-      stages["rewrite-test"] = { "rewrites" => rec(5, 4, dropped: { "statement_timeout" => 1 }).except("out") }
-      band = bands(funnel("rewrite"))[5]
-      expect(band).to start_with(%(<g class="band partial">))
-      expect(counts(band)).to eq("went on not recorded · dropped: never tested, because a statement timed out: 1")
-    end
-
-    it "still shows a stage that counted what went on but not what came in as not recorded" do
-      stages["index-test"] = { "original" => rec(1, 3).except("in") }
-      band = bands(funnel("index"))[3]
-      expect(band).to start_with('<g class="band unknown">')
-      expect(counts(band)).to eq("not recorded")
-    end
-
-    it "shows a stage with a negative count as not recorded, never as that count" do
-      stages["index-test"] = { "original" => rec(-1, 3) }
-      stages["llm-index-ideas"] = { "original" => rec(3, -2) }
-      index = bands(funnel("index"))
-      expect(index.values_at(3, 4)).to all(start_with('<g class="band unknown">'))
-      expect(index.values_at(3, 4).map { counts(it) }).to all(eq("not recorded"))
-      expect(index.values_at(3, 4).join).not_to match(/-[12]\b/)
-    end
-
-    # A band's trapezoid's y at its corners: top left, top right, bottom right, bottom left.
-    def rows_y(band) = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").last.to_f }
-
-    it "stacks its bands top to bottom, with no gap between them, in a picture just tall enough for them" do
-      funnel_module = Quaack::Driver::Report::Funnel
-      %w[index rewrite].each do |id|
-        svg = funnel(id)
-        ys = bands(svg).map { rows_y(it) }
-        ys.each do |top, top2, bottom, bottom2|
-          expect([top2, bottom2, bottom - top]).to eq([top, bottom, funnel_module::HEIGHT])
-        end
-        expect(ys.first.first).to eq(funnel_module::TOP)
-        expect(ys.each_cons(2).map { |above, below| below.first - above.last }).to all(eq(0))
-        height = (ys.last.last + funnel_module::TOP).to_i
-        expect(svg[/viewBox="([^"]+)"/, 1]).to eq("0 0 #{funnel_module::VIEW_WIDTH} #{height}")
-      end
-      expect(funnel("index")[/viewBox="([^"]+)"/, 1]).to eq("0 0 940 330")
-    end
-
-    it "sets each band's words to its right, the stage's name over its counts, within the band's height" do
-      funnel_module = Quaack::Driver::Report::Funnel
-      expect(funnel_module::LABEL_X).to be > funnel_module::WIDTH
-      bands(funnel("index")).each do |band|
-        top = rows_y(band).first
-        texts = band.scan(/<text class="(\w+)" x="([^"]+)" y="([^"]+)">/)
-        expect(texts).to eq([["stage", funnel_module::LABEL_X.to_s, (top + 18).to_i.to_s],
-                             ["counts", funnel_module::LABEL_X.to_s, (top + 37).to_i.to_s]])
-      end
-    end
-
-    it "stripes an unknown band across its whole face at 45 degrees, every stripe cut to its edges" do
-      funnel_module = Quaack::Driver::Report::Funnel
-      [[funnel("index"), 3], [funnel("index", html), 0], [funnel("index", html), 6]].each do |svg, i|
-        band = bands(svg)[i]
-        top = rows_y(band).first
-        bottom = top + funnel_module::HEIGHT
-        left, right = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").first.to_f }.first(2)
-        stripes = band[/<path class="hatch" d="([^"]+)"/, 1].scan(/M([\d.]+),([\d.]+)L([\d.]+),([\d.]+)/)
-                                                            .map { it.map(&:to_f) }
-        stripes.each do |x1, y1, x2, y2|
-          expect([x1, x2]).to all(be_between(left, right))
-          expect([y1, y2]).to all(be_between(top, bottom))
-          expect((x1 - x2).round(1)).to eq((y2 - y1).round(1))
-          expect(y1 == top || x1 == right).to be(true)
-          expect(y2 == bottom || x2 == left).to be(true)
-        end
-        crossings = stripes.map { |x1, y1, _, _| (x1 + y1 - top).round(1) }
-        expect(crossings.first).to eq((left + funnel_module::STRIPE).round(1))
-        expect(crossings.each_cons(2).map { |a, b| (b - a).round(1) }).to all(eq(funnel_module::STRIPE))
-        expect(crossings.last).to be > right + funnel_module::HEIGHT - funnel_module::STRIPE
-      end
-    end
-
-    it "says in an unknown band's tooltip that the run didn't count it, not that it counted none" do
-      band = bands(funnel("index"))[3]
-      expect(band).to include("<title>#{stage(band)}: not recorded. " \
-                              "This run didn&#39;t count it, which doesn&#39;t mean none. ")
-    end
-
-    it "escapes what it shows, and sets no SQL apart in it" do
-      evil = "<script>alert(1)</script>]]>"
-      stages["rewrite-rules"]["rewrites"]["added"] = { evil => 3 }
-      stages["measurement"]["rewrites"]["dropped"] = { evil => 1 }
-      svg = funnel("rewrite")
-      expect(svg).not_to include("<script")
-      expect(svg).not_to include("]]>")
-      expect(svg).to include("dropped: &lt;script&gt;alert(1)&lt;/script&gt;]]&gt;: 1")
-      expect(svg).not_to include("<code")
+    it "says in the Sankey and the table what a stage set aside, added, and dropped, by reason" do
+      stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1)
+      index = sankeys("index")
+      expect(index).to include("Set aside for testing during ranking: 1")
+      expect(index).to include("Dropped, the same as another idea: 2")
+      expect(sankeys("rewrite")).to include("From the LLM: 5")
+      expect(table("index")).to include("<td>the same as another idea: 2</td><td class=\"num\">1</td>" \
+                                        '<td class="num">3</td>')
     end
 
     it "escapes its words without setting marked SQL apart, since an SVG text can't hold code" do
-      expect(Quaack::Driver::Report::Funnel.text("on #{Quaack::Driver::Report::Format.sql_span("a < 1")}"))
+      expect(Quaack::Driver::Report::StageStyle.text("on #{Quaack::Driver::Report::Format.sql_span("a < 1")}"))
         .to eq("on a &lt; 1")
     end
 
-    it "keeps each table, with its exact numbers, under its funnel" do
-      table = section(out, "burndown")[%r{<table id="burndown-rewrite">.*?</table>}m]
+    it "keeps each table, with its exact numbers, under its Sankey diagrams" do
       tip = esc(Quaack::Driver::Report::StageSentences::TABLE.fetch("operator-rewrites"))
-      expect(table).to include(%(<tr title="#{tip}"><th scope="row">Your own rewrites</th><td>))
+      expect(table("rewrite")).to include(%(<tr title="#{tip}"><th scope="row">Your own rewrites</th><td>))
     end
   end
 
@@ -3233,16 +2912,43 @@ RSpec.describe Quaack::Driver::Report do
 
     def steps(id, number, html = out) = texts(sankey(id, number, html)).select { it[:kind] == "step" }.map { it[:text] }
 
-    it "draws a Sankey diagram under each funnel and over its table, and says they show the same data" do
-      burndown = section(out, "burndown")
-      %w[index rewrite rewrite-index].each do |id|
-        expect(burndown.index(%(<svg id="funnel-#{id}"))).to be < burndown.index(%(<svg id="sankey-#{id}-1"))
-        expect(burndown.index(%(<svg id="sankey-#{id}-1"))).to be < burndown.index(%(<table id="burndown-#{id}">))
-        expect(burndown).to include(%(id="compare-#{id}"))
+    # DESIGN.md: each stage has its own color from a fixed palette, so it keeps its color
+    # in every diagram. [diagram, stage, fill] for every stage's layer (merge or after), named
+    # by its first stage, whatever its fill.
+    def painted_layers(html)
+      key_of = stage_keys_by_name
+      section(html, "burndown").scan(%r{<svg id="sankey-.*?</svg>}m).flat_map do |svg|
+        stage_nodes(svg).select { stage_layer?(it) }.map do |node|
+          [svg[/id="sankey-([\w-]+)-\d+"/, 1], key_of.fetch(node["data-stage"].split("; ").first),
+           node["style"].to_s[/fill: ([^;"]+)/, 1]]
+        end
       end
-      expect(burndown).to include("Funnel").and include("Sankey diagram")
-      expect(burndown.scan(%r{<p class="note compare"[^>]*>(.*?)</p>}m).flatten.first)
-        .to include("same counts").and include("funnel").and include("Sankey")
+    end
+
+    # A stage's own layer, not the layer a diagram starts from or the set-aside one.
+    def stage_layer?(node) = node["class"].split.intersect?(%w[merge after])
+
+    # Each stage's key, by the name its layers carry, including the rewrites' index searches.
+    def stage_keys_by_name
+      words = Quaack::Driver::Report::Words
+      names = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].reduce(:merge)
+      searches = words::INDEX_STAGES.to_h do |stage, name|
+        [esc(ERB::Util.html_escape("Index ideas for the rewrites: #{words.lower(name)}")), stage]
+      end
+      names.keys.to_h { [named(it), it] }.merge(searches)
+    end
+
+    it "paints each stage's layers in the stage's own palette color, the same in every diagram" do
+      colors = Quaack::Driver::Report::StageStyle::COLORS
+      painted = painted_layers(out)
+      expect(painted.reject { |_, stage, fill| fill == colors.fetch(stage) }).to eq([])
+      # Every stage the fixture records, but index-from-plan, which joins index-from-query's layer.
+      expect(painted.map { it[1] }.uniq.sort).to eq((colors.keys - ["index-from-plan"]).sort)
+      dedupe = painted.select { it[1] == "index-dedupe" }
+      expect(dedupe.map(&:first).uniq).to eq(%w[index rewrite-index])
+      expect(dedupe.map(&:last).uniq).to eq(["var(--st-violet)"])
+      expect(painted.select { it[1] == "rewrite-test" }.map(&:last).uniq).to eq(["var(--st-green)"])
+      expect(painted.map { it[1] }.uniq.map { colors[it] }.uniq.size).to be >= 7
     end
 
     it "draws one layer per state, in order: a stage that adds and drops is a merge layer and the layer after it" do
@@ -3580,9 +3286,9 @@ RSpec.describe Quaack::Driver::Report do
       expect(style).to include("svg.sankey text")
     end
 
-    it "keeps the table with its exact numbers under the diagrams, and leaves the funnel in place" do
+    it "keeps the table with its exact numbers under the diagrams, and draws no funnel" do
       burndown = section(out, "burndown")
-      expect(burndown.scan('<svg id="funnel-').size).to eq(3)
+      expect(burndown.scan('<svg id="funnel-').size).to eq(0)
       expect(burndown.scan('<svg id="sankey-').size).to eq(6)
       expect(burndown.scan('<table id="burndown-').size).to eq(3)
       expect(burndown.rindex(%(<svg id="sankey-rewrite-2"))).to be < burndown.index(%(<table id="burndown-rewrite">))

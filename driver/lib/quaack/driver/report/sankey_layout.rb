@@ -9,7 +9,7 @@ module Quaack
       # Where everything in one Sankey diagram goes (see SankeyDrawing, which
       # draws it, and SankeyLayers, which builds the layers and steps it lays out).
       #
-      # It runs top to bottom, the way the funnel does. Each layer is a bar at LEFT,
+      # It runs top to bottom, in the table's order. Each layer is a bar at LEFT,
       # SPINE_MAX times its share of the diagram's largest count wide, but never less
       # than MIN_THICKNESS, so a count of one stays visible beside thousands. A layer
       # the run didn't count is UNKNOWN_WIDTH wide.

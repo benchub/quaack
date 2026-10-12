@@ -3,7 +3,7 @@
 require_relative "format"
 require_relative "words"
 require_relative "stage_sentences"
-require_relative "funnel"
+require_relative "stage_style"
 require_relative "sankey_layout"
 
 module Quaack
@@ -12,7 +12,7 @@ module Quaack
       # What a Sankey diagram draws for each stage (see Sankey): a node from
       # the stage's record, a source for each name in its added, and a sink
       # for each of its drop reasons and what it set aside for testing during
-      # ranking. Its words are the funnel's and the table's. A stage that adds
+      # ranking. Its words are the table's. A stage that adds
       # always shows its source, with a zero when it added nothing (ZERO).
       module SankeyStages
         SET_ASIDE = "Set aside for testing during ranking"
@@ -24,13 +24,13 @@ module Quaack
         private
 
         def sankey_stage(index, name, record, stage, of_rewrite)
-          inn, out = funnel_counted(record)
+          inn, out = StageStyle.counted(record)
           state = sankey_state(inn, out)
           sentence = StageSentences.for(stage, of_rewrite:)
           sources, sinks = state == :unknown ? [[], []] : sankey_flows(record, stage, sentence)
           SankeyParts::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:, sinks:,
-                                 color: Funnel::COLORS.fetch(stage, Funnel::BLUE), keys: [stage],
-                                 sentences: [sentence, Funnel.untimed_note(record)].compact)
+                                 color: StageStyle::COLORS.fetch(stage, StageStyle::BLUE), keys: [stage],
+                                 sentences: [sentence, StageStyle.untimed_note(record)].compact)
         end
 
         # Whether the run counted all, only what came in, or none of the stage.
@@ -43,8 +43,8 @@ module Quaack
         # The node's hover: a note for a stage the run didn't fully record,
         # then the stage's sentence, then the stage's own numbers.
         def sankey_tip(node)
-          note = { unknown: "#{node.name}: #{Words::MISSING}. #{Funnel::NOT_NONE}",
-                   partial: "How many went on: #{Words::MISSING}. #{Funnel::NOT_NONE}" }[node.state]
+          note = { unknown: "#{node.name}: #{Words::MISSING}. #{StageStyle::NOT_NONE}",
+                   partial: "How many went on: #{Words::MISSING}. #{StageStyle::NOT_NONE}" }[node.state]
           numbers = node.state == :unknown ? [] : sankey_numbers(node)
           [note, *node.sentences, *numbers].compact.join(" ")
         end
