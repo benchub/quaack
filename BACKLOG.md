@@ -860,6 +860,10 @@ Answers (the user, 2026-10-12):
 
 Open questions: whether the `rewrite_test` message gets new fields (trials, the stage's name) and what egress checks on them; what counts as a coverage signature.
 
+From 20261012-5's phase 1 (2026-10-12, `scratch/corpus-20261012-5/REPORT.md` in the main checkout), two traps in the spike's code that the build must avoid:
+- The footprint reads only schema-qualified relations, as `Scenarios.query_tables` does. Production qualifies both queries before rewrite-test, but a spec or harness that feeds raw SQL gets an empty footprint and a pass that tested nothing. Make an empty footprint for a query that reads a table an error, not a pass.
+- After a candidate fails with a data error, the spike's lift read an out-of-footprint parent's catalog on the aborted transaction, so every lift failed with "current transaction is aborted" and the counterexample was lost. Roll back to the world's savepoint before lifting.
+
 - **Depends on:** 20261011-15 (landed), 20261012-6.
 - **Came from:** The user and the disproof spike, 2026-10-12.
 - **Design:** rewrite-test, fixture-scenarios, llm-counterexamples.
@@ -916,7 +920,8 @@ Report to the user with the cases only the LLM caught, if any. If there are none
 - **Depends on:** 20261012-2, 20261012-3. The hard corpus can be built before they land.
 - **Came from:** The user, 2026-10-12.
 - **Design:** llm-counterexamples, rewrite-test.
-- **Status:** todo
+- **Progress (2026-10-12):** phase 1 is done in `scratch/corpus-20261012-5/` (main checkout, git-ignored; `REPORT.md`). The prompt pack's 27 recorded replies per planted wrong rewrite disproved 3 of its 4 (the 4th, `orm_join`, can't be decided by any stage: the comparison refuses its inner LIMIT over a join), and the spike's swarm and enumeration killed the same 3 in under half a second. The hard corpus holds 110 cases (84 wrong with witnesses verified on Postgres, 26 sound), frozen before any run. The spike's frozen swarm and enumeration kill 44 of the 84 (none more at 300 s than at 60 s) with no false disproof. The 40 they miss need more than 4 rows in a table (8), a relation across rows or columns (5), or a value nowhere near the queries' constants (27: Unicode, NaN, DST, ISO weeks, JSON types, arrays holding NULL). Phase 2, collecting replies from three models (claude-opus-5.5, gpt-6.1-sol and gemini-3.8-flash, chosen by the user) to blind prompts built with the driver's and enclave's real code, is under way.
+- **Status:** in progress
 
 ### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them.
 
@@ -962,5 +967,16 @@ From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`
 - **Depends on:** None.
 - **Came from:** The build of 20261012-1, 2026-10-12 (minor).
 - **Design:** literal-sets, index-ideas.
+- **Status:** todo
+
+### 20261012-10. llm-counterexamples counts a round where the ORIGINAL query fails as a disproof.
+
+Found by 20261012-5's corpus work (2026-10-12) and reproduced with the real enclave code (`scratch/corpus-20261012-5/bugdemo.rb` in the main checkout). `Counterexamples.compare` (`enclave/lib/quaack/enclave/counterexamples.rb` ~109) turns any runner failure that isn't a load failure into `match: false`, and the round disproves the rewrite. Its comment assumes the candidate failed, but `ArenaRunner#run_query` raises `query_failed` for either query. So inserts that make the original fail make every rewrite look wrong, even an exactly equivalent one: `SELECT t.id, t.a / t.b FROM public.t t ORDER BY t.id` against the same query with `WHERE true` added, and a row with `b = 0`, comes out disproved with rule `query_failed`. LLMs reach for division by zero, overflow and bad casts on their own, so this drops sound rewrites on realistic data. ScenarioTests doesn't have this bug: it counts `query_failed` as a runner failure (`rewrite_test_failed`), not a disproof.
+
+Fix it test first. A round where the original fails says nothing about the candidate: report it like a load failure (match nil, with its own rule, such as `original_failed`), so the next round runs. Keep the disproof when only the candidate fails while the original ran (that's a real difference: the rewrite errors where the original doesn't). Check which query failed from the runner's error (its step and index), not from the message text. Check `RewriteFate`, the burndown's drop reasons and `rule_bugs` for the new rule, and say in DESIGN.md's counterexamples section that an original that fails disproves nothing. Also check that the disproof search (20261012-2) and the enumeration (20261012-3), when they land, follow the same rule; the spike's code already does (it counts only a candidate data error where the original ran).
+
+- **Depends on:** None.
+- **Came from:** 20261012-5's phase 1, 2026-10-12.
+- **Design:** llm-counterexamples.
 - **Status:** todo
 
