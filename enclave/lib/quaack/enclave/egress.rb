@@ -5,6 +5,7 @@ require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
+require "quaack/protocol/fuzz_result"
 require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
@@ -148,9 +149,12 @@ module Quaack
       # fixed list and its s1_rows and s1_nonzero_rows each nil or a count (see
       # Protocol::VacuityDiagnostic.valid?), so no error message or value
       # rides out in them. Its rule must be nil or a lowercase word, such as
-      # the budget's out_of_time (Protocol::RewriteBudget.rule?).
+      # the budget's out_of_time (Protocol::RewriteBudget.rule?), and its
+      # stage and trials nil, a stage from the fixed list, and a count (see
+      # Protocol::FuzzResult.rewrite_test?).
       def check_rewrite_test(fields)
-        return if Protocol::VacuityDiagnostic.valid?(fields) && Protocol::RewriteBudget.rule?(fields["rule"])
+        return if Protocol::VacuityDiagnostic.valid?(fields) && Protocol::RewriteBudget.rule?(fields["rule"]) &&
+                  Protocol::FuzzResult.rewrite_test?(fields)
 
         raise Error, "a value in this rewrite_test message isn't a vacuity diagnostic"
       end

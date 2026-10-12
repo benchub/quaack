@@ -8,10 +8,12 @@ module Quaack
     module Fuzz
       # The queries' constants dictionary for one column: each constant the
       # column's type can read, and its near neighbours at the type's
-      # resolution (STEPS), finer than ValuePools'.
+      # resolution (STEPS), finer than ValuePools'. Each step comes with its
+      # negation, so a neighbour is always the value plus a step.
       class Dictionary
-        STEPS = { "N" => ["1", "0.000001"],
-                  "D" => ["1", "interval '1 second'", "interval '1 day'", "interval '1 microsecond'"] }.freeze
+        STEPS = { "N" => ["1", "-1", "0.000001", "-0.000001"],
+                  "D" => ["1", "-1", "interval '1 second'", "interval '-1 second'", "interval '1 day'",
+                          "interval '-1 day'", "interval '1 microsecond'", "interval '-1 microsecond'"] }.freeze
 
         def initialize(conn, constants)
           @conn = conn
@@ -36,8 +38,8 @@ module Quaack
         end
 
         def neighbours(col, value)
-          STEPS.fetch(category(col), []).product(%w[+ -]).filter_map do |step, sign|
-            sql = "SELECT (CAST($1 AS #{col.type}) OPERATOR(pg_catalog.#{sign}) #{step})::#{col.type}::pg_catalog.text"
+          STEPS.fetch(category(col), []).filter_map do |step|
+            sql = "SELECT (CAST($1 AS #{col.type}) OPERATOR(pg_catalog.+) #{step})::#{col.type}::pg_catalog.text"
             @conn.exec_params(sql, [value]).getvalue(0, 0)
           rescue PG::Error
             nil

@@ -15,6 +15,7 @@ require_relative "../scenario_tests"
 require_relative "../table_name"
 require_relative "index_payload"
 require_relative "index_search"
+require_relative "rewrite_fuzz"
 
 module Quaack
   module Enclave
@@ -109,7 +110,7 @@ module Quaack
             [{ type: :rewrite_test, rewrite: search, **result.slice(*MESSAGE_KEYS).transform_keys(&:to_sym) }]
           end
 
-          MESSAGE_KEYS = %w[passed scenario rule s1_load_rule s1_rows s1_nonzero_rows].freeze
+          MESSAGE_KEYS = %w[passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials].freeze
 
           def discarded?(store, number)
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]
@@ -122,19 +123,22 @@ module Quaack
               "untested_unchanged" => [] }
           end
 
-          # The result, once its burndown is recorded (RewriteBurndown.record_test).
-          # A refusal comes from the query, not the rewrite, so the first one
-          # is kept as rewrite_test_refusal and every later rewrite gets it.
+          # The result, once its burndown is recorded (RewriteFuzz.call, then
+          # RewriteBurndown.record_test unless fuzz disproved it). A refusal
+          # comes from the query, not the rewrite, so the first one is kept as
+          # rewrite_test_refusal and every later rewrite gets it. The arena's
+          # connection is made only when fuzz or ScenarioTests needs it.
           def test(store, search, deadline)
             Counterexamples.arena!(store, "rewrite_test")
-            return refusal(store, search) if store.entry?("rewrite_test_refusal")
+            connection = nil
+            connect = -> { connection ||= Enclave::RunServer.connect(store, :arena) }
+            fuzzed = RewriteFuzz.call(store, search, deadline, connect)
+            return RewriteFuzz.disproof(fuzzed) if fuzzed.verdict == :disproved
 
-            run(store, search, deadline).tap { store.write("rewrite_test_refusal", it) if it["refused"] }
-          end
-
-          def refusal(store, search)
-            result = store.read("rewrite_test_refusal")
-            result.tap { RewriteBurndown.record_test(store, search, it, empty_report(result["rule"])) }
+            result, report = scenarios(store, search, deadline, connect)
+            RewriteFuzz.decided(result, fuzzed).tap { RewriteBurndown.record_test(store, search, it, report) }
+          ensure
+            connection&.close
           end
 
           def empty_report(refused)
@@ -143,19 +147,20 @@ module Quaack
                                       s1_nonzero_rows: nil)
           end
 
-          # The arena transaction an Expired interrupts has rolled back
-          # (ArenaRunner), and the connection closes here.
-          def run(store, search, deadline)
-            connection = Enclave::RunServer.connect(store, :arena)
-            report = Deadline.within(deadline) { scenario_tests(connection, store, search) }
+          # ScenarioTests' result and report, or the cached refusal's. The
+          # arena transaction an Expired interrupts has rolled back
+          # (ArenaRunner).
+          def scenarios(store, search, deadline, connect)
+            if store.entry?("rewrite_test_refusal")
+              cached = store.read("rewrite_test_refusal")
+              return [cached, empty_report(cached["rule"])]
+            end
+
+            report = Deadline.within(deadline) { scenario_tests(connect.call, store, search) }
             result = outcome(report, unchanged(store, search, report))
-            result.tap { RewriteBurndown.record_test(store, search, it, report) }
+            [result.tap { store.write("rewrite_test_refusal", it) if it["refused"] }, report]
           rescue Deadline::Expired
-            gone_on = untried(Protocol::RewriteBudget::RULE).merge("passed" => true)
-            RewriteBurndown.record_test(store, search, gone_on, empty_report(nil))
-            gone_on
-          ensure
-            connection&.close
+            [untried(Protocol::RewriteBudget::RULE).merge("passed" => true), empty_report(nil)]
           end
 
           def scenario_tests(connection, store, search)

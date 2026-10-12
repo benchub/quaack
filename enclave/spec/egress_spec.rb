@@ -251,6 +251,15 @@ RSpec.describe Quaack::Enclave::Egress do
                                     "s1_rows" => 3, "s1_nonzero_rows" => 0)
     end
 
+    it "sends the stage that decided it and fuzz's trials (20261012-2), but never a disproof's sizes" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil, rule: "row_count",
+                             stage: "fuzz", trials: 41_200, sizes: [["public", EGRESS_SENTINEL, 2]])
+
+      expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => false,
+                                    "scenario" => nil, "rule" => "row_count", "stage" => "fuzz",
+                                    "trials" => 41_200)
+    end
+
     [
       ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
       ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],
@@ -262,7 +271,12 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a nonzero row count just above the cap",
        { s1_nonzero_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
       ["an error message as the rewrite's rule", { rule: "PG::Error: #{EGRESS_SENTINEL}" }],
-      ["a number as the rewrite's rule", { rule: 5 }]
+      ["a number as the rewrite's rule", { rule: 5 }],
+      ["a stage not on the list", { stage: EGRESS_SENTINEL }],
+      ["a stage as a Symbol", { stage: :fuzz }],
+      ["a string where the trials count belongs", { trials: EGRESS_SENTINEL }],
+      ["a negative trials count", { trials: -1 }],
+      ["a fractional trials count", { trials: 1.5 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a vacuity diagnostic"

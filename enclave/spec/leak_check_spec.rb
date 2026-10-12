@@ -438,7 +438,7 @@ RSpec.describe LeakCheck do
 
     # No subcommand reads stdin yet, so a stand-in install shows what run
     # hands it. run_ruby's spec above shows the install passes stdin on.
-    it "passes stdin, HOME, and argv on to the installed quaacks" do
+    it "passes stdin, HOME, argv, and the spec's fuzz trials on to the installed quaacks" do
       install = Class.new do
         attr_reader :calls
 
@@ -453,12 +453,15 @@ RSpec.describe LeakCheck do
 
       stand_in.run("probe", "--flag", stdin: "from stdin")
 
+      fuzz = { "QUAACKS_FUZZ_TRIALS" => ENV.fetch("QUAACKS_FUZZ_TRIALS") }
       expect(install.calls)
-        .to eq([[%w[quaacks probe --flag], { env: { "HOME" => stand_in.home }, stdin: "from stdin" }]])
+        .to eq([[%w[quaacks probe --flag], { env: { **fuzz, "HOME" => stand_in.home }, stdin: "from stdin" }]])
 
-      stand_in.run("probe", env: { "PGSERVICE" => "prod", "PGUSER" => nil, "HOME" => "/elsewhere" })
+      stand_in.run("probe", env: { "PGSERVICE" => "prod", "PGUSER" => nil, "HOME" => "/elsewhere",
+                                   "QUAACKS_FUZZ_TRIALS" => "7" })
       expect(install.calls.last)
-        .to eq([%w[quaacks probe], { env: { "PGSERVICE" => "prod", "PGUSER" => nil, "HOME" => stand_in.home },
+        .to eq([%w[quaacks probe], { env: { "QUAACKS_FUZZ_TRIALS" => "7", "PGSERVICE" => "prod", "PGUSER" => nil,
+                                            "HOME" => stand_in.home },
                                      stdin: "" }])
     ensure
       stand_in&.remove

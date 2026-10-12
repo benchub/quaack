@@ -58,10 +58,10 @@ module Quaack
 
             values = group.map { row_sql(columns, it) }
             ["INSERT INTO #{table} (#{columns.map { quote(it) }.join(", ")}) OVERRIDING SYSTEM VALUE " \
-             "VALUES #{values.join(", ")}"]
+             "VALUES (#{values.join("), (")})"]
           end
 
-          def row_sql(columns, row) = "(#{columns.map { literal(row.cells, it) }.join(", ")})"
+          def row_sql(columns, row) = columns.map { literal(row.cells, it) }.join(", ")
 
           def literal(cells, column)
             return "DEFAULT" unless cells.key?(column)
@@ -75,7 +75,7 @@ module Quaack
           def capture
             updates = []
             statement = lambda do |sql, params = [], **|
-              next Captured.new(rows: @conn.exec_params(sql, params).values) unless sql.start_with?("UPDATE ")
+              next Captured.new(rows: @conn.exec_params(sql, params).values) unless sql.match?(/\AUPDATE /)
 
               updates << [sql, params]
               Captured.new(rows: [])

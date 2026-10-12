@@ -18,7 +18,8 @@ module Quaack
       # the cap). For specs, QUAACKS_FUZZ_TRIALS=<n> makes each observed
       # trial one unit, with a floor of n trials and a cap of CAP_FLOORS
       # times that, so the search does the same work on any machine and a
-      # spec's verdict never depends on its speed.
+      # spec's verdict never depends on its speed. QUAACKS_FUZZ_TRIALS=0
+      # turns the search off.
       class StopRule
         ENV_TRIALS = "QUAACKS_FUZZ_TRIALS"
         FLOOR_SECONDS = 30
@@ -27,12 +28,14 @@ module Quaack
 
         attr_reader :floor, :cap, :unit, :trials
 
+        # The rule ENV asks for, or nil when QUAACKS_FUZZ_TRIALS is 0, which
+        # turns the search off, for the specs that test ScenarioTests alone.
         def self.from_env(env)
           value = env[ENV_TRIALS]
           return new(floor: FLOOR_SECONDS, cap: nil, clock: MONOTONIC) if value.nil?
-          raise ArgumentError, "#{ENV_TRIALS} must be a positive whole number" unless value.match?(/\A[1-9]\d*\z/)
+          raise ArgumentError, "#{ENV_TRIALS} must be a whole number" unless value.match?(/\A(0|[1-9]\d*)\z/)
 
-          trials(Integer(value))
+          trials(Integer(value)) unless value == "0"
         end
 
         def self.trials(floor) = new(floor:, cap: floor * CAP_FLOORS, clock: nil)

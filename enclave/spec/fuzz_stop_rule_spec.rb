@@ -93,8 +93,12 @@ RSpec.describe Quaack::Enclave::Fuzz::StopRule do
       expect([rule.floor, rule.cap, rule.unit]).to eq([40, 400, :trials])
     end
 
-    it "refuses a QUAACKS_FUZZ_TRIALS that isn't a positive whole number" do
-      ["0", "-3", "1.5", "lots", ""].each do |bad|
+    it "is nil, turning the search off, when QUAACKS_FUZZ_TRIALS is 0, for specs that test ScenarioTests alone" do
+      expect(described_class.from_env({ "QUAACKS_FUZZ_TRIALS" => "0" })).to be_nil
+    end
+
+    it "refuses a QUAACKS_FUZZ_TRIALS that isn't a whole number" do
+      ["-3", "1.5", "lots", "", "00", "07"].each do |bad|
         expect { described_class.from_env({ "QUAACKS_FUZZ_TRIALS" => bad }) }
           .to raise_error(ArgumentError, /QUAACKS_FUZZ_TRIALS/)
       end

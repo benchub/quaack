@@ -9,6 +9,7 @@ require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/rewrite_budget"
+require "quaack/protocol/fuzz_result"
 require_relative "../enclave_error"
 require_relative "error_fields"
 require_relative "lexical"
@@ -185,7 +186,8 @@ module Quaack
         # Protocol::Burndown.valid?, and a report's plans
         # Protocol::PlanNodes.valid? and its index_sources
         # Protocol::IndexSources.valid?, and a rewrite_test's rule
-        # Protocol::RewriteBudget.rule?, as egress checks before sending each.
+        # Protocol::RewriteBudget.rule? and its stage and trials
+        # Protocol::FuzzResult.rewrite_test?, as egress checks before sending each.
         def message?(line)
           fields = FIELDS[line["type"]]
           return false unless fields && (line.keys - ["type"] - fields).empty?
@@ -198,7 +200,7 @@ module Quaack
           case line["type"]
           when "burndown" then Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
           when "report" then report_plans?(line) && report_counts?(line) && hidden_statistics?(line)
-          when "rewrite_test" then Protocol::RewriteBudget.rule?(line["rule"])
+          when "rewrite_test" then Protocol::RewriteBudget.rule?(line["rule"]) && Protocol::FuzzResult.rewrite_test?(line)
           else true
           end
         end

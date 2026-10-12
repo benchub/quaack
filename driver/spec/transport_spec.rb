@@ -801,6 +801,21 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.full_message(highlight: false)).not_to include(sentinel)
     end
 
+    # Egress sends a rewrite_test only if its stage and trials pass
+    # Protocol::FuzzResult.rewrite_test? (20261012-2), so the driver checks the same.
+    it "reads a rewrite_test with fuzz's stage and trials, and refuses one whose stage or trials isn't on the list" do
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"row_count",) +
+             %("stage":"fuzz","trials":41200})
+      result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first).to include("stage" => "fuzz", "trials" => 41_200)
+      [%("stage":"#{sentinel}"), %("trials":"#{sentinel}"), %("trials":-1)].each do |field|
+        error = refusal(%({"type":"rewrite_test","rewrite":"rewrite_1","passed":true,#{field}}))
+        expect(error.rule).to eq("unexpected_output")
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Egress sends a report only if its plans pass Protocol::PlanNodes.valid?,
     # so the driver checks the same.
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
