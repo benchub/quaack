@@ -865,6 +865,11 @@ Open questions, answered (the user, 2026-10-12):
   Egress checks both: `stage` on that fixed list, and `trials` nil or a non-negative Integer. A disproof's size per table goes only to the store and the report payload, as `[schema, table, rows]`, and egress checks those too: names from the queries' footprint, and counts.
 - A coverage signature is plan coverage. For each trial, run `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, FORMAT JSON)` on both queries. The signature records each plan node's rows as 0, 1 or many, and whether a filter removed any rows, plus whether each query errored.
 - A fuzz pass counts as tested even when ScenarioTests refuses the query (`complex_check`, `fk_cycle` and the like): the refusal only skips ScenarioTests. This matters only until 20261012-4 removes ScenarioTests. A fuzz run that tested nothing isn't a pass: an empty footprint, or no legal world in which both queries ran. The rewrite then stays untested, as a refusal leaves it today.
+- A world where the original runs but the rewrite errors (an overflow, a division by zero, an invalid date) disproves the rewrite, under the existing rule `query_failed`. Two conditions:
+  - It counts only once the lift succeeds, so the error happened on a fully legal database.
+  - Statement timeouts and cancels QUAACK didn't send don't count, since they don't come from the data.
+
+  The report says the rewrite failed where the original ran. This matches ScenarioTests and the counterexample rounds, which already treat a rewrite that fails to run as not passing.
 
 From 20261012-5's phase 1 (2026-10-12, `scratch/corpus-20261012-5/REPORT.md` in the main checkout), two traps in the spike's code that the build must avoid:
 - The footprint reads only schema-qualified relations, as `Scenarios.query_tables` does. Production qualifies both queries before rewrite-test, but a spec or harness that feeds raw SQL gets an empty footprint and a pass that tested nothing. Make an empty footprint for a query that reads a table an error, not a pass.
