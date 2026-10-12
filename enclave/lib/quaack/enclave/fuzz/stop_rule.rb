@@ -1,0 +1,73 @@
+# frozen_string_literal: true
+
+module Quaack
+  module Enclave
+    module Fuzz
+      # When the fuzz search stops (task 20261012-2, the user's rule): it
+      # runs at least floor; past it, it stops once it has run twice as long
+      # as it took to find its last new coverage signature (Signature); it
+      # never runs past cap. Fuzz.run stops at once on a lifted
+      # counterexample, and the rewrite's Deadline bounds it too, since
+      # every trial checks it.
+      #
+      #   rule = StopRule.from_env(ENV)
+      #   rule.observe(signature) until rule.stop?
+      #
+      # The units are seconds on the monotonic clock in production (a floor
+      # of 30 and no cap of its own: the rewrite's five-minute Deadline is
+      # the cap). For specs, QUAACKS_FUZZ_TRIALS=<n> makes each observed
+      # trial one unit, with a floor of n trials and a cap of CAP_FLOORS
+      # times that, so the search does the same work on any machine and a
+      # spec's verdict never depends on its speed.
+      class StopRule
+        ENV_TRIALS = "QUAACKS_FUZZ_TRIALS"
+        FLOOR_SECONDS = 30
+        CAP_FLOORS = 10
+        MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+
+        attr_reader :floor, :cap, :unit, :trials
+
+        def self.from_env(env)
+          value = env[ENV_TRIALS]
+          return new(floor: FLOOR_SECONDS, cap: nil, clock: MONOTONIC) if value.nil?
+          raise ArgumentError, "#{ENV_TRIALS} must be a positive whole number" unless value.match?(/\A[1-9]\d*\z/)
+
+          trials(Integer(value))
+        end
+
+        def self.trials(floor) = new(floor:, cap: floor * CAP_FLOORS, clock: nil)
+
+        # clock gives the time in seconds; nil counts observed trials instead.
+        def initialize(floor:, cap:, clock:)
+          @floor = floor
+          @cap = cap
+          @clock = clock
+          @unit = clock ? :seconds : :trials
+          @start = now
+          @trials = 0
+          @seen = Set.new
+          @last_new = 0
+        end
+
+        # One trial's signature, after the trial.
+        def observe(signature)
+          @trials += 1
+          @last_new = elapsed if @seen.add?(signature)
+        end
+
+        def elapsed = now - @start
+
+        def stop?
+          spent = elapsed
+          return true if cap && spent >= cap
+
+          spent >= floor && spent >= 2 * @last_new
+        end
+
+        private
+
+        def now = @clock ? @clock.call : @trials.to_i
+      end
+    end
+  end
+end
