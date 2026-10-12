@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-(none. Closed at 0.1.34.)
+- 20261012-1: value pools and simple CHECKs read each element of an `ARRAY[...]` under casts for `= ANY` and `<> ALL` (a varchar IN CHECK no longer refuses as `unsatisfiable_check`); no change to any reported field.
 
 ## How this file works.
 
@@ -827,14 +827,7 @@ From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables m
 - **Design:** rewrite-test, scenarios.
 - **Status:** todo (deprioritized by the user, 2026-10-12: 20261012-2's search fills only the queries' own tables, so it needs no closure; drop this when 20261012-4 removes ScenarioTests)
 
-### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal, so rewrite-test refuses the query as `unsatisfiable_check`.
-
-Postgres prints `status IN ('a', 'b')` on a `character varying` column as `((status)::text = ANY ((ARRAY['a'::character varying, 'b'::character varying])::text[]))`. `ValuePools::Sides.sides` unwraps a list or a bare `ARRAY[...]`, but not an `ARRAY[...]` under a type cast, so `Sides.literals` casts the whole array to the column's type and gets the one candidate `{a,b}`. It fails the CHECK, `Scenarios::Checks#own_values` comes back empty, and `Checks#satisfying` raises `unsatisfiable_check`: every query whose fixtures need a row in that table is refused, and its rewrites are left out untested (`rewrite_test_untested`). Rails makes string columns `character varying` and writes an inclusion CHECK as an IN list, so this is common: on the disproof spike's synthetic 582-table Canvas-like schema it refused 22 of 62 rewrites, 10 of them sound. Fix it test first against a real Postgres CHECK on a varchar column: unwrap a type cast around `ARRAY[...]` in `Sides.sides` (the elements' own casts already evaluate). Check the other readers of `= ANY` sides too, such as the vacuity guard's atoms and a query predicate written as `col = ANY (ARRAY[...]::text[])`. A quick win for the current rewrite-test, and still needed after 20261012-4 if the new search reuses `Checks` and `ValuePools`.
-
-- **Depends on:** None.
-- **Came from:** The disproof spike, 2026-10-12 (reproduced with psql on postgres:18).
-- **Design:** fixture-scenarios.
-- **Status:** todo
+### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-2. rewrite-test: a disproof search over small random databases on the queries' own tables.
 
@@ -937,5 +930,37 @@ What the Sankey uses from `Funnel` stays, under a name of its own: the stage col
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-12. Do it before 20261012-2 and 20261012-3, so their new burndown stages need no funnel work.
 - **Design:** burndown, report.
+- **Status:** todo
+
+### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`.
+
+From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` prints as `((g)::text <> ALL ((ARRAY['bad'::character varying, 'worse'::character varying])::text[]))`. `Scenarios::Checks::KINDS` (`enclave/lib/quaack/enclave/scenarios/checks.rb:21`) doesn't hold `AEXPR_OP_ALL`, so `Checks.new` raises `complex_check` and rewrite-test refuses every query whose fixtures need a row in that table (the reviewer saw `[[false, :complex_check, nil]]` end to end). `Sides.sides` already reads `<> ALL` over a cast ARRAY since 20261012-1, so accepting it should be small. DESIGN.md doesn't list NOT IN as simple today, so update its simple-CHECK sentence. Also add the specs the review found missing, for behaviour it checked by hand: a CHECK IN list holding NULL (`IN ('p', NULL)` gives values `["p"]` and, as in Postgres, rejects nothing), and a one-element IN list (which prints as `= 'only'`). Still worth doing after 20261012-4 only if the search reuses `Checks`; if it doesn't, drop this when 20261012-4 lands.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-1, 2026-10-12 (minor).
+- **Design:** fixture-scenarios.
+- **Status:** todo
+
+### 20261012-8. Value pools: an array literal under `= ANY` isn't split, and a bare `ARRAY[...]` compared with an array column is.
+
+From the build and review of 20261012-1. Two readers of array sides in `ValuePools::Sides.sides` still get the wrong values. Check each first:
+- An array literal, not `ARRAY[...]`: `CHECK (f = ANY ('{u,v}'::text[]))` gives `Checks#values` `[]` and then `unsatisfiable_check`, and a query's `s.a::text = ANY ('{x,y}'::text[])` gets a pool with nothing satisfying and `"{x,y}"` as its only literal. Postgres never prints an IN list this way, but drivers that bind a list as one array (node-postgres, Ecto, `= ANY($1)`) give queries in this shape. Split it into its elements in Postgres (`unnest`), not by parsing the text.
+- A bare, uncast `ARRAY[...]` compared with `=` on an array column (`tags = ARRAY['a', 'b']`) is split into elements, so its pool comes out empty. 20261012-1 keeps the cast form whole; do the same for the bare one.
+- Also from the builder: `VacuityGuard::Search::Skips#column_compared?` doesn't count `col = ANY (ARRAY[...])`, cast or not, as a column compared with constants. Drop this bullet if 20261012-4 lands first, since it removes the vacuity guard.
+
+Unsupported in v1 instead, if any of these turns out hard: list it in DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-1, 2026-10-12 (minor).
+- **Design:** fixture-scenarios, vacuity-guard.
+- **Status:** todo
+
+### 20261012-9. LiteralSet and CastlessIndex don't read an `ARRAY[$1, ...]` under a cast.
+
+From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`enclave/lib/quaack/enclave/literal_set.rb:322`) reads `col = ANY (ARRAY[$1, $2])`'s elements as list placeholders, but not when the ARRAY is cast (`= ANY (ARRAY[$1, $2]::text[])`, or the cast `IN` form Postgres prints), so those placeholders fall back instead of getting worst-case and typical picks. The builder said `CastlessIndex` has a similar gap. Reproduce each with a realistic query first; for each that's real, fix it test first, and for one that isn't, say so and drop it. The picks stay in the store, so this isn't a trust-boundary issue, only weaker picks.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-1, 2026-10-12 (minor).
+- **Design:** literal-sets, index-ideas.
 - **Status:** todo
 
