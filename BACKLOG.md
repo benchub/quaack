@@ -859,7 +859,13 @@ Spike lessons the build must keep (each one caused a missed disproof or a false 
 - Expression unique indexes need handling, and a CHECKed unique column cycles through the CHECK's values.
 - Whether a world is legal is decided per query: don't merge the two queries' verdicts.
 
-Open questions: the saturation rule (such as K trials with no new coverage signature, with K from the spike's data); whether the `rewrite_test` message gets new fields (trials, the search's name) and what egress checks on them; how a counterexample's shape shows in the report.
+Answers (the user, 2026-10-12):
+- Stop rule: run at least 30 s, then stop once the search has gone twice as long as it took to find its last new kind of database (a new coverage signature), never past the 5-minute cap.
+- The burndown stage is named `fuzz` (the enumeration in 20261012-3 is `enumerate`).
+- A rewrite's section says how many random databases it survived, such as "It also survived 41,200 random small databases built around its own values".
+- A counterexample is shrunk to a minimal one. The report gives its size per table and the rule (such as 2 rows in orders and 1 in customers; row count differs), never its rows.
+
+Open questions: whether the `rewrite_test` message gets new fields (trials, the stage's name) and what egress checks on them; what counts as a coverage signature.
 
 - **Depends on:** 20261011-15 (landed), 20261012-6.
 - **Came from:** The user and the disproof spike, 2026-10-12.
@@ -868,7 +874,7 @@ Open questions: the saturation rule (such as K trials with no new coverage signa
 
 ### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says.
 
-From 20261012-2. A random search's pass says only that N random databases didn't differ. The spike's algorithm B enumerates worlds instead. It reduces each row to a kind, a tuple of value classes per column drawn from the same value domains, and tries every world in order of total rows, so a pass can say "no database of at most w rows over these value classes differs". In the spike, in 15 s, w reached 8 to 12 on single-table queries, 4 to 8 on two tables, and 4 on four tables. It caught 151 of 152 wrong mutants (it missed one that needs 4 orders per customer) and 32 of 34 wrong Canvas rewrites (two 4-table queries need more than 4 rows). Run it when the random search finds nothing, within the same per-rewrite cap and saturation rule. Like the search (20261012-2), it's its own burndown stage, between the search and rewrite-test (the user, 2026-10-12). It gets a record with drops by rule, the worlds it tried, and the bound w it finished as extras, plus everything that stage needs in the Sankey, the table, the stage sentence, the fates, and `rule_bugs`. Decide with the user how a pass is worded (such as "survived N random small databases and every database of up to w rows over its value classes"), where it shows (the rewrite's section and the burndown), and how the counts leave the enclave (integers only).
+From 20261012-2. A random search's pass says only that N random databases didn't differ. The spike's algorithm B enumerates worlds instead. It reduces each row to a kind, a tuple of value classes per column drawn from the same value domains, and tries every world in order of total rows, so a pass can say "no database of at most w rows over these value classes differs". In the spike, in 15 s, w reached 8 to 12 on single-table queries, 4 to 8 on two tables, and 4 on four tables. It caught 151 of 152 wrong mutants (it missed one that needs 4 orders per customer) and 32 of 34 wrong Canvas rewrites (two 4-table queries need more than 4 rows). Run it when the random search finds nothing, within the same per-rewrite cap and saturation rule. Like the search (20261012-2), it's its own burndown stage, `enumerate`, between `fuzz` and rewrite-test (the user, 2026-10-12). It gets a record with drops by rule, the worlds it tried, and the bound w it finished as extras, plus everything that stage needs in the Sankey, the table, the stage sentence, the fates, and `rule_bugs`. Decide with the user how a pass is worded (such as "survived N random small databases and every database of up to w rows over its value classes"), where it shows (the rewrite's section and the burndown), and how the counts leave the enclave (integers only).
 
 - **Depends on:** 20261012-2.
 - **Came from:** The user and the disproof spike, 2026-10-12.
