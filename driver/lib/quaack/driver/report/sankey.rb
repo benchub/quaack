@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "format"
-require_relative "funnel"
+require_relative "stage_style"
 require_relative "sankey_stages"
 require_relative "sankey_layers"
 require_relative "sankey_drawing"
@@ -9,15 +9,14 @@ require_relative "sankey_drawing"
 module Quaack
   module Driver
     module Report
-      # DESIGN.md's burndown, drawn a second way: each burndown table as
-      # Sankey diagrams beside its funnel, from the same stage records.
+      # DESIGN.md's burndown, drawn: each burndown table as Sankey diagrams
+      # above it, from the same stage records.
       #
-      # The funnel keeps one width for everything in the pipe. A Sankey
-      # shows where each part came from and where it went: each state is a
-      # layer (see SankeyLayers), each source in a stage's "added" is its own
-      # named input, each drop reason is its own named sink, and what a stage
-      # set aside for testing during ranking flows into a layer of its own.
-      # Nothing widens out of nowhere.
+      # A Sankey shows where each part came from and where it went: each
+      # state is a layer (see SankeyLayers), each source in a stage's
+      # "added" is its own named input, each drop reason is its own named
+      # sink, and what a stage set aside for testing during ranking flows
+      # into a layer of its own. Nothing widens out of nowhere.
       #
       # The units change along the way, and a diagram's widths mean one
       # unit, so each table is cut into one diagram per unit (UNITS), each
@@ -27,16 +26,14 @@ module Quaack
       # diagram begins with a layer that says what the one above sent.
       #
       # SankeyDrawing does the layout and the SVG; SankeyStages builds what
-      # it draws from the rows Stages gives (the same rows the funnel and the
-      # table draw), with the same stage sentences and words.
+      # it draws from the rows Stages gives (the same rows the table
+      # draws), with the same stage sentences and words.
       module Sankey
         include SankeyStages
         include SankeyLayers
 
         SPINE_MAX = SankeyLayout::SPINE_MAX
         MIN_THICKNESS = SankeyLayout::MIN_THICKNESS
-        NOTE = "Both pictures show the same counts as the table under them: the funnel is the whole pipe at one " \
-               "width, and the Sankey diagram shows where each part came from and where it went."
         STAGE_UNIT = {
           "index-rank" => :sets,
           "rewrite-rules" => :rewrites, "llm-rewrites" => :rewrites, "operator-rewrites" => :rewrites,
@@ -94,7 +91,7 @@ module Quaack
           unit = sankey_unit(stage)
           unit = :rewrite_ideas if unit == :ideas && of_rewrite
           words = [UNITS.fetch(unit), (sankey_combinations(of_rewrite) if unit == :sets)].compact.join(" ")
-          %(<p class="note unit" id="#{key}-unit">#{Funnel.text(words)}</p>\n)
+          %(<p class="note unit" id="#{key}-unit">#{StageStyle.text(words)}</p>\n)
         end
 
         # Why the ranking tried as many combinations as it did, and for the rewrites, how many

@@ -63,9 +63,8 @@ RSpec.describe Quaack::Driver::Report do
 
   it "counts it in the burndown as not tested in time, gone on, not dropped" do
     burndown = html[%r{<section id="burndown">.*?</section>}m]
-    expect(burndown).to include("not tested in time, so checked only on the LLM's test data and the real data: 1")
-    funnel = burndown[%r{<svg id="funnel-rewrite".*?</svg>}m]
-    expect(funnel).to include("1 went on, 1 not tested in time, carried on")
+    table = burndown[%r{<table id="burndown-rewrite">.*?</table>}m]
+    expect(table).to include("<td>not tested in time, so checked only on the LLM's test data and the real data: 1")
     sankey = burndown[%r{<svg id="sankey-rewrite-1".*?</svg>}m]
     expect(sankey).to include("1 not tested in time on made-up data went on, checked only on the LLM's test " \
                               "data and the real data.")

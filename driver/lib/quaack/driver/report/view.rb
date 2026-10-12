@@ -16,7 +16,6 @@ require_relative "indexes"
 require_relative "accountability"
 require_relative "plans"
 require_relative "stages"
-require_relative "funnel"
 require_relative "sankey"
 require_relative "providers"
 require_relative "usage"
@@ -44,7 +43,6 @@ module Quaack
         include Accountability
         include Plans
         include Stages
-        include Funnel
         include Sankey
         include Providers
         include Usage
