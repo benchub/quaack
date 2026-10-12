@@ -10709,3 +10709,23 @@ Report to the user with the cases only the LLM caught, if any. If there are none
   - drop the LLM runs on the spike's mutants and Canvas corpus.
 
   Findings filed along the way: 20261012-10, 20261012-11 and 20261012-12.
+
+### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them.
+
+The user, 2026-10-12: the Sankey diagrams are better, so stop spending work on the funnels. Remove every funnel from the report's burndown:
+- the original query's indexes, the rewrites, and the rewrites' index searches;
+- `report/funnel.rb`'s drawing, the template's `<h4>Funnel</h4>` and `svg.funnel` styles, and the note that says the funnel and the Sankey show the same counts;
+- the specs that pin funnels, such as `report_spec.rb`, `report_out_of_time_spec.rb`, and `pipeline_replay_spec.rb`'s first-band checks from 20261009-43 and 20261009-53.
+
+What the Sankey uses from `Funnel` stays, under a name of its own: the stage colors (`COLORS`, `BLUE`), `text`, `untimed` and `untimed_note`, `NOT_NONE`, and the counting helpers (`funnel_counted`). Rename the `--funnel-text` and `--funnel-count` CSS variables, which the Sankey also uses, and keep their dark values. Each section then reads Sankey diagrams, then the table. The table keeps every exact number, and the recorded-runs spec still checks that the stage records join up. Anything a funnel showed that no Sankey or table shows must not be lost, such as the not-recorded and partial stages, and the "went on though not tested in time" note: check that the Sankey or the table carries each one. Update DESIGN.md's burndown section, dropping the funnel paragraph and the "may be replaced by the Sankey later" aside, and the README sample. Driver only, so it doesn't go on the unreleased enclave list.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-12. Do it before 20261012-2 and 20261012-3, so their new burndown stages need no funnel work.
+- **Design:** burndown, report.
+- **Status:** **done.** Landed 2026-10-12 (`task/20261012-6`: 3eb8799e, ac859f75, 963b4478).
+  - **What landed.** `report/funnel.rb` is gone. What the Sankey used from it is now `Report::StageStyle` (`report/stage_style.rb`), and the CSS variables are `--sankey-text` and `--sankey-count`. Each burndown section reads Sankey diagrams, then the table. The not-recorded and partial stages and the "not tested in time" note still show, each pinned by a test. DESIGN.md's burndown section and the README sample are updated.
+  - **First review: one blocking finding.** No test checked that the drawn Sankey paints each stage in its palette color: the deleted funnel test was the only one. Fixed in ac859f75, which also moved DESIGN.md's color sentence into the Sankey paragraph.
+  - **Second review: one blocking finding.** The new color test skipped layers whose fill wasn't a palette color, so a stage with no color stayed green. A test-only round, 963b4478, made it check every stage layer's fill and the exact set of painted stages.
+  - **Third review, of that test only.** Every color mutant goes red, the original hole included. Two mutants that drop a layer without changing any color survive it, but the sibling test "draws one layer per state" catches both, so the suite isn't blind to them. Filed as minor.
+  - **Per-commit check.** It ran in a Linux container on 963b4478: RuboCop, protocol and enclave passed, with only the four failures the user accepted for a container run (`deploy_spec.rb:92`, `:321`, `test_postgres_spec.rb:751`, `:759`).
+  - **Minors filed** as 20261012-14.

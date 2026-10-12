@@ -662,10 +662,9 @@ From the review of 20261010-22. Only NULL and numeric zeros (regex `/\A[-+]?(0+(
 
 ### 20261010-44. Burndown: minors from 20261010-20.
 
-1. **index-rank's added slice counts combinations, not ideas.** "Trying indexes together" adds 6 combinations (`added: {combinations: 6}`), which the funnel now draws as a lighter slice on top of the 9 ideas it takes in (widest point 15) and then narrows to 4 that went on. That mixes units, and it is the kind of "output wider than input" picture the user objected to. Leave index-rank out of the added slice, or draw it as a separate kind of mark, and word its label so it doesn't read as added ideas.
+1. **index-rank's added count is combinations, not ideas.** The funnel this item was about is gone (20261012-6). The Sankey draws index-rank in its own unit, sets, with a note on why it tries that many combinations (`sankey.rb` `COMBINATIONS`), and the table says "combinations tried". Check that the Sankey's index-rank layer can't be read as more ideas going on than came in. If it can't, drop this item.
 2. **The rewrites' index searches join only loosely.** The replay check (`spec/pipeline_replay_spec.rb`, `burndown_joins?` with `strict: false`) requires only `in < running` on the summed "Index ideas for the rewrites" rows, which can hide a real under-carry. Check each `rewrite_N` search strictly, one at a time, and show why a narrowing happens (a rewrite dropped after its index search keeps its index-test out but has no LLM round).
 3. No focused enclave unit spec for `RewriteBurndown#carried` (nearest earlier stage, falling back past a missing stage); it is covered only through the replay and rewrite step specs.
-4. The two extra synthetic funnel cases (a round that adds more than it keeps, a skipped refine) weren't rendered in headless Firefox.
 
 - **Depends on:** 20261010-20 (landed).
 - **Came from:** The reviews of 20261010-20, 2026-10-10.
@@ -842,7 +841,7 @@ Build it in the enclave, near `vacuity_guard/search/` and `scenario_tests.rb`, c
 - Assumptions: honour a rule's `denormalized_equal`, and any other assumption the rewrite states, in every world, as ScenarioTests does.
 - Budget: the existing 5-minute per-rewrite deadline (`Protocol::RewriteBudget`) is the cap. The user, 2026-10-12: 300 s is fine "assuming it's not wasted work; some rewrites will be huge". So stop early once the search has saturated, and use the whole cap only while it keeps reaching new ground.
 - Trust boundary: the worlds hold real literals and never leave the enclave. Only the rule (row_count, multiset, order), counts, and fixed words go to the driver, as for ScenarioTests now. Sentinel tests for both.
-- Burndown (the user, 2026-10-12): the search is its own burndown stage, between plan-pruning and rewrite-test, so the report shows what it caught apart from ScenarioTests and the LLM counterexamples. Its record has `in`, `out`, drops by the comparison's rule, and the trials it ran as an extra. That means a row in DESIGN.md's burndown table, and everything in the driver's report that knows `rewrite-test` by name: the Sankey layer, its color and its unit (`sankey.rb`, `sankey_layers.rb`, and the colors that lived in `report/funnel.rb` before 20261012-6), the stage sentence (`stage_sentences.rb`), the words (`words.rb`, `stages.rb`), and the spec that checks that the recorded stages join up. Also the step's progress line (`pipeline.rb`), a fate of its own in `RewriteFate` with its wording in the rewrite's section (`report/rewrites.rb`), and `rule_bugs`, since a rule-made rewrite the search disproves is a rule bug. A run from before the stage existed must still render.
+- Burndown (the user, 2026-10-12): the search is its own burndown stage, between plan-pruning and rewrite-test, so the report shows what it caught apart from ScenarioTests and the LLM counterexamples. Its record has `in`, `out`, drops by the comparison's rule, and the trials it ran as an extra. That means a row in DESIGN.md's burndown table, and everything in the driver's report that knows `rewrite-test` by name: the Sankey layer, its color and its unit (`sankey.rb`, `sankey_layers.rb`, and `StageStyle::COLORS` in `report/stage_style.rb`), the stage sentence (`stage_sentences.rb`), the words (`words.rb`, `stages.rb`), and the spec that checks that the recorded stages join up. Also the step's progress line (`pipeline.rb`), a fate of its own in `RewriteFate` with its wording in the rewrite's section (`report/rewrites.rb`), and `rule_bugs`, since a rule-made rewrite the search disproves is a rule bug. A run from before the stage existed must still render.
 
 Spike lessons the build must keep (each one caused a missed disproof or a false refusal there):
 - Key pools are typed: a `timestamptz` join key needs `timestamptz` keys.
@@ -901,19 +900,7 @@ Stored entries and messages from older versions must still read, as `out_of_time
 
 ### 20261012-5. Measure what the LLM counterexamples catch that the mechanical search and enumeration don't. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them.
-
-The user, 2026-10-12: the Sankey diagrams are better, so stop spending work on the funnels. Remove every funnel from the report's burndown:
-- the original query's indexes, the rewrites, and the rewrites' index searches;
-- `report/funnel.rb`'s drawing, the template's `<h4>Funnel</h4>` and `svg.funnel` styles, and the note that says the funnel and the Sankey show the same counts;
-- the specs that pin funnels, such as `report_spec.rb`, `report_out_of_time_spec.rb`, and `pipeline_replay_spec.rb`'s first-band checks from 20261009-43 and 20261009-53.
-
-What the Sankey uses from `Funnel` stays, under a name of its own: the stage colors (`COLORS`, `BLUE`), `text`, `untimed` and `untimed_note`, `NOT_NONE`, and the counting helpers (`funnel_counted`). Rename the `--funnel-text` and `--funnel-count` CSS variables, which the Sankey also uses, and keep their dark values. Each section then reads Sankey diagrams, then the table. The table keeps every exact number, and the recorded-runs spec still checks that the stage records join up. Anything a funnel showed that no Sankey or table shows must not be lost, such as the not-recorded and partial stages, and the "went on though not tested in time" note: check that the Sankey or the table carries each one. Update DESIGN.md's burndown section, dropping the funnel paragraph and the "may be replaced by the Sankey later" aside, and the README sample. Driver only, so it doesn't go on the unreleased enclave list.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-12. Do it before 20261012-2 and 20261012-3, so their new burndown stages need no funnel work.
-- **Design:** burndown, report.
-- **Status:** todo
+### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`.
 
@@ -1044,5 +1031,21 @@ Some cases need rows that relate to each other in ways a value pool can't plan, 
 - **Depends on:** 20261012-2.
 - **Came from:** 20261012-5, 2026-10-12 (the user's decision).
 - **Design:** rewrite-test, llm-counterexamples.
+- **Status:** todo
+
+### 20261012-14. Report: minors from the reviews of 20261012-6.
+
+1. **`StageStyle.untimed` with `not_tested_in_time: 0` is untested** (`driver/lib/quaack/driver/report/stage_style.rb`, `untimed`). A zero must give no hover note, as a missing count does. No spec feeds it a zero.
+2. **The burndown table prints a negative count as a raw number.** `StageStyle.counted` treats a negative `in` or `out` as no count, so the Sankey leaves it out. The table still prints it as recorded. Show it as not counted, or flag it, the way the Sankey does.
+3. **Palette coverage that went with the funnel test.** The deleted funnel test checked two things that nothing checks now:
+   - every stage key has an entry in `StageStyle::COLORS`;
+   - the stages in one diagram all get different colors.
+
+   Making `operator-rewrites` violet, the same as `llm-rewrites`, stays green, and so does removing the key of a stage that the spec's fixture doesn't draw. Add both checks.
+4. **The color test checks the painted stages across all diagrams together, not per diagram.** Dropping one stage's layer in only one diagram, or dropping a merge layer but keeping its after layer, leaves "paints each stage's layers in the stage's own palette color" green. The sibling test "draws one layer per state" catches both, so this is only about which test fails. Asserting the full list of `[diagram, stage]` pairs, one per layer, would make the color test catch them too.
+
+- **Depends on:** None.
+- **Came from:** The reviews of 20261012-6, 2026-10-12 (minor).
+- **Design:** report, burndown.
 - **Status:** todo
 
