@@ -10660,3 +10660,52 @@ Postgres prints `status IN ('a', 'b')` on a `character varying` column as `((sta
 - **Came from:** The disproof spike, 2026-10-12 (reproduced with psql on postgres:18).
 - **Design:** fixture-scenarios.
 - **Status:** **done.** Landed 2026-10-12 (task/20261012-1, one Opus review with no blocking findings, no fix round). `Sides.sides` now looks through casts, nested ones too, to an `ARRAY[...]` for `= ANY` and `<> ALL` only, so a varchar CHECK's IN list gives each label to `Checks#values` and `#satisfying`, and a query's `col = ANY (ARRAY[...]::text[])` pools each element. A cast ARRAY compared with `=` on an array column stays whole. Query atoms and the vacuity guard's pools share `Sides`, so they're fixed too. New spec `enclave/spec/value_pools_cast_array_postgres_spec.rb` (real Postgres); DESIGN.md's pool and simple-CHECK paragraphs say so. The per-commit check ran in a Linux container (the sandbox blocks host loopback to Docker ports): RuboCop, protocol and enclave passed, and only the four failures the user accepted for a container run remained (`deploy_spec.rb:92`, `:321`, `test_postgres_spec.rb:751`, `:759`). Minor findings filed as 20261012-7 (a NOT IN CHECK is still `complex_check`), 20261012-8 (an array literal `'{a,b}'` under `= ANY`, and a bare `ARRAY[...]` on an array column) and 20261012-9 (LiteralSet and CastlessIndex under a cast).
+
+### 20261012-5. Measure what the LLM counterexamples catch that the mechanical search and enumeration don't; drop them if nothing.
+
+The user, 2026-10-12: the LLM counterexamples (llm-counterexamples, up to 3 rounds of LLM-written inserts) have the same goal as the search (20261012-2) and the enumeration (20261012-3), but come at it differently. Keep them only if they catch wrong rewrites the two mechanical stages miss. If they add nothing, drop them. Nobody has measured them yet: the disproof spike's 121 "real LLM rewrites" were rewrites the LLM wrote, not its counterexamples.
+
+The spike's corpora can't answer this alone. The swarm caught every wrong rewrite in them, so the LLM can't show a catch of its own there. Build a hard corpus of wrong rewrites where an LLM's knowledge of the world might beat a search over the queries' own constants and their neighbours, such as:
+- one that differs only with many rows (a LIMIT 50, a HAVING count(*) > 20, a window over 10 rows);
+- values in no query: collation and case folding, Unicode, an empty string against NULL, NaN and infinity, numeric overflow, integer division, February 29, DST edges, time zones;
+- relations between columns (starts_at < ends_at), and the contents of JSON or arrays;
+- realistic ORM shapes on the synthetic 582-table schema.
+
+Label every case by hand or with an oracle the stages don't share, as the spike did. Then, on the hard corpus, the e2e traps, the mutants and the Canvas corpus, run the search and the enumeration, and separately the LLM counterexamples alone. Use real LLM calls, each provider the pipeline uses, every reply recorded so the measurement can be replayed. For each corpus, report:
+- what each catches, alone and together;
+- what only one of them catches;
+- false disproofs;
+- time and LLM calls.
+
+Report to the user with the cases only the LLM caught, if any. If there are none, propose a task to remove llm-counterexamples: the step, its burndown stage, its protocol messages, the report's wording, and DESIGN.md's counterexamples section. If there are some, propose teaching the mechanical search those value classes, and say what the LLM would still add after that.
+
+- **Depends on:** 20261012-2, 20261012-3. The hard corpus can be built before they land.
+- **Came from:** The user, 2026-10-12.
+- **Design:** llm-counterexamples, rewrite-test.
+- **Phase 1 (2026-10-12):** done in `scratch/corpus-20261012-5/` (main checkout, git-ignored; `REPORT.md`). The prompt pack's 27 recorded replies per planted wrong rewrite disproved 3 of its 4 (the 4th, `orm_join`, can't be decided by any stage: the comparison refuses its inner LIMIT over a join), and the spike's swarm and enumeration killed the same 3 in under half a second. The hard corpus holds 110 cases (84 wrong with witnesses verified on Postgres, 26 sound), frozen before any run. The spike's frozen swarm and enumeration kill 44 of the 84 (none more at 300 s than at 60 s) with no false disproof. The 40 they miss need more than 4 rows in a table (8), a relation across rows or columns (5), or a value nowhere near the queries' constants (27: Unicode, NaN, DST, ISO weeks, JSON types, arrays holding NULL).
+- **Phase 2 (2026-10-12, `results/llm-score.md`):** replies from three models (claude-opus-5.5, gpt-6.1-sol and gemini-3.8-flash, chosen by the user) to blind prompts built with the driver's and enclave's real code.
+  - **Scope.** Production's rewrite-test refuses 11 of the 110 cases (`complex_check`), so no LLM would be asked about them. That leaves 76 wrong and 23 sound in scope. Each model answered each prompt once, for up to 3 rounds with production's own feedback, and every reply was replayed through the enclave's real InsertCheck, load and compare code.
+  - **Wrong rewrites disproved (of 76):**
+
+    | | round 1 | by round 2 | by round 3 |
+    |---|---|---|---|
+    | gpt | 69 | 76 | 76 |
+    | claude | 41 | 70 | 73 |
+    | gemini | 35 | 67 | 72 |
+    | any model | 69 | 76 | 76 |
+    | mechanical search (swarm or enumeration) | 41 | | |
+
+  - **Only one side.** 35 are caught only by an LLM, and none only by the mechanical search. The LLM-only catches: 9 need many rows, such as a HAVING threshold, a 10-row window or OFFSET 21; 5 are Unicode or case folding; 3 are blank or trimmed strings; 4 are NaN, overflow or rounding; 3 are calendar edges (ISO week, a quarter without its year, day of week); 3 are DST; 7 are JSON types or arrays holding NULL; 1 is a negative divisor.
+  - **False disproofs:** none on the 23 sound rewrites. Two "disproofs" counted only because the original failed too (20261012-10), so they aren't counted as catches.
+  - **Caveats.**
+    - An LLM wrote the corpus, aimed at what a search over the queries' own constants misses, so it favours the LLM.
+    - Each agent answered 11 to 22 prompts in one context, so replies aren't independent.
+    - A few queries name their trap (`'kelvin'`, `'Europe/London'`).
+  - **Refusals.** claude and gemini lost many rounds to refused inserts (20261012-12).
+  - **Not measured:** the LLM on the spike's mutants and Canvas corpus (the mechanical search already catches all of those), and wall time per round.
+- **Status:** **done.** Closed 2026-10-12 by the user's decision:
+  - keep llm-counterexamples;
+  - teach the fuzz search the LLM-only value classes in 20261012-13, after 20261012-2, and re-measure on this corpus there;
+  - drop the LLM runs on the spike's mutants and Canvas corpus.
+
+  Findings filed along the way: 20261012-10, 20261012-11 and 20261012-12.
