@@ -921,6 +921,26 @@ Report to the user with the cases only the LLM caught, if any. If there are none
 - **Came from:** The user, 2026-10-12.
 - **Design:** llm-counterexamples, rewrite-test.
 - **Progress (2026-10-12):** phase 1 is done in `scratch/corpus-20261012-5/` (main checkout, git-ignored; `REPORT.md`). The prompt pack's 27 recorded replies per planted wrong rewrite disproved 3 of its 4 (the 4th, `orm_join`, can't be decided by any stage: the comparison refuses its inner LIMIT over a join), and the spike's swarm and enumeration killed the same 3 in under half a second. The hard corpus holds 110 cases (84 wrong with witnesses verified on Postgres, 26 sound), frozen before any run. The spike's frozen swarm and enumeration kill 44 of the 84 (none more at 300 s than at 60 s) with no false disproof. The 40 they miss need more than 4 rows in a table (8), a relation across rows or columns (5), or a value nowhere near the queries' constants (27: Unicode, NaN, DST, ISO weeks, JSON types, arrays holding NULL). Phase 2, collecting replies from three models (claude-opus-5.5, gpt-6.1-sol and gemini-3.8-flash, chosen by the user) to blind prompts built with the driver's and enclave's real code, is under way.
+- **Phase 2 result (2026-10-12, `results/llm-score.md`):**
+  - **Scope.** Production's rewrite-test refuses 11 of the 110 cases (`complex_check`), so no LLM would be asked about them. That leaves 76 wrong and 23 sound in scope. Each model answered each prompt once, for up to 3 rounds with production's own feedback, and every reply was replayed through the enclave's real InsertCheck, load and compare code.
+  - **Wrong rewrites disproved (of 76):**
+
+    | | round 1 | by round 2 | by round 3 |
+    |---|---|---|---|
+    | gpt | 69 | 76 | 76 |
+    | claude | 41 | 70 | 73 |
+    | gemini | 35 | 67 | 72 |
+    | any model | 69 | 76 | 76 |
+    | mechanical search (swarm or enumeration) | 41 | | |
+
+  - **Only one side.** 35 are caught only by an LLM, and none only by the mechanical search. The LLM-only catches: 9 need many rows, such as a HAVING threshold, a 10-row window or OFFSET 21; 5 are Unicode or case folding; 3 are blank or trimmed strings; 4 are NaN, overflow or rounding; 3 are calendar edges (ISO week, a quarter without its year, day of week); 3 are DST; 7 are JSON types or arrays holding NULL; 1 is a negative divisor.
+  - **False disproofs:** none on the 23 sound rewrites. Two "disproofs" counted only because the original failed too (20261012-10), so they aren't counted as catches.
+  - **Caveats.**
+    - An LLM wrote the corpus, aimed at what a search over the queries' own constants misses, so it favours the LLM.
+    - Each agent answered 11 to 22 prompts in one context, so replies aren't independent.
+    - A few queries name their trap (`'kelvin'`, `'Europe/London'`).
+  - **Refusals.** claude and gemini lost many rounds to refused inserts (20261012-12).
+  - **Not measured:** the LLM on the spike's mutants and Canvas corpus (the mechanical search already catches all of those), and wall time per round.
 - **Status:** in progress
 
 ### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them.
@@ -989,5 +1009,39 @@ Fix it test first, on a realistic query like this one. A fixture on which the or
 - **Depends on:** None.
 - **Came from:** 20261012-5's phase 2, 2026-10-12.
 - **Design:** rewrite-test, vacuity-guard, fixture-scenarios.
+- **Status:** todo
+
+### 20261012-12. llm-counterexamples: tell the LLM which values get an insert refused, and what each refusal means.
+
+Found by 20261012-5's phase 2 (2026-10-12; `scratch/corpus-20261012-5/results/llm-score.md` in the main checkout). We replayed 531 replies from three models through production's InsertCheck, over up to 3 rounds with production's feedback. Many inserts were refused for values the system prompt never warns about, and the feedback doesn't say enough for the model to recover.
+
+What we saw:
+- **Operators.** `$1 || ' '`, `$2 - interval '1 day'` and `$1 * 2` are refused as `not_plain_value` (`insert_values.rb` `plain!`, `insert_check.rb` rule 10). The system prompt (`driver/lib/quaack/driver/counterexamples.rb` `SYSTEM`) says values must be "constants, casts, $n, DEFAULT, or immutable function calls on those", and models read that as allowing operators. claude-opus-5.5 had 50 such refusals and gemini-3.8-flash 24. In round 1, claude ended with nothing accepted on 42 of 99 cases.
+- **`not_immutable` doesn't name the refused call.** The enclave's error detail does ("function pg_catalog.timezone is stable, not immutable"), but only the rule reaches the LLM.
+  - claude and gemini kept using `jsonb_build_object` and `concat`, which are STABLE.
+  - `InsertValues::MUTABLE_SQL` matches by name and argument count, not by the overload Postgres would resolve. So `timezone($1, <timestamp>)` is refused because `timezone(text, timetz)` is STABLE, even though `timezone(text, timestamp)` is IMMUTABLE. A model can't work that out from "not_immutable".
+- **One refused value loses the whole statement.** It refuses the whole multi-row INSERT, so every row in it is lost.
+- **Misleading feedback.** After a round where every insert was refused, the feedback still says "The accepted inserts gave both queries the same results." (`result_line`).
+
+Most of claude's gain from round 1 to round 3 (41 to 73 of 76 wrong rewrites) came from working around these refusals, not from new ideas. gemini went from 35 to 72. gpt-6.1-sol, which seldom wrote operators, got 69 in round 1. So a clearer prompt should make round 1 much stronger, and fewer rounds means less time.
+
+Fix it test first:
+- **System prompt.**
+  - Say that operators are refused, and that the way around them is an immutable function (`pg_catalog.textcat`, `int4pl`, ...) or the value written out.
+  - Say that a function is refused if any of its overloads with that many arguments isn't IMMUTABLE (`timezone`, `concat`, `jsonb_build_object`), and suggest writing the value out instead.
+  - Suggest one row per INSERT when a value might be refused.
+- **Feedback.**
+  - Give each refusal rule a fixed sentence that says what it means.
+  - When nothing was accepted, say so.
+
+Decide with the user:
+- Whether the enclave should also send the refused function's name, which its error detail already holds. The name comes from the insert's own text, never a value, but it would need a protocol field and an egress check, and the change would go on the unreleased enclave list.
+- Whether `MUTABLE_SQL` should resolve the overload from the argument types instead.
+
+Re-measure with the corpus harness, which builds prompts with the driver's and the enclave's real code. Compare round-1 refusals and catches before and after.
+
+- **Depends on:** None.
+- **Came from:** 20261012-5's phase 2, 2026-10-12.
+- **Design:** llm-counterexamples.
 - **Status:** todo
 
