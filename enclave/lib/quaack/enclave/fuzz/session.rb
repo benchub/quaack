@@ -4,6 +4,7 @@ require "pg"
 require_relative "../arena_runner"
 require_relative "../result_comparator"
 require_relative "../result_comparison"
+require_relative "data_error"
 require_relative "signature"
 
 module Quaack
@@ -24,8 +25,10 @@ module Quaack
       # world either query can't run on is illegal for it, judged per query:
       # a world that fails to load is illegal for both and is never
       # compared; one where the original fails is illegal for the original
-      # and not compared; one where only the candidate fails is not compared
-      # either, since a query failure is no disproof (as in ScenarioTests).
+      # and not compared. One where only the candidate fails is not compared
+      # either, but a failure on the data (DataError) makes it a kill, by
+      # query_failed, as in ScenarioTests and the counterexample rounds; a
+      # timeout or a cancel doesn't.
       # Otherwise the results are compared cheaply, and on any difference
       # with the official ResultComparison, whose mismatching rule
       # (ResultComparator::MISMATCHES) makes the trial a kill.
@@ -74,9 +77,9 @@ module Quaack
           restart if (@since += 1) > RESTART
           return Trial.new(signature: ILLEGAL, compared: false, rule: nil) unless @loader.load(rows)
 
-          plans, results = queries
+          plans, results, failed = queries
           signature = Signature.trial(*plans)
-          return Trial.new(signature:, compared: false, rule: nil) unless results
+          return Trial.new(signature:, compared: false, rule: failed) unless results
 
           Trial.new(signature:, compared: true, rule: compare(*results))
         end
@@ -88,14 +91,26 @@ module Quaack
           open
         end
 
-        # EXPLAIN of each query, then each query: [plans, results], a plan
-        # nil for a query that failed, and results nil unless both ran.
+        # EXPLAIN of each query, then each query: [plans, results, failed],
+        # a plan nil for a query that failed, results nil unless both ran,
+        # and failed the candidate's kill (candidate_failed).
         def queries
           original, candidate = @queries
           runs = Session.batch(@conn, [EXPLAIN + original, EXPLAIN + candidate, original, candidate])
           plans = runs.first(2).map { |result, ok| ok ? result.getvalue(0, 0) : nil }
           plans[1] = nil unless runs[0].last
-          [plans, runs.all?(&:last) ? runs.last(2).map(&:first) : nil]
+          [plans, runs.all?(&:last) ? runs.last(2).map(&:first) : nil, candidate_failed(runs)]
+        end
+
+        # :query_failed when the original ran and the candidate failed on
+        # the data (DataError), or nil. The batch stops at its first error,
+        # so the first failed run is the one that failed: 1 or 3 is the
+        # candidate's, the original's EXPLAIN ANALYZE having run before it.
+        def candidate_failed(runs)
+          failed = runs.index { !it.last }
+          return unless [1, 3].include?(failed)
+
+          :query_failed if DataError.sqlstate?(runs[failed].first&.error_field(PG::PG_DIAG_SQLSTATE))
         end
 
         def compare(original, candidate)

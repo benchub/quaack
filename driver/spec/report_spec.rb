@@ -1060,6 +1060,17 @@ RSpec.describe Quaack::Driver::Report do
         end
       end
 
+      # The user's decision (2026-10-12): the rewrite failing where the
+      # original ran disproves it. The error's text never reaches here.
+      it "says a random small database proved a rewrite wrong by making it fail where the original query ran" do
+        expect(fate("fuzz_disproved", rule: "query_failed", sizes: [["public", "orders", 1]]))
+          .to eq(esc("It failed on a random small database built around its own values (1 row in orders), where " \
+                     "the original query ran, so it's wrong."))
+        expect(fate("fuzz_disproved", rule: "query_failed"))
+          .to eq(esc("It failed on a random small database built around its own values, where the original query " \
+                     "ran, so it's wrong."))
+      end
+
       it "says a rewrite was never tested when rewrite-test couldn't build test data, and why, by rule" do
         expect(fate("rewrite_test_untested", rule: "complex_check"))
           .to eq(esc("QUAACK couldn't make up test data for the original query, because a CHECK constraint on its " \
@@ -1920,13 +1931,14 @@ RSpec.describe Quaack::Driver::Report do
       expect(bug_section).not_to include("<b>")
     end
 
-    # Task 20261012-2.
+    # Task 20261012-2. Its entry doesn't say how fuzz proved it wrong, and
+    # fuzz also disproves a rewrite that fails where the original ran.
     it "names a rule-made rewrite a random small database proved wrong" do
       fuzzed = render(payload.merge("rule_bugs" => [{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"],
                                                       "step" => "fuzz" }]))
       expect(section(fuzzed, "quaack-bugs"))
-        .to include(esc("<li>Rewrite Smooth Kayak, made by transform rule key_in_self_join, returned different " \
-                        "results on a random small database built around its own values.</li>"))
+        .to include(esc("<li>Rewrite Smooth Kayak, made by transform rule key_in_self_join, was proved wrong " \
+                        "on a random small database built around its own values.</li>"))
     end
 
     it "is left out when no rule-made rewrite was disproved, or the enclave sent no list" do
@@ -2567,6 +2579,7 @@ RSpec.describe Quaack::Driver::Report do
     it "shows fuzz between plan-pruning and rewrite-test, with its drops by rule and its trials in words" do
       stages = { "plan-pruning" => { "rewrites" => rec(3, 2, dropped: { "same_plans" => 1 }) },
                  "fuzz" => { "rewrite_1" => rec(1, 0, dropped: { "row_count" => 1 }, extra: { "trials" => 40 }),
+                             "rewrite_3" => rec(1, 0, dropped: { "query_failed" => 1 }, extra: { "trials" => 0 }),
                              "rewrite_2" => rec(1, 1, extra: { "trials" => 0, "untested" => 1 }) },
                  "rewrite-test" => { "rewrite_2" => rec(1, 1) } }
       table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
@@ -2574,8 +2587,9 @@ RSpec.describe Quaack::Driver::Report do
       names = table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten
       expect(names.each_cons(3)).to include(["Checking each rewrite can run differently from the original query",
                                              "Testing on random small databases", "Testing on made-up edge-case data"])
-      expect(table).to include(row("Testing on random small databases", 2, "none",
-                                   "wrong on a random small database, where the row count differs: 1", 0, 1,
+      expect(table).to include(row("Testing on random small databases", 3, "none",
+                                   "wrong on a random small database, where the row count differs: 1; wrong on a " \
+                                   "random small database, where it failed and the original query ran: 1", 0, 1,
                                    "random small databases compared: 40; not tested by the random search: 1"))
     end
 

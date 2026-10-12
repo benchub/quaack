@@ -685,7 +685,13 @@ RSpec.describe "quaacks report-payload" do
                            survived: false)
           stored(store, 6, tested: tested(true).merge("stage" => "fuzz", "trials" => 41_200))
           stored(store, 7, tested: fuzzed(false, REPORT_WORD_SENTINEL, 3, []), survived: false)
+          stored(store, 8, tested: fuzzed(false, "query_failed", 9, [["public", "orders", 1]]), survived: false)
         end
+      end
+
+      it "says fuzz disproved one that failed where the original ran, by query_failed, with its rows per table" do
+        expect(rewrite(8)).to include("fate" => "fuzz_disproved", "rule" => "query_failed", "trials" => 9,
+                                      "sizes" => [["public", "orders", 1]])
       end
 
       it "says fuzz disproved it, with the rule, the rows per table, and the trials" do
@@ -967,6 +973,20 @@ RSpec.describe "quaacks report-payload" do
         let(:outcome) do
           with_rewrite do |store|
             rule_made(store, 2, tested(false, "row_count").merge("stage" => "fuzz", "trials" => 12, "sizes" => []),
+                      false)
+          end
+        end
+
+        it "names fuzz as the step that disproved it" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "fuzz",
+                                               "rules" => %w[key_in_self_join key_in_self_join] }])
+        end
+      end
+
+      context "with a rule-made rewrite fuzz disproved by failing where the original ran" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "query_failed").merge("stage" => "fuzz", "trials" => 12, "sizes" => []),
                       false)
           end
         end

@@ -260,6 +260,15 @@ RSpec.describe Quaack::Enclave::Egress do
                                     "trials" => 41_200)
     end
 
+    # The user's decision (2026-10-12): fuzz disproves a rewrite that fails
+    # where the original ran, by query_failed.
+    it "sends fuzz's query_failed disproof by its rule alone" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil,
+                             rule: "query_failed", stage: "fuzz", trials: 0)
+
+      expect(JSON.parse(out)).to include("rule" => "query_failed", "stage" => "fuzz", "trials" => 0)
+    end
+
     [
       ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
       ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],

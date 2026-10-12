@@ -809,6 +809,8 @@ RSpec.describe Quaack::Driver::Transport do
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
       expect(result.messages.first).to include("stage" => "fuzz", "trials" => 41_200)
+      failed = raw("print #{"#{good.sub("row_count", "query_failed")}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+      expect(failed.messages.first).to include("stage" => "fuzz", "rule" => "query_failed")
       [%("stage":"#{sentinel}"), %("trials":"#{sentinel}"), %("trials":-1)].each do |field|
         error = refusal(%({"type":"rewrite_test","rewrite":"rewrite_1","passed":true,#{field}}))
         expect(error.rule).to eq("unexpected_output")

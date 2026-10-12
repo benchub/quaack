@@ -214,4 +214,98 @@ RSpec.describe Quaack::Enclave::Fuzz do
       expect(lift.call(world, original: pair[0], candidate: pair[1])).to eq(:row_count)
     end
   end
+
+  # The user's decision (2026-10-12): a world where the original runs and
+  # the rewrite fails on the data disproves it, by query_failed, once
+  # lifted. A timeout, or a cancel QUAACK didn't send, says nothing.
+  context "with a rewrite that fails where the original runs" do
+    let(:original) { "SELECT id FROM s.orders WHERE total > 0" }
+    # Equal to the original but on total = 0, where it divides by zero.
+    let(:divides) { "SELECT id FROM s.orders WHERE 100 / total > 0" }
+    # Equal to the original but on total = 0, where it runs far past the timeout.
+    let(:slow) do
+      "SELECT id FROM s.orders WHERE CASE WHEN total = 0 " \
+        "THEN (SELECT count(*) FROM generate_series(1, 100000000 + id)) < 0 ELSE total > 0 END"
+    end
+    # Equal to the original but on total = 0, where it cancels itself, then
+    # works on until the cancel lands.
+    let(:cancels) do
+      "SELECT id FROM s.orders WHERE CASE WHEN total = 0 THEN CASE WHEN pg_cancel_backend(pg_backend_pid()) " \
+        "THEN (SELECT count(*) FROM generate_series(1, 100000000 + id)) < 0 END ELSE total > 0 END"
+    end
+    let(:orders) { Quaack::Enclave::TableName.new(schema: "s", name: "orders") }
+    let(:catalog) { Quaack::Enclave::Fuzz::Catalog.new(conn, [orders]) }
+    let(:zero) { world("0") }
+
+    def world(total)
+      cells = { "id" => "1", "customer_id" => "1", "status" => "new", "total" => total }
+      [Quaack::Enclave::Fuzz::Generator::Row.new(orders, cells)]
+    end
+
+    def trial(candidate, rows, first: original)
+      session = Quaack::Enclave::Fuzz::Session.new(conn, catalog, [first, candidate], honour: [],
+                                                                                      statement_timeout_ms: 200)
+      session.open
+      session.trial(rows)
+    ensure
+      session&.close
+    end
+
+    def lift(candidate, rows, first: original)
+      domains = Quaack::Enclave::Fuzz::Domains.new(conn, catalog, [first, candidate])
+      Quaack::Enclave::Fuzz::Lift.new(conn, catalog, domains, honour: [], statement_timeout_ms: 200)
+                                 .call(rows, original: first, candidate:)
+    end
+
+    it "disproves it by query_failed, with its size per table, once the lift fails it the same way" do
+      expect(fuzz(original, divides)).to have_attributes(verdict: :disproved, rule: :query_failed,
+                                                         sizes: [["s", "orders", 1]])
+    end
+
+    it "counts a world the rewrite fails on the data as a kill, and one it times out or is canceled on, or the " \
+       "original fails on too, as none" do
+      expect(trial(divides, zero)).to have_attributes(kill?: true, rule: :query_failed)
+      expect(trial(divides, world("5"))).to have_attributes(kill?: false, compared: true)
+      expect(trial(divides, zero, first: divides.sub("> 0", "> 1")).kill?).to be(false)
+      [slow, cancels].each do |candidate|
+        failed = trial(candidate, zero)
+        expect(failed.signature.last).to eq(:error)
+        expect(failed.kill?).to be(false)
+      end
+    end
+
+    it "lifts a data failure as query_failed, but not a timeout, or a world the original fails on too" do
+      expect(lift(divides, zero)).to eq(:query_failed)
+      expect(lift(slow, zero)).to be_nil
+      expect(lift(divides, zero, first: divides.sub("> 0", "> 1"))).to be_nil
+    end
+
+    # A cancel that comes only once, as an operator's does: a sequence
+    # (which no rollback resets) counts the candidate's runs on total = 0.
+    def once(first, second)
+      conn.exec("CREATE SEQUENCE s.runs")
+      "SELECT id FROM s.orders WHERE CASE WHEN total = 0 THEN CASE WHEN nextval('s.runs') = 1 THEN #{first} " \
+        "ELSE #{second} END ELSE total > 0 END"
+    end
+
+    def cancel
+      "CASE WHEN pg_cancel_backend(pg_backend_pid()) THEN " \
+        "(SELECT count(*) FROM generate_series(1, 100000000 + id)) < 0 END"
+    end
+
+    it "ends the lift on a cancel QUAACK didn't send, in the comparison or in the run that confirms a failure" do
+      [[cancel, "false"], ["100 / total > 0", cancel]].each do |first, second|
+        expect { lift(once(first, second), zero) }.to raise_error(Quaack::Enclave::ArenaRunner::Error) do |error|
+          expect(error.rule).to eq(:statement_canceled)
+        end
+        conn.exec("DROP SEQUENCE s.runs")
+      end
+    end
+
+    # A query that cancels itself is one the comparison can't judge, so
+    # the search never runs on it; the trial and the lift above cover it.
+    it "never disproves a rewrite that only times out" do
+      expect(fuzz(original, slow, statement_timeout_ms: 200).verdict).to eq(:passed)
+    end
+  end
 end

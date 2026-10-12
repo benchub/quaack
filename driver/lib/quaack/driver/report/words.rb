@@ -41,11 +41,13 @@ module Quaack
                      "domain_check" => "a column's domain rejects every value QUAACK tried",
                      "exclusion_constraint" => "an exclusion constraint on its tables has no = column" }.freeze
 
-        # Where a rule_bugs entry's rewrite was proved wrong.
-        BUG_STEPS = { "fuzz" => "on a random small database built around its own values",
-                      "rewrite-test" => "on made-up test data",
-                      "counterexamples" => "on test data the LLM wrote to break it",
-                      "result-comparison" => "on the real data" }.freeze
+        # How a rule_bugs entry's rewrite was proved wrong, by its step. fuzz
+        # also disproves a rewrite that fails where the original ran, and the
+        # entry doesn't say which.
+        BUG_STEPS = { "fuzz" => "was proved wrong on a random small database built around its own values",
+                      "rewrite-test" => "returned different results on made-up test data",
+                      "counterexamples" => "returned different results on test data the LLM wrote to break it",
+                      "result-comparison" => "returned different results on the real data" }.freeze
 
         # How two results differed, by the comparison's rule.
         MISMATCHES = { "column_count" => "the number of columns differs",
@@ -53,6 +55,9 @@ module Quaack
                        "value" => "a value differs", "multiset" => "the rows differ",
                        "subset" => "it returned a row the original query can't return",
                        "candidate_unordered" => "it doesn't keep the original query's order" }.freeze
+
+        # Where fuzz's query_failed disproved a rewrite (task 20261012-2).
+        FUZZ_FAILED = "it failed and the original query ran"
 
         # DESIGN.md's burndown's stages: the original query's index search.
         INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",

@@ -88,7 +88,7 @@ module Quaack
         end
 
         def fuzz_drop(rule)
-          why = Words::MISMATCHES[rule]
+          why = rule == "query_failed" ? Words::FUZZ_FAILED : Words::MISMATCHES[rule]
           "wrong on a random small database#{", where #{why}" if why}"
         end
 

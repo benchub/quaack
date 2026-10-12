@@ -480,6 +480,30 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           planted = { "sizes" => [["public", "orders #{sentinels.text}", 1]], "trials" => sentinels.number }
           expect(LeakCheck.findings(sentinels, objects: { payload: planted }).map(&:to_s)).not_to eq([])
         end
+
+        # The user's decision (2026-10-12): the rewrite failing on the data
+        # where the original runs disproves it. Postgres's error here quotes
+        # the sentinel note it couldn't read as an integer.
+        it "disproves a rewrite that fails on the data where the original runs, by query_failed, and sends none " \
+           "of them or the error's text" do
+          failing = "#{candidate} AND CAST(o.note AS integer) IS NOT NULL"
+          ready(failing)
+
+          # Every row that reaches the cast fails it, so every kill is
+          # query_failed. Only a row that matches the other conditions
+          # reaches it, so this allows more worlds than the step's usual 40.
+          outcome = step_with({ "QUAACKS_FUZZ_TRIALS" => "400" }, "rewrite_1")
+
+          message = lines(outcome).first
+          expect(message).to include("passed" => false, "stage" => "fuzz", "rule" => "query_failed")
+          expect(tested).to include("rule" => "query_failed", "sizes" => [["public", "orders", 1]])
+          expect(burndown["stages"]["fuzz"]["rewrite_1"])
+            .to eq(counted(dropped: { "query_failed" => 1 }, extra: { "trials" => message["trials"] }))
+          payload = Quaack::Enclave::Steps::ReportPayload.fuzz(stored, "rewrite_1", store.read("qualified_query"),
+                                                               failing)
+          expect(payload).to include("sizes" => [["public", "orders", 1]])
+          expect_no_leaks(sentinels, outcome, objects: { tested:, burndown:, payload: })
+        end
       end
 
       it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials" do
@@ -518,8 +542,11 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         outcomes.each { expect_no_leaks(sentinels, it) }
       end
 
+      # The rewrite fails on every world, but not on the data (42P01), so
+      # no world is compared and nothing disproves it.
       it "leaves a refused rewrite untested when fuzz compared nothing, as without it" do
-        ready("#{same} AND 1 / 0 = 1", status_check: "status = 'open' OR status = 'closed'")
+        ready("#{same} AND CAST('public.quaack_no_such_table' AS regclass) IS NOT NULL",
+              status_check: "status = 'open' OR status = 'closed'")
 
         message = lines(fuzz_step).first
 

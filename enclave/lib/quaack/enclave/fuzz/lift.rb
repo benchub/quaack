@@ -5,6 +5,7 @@ require_relative "../arena_runner"
 require_relative "../denormalized_fixture"
 require_relative "../result_comparator"
 require_relative "../result_comparison/load_orders"
+require_relative "data_error"
 require_relative "typical"
 
 module Quaack
@@ -16,7 +17,7 @@ module Quaack
       # rewrite-test).
       #
       #   Lift.new(conn, catalog, domains, honour:, statement_timeout_ms:).call(rows, original:, candidate:)
-      #   # => :row_count, or nil when it doesn't hold
+      #   # => :row_count, :query_failed, or nil when it doesn't hold
       #
       # It builds a parent row for each reference a world row makes out of
       # the footprint, and for each such parent's own references, however
@@ -28,9 +29,10 @@ module Quaack
       # and the world load in a fresh ArenaRunner transaction (honouring
       # the copies, as DenormalizedFixture::Runner does) with every
       # constraint checked, and ResultComparison.compare_in_load_orders
-      # compares again. A load or query failure isn't a disproof; a cancel
-      # that wasn't QUAACK's statement_timeout ends the step, as in
-      # ScenarioTests.
+      # compares again. A load failure isn't a disproof, and nor is a query
+      # failure, unless the original runs and the candidate fails on the
+      # data (DataError), which is query_failed; a cancel that wasn't
+      # QUAACK's statement_timeout ends the step, as in ScenarioTests.
       class Lift
         DEPTH = 20
         # Past the generator's fresh values, so a built key never meets a world's.
@@ -50,14 +52,21 @@ module Quaack
         def call(rows, original:, candidate:)
           fixture = loaded(parents(rows)) + rows.map { fixture_row(it.table, it.cells) }
           verdict = ResultComparison.compare_in_load_orders(@runner, fixture, original:, candidate:)
-          verdict.rule if !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
+          mismatch(verdict)
         rescue Unliftable
           nil
         rescue ArenaRunner::Error => e
           raise if ArenaRunner::Cancel.foreign?(e)
+
+          # The comparison runs more than the two queries, such as the
+          # original with a tiebreaker, so its failure alone doesn't say
+          # whose it was.
+          :query_failed if DataError.candidate_only?(@runner, fixture, original, candidate)
         end
 
         private
+
+        def mismatch(verdict) = (verdict.rule if !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule))
 
         # The built parents in load order: by table, each table after the
         # tables its rows reference, and in a table, each row after the rows

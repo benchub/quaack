@@ -51,6 +51,11 @@ module Quaack
           "measurement_timed_out" => "It passed every test, but every measurement run of it timed out."
         }.freeze
 
+        # fuzz_disproved by query_failed: the rewrite failed where the
+        # original ran (task 20261012-2).
+        FUZZ_FAILED = "It failed on a random small database built around its own values%<fuzz>s, where the " \
+                      "original query ran, so it's wrong."
+
         # An unfinished rewrite, by the last stage it finished.
         UNFINISHED = { nil => "QUAACK kept it, but the run ended before testing it.",
                        "rewrite-test" => "It passed the tests on made-up data, and the run ended before going further.",
@@ -161,7 +166,12 @@ module Quaack
           "It also survived #{Words.count(trials, "random small database")} built around its own values."
         end
 
-        def fate_text(entry) = entry["fate"] == "not_better" ? not_better_text(entry) : FATES[entry["fate"]]
+        def fate_text(entry)
+          return not_better_text(entry) if entry["fate"] == "not_better"
+          return FUZZ_FAILED if entry["fate"] == "fuzz_disproved" && entry["rule"] == "query_failed"
+
+          FATES[entry["fate"]]
+        end
 
         # An fk_cycle refusal's tables, in the order their foreign keys
         # point, or nil.
@@ -251,8 +261,8 @@ module Quaack
         def rule_bugs = @payload["rule_bugs"] || []
 
         def bug(entry)
-          where = Words::BUG_STEPS.fetch(entry["step"], "in a test")
-          "#{called(entry)}, #{made_by(entry["rules"])}, returned different results #{where}."
+          how = Words::BUG_STEPS.fetch(entry["step"], "returned different results in a test")
+          "#{called(entry)}, #{made_by(entry["rules"])}, #{how}."
         end
       end
     end
