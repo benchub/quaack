@@ -857,7 +857,14 @@ Answers (the user, 2026-10-12):
 - A rewrite's section says how many random databases it survived, such as "It also survived 41,200 random small databases built around its own values".
 - A counterexample is shrunk to a minimal one. The report gives its size per table and the rule (such as 2 rows in orders and 1 in customers; row count differs), never its rows.
 
-Open questions: whether the `rewrite_test` message gets new fields (trials, the stage's name) and what egress checks on them; what counts as a coverage signature.
+Open questions, answered (the user, 2026-10-12):
+- The result stays inside rewrite-test, as above. The `rewrite_test` message gets two new fields:
+  - `stage`: nil, `fuzz` or `rewrite-test`, whichever decided;
+  - `trials`: an Integer count of the random databases tried.
+
+  Egress checks both: `stage` on that fixed list, and `trials` nil or a non-negative Integer. A disproof's size per table goes only to the store and the report payload, as `[schema, table, rows]`, and egress checks those too: names from the queries' footprint, and counts.
+- A coverage signature is plan coverage. For each trial, run `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, FORMAT JSON)` on both queries. The signature records each plan node's rows as 0, 1 or many, and whether a filter removed any rows, plus whether each query errored.
+- A fuzz pass counts as tested even when ScenarioTests refuses the query (`complex_check`, `fk_cycle` and the like): the refusal only skips ScenarioTests. This matters only until 20261012-4 removes ScenarioTests. A fuzz run that tested nothing isn't a pass: an empty footprint, or no legal world in which both queries ran. The rewrite then stays untested, as a refusal leaves it today.
 
 From 20261012-5's phase 1 (2026-10-12, `scratch/corpus-20261012-5/REPORT.md` in the main checkout), two traps in the spike's code that the build must avoid:
 - The footprint reads only schema-qualified relations, as `Scenarios.query_tables` does. Production qualifies both queries before rewrite-test, but a spec or harness that feeds raw SQL gets an empty footprint and a pass that tested nothing. Make an empty footprint for a query that reads a table an error, not a pass.
