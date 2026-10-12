@@ -2912,6 +2912,41 @@ RSpec.describe Quaack::Driver::Report do
 
     def steps(id, number, html = out) = texts(sankey(id, number, html)).select { it[:kind] == "step" }.map { it[:text] }
 
+    # DESIGN.md: each stage has its own color from a fixed palette, so it keeps its color
+    # in every diagram. [diagram, stage, fill] for each colored layer, by its first stage.
+    def painted_layers(html)
+      key_of = stage_keys_by_name
+      section(html, "burndown").scan(%r{<svg id="sankey-.*?</svg>}m).flat_map do |svg|
+        stage_nodes(svg).filter_map do |node|
+          fill = node["style"].to_s[/fill: (var\(--st-[a-z]+\))/, 1] or next
+          [svg[/id="sankey-([\w-]+)-\d+"/, 1], key_of.fetch(node["data-stage"].split("; ").first), fill]
+        end
+      end
+    end
+
+    # Each stage's key, by the name its layers carry, including the rewrites' index searches.
+    def stage_keys_by_name
+      words = Quaack::Driver::Report::Words
+      names = [words::INDEX_STAGES, words::REWRITE_STAGES, words::LATE_STAGES].reduce(:merge)
+      searches = words::INDEX_STAGES.to_h do |stage, name|
+        [esc(ERB::Util.html_escape("Index ideas for the rewrites: #{words.lower(name)}")), stage]
+      end
+      names.keys.to_h { [named(it), it] }.merge(searches)
+    end
+
+    it "paints each stage's layers in the stage's own palette color, the same in every diagram" do
+      colors = Quaack::Driver::Report::StageStyle::COLORS
+      painted = painted_layers(out)
+      expect(painted).to eq(painted.map { |diagram, stage, _| [diagram, stage, colors.fetch(stage)] })
+      expect(painted.map { it[1] }.uniq).to include("index-dedupe", "index-test", "llm-index-ideas", "index-rank",
+                                                    "rewrite-rules", "llm-rewrites", "rewrite-test", "measurement")
+      dedupe = painted.select { it[1] == "index-dedupe" }
+      expect(dedupe.map(&:first).uniq).to eq(%w[index rewrite-index])
+      expect(dedupe.map(&:last).uniq).to eq(["var(--st-violet)"])
+      expect(painted.select { it[1] == "rewrite-test" }.map(&:last).uniq).to eq(["var(--st-green)"])
+      expect(painted.map { it[1] }.uniq.map { colors[it] }.uniq.size).to be >= 7
+    end
+
     it "draws one layer per state, in order: a stage that adds and drops is a merge layer and the layer after it" do
       expect(layers("index", 1)).to eq(
         ["Mechanical index ideas: 9", "After removing duplicates and indexes you already have: 8",
