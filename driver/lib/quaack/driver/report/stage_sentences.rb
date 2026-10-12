@@ -28,6 +28,8 @@ module Quaack
                                 "constraints and indexes.",
           "plan-pruning" => "QUAACK plans each rewrite, and drops any that can't plan, return a different number or " \
                             "type of columns, or get the same plan as the original query, with or without indexes.",
+          "fuzz" => "QUAACK runs each rewrite and the original query on random small databases built around the " \
+                    "query's own values, and drops any rewrite whose results differ.",
           "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
                             "the original query.",
           "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",

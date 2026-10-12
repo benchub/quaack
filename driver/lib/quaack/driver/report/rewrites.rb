@@ -26,6 +26,8 @@ module Quaack
           "same_plans" => "Postgres plans it exactly as it plans the original query, so it can't run any " \
                           "differently. QUAACK didn't test it further.",
           "rewrite_test_disproved" => "#{DIFFERENT} made-up test data%<scenario>s, so it's wrong.",
+          "fuzz_disproved" => "#{DIFFERENT} a random small database built around its own values%<fuzz>s, so it's " \
+                              "wrong.",
           "counterexamples_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
           "rewrite_test_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
           "counterexamples_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
@@ -114,8 +116,49 @@ module Quaack
           return untimed(entry, UNFINISHED.fetch(entry["after"], UNFINISHED[nil])) if entry["fate"] == "unfinished"
 
           text = untimed(entry, fate_text(entry) || (return "#{Words::MISSING}."))
-          format(text, percent: NotBetterFate::PERCENT, scenario: bracket(Words::SCENARIOS[entry["scenario"]]),
-                       round: bracket(entry["round"] && "round #{entry["round"]}"), **because(entry))
+          format(text, percent: NotBetterFate::PERCENT, **fills(entry), **because(entry))
+        end
+
+        # The fate sentences' bracketed details.
+        def fills(entry)
+          { scenario: bracket(Words::SCENARIOS[entry["scenario"]]), fuzz: bracket(fuzz(entry)),
+            round: bracket(entry["round"] && "round #{entry["round"]}") }
+        end
+
+        # A fuzz disproof's rows per table and how the results differed,
+        # such as "2 rows in orders and 1 in customers; the row count
+        # differs", or nil with neither. Sizes that aren't [schema, table,
+        # rows] triples, rows a positive count, are left out.
+        def fuzz(entry)
+          parts = [sizes(entry["sizes"]), Words::MISMATCHES[entry["rule"]]].compact
+          parts.join("; ") unless parts.empty?
+        end
+
+        def sizes(list)
+          return unless list.is_a?(Array) && !list.empty? && list.all? { size?(it) }
+
+          said = list.each_with_index.map { |size, i| size_words(*size, first: i.zero?) }
+          said.size < 3 ? said.join(" and ") : "#{said[..-2].join(", ")}, and #{said.last}"
+        end
+
+        # "2 rows in orders", or just "2 in sales.customers" after the first.
+        def size_words(schema, table, rows, first:)
+          "#{first ? Words.count(rows, "row") : Format.number(rows)} in " \
+            "#{"#{schema}." unless schema == "public"}#{table}"
+        end
+
+        def size?(size)
+          size.is_a?(Array) && size.size == 3 && size.take(2).all?(String) && size[2].is_a?(Integer) &&
+            size[2].positive?
+        end
+
+        # How many random small databases fuzz compared the rewrite on,
+        # unless one proved it wrong, or nil.
+        def fuzz_line(entry)
+          trials = entry["trials"]
+          return unless trials.is_a?(Integer) && trials.positive? && entry["fate"] != "fuzz_disproved"
+
+          "It also survived #{Words.count(trials, "random small database")} built around its own values."
         end
 
         def fate_text(entry) = entry["fate"] == "not_better" ? not_better_text(entry) : FATES[entry["fate"]]

@@ -208,7 +208,8 @@ module Quaack
         # A report's index_sources, top, and labels' suggested_drops, as egress checks.
         def report_counts?(line)
           Protocol::IndexSources.valid?(line["index_sources"]) && indexes?(line) &&
-            Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line)
+            Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line) &&
+            Protocol::FuzzResult.rewrites?(line["rewrites"])
         end
 
         # A report's indexes, if it has them, must pass

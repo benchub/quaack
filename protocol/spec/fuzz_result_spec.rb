@@ -25,4 +25,11 @@ RSpec.describe Quaack::Protocol::FuzzResult do
                [["public", "orders", 10**12]], { "public.orders" => 2 }, "2 rows in orders"]
     expect(refused.map { described_class.sizes?(it) }).to all(be(false))
   end
+
+  it "accepts a report's rewrites only if each one's sizes and trials pass" do
+    sound = { "sizes" => [["public", "orders", 2]], "trials" => 41_200 }
+    expect(described_class.rewrites?([sound, {}, { "sizes" => nil, "trials" => nil }])).to be(true)
+    expect(described_class.rewrites?([sound, sound.merge("sizes" => [%w[public orders 2]])])).to be(false)
+    expect(described_class.rewrites?([sound, sound.merge("trials" => -1)])).to be(false)
+  end
 end

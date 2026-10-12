@@ -510,6 +510,54 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261012-2: a fuzz disproof's sizes are [schema, table, rows],
+    # each table one the report's queries name, and trials a count
+    # (Protocol::FuzzResult, FuzzSizes).
+    describe "a rewrite's fuzz sizes and trials" do
+      let(:original_sql) { "SELECT o.id FROM public.orders o JOIN sales.customers c ON c.id = o.customer_id" }
+
+      def report_with(entry, sql: "SELECT o.id FROM public.orders o")
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil, "sql" => sql }.merge(entry)
+        { type: :report, original_sql:, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
+      end
+
+      it "sends tables either query names, with their row counts, and trials as a count" do
+        sizes = [["public", "orders", 2], ["sales", "customers", 1], ["sales", "refunds", 1]]
+        rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
+        sent = parsed(report_with({ "sizes" => sizes, "trials" => 41_200 }, sql: rewrite_sql))
+        expect(sent["rewrites"].first).to include("sizes" => sizes, "trials" => 41_200)
+        expect(parsed(report_with({ "sizes" => nil, "trials" => nil }))["rewrites"].first)
+          .to include("sizes" => nil, "trials" => nil)
+      end
+
+      [
+        ["a table neither query names", { "sizes" => [["public", EGRESS_SENTINEL, 1]] }],
+        ["a planted schema", { "sizes" => [[EGRESS_SENTINEL, "orders", 1]] }],
+        ["a String in place of a row count", { "sizes" => [["public", "orders", EGRESS_SENTINEL]] }],
+        ["a planted fourth value", { "sizes" => [["public", "orders", 1, EGRESS_SENTINEL]] }],
+        ["a String in place of the sizes", { "sizes" => EGRESS_SENTINEL }],
+        ["sizes under a Symbol key", { sizes: [["public", EGRESS_SENTINEL, 1]] }],
+        ["a String in place of trials", { "trials" => EGRESS_SENTINEL }],
+        ["a negative trials", { "trials" => -1 }],
+        ["trials under a Symbol key", { trials: EGRESS_SENTINEL }]
+      ].each do |what, planted|
+        it "refuses one with #{what}, without quoting it" do
+          refusal = "a value in this report message has fuzz sizes or trials that aren't the queries' tables " \
+                    "and counts"
+          expect { egress.serialize(report_with(planted)) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
+      end
+
+      it "refuses a table the queries name only without its schema, or in a string" do
+        unqualified = report_with({ "sizes" => [["public", "orders", 1]] }, sql: "SELECT 'public.orders' FROM orders")
+        expect { egress.serialize(unqualified.merge(original_sql: "SELECT 1")) }
+          .to raise_error(described_class::Error, /fuzz sizes/)
+      end
+    end
+
     # Task 20261009-40: a rewrite's untested_unchanged repeats shapes of its
     # untested_atoms and nothing else (Protocol::UnchangedAtoms.valid?).
     describe "a rewrite's untested_unchanged" do

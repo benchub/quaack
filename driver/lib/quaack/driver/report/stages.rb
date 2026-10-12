@@ -25,8 +25,16 @@ module Quaack
 
         # The rewrite stages, each summed over its searches. The rewrites'
         # own index searches count index ideas, not rewrites, so they're
-        # their own table (rewrite_index_rows).
-        def rewrite_rows = summed(Words::REWRITE_STAGES) + summed(Words::LATE_STAGES)
+        # their own table (rewrite_index_rows). A run from before fuzz
+        # (task 20261012-2) recorded rewrite-test but never fuzz, so it
+        # gets no fuzz row.
+        def rewrite_rows = summed(rewrite_stages) + summed(Words::LATE_STAGES)
+
+        def rewrite_stages
+          stages = burndown["stages"]
+          before_fuzz = stages.key?("rewrite-test") && !stages.key?("fuzz")
+          before_fuzz ? Words::REWRITE_STAGES.except("fuzz") : Words::REWRITE_STAGES
+        end
 
         # The rewrites' own index searches, totaled per stage.
         def rewrite_index_rows = search_rows
@@ -70,11 +78,18 @@ module Quaack
         # A name in words. rewrite-test drops a rewrite it never tested by
         # the rule of the refusal or the failure, said as the rewrite's fate
         # says it; any rule it has no words for is a statement that failed.
+        # fuzz drops one by the comparison's rule.
         def counted(name, stage)
+          return fuzz_drop(name) if stage == "fuzz" && !Words::COUNTS.key?(name)
           return Words::COUNTS.fetch(name) { Words.plain(name) } unless stage == "rewrite-test" &&
                                                                         !Words::SCENARIOS.key?(name)
 
           "never tested, because #{Words::REFUSALS.fetch(name) { Words::FAILURES.fetch(name, Words::FAILED) }}"
+        end
+
+        def fuzz_drop(rule)
+          why = Words::MISMATCHES[rule]
+          "wrong on a random small database#{", where #{why}" if why}"
         end
 
         # burndown's work totals, each always listed, then any other the enclave

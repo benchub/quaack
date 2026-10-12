@@ -775,6 +775,26 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
+    # Task 20261012-2: how many random small databases the fuzz search
+    # compared a rewrite on, when none proved it wrong.
+    describe "the random small databases a rewrite survived" do
+      def survived(trials, fate = "ranked")
+        payload["rewrites"].first.merge!("trials" => trials, "fate" => fate)
+        section(render(payload), "queries")
+      end
+
+      it "says how many random small databases it survived" do
+        expect(survived(41_200)).to include('<p class="fuzz">It also survived 41,200 random small databases built ' \
+                                            "around its own values.</p>")
+        expect(survived(1)).to include("It also survived 1 random small database built around its own values.")
+      end
+
+      it "says nothing when fuzz compared none, disproved it, or the count isn't one" do
+        [0, nil, -1, "2", 1.5].each { expect(survived(it)).not_to include('class="fuzz"') }
+        expect(survived(5, "fuzz_disproved")).not_to include('class="fuzz"')
+      end
+    end
+
     describe "the conditions no test ever exercised (vacuity-guard)" do
       let(:lead) do
         esc("QUAACK's tests never made these conditions from the original query both true and false, and they " \
@@ -1011,6 +1031,33 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("rewrite_test_out_of_time"))
           .to eq(esc("QUAACK couldn't test it within 5 minutes, so it left it out and won't recommend it. That " \
                      "says nothing about whether it's right."))
+      end
+
+      # Task 20261012-2: the fuzz search's disproof, by its size per table
+      # and its rule, never its rows.
+      it "says a random small database proved a rewrite wrong, with its rows per table and the rule" do
+        sizes = [["public", "orders", 2], ["public", "customers", 1]]
+        expect(fate("fuzz_disproved", rule: "row_count", sizes:))
+          .to eq(esc("It returned different results from the original query on a random small database built " \
+                     "around its own values (2 rows in orders and 1 in customers; the row count differs), so it's " \
+                     "wrong."))
+        expect(fate("fuzz_disproved", rule: "multiset", sizes: [["sales", "orders", 1]]))
+          .to include(esc("(1 row in sales.orders; the rows differ)"))
+        expect(fate("fuzz_disproved", rule: "value", sizes: [["a", "x", 3], ["b", "y", 3], ["c", "z", 3]]))
+          .to include("(3 rows in a.x, 3 in b.y, and 3 in c.z; a value differs)")
+      end
+
+      it "leaves out a fuzz disproof's sizes or rule the payload doesn't have, or that aren't sizes" do
+        lead = "It returned different results from the original query on a random small database built around " \
+               "its own values"
+        expect(fate("fuzz_disproved")).to eq(esc("#{lead}, so it's wrong."))
+        expect(fate("fuzz_disproved", rule: "row_count"))
+          .to eq(esc("#{lead} (the row count differs), so it's wrong."))
+        expect(fate("fuzz_disproved", sizes: [["public", "orders", 2]]))
+          .to eq(esc("#{lead} (2 rows in orders), so it's wrong."))
+        [[%w[public orders 2]], [["public", "orders", 0]], "orders", [["orders", 2]]].each do |sizes|
+          expect(fate("fuzz_disproved", sizes:)).to eq(esc("#{lead}, so it's wrong."))
+        end
       end
 
       it "says a rewrite was never tested when rewrite-test couldn't build test data, and why, by rule" do
@@ -1873,6 +1920,15 @@ RSpec.describe Quaack::Driver::Report do
       expect(bug_section).not_to include("<b>")
     end
 
+    # Task 20261012-2.
+    it "names a rule-made rewrite a random small database proved wrong" do
+      fuzzed = render(payload.merge("rule_bugs" => [{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"],
+                                                      "step" => "fuzz" }]))
+      expect(section(fuzzed, "quaack-bugs"))
+        .to include(esc("<li>Rewrite Smooth Kayak, made by transform rule key_in_self_join, returned different " \
+                        "results on a random small database built around its own values.</li>"))
+    end
+
     it "is left out when no rule-made rewrite was disproved, or the enclave sent no list" do
       expect(render(payload.merge("rule_bugs" => []))).not_to include('id="quaack-bugs"')
       expect(html).not_to include('id="quaack-bugs"')
@@ -2099,6 +2155,12 @@ RSpec.describe Quaack::Driver::Report do
 
     it "never counts a failed, tied, or unfinished rewrite as wrong or not better" do
       expect(rows(accountable, "rewrites")["You"].last(5)).to eq(%w[0 0 0 0 2])
+    end
+
+    # Task 20261012-2: a fuzz disproof proved the rewrite wrong.
+    it "counts a rewrite a random small database proved wrong as wrong results" do
+      wrong = rewrites + [fated(30, "fuzz_disproved", source: "operator", rule: "row_count")]
+      expect(rows(render(payload.merge("rewrites" => wrong)), "rewrites")["You"].last(5)).to eq(%w[0 1 0 0 2])
     end
 
     it "counts every fate that neither proved a rewrite wrong nor judged it not better as stopped for another reason" do
@@ -2501,6 +2563,33 @@ RSpec.describe Quaack::Driver::Report do
                                    "compared on only part of the real data: 2"))
     end
 
+    # Task 20261012-2: the fuzz search, between plan-pruning and rewrite-test.
+    it "shows fuzz between plan-pruning and rewrite-test, with its drops by rule and its trials in words" do
+      stages = { "plan-pruning" => { "rewrites" => rec(3, 2, dropped: { "same_plans" => 1 }) },
+                 "fuzz" => { "rewrite_1" => rec(1, 0, dropped: { "row_count" => 1 }, extra: { "trials" => 40 }),
+                             "rewrite_2" => rec(1, 1, extra: { "trials" => 0, "untested" => 1 }) },
+                 "rewrite-test" => { "rewrite_2" => rec(1, 1) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+
+      names = table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten
+      expect(names.each_cons(3)).to include(["Checking each rewrite can run differently from the original query",
+                                             "Testing on random small databases", "Testing on made-up edge-case data"])
+      expect(table).to include(row("Testing on random small databases", 2, "none",
+                                   "wrong on a random small database, where the row count differs: 1", 0, 1,
+                                   "random small databases compared: 40; not tested by the random search: 1"))
+    end
+
+    # A run stored before fuzz existed recorded rewrite-test but never fuzz.
+    # A run that recorded neither still shows it as not recorded.
+    it "leaves fuzz out of a run from before it, rather than saying the run didn't count it" do
+      expect(rewrite_table).to include("Testing on made-up edge-case data")
+      expect(rewrite_table).not_to include("random small databases")
+      stages = { "plan-pruning" => { "rewrites" => rec(1, 1) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+      expect(table).to include("#{tr("Testing on random small databases")}" \
+                               '<td colspan="5" class="missing">not recorded</td></tr>')
+    end
+
     # Task 20261004-69: rewrite-test's never-tested reasons in the fates'
     # own words, and a counterexamples round that failed to run said so.
     it "says why rewrite-test never tested a rewrite, and which round failed to run, in words" do
@@ -2622,7 +2711,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "says every stage wasn't recorded when the payload has no burndown" do
-      expect(section(html, "burndown").scan('class="missing">not recorded').size).to eq(17)
+      expect(section(html, "burndown").scan('class="missing">not recorded').size).to eq(18)
     end
   end
 
@@ -2648,6 +2737,7 @@ RSpec.describe Quaack::Driver::Report do
         "operator-rewrites" => { "rewrites" => rec(6, 8, added: { "operator" => 2 }) },
         "assumption-check" => { "rewrites" => rec(8, 7, dropped: { "unmet_assumption" => 1 }) },
         "plan-pruning" => { "rewrites" => rec(7, 5, dropped: { "same_plans" => 2 }) },
+        "fuzz" => { "rewrites" => rec(5, 5, extra: { "trials" => 120 }) },
         "rewrite-test" => { "rewrites" => rec(5, 4, dropped: { "s2" => 1 }) },
         "counterexamples" => { "rewrites" => rec(4, 3, dropped: { "round_1" => 1 }) },
         "rewrite-index-ideas" => { "rewrites" => rec(3, 3) },
@@ -2727,6 +2817,8 @@ RSpec.describe Quaack::Driver::Report do
                           "type of columns, or get the same plan as the original query, with or without indexes.",
         "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
                           "the original query.",
+        "fuzz" => "QUAACK runs each rewrite and the original query on random small databases built around the " \
+                  "query's own values, and drops any rewrite whose results differ.",
         "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",
         "rewrite-index-ideas" => "Each rewrite that's left gets its own index search, since it can need " \
                                  "different indexes than the original query.",
@@ -2849,6 +2941,7 @@ RSpec.describe Quaack::Driver::Report do
         "operator-rewrites" => { "rewrites" => rec(6, 7, added: { "operator" => 1 }) },
         "assumption-check" => { "rewrites" => rec(7, 6, dropped: { "unmet_assumption" => 1 }) },
         "plan-pruning" => { "rewrites" => rec(6, 5, dropped: { "same_plans" => 1 }) },
+        "fuzz" => { "rewrites" => rec(5, 5, extra: { "trials" => 900 }) },
         "rewrite-test" => { "rewrites" => rec(5, 4, dropped: { "s2" => 1 }) },
         "counterexamples" => { "rewrites" => rec(4, 3, dropped: { "round_1" => 1 }) },
         "rewrite-index-ideas" => { "rewrites" => rec(3, 3) },
@@ -2948,6 +3041,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(dedupe.map(&:first).uniq).to eq(%w[index rewrite-index])
       expect(dedupe.map(&:last).uniq).to eq(["var(--st-violet)"])
       expect(painted.select { it[1] == "rewrite-test" }.map(&:last).uniq).to eq(["var(--st-green)"])
+      expect(painted.select { it[1] == "fuzz" }.map(&:last).uniq).to eq(["var(--st-indigo)"])
       expect(painted.map { it[1] }.uniq.map { colors[it] }.uniq.size).to be >= 7
     end
 
@@ -2964,7 +3058,8 @@ RSpec.describe Quaack::Driver::Report do
         ["Rewrites from the transform rules: 4", "After removing duplicate rule rewrites: 2",
          "Combined with rewrites from the LLM: 7", "After checking the LLM&#39;s rewrites: 6",
          "Combined with your own rewrites: 7", "After checking what each rewrite assumes: 6",
-         "After checking each rewrite runs differently: 5", "After testing on made-up edge-case data: 4",
+         "After checking each rewrite runs differently: 5", "After testing on random small databases: 5",
+         "After testing on made-up edge-case data: 4",
          "After testing on data the LLM wrote to break them: 3"]
       )
       expect(layers("rewrite", 2)).to eq(["Carried in from the diagram above: 3",

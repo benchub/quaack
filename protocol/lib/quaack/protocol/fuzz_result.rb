@@ -35,6 +35,9 @@ module Quaack
 
       def trials?(trials) = trials.nil? || count?(trials)
 
+      # Whether each of a report's rewrites carries sizes and trials that pass.
+      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && trials?(it["trials"]) }
+
       def sizes?(sizes)
         return true if sizes.nil?
 

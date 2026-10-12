@@ -273,7 +273,7 @@ module Quaack
         def rewrite(transport, client, args, tested, progress, record) # rubocop:disable Metrics/ParameterLists
           untimed = false
           passed = Pipeline.run_step(progress, tested, "rewrite-test") do
-            untimed = went_on_untimed?(progress, reply = message(transport.call("rewrite-test", args:), "rewrite_test"))
+            untimed = noted_untimed?(progress, reply = message(transport.call("rewrite-test", args:), "rewrite_test"))
             reply["passed"]
           end
           return false unless tested || passed
@@ -282,6 +282,27 @@ module Quaack
             survives_counterexamples?(transport, client, args, progress, record)
           end
           survived && untimed ? :untimed : survived
+        end
+
+        # Notes what rewrite-test found under the rewrite's name, and
+        # whether it went on untested in time.
+        def noted_untimed?(progress, reply)
+          fuzz_note(progress, reply)
+          went_on_untimed?(progress, reply)
+        end
+
+        # What rewrite-test's fuzz search (task 20261012-2) found, under the
+        # rewrite's name: that a random small database proved it wrong, or
+        # how many it survived. Nothing when it compared none.
+        def fuzz_note(progress, message)
+          trials = message["trials"]
+          if message["stage"] == "fuzz" && message["passed"] == false
+            progress.step_note("rewrite-test", "A random small database built around the query's values proved " \
+                                               "the rewrite wrong")
+          elsif trials.is_a?(Integer) && trials.positive?
+            progress.step_note("rewrite-test", "Survived #{Report::Words.count(trials, "random small database")} " \
+                                               "built around the query's values")
+          end
         end
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)

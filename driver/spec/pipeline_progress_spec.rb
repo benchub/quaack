@@ -320,6 +320,45 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 0 passed, 1 went on though not tested in time"])
     end
 
+    # Task 20261012-2: the fuzz search runs inside rewrite-test.
+    it "says, under the rewrite's name, that a random small database proved it wrong" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "row_count",
+                   "stage" => "fuzz", "trials" => 12 })
+
+      run
+
+      expect(lines_of("rewrite-correctness"))
+        .to eq(["Testing each rewrite for wrong results (rewrite-correctness)",
+                "#{name}: Testing the rewrite on generated rows (rewrite-test)",
+                "#{name}: A random small database built around the query's values proved the rewrite wrong " \
+                "(rewrite-test)"])
+    end
+
+    it "says how many random small databases a rewrite survived, before it goes on" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
+                   "stage" => "rewrite-test", "trials" => 41_200 })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to eq("#{name}: Survived 41,200 random small databases built around the query's values (rewrite-test)")
+      expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 1 passed"])
+    end
+
+    it "says nothing of random small databases when the search compared none" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
+                   "stage" => "rewrite-test", "trials" => 0 })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(stderr.string).not_to include("random small database")
+    end
+
     it "counts several rewrites not tested in time apart from those that passed" do
       entries.merge!(rewrite(1, rewrite_survived: false), rewrite(2, rewrite_survived: false),
                      rewrite(3, rewrite_survived: false))

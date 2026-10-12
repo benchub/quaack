@@ -37,8 +37,8 @@ module Quaack
         STAGE_UNIT = {
           "index-rank" => :sets,
           "rewrite-rules" => :rewrites, "llm-rewrites" => :rewrites, "operator-rewrites" => :rewrites,
-          "assumption-check" => :rewrites, "plan-pruning" => :rewrites, "rewrite-test" => :rewrites,
-          "counterexamples" => :rewrites,
+          "assumption-check" => :rewrites, "plan-pruning" => :rewrites, "fuzz" => :rewrites,
+          "rewrite-test" => :rewrites, "counterexamples" => :rewrites,
           "rewrite-index-ideas" => :candidates, "measurement" => :candidates
         }.freeze
         # Each unit's caption. The rewrites' own index searches are added up, so they say so.

@@ -896,6 +896,26 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261012-2. Egress sends a rewrite's sizes and trials only if
+    # Protocol::FuzzResult passes them, so the driver checks the same.
+    it "reads a report whose rewrites' sizes and trials Protocol::FuzzResult passes, and refuses one it doesn't" do
+      report = lambda do |fields|
+        JSON.generate({ "type" => "report", "original_plan" => [], "labels" => [], "index_sources" => index_sources,
+                        "rewrites" => [{ "rewrite" => "rewrite_1", "plan" => nil, **fields }] })
+      end
+      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200 }
+      result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first["rewrites"].first.slice("sizes", "trials")).to eq(good)
+      [{ "sizes" => [["public", "orders", sentinel]] }, { "sizes" => [["public", "orders", 2, sentinel]] },
+       { "sizes" => sentinel }, { "trials" => sentinel }, { "trials" => -1 }].each do |planted|
+        error = refusal(report.call(planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Task 20261008-34. Egress sends hidden_statistics only if
     # Protocol::HiddenStatistics.valid? passes, so the driver checks the same.
     it "reads a report whose hidden_statistics Protocol::HiddenStatistics.valid? passes, and refuses one it doesn't" do
