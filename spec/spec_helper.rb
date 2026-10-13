@@ -12,6 +12,12 @@ ENV["QUAACK_SPECS"] = "1"
 # machine's speed and the suite stays fast.
 ENV["QUAACKS_FUZZ_TRIALS"] = "40"
 
+# rewrite-test's enumerate stage (task 20261012-3), which runs after a
+# fuzz pass for up to 30 seconds, is off in every quaacks child a spec
+# starts, so the recorded replays' verdicts stay what fuzz and rewrite-test
+# decide. The enclave's own specs turn it on where they test it.
+ENV["QUAACKS_ENUMERATE_WORLDS"] = "0"
+
 require_relative "../rakelib/full_replay"
 
 Dir[File.join(__dir__, "support", "*.rb")].each { |f| require f }

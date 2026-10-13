@@ -192,6 +192,11 @@ RSpec.describe PipelineReplay do
         # cap of 400, not the 30 seconds a production run takes. trials
         # counts only the worlds both queries ran on.
         expect(stages.dig("fuzz", "rewrite_1", "extra")).to match("trials" => be_between(1, 400))
+        # The spec_helper's QUAACKS_ENUMERATE_WORLDS 0: enumerate (task
+        # 20261012-3) is off in the replays, so it records the rewrite
+        # untested and lets it go on.
+        expect(stages.dig("enumerate", "rewrite_1"))
+          .to include(went_on).and include("extra" => { "worlds" => 0, "untested" => 1 })
         %w[rewrite-index-ideas measurement].each { expect(stages[it]["rewrites"]).to include(went_on) }
         expect(outcome.report["burndown"]["totals"].slice("indexes_built", "measurement_runs", "fixture_loads"))
           .to match("indexes_built" => be_positive, "measurement_runs" => be_positive, "fixture_loads" => be_positive)
