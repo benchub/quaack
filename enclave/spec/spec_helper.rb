@@ -32,6 +32,12 @@ ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 # the search do the same work on any machine.
 ENV["QUAACKS_FUZZ_TRIALS"] = "0"
 FUZZ_ON = { "QUAACKS_FUZZ_TRIALS" => "40" }.freeze
+# For a spec that needs the search to find a kill. The seed is the queries'
+# text, and a query holding random sentinels searches different worlds each
+# run, so 40 trials can miss: task 20261012-18 measured one rewrite missing
+# about 1 run in 7. A kill ends the search at once, so the higher floor costs
+# time only when a run would otherwise have failed.
+FUZZ_TO_KILL = { "QUAACKS_FUZZ_TRIALS" => "400" }.freeze
 
 # What a step that reports counts prints when it succeeds: its step_counts
 # line, its counts in whitelist order as egress writes them, then DONE.

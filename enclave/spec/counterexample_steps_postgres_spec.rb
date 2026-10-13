@@ -423,7 +423,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     # doesn't run; a pass goes on to ScenarioTests, and stands if
     # ScenarioTests refuses the query or runs out of time.
     describe "the fuzz search before ScenarioTests" do
-      def fuzz_step(search = "rewrite_1") = step_with(FUZZ_ON, search)
+      def fuzz_step(search = "rewrite_1", env = FUZZ_ON) = step_with(env, search)
 
       def step_with(env, search)
         quaacks.run("rewrite-test", "--search", search, "--run", store.run_id, env: libpq_env.merge(env))
@@ -435,7 +435,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       it "disproves a looser rewrite with a counterexample's rule, stage, trials, and size, and no value" do
         ready(looser)
 
-        outcome = fuzz_step
+        outcome = fuzz_step("rewrite_1", FUZZ_TO_KILL)
 
         expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
         message = lines(outcome).first
@@ -468,7 +468,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
            "report's fields" do
           ready(candidate)
 
-          outcome = fuzz_step
+          # A kill needs one order with the sentinel note, a total of at
+          # least the sentinel number, and a status other than held: about
+          # 1 world in 20, so 40 trials missed about 1 run in 7.
+          outcome = fuzz_step("rewrite_1", FUZZ_TO_KILL)
 
           expect(lines(outcome).first).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
           expect(store.read("qualified_query")).to include(sentinels.text, sentinels.number.to_s)
@@ -492,7 +495,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           # Every row that reaches the cast fails it, so every kill is
           # query_failed. Only a row that matches the other conditions
           # reaches it, so this allows more worlds than the step's usual 40.
-          outcome = step_with({ "QUAACKS_FUZZ_TRIALS" => "400" }, "rewrite_1")
+          outcome = step_with(FUZZ_TO_KILL, "rewrite_1")
 
           message = lines(outcome).first
           expect(message).to include("passed" => false, "stage" => "fuzz", "rule" => "query_failed")
@@ -524,7 +527,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         store.write("rewrite_2", stored.read("rewrite_1"))
         store.write("rewrite_3", stored.read("rewrite_1").merge("sql" => looser, "anchored_sql" => looser))
 
-        outcomes = %w[rewrite_1 rewrite_2 rewrite_3].map { fuzz_step(it) }
+        outcomes = [fuzz_step("rewrite_1"), fuzz_step("rewrite_2"), fuzz_step("rewrite_3", FUZZ_TO_KILL)]
 
         first, second, third = outcomes.map { lines(it).first }
         [first, second].each do |message|
