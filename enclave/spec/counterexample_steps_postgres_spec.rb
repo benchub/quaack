@@ -213,6 +213,39 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
+    # Task 20261012-11: a query that divides by a column production never
+    # holds 0 in. The scenarios' typical values hold 0, so the original
+    # fails on them, and those fixtures say nothing about the rewrite.
+    describe "an original that fails on the scenarios' data" do
+      let(:query) { "SELECT o.note, o.status FROM public.orders o WHERE o.status = 'held' AND (o.id / o.total) >= 2" }
+
+      def seed(conn)
+        super
+        conn.exec("UPDATE public.orders SET total = total + 1; ANALYZE public.orders")
+      end
+
+      it "finishes, testing the rewrite on the fixtures the original runs on" do
+        ready("SELECT o.note, o.status FROM public.orders o WHERE (o.id / o.total) >= $2 AND o.status = $1")
+
+        outcome = step("rewrite-test", "--search", "rewrite_1")
+
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+        expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => true, "rule" => nil,
+                                                "s1_load_rule" => "original_failed", "s1_rows" => nil)
+        expect(stored.read("rewrite_tested_1")).to include("passed" => true, "s1_load_rule" => "original_failed")
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "disproves a wrong rewrite there" do
+        ready("SELECT o.note, o.status FROM public.orders o WHERE (o.id / o.total) >= $2")
+
+        outcome = step("rewrite-test", "--search", "rewrite_1")
+
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+        expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false, "rule" => "row_count")
+      end
+    end
+
     # Task 20261009-40: which untested atoms the rewrite left unchanged, by
     # position, as a subset of the shapes already stored under untested.
     describe "untested_unchanged" do

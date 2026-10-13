@@ -117,9 +117,10 @@ module Quaack
       # The atoms not yet exercised that none of S1's fixtures exercise
       # either: its first, and its further ones (Scenarios::Parts), which
       # fixture-compare runs too. A fixture that won't load (a trigger or
-      # constraint QUAACK doesn't model, say) exercises nothing, so its
-      # atoms stay vacuous, are retried, and end untested. Scenarios never
-      # crash rewrite-test. The S1 diagnostic is the first fixture's.
+      # constraint QUAACK doesn't model, say), or on which the original
+      # fails (a division by a column that's 0 there), exercises nothing,
+      # so its atoms stay vacuous, are retried, and end untested. Scenarios
+      # never crash rewrite-test. The S1 diagnostic is the first fixture's.
       def vacuous_atoms(runner, fixtures, sql, loosened, state)
         pending = loosened.keys - state[:exercised]
         first, *rest = fixtures
@@ -133,6 +134,8 @@ module Quaack
 
       def spill_exercised_atoms(runner, rows, sql, loosened, state)
         loosened.empty? ? [] : exercised_atoms(runner, rows, sql, loosened, compared: state[:compared])
+      rescue OriginalFailed
+        []
       rescue ArenaRunner::Error => e
         raise unless LOAD_STEPS.include?(e.step)
 
@@ -141,16 +144,28 @@ module Quaack
 
       LOAD_STEPS = %i[load insert].freeze
 
+      # The original query failed on a fixture (exercised_atoms), by an
+      # error from the data or QUAACK's own statement_timeout. Like a
+      # fixture that won't load, the fixture then exercises nothing.
+      class OriginalFailed < ArenaRunner::Error; end
+
       # state also takes the last attempt's S1 diagnostic: the rule the load
       # failed with, or the original's row count once it loaded, and how
       # many of those rows are nonzero (nonzero_rows).
       def loaded_exercised_atoms(runner, rows, sql, loosened, state)
         state[:s1_load_rule] = nil
         exercised_atoms(runner, rows, sql, loosened, compared: state[:compared]) { s1_counts(state, it) }
+      rescue OriginalFailed
+        s1_failed(state, :original_failed)
       rescue ArenaRunner::Error => e
         raise unless LOAD_STEPS.include?(e.step)
 
-        state[:s1_load_rule] = load_rule(e.rule)
+        s1_failed(state, load_rule(e.rule))
+      end
+
+      # S1 exercised nothing, by rule, so it has no row counts.
+      def s1_failed(state, rule)
+        state[:s1_load_rule] = rule
         s1_counts(state, nil)
         []
       end
@@ -219,7 +234,41 @@ module Quaack
 
       # The atoms whose loosened query returns other rows, and whether the
       # original returned none.
-      def changed_atoms(runner, rows, sql, loosened, inserts)
+      #
+      # The original runs first, so a query error's index names the query
+      # that failed. When it's the original, by an error from the data (a
+      # division by a column that's 0, say) or QUAACK's own
+      # statement_timeout, this raises OriginalFailed. When it's a loosened
+      # query, its atom isn't counted exercised, and the fixture loads again
+      # for the rest, uncounted, since whether a loosened query fails
+      # follows the data. (Compared, which may compare that atom's query
+      # after, reads its failure as no mismatch.) A cancel QUAACK didn't
+      # send goes up as it is.
+      def changed_atoms(runner, rows, sql, loosened, inserts, &)
+        failed = []
+        begin
+          left = loosened.except(*failed)
+          run = -> { changed_on(runner, rows, sql, left, inserts, &) }
+          changed, empty = failed.empty? ? run.call : runner.uncounted(&run)
+        rescue ArenaRunner::Error => e
+          failed << failed_atom(e, left)
+          retry
+        end
+        [changed, empty]
+      end
+
+      # The atom of left whose loosened query failed with error, or else
+      # error goes up: as OriginalFailed when the original failed.
+      def failed_atom(error, left)
+        raise error if ArenaRunner::Cancel.foreign?(error) || error.step != :query || error.index.nil?
+        if error.index.zero?
+          raise OriginalFailed.new(error.rule, step: error.step, sqlstate: error.sqlstate, index: 0), cause: nil
+        end
+
+        left.keys.fetch(error.index - 1)
+      end
+
+      def changed_on(runner, rows, sql, loosened, inserts)
         runner.with_fixture(rows, inserts:) do |tx|
           result = tx.query(sql)
           yield result.rows if block_given?

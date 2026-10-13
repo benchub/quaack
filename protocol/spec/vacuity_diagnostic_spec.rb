@@ -29,6 +29,11 @@ RSpec.describe Quaack::Protocol::VacuityDiagnostic do
     expect(valid?({})).to be(true)
   end
 
+  # Task 20261012-11: S1 loaded, but its rows made the original fail.
+  it "takes original_failed, with no row counts" do
+    expect(valid?({ "s1_load_rule" => "original_failed", "s1_rows" => nil, "s1_nonzero_rows" => nil })).to be(true)
+  end
+
   it "caps s1_rows at MAX_ROWS, a few million, inclusive" do
     expect(described_class::MAX_ROWS).to eq(2_000_000)
     expect(valid?({ "s1_rows" => described_class::MAX_ROWS })).to be(true)
