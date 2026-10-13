@@ -11005,3 +11005,32 @@ Answers (the user, 2026-10-12):
     - The trial rate falls 25–40% on ORM-shaped queries (filed as 20261012-25).
     - DESIGN.md's counterexamples paragraph named "a lag over days with one missing" as LLM-only, but fuzz now catches `mr_lag7`. The main session dropped the example at landing.
   - **Per-commit check** (on the branch tip; `main` had only backlog commits since): RuboCop clean; protocol and enclave (6696 examples) passed; driver and root only the four accepted failures. A first run of the root suite had 117 failures from another runner's stale-container sweep (see 20261012-20); the root suite rerun alone was clean.
+
+### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says.
+
+From 20261012-2. A random search's pass says only that N random databases didn't differ. The spike's algorithm B enumerates worlds instead. It reduces each row to a kind, a tuple of value classes per column drawn from the same value domains, and tries every world in order of total rows, so a pass can say "no database of at most w rows over these value classes differs". In the spike, in 15 s, w reached 8 to 12 on single-table queries, 4 to 8 on two tables, and 4 on four tables. It caught 151 of 152 wrong mutants (it missed one that needs 4 orders per customer) and 32 of 34 wrong Canvas rewrites (two 4-table queries need more than 4 rows). Run it when the random search finds nothing, within the same per-rewrite cap and saturation rule. Like the search (20261012-2), it's its own burndown stage, `enumerate`, between `fuzz` and rewrite-test (the user, 2026-10-12). It gets a record with drops by rule, the worlds it tried, and the bound w it finished as extras, plus everything that stage needs in the Sankey, the table, the stage sentence, the fates, and `rule_bugs`. Decide with the user how a pass is worded (such as "survived N random small databases and every database of up to w rows over its value classes"), where it shows (the rewrite's section and the burndown), and how the counts leave the enclave (integers only).
+
+Answers (the user, 2026-10-12):
+- Enumerate runs for at most 30 s after fuzz passes, inside the rewrite's 5-minute budget. It reports the largest w it finished.
+- A pass is worded "Found no difference on N random datasets, or on any dataset of up to w rows over its value classes." It shows in the rewrite's section and in the burndown. N, w and the number of worlds tried leave the enclave as integers.
+- An enumerate pass counts as tested even when ScenarioTests refuses the query, as a fuzz pass does.
+
+Like fuzz and the counterexample rounds (20261012-10), a world where the original fails disproves nothing. Only a candidate data error where the original ran counts as a kill, as fuzz's `DataError.candidate_only?` decides.
+
+- **Depends on:** 20261012-2.
+- **Came from:** The user and the disproof spike, 2026-10-12.
+- **Design:** rewrite-test.
+- **Status:** done (merged 2026-10-13, 418b7437).
+  - **Decisions** (the main session, 2026-10-12 and -13; the user asleep, overnight rules):
+    - Enumerate runs only after a fuzz pass, for at most 30 s, inside the rewrite's deadline. It reuses fuzz's catalog, domains, session and lift.
+    - It enumerates over 20261012-2's base value classes, not 20261012-13's world values or copies. A table's row kinds are the full product of its columns' classes when that's at most 64, else a pairwise covering array, with the base-choice kinds first. DESIGN.md defines "its value classes" as these row kinds.
+    - w is a true row bound: every world of at most w rows (at most 4 a table, every foreign-key wiring) has been tried. So w is 0 to 4, and in practice 1 to 4, not the spike's weight. Worlds are still tried in the spike's weight order, which finds kills sooner.
+    - A disproof needs a lifted kill. A pass needs a compared world and w of at least 1. Anything else is untested, and the report then shows fuzz's sentence only.
+    - Spec env var `QUAACKS_ENUMERATE_WORLDS` (worlds tried; 0 turns it off). The enclave suite and the root suite (the replays) default to 0.
+    - The report shows the user's sentence only when nothing later (scenarios, counterexamples, production) disproved the rewrite; otherwise fuzz's sentence stays.
+    - The burndown records `bound_<w>: 1` on a pass and `untested: 1` otherwise. Color `var(--st-slate)`.
+  - **What landed:** 377b9967 (protocol: stage, `worlds`, `bound`, `MAX_BOUND` 4), 577003a7 (`Fuzz.search`, `Fuzz::Enumerate` with `Kinds`, `Worlds` and `Limit`, and a spec that checks the bound against brute force), 304ade24 (whitelist and egress), be6ca21d (`RewriteFuzz` wiring, burndown, the `enumerate_disproved` fate, `rule_bugs`, the report payload, end-to-end step specs), cf56f60d (driver: wording, progress line, Sankey layer, stage sentence, color), 6434905b (root suite turns enumerate off), 9570e94b (DESIGN.md), 49d33590 (LeakCheck spec), and the fix round: c20296de, efa304e7, 04be9322.
+  - **Measured** (production stop rule, 300 s deadline): all 76 wrong rewrites in the hard corpus caught, 75 by fuzz and `cv_topics_nulls_last` by enumerate (2.3 s, 143 worlds). 0 false disproofs on the hard corpus's 23 sound rewrites, the spike's Canvas corpus (28 sound) and e2e corpus (33 sound), and 121 LLM-written replies. w on the hard corpus's passes: 1 for 7, 2 for 8, 3 for 5, 4 for 10; on Canvas, 1 for 21 of 28; on e2e mostly 2. Enumerate usually takes its full 30 s and never ran past 30.03 s; building the kinds took at most 0.16 s a table.
+  - **First review: two blocking findings, both vacuous tests; the code was correct.** The NOT NULL foreign-key branch of `Worlds#viable?` wasn't pinned (fixed by c20296de, a NOT NULL variant of the brute-force spec). "Drops a kill that doesn't lift" survived deleting `confirm`'s session reopen (fixed by efa304e7). The main session promoted a third: the report showed enumerate's sentence even when a later stage disproved the rewrite, against DESIGN.md (fixed by 04be9322). 48 of 54 mutants were killed. The first review's minor findings went to 20261012-26 and -27, and the builder's suggestions to -29, -30, -31 and 20261012-15's item 2.
+  - **Second review: landable**, no blocking findings. Every named mutant now goes red. Two minors (the progress line, and a hand-kept list of later disproofs) went to 20261012-28.
+  - **Per-commit check** (on 04be9322; `main` had no commits the branch lacked): RuboCop clean; protocol and enclave (6732 examples) passed; driver and root only the four accepted failures.

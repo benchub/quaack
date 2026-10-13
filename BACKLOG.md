@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-11: rewrite-test no longer crashes when the original query fails on a scenario's rows. vacuity-guard treats such a fixture like one that won't load, and `s1_load_rule` can now say `original_failed` (added to the protocol's `VacuityDiagnostic::LOAD_RULES`). fixture-compare skips the fixture for every candidate. A candidate compared on no fixture ends with rule `original_failed` and no scenario, and its fate and burndown drop are `original_failed`. The report says the original failed on the test data.
 - 20261012-22: once the original has failed on some fixture, a candidate passes only if the original returned a row with a value that's neither NULL nor zero on some fixture where it ran; otherwise it ends `original_failed`. No new reported field.
 - 20261012-13: fuzz draws values from world knowledge (`Fuzz::WorldValues`) and, in a quarter of worlds, many copies of a row (a query's integer constant up to 100, ±1). A disproof's size per table is capped at 5, meaning "5 or more": the enclave, egress (`Protocol::FuzzResult::MAX_SIZE`), the driver's transport check and the report payload all refuse more, and the report says "5 or more rows".
+- 20261012-3: after a fuzz pass, rewrite-test runs a new stage, `enumerate`: every world of up to w rows over each table's row kinds, for at most 30 s. The `rewrite_test` message's `stage` can be `enumerate`, and it gains `worlds` and `bound` (nil or 0 to 4, `Protocol::FuzzResult::MAX_BOUND`), checked in egress and the driver's transport. The report payload gains the fate `enumerate_disproved` and each rewrite's `worlds` and `bound`. The burndown gains the stage `enumerate`, between fuzz and rewrite-test. An enumerate pass counts as tested when ScenarioTests refuses or runs out of time. New spec env var `QUAACKS_ENUMERATE_WORLDS` (0 turns it off).
 
 ## How this file works.
 
@@ -836,21 +837,7 @@ From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables m
 
 ### 20261012-2. rewrite-test: a disproof search over small random databases on the queries' own tables. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says.
-
-From 20261012-2. A random search's pass says only that N random databases didn't differ. The spike's algorithm B enumerates worlds instead. It reduces each row to a kind, a tuple of value classes per column drawn from the same value domains, and tries every world in order of total rows, so a pass can say "no database of at most w rows over these value classes differs". In the spike, in 15 s, w reached 8 to 12 on single-table queries, 4 to 8 on two tables, and 4 on four tables. It caught 151 of 152 wrong mutants (it missed one that needs 4 orders per customer) and 32 of 34 wrong Canvas rewrites (two 4-table queries need more than 4 rows). Run it when the random search finds nothing, within the same per-rewrite cap and saturation rule. Like the search (20261012-2), it's its own burndown stage, `enumerate`, between `fuzz` and rewrite-test (the user, 2026-10-12). It gets a record with drops by rule, the worlds it tried, and the bound w it finished as extras, plus everything that stage needs in the Sankey, the table, the stage sentence, the fates, and `rule_bugs`. Decide with the user how a pass is worded (such as "survived N random small databases and every database of up to w rows over its value classes"), where it shows (the rewrite's section and the burndown), and how the counts leave the enclave (integers only).
-
-Answers (the user, 2026-10-12):
-- Enumerate runs for at most 30 s after fuzz passes, inside the rewrite's 5-minute budget. It reports the largest w it finished.
-- A pass is worded "Found no difference on N random datasets, or on any dataset of up to w rows over its value classes." It shows in the rewrite's section and in the burndown. N, w and the number of worlds tried leave the enclave as integers.
-- An enumerate pass counts as tested even when ScenarioTests refuses the query, as a fuzz pass does.
-
-Like fuzz and the counterexample rounds (20261012-10), a world where the original fails disproves nothing. Only a candidate data error where the original ran counts as a kill, as fuzz's `DataError.candidate_only?` decides.
-
-- **Depends on:** 20261012-2.
-- **Came from:** The user and the disproof spike, 2026-10-12.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-4. rewrite-test: replace ScenarioTests with the disproof search.
 
@@ -976,7 +963,7 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 ### 20261012-15. fuzz: minors from the review of 20261012-2.
 
 1. **A counterexample found just as the deadline expires turns into a pass** (`fuzz.rb`: the deadline rescue near the shrink and lift, and `ended`). If the rewrite's deadline expires while a counterexample is being shrunk or lifted, the counterexample is dropped and `ended` returns passed. ScenarioTests then expires at once, and the fuzz pass replaces its `out_of_time`, so the "not tested in time" caution is lost. The fix: a deadline that expires mid-shrink or mid-lift leaves fuzz undecided, so the rewrite goes on as `out_of_time` would.
-2. **`QUAACKS_FUZZ_TRIALS` isn't confined to specs** (`fuzz/stop_rule.rb`). Set on a jump server, it quietly weakens the search, and 0 turns it off. Say so when it's set: a line on stderr, or a count in the fuzz burndown record, so a weakened run can't pass for a normal one.
+2. **`QUAACKS_FUZZ_TRIALS` isn't confined to specs** (`fuzz/stop_rule.rb`). Set on a jump server, it quietly weakens the search, and 0 turns it off. Say so when it's set: a line on stderr, or a count in the fuzz burndown record, so a weakened run can't pass for a normal one. 20261012-3 added `QUAACKS_ENUMERATE_WORLDS` (`fuzz/enumerate/limit.rb`), which has the same problem: it caps enumerate at n worlds instead of 30 s, and 0 turns it off. Cover both.
 3. **Done by 20261012-13** (sizes are capped at 5, "5 or more", in the enclave, egress, the driver and the report). **Egress doesn't cap a disproof's sizes.** A size is never more than 4, the generator's most rows per table, but `FuzzResult.size?` accepts any positive count. Cap it at the generator's maximum. A shrunk size or a trial count can vary with a query's literal, such as a LIMIT or HAVING threshold. The user asked for both fields, and 20261010-47 is the precedent for counts like these. A cap narrows what a size can carry.
 4. **No spec checks that fuzz never disproves a sound replayed rewrite.** The replay specs check only that each planted wrong rewrite is disproved. Assert that no rewrite outside a run's `outcome.wrong` gets `fuzz_disproved`.
 5. **The INTERSECT ALL versus INTERSECT trap (e2e case 100) isn't caught at the spec setting.** It needs 4 rows sharing one key. It was missed at 378 and 3,000 trials and found at 5,285, well inside the 30 s production floor, so production catches it. A spec at 40 trials can't show that. Either add a spec at a trial count that catches it, or note in the fuzz spec why it's left out.
@@ -1090,4 +1077,71 @@ Find where the time goes: copies worlds load up to 101 rows a table, a quarter o
 - **Came from:** The build and review of 20261012-13, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261012-26. enumerate: an error during enumerate throws away fuzz's pass.
+
+From the first review of 20261012-3 (minor). `Fuzz.search` runs fuzz, then enumerate after a fuzz pass, in one call (`Search#call` in `enclave/lib/quaack/enclave/fuzz.rb`). Enumerate rescues the deadline itself, but nothing rescues a `PG::Error`, `ArenaRunner::Error` or `Fuzz::Error` raised while it builds kinds, runs a world, or reopens the session after a failed lift (`confirm`). That error leaves `Fuzz.search`, and `RewriteFuzz.search` rescues it as `UNTESTED`, so both outcomes come back untested and fuzz's pass, with its trials, is lost. The fuzz burndown then records the rewrite untested too, and a ScenarioTests refusal is no longer covered by the fuzz pass.
+
+Fix it test first: make enumerate fail after fuzz passes (for example, a session reopen that raises), and check that fuzz's pass and trials stand, enumerate is untested, and both burndown records say so. Catch the error around enumerate in `Search#call`, not in `RewriteFuzz`.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261012-3, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-27. enumerate: minors from the first review of 20261012-3.
+
+1. **`bound` leaves the enclave when enumerate compared nothing** (`Enumerate::Run#outcome` in `enclave/lib/quaack/enclave/fuzz/enumerate.rb`). `outcome` always sends `@worlds.bound(@done)`, so when every world was illegal (it failed to load, or the original errored) the verdict is untested but `bound` can be up to 4. The driver's `fuzz_line` (`report/rewrites.rb`) and `search_note` (`pipeline.rb`) key on `bound` being 1 to 4, not on the verdict, so the rewrite's section and progress line would say "or on any dataset of up to 4 rows" for an enumeration that compared nothing. Removing `@compared.positive? &&` from `ended` survives every spec. Send `bound` only with a verdict of passed or disproved (nil otherwise), test first, with a spec where every enumerated world is illegal.
+2. **DESIGN.md's value classes overstate what a join key gets.** Its enumerate section says a kind gives a value to each column the queries "read or join on", and that a join or foreign key column gets its key class's values. But a key the plan fills (`:pk`) is fixed by the row's position ("the nth key value"), with no classes. Say which key columns get classes and which are fixed.
+3. **Two surviving mutants** in the enumerate code. Removing the `@lifts >= LIFTS` stop in `Enumerate::Run#step` survives, so nothing checks that enumerate stops after fuzz's limit of unlifted kills. Changing `Kinds::KEY_CLASS` from 3 to 1 survives, so nothing checks that a key column gets more than one key class. Add a test that goes red under each, or say in a comment why it can't. (`viable? || true` in `Worlds` also survives, but it's equivalent: it adds only row splits that yield no worlds.)
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261012-3, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-28. Enumerate's pass sentence: the progress line, and the list of later disproofs.
+
+From the second review of 20261012-3 (minor).
+
+1. **The progress line doesn't follow the report's rule.** DESIGN.md's enumerate section says the rewrite's section shows "Found no difference on N random datasets, or on any dataset of up to w rows over its value classes." only when nothing later disproved the rewrite, and that "the progress line says the same". But `search_note` (`driver/lib/quaack/driver/pipeline.rb`) shows that sentence whenever `bound` is positive, even on a `rewrite_test` message with stage `rewrite-test` and `passed` false, the case where the scenarios disproved the rewrite. The report section for the same rewrite shows fuzz's sentence. Fix test first in `driver/spec/pipeline_progress_spec.rb`: when the message has `passed` false, show fuzz's "Survived N random small databases…" line.
+2. **`LATER_DISPROOFS` is a hand-kept list** (`driver/lib/quaack/driver/report/rewrites.rb`). It names the three fates where a later stage disproved the rewrite: `rewrite_test_disproved`, `counterexamples_disproved` and `production_mismatch`. A disproof fate added later would get the enumerate sentence by default. Derive it from `Accountability::OUTCOMES` (the disproof fates, less `SEARCH_FAILED`'s), or add a spec that the two agree.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261012-3, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-29. The recorded pipeline replays never run enumerate.
+
+From the build of 20261012-3. The root suite sets `QUAACKS_ENUMERATE_WORLDS=0` for the replays' `quaacks` children, so no recorded run sends an enumerate pass or disproof through the driver: its transport check, the report's enumerate sentence, the `enumerate_disproved` fate, the burndown's `enumerate` stage and its Sankey layer are only covered by specs that build the messages by hand. With enumerate on at 30 s, the `key_in_self_join` replay spent 30 s for a bound of 1, which is why the builder left it off.
+
+Add a replay variant that turns enumerate on with a small world cap, so its verdict doesn't depend on the machine's speed, and check that it reaches the report: a rewrite whose section shows the enumerate sentence with its bound, and the `enumerate` stage in the burndown. If a planted run can be made to have a rewrite only enumerate catches (such as a NULLS LAST change, like `cv_topics_nulls_last`), check its `enumerate_disproved` fate too. Keep the per-commit check's run time about the same: put the variant in `rake full` if it's slow.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-3, 2026-10-13.
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-30. enumerate: a primary key the queries read gets only a few key classes.
+
+From the build of 20261012-3. In `Fuzz::Enumerate::Kinds` (`enclave/lib/quaack/enclave/fuzz/enumerate/kinds.rb`), a key column gets the first three values of its key class and the first two of the shared key pool (`KEY_CLASS`, `KEYS`), even when the queries compare it with a constant, as in `id > 100` or keyset pagination's `id > $1`. So the queries' constants and their neighbours, which a read column gets first, may never be a key's class, and enumerate can't put a row on each side of the boundary. Fuzz's random worlds cover some of this.
+
+Check it on a query that reads its key with a range (such as keyset pagination over `id`) against a rewrite that moves the boundary by one. If enumerate misses it, give a key column the queries compare with a constant its read classes too (the constants and their neighbours first), while keeping the key unique in a world. Measure on the hard corpus: no false disproofs, and the bound w on passes before and after.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-3, 2026-10-13.
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-31. enumerate's pass sentence at w = 1.
+
+From the build of 20261012-3. A pass with w = 1 says only that every one-row database (one row in one table) gave the same result. On queries over several tables that's common: 21 of the 28 sound Canvas rewrites passed at w = 1, since a join needs a row in each table. The report then says "Found no difference on N random datasets, or on any dataset of up to 1 row over its value classes.", which is true but may read as more than it is.
+
+Open question for the user: at w = 1, should the rewrite's section keep fuzz's sentence ("It also survived N random small databases built around its own values."), use the enumerate sentence as now, or word it another way? The same choice applies to the progress line and to the burndown's `bound_1` count.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-3, 2026-10-13.
+- **Design:** rewrite-test.
+- **Status:** todo (open question for the user)
 
