@@ -15,6 +15,7 @@ require_relative "fuzz/domains"
 require_relative "fuzz/generator"
 require_relative "fuzz/session"
 require_relative "fuzz/lift"
+require_relative "fuzz/enumerate"
 
 module Quaack
   module Enclave
@@ -63,16 +64,23 @@ module Quaack
 
       module_function
 
-      def run(conn, original, candidate, stop:, honour: [], seed: nil, # rubocop:disable Metrics/ParameterLists
-              statement_timeout_ms: ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS)
+      # The fuzz search's Outcome and enumerate's (Enumerate::Outcome).
+      Results = Data.define(:fuzz, :enumerate)
+
+      def run(conn, original, candidate, stop:, **) = search(conn, original, candidate, stop:, enumerate: nil, **).fuzz
+
+      # The fuzz search, then, if it passed and enumerate is an
+      # Enumerate::Limit, enumerate in the same session, as Results.
+      def search(conn, original, candidate, stop:, enumerate:, honour: [], seed: nil, # rubocop:disable Metrics/ParameterLists
+                 statement_timeout_ms: ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS)
         queries = [original, candidate]
         queries.each_with_index { |sql, i| ArenaRunner::StatementCheck.check(sql, :query, i) }
         footprint = footprint(queries)
-        return untested if footprint.empty? || unjudged?(original, candidate)
+        return Results.new(fuzz: untested, enumerate: Enumerate.untested) if footprint.empty? || unjudged?(*queries)
 
         quietly(conn) do
           Search.new(conn, footprint, queries, honour:, statement_timeout_ms:)
-                .call(stop, Random.new(seed || seed(*queries)))
+                .call(stop, Random.new(seed || seed(*queries)), enumerate)
         end
       end
 
@@ -141,17 +149,42 @@ module Quaack
           @lifts = 0
         end
 
-        def call(stop, rng)
-          return Fuzz.untested unless open
+        def call(stop, rng, limit)
+          return Results.new(fuzz: Fuzz.untested, enumerate: Enumerate.untested) unless open
 
-          search(stop, rng)
-        rescue Deadline::Expired
-          ended
+          fuzz = fuzzed(stop, rng)
+          Results.new(fuzz:, enumerate: fuzz.verdict == :passed && limit ? enumerate(limit) : Enumerate.untested)
         ensure
           @session.close
         end
 
+        # One trial on rows in the session.
+        def trial(rows) = @session.trial(rows)
+
+        # A kill shrunk and lifted, as [rule, sizes], or nil, with the
+        # session open again to go on.
+        def confirm(rows)
+          rows = shrink(rows)
+          @session.close
+          rule = @lift.call(rows, **@queries)
+          return [rule, sizes(rows)] if rule
+
+          @session.open
+          nil
+        end
+
         private
+
+        def fuzzed(stop, rng)
+          search(stop, rng)
+        rescue Deadline::Expired
+          ended
+        end
+
+        def enumerate(limit)
+          kinds = Enumerate::Kinds.new(@catalog, @generator.plan, @domains)
+          Enumerate::Run.new(self, Enumerate::Worlds.new(@catalog, @generator.plan, @domains, kinds), limit).call
+        end
 
         def search(stop, rng)
           until stop.stop? || @lifts >= LIFTS
@@ -190,13 +223,8 @@ module Quaack
         # session open again to search on.
         def lifted(rows)
           @lifts += 1
-          rows = shrink(rows)
-          @session.close
-          rule = @lift.call(rows, **@queries)
-          return outcome(:disproved, rule, sizes(rows)) if rule
-
-          @session.open
-          nil
+          rule, sizes = confirm(rows)
+          outcome(:disproved, rule, sizes) if rule
         end
 
         # Drops one row at a time while the world still kills, until no row
