@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "arena_runner"
 require_relative "denormalized_fixture"
 require_relative "result_comparison"
+require_relative "result_comparison/original_rerun"
 require_relative "scenarios"
 require_relative "vacuity_guard"
 
@@ -30,6 +31,21 @@ module Quaack
     # (ArenaRunner::Cancel.foreign?). A candidate
     # that matches every scenario passes, with scenario nil.
     #
+    # A fixture on which the original itself fails (a division by a column
+    # that's 0 there, say) says nothing about a candidate, like one that
+    # won't load. When a comparison fails other than by a cancel QUAACK
+    # didn't send, ResultComparison::OriginalRerun says whether the
+    # original failed there. If it did, the fixture is skipped, for this
+    # candidate and the later ones, and the rest run. Then a candidate
+    # passes only if, on some fixture left, the original returns a row
+    # holding a value that's neither NULL nor zero (shows?). One that
+    # matched only where the original returned nothing, such as S0's empty
+    # tables, an aggregate's 0 or NULL there, or S1's near misses alone,
+    # was compared on nothing. It doesn't pass: its Result has the rule
+    # :original_failed and scenario nil, a runner failure to RewriteFate.
+    # Those fixtures still run, and can disprove. When the original fails
+    # on no fixture, nothing asks what it returned.
+    #
     # honour is the DenormalizedFixture::Copies of a rule's rewrite under
     # test. Every fixture, the guard's included, then keeps each copy on
     # the class's rows. rewrite-test and counterexamples test one rewrite at a time, so the
@@ -51,7 +67,8 @@ module Quaack
       # a unique key (Scenarios::Builder#dropped). loads counts the fixtures
       # loaded in arena (ArenaRunner#loads), the guard's included. s1_load_rule
       # s1_rows and s1_nonzero_rows are vacuity-guard's diagnostic
-      # (VacuityGuard::Result): the rule S1 failed to load with, the
+      # (VacuityGuard::Result): the rule S1 failed to load with (or
+      # :original_failed when the original failed on S1's rows), the
       # original's row count on S1, and how many of those rows are nonzero, each
       # nil when it doesn't apply (and both nil on a refusal).
       # untested_paths are the untested atoms' paths into the original's parse
@@ -72,7 +89,8 @@ module Quaack
         runner = DenormalizedFixture::Runner.new(conn, honour, statement_timeout_ms:)
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql, search:)
-        results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }
+        fixtures = fixtures(guard.scenarios, builder.spills)
+        results = candidates.map { |candidate| test(runner, fixtures, sql, candidate) }
         tested(guard, builder, results, runner.loads)
       rescue Scenarios::Error => e
         refused(candidates, e.rule, cycle: e.cycle, loads: runner.loads)
@@ -94,20 +112,81 @@ module Quaack
                    s1_nonzero_rows: nil)
       end
 
-      # A scenario's further fixtures (spills, see Scenarios::Parts) run
-      # after its first, under its name.
-      def test(runner, scenarios, spills, sql, candidate)
-        Scenarios::NAMES.each do |name|
-          [scenarios.fetch(name), *spills.fetch(name, [])].each do |rows|
-            verdict = ResultComparison.compare_in_load_orders(runner, rows, original: sql, candidate:)
-            next if verdict.match?
+      # A fixture to compare on, named for its scenario. skipped is set once
+      # the original fails on it, for every candidate after. shows is
+      # whether the original returns a nonzero row there (shows?), once
+      # asked.
+      Fixture = Struct.new(:name, :rows, :skipped, :shows)
 
-            return Result.new(passed: false, scenario: name, rule: verdict.rule, load_order: verdict.load_order)
-          rescue ArenaRunner::Error => e
-            return failed(name, e)
-          end
+      # Every scenario's fixtures, S0 to S6: its first, then its further
+      # ones (spills, see Scenarios::Parts), under its name.
+      def fixtures(scenarios, spills)
+        Scenarios::NAMES.flat_map do |name|
+          [scenarios.fetch(name), *spills.fetch(name, [])].map { Fixture.new(name, it, false) }
         end
-        Result.new(passed: true, scenario: nil, rule: nil, load_order: nil)
+      end
+
+      # The first fixture's Result that doesn't pass, else PASSED. When the
+      # original failed on some fixture, it's ORIGINAL_FAILED instead unless
+      # the original shows a nonzero row on a fixture left (shows?). A
+      # fixture where it returns none, such as S0's empty tables or S1's
+      # near misses alone, runs and can disprove, but doesn't count.
+      def test(runner, fixtures, sql, candidate)
+        fixtures.each do |fixture|
+          result = compared(runner, fixture, sql, candidate) unless fixture.skipped
+          return result if result && !result.passed
+        end
+        matched(runner, fixtures, sql)
+      end
+
+      # A candidate's Result once it matched on every fixture left.
+      def matched(runner, fixtures, sql)
+        return PASSED if fixtures.none?(&:skipped)
+
+        fixtures.any? { !it.skipped && shows?(runner, it, sql) } ? PASSED : ORIGINAL_FAILED
+      end
+
+      # Whether the original returns a row on fixture holding a value
+      # that's neither NULL nor zero (VacuityGuard.nonzero_rows). It costs
+      # one more load of the fixture, once a run, kept on the fixture.
+      def shows?(runner, fixture, sql)
+        return fixture.shows unless fixture.shows.nil?
+
+        fixture.shows = runner.with_fixture(fixture.rows) { VacuityGuard.nonzero_rows(it.query(sql).rows).positive? }
+      rescue ArenaRunner::Error => e
+        raise if ArenaRunner::Cancel.foreign?(e)
+
+        fixture.shows = false
+      end
+
+      PASSED = Result.new(passed: true, scenario: nil, rule: nil, load_order: nil)
+
+      # A candidate compared only where the original failed or showed no
+      # nonzero row was compared on nothing, so it doesn't pass.
+      ORIGINAL_FAILED = Result.new(passed: false, scenario: nil, rule: :original_failed, load_order: nil)
+
+      # The candidate's Result on fixture, or nil when the original fails
+      # there, which skips it.
+      def compared(runner, fixture, sql, candidate)
+        verdict = ResultComparison.compare_in_load_orders(runner, fixture.rows, original: sql, candidate:)
+        return PASSED if verdict.match?
+
+        Result.new(passed: false, scenario: fixture.name, rule: verdict.rule, load_order: verdict.load_order)
+      rescue ArenaRunner::Error => e
+        return failed(fixture.name, e) unless original_failed?(runner, fixture.rows, sql, e)
+
+        fixture.skipped = true
+        nil
+      end
+
+      # Whether error, from a comparison on rows, came from the original
+      # failing there (ResultComparison::OriginalRerun), not from a load or
+      # the candidate: a fixture that won't load fails the rerun's load too,
+      # which says no. A cancel QUAACK didn't send goes up.
+      def original_failed?(runner, rows, sql, error)
+        raise error if ArenaRunner::Cancel.foreign?(error)
+
+        ResultComparison::OriginalRerun.fails?(runner, rows, sql)
       end
 
       # A runner failure in scenario name: a Result, or the error itself,

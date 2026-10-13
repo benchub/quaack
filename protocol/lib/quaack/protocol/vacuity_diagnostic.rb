@@ -14,8 +14,10 @@ module Quaack
     #   VacuityDiagnostic.valid?({ "s1_load_rule" => nil, "s1_rows" => 3 })  # => true
     module VacuityDiagnostic
       # The rules a fixture load can fail with, as ArenaRunner raises them in
-      # its load and insert steps, plus other for any rule not named here.
-      LOAD_RULES = %w[fixture_load_failed insert_failed statement_timeout statement_canceled other]
+      # its load and insert steps, plus other for any rule not named here,
+      # and original_failed when S1 loaded but its rows made the original
+      # query fail (a division by zero, say).
+      LOAD_RULES = %w[fixture_load_failed insert_failed statement_timeout statement_canceled other original_failed]
                    .map(&:freeze).freeze
 
       # The most rows s1_rows may hold. S1 is a few dozen made-up rows (one

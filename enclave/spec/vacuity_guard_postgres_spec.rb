@@ -274,10 +274,25 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.retries).to eq(3)
   end
 
-  it "raises a query that fails on the loaded fixture, instead of reporting its atoms untested" do
+  it "reads a fixture the original fails on as exercising nothing, like one that won't load" do
     # Division by zero fails at the query step, after the fixture loaded.
-    # Only a load failure may be read as "exercised nothing".
-    expect { guard("SELECT o.id FROM fx.orders o WHERE o.qty / 0 > 1 AND o.status = 'open'") }
-      .to raise_error(Quaack::Enclave::ArenaRunner::Error) { |e| expect([e.rule, e.step]).to eq(%i[query_failed query]) }
+    # A fixture the original fails on says nothing about its atoms.
+    builder, result = guard("SELECT o.id FROM fx.orders o WHERE o.qty / 0 > 1 AND o.status = 'open'")
+    expect(result.untested).to eq(builder.atoms.map(&:shape))
+    expect([result.s1_load_rule, result.s1_rows, result.s1_nonzero_rows]).to eq([:original_failed, nil, nil])
+  end
+
+  it "still raises a foreign cancel from the original's query" do
+    canceled = Object.new
+    canceled.define_singleton_method(:with_fixture) do |_rows, **, &block|
+      tx = Object.new
+      tx.define_singleton_method(:query) do |_sql|
+        raise Quaack::Enclave::ArenaRunner::Error.new(:statement_canceled, step: :query, sqlstate: "57014", index: 0),
+              cause: nil
+      end
+      block.call(tx)
+    end
+    expect { guard_with(canceled) }
+      .to raise_error(Quaack::Enclave::ArenaRunner::Error) { |e| expect(e.rule).to eq(:statement_canceled) }
   end
 end

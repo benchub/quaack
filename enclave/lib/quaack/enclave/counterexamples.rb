@@ -115,7 +115,7 @@ module Quaack
       # A query that fails with statement_canceled, a cancel QUAACK didn't send (such as an operator's
       # pg_cancel_backend), says nothing about the candidate, so it's raised and ends the step, as in RunDiscipline
       # (ArenaRunner::Cancel.foreign?). Untested atoms with_true can't replace are skipped, and when a loosened
-      # original fails, the round keeps its verdict and covers nothing (covered).
+      # original fails, the round keeps its verdict and doesn't cover that atom (covered).
       def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
         verdict = ResultComparison.compare_in_load_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)
@@ -128,7 +128,8 @@ module Quaack
       end
 
       # The untested atoms' shapes this round exercised. A loosened original that fails on the fixture says nothing
-      # about the candidate, so it covers nothing and leaves the round's verdict as it is.
+      # about the candidate: VacuityGuard drops that atom alone, and the round's verdict stays as it is. Only an
+      # original that fails here (VacuityGuard::OriginalFailed) leaves the round covering nothing.
       def covered(runner, prepared, original, atoms, untested)
         exercised(runner, prepared, original, atoms, untested).map { |i| atoms[i].shape }
       rescue ArenaRunner::Error => e
