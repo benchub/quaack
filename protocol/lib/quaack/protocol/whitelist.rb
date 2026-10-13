@@ -139,9 +139,13 @@ module Quaack
       # load), and s1_nonzero_rows how many of them hold a nonzero value,
       # checked by Protocol::VacuityDiagnostic.valid?. stage is the stage
       # that decided it (nil, fuzz, or rewrite-test) and trials how many
-      # small random databases fuzz compared it on (nil or a count), both
+      # small random databases fuzz compared it on (nil or a count). Task
+      # 20261012-3 adds enumerate: stage may be enumerate, worlds is how many
+      # small databases enumerate compared (nil or a count), and bound the
+      # most rows of every database it tried (nil or 0 to 4). All are
       # checked by Protocol::FuzzResult.rewrite_test?. Never SQL or a row.
-      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials].freeze,
+      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials worlds
+                       bound].freeze,
       # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
       # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound

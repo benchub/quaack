@@ -21,6 +21,10 @@ RSpec.describe Quaack::Protocol::VacuityDiagnostic do
       .to include("s1_load_rule", "s1_rows", "s1_nonzero_rows")
   end
 
+  it "whitelists rewrite_test's fuzz and enumerate counts, which Protocol::FuzzResult checks (20261012-3)" do
+    expect(Quaack::Protocol::WHITELIST[:rewrite_test].map(&:name)).to include("stage", "trials", "worlds", "bound")
+  end
+
   it "takes a rule from the list or nil, and a row count or nil, and ignores other fields" do
     expect(valid?({ "s1_load_rule" => "fixture_load_failed", "s1_rows" => nil, "passed" => true })).to be(true)
     expect(valid?({ "s1_load_rule" => nil, "s1_rows" => 0 })).to be(true)
