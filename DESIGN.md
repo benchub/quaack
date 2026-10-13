@@ -1378,9 +1378,11 @@ Inserts load parents' tables first. When a foreign-key cycle leaves no such orde
 
 #### counterexample-compare. Compare results.
 
-Run the comparator from fixture-compare. Any mismatch disproves the candidate.
+Run the comparator from fixture-compare. Any mismatch disproves the candidate. So does the candidate failing where the original ran, such as by a division by zero (`query_failed`) or QUAACK's own statement timeout (`statement_timeout`): the rewrite errors where the original doesn't.
 
-For each atom that vacuity-guard marked as untested, also run the vacuity-guard test on this fixture. If the atom counts as exercised, record that counterexamples covered it.
+An original that fails on a round's rows disproves nothing, since the round says nothing about the candidate: LLMs reach for division by zero, overflow, and bad casts on their own. The comparison runs many queries, built from either query, so when one fails, the enclave runs the original's own comparison again, against itself, in each load order, and if a query fails there (by the runner's step, never Postgres's message), the original failed. The round is then reported like a load failure, with match nil and the rule `original_failed`, it records no evidence, and the next round runs. The driver tells the LLM its rows made the original query fail. A cancel QUAACK didn't send still ends the step.
+
+For each atom that vacuity-guard marked as untested, also run the vacuity-guard test on this fixture. If the atom counts as exercised, record that counterexamples covered it. If the original with an atom loosened fails on the round's rows, that says nothing about the candidate either: the round keeps its verdict and covers no atom.
 
 #### counterexample-rollback. Roll back.
 
