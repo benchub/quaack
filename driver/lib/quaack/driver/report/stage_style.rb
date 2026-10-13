@@ -25,6 +25,8 @@ module Quaack
           "operator-rewrites" => "var(--st-teal)",
           "assumption-check" => "var(--st-brown)",
           "plan-pruning" => "var(--st-rose)",
+          # The only other indigo stage is in the candidates' diagram.
+          "fuzz" => "var(--st-indigo)",
           "rewrite-test" => "var(--st-green)",
           "counterexamples" => "var(--st-gold)",
           "rewrite-index-ideas" => "var(--st-indigo)",

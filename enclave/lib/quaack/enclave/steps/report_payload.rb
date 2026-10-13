@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/fuzz_result"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/untested_states"
 require_relative "../burndown"
 require_relative "../candidate_ddl_redaction"
 require_relative "../clock_anchoring"
 require_relative "../dedupe"
+require_relative "../fuzz_sizes"
 require_relative "../index_candidate"
 require_relative "../measurement"
 require_relative "../planner_statistics"
@@ -71,7 +73,12 @@ module Quaack
       #                    the counterexample rounds covered, or nil if no
       #                    round ran), and
       #                    "evidence" (whether a counterexamples round compared it
-      #                    on loaded inserts; nil unless it survived) }
+      #                    on loaded inserts; nil unless it survived),
+      #                    "trials" (how many random small databases
+      #                    rewrite-test's fuzz search compared it on, a
+      #                    count, or nil), and "sizes" (a fuzz disproof's
+      #                    rows per table, [schema, table, rows], or nil;
+      #                    FuzzSizes, which egress checks too) }
       #   indexes          { built index name => { "ddl", "size",
       #                    "covered_by" (nil or an existing index),
       #                    "sources" (names of the sources that proposed it,
@@ -83,8 +90,8 @@ module Quaack
       #                    (DESIGN.md's negative-result), each index once,
       #                    with the searches it came up in, whether or not
       #                    top is empty
-      #   rule_bugs        [{ "rewrite", "rules", "step" (rewrite-test, counterexamples, or
-      #                    result-comparison) }]: each rule-made rewrite a test disproved
+      #   rule_bugs        [{ "rewrite", "rules", "step" (fuzz, rewrite-test, counterexamples,
+      #                    or result-comparison) }]: each rule-made rewrite a test disproved
       #                    (never a result-comparison timeout, which compares nothing,
       #                    nor a rewrite-test or counterexamples disproof of one resting on
       #                    a denormalized_equal assumption),
@@ -118,6 +125,10 @@ module Quaack
       # details are QUAACK's own constants: RewriteSource and RewriteFate
       # send no other, but for an fk_cycle's tables, which are schema and
       # each one the schema_subset entry holds. Untested atoms are rewrite-test's redacted shapes.
+      # A fuzz disproof's sizes are table names, which are schema, each one
+      # a schema-qualified relation original_sql or the rewrite's sql names,
+      # and row counts (FuzzSizes.check); trials is a count. Neither goes out
+      # otherwise.
       # index_sources is counts under Protocol::IndexSources' fixed source
       # names only, which egress checks.
       module ReportPayload # rubocop:disable Metrics/ModuleLength
@@ -160,12 +171,22 @@ module Quaack
 
         def rewrites(store, stats)
           context = RewriteFate.context(store)
+          original = original_sql(store)
           NegativeResult.rewrites(store).map do |name|
             entry = store.read(name)
             { "rewrite" => name, "sql" => entry["sql"], **RewriteSource.fields(entry),
               **RewriteFate.call(store, name, context), "plan" => rewrite_plan(store, name, stats),
-              **checks(store, name.delete_prefix("rewrite_")) }
+              **checks(store, name.delete_prefix("rewrite_")), **fuzz(store, name, original, entry["sql"]) }
           end
+        end
+
+        # rewrite-test's fuzz trials, if they're a count, and a disproof's
+        # sizes, if FuzzSizes.check passes them against the two queries.
+        def fuzz(store, name, original, sql)
+          tested = NegativeResult.optional(store, name.sub("rewrite_", "rewrite_tested_")) || {}
+          trials = tested["trials"]
+          { "trials" => (trials if Protocol::FuzzResult.trials?(trials)),
+            "sizes" => FuzzSizes.check(tested["sizes"], FuzzSizes.tables(original, sql)) }
         end
 
         def rewrite_plan(store, search, stats)

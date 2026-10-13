@@ -63,7 +63,8 @@ module CatalogNames
     ["quaack/enclave/steps/index_build.rb", "CREATE INDEX "] => "a replacement String#sub writes into DDL",
     ["quaack/enclave/clock_defaults.rb", "TABLE ONLY "] => "the middle of an ALTER TABLE built in pieces",
     ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces",
-    ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run"
+    ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run",
+    ["quaack/enclave/fuzz/session.rb", "EXPLAIN (ANALYZE"] => "a prefix the queries are explained after"
   }.freeze
 
   # Interpolations that hold a type's name that reads back as that type
@@ -78,6 +79,8 @@ module CatalogNames
     ["quaack/enclave/value_pools.rb", "@col.type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/scenarios/row_set.rb", "@schema.column(table, c).type"] =>
       "an ArenaSchema column's type, read on the arena connection",
+    ["quaack/enclave/fuzz/dictionary.rb", "col.type"] => "an ArenaSchema column's type, read on the arena connection",
+    ["quaack/enclave/fuzz/legal.rb", "type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/assumption_check/denormalized_equal.rb", "kind.type_name"] =>
       "schema.name, both quote_ident'd, from Equality.base"
   }.freeze

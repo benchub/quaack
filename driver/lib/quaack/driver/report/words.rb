@@ -41,10 +41,23 @@ module Quaack
                      "domain_check" => "a column's domain rejects every value QUAACK tried",
                      "exclusion_constraint" => "an exclusion constraint on its tables has no = column" }.freeze
 
-        # Where a rule_bugs entry's rewrite was proved wrong.
-        BUG_STEPS = { "rewrite-test" => "on made-up test data",
-                      "counterexamples" => "on test data the LLM wrote to break it",
-                      "result-comparison" => "on the real data" }.freeze
+        # How a rule_bugs entry's rewrite was proved wrong, by its step. fuzz
+        # also disproves a rewrite that fails where the original ran, and the
+        # entry doesn't say which.
+        BUG_STEPS = { "fuzz" => "was proved wrong on a random small database built around its own values",
+                      "rewrite-test" => "returned different results on made-up test data",
+                      "counterexamples" => "returned different results on test data the LLM wrote to break it",
+                      "result-comparison" => "returned different results on the real data" }.freeze
+
+        # How two results differed, by the comparison's rule.
+        MISMATCHES = { "column_count" => "the number of columns differs",
+                       "column_types" => "a column's type differs", "row_count" => "the row count differs",
+                       "value" => "a value differs", "multiset" => "the rows differ",
+                       "subset" => "it returned a row the original query can't return",
+                       "candidate_unordered" => "it doesn't keep the original query's order" }.freeze
+
+        # Where fuzz's query_failed disproved a rewrite (task 20261012-2).
+        FUZZ_FAILED = "it failed and the original query ran"
 
         # DESIGN.md's burndown's stages: the original query's index search.
         INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",
@@ -62,6 +75,7 @@ module Quaack
                            "operator-rewrites" => "Your own rewrites",
                            "assumption-check" => "Checking what each rewrite assumes",
                            "plan-pruning" => "Checking each rewrite can run differently from the original query",
+                           "fuzz" => "Testing on random small databases",
                            "rewrite-test" => "Testing on made-up edge-case data",
                            "counterexamples" => "Testing on data the LLM wrote to break them" }.freeze
         LATE_STAGES = { "rewrite-index-ideas" => "Choosing indexes for each rewrite",
@@ -80,6 +94,7 @@ module Quaack
                    "failed_to_plan" => "didn't plan", "output_mismatch" => "returned different columns",
                    "same_plans" => "planned the same as the original query",
                    "untested_atoms" => "conditions the test data never exercised",
+                   "trials" => "random small databases compared", "untested" => "not tested by the random search",
                    "too_many" => "over the limit of five", "bad_assumption" => "assumed something QUAACK can't check",
                    "unmet_assumption" => "assumed something your data doesn't hold",
                    "operator_warnings" => "warnings on your own rewrites",

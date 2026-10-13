@@ -5,6 +5,7 @@ require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
+require "quaack/protocol/fuzz_result"
 require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
@@ -13,6 +14,7 @@ require "quaack/protocol/step_counts"
 require "quaack/protocol/unchanged_atoms"
 require "quaack/protocol/untested_states"
 require "quaack/protocol/vacuity_diagnostic"
+require_relative "fuzz_sizes"
 require_relative "plain_data"
 
 module Quaack
@@ -148,9 +150,12 @@ module Quaack
       # fixed list and its s1_rows and s1_nonzero_rows each nil or a count (see
       # Protocol::VacuityDiagnostic.valid?), so no error message or value
       # rides out in them. Its rule must be nil or a lowercase word, such as
-      # the budget's out_of_time (Protocol::RewriteBudget.rule?).
+      # the budget's out_of_time (Protocol::RewriteBudget.rule?), and its
+      # stage and trials nil, a stage from the fixed list, and a count (see
+      # Protocol::FuzzResult.rewrite_test?).
       def check_rewrite_test(fields)
-        return if Protocol::VacuityDiagnostic.valid?(fields) && Protocol::RewriteBudget.rule?(fields["rule"])
+        return if Protocol::VacuityDiagnostic.valid?(fields) && Protocol::RewriteBudget.rule?(fields["rule"]) &&
+                  Protocol::FuzzResult.rewrite_test?(fields)
 
         raise Error, "a value in this rewrite_test message isn't a vacuity diagnostic"
       end
@@ -165,7 +170,8 @@ module Quaack
       # names (see Protocol::IndexSources.valid?), and is needed too. The
       # top, when sent, must carry only kinds from Protocol::CandidateKinds::KINDS.
       # Each rewrite's untested_unchanged must repeat only shapes of its own
-      # untested_atoms.
+      # untested_atoms. Each rewrite's fuzz sizes and trials must pass
+      # check_fuzz.
       # The report's other fields still go out unchecked.
       def check_report(fields)
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
@@ -175,9 +181,23 @@ module Quaack
         check_ranking(fields)
         check_untested_atoms(fields["rewrites"])
         check_suggested_drops(fields["labels"])
+        check_fuzz(fields)
+        check_hidden_statistics(fields)
+      end
+
+      def check_hidden_statistics(fields)
         return if !fields.key?("hidden_statistics") || Protocol::HiddenStatistics.valid?(fields["hidden_statistics"])
 
         raise Error, "a value in this report message has hidden statistics that aren't index names and a count"
+      end
+
+      # Each rewrite's fuzz sizes name only tables the queries name, and
+      # its trials are a count (see FuzzSizes.report?).
+      def check_fuzz(fields)
+        return if FuzzSizes.report?(fields["original_sql"], fields["rewrites"])
+
+        raise Error, "a value in this report message has fuzz sizes or trials that aren't the queries' tables " \
+                     "and counts"
       end
 
       # Each rewrite's untested_unchanged, if it has one, must be shapes the

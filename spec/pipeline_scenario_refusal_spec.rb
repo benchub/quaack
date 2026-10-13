@@ -17,8 +17,12 @@ module ScenarioRefusalRun
 
   module_function
 
-  def cached
-    @cached ||= begin
+  # fuzz false, as the refusal's examples run, turns rewrite-test's fuzz
+  # search off (PipelineReplay.without_fuzz): a fuzz pass would test the
+  # rewrite (task 20261012-2), so the refusal leaves a rewrite untested only
+  # when fuzz tests nothing.
+  def cached(fuzz: false)
+    (@cached ||= {})[fuzz] ||= fuzzed(fuzz) do
       server = TestPostgres.server
       Dir.mktmpdir("quaack-refusal") do |home|
         prod, racetrack = PromptPack.databases(server, QUERY)
@@ -29,6 +33,8 @@ module ScenarioRefusalRun
       end
     end
   end
+
+  def fuzzed(fuzz, &) = fuzz ? yield : PipelineReplay.without_fuzz(&)
 
   def add_check(server, db)
     conn = PG.connect(host: server.host, port: server.port, dbname: db, user: TestPostgres::USER,
@@ -112,13 +118,38 @@ RSpec.describe ScenarioRefusalRun do
       expect(runs.stderr).not_to include("(rewrite-test)")
     end
   end
+
+  # Task 20261012-2: with fuzz on, the same query's rewrite passes fuzz, so
+  # the refusal only skips ScenarioTests. The rewrite is tested and passed,
+  # goes on to the LLM's counterexamples (here empty answers) and
+  # measurement, and the run finishes.
+  describe "with rewrite-test's fuzz search on" do
+    refusal_spec do
+      let(:runs) { described_class.cached(fuzz: true) }
+      let(:rewrite) { runs.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
+
+      it "finishes both runs, testing the rewrite by fuzz alone, and ranks it" do
+        expect([runs.first_error, runs.second_error]).to eq([nil, nil])
+        expect(runs.entries).to include("rewrite_tested_1" => true, "rewrite_survived_1" => true,
+                                        "rewrite_index_ideas_1" => true)
+        expect(rewrite).to include("fate" => "ranked", "trials" => be_positive)
+        expect(runs.report["burndown"]["stages"]["fuzz"]["rewrite_1"]).to include("in" => 1, "out" => 1)
+      end
+
+      it "says in the report file how many random small databases the rewrite survived" do
+        expect(runs.html).to match(/It also survived [\d,]+ random small databases? built around its own values\./)
+        expect(runs.html).not_to include("never tested this rewrite")
+      end
+    end
+  end
 end
 
 # Task 20261003-43: the same run, but the refusal is an fk_cycle (DESIGN.md's
 # rewrite-test). A NOT NULL foreign key cycle between orders and a mixed-case
 # "Accounts" table can't be loaded, so the rule's rewrite is never tested, and
 # the report names the cycle's tables in the order the foreign keys point,
-# the mixed-case one quoted as the catalog quotes it.
+# the mixed-case one quoted as the catalog quotes it. Like ScenarioRefusalRun's
+# refusal, it runs with rewrite-test's fuzz search off.
 module FkCycleRun
   CYCLE = <<~SQL
     CREATE TABLE public."Accounts" (id int PRIMARY KEY, order_id int NOT NULL);
@@ -132,7 +163,7 @@ module FkCycleRun
   module_function
 
   def cached
-    @cached ||= begin
+    @cached ||= PipelineReplay.without_fuzz do
       server = TestPostgres.server
       Dir.mktmpdir("quaack-fk-cycle") do |home|
         prod, racetrack = PromptPack.databases(server, QUERY)

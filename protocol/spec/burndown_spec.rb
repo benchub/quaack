@@ -10,7 +10,7 @@ RSpec.describe Quaack::Protocol::Burndown do
   it "lists each stage of DESIGN.md's burndown tables once, as a frozen String" do
     expect(described_class::STAGES).to eq(%w[index-from-query index-from-plan index-dedupe index-test llm-index-ideas
                                              llm-index-refine index-rank rewrite-rules llm-rewrites assumption-check
-                                             operator-rewrites plan-pruning rewrite-test counterexamples
+                                             operator-rewrites plan-pruning fuzz rewrite-test counterexamples
                                              rewrite-index-ideas measurement])
     expect(described_class::STAGES).to be_frozen.and(all(be_frozen))
   end

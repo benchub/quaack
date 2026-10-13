@@ -801,6 +801,23 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.full_message(highlight: false)).not_to include(sentinel)
     end
 
+    # Egress sends a rewrite_test only if its stage and trials pass
+    # Protocol::FuzzResult.rewrite_test? (20261012-2), so the driver checks the same.
+    it "reads a rewrite_test with fuzz's stage and trials, and refuses one whose stage or trials isn't on the list" do
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"row_count",) +
+             %("stage":"fuzz","trials":41200})
+      result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first).to include("stage" => "fuzz", "trials" => 41_200)
+      failed = raw("print #{"#{good.sub("row_count", "query_failed")}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+      expect(failed.messages.first).to include("stage" => "fuzz", "rule" => "query_failed")
+      [%("stage":"#{sentinel}"), %("trials":"#{sentinel}"), %("trials":-1)].each do |field|
+        error = refusal(%({"type":"rewrite_test","rewrite":"rewrite_1","passed":true,#{field}}))
+        expect(error.rule).to eq("unexpected_output")
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Egress sends a report only if its plans pass Protocol::PlanNodes.valid?,
     # so the driver checks the same.
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
@@ -874,6 +891,26 @@ RSpec.describe Quaack::Driver::Transport do
       expect(result.messages.first["labels"].first["suggested_drops"]).to eq(drops)
       [[drops.first.merge("predicate" => sentinel)], [drops.first.merge("idx_scan" => sentinel)],
        sentinel].each do |planted|
+        error = refusal(report.call(planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
+    # Task 20261012-2. Egress sends a rewrite's sizes and trials only if
+    # Protocol::FuzzResult passes them, so the driver checks the same.
+    it "reads a report whose rewrites' sizes and trials Protocol::FuzzResult passes, and refuses one it doesn't" do
+      report = lambda do |fields|
+        JSON.generate({ "type" => "report", "original_plan" => [], "labels" => [], "index_sources" => index_sources,
+                        "rewrites" => [{ "rewrite" => "rewrite_1", "plan" => nil, **fields }] })
+      end
+      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200 }
+      result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first["rewrites"].first.slice("sizes", "trials")).to eq(good)
+      [{ "sizes" => [["public", "orders", sentinel]] }, { "sizes" => [["public", "orders", 2, sentinel]] },
+       { "sizes" => sentinel }, { "trials" => sentinel }, { "trials" => -1 }].each do |planted|
         error = refusal(report.call(planted))
 
         expect(error.rule).to eq("unexpected_output"), "for #{planted}"

@@ -88,6 +88,23 @@ module Quaack
         ["plan-pruning", :rewrites, { in: pruning.values.sum, dropped: pruning, out: 0 }] if pruning.any?
       end
 
+      # Records fuzz's burndown for search, rewrite_<n> (task 20261012-2,
+      # Burndown.record_latest): in 1, and out 1 unless it disproved the
+      # rewrite, dropped then by its rule, a constant of
+      # RewriteFate::FUZZ_DISPROOFS (failed for any other). extra trials is how
+      # many worlds it compared, and untested 1 says it compared none.
+      # outcome is Fuzz.run's.
+      def record_fuzz(store, search, outcome)
+        disproved = outcome.verdict == :disproved
+        untested = outcome.verdict == :untested ? { untested: 1 } : {}
+        Burndown.record_latest(
+          store, [["fuzz", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
+                                            out: disproved ? 0 : 1, extra: { trials: outcome.trials, **untested } }]]
+        )
+      end
+
+      def fuzz_drop(rule) = Steps::RewriteFate::FUZZ_DISPROOFS.include?(rule.to_s) ? rule.to_sym : :failed
+
       # Records rewrite-test's burndown for search, rewrite_<n> (Burndown.record_latest): in 1,
       # out 1 if it passed, or dropped by why it didn't (test_drop), with
       # extra untested_atoms and vacuity_guard_retries, and the fixtures it

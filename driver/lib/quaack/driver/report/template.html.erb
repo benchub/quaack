@@ -148,6 +148,9 @@
 <% if (left = dropped_line(r)) %>
 <p class="dropped"><%= h left %></p>
 <% end %>
+<% if (survived = fuzz_line(r)) %>
+<p class="fuzz"><%= h survived %></p>
+<% end %>
 <% if (line = counterexample_line(r)) %>
 <p class="counterexamples"><%= h line %></p>
 <% end %>

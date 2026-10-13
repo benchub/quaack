@@ -24,6 +24,10 @@ module Quaack
       #   ranked                   selection ranked one of its labels
       #   same_plans               plan-pruning found it plans as the original
       #                            does, so it was never tested
+      #   fuzz_disproved           rewrite-test's fuzz search (task 20261012-2)
+      #                            found a small database where the results
+      #                            differ, or the rewrite failed where the
+      #                            original ran; with the rule
       #   rewrite_test_disproved          a rewrite-test scenario got different results;
       #                            with the scenario and the rule
       #   rewrite_test_untested           rewrite-test couldn't build scenarios for the
@@ -75,7 +79,7 @@ module Quaack
       # each the schema_subset entry's own (the catalog's relations). A
       # cycle with any other value goes out as nil.
       module RewriteFate
-        FATES = %w[ranked same_plans rewrite_test_disproved rewrite_test_untested rewrite_test_failed
+        FATES = %w[ranked same_plans fuzz_disproved rewrite_test_disproved rewrite_test_untested rewrite_test_failed
                    rewrite_test_out_of_time
                    counterexamples_disproved counterexamples_failed production_mismatch production_timed_out
                    production_not_compared below_top_three footprint_tie not_better measurement_timed_out
@@ -83,6 +87,10 @@ module Quaack
 
         # The rules that say two results differed, in rewrite-test, counterexamples, and result-comparison.
         MISMATCHES = ResultComparator::MISMATCHES.map(&:to_s).freeze
+
+        # The rules a fuzz disproof carries: a mismatch, or query_failed,
+        # the rewrite failing on the data where the original ran (Fuzz::Lift).
+        FUZZ_DISPROOFS = [*MISMATCHES, "query_failed"].freeze
 
         # The rules that end a rewrite-test scenario or a counterexample-compare round with nothing
         # compared: the comparison's refusal, unsupported_order, and every one of
@@ -165,12 +173,17 @@ module Quaack
           return untested(tested, context) if tested["refused"] == true
           return fate("rewrite_test_out_of_time") if tested["rule"] == Protocol::RewriteBudget::RULE
 
+          return fuzz(tested) if fuzz?(tested)
+
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
           return fate("rewrite_test_disproved", scenario:, rule: mismatch) if mismatch
 
           fate("rewrite_test_failed", scenario:, rule: known(FAILURES, tested["rule"]))
         end
+
+        def fuzz?(tested) = tested["stage"] == "fuzz" && known(FUZZ_DISPROOFS, tested["rule"])
+        def fuzz(tested) = fate("fuzz_disproved", rule: tested["rule"])
 
         def untested(tested, context)
           rule = known(REFUSALS, tested["rule"])

@@ -72,7 +72,10 @@ module LeakCheck
 
     private
 
-    def child_env(env) = { **env, "HOME" => home }
+    # The spec process's QUAACKS_FUZZ_TRIALS (spec_helper.rb) goes to the
+    # child unless env says otherwise: Bundler.with_unbundled_env, which
+    # IsolatedInstall runs it in, would drop it.
+    def child_env(env) = { "QUAACKS_FUZZ_TRIALS" => ENV.fetch("QUAACKS_FUZZ_TRIALS", nil), **env, "HOME" => home }
 
     def outcome(run)
       Outcome.new(stdout: run.stdout, stderr: run.stderr, status: run.status, loaded_features: run.loaded_features)

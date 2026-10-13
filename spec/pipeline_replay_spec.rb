@@ -101,15 +101,16 @@ RSpec.describe PipelineReplay do
           end
 
           it "never reports the subtly wrong rewrite as a winning fix" do
-            # Disproved at rewrite-test or counterexamples: never marked for rewrite-index-ideas, and so
-            # never measured or ranked. The report sends it with that fate.
+            # Disproved at fuzz, rewrite-test, or counterexamples: never marked for rewrite-index-ideas, and
+            # so never measured or ranked. The report sends it with that fate.
             labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
             fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
             outcome.wrong.each do |n|
               expect(outcome.entries["rewrite_index_ideas_#{n}"]).to be(false)
               expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
               if outcome.report
-                expect(fates["rewrite_#{n}"]).to eq("rewrite_test_disproved").or eq("counterexamples_disproved")
+                expect(fates["rewrite_#{n}"])
+                  .to eq("fuzz_disproved").or eq("rewrite_test_disproved").or eq("counterexamples_disproved")
               end
             end
           end
@@ -183,9 +184,14 @@ RSpec.describe PipelineReplay do
       it "records the rule's rewrite going through every later rewrite stage once, and the work totals" do
         stages = outcome.report["burndown"]["stages"]
         went_on = { "in" => 1, "out" => 1 }
-        expect(stages.slice("plan-pruning", "rewrite-test", "counterexamples").transform_values(&:keys))
-          .to eq("plan-pruning" => ["rewrite_1"], "rewrite-test" => ["rewrite_1"], "counterexamples" => ["rewrite_1"])
-        %w[plan-pruning rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
+        expect(stages.slice("plan-pruning", "fuzz", "rewrite-test", "counterexamples").transform_values(&:keys))
+          .to eq("plan-pruning" => ["rewrite_1"], "fuzz" => ["rewrite_1"], "rewrite-test" => ["rewrite_1"],
+                 "counterexamples" => ["rewrite_1"])
+        %w[plan-pruning fuzz rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
+        # The spec_helper's QUAACKS_FUZZ_TRIALS: a floor of 40 trials and a
+        # cap of 400, not the 30 seconds a production run takes. trials
+        # counts only the worlds both queries ran on.
+        expect(stages.dig("fuzz", "rewrite_1", "extra")).to match("trials" => be_between(1, 400))
         %w[rewrite-index-ideas measurement].each { expect(stages[it]["rewrites"]).to include(went_on) }
         expect(outcome.report["burndown"]["totals"].slice("indexes_built", "measurement_runs", "fixture_loads"))
           .to match("indexes_built" => be_positive, "measurement_runs" => be_positive, "fixture_loads" => be_positive)
@@ -230,10 +236,10 @@ RSpec.describe PipelineReplay do
     end
 
     describe "the planted replies" do
-      def run(name)
+      def run(name, fuzz: true)
         query = PromptPack::QUERIES.find { it.name == name }
         variant = described_class::Variant.new(llm: "planted", k: 1)
-        described_class.cached(TestPostgres.server, query, variant)
+        described_class.cached(TestPostgres.server, query, variant, fuzz:)
       end
 
       it "read a prose-wrapped llm-rewrites reply, and counterexamples disproves its wrong rewrite with the replayed " \
@@ -271,9 +277,22 @@ RSpec.describe PipelineReplay do
         expect(stages.dig("llm-index-refine", "rewrite_1")).not_to be_nil
       end
 
-      it "load an llm-counterexamples-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it " \
-         "disproves (orm_join)" do
+      # fuzz disproves the wrong rewrite before counterexamples asks for
+      # llm-counterexamples-4 (task 20261012-2), so the reply that loads
+      # with OVERRIDING SYSTEM VALUE is replayed with fuzz off.
+      it "disprove orm_join's wrong rewrite at fuzz, before the LLM's counterexamples" do
         outcome = run("orm_join")
+        expect(outcome.log).to include("llm-rewrites-1: replayed")
+        expect(outcome.log.grep(/\Allm-counterexamples-4:/)).to be_empty
+        expect(outcome.wrong).to eq([2])
+        expect(outcome.report["rewrites"].find { it["rewrite"] == "rewrite_2" })
+          .to include("fate" => "fuzz_disproved", "rule" => be_a(String), "sizes" => all(match([String, String,
+                                                                                                be_positive])))
+      end
+
+      it "load an llm-counterexamples-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it " \
+         "disproves (orm_join, fuzz off)" do
+        outcome = run("orm_join", fuzz: false)
         expect(outcome.log).to include("llm-rewrites-1: replayed", "llm-counterexamples-4: replayed")
         expect(outcome.wrong).to eq([2])
         expect(outcome.entries).to include("rewrite_index_ideas_1" => true, "rewrite_index_ideas_2" => false)

@@ -26,6 +26,13 @@ end
 # Without it, quaacks refuses (see cli_spec.rb).
 ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 
+# Turns rewrite-test's fuzz search (Fuzz::StopRule.from_env) off in every
+# quaacks this suite starts, so the specs of ScenarioTests test it alone.
+# The specs of the search itself set a trial count (FUZZ_ON), which makes
+# the search do the same work on any machine.
+ENV["QUAACKS_FUZZ_TRIALS"] = "0"
+FUZZ_ON = { "QUAACKS_FUZZ_TRIALS" => "40" }.freeze
+
 # What a step that reports counts prints when it succeeds: its step_counts
 # line, its counts in whitelist order as egress writes them, then DONE.
 def counts_then_done(**counts)

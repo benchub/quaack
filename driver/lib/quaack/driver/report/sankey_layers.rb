@@ -33,6 +33,7 @@ module Quaack
           "operator-rewrites" => "After checking your own rewrites",
           "assumption-check" => "After checking what each rewrite assumes",
           "plan-pruning" => "After checking each rewrite runs differently",
+          "fuzz" => "After testing on random small databases",
           "rewrite-test" => "After testing on made-up edge-case data",
           "counterexamples" => "After testing on data the LLM wrote to break them",
           "rewrite-index-ideas" => "Candidates after choosing indexes for each rewrite",

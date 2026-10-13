@@ -14,8 +14,10 @@ module Quaack
       #   RuleBugs.call(store)
       #   # => [{ "rewrite" => "rewrite_1", "rules" => ["key_in_self_join"], "step" => "rewrite-test" }]
       #
-      # step is what disproved it: rewrite-test, counterexamples, or result-comparison. rewrite-test and
-      # counterexamples disprove it only with a result mismatch, as RewriteFate reads
+      # step is what disproved it: fuzz (rewrite-test's fuzz search, task 20261012-2), rewrite-test,
+      # counterexamples, or result-comparison. rewrite-test and
+      # counterexamples disprove it only with a result mismatch, and fuzz
+      # also with query_failed, as RewriteFate reads
       # rewrite_tested_<n> and rewrite_round_<n>. A rewrite plan-pruning
       # pruned for planning as the original does was never tested: its
       # rewrite_tested_<n> says rule discarded, and it isn't a bug.
@@ -39,12 +41,13 @@ module Quaack
       # Trust boundary. Entry names, step names, and rule names through
       # RewriteSource, which sends only QUAACK's own.
       module RuleBugs
-        # RewriteFate's fates that say rewrite-test or counterexamples got different results. A
+        # RewriteFate's fates that say rewrite-test or counterexamples got different results, or, for
+        # fuzz's query_failed, that the rewrite failed where the original ran. A
         # scenario or round that ended without comparing (unsupported_order,
         # query_failed, statement_timeout, and the rest of RewriteFate's
         # FAILURES) is rewrite_test_failed or counterexamples_failed, and
         # says nothing about the rewrite.
-        TEST_DISPROOFS = { "rewrite_test_disproved" => "rewrite-test",
+        TEST_DISPROOFS = { "fuzz_disproved" => "fuzz", "rewrite_test_disproved" => "rewrite-test",
                            "counterexamples_disproved" => "counterexamples" }.freeze
 
         module_function

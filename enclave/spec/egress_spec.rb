@@ -251,6 +251,24 @@ RSpec.describe Quaack::Enclave::Egress do
                                     "s1_rows" => 3, "s1_nonzero_rows" => 0)
     end
 
+    it "sends the stage that decided it and fuzz's trials (20261012-2), but never a disproof's sizes" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil, rule: "row_count",
+                             stage: "fuzz", trials: 41_200, sizes: [["public", EGRESS_SENTINEL, 2]])
+
+      expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => false,
+                                    "scenario" => nil, "rule" => "row_count", "stage" => "fuzz",
+                                    "trials" => 41_200)
+    end
+
+    # The user's decision (2026-10-12): fuzz disproves a rewrite that fails
+    # where the original ran, by query_failed.
+    it "sends fuzz's query_failed disproof by its rule alone" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil,
+                             rule: "query_failed", stage: "fuzz", trials: 0)
+
+      expect(JSON.parse(out)).to include("rule" => "query_failed", "stage" => "fuzz", "trials" => 0)
+    end
+
     [
       ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
       ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],
@@ -262,7 +280,12 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a nonzero row count just above the cap",
        { s1_nonzero_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
       ["an error message as the rewrite's rule", { rule: "PG::Error: #{EGRESS_SENTINEL}" }],
-      ["a number as the rewrite's rule", { rule: 5 }]
+      ["a number as the rewrite's rule", { rule: 5 }],
+      ["a stage not on the list", { stage: EGRESS_SENTINEL }],
+      ["a stage as a Symbol", { stage: :fuzz }],
+      ["a string where the trials count belongs", { trials: EGRESS_SENTINEL }],
+      ["a negative trials count", { trials: -1 }],
+      ["a fractional trials count", { trials: 1.5 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a vacuity diagnostic"
@@ -493,6 +516,54 @@ RSpec.describe Quaack::Enclave::Egress do
                                                   "aren't fixed words") { |e|
                 expect(e.message).not_to include(EGRESS_SENTINEL)
               }
+      end
+    end
+
+    # Task 20261012-2: a fuzz disproof's sizes are [schema, table, rows],
+    # each table one the report's queries name, and trials a count
+    # (Protocol::FuzzResult, FuzzSizes).
+    describe "a rewrite's fuzz sizes and trials" do
+      let(:original_sql) { "SELECT o.id FROM public.orders o JOIN sales.customers c ON c.id = o.customer_id" }
+
+      def report_with(entry, sql: "SELECT o.id FROM public.orders o")
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil, "sql" => sql }.merge(entry)
+        { type: :report, original_sql:, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
+      end
+
+      it "sends tables either query names, with their row counts, and trials as a count" do
+        sizes = [["public", "orders", 2], ["sales", "customers", 1], ["sales", "refunds", 1]]
+        rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
+        sent = parsed(report_with({ "sizes" => sizes, "trials" => 41_200 }, sql: rewrite_sql))
+        expect(sent["rewrites"].first).to include("sizes" => sizes, "trials" => 41_200)
+        expect(parsed(report_with({ "sizes" => nil, "trials" => nil }))["rewrites"].first)
+          .to include("sizes" => nil, "trials" => nil)
+      end
+
+      [
+        ["a table neither query names", { "sizes" => [["public", EGRESS_SENTINEL, 1]] }],
+        ["a planted schema", { "sizes" => [[EGRESS_SENTINEL, "orders", 1]] }],
+        ["a String in place of a row count", { "sizes" => [["public", "orders", EGRESS_SENTINEL]] }],
+        ["a planted fourth value", { "sizes" => [["public", "orders", 1, EGRESS_SENTINEL]] }],
+        ["a String in place of the sizes", { "sizes" => EGRESS_SENTINEL }],
+        ["sizes under a Symbol key", { sizes: [["public", EGRESS_SENTINEL, 1]] }],
+        ["a String in place of trials", { "trials" => EGRESS_SENTINEL }],
+        ["a negative trials", { "trials" => -1 }],
+        ["trials under a Symbol key", { trials: EGRESS_SENTINEL }]
+      ].each do |what, planted|
+        it "refuses one with #{what}, without quoting it" do
+          refusal = "a value in this report message has fuzz sizes or trials that aren't the queries' tables " \
+                    "and counts"
+          expect { egress.serialize(report_with(planted)) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
+      end
+
+      it "refuses a table the queries name only without its schema, or in a string" do
+        unqualified = report_with({ "sizes" => [["public", "orders", 1]] }, sql: "SELECT 'public.orders' FROM orders")
+        expect { egress.serialize(unqualified.merge(original_sql: "SELECT 1")) }
+          .to raise_error(described_class::Error, /fuzz sizes/)
       end
     end
 

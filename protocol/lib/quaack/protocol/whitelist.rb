@@ -137,8 +137,11 @@ module Quaack
       # discarded. s1_load_rule is nil or the rule S1 failed to load with, and
       # s1_rows how many rows the original returned on S1 (nil when it didn't
       # load), and s1_nonzero_rows how many of them hold a nonzero value,
-      # checked by Protocol::VacuityDiagnostic.valid?. Never SQL or a row.
-      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows].freeze,
+      # checked by Protocol::VacuityDiagnostic.valid?. stage is the stage
+      # that decided it (nil, fuzz, or rewrite-test) and trials how many
+      # small random databases fuzz compared it on (nil or a count), both
+      # checked by Protocol::FuzzResult.rewrite_test?. Never SQL or a row.
+      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials].freeze,
       # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
       # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound
