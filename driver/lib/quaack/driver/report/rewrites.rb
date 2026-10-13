@@ -62,6 +62,10 @@ module Quaack
                            "the original query ran, so it's wrong."
         SEARCH_FAILED = { "fuzz_disproved" => FUZZ_FAILED, "enumerate_disproved" => ENUMERATE_FAILED }.freeze
 
+        # The fates of a rewrite a stage after the searches disproved, whose
+        # section keeps fuzz's sentence rather than enumerate's.
+        LATER_DISPROOFS = %w[rewrite_test_disproved counterexamples_disproved production_mismatch].freeze
+
         # An unfinished rewrite, by the last stage it finished.
         UNFINISHED = { nil => "QUAACK kept it, but the run ended before testing it.",
                        "rewrite-test" => "It passed the tests on made-up data, and the run ended before going further.",
@@ -175,7 +179,8 @@ module Quaack
 
           bound = entry["bound"]
           return "It also survived #{Words.count(trials, "random small database")} built around its own values." \
-            unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND)
+            unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND) &&
+                   !LATER_DISPROOFS.include?(entry["fate"])
 
           "Found no difference on #{Words.count(trials, "random dataset")}, or on any dataset of up to " \
             "#{Words.count(bound, "row")} over its value classes."

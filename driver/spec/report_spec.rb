@@ -815,6 +815,14 @@ RSpec.describe Quaack::Driver::Report do
         expect(enumerated(2, "enumerate_disproved")).not_to include("Found no difference")
         expect(enumerated(2, trials: 0)).not_to include('class="fuzz"')
       end
+
+      it "keeps fuzz's sentence, not enumerate's, when a later stage disproved the rewrite" do
+        %w[rewrite_test_disproved counterexamples_disproved production_mismatch].each do |fate|
+          text = enumerated(2, fate)
+          expect(text).to include("It also survived 40 random small databases built around its own values.")
+          expect(text).not_to include("Found no difference")
+        end
+      end
     end
 
     describe "the conditions no test ever exercised (vacuity-guard)" do
