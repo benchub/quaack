@@ -5,7 +5,9 @@ module Quaack
     module Fuzz
       module Enumerate
         # Each footprint table's row kinds: what a row holds in the columns
-        # the queries read or join on, each from the column's value classes.
+        # the queries read and the key columns the plan draws (:key), each
+        # from the column's value classes. A key the plan fixes by position
+        # (:pk) or fills from a parent row (:fk) is Worlds'.
         #
         #   kinds = Kinds.new(catalog, plan, domains)
         #   kinds.for(table)       # => Table(kinds: [{ "status" => "shipped", ... }, ...], base: 4)
