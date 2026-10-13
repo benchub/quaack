@@ -835,6 +835,11 @@ From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables m
 
 From 20261012-2. A random search's pass says only that N random databases didn't differ. The spike's algorithm B enumerates worlds instead. It reduces each row to a kind, a tuple of value classes per column drawn from the same value domains, and tries every world in order of total rows, so a pass can say "no database of at most w rows over these value classes differs". In the spike, in 15 s, w reached 8 to 12 on single-table queries, 4 to 8 on two tables, and 4 on four tables. It caught 151 of 152 wrong mutants (it missed one that needs 4 orders per customer) and 32 of 34 wrong Canvas rewrites (two 4-table queries need more than 4 rows). Run it when the random search finds nothing, within the same per-rewrite cap and saturation rule. Like the search (20261012-2), it's its own burndown stage, `enumerate`, between `fuzz` and rewrite-test (the user, 2026-10-12). It gets a record with drops by rule, the worlds it tried, and the bound w it finished as extras, plus everything that stage needs in the Sankey, the table, the stage sentence, the fates, and `rule_bugs`. Decide with the user how a pass is worded (such as "survived N random small databases and every database of up to w rows over its value classes"), where it shows (the rewrite's section and the burndown), and how the counts leave the enclave (integers only).
 
+Answers (the user, 2026-10-12):
+- Enumerate runs for at most 30 s after fuzz passes, inside the rewrite's 5-minute budget. It reports the largest w it finished.
+- A pass is worded "Found no difference on N random datasets, or on any dataset of up to w rows over its value classes." It shows in the rewrite's section and in the burndown. N, w and the number of worlds tried leave the enclave as integers.
+- An enumerate pass counts as tested even when ScenarioTests refuses the query, as a fuzz pass does.
+
 - **Depends on:** 20261012-2.
 - **Came from:** The user and the disproof spike, 2026-10-12.
 - **Design:** rewrite-test.
@@ -855,6 +860,10 @@ The user, 2026-10-12: replace ScenarioTests entirely, not just run the search be
 Stored entries and messages from older versions must still read, as `out_of_time` ones from before 20261011-15 do. A fixture that fails to load stops being a rewrite-level failure: today it leaves the rewrite out as `rewrite_test_failed` (4 sound Canvas rewrites in the spike), but in the search it's just an illegal world. Decide with the user:
 - What replaces the vacuity guard's guarantee that every atom of the original was exercised. The search can report which atoms came out both true and false across its trials, and caution or refuse when one never did.
 - What replaces a scenario's name where the report and burndown say why a rewrite was disproved.
+
+Answers (the user, 2026-10-12):
+- **Vacuity guard.** The search reports which of the original's atoms came out both true and false across its trials. If an atom never did, the rewrite still passes, with a caution that names those atoms.
+- **"Why disproved".** In place of the scenario's name, the report and burndown give the stage (`fuzz` or `enumerate`), the rule, and the disproving database's rows per table.
 
 - **Depends on:** 20261012-2, 20261012-3.
 - **Came from:** The user, 2026-10-12.
@@ -946,6 +955,10 @@ Decide with the user:
 - Whether the enclave should also send the refused function's name, which its error detail already holds. The name comes from the insert's own text, never a value, but it would need a protocol field and an egress check, and the change would go on the unreleased enclave list.
 - Whether `MUTABLE_SQL` should resolve the overload from the argument types instead.
 
+Answers (the user, 2026-10-12):
+- Yes, send the refused function's name back to the LLM. It goes in a new protocol field with an egress check. The task goes on the unreleased enclave list.
+- Yes, judge the overload Postgres resolves the call to, not every overload with that many arguments.
+
 Re-measure with the corpus harness, which builds prompts with the driver's and the enclave's real code. Compare round-1 refusals and catches before and after.
 
 - **Depends on:** None.
@@ -990,6 +1003,11 @@ Measure with the harness on the hard corpus, 60 s per rewrite. Report:
 - the change in time per rewrite.
 
 Some cases need rows that relate to each other in ways a value pool can't plan, such as days missing from a lag. Those, and classes nobody has listed, are why the LLM stage stays. Say so in DESIGN.md's counterexamples section.
+
+Answers (the user, 2026-10-12):
+- The copies generator follows integer constants up to 100, so a world has at most 101 rows in a table. It ignores larger constants.
+- A disproof's size of more than 4 rows in a table leaves the enclave as 5, meaning "5 or more". The enclave check (egress) and the driver's check both accept 5 and nothing higher. So a size can't carry a query constant (see 20261010-47), and 20261012-15's item 3 caps sizes at 5.
+- DST: when the queries name no time zone, use America/New_York, Europe/London and Australia/Sydney.
 
 - **Depends on:** 20261012-2.
 - **Came from:** 20261012-5, 2026-10-12 (the user's decision).
