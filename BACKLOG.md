@@ -918,10 +918,14 @@ Found by 20261012-5's corpus work (2026-10-12). On the Canvas schema, `ScenarioT
 
 Fix it test first, on a realistic query like this one. A fixture on which the original fails says nothing about a rewrite, the way a fixture that won't load says nothing: treat it like a load failure in the guard (its atoms stay vacuous and are retried) and in the scenario comparison (that scenario is skipped, not a disproof), and test the rewrite on the other scenarios. Say so in DESIGN.md where it says scenarios never crash rewrite-test. Check that 20261012-10 (counterexamples) and the disproof search (20261012-2) follow the same rule: an original that fails disproves nothing.
 
+Decided by the main session during the build (2026-10-12, with the user asleep; overnight rules): a candidate compared on no fixture doesn't pass. It gets `passed: false`, rule `original_failed`, scenario nil, and RewriteFate counts it as a runner failure. A fixture with no rows (S0) still runs and can disprove a candidate, but doesn't count as compared.
+
+Status note (2026-10-12): built on branch `task/20261012-11` (33a1ebb3 … 71974d72), with one fix round. The second review found one more blocking case: a fixture where the original runs but returns no rows (a LIMIT query's near-misses spill) still counts as compared, so wrong rewrites pass. That case is split into 20261012-22, built on top of this branch, and both land together. Nothing from this branch is on `main` yet.
+
 - **Depends on:** None.
 - **Came from:** 20261012-5's phase 2, 2026-10-12.
 - **Design:** rewrite-test, vacuity-guard, fixture-scenarios.
-- **Status:** todo
+- **Status:** in progress (waits on 20261012-22 to land)
 
 ### 20261012-12. llm-counterexamples: tell the LLM which values get an insert refused, and what each refusal means.
 
@@ -1092,5 +1096,33 @@ From the build and review of 20261012-11 (minor).
 - **Depends on:** None.
 - **Came from:** The build and review of 20261012-11, 2026-10-12.
 - **Design:** rewrite-test, vacuity-guard.
+- **Status:** todo
+
+### 20261012-22. ScenarioTests: when the original failed on a fixture, count only fixtures where it returned a nonzero row as compared.
+
+Split from 20261012-11 after its second review (blocking there). 20261012-11 skips a fixture the original fails on, and a candidate passes if it matched on the fixtures left. Its fix round stopped fixtures with no rows (S0) from counting as compared. But a fixture with rows where the original returns nothing still counts.
+
+Under a top-level LIMIT without an ORDER BY, S1 gets an extra fixture holding only its near misses, so the original runs there and returns 0 rows. On 20261012-11's own Canvas-shaped query with `LIMIT 10` added, where the original fails on every other fixture with rows, these wrong rewrites all came out passed:
+- `> 0.9`;
+- `>= 0.95`;
+- `s.score >= 0.9 * a.points_possible`;
+- `LIMIT 0`;
+- `WHERE false`.
+
+The second reviewer's probe is `scratch/review-20261012-11-r2/probe_spec.rb` in the main checkout, cases A and B2.
+
+The rule (decided by the main session, 2026-10-12; the user asleep, overnight rules):
+- **When the original failed on at least one fixture**, a candidate passes only if, on some fixture where the original ran, the original returned at least one row holding a value that isn't NULL or zero. That's the test VacuityGuard's `nonzero_rows` already uses for the S1 diagnostic, so an aggregate's 0 or NULL on S0 doesn't count. Otherwise the candidate gets `passed: false`, rule `original_failed`, scenario nil.
+- **When the original failed on no fixture**, nothing changes from `main`.
+- **Fixtures that don't count** (S0, near-miss spills) still run and can still disprove a candidate.
+- This replaces 20261012-11's "has rows" check.
+
+Fix it test first: the probe's cases on real Postgres, red for passing today. Also check that an equivalent rewrite still passes when the original fails on some fixtures but returns nonzero rows on another. Move the misplaced comment the second review found: "The share of course 1's submissions…" sits above the wrong describe in `scenario_tests_original_fails_postgres_spec.rb`. Update DESIGN.md's sentence on what counts as compared.
+
+Build it on top of branch `task/20261012-11`, on branch `task/20261012-22`, and land both together. 20261012-11 then moves to BACKLOG-COMPLETE.md.
+
+- **Depends on:** 20261012-11 (its branch).
+- **Came from:** The second review of 20261012-11, 2026-10-12.
+- **Design:** rewrite-test, fixture-scenarios.
 - **Status:** todo
 
