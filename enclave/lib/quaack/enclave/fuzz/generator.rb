@@ -14,18 +14,29 @@ module Quaack
       #
       # Each world draws its own swarm Config: how many rows each table gets
       # (0 to 4), how small the shared key pool is, and how often a value is
-      # NULL, one of the queries' own, a copy of an earlier row's, or a type
-      # boundary. Different worlds stress different things, which finds more
-      # than one fixed mix.
+      # NULL, one of the queries' own, a copy of an earlier row's, a type
+      # boundary, or one from world knowledge (WorldValues). Different
+      # worlds stress different things, which finds more than one fixed mix.
+      #
+      # A share of worlds (COPIES_SHARE), when the queries hold an integer
+      # constant up to WorldValues::COPIES_MAX, give one table Copies: as
+      # many rows as a constant or one either side, each a copy of the
+      # table's first row in every column but its fresh unique ones and,
+      # at the vary rate, one read column the queries don't group or
+      # partition on, so a group can mix values in it.
+      # A HAVING count, a window frame, a LIMIT or an OFFSET can need them.
       #
       # Each column gets its value the way the Plan says. A row that would
       # collide on a unique key gets a fresh value in one of the key's
       # columns, or is left out (Uniques).
       class Generator
         Row = Struct.new(:table, :cells)
-        Config = Data.define(:rows, :key_pool, :null_rate, :literal_bias, :dup_rate, :boundary_rate)
+        Config = Data.define(:rows, :key_pool, :null_rate, :literal_bias, :dup_rate, :boundary_rate, :world_rate,
+                             :copies)
+        Copies = Data.define(:table, :count, :vary)
 
         ROWS = [0, 1, 1, 2, 2, 2, 3, 3, 4].freeze
+        COPIES_SHARE = 0.25
 
         attr_reader :catalog, :domains, :plan
 
@@ -38,11 +49,19 @@ module Quaack
 
         def order = @plan.order
 
-        def self.config(rng, tables)
+        def self.config(rng, tables, counts = [])
           Config.new(rows: tables.to_h { [it, ROWS.sample(random: rng)] }, key_pool: [1, 2, 2, 3].sample(random: rng),
                      null_rate: [0.0, 0.15, 0.4].sample(random: rng),
                      literal_bias: [0.5, 0.8, 0.95].sample(random: rng), dup_rate: [0.0, 0.0, 0.3].sample(random: rng),
-                     boundary_rate: [0.0, 0.0, 0.05].sample(random: rng))
+                     boundary_rate: [0.0, 0.0, 0.05].sample(random: rng),
+                     world_rate: [0.0, 0.1, 0.3].sample(random: rng), copies: copies(rng, tables, counts))
+        end
+
+        def self.copies(rng, tables, counts)
+          return if counts.empty? || tables.empty? || rng.rand >= COPIES_SHARE
+
+          Copies.new(table: tables.sample(random: rng), count: counts.sample(random: rng),
+                     vary: [0.0, 0.0, 0.1, 0.3].sample(random: rng))
         end
 
         def world(rng) = Draw.new(self, rng).rows

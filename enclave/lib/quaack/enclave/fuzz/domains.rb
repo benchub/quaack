@@ -5,10 +5,12 @@ require "pg_query"
 require_relative "../predicate_atoms"
 require_relative "../value_pools"
 require_relative "dictionary"
+require_relative "facts"
 require_relative "key_classes"
 require_relative "legal"
 require_relative "tree"
 require_relative "typical"
+require_relative "world_values"
 
 module Quaack
   module Enclave
@@ -29,10 +31,15 @@ module Quaack
       #   own constants are values too, the only ones a column it pins can
       #   take.
       #
+      # - A read column also gets WorldValues' classes for its type: values
+      #   from world knowledge, such as padded and case-folded strings, NaN,
+      #   ISO-week dates, DST hours, and each JSON type for a key the queries
+      #   read, each cast to the column's type, which must read it.
+      #
       # Built, and each column the generator plans for prepared, before the
       # session's transaction, since the probes can't run in it. Trust
       # boundary: these are real values, so they stay in the enclave.
-      class Domains
+      class Domains # rubocop:disable Metrics/ClassLength -- every pool a column draws from
         NUMERIC_KEY = /\A(smallint|integer|bigint|numeric)/
         KEYS = 40
         CHECK_CONSTANTS = 4
@@ -56,7 +63,7 @@ module Quaack
         # its probes can't run in the session's transaction, which a failed
         # world leaves aborted until the next trial rolls it back.
         def prepare(table, column)
-          %i[typical boundaries base_keys class_values].each { public_send(it, table, column) }
+          %i[typical boundaries base_keys class_values world].each { public_send(it, table, column) }
           unique(table, column, 0)
         end
 
@@ -79,6 +86,24 @@ module Quaack
             typical.empty? ? @legal.constants(table, column).first(2) : typical
           end
         end
+
+        # A read column's values from world knowledge (WorldValues), as its
+        # type writes them, that pass its CHECKs.
+        def world(table, column)
+          memo(:world, table, column) do
+            next [] unless read?(table, column)
+
+            col = @catalog.column(table, column)
+            @world.values(col.type, column, typical(table, column)).filter_map { cast(col.type, it) }.uniq
+                  .select { @legal.call(table, column, it) }
+          end
+        end
+
+        # How many copies of a row a world may hold (WorldValues#copies).
+        def copies = @world.copies
+
+        # Whether a query groups or partitions on the column's name.
+        def grouped?(_table, column) = @world.grouped?(column)
 
         def boundaries(table, column)
           memo(:boundaries, table, column) do
@@ -113,12 +138,23 @@ module Quaack
 
         def memo(*key) = @memo.fetch(key) { @memo[key] = yield }
 
+        def cast(type, value)
+          @conn.exec_params("SELECT CAST($1 AS #{type})::pg_catalog.text", [value]).getvalue(0, 0)
+        rescue PG::Error
+          nil
+        end
+
         def absorb_all(parses)
           parses.each { absorb(it) }
-          @dictionary = Dictionary.new(@conn, parses.flat_map { Tree.constants(it.tree.to_h) }.uniq)
+          knowledge(parses.map { it.tree.to_h })
           @read.each { |table, column| @values[[table, column]] |= @dictionary.values(@catalog.column(table, column)) }
           @classes.join_foreign_keys(@catalog.kept)
           legalize
+        end
+
+        def knowledge(trees)
+          @dictionary = Dictionary.new(@conn, trees.flat_map { Tree.constants(it) }.uniq)
+          @world = WorldValues.new(@conn, Facts.new(trees))
         end
 
         # A query's reads, join classes, and pools. Pools are extra values,

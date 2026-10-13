@@ -547,6 +547,39 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         end
       end
 
+      # Task 20261012-13: fuzz pads, case-folds and decomposes the query's
+      # strings, which a needle for the whole token can miss: "ſentınel..."
+      # holds no "sentinel". So a needle for the token's random hex catches
+      # those too.
+      context "with a sentinel the query trims" do
+        let(:query) { "SELECT o.note FROM public.orders o WHERE trim(o.note) = '#{sentinels.text}'" }
+        let(:candidate) { "SELECT o.note FROM public.orders o WHERE o.note = $1" }
+        let(:hex) { LeakCheck::Sentinels.new(extra: { hex: sentinels.text[/\Asentinel(\h{12})/, 1] }) }
+
+        def payload_fields
+          Quaack::Enclave::Steps::ReportPayload.fuzz(stored, "rewrite_1", store.read("qualified_query"), candidate)
+        end
+
+        it "disproves the rewrite with a padded copy of it, and sends no copy of it" do
+          ready(candidate)
+
+          outcome = fuzz_step("rewrite_1", FUZZ_TO_KILL)
+
+          expect(lines(outcome).first).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
+          expect(payload_fields).to include("sizes" => [["public", "orders", 1]])
+          objects = { tested:, burndown:, payload: payload_fields }
+          expect_no_leaks(sentinels, outcome, objects:)
+          expect_no_leaks(hex, outcome, objects:)
+        end
+
+        it "uses a check that sees a case-folded copy planted in the sizes" do
+          folded = sentinels.text.sub("s", "\u017F").sub("i", "\u0131")
+          planted = { "sizes" => [["public", "orders #{folded}", 1]] }
+          expect(LeakCheck.findings(sentinels, objects: { payload: planted }).map(&:to_s)).to eq([])
+          expect(LeakCheck.findings(hex, objects: { payload: planted }).map(&:to_s)).not_to eq([])
+        end
+      end
+
       it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials" do
         ready(same)
 
