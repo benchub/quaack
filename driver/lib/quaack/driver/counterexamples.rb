@@ -76,6 +76,9 @@ module Quaack
       ANOTHER = "Write a new set of inserts that tries something different. #{ANSWER}".freeze
       EARLIER = "Earlier rounds, run by another model."
       DIFFERENT = "Write a new set of inserts that tries something different from all of them. #{ANSWER}".freeze
+      # A round whose rows made the original fail (task 20261012-10).
+      ORIGINAL_FAILED = "The accepted inserts made the original query fail (original_failed), so the round " \
+                        "compared nothing. Write rows the original query can run on."
 
       # provider is the entry that wrote the inserts; after, for a fresh
       # start's first round, the rule that ended the unit before it; and
@@ -95,7 +98,8 @@ module Quaack
       # one, and each later ask hears how the round before went. A round
       # that finds a mismatch (match false) disproves the candidate, and no
       # more run. A round whose inserts failed to load (load_failed, match
-      # nil) disproves nothing, and the rounds go on.
+      # nil), or whose rows made the original query fail (original_failed,
+      # match nil), disproves nothing, and the rounds go on.
       #
       # The result's units say, for the provenance record, which entry ran
       # each unit, in order, how many rounds it asked, for a fresh start,
@@ -182,6 +186,7 @@ module Quaack
 
       def result_line(outcome)
         return "The accepted inserts failed to load (#{outcome["rule"]})." if outcome["load_failed"]
+        return ORIGINAL_FAILED if outcome["rule"] == "original_failed"
 
         "The accepted inserts gave both queries the same results."
       end

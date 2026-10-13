@@ -136,6 +136,22 @@ RSpec.describe Quaack::Driver::Counterexamples do
       expect(fake.asks[1].body[:messages][2][:content]).to include("failed to load (insert_failed)")
     end
 
+    # Task 20261012-10: the rows made the original fail, so the round
+    # compared nothing, and the LLM hears why.
+    it "keeps going after a round whose rows made the original query fail, and tells the LLM so" do
+      3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
+      failed = { "match" => nil, "load_failed" => false, "rule" => "original_failed", "covered" => [],
+                 "refused" => [] }
+      outcomes.push(failed, clean, clean)
+      result = run
+      expect(result.rounds.size).to eq(3)
+      expect(result.disproved).to be(false)
+      feedback = fake.asks[1].body[:messages][2][:content]
+      expect(feedback).to include("made the original query fail (original_failed)",
+                                  "rows the original query can run on")
+      expect(feedback).not_to include("same results")
+    end
+
     # DESIGN.md, "Several LLM providers" (Routing): a later round's ask
     # that fails with a rule that fails over starts the rewrite's remaining
     # rounds fresh on another provider.
