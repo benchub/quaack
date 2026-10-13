@@ -68,14 +68,14 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(result.enumerate.worlds).to be_between(1, 3000)
   end
 
-  it "stops at its cap of worlds, and its bound is what it finished" do
+  it "stops at its cap of worlds, and sends a bound only once it finishes one" do
     pair = ["SELECT id FROM s.topics WHERE kind = 'news' AND posted_at > '2024-01-01'",
             "SELECT id FROM s.topics WHERE posted_at > '2024-01-01' AND kind = 'news'"]
 
     small = both(*pair, worlds: 2).enumerate
     large = both(*pair, worlds: 3000).enumerate
 
-    expect(small).to have_attributes(verdict: :untested, worlds: 2, bound: 0)
+    expect(small).to have_attributes(verdict: :untested, worlds: 2, bound: nil)
     expect(large.bound).to be_positive
   end
 
@@ -139,11 +139,11 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
 
   let(:pair) { ["SELECT id FROM s.topics WHERE kind = 'news'", "SELECT id FROM s.topics WHERE 'news' = kind"] }
 
-  it "is untested when the rewrite's deadline runs out before it finishes a bound, and the fuzz pass stands" do
+  it "is untested, with no bound, when the deadline runs out before it finishes one, and the fuzz pass stands" do
     result = within(enumerating([0, 1])) { both(*pair) }
 
     expect(result.fuzz.verdict).to eq(:passed)
-    expect(result.enumerate).to have_attributes(verdict: :untested, bound: 0)
+    expect(result.enumerate).to have_attributes(verdict: :untested, bound: nil)
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
@@ -389,6 +389,80 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(domains.values.map(&:size).reduce(:*)).to be > described_class::Kinds::MAX_KINDS
       expect(rows.size).to be < domains.values.map(&:size).reduce(:*)
       expect(pairs.reject { |x, a, y, b| rows.any? { it[x] == a && it[y] == b } }).to be_empty
+    end
+
+    # orders.customer_id joins customers.id with no foreign key, so it's a
+    # key column the plan draws (:key), not one it fixes by position (:pk).
+    it "gives a key column the first three values of its key class, then the first two shared keys" do
+      conn.exec(<<~SQL)
+        CREATE TABLE s.customers (id integer PRIMARY KEY, name text);
+        CREATE TABLE s.orders (id integer PRIMARY KEY, customer_id integer);
+      SQL
+      sql = "SELECT o.id FROM s.orders o JOIN s.customers c ON c.id = o.customer_id WHERE c.id IN (10, 20, 30, 40)"
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      domains = fuzz::Domains.new(conn, catalog, [sql])
+      plan = fuzz::Generator.new(catalog, domains).plan
+      orders = catalog.footprint.find { it.name == "orders" }
+
+      expect(plan.entries_for(orders).find { it.column == "customer_id" }.kind).to eq(:key)
+      expect(domains.class_values(orders, "customer_id").size).to be > 3
+      expect(described_class::Kinds.new(catalog, plan, domains).domains(orders)["customer_id"])
+        .to eq(domains.class_values(orders, "customer_id").first(3) + %w[1 2] + [nil])
+    end
+  end
+
+  # Run on a stand-in for the fuzz search, so each world's trial is what
+  # the spec says.
+  describe "Run" do
+    let(:sql) { "SELECT id FROM s.topics WHERE kind = 'news'" }
+    let(:worlds) do
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      domains = fuzz::Domains.new(conn, catalog, [sql])
+      plan = fuzz::Generator.new(catalog, domains).plan
+      described_class::Worlds.new(catalog, plan, domains, described_class::Kinds.new(catalog, plan, domains))
+    end
+
+    let(:search_class) do
+      Class.new do
+        attr_reader :trials, :confirms
+
+        def initialize(trial)
+          @trial = trial
+          @trials = 0
+          @confirms = 0
+        end
+
+        def trial(_rows)
+          @trials += 1
+          @trial
+        end
+
+        def confirm(_rows)
+          @confirms += 1
+          nil
+        end
+      end
+    end
+
+    it "sends no bound when every world it tried was illegal, though it finished one" do
+      illegal = fuzz::Session::Trial.new(signature: fuzz::Session::ILLEGAL, compared: false, rule: nil)
+      search = search_class.new(illegal)
+
+      outcome = described_class::Run.new(search, worlds, described_class::Limit.worlds(3000)).call
+
+      expect(worlds.bound(worlds.max_weight)).to be_positive
+      expect(search.trials).to eq(3000)
+      expect(outcome).to have_attributes(verdict: :untested, worlds: 0, bound: nil)
+    end
+
+    it "stops after fuzz's limit of kills that don't lift" do
+      kill = fuzz::Session::Trial.new(signature: nil, compared: true, rule: :value)
+      search = search_class.new(kill)
+
+      outcome = described_class::Run.new(search, worlds, described_class::Limit.worlds(3000)).call
+
+      expect([search.trials, search.confirms]).to eq([fuzz::LIFTS, fuzz::LIFTS])
+      expect(outcome).to have_attributes(verdict: :untested, rule: nil, worlds: fuzz::LIFTS, bound: nil)
     end
   end
 end

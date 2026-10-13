@@ -21,9 +21,11 @@ module Quaack
       # and every world of at least one row tried), or :untested (it didn't
       # run, compared no world, or finished no bound). worlds counts the
       # worlds compared. bound is the most rows of every world tried
-      # (Worlds#bound), 0 to Protocol::FuzzResult::MAX_BOUND, or nil when
-      # it didn't run. sizes are a disproof's rows per table, as the
-      # search's are. The worlds, kinds and values never leave here.
+      # (Worlds#bound), 0 to Protocol::FuzzResult::MAX_BOUND, when it
+      # passed or disproved, and nil when it's untested, so an enumeration
+      # that compared nothing never claims one. sizes are a disproof's rows
+      # per table, as the search's are. The worlds, kinds and values never
+      # leave here.
       module Enumerate
         Outcome = Data.define(:verdict, :rule, :worlds, :bound, :sizes)
 
@@ -85,7 +87,8 @@ module Quaack
           end
 
           def outcome(verdict, rule = nil, sizes = [])
-            Outcome.new(verdict:, rule:, worlds: @compared, bound: @worlds.bound(@done), sizes:)
+            bound = @worlds.bound(@done) unless verdict == :untested
+            Outcome.new(verdict:, rule:, worlds: @compared, bound:, sizes:)
           end
         end
       end
