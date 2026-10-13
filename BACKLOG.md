@@ -973,6 +973,10 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 5. **The INTERSECT ALL versus INTERSECT trap (e2e case 100) isn't caught at the spec setting.** It needs 4 rows sharing one key. It was missed at 378 and 3,000 trials and found at 5,285, well inside the 30 s production floor, so production catches it. A spec at 40 trials can't show that. Either add a spec at a trial count that catches it, or note in the fuzz spec why it's left out.
 6. **Nothing tests that a number's neighbours go both ways** (`fuzz/dictionary.rb`, `finest`'s `%w[1 -1]`). With neighbours on one side only, every probe still disproved, because with two constants either side's neighbour lands in the gap. Add a test with a single constant that needs its upward neighbour, or say in a comment why one side is enough. This one came from the second review.
 
+Decisions (made overnight, 2026-10-13, while the user was away; the user can revisit them):
+- **Item 1 covers enumerate too.** Enumerate's `Run#call` rescues the deadline and returns `ended`, so a kill it finds just before the deadline, dropped mid-shrink or mid-lift, can pass with the bound it finished, which prints the stronger sentence. A deadline that expires while either search confirms a kill (shrink or lift) leaves both searches untested, with no trials or bound claimed, so no sentence says the rewrite survived. ScenarioTests then runs out of time, and the rewrite goes on as `out_of_time`, with its "not tested in time" caution. A deadline at any other point keeps today's behaviour.
+- **Item 2 marks the burndown, not stderr.** The enclave sends stderr to the null device (`ErrorFilter.silence_stderr!`), so a line there would never be seen. When `QUAACKS_FUZZ_TRIALS` or `QUAACKS_ENUMERATE_WORLDS` is set, 0 included, a record that is always written for the rewrite carries the setting as an extra count, so the burndown report shows it. The setting is a number the operator set, not data.
+
 - **Depends on:** 20261012-2.
 - **Came from:** The two reviews of 20261012-2, 2026-10-12 (minor).
 - **Design:** rewrite-test.
