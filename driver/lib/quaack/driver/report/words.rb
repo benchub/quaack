@@ -27,6 +27,7 @@ module Quaack
         FAILURES = { "unsupported_order" => "the order of the original query's rows can't be checked",
                      "statement_timeout" => "a statement timed out",
                      "statement_canceled" => "a statement was canceled",
+                     "original_failed" => "the original query failed on the test data",
                      Protocol::RewriteBudget::RULE => "its test didn't finish within " \
                                                       "#{Protocol::RewriteBudget.minutes} minutes" }.freeze
         FAILED = "a statement failed on the test database"

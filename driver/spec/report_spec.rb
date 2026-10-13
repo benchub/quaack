@@ -1025,6 +1025,9 @@ RSpec.describe Quaack::Driver::Report do
           .to include("(round 1) ended without comparing results, because a statement timed out, so")
         expect(fate("rewrite_test_failed", scenario: "s1", rule: "query_failed"))
           .to include("ended without comparing results, because a statement failed on the test database, so")
+        expect(fate("rewrite_test_failed", rule: "original_failed"))
+          .to eq(esc("A test on made-up data ended without comparing results, because the original query failed " \
+                     "on the test data, so QUAACK dropped it. That says nothing about whether it's right."))
       end
 
       it "says a rewrite whose test ran past its budget was left out, not that it's wrong (20261010-53)" do
