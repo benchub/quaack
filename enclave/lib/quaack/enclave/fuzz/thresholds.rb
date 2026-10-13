@@ -43,7 +43,8 @@ module Quaack
         def solve(combination)
           expression = SOLUTIONS.fetch([combination.operator, combination.column_first])
                                 .gsub(/\$\d/) { "#{it}::pg_catalog.numeric" }
-          sql = "SELECT pg_catalog.trim_scale(s)::text, pg_catalog.ceil(s)::text, pg_catalog.floor(s)::text " \
+          sql = "SELECT pg_catalog.trim_scale(s)::pg_catalog.text, pg_catalog.ceil(s)::pg_catalog.text, " \
+                "pg_catalog.floor(s)::pg_catalog.text " \
                 "FROM (SELECT #{expression} AS s) AS solved WHERE s IS NOT NULL"
           @conn.exec_params(sql, [combination.constant, combination.compared]).values.flatten
         rescue PG::Error
