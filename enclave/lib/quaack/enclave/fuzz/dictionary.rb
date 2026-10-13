@@ -18,13 +18,6 @@ module Quaack
                   "D" => ["1", "-1", "interval '1 second'", "interval '-1 second'", "interval '1 day'",
                           "interval '-1 day'", "interval '1 microsecond'", "interval '-1 microsecond'"] }.freeze
         FINEST = %w[0.000001 0.00001 0.0001 0.001 0.01 0.1 1].freeze
-        FINE_SQL = <<~SQL
-          SELECT (CAST($1 AS %<type>s) OPERATOR(pg_catalog.+) $2::pg_catalog.numeric * p)::%<type>s::pg_catalog.text
-          FROM pg_catalog.unnest($3::pg_catalog.numeric[]) WITH ORDINALITY AS steps (p, n)
-          WHERE (CAST($1 AS %<type>s) OPERATOR(pg_catalog.+) $2::pg_catalog.numeric * p)::%<type>s
-                OPERATOR(pg_catalog.<>) CAST($1 AS %<type>s)
-          ORDER BY n LIMIT 1
-        SQL
 
         def initialize(conn, constants)
           @conn = conn
@@ -60,12 +53,26 @@ module Quaack
 
         # The value's nearest neighbour either side that col's type keeps.
         def finest(col, value)
-          sql = format(FINE_SQL, type: col.type)
+          sql = fine_sql(col)
           %w[1 -1].filter_map do |sign|
             @conn.exec_params(sql, [value, sign, PG::TextEncoder::Array.new.encode(FINEST)]).values.dig(0, 0)
           rescue PG::Error
             nil
           end
+        end
+
+        # value + sign * step, as col's type, for the first step of FINEST
+        # the type doesn't round away.
+        def fine_sql(col)
+          <<~SQL
+            SELECT (CAST($1 AS #{col.type}) OPERATOR(pg_catalog.+)
+                    ($2::pg_catalog.numeric OPERATOR(pg_catalog.*) p))::#{col.type}::pg_catalog.text
+            FROM pg_catalog.unnest($3::pg_catalog.numeric[]) WITH ORDINALITY AS steps (p, n)
+            WHERE (CAST($1 AS #{col.type}) OPERATOR(pg_catalog.+)
+                   ($2::pg_catalog.numeric OPERATOR(pg_catalog.*) p))::#{col.type}
+                  OPERATOR(pg_catalog.<>) CAST($1 AS #{col.type})
+            ORDER BY n LIMIT 1
+          SQL
         end
       end
     end
