@@ -181,9 +181,15 @@ module Quaack
           ended
         end
 
+        # Enumerate's outcome, or untested if it fails, so fuzz's pass
+        # stands. A cancel QUAACK didn't send still ends the step.
         def enumerate(limit)
           kinds = Enumerate::Kinds.new(@catalog, @generator.plan, @domains)
           Enumerate::Run.new(self, Enumerate::Worlds.new(@catalog, @generator.plan, @domains, kinds), limit).call
+        rescue Error, ArenaRunner::Error, PG::Error, Deadline::Expired => e
+          raise if e.is_a?(ArenaRunner::Error) && ArenaRunner::Cancel.foreign?(e)
+
+          Enumerate.untested
         end
 
         def search(stop, rng)

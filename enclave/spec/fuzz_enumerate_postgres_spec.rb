@@ -155,6 +155,72 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(result.enumerate.worlds).to be < finished.worlds
   end
 
+  # Task 20261012-26: enumerate failing after a fuzz pass leaves that pass,
+  # with its trials, standing, and enumerate untested.
+  describe "a failure in enumerate" do
+    def fuzz_alone(original, candidate)
+      fuzz.search(conn, original, candidate, stop: fuzz::StopRule.trials(40), enumerate: nil).fuzz
+    end
+
+    # As in "drops a kill that doesn't lift": every kill enumerate finds
+    # fails to lift, so it reopens the session. Another session holds a lock
+    # on s.items then, so the reopen's ALTER TABLE waits out its
+    # statement_timeout and fails.
+    it "keeps the fuzz pass and its trials when enumerate can't reopen its session, and calls enumerate untested" do
+      conn.exec(<<~SQL)
+        CREATE TABLE s.items (id integer PRIMARY KEY, owner_id integer NOT NULL);
+        CREATE TABLE s.owners (id integer PRIMARY KEY, item_id integer NOT NULL REFERENCES s.items);
+        ALTER TABLE s.items ADD FOREIGN KEY (owner_id) REFERENCES s.owners;
+      SQL
+      queries = ["SELECT id FROM s.items WHERE id > 1", "SELECT id FROM s.items WHERE id >= 1"]
+      alone = fuzz_alone(*queries)
+      holder = racetrack_and_arena.arena.connect
+      reopened = 0
+      allow(fuzz::Session).to receive(:new).and_wrap_original do |new, *args, **options|
+        new.call(*args, **options).tap do |session|
+          allow(session).to receive(:open).and_wrap_original do |open|
+            if caller_locations.any? { it.path.end_with?("fuzz/enumerate.rb") }
+              reopened += 1
+              holder.exec("BEGIN; LOCK TABLE s.items")
+            end
+            open.call
+          end
+        end
+      end
+
+      result = nil
+      expect do
+        result = fuzz.search(conn, *queries, stop: fuzz::StopRule.trials(40),
+                                             enumerate: described_class::Limit.worlds(3000), statement_timeout_ms: 200)
+      end.not_to raise_error
+      expect(reopened).to eq(1)
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    ensure
+      holder&.close
+    end
+
+    it "keeps the fuzz pass and its trials when the rewrite's deadline runs out while enumerate builds its kinds" do
+      alone = fuzz_alone(*pair)
+      building = false
+      allow(described_class::Kinds).to receive(:new).and_wrap_original do |new, *args|
+        building = true
+        Quaack::Enclave::Deadline.check!
+        new.call(*args)
+      end
+      deadline = Quaack::Enclave::Deadline.new(1, clock: -> { building ? 1_000.0 : 0.0 })
+
+      result = nil
+      expect { result = within(deadline) { both(*pair) } }.not_to raise_error
+      expect(building).to be(true)
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    end
+  end
+
   # The bound is true: every world of at most bound rows, each row one of
   # its table's kinds, every child row wired to each parent row or NULL, is
   # one the enumerator gives by the weight it says. A brute force over the
