@@ -818,6 +818,20 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261012-3: enumerate's worlds and bound, checked as egress does.
+    it "reads a rewrite_test with enumerate's stage, worlds and bound, and refuses one whose worlds or bound isn't" do
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"value",) +
+             %("stage":"enumerate","trials":40,"worlds":905,"bound":2})
+      result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.first).to include("stage" => "enumerate", "worlds" => 905, "bound" => 2)
+      [%("worlds":"#{sentinel}"), %("worlds":-1), %("bound":"#{sentinel}"), %("bound":5), %("bound":-1)].each do |f|
+        error = refusal(%({"type":"rewrite_test","rewrite":"rewrite_1","passed":true,#{f}}))
+        expect(error.rule).to eq("unexpected_output"), "for #{f}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Egress sends a report only if its plans pass Protocol::PlanNodes.valid?,
     # so the driver checks the same.
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
@@ -905,13 +919,14 @@ RSpec.describe Quaack::Driver::Transport do
         JSON.generate({ "type" => "report", "original_plan" => [], "labels" => [], "index_sources" => index_sources,
                         "rewrites" => [{ "rewrite" => "rewrite_1", "plan" => nil, **fields }] })
       end
-      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200 }
+      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200, "worlds" => 905, "bound" => 2 }
       result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
-      expect(result.messages.first["rewrites"].first.slice("sizes", "trials")).to eq(good)
+      expect(result.messages.first["rewrites"].first.slice("sizes", "trials", "worlds", "bound")).to eq(good)
       [{ "sizes" => [["public", "orders", sentinel]] }, { "sizes" => [["public", "orders", 2, sentinel]] },
        { "sizes" => sentinel }, { "trials" => sentinel }, { "trials" => -1 },
-       { "sizes" => [["public", "orders", 6]] }, { "sizes" => [["public", "orders", 37]] }].each do |planted|
+       { "sizes" => [["public", "orders", 6]] }, { "sizes" => [["public", "orders", 37]] },
+       { "worlds" => sentinel }, { "worlds" => -1 }, { "bound" => sentinel }, { "bound" => 5 }].each do |planted|
         error = refusal(report.call(planted))
 
         expect(error.rule).to eq("unexpected_output"), "for #{planted}"

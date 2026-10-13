@@ -27,6 +27,8 @@ module Quaack
           "plan-pruning" => "var(--st-rose)",
           # The only other indigo stage is in the candidates' diagram.
           "fuzz" => "var(--st-indigo)",
+          # The only other slate stage is in the candidates' diagram.
+          "enumerate" => "var(--st-slate)",
           "rewrite-test" => "var(--st-green)",
           "counterexamples" => "var(--st-gold)",
           "rewrite-index-ideas" => "var(--st-indigo)",

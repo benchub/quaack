@@ -34,6 +34,7 @@ module Quaack
           "assumption-check" => "After checking what each rewrite assumes",
           "plan-pruning" => "After checking each rewrite runs differently",
           "fuzz" => "After testing on random small databases",
+          "enumerate" => "After testing on every small database up to a few rows",
           "rewrite-test" => "After testing on made-up edge-case data",
           "counterexamples" => "After testing on data the LLM wrote to break them",
           "rewrite-index-ideas" => "Candidates after choosing indexes for each rewrite",

@@ -30,6 +30,9 @@ module Quaack
                             "type of columns, or get the same plan as the original query, with or without indexes.",
           "fuzz" => "QUAACK runs each rewrite and the original query on random small databases built around the " \
                     "query's own values, and drops any rewrite whose results differ.",
+          "enumerate" => "QUAACK then runs each rewrite that's left and the original query on every database of " \
+                         "up to a few rows over the query's own values, smallest first, for up to 30 seconds, and " \
+                         "drops any rewrite whose results differ.",
           "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
                             "the original query.",
           "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",
