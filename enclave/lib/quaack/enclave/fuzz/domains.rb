@@ -174,7 +174,7 @@ module Quaack
           derived = typed(@catalog.column(table, column), solutions)
           values = @values[[table, column]]
           cut = (values.index { !it.nil? } || 0) + 1
-          @values[[table, column]] = (values[0...cut] + derived + values[cut..]).uniq
+          @values[[table, column]] = (values.take(cut) + derived + values.drop(cut)).uniq
         end
 
         # numbers and their neighbours, as col's type writes them.

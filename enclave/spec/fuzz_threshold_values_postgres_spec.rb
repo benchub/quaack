@@ -83,6 +83,21 @@ RSpec.describe "Quaack::Enclave::Fuzz's values that solve a comparison's boundar
       expect(got).to include("33.3333333333333333", "34", "33")
       expect(got).not_to include("50", "51", "49")
     end
+
+    # Combinations match columns by name, so a boolean column of the same
+    # name, which takes no number, gets none, and nothing breaks.
+    it "gives a column of the same name that holds no number none of them" do
+      conn.exec("CREATE TABLE fx.flags (id bigint PRIMARY KEY, points_possible boolean)")
+      from = "SELECT a.id FROM fx.assignments a JOIN fx.flags f ON f.id = a.id WHERE f.points_possible AND "
+      queries = [2, 3].map { "#{from}100 / a.points_possible > #{it}" }
+      footprint = fuzz.send(:footprint, queries)
+      domains = Quaack::Enclave::Fuzz::Domains.new(conn, Quaack::Enclave::Fuzz::Catalog.new(conn, footprint), queries)
+
+      flags, assignments = %w[flags assignments].map { |name| footprint.find { it.name == name } }
+
+      expect(domains.values(flags, "points_possible").compact).to eq([])
+      expect(domains.values(assignments, "points_possible")).to include("50", "33.3333333333333333")
+    end
   end
 
   describe Quaack::Enclave::Fuzz::Thresholds do
