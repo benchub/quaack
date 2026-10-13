@@ -8,6 +8,7 @@ require_relative "dictionary"
 require_relative "facts"
 require_relative "key_classes"
 require_relative "legal"
+require_relative "thresholds"
 require_relative "tree"
 require_relative "typical"
 require_relative "world_values"
@@ -147,15 +148,37 @@ module Quaack
         def absorb_all(parses)
           parses.each { absorb(it) }
           knowledge(parses.map { it.tree.to_h })
-          @read.each { |table, column| @values[[table, column]] |= @dictionary.values(@catalog.column(table, column)) }
+          @read.each do |table, column|
+            @values[[table, column]] |= @dictionary.values(@catalog.column(table, column))
+            solved(table, column)
+          end
           @classes.join_foreign_keys(@catalog.kept)
           legalize
         end
 
         def knowledge(trees)
           @dictionary = Dictionary.new(@conn, trees.flat_map { Tree.constants(it) }.uniq)
-          @world = WorldValues.new(@conn, Facts.new(trees))
+          facts = Facts.new(trees)
+          @world = WorldValues.new(@conn, facts)
+          @thresholds = Thresholds.new(@conn, facts)
         end
+
+        # A column's Thresholds and their neighbours, as its type writes
+        # them, right after its first value, so they're among the first
+        # classes enumerate takes. Legalize then drops those its CHECKs
+        # forbid.
+        def solved(table, column)
+          solutions = @thresholds.values(column)
+          return if solutions.empty?
+
+          derived = typed(@catalog.column(table, column), solutions)
+          values = @values[[table, column]]
+          cut = (values.index { !it.nil? } || 0) + 1
+          @values[[table, column]] = (values.take(cut) + derived + values.drop(cut)).uniq
+        end
+
+        # numbers and their neighbours, as col's type writes them.
+        def typed(col, numbers) = Dictionary.new(@conn, numbers).values(col).filter_map { cast(col.type, it) }.uniq
 
         # A query's reads, join classes, and pools. Pools are extra values,
         # so a query whose atoms can't be read gives none, and still its
