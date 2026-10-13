@@ -1050,6 +1050,35 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(4, note_row)).first["rule"]).to eq("counterexample_round_bad_round")
     end
 
+    # Task 20261012-10: the rows make the original divide by zero, so the
+    # round disproves nothing, and the next one runs.
+    describe "a round whose rows make the original fail" do
+      let(:select_list) { "o.note, (o.id / (o.total - o.id))::text" }
+      let(:ratio) { "SELECT #{select_list} FROM public.orders o WHERE o.status = $2 AND o.note = $1" }
+
+      it "reports original_failed, not a disproof, records no evidence, and runs the next round" do
+        ready(ratio)
+        store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+        outcome = round(1, "INSERT INTO public.orders (id, note, status, total) VALUES (1, $1, $2, 1)")
+
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+        expect(lines(outcome).first).to eq("type" => "counterexample_round", "match" => nil,
+                                           "rule" => "original_failed", "load_order" => nil, "covered" => [],
+                                           "refused" => [], "load_failed" => false)
+        expect(stored.read("rewrite_round_1")).to include("round" => 1, "evidence" => false,
+                                                          "rule" => "original_failed")
+        expect(stored.entry?("rewrite_survived_1")).to be(false)
+        expect(burndown).to eq("stages" => {}, "totals" => {})
+        expect_no_leaks(sentinels, outcome)
+
+        second = round(2, "INSERT INTO public.orders (id, note, status, total) VALUES (1, $1, $2, 3)")
+
+        expect(lines(second).first).to include("match" => true, "rule" => nil, "load_failed" => false)
+        expect(stored.read("rewrite_round_1")).to include("round" => 2, "evidence" => true)
+      end
+    end
+
     # Task 20261012-2: a fuzz pass tests a rewrite whose query ScenarioTests
     # refuses, so its rounds run on a query rewrite-test built no atoms for.
     # They need none: it left no untested atom to cover.

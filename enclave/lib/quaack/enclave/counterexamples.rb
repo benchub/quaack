@@ -12,6 +12,7 @@ require_relative "counterexamples/evaluated"
 require_relative "counterexamples/parent_rows"
 require_relative "counterexamples/deferral"
 require_relative "counterexamples/clock_binding"
+require_relative "counterexamples/failure"
 
 module Quaack
   module Enclave
@@ -101,11 +102,20 @@ module Quaack
       # in every load order (ResultComparison.compare_in_load_orders: the parent rows reorder, the inserts keep their
       # order), then vacuity-guard's test for each untested atom (indexes into atoms, the original's PredicateAtoms),
       # each in its own arena transaction that rolls back. A fixture that fails to load disproves nothing: the round
-      # reports the runner's rule, with match nil, load_failed true, and nothing covered. Any other runner failure,
-      # such as the candidate failing to run (query_failed), disproves it, with match false, and so does QUAACK's own
-      # statement_timeout. A query that fails with statement_canceled, a cancel QUAACK didn't send (such as an
-      # operator's pg_cancel_backend), says nothing about the candidate, so it's raised and ends the step, as in
-      # RunDiscipline (ArenaRunner::Cancel.foreign?). Untested atoms with_true can't replace are skipped.
+      # reports the runner's rule, with match nil, load_failed true, and nothing covered.
+      #
+      # Nor does a round whose rows make the original fail, by an error from the data (a division by zero, say) or
+      # QUAACK's own statement_timeout: it says nothing about the candidate. The comparison runs many queries, built
+      # from either query, so when one fails, Failure.original_fails? runs the original's own comparison again,
+      # against itself, where every query is the original's. If a query fails there (the error's step is query), the
+      # round reports original_failed, with match nil, load_failed false, and nothing covered, and the next round
+      # runs. Otherwise the candidate failed where the original ran, such as query_failed or statement_timeout, and
+      # that disproves it, with match false and the runner's rule.
+      #
+      # A query that fails with statement_canceled, a cancel QUAACK didn't send (such as an operator's
+      # pg_cancel_backend), says nothing about the candidate, so it's raised and ends the step, as in RunDiscipline
+      # (ArenaRunner::Cancel.foreign?). Untested atoms with_true can't replace are skipped, and when a loosened
+      # original fails, the round keeps its verdict and covers nothing (covered).
       def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
         verdict = ResultComparison.compare_in_load_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)
@@ -114,16 +124,24 @@ module Quaack
       rescue ArenaRunner::Error => e
         raise if ArenaRunner::Cancel.foreign?(e)
 
-        load_failed = LOAD_RULES.include?(e.rule) || LOAD_STEPS.include?(e.step)
-        Round.new(match: load_failed ? nil : false, rule: e.rule, load_order: nil, covered: [], load_failed:)
+        Failure.round(runner, prepared, original, e)
       end
 
+      # The untested atoms' shapes this round exercised. A loosened original that fails on the fixture says nothing
+      # about the candidate, so it covers nothing and leaves the round's verdict as it is.
       def covered(runner, prepared, original, atoms, untested)
+        exercised(runner, prepared, original, atoms, untested).map { |i| atoms[i].shape }
+      rescue ArenaRunner::Error => e
+        raise if ArenaRunner::Cancel.foreign?(e)
+
+        []
+      end
+
+      def exercised(runner, prepared, original, atoms, untested)
         parse = PgQuery.parse(original)
         replaceable = untested.select { |i| atoms[i].replaceable }
         loosened = replaceable.to_h { |i| [i, PredicateAtoms.with_true(parse, atoms[i])] }
         VacuityGuard.exercised_atoms(runner, prepared.rows, original, loosened, inserts: prepared.inserts)
-                    .map { |i| atoms[i].shape }
       end
 
       def prepare(conn, inserts, placeholder_map:, tables:, queries: nil, settings: nil) # rubocop:disable Metrics/ParameterLists

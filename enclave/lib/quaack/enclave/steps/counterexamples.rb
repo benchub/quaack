@@ -321,7 +321,9 @@ module Quaack
           # untested atoms' shapes any round so far covered ("covered"), and
           # holds this round's "rule": nil for a match, the comparison's
           # rule for a mismatch, or the arena runner's when a statement
-          # failed. RewriteFate reads it to tell a disproof from a
+          # failed, or original_failed when the round's rows made the
+          # original fail (Enclave::Counterexamples.compare), which decides
+          # nothing. RewriteFate reads it to tell a disproof from a
           # candidate that failed to run. "fixture_loads" counts the
           # fixtures the rounds so far loaded, for the burndown, which is
           # recorded once survival is decided, before rewrite_survived_<n>

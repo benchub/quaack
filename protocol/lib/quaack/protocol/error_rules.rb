@@ -38,7 +38,8 @@ module Quaack
                  natural_join_unreplaceable
                  not_a_query_parse not_a_table
                  not_create_index not_immutable not_insert not_one_select not_plain_value nulls_not_distinct
-                 on_conflict on_only parse_error partitioned_relation pg_dump_failed pg_dump_missing pg_dump_too_old
+                 on_conflict on_only original_failed parse_error partitioned_relation pg_dump_failed pg_dump_missing
+                 pg_dump_too_old
                  plan_bad_shape plan_gate_bad_plan plan_gate_mismatch_likely_stale_statistics
                  plan_gate_not_comparable plan_no_buffers plan_not_analyzed plan_not_json plan_statement_mismatch
                  plan_table_mismatch plan_too_deep plan_too_large
