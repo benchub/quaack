@@ -1064,6 +1064,8 @@ From the review of 20261012-10 (minor). When a round's comparison raises a non-l
 
 Add tests that go red under the two surviving mutants, using real Postgres. For the CutTies gap, either show it's unreachable on a realistic query, or make the rerun follow the comparison's path.
 
+20261012-11 moved the rerun to `ResultComparison::OriginalRerun`, and ScenarioTests now uses it too. So the gap reaches rewrite-test: if the original fails only in a variant that the candidate's comparison triggers (say its tiebroken or unlimited run) on a fixture where the plain original runs, ScenarioTests skips that fixture when the candidate should have failed, and a wrong candidate could pass. That still needs rare SQL. Cover both callers.
+
 - **Depends on:** None.
 - **Came from:** The review of 20261012-10, 2026-10-12 (minor).
 - **Design:** llm-counterexamples.
@@ -1078,5 +1080,17 @@ A likely cause: `PgBouncer.wait_until_ready` (`spec/support/test_pgbouncer.rb`) 
 - **Depends on:** None.
 - **Came from:** The landing of 20261012-10, 2026-10-12.
 - **Design:** none (test harness).
+- **Status:** todo
+
+### 20261012-21. `original_failed`'s leftovers: a rerun after a load failure, and a swallowed cancel in `Compared#compare`.
+
+From the build and review of 20261012-11 (minor).
+- **The rerun runs after a load failure too.** `ScenarioTests`' `original_failed?` calls `ResultComparison::OriginalRerun` on any runner error, a load failure included. The rerun's own load then fails and the answer is no, which is right. But it adds 3 to `loads` for each fixture that won't load, per candidate, so the report's load count overstates the work. Skip the rerun when the error's rule or step is a load (`LOAD_RULES` / `LOAD_STEPS`), as `Counterexamples::Failure.round` does.
+- **`VacuityGuard::Compared#compare` swallows a foreign cancel.** It rescues every `ArenaRunner::Error`, including a cancel QUAACK didn't send (`ArenaRunner::Cancel.foreign?`), which everywhere else ends the step. Re-raise it, test first. This predates 20261012-11.
+- **One report-payload check is green on `main`.** The `original_failed` case in report-payload's "isn't a rule bug" list passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-11, 2026-10-12.
+- **Design:** rewrite-test, vacuity-guard.
 - **Status:** todo
 
