@@ -81,6 +81,7 @@ module CatalogNames
       "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/fuzz/dictionary.rb", "col.type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/fuzz/legal.rb", "type"] => "an ArenaSchema column's type, read on the arena connection",
+    ["quaack/enclave/fuzz/domains.rb", "type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/assumption_check/denormalized_equal.rb", "kind.type_name"] =>
       "schema.name, both quote_ident'd, from Equality.base"
   }.freeze
