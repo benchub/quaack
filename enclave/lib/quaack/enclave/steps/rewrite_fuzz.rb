@@ -26,7 +26,10 @@ module Quaack
       # production, a count of worlds for specs, or none. A query the search
       # can't take (Fuzz::Error, a statement ArenaRunner refuses, or a
       # failure on the arena) is untested too: ScenarioTests then meets it
-      # as it would without fuzz.
+      # as it would without fuzz. A cancel QUAACK didn't send, from a lift
+      # (ArenaRunner::Cancel.foreign?), isn't: it ends the step, as it does
+      # in ScenarioTests, before any burndown is recorded. An error in
+      # enumerate alone leaves fuzz's outcome standing (Fuzz::Search).
       #
       # A disproof's entry carries the rule, the stage that found it (fuzz
       # or enumerate), fuzz's trials, enumerate's worlds and bound, and
@@ -67,11 +70,18 @@ module Quaack
           Deadline.within(deadline) do
             Fuzz.search(connect.call, original, candidate, stop:, enumerate: limit, honour:)
           end
-        rescue *UNTESTED
-          untested
+        rescue *UNTESTED => e
+          untested_after(e)
         end
 
         def untested = Fuzz::Results.new(fuzz: Fuzz.untested, enumerate: Fuzz::Enumerate.untested)
+
+        # Both untested, or error raised again if it's a cancel QUAACK didn't send.
+        def untested_after(error)
+          raise error if error.is_a?(ArenaRunner::Error) && ArenaRunner::Cancel.foreign?(error)
+
+          untested
+        end
 
         def fuzz_disproved?(results) = results.fuzz.verdict == :disproved
 

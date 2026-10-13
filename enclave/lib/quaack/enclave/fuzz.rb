@@ -70,7 +70,9 @@ module Quaack
       def run(conn, original, candidate, stop:, **) = search(conn, original, candidate, stop:, enumerate: nil, **).fuzz
 
       # The fuzz search, then, if it passed and enumerate is an
-      # Enumerate::Limit, enumerate in the same session, as Results.
+      # Enumerate::Limit, enumerate in the same session, as Results. An
+      # error in enumerate makes it untested and leaves fuzz's outcome as it
+      # was; a cancel QUAACK didn't send is raised, from either.
       def search(conn, original, candidate, stop:, enumerate:, honour: [], seed: nil, # rubocop:disable Metrics/ParameterLists
                  statement_timeout_ms: ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS)
         queries = [original, candidate]
@@ -181,9 +183,15 @@ module Quaack
           ended
         end
 
+        # Enumerate's outcome, or untested if it fails, so fuzz's pass
+        # stands. A cancel QUAACK didn't send still ends the step.
         def enumerate(limit)
           kinds = Enumerate::Kinds.new(@catalog, @generator.plan, @domains)
           Enumerate::Run.new(self, Enumerate::Worlds.new(@catalog, @generator.plan, @domains, kinds), limit).call
+        rescue Error, ArenaRunner::Error, PG::Error, Deadline::Expired => e
+          raise if e.is_a?(ArenaRunner::Error) && ArenaRunner::Cancel.foreign?(e)
+
+          Enumerate.untested
         end
 
         def search(stop, rng)

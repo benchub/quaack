@@ -96,6 +96,45 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     SQL
   end
 
+  # Arena SQL for a nap() that sleeps once, the first time it runs with
+  # orders' foreign key to customers in place: in a lift, which enforces
+  # every constraint, never in fuzz's session, which drops it. A sequence
+  # counts the runs, since no rollback resets it.
+  let(:napping) do
+    <<~SQL
+      CREATE TABLE public.customers (id int PRIMARY KEY);
+      ALTER TABLE public.orders ADD COLUMN customer_id int REFERENCES public.customers;
+      CREATE SEQUENCE public.naps;
+      CREATE FUNCTION public.nap() RETURNS boolean LANGUAGE plpgsql AS $$
+        BEGIN
+          IF EXISTS (SELECT FROM pg_constraint WHERE conname = 'orders_customer_id_fkey')
+             AND nextval('public.naps') = 1 THEN
+            PERFORM pg_sleep(30);
+          END IF;
+          RETURN true;
+        END $$;
+    SQL
+  end
+
+  # Whether the step stored no result, survival, or burndown for rewrite_1.
+  def stored_nothing?
+    stages = Quaack::Enclave::Burndown.read(stored).fetch("stages", {})
+    %w[rewrite_tested_1 rewrite_survived_1].none? { stored.entry?(it) } &&
+      stages.values.none? { it.key?("rewrite_1") }
+  end
+
+  let(:rewrite_test) { Quaack::Enclave::Steps::Counterexamples::RewriteTest }
+
+  # rewrite-test in this process, as the CLI calls it, with libpq_env's
+  # credentials, under deadline.
+  def in_process(search, deadline, env = {})
+    saved = ENV.to_h
+    libpq_env.merge(env).each { |name, value| value.nil? ? ENV.delete(name) : ENV.store(name, value) }
+    rewrite_test.call(store: stored, options: { "search" => search }, deadline:)
+  ensure
+    ENV.replace(saved)
+  end
+
   def arena_exec(sql)
     server = production.server
     conn = PG.connect(host: server.host, port: server.port, dbname: arena_name, user: TestPostgres::USER,
@@ -680,6 +719,20 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: { "trials" => 0,
                                                                                        "untested" => 1 }))
       end
+
+      # Task 20261012-26: a cancel QUAACK didn't send, of a lift, says
+      # nothing about the rewrite, so the step fails and stores nothing for
+      # it, as for ScenarioTests.
+      it "fails with statement_canceled, storing nothing for the rewrite, when an operator cancels fuzz's lift" do
+        ready("#{looser} AND public.nap()", arena_sql: napping)
+
+        outcome, canceled = cancel_arena_sleeper { fuzz_step("rewrite_1", FUZZ_TO_KILL) }
+
+        expect(canceled).to be(true)
+        expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
+                                        "rule" => "statement_canceled", "sqlstate" => "57014" }])
+        expect(stored_nothing?).to be(true)
+      end
     end
 
     # Task 20261012-3: enumerate runs after a fuzz pass, in the same
@@ -747,6 +800,20 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           expect(burndown["stages"]["enumerate"]["rewrite_1"])
             .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
         end
+
+        # Task 20261012-26: as for fuzz's lift. Fuzz misses the dropped
+        # NULLS LAST, so enumerate's kill is the first lift.
+        it "fails with statement_canceled, storing nothing for the rewrite, when an operator cancels " \
+           "enumerate's lift" do
+          ready(candidate.sub("$1 ORDER", "$1 AND public.nap() ORDER"), arena_sql: napping)
+
+          outcome, canceled = cancel_arena_sleeper { enumerate_step }
+
+          expect(canceled).to be(true)
+          expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
+                                          "rule" => "statement_canceled", "sqlstate" => "57014" }])
+          expect(stored_nothing?).to be(true)
+        end
       end
 
       it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials and enumerate's counts" do
@@ -777,6 +844,23 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(tested).not_to have_key("refused")
         expect(stored.entry?("rewrite_survived_1")).to be(false)
       end
+
+      # Task 20261012-26: an error in enumerate after a fuzz pass leaves
+      # that pass standing, so it still covers a query ScenarioTests refuses.
+      it "lets a fuzz pass stand for a refused query when enumerate fails, recording enumerate as untested" do
+        ready(same, status_check: "status = 'open' OR status = 'closed'")
+        allow(Quaack::Enclave::Fuzz::Enumerate::Kinds).to receive(:new).and_raise(Quaack::Enclave::Fuzz::Error)
+
+        message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
+
+        expect(message).to include(passed: true, scenario: nil, rule: nil, stage: "fuzz", worlds: 0, bound: nil)
+        expect(message[:trials]).to be_a(Integer).and be >= 40
+        expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message[:trials])
+        expect(burndown["stages"]["fuzz"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: { "trials" => message[:trials] }))
+        expect(burndown["stages"]["enumerate"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
+      end
     end
 
     # Task 20261010-53: a rewrite whose test runs past its budget is
@@ -784,18 +868,6 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     # disproved, so it goes on to counterexamples and the later stages like
     # one that passed, with rule out_of_time as its caution.
     describe "the budget per rewrite" do
-      let(:rewrite_test) { Quaack::Enclave::Steps::Counterexamples::RewriteTest }
-
-      # rewrite-test in this process, as the CLI calls it, with libpq_env's
-      # credentials, under deadline.
-      def in_process(search, deadline, env = {})
-        saved = ENV.to_h
-        libpq_env.merge(env).each { |name, value| value.nil? ? ENV.delete(name) : ENV.store(name, value) }
-        rewrite_test.call(store: stored, options: { "search" => search }, deadline:)
-      ensure
-        ENV.replace(saved)
-      end
-
       def spent = Quaack::Enclave::Deadline.new(0)
 
       it "carries a rewrite out of time on to counterexamples with its caution, calls it no bug, and tests the next" do
