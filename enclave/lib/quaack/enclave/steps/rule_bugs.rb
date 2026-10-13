@@ -14,7 +14,8 @@ module Quaack
       #   RuleBugs.call(store)
       #   # => [{ "rewrite" => "rewrite_1", "rules" => ["key_in_self_join"], "step" => "rewrite-test" }]
       #
-      # step is what disproved it: fuzz (rewrite-test's fuzz search, task 20261012-2), rewrite-test,
+      # step is what disproved it: fuzz (rewrite-test's fuzz search, task 20261012-2), enumerate
+      # (its enumerate stage, task 20261012-3), rewrite-test,
       # counterexamples, or result-comparison. rewrite-test and
       # counterexamples disprove it only with a result mismatch, and fuzz
       # also with query_failed, as RewriteFate reads
@@ -42,12 +43,13 @@ module Quaack
       # RewriteSource, which sends only QUAACK's own.
       module RuleBugs
         # RewriteFate's fates that say rewrite-test or counterexamples got different results, or, for
-        # fuzz's query_failed, that the rewrite failed where the original ran. A
+        # fuzz's and enumerate's query_failed, that the rewrite failed where the original ran. A
         # scenario or round that ended without comparing (unsupported_order,
         # query_failed, statement_timeout, and the rest of RewriteFate's
         # FAILURES) is rewrite_test_failed or counterexamples_failed, and
         # says nothing about the rewrite.
-        TEST_DISPROOFS = { "fuzz_disproved" => "fuzz", "rewrite_test_disproved" => "rewrite-test",
+        TEST_DISPROOFS = { "fuzz_disproved" => "fuzz", "enumerate_disproved" => "enumerate",
+                           "rewrite_test_disproved" => "rewrite-test",
                            "counterexamples_disproved" => "counterexamples" }.freeze
 
         module_function

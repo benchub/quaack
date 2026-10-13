@@ -9,7 +9,10 @@ module Quaack
     # A rewrite_test message's stage is the stage that decided it, nil (a
     # rewrite plan-pruning discarded, which nothing tested) or one of
     # STAGES, and trials how many small random databases fuzz compared the
-    # two queries on, nil or a count.
+    # two queries on, nil or a count. Task 20261012-3 adds the enumerate
+    # stage, which runs after a fuzz pass, and its worlds, how many small
+    # databases it compared, nil or a count, and bound, the most rows of
+    # every database it tried, nil or 0 to MAX_BOUND.
     #
     # A fuzz disproof's sizes go only to the store and the report: one
     # [schema, table, rows] triple per table the shrunk counterexample put
@@ -19,9 +22,10 @@ module Quaack
     # one out. The rows themselves never leave the enclave.
     #
     #   FuzzResult.rewrite_test?("stage" => "fuzz", "trials" => 12)  # => true
+    #   FuzzResult.rewrite_test?("stage" => "enumerate", "worlds" => 900, "bound" => 2)  # => true
     #   FuzzResult.sizes?([["public", "orders", 2]])                  # => true
     module FuzzResult
-      STAGES = %w[fuzz rewrite-test].map(&:freeze).freeze
+      STAGES = %w[fuzz enumerate rewrite-test].map(&:freeze).freeze
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12
@@ -29,19 +33,28 @@ module Quaack
       # The most rows a size says, meaning that many or more.
       MAX_SIZE = 5
 
+      # Enumerate never puts more than 4 rows in a table, so a bound past 4
+      # rows wouldn't be true of every database that size.
+      MAX_BOUND = 4
+
       # A Postgres identifier is at most 63 bytes.
       MAX_NAME_BYTES = 63
 
       module_function
 
-      def rewrite_test?(fields) = stage?(fields["stage"]) && trials?(fields["trials"])
+      def rewrite_test?(fields) = stage?(fields["stage"]) && counts?(fields)
 
       def stage?(stage) = stage.nil? || STAGES.include?(stage)
 
       def trials?(trials) = trials.nil? || count?(trials)
 
-      # Whether each of a report's rewrites carries sizes and trials that pass.
-      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && trials?(it["trials"]) }
+      def bound?(bound) = bound.nil? || (count?(bound) && bound <= MAX_BOUND)
+
+      # Whether fields' trials and worlds are nil or counts, and its bound nil or 0 to MAX_BOUND.
+      def counts?(fields) = trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"])
+
+      # Whether each of a report's rewrites carries sizes, trials, worlds and bound that pass.
+      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && counts?(it) }
 
       def sizes?(sizes)
         return true if sizes.nil?

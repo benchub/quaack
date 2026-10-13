@@ -291,18 +291,31 @@ module Quaack
           went_on_untimed?(progress, reply)
         end
 
-        # What rewrite-test's fuzz search (task 20261012-2) found, under the
-        # rewrite's name: that a random small database proved it wrong, or
-        # how many it survived. Nothing when it compared none.
+        # What rewrite-test's fuzz search (task 20261012-2) and enumerate
+        # (20261012-3) found, under the rewrite's name: that a small
+        # database proved it wrong, or what it survived. Nothing when fuzz
+        # compared none.
         def fuzz_note(progress, message)
-          trials = message["trials"]
-          if message["stage"] == "fuzz" && message["passed"] == false
-            progress.step_note("rewrite-test", "A random small database built around the query's values proved " \
-                                               "the rewrite wrong")
-          elsif trials.is_a?(Integer) && trials.positive?
-            progress.step_note("rewrite-test", "Survived #{Report::Words.count(trials, "random small database")} " \
-                                               "built around the query's values")
-          end
+          note = search_note(message)
+          progress.step_note("rewrite-test", note) if note
+        end
+
+        SEARCH_DISPROOFS = {
+          "fuzz" => "A random small database built around the query's values proved the rewrite wrong",
+          "enumerate" => "A small database QUAACK enumerated from the query's values proved the rewrite wrong"
+        }.freeze
+
+        def search_note(message)
+          disproof = SEARCH_DISPROOFS[message["stage"]]
+          return disproof if disproof && message["passed"] == false
+
+          trials, bound = message.values_at("trials", "bound")
+          return unless trials.is_a?(Integer) && trials.positive?
+          return "Survived #{Report::Words.count(trials, "random small database")} built around the query's values" \
+            unless bound.is_a?(Integer) && bound.positive?
+
+          "Found no difference on #{Report::Words.count(trials, "random dataset")}, or on any dataset of up to " \
+            "#{Report::Words.count(bound, "row")} over its value classes"
         end
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)

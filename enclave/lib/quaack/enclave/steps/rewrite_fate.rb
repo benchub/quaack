@@ -28,6 +28,9 @@ module Quaack
       #                            found a small database where the results
       #                            differ, or the rewrite failed where the
       #                            original ran; with the rule
+      #   enumerate_disproved      rewrite-test's enumerate stage (task
+      #                            20261012-3) found one, among every small
+      #                            database over the row kinds; with the rule
       #   rewrite_test_disproved          a rewrite-test scenario got different results;
       #                            with the scenario and the rule
       #   rewrite_test_untested           rewrite-test couldn't build scenarios for the
@@ -79,11 +82,10 @@ module Quaack
       # each the schema_subset entry's own (the catalog's relations). A
       # cycle with any other value goes out as nil.
       module RewriteFate
-        FATES = %w[ranked same_plans fuzz_disproved rewrite_test_disproved rewrite_test_untested rewrite_test_failed
-                   rewrite_test_out_of_time
-                   counterexamples_disproved counterexamples_failed production_mismatch production_timed_out
-                   production_not_compared below_top_three footprint_tie not_better measurement_timed_out
-                   unfinished].freeze
+        FATES = %w[ranked same_plans fuzz_disproved enumerate_disproved rewrite_test_disproved rewrite_test_untested
+                   rewrite_test_failed rewrite_test_out_of_time counterexamples_disproved counterexamples_failed
+                   production_mismatch production_timed_out production_not_compared below_top_three footprint_tie
+                   not_better measurement_timed_out unfinished].freeze
 
         # The rules that say two results differed, in rewrite-test, counterexamples, and result-comparison.
         MISMATCHES = ResultComparator::MISMATCHES.map(&:to_s).freeze
@@ -91,6 +93,7 @@ module Quaack
         # The rules a fuzz disproof carries: a mismatch, or query_failed,
         # the rewrite failing on the data where the original ran (Fuzz::Lift).
         FUZZ_DISPROOFS = [*MISMATCHES, "query_failed"].freeze
+        SEARCH_FATES = { "fuzz" => "fuzz_disproved", "enumerate" => "enumerate_disproved" }.freeze
 
         # The rules that end a rewrite-test scenario or a counterexample-compare round with nothing
         # compared: the comparison's refusal, unsupported_order, every one of
@@ -184,8 +187,9 @@ module Quaack
           fate("rewrite_test_failed", scenario:, rule: known(FAILURES, tested["rule"]))
         end
 
-        def fuzz?(tested) = tested["stage"] == "fuzz" && known(FUZZ_DISPROOFS, tested["rule"])
-        def fuzz(tested) = fate("fuzz_disproved", rule: tested["rule"])
+        # A disproof by fuzz or enumerate, which carry the same rules.
+        def fuzz?(tested) = SEARCH_FATES.key?(tested["stage"]) && known(FUZZ_DISPROOFS, tested["rule"])
+        def fuzz(tested) = fate(SEARCH_FATES.fetch(tested["stage"]), rule: tested["rule"])
 
         def untested(tested, context)
           rule = known(REFUSALS, tested["rule"])

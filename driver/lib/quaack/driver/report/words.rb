@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/fuzz_result"
 require "quaack/protocol/rewrite_budget"
 
 require_relative "../rewrite_names"
@@ -46,6 +47,7 @@ module Quaack
         # also disproves a rewrite that fails where the original ran, and the
         # entry doesn't say which.
         BUG_STEPS = { "fuzz" => "was proved wrong on a random small database built around its own values",
+                      "enumerate" => "was proved wrong on a small database QUAACK enumerated from its own values",
                       "rewrite-test" => "returned different results on made-up test data",
                       "counterexamples" => "returned different results on test data the LLM wrote to break it",
                       "result-comparison" => "returned different results on the real data" }.freeze
@@ -59,6 +61,9 @@ module Quaack
 
         # Where fuzz's query_failed disproved a rewrite (task 20261012-2).
         FUZZ_FAILED = "it failed and the original query ran"
+
+        # An extra count a stage words its own way, by stage (task 20261012-3).
+        STAGE_EXTRAS = { "enumerate" => { "untested" => "not tested by enumeration" } }.freeze
 
         # DESIGN.md's burndown's stages: the original query's index search.
         INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",
@@ -77,6 +82,7 @@ module Quaack
                            "assumption-check" => "Checking what each rewrite assumes",
                            "plan-pruning" => "Checking each rewrite can run differently from the original query",
                            "fuzz" => "Testing on random small databases",
+                           "enumerate" => "Testing on every small database up to a few rows",
                            "rewrite-test" => "Testing on made-up edge-case data",
                            "counterexamples" => "Testing on data the LLM wrote to break them" }.freeze
         LATE_STAGES = { "rewrite-index-ideas" => "Choosing indexes for each rewrite",
@@ -96,6 +102,10 @@ module Quaack
                    "same_plans" => "planned the same as the original query",
                    "untested_atoms" => "conditions the test data never exercised",
                    "trials" => "random small databases compared", "untested" => "not tested by the random search",
+                   "worlds" => "small databases enumerated",
+                   **(1..Protocol::FuzzResult::MAX_BOUND).to_h do |rows|
+                     ["bound_#{rows}", "passed every database of up to #{rows} row#{"s" unless rows == 1}"]
+                   end,
                    "too_many" => "over the limit of five", "bad_assumption" => "assumed something QUAACK can't check",
                    "unmet_assumption" => "assumed something your data doesn't hold",
                    "operator_warnings" => "warnings on your own rewrites",

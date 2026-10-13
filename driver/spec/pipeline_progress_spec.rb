@@ -348,6 +348,32 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 1 passed"])
     end
 
+    # Task 20261012-3: enumerate runs after a fuzz pass, inside rewrite-test.
+    it "says, under the rewrite's name, that a small database QUAACK enumerated proved it wrong" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "value",
+                   "stage" => "enumerate", "trials" => 40, "worlds" => 12, "bound" => nil })
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to eq("#{name}: A small database QUAACK enumerated from the query's values proved the rewrite wrong " \
+               "(rewrite-test)")
+    end
+
+    it "says, in the user's words, that no random dataset nor any dataset up to the bound differed" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
+                   "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows over its " \
+               "value classes (rewrite-test)")
+    end
+
     it "says nothing of random small databases when the search compared none" do
       entries.merge!(rewrite(1, rewrite_survived: false))
       tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,

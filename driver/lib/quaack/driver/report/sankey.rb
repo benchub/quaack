@@ -38,6 +38,7 @@ module Quaack
           "index-rank" => :sets,
           "rewrite-rules" => :rewrites, "llm-rewrites" => :rewrites, "operator-rewrites" => :rewrites,
           "assumption-check" => :rewrites, "plan-pruning" => :rewrites, "fuzz" => :rewrites,
+          "enumerate" => :rewrites,
           "rewrite-test" => :rewrites, "counterexamples" => :rewrites,
           "rewrite-index-ideas" => :candidates, "measurement" => :candidates
         }.freeze

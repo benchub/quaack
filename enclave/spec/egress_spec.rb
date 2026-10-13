@@ -269,6 +269,15 @@ RSpec.describe Quaack::Enclave::Egress do
       expect(JSON.parse(out)).to include("rule" => "query_failed", "stage" => "fuzz", "trials" => 0)
     end
 
+    it "sends enumerate's stage, the worlds it compared, and the bound it finished (20261012-3)" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: nil, rule: nil,
+                             stage: "enumerate", trials: 41_200, worlds: 905, bound: 4)
+
+      expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => true,
+                                    "scenario" => nil, "rule" => nil, "stage" => "enumerate",
+                                    "trials" => 41_200, "worlds" => 905, "bound" => 4)
+    end
+
     [
       ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
       ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],
@@ -285,7 +294,12 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a stage as a Symbol", { stage: :fuzz }],
       ["a string where the trials count belongs", { trials: EGRESS_SENTINEL }],
       ["a negative trials count", { trials: -1 }],
-      ["a fractional trials count", { trials: 1.5 }]
+      ["a fractional trials count", { trials: 1.5 }],
+      ["a string where the worlds count belongs", { worlds: EGRESS_SENTINEL }],
+      ["a negative worlds count", { worlds: -1 }],
+      ["a string where the bound belongs", { bound: EGRESS_SENTINEL }],
+      ["a bound past MAX_BOUND", { bound: Quaack::Protocol::FuzzResult::MAX_BOUND + 1 }],
+      ["a bound of a query constant's worth", { bound: 37 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a vacuity diagnostic"
@@ -533,10 +547,11 @@ RSpec.describe Quaack::Enclave::Egress do
       it "sends tables either query names, with their row counts, and trials as a count" do
         sizes = [["public", "orders", 5], ["sales", "customers", 1], ["sales", "refunds", 1]]
         rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
-        sent = parsed(report_with({ "sizes" => sizes, "trials" => 41_200 }, sql: rewrite_sql))
-        expect(sent["rewrites"].first).to include("sizes" => sizes, "trials" => 41_200)
-        expect(parsed(report_with({ "sizes" => nil, "trials" => nil }))["rewrites"].first)
-          .to include("sizes" => nil, "trials" => nil)
+        counts = { "trials" => 41_200, "worlds" => 905, "bound" => 3 }
+        sent = parsed(report_with({ "sizes" => sizes, **counts }, sql: rewrite_sql))
+        expect(sent["rewrites"].first).to include("sizes" => sizes, **counts)
+        none = { "sizes" => nil, "trials" => nil, "worlds" => nil, "bound" => nil }
+        expect(parsed(report_with(none))["rewrites"].first).to include(none)
       end
 
       [
@@ -550,7 +565,12 @@ RSpec.describe Quaack::Enclave::Egress do
         ["sizes under a Symbol key", { sizes: [["public", EGRESS_SENTINEL, 1]] }],
         ["a String in place of trials", { "trials" => EGRESS_SENTINEL }],
         ["a negative trials", { "trials" => -1 }],
-        ["trials under a Symbol key", { trials: EGRESS_SENTINEL }]
+        ["trials under a Symbol key", { trials: EGRESS_SENTINEL }],
+        ["a String in place of worlds", { "worlds" => EGRESS_SENTINEL }],
+        ["worlds under a Symbol key", { worlds: EGRESS_SENTINEL }],
+        ["a String in place of the bound", { "bound" => EGRESS_SENTINEL }],
+        ["a bound past MAX_BOUND", { "bound" => Quaack::Protocol::FuzzResult::MAX_BOUND + 1 }],
+        ["a bound under a Symbol key", { bound: 37 }]
       ].each do |what, planted|
         it "refuses one with #{what}, without quoting it" do
           refusal = "a value in this report message has fuzz sizes or trials that aren't the queries' tables " \

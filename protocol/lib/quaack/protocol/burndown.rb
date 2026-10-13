@@ -12,7 +12,7 @@ module Quaack
       # the index searches of plan-pruning and rewrite-index-ideas, one search per rewrite.
       STAGES = %w[index-from-query index-from-plan index-dedupe index-test llm-index-ideas llm-index-refine
                   index-rank rewrite-rules llm-rewrites assumption-check operator-rewrites plan-pruning fuzz
-                  rewrite-test counterexamples rewrite-index-ideas measurement].map(&:freeze).freeze
+                  enumerate rewrite-test counterexamples rewrite-index-ideas measurement].map(&:freeze).freeze
 
       # The steps the driver runs that call an LLM (DESIGN.md, "Which part runs
       # each step"). The last two are llm-index-ideas and llm-index-refine in rewrite-index-ideas, searching

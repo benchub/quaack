@@ -76,7 +76,11 @@ module Quaack
       #                    on loaded inserts; nil unless it survived),
       #                    "trials" (how many random small databases
       #                    rewrite-test's fuzz search compared it on, a
-      #                    count, or nil), and "sizes" (a fuzz disproof's
+      #                    count, or nil), "worlds" and "bound" (how many
+      #                    small databases rewrite-test's enumerate stage
+      #                    compared it on, and the most rows of every one
+      #                    it tried, task 20261012-3; a count and 0 to 4,
+      #                    or nil), and "sizes" (a fuzz or enumerate disproof's
       #                    rows per table, [schema, table, rows], or nil;
       #                    FuzzSizes, which egress checks too) }
       #   indexes          { built index name => { "ddl", "size",
@@ -90,7 +94,7 @@ module Quaack
       #                    (DESIGN.md's negative-result), each index once,
       #                    with the searches it came up in, whether or not
       #                    top is empty
-      #   rule_bugs        [{ "rewrite", "rules", "step" (fuzz, rewrite-test, counterexamples,
+      #   rule_bugs        [{ "rewrite", "rules", "step" (fuzz, enumerate, rewrite-test, counterexamples,
       #                    or result-comparison) }]: each rule-made rewrite a test disproved
       #                    (never a result-comparison timeout, which compares nothing,
       #                    nor a rewrite-test or counterexamples disproof of one resting on
@@ -180,12 +184,15 @@ module Quaack
           end
         end
 
-        # rewrite-test's fuzz trials, if they're a count, and a disproof's
-        # sizes, if FuzzSizes.check passes them against the two queries.
+        # rewrite-test's fuzz trials and enumerate's worlds, if they're
+        # counts, enumerate's bound if it's one, and a disproof's sizes, if
+        # FuzzSizes.check passes them against the two queries.
         def fuzz(store, name, original, sql)
           tested = NegativeResult.optional(store, name.sub("rewrite_", "rewrite_tested_")) || {}
-          trials = tested["trials"]
+          trials, worlds, bound = tested.values_at("trials", "worlds", "bound")
           { "trials" => (trials if Protocol::FuzzResult.trials?(trials)),
+            "worlds" => (worlds if Protocol::FuzzResult.trials?(worlds)),
+            "bound" => (bound if Protocol::FuzzResult.bound?(bound)),
             "sizes" => FuzzSizes.check(tested["sizes"], FuzzSizes.tables(original, sql)) }
         end
 

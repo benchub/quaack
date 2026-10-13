@@ -29,6 +29,8 @@ module Quaack
           "rewrite_test_disproved" => "#{DIFFERENT} made-up test data%<scenario>s, so it's wrong.",
           "fuzz_disproved" => "#{DIFFERENT} a random small database built around its own values%<fuzz>s, so it's " \
                               "wrong.",
+          "enumerate_disproved" => "#{DIFFERENT} a small database QUAACK enumerated from its own values%<fuzz>s, " \
+                                   "so it's wrong.",
           "counterexamples_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
           "rewrite_test_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
           "counterexamples_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
@@ -56,6 +58,13 @@ module Quaack
         # original ran (task 20261012-2).
         FUZZ_FAILED = "It failed on a random small database built around its own values%<fuzz>s, where the " \
                       "original query ran, so it's wrong."
+        ENUMERATE_FAILED = "It failed on a small database QUAACK enumerated from its own values%<fuzz>s, where " \
+                           "the original query ran, so it's wrong."
+        SEARCH_FAILED = { "fuzz_disproved" => FUZZ_FAILED, "enumerate_disproved" => ENUMERATE_FAILED }.freeze
+
+        # The fates of a rewrite a stage after the searches disproved, whose
+        # section keeps fuzz's sentence rather than enumerate's.
+        LATER_DISPROOFS = %w[rewrite_test_disproved counterexamples_disproved production_mismatch].freeze
 
         # An unfinished rewrite, by the last stage it finished.
         UNFINISHED = { nil => "QUAACK kept it, but the run ended before testing it.",
@@ -161,18 +170,25 @@ module Quaack
             size[2].between?(1, Protocol::FuzzResult::MAX_SIZE)
         end
 
-        # How many random small databases fuzz compared the rewrite on,
-        # unless one proved it wrong, or nil.
+        # How many random small databases fuzz compared the rewrite on, and
+        # the bound enumerate finished, in the user's words (2026-10-12),
+        # unless either proved it wrong, or nil.
         def fuzz_line(entry)
           trials = entry["trials"]
-          return unless trials.is_a?(Integer) && trials.positive? && entry["fate"] != "fuzz_disproved"
+          return unless trials.is_a?(Integer) && trials.positive? && !SEARCH_FAILED.key?(entry["fate"])
 
-          "It also survived #{Words.count(trials, "random small database")} built around its own values."
+          bound = entry["bound"]
+          return "It also survived #{Words.count(trials, "random small database")} built around its own values." \
+            unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND) &&
+                   !LATER_DISPROOFS.include?(entry["fate"])
+
+          "Found no difference on #{Words.count(trials, "random dataset")}, or on any dataset of up to " \
+            "#{Words.count(bound, "row")} over its value classes."
         end
 
         def fate_text(entry)
           return not_better_text(entry) if entry["fate"] == "not_better"
-          return FUZZ_FAILED if entry["fate"] == "fuzz_disproved" && entry["rule"] == "query_failed"
+          return SEARCH_FAILED[entry["fate"]] if SEARCH_FAILED.key?(entry["fate"]) && entry["rule"] == "query_failed"
 
           FATES[entry["fate"]]
         end
