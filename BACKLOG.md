@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-13: fuzz draws values from world knowledge (`Fuzz::WorldValues`) and, in a quarter of worlds, many copies of a row (a query's integer constant up to 100, ±1). A disproof's size per table is capped at 5, meaning "5 or more": the enclave, egress (`Protocol::FuzzResult::MAX_SIZE`), the driver's transport check and the report payload all refuse more, and the report says "5 or more rows".
 - 20261012-3: after a fuzz pass, rewrite-test runs a new stage, `enumerate`: every world of up to w rows over each table's row kinds, for at most 30 s. The `rewrite_test` message's `stage` can be `enumerate`, and it gains `worlds` and `bound` (nil or 0 to 4, `Protocol::FuzzResult::MAX_BOUND`), checked in egress and the driver's transport. The report payload gains the fate `enumerate_disproved` and each rewrite's `worlds` and `bound`. The burndown gains the stage `enumerate`, between fuzz and rewrite-test. An enumerate pass counts as tested when ScenarioTests refuses or runs out of time. New spec env var `QUAACKS_ENUMERATE_WORLDS` (0 turns it off).
 - 20261012-23: fuzz's (and so enumerate's) values for a column combined with a constant and compared with another (`100 / x > 2`, `x * 0.9 >= 45`) now include the values that solve the comparison, with their ceiling, floor and neighbours (`Fuzz::Thresholds`, one Postgres query per comparison at setup). No change to any reported field.
+- 20261012-26: an error in enumerate (from the arena, a query it can't take, or the deadline while it builds its kinds) leaves fuzz's pass and trials standing, with enumerate untested, in the message and the burndown. A cancel QUAACK didn't send, in fuzz's or enumerate's lift, now ends rewrite-test with `statement_canceled` and stores nothing for the rewrite, as one in ScenarioTests does; before, it made both searches untested and ScenarioTests ran on.
 
 ## How this file works.
 
@@ -1068,23 +1069,6 @@ Find where the time goes: copies worlds load up to 101 rows a table, a quarter o
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-26. enumerate: an error during enumerate throws away fuzz's pass.
-
-From the first review of 20261012-3 (minor). `Fuzz.search` runs fuzz, then enumerate after a fuzz pass, in one call (`Search#call` in `enclave/lib/quaack/enclave/fuzz.rb`). Enumerate rescues the deadline itself, but nothing rescues a `PG::Error`, `ArenaRunner::Error` or `Fuzz::Error` raised while it builds kinds, runs a world, or reopens the session after a failed lift (`confirm`). That error leaves `Fuzz.search`, and `RewriteFuzz.search` rescues it as `UNTESTED`, so both outcomes come back untested and fuzz's pass, with its trials, is lost. The fuzz burndown then records the rewrite untested too, and a ScenarioTests refusal is no longer covered by the fuzz pass.
-
-Fix it test first: make enumerate fail after fuzz passes (for example, a session reopen that raises), and check that fuzz's pass and trials stand, enumerate is untested, and both burndown records say so. Catch the error around enumerate in `Search#call`, not in `RewriteFuzz`.
-
-**A cancel QUAACK didn't send is swallowed too** (found while briefing this task, 2026-10-13). `Fuzz::Lift` raises a foreign cancel (`ArenaRunner::Cancel.foreign?`), as its spec says, but `RewriteFuzz::UNTESTED` rescues every `ArenaRunner::Error`, so the cancel becomes an untested fuzz and enumerate, and ScenarioTests runs on. DESIGN.md's rewrite-test says a cancel QUAACK didn't send ends the step and stores nothing for the rewrite. A trial's foreign cancel stays no kill, as DESIGN.md's fuzz section says.
-
-Decisions (made overnight, 2026-10-13, while the user was away; the user can revisit them):
-- Catch, around enumerate in `Search#call`, what `RewriteFuzz` treats as untested (`Fuzz::Error`, `ArenaRunner::Error`, `PG::Error`, `Deadline::Expired`), so a deadline that expires while enumerate builds its kinds is untested enumerate too. Fuzz's outcome stands.
-- A foreign cancel from fuzz or enumerate isn't caught by either rescue: it ends the step, as DESIGN.md says for rewrite-test, with nothing stored for the rewrite.
-
-- **Depends on:** None.
-- **Came from:** The first review of 20261012-3, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-27. enumerate: minors from the first review of 20261012-3.
 
 1. **`bound` leaves the enclave when enumerate compared nothing** (`Enumerate::Run#outcome` in `enclave/lib/quaack/enclave/fuzz/enumerate.rb`). `outcome` always sends `@worlds.bound(@done)`, so when every world was illegal (it failed to load, or the original errored) the verdict is untested but `bound` can be up to 4. The driver's `fuzz_line` (`report/rewrites.rb`) and `search_note` (`pipeline.rb`) key on `bound` being 1 to 4, not on the verdict, so the rewrite's section and progress line would say "or on any dataset of up to 4 rows" for an enumeration that compared nothing. Removing `@compared.positive? &&` from `ended` survives every spec. Send `bound` only with a verdict of passed or disproved (nil otherwise), test first, with a spec where every enumerated world is illegal.
@@ -1165,3 +1149,20 @@ From the review of 20261012-23 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 
+
+### 20261012-34. Fuzz and enumerate errors: minors from the build and review of 20261012-26.
+
+1. **One DESIGN.md sentence is wrong** (enumerate's Verdicts paragraph). It says the rewrite's deadline makes enumerate untested while it "runs a world". `Enumerate::Run#call` catches the deadline itself and returns `ended`, which can still pass with the bound it finished. Only a deadline while enumerate builds its kinds makes it untested. Fix the sentence.
+2. **Three surviving mutants.**
+   - `RewriteFuzz` re-raising every `ArenaRunner::Error`, not just a foreign cancel (`steps/rewrite_fuzz.rb`, about line 81), survives every spec. In practice it only changes `StatementCheck`'s `statement_not_allowed` and `statement_unparsable`. Add an example where `Fuzz.search` raises an `ArenaRunner::Error` that isn't a foreign cancel, and both outcomes come back untested with nothing raised.
+   - Dropping `ArenaRunner::Error` from `Search#enumerate`'s rescue survives (`fuzz.rb`, about lines 191–192).
+   - So does `Search#enumerate` re-raising every `ArenaRunner::Error`.
+   Enumerate can't realistically raise one, since `Lift` and `DataError.candidate_only?` swallow them. Add an example where `Kinds.new` raises a non-foreign `ArenaRunner::Error`, expecting enumerate untested.
+3. **The `ensure` can still lose fuzz's pass** (`Search#call`'s `ensure @session.close`). If the backend is killed during enumerate, the new rescue returns an untested enumerate. But `close` then sends `ROLLBACK` on the dead connection, and its `PG::Error` replaces the result, so both outcomes come back untested again. Rescue a `PG::Error` from the `close` in the `ensure`, test first.
+4. **ScenarioTests' foreign cancel stores fuzz's records.** `RewriteFuzz.call` writes the fuzz and enumerate burndown records before ScenarioTests runs. So a cancel QUAACK didn't send in ScenarioTests ends the step with those records already stored for the rewrite, against DESIGN.md's "store nothing for the rewrite". Decide whether the burndown records count as storing something. If they do, write them only once the rewrite's result is known.
+5. **Kinds and Worlds never check the deadline.** Building enumerate's kinds and worlds never calls `Deadline.check!`, so a large pairwise kinds build can't be stopped by the rewrite's budget. Check whether it's ever slow enough to matter, on the synthetic 583-table schema's widest footprint. If it is, check the deadline in the build.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-26, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
