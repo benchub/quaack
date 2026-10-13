@@ -93,9 +93,11 @@ module Quaack
         FUZZ_DISPROOFS = [*MISMATCHES, "query_failed"].freeze
 
         # The rules that end a rewrite-test scenario or a counterexample-compare round with nothing
-        # compared: the comparison's refusal, unsupported_order, and every one of
-        # ArenaRunner::RULES, ArenaRunner's and ArenaFixture's failures.
-        FAILURES = ["unsupported_order", *ArenaRunner::RULES.keys.map(&:to_s)].freeze
+        # compared: the comparison's refusal, unsupported_order, every one of
+        # ArenaRunner::RULES, ArenaRunner's and ArenaFixture's failures, and
+        # original_failed, the original failing on every fixture (ScenarioTests)
+        # or on a round's rows (Counterexamples).
+        FAILURES = ["unsupported_order", *ArenaRunner::RULES.keys.map(&:to_s), "original_failed"].freeze
 
         # Scenarios::Error's rules: why rewrite-test couldn't build scenarios.
         REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type

@@ -585,6 +585,8 @@ RSpec.describe "quaacks report-payload" do
         stored(store, 32, tested: tested(false, "s1", "transaction_closed"), survived: false)
         stored(store, 33, tested: tested(true), survived: false,
                           round: { "round" => 2, "evidence" => true, "rule" => "transaction_closed" })
+        # The original failed on every scenario, so nothing was compared.
+        stored(store, 34, tested: tested(false, nil, "original_failed"), survived: false)
       end
     end
 
@@ -621,7 +623,8 @@ RSpec.describe "quaacks report-payload" do
       30 => { "fate" => "rewrite_test_untested", "rule" => "domain_check" },
       31 => { "fate" => "rewrite_test_untested", "rule" => "exclusion_constraint" },
       32 => { "fate" => "rewrite_test_failed", "scenario" => "s1", "rule" => "transaction_closed" },
-      33 => { "fate" => "counterexamples_failed", "round" => 2, "rule" => "transaction_closed" }
+      33 => { "fate" => "counterexamples_failed", "round" => 2, "rule" => "transaction_closed" },
+      34 => { "fate" => "rewrite_test_failed", "rule" => "original_failed" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
@@ -1088,7 +1091,8 @@ RSpec.describe "quaacks report-payload" do
 
       # A rewrite-test scenario or counterexample-compare round that ended without comparing
       # results says nothing about the rewrite.
-      %w[unsupported_order query_failed statement_timeout statement_canceled begin_failed].each do |rule|
+      %w[unsupported_order query_failed statement_timeout statement_canceled begin_failed
+         original_failed].each do |rule|
         context "with a rule-made rewrite whose rewrite-test scenario ended as #{rule}" do
           let(:outcome) { with_rewrite { rule_made(it, 2, tested(false, rule, "s3"), false) } }
 
