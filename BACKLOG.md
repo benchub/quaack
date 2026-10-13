@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-22: once the original has failed on some fixture, a candidate passes only if the original returned a row with a value that's neither NULL nor zero on some fixture where it ran; otherwise it ends `original_failed`. No new reported field.
 - 20261012-13: fuzz draws values from world knowledge (`Fuzz::WorldValues`) and, in a quarter of worlds, many copies of a row (a query's integer constant up to 100, ±1). A disproof's size per table is capped at 5, meaning "5 or more": the enclave, egress (`Protocol::FuzzResult::MAX_SIZE`), the driver's transport check and the report payload all refuse more, and the report says "5 or more rows".
 - 20261012-3: after a fuzz pass, rewrite-test runs a new stage, `enumerate`: every world of up to w rows over each table's row kinds, for at most 30 s. The `rewrite_test` message's `stage` can be `enumerate`, and it gains `worlds` and `bound` (nil or 0 to 4, `Protocol::FuzzResult::MAX_BOUND`), checked in egress and the driver's transport. The report payload gains the fate `enumerate_disproved` and each rewrite's `worlds` and `bound`. The burndown gains the stage `enumerate`, between fuzz and rewrite-test. An enumerate pass counts as tested when ScenarioTests refuses or runs out of time. New spec env var `QUAACKS_ENUMERATE_WORLDS` (0 turns it off).
+- 20261012-23: fuzz's (and so enumerate's) values for a column combined with a constant and compared with another (`100 / x > 2`, `x * 0.9 >= 45`) now include the values that solve the comparison, with their ceiling, floor and neighbours (`Fuzz::Thresholds`, one Postgres query per comparison at setup). No change to any reported field.
 
 ## How this file works.
 
@@ -1034,18 +1035,7 @@ From the build and review of 20261012-11 (minor).
 
 ### 20261012-22. ScenarioTests: when the original failed on a fixture, count only fixtures where it returned a nonzero row as compared. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-23. fuzz and scenarios: values for a column that's combined with a constant, such as a constant divided by a column.
-
-Found by the review of 20261012-22 (2026-10-12; probe case H, `scratch/review-20261012-22/probe_spec.rb` in the main checkout). The original `SELECT a.id, a.course_id FROM fx.assignments a WHERE a.course_id = 1 AND 100 / a.points_possible > 2` (`points_possible numeric`) against the wrong rewrite with `> 3` passed both the scenarios and the fuzz search, at production's stop rule (30.0 s, 17,586 trials). The two differ only when `points_possible` is in [33⅓, 50). The pools hold the queries' constants and their neighbours (100, 2, 3, 1, 0, ...), so no trial puts the column in that band. Dividing a constant by a column, or comparing a column times a constant against another constant, is ordinary SQL (percentages, ratios, unit conversions).
-
-Fix it test first, on this query and one like `a.points_possible * 0.9 >= 45`. Where a column meets a constant through `/`, `*`, `+` or `-` and the result is compared with another constant, add the values that solve the comparison's boundary (100 / 2 = 50 and 100 / 3 ≈ 33.33 here, and 45 / 0.9 = 50), with the neighbours the pools already give a constant. Do it for fuzz's pools, and for the scenarios' near-miss values if they share the code. A cheaper, broader alternative: add the pairwise quotients and products of the queries' numeric constants. Measure which catches more on the hard corpus (`scratch/corpus-20261012-5/`) without false disproofs.
-
-Keep the trust boundary as in 20261012-2: these values stay in the enclave. A derived value is a function of the query's constants, so it must never leave in a size, a count or a message.
-
-- **Depends on:** 20261012-13 (it touches the same value pools; build after it).
-- **Came from:** The review of 20261012-22, 2026-10-12 (minor: outside that task).
-- **Design:** rewrite-test, fixture-scenarios.
-- **Status:** todo
+### 20261012-23. fuzz and scenarios: values for a column that's combined with a constant, such as a constant divided by a column. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row.
 
@@ -1144,4 +1134,28 @@ Open question for the user: at w = 1, should the rewrite's section keep fuzz's s
 - **Came from:** The build of 20261012-3, 2026-10-13.
 - **Design:** rewrite-test.
 - **Status:** todo (open question for the user)
+
+### 20261012-32. fuzz's solved comparison values: a column under a cast, and the shapes it skips.
+
+From the review of 20261012-23 (minor). `Fuzz::Facts` finds a comparison only when the column itself meets the constant, so `o.x::numeric / 3 > 2` isn't solved: against the wrong `> 2.5` it passed 3,000 fuzz trials and 2,000 enumerate worlds. A cast on the column is common where an integer column is divided to get a fraction. Look through a `type_cast` (and `CAST(...)`) to the column under it, test first on that pair.
+
+These are skipped cleanly (no crash, no change from before 20261012-23): nested arithmetic such as `(a.p * 2) + 3 > 9`, `IN (...)` lists, and `$1` parameters in place of a constant. Say in DESIGN.md's fuzz section that they aren't solved, beside column-by-column ratios.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-23, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-33. fuzz's solved comparison values: test gaps, and matching by column name.
+
+From the review of 20261012-23 (minor).
+
+1. **Two surviving mutants.** Removing the `COMPARES` gate in `Fuzz::Facts` (`enclave/lib/quaack/enclave/fuzz/facts.rb`, about line 82) survives, so nothing checks that only a comparison's operands are solved. Setting `Domains`' `cut` to 1 survives, so nothing checks where the solutions go when a column's value list starts with NULL. Add a test that goes red under each: a nested expression such as `(a.p * 2) + 3 > 9`, and a column whose first value is NULL.
+2. **The sentinel test's needle contains the sentinel's own digits** (`enclave/spec/counterexample_steps_postgres_spec.rb`, the solved-value example), so the plain sentinel check would catch the same leak. Use a comparison whose solution shares no digits with the query's constants (such as `100 / x > 7`, solving to 14.28…), so the test proves the solved value itself is checked.
+3. **Combinations match columns by name only** (`enclave/lib/quaack/enclave/fuzz/thresholds.rb`, about line 38), as `Facts.divided` does. A same-named column on another table in the query, such as `total` or `amount` on a joined table, gets the solutions too, and they take slots in its first six enumerate classes. Match on the column's table (the range variable's relation) where the query names it, and fall back to the name only where it doesn't. Measure enumerate's bound on the hard corpus before and after.
+
+- **Depends on:** None.
+- **Came from:** The review and build of 20261012-23, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
 
