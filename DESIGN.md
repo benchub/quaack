@@ -1374,7 +1374,7 @@ Give the LLM:
 
 A rewrite's rounds are one unit, on one provider, unless a later round's ask fails and the remaining rounds start fresh on another, and `counterexample_pairing` can keep them off the provider that wrote the rewrite (Several LLM providers).
 
-rewrite-test's fuzz search catches much of what the LLM catches (values from world knowledge, many copies of a row), but not all of it. Some wrong rewrites need rows that relate to each other in ways a value pool can't plan, such as a lag over days with one missing, and some need classes of value nobody has listed. Those are why this stage stays (the user, 2026-10-12).
+rewrite-test's fuzz search catches much of what the LLM catches (values from world knowledge, many copies of a row), but not all of it. Some wrong rewrites need rows that relate to each other in ways a value pool can't plan, and some need classes of value nobody has listed. Those are why this stage stays (the user, 2026-10-12).
 
 Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints, except to honour a rule's `denormalized_equal`, as in rewrite-test. (rewrite-test's fuzz search also drops the foreign keys that leave its footprint while it searches, with the user's go of 2026-10-12, but only a counterexample it lifts, reloaded with every constraint enforced, disproves: see fuzz under rewrite-test.) For the LLM's inserts: once the inserts have loaded, and after any deferred `UPDATE`s, the copy column's foreign keys are dropped and the copy is set on the class's rows.
 

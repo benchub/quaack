@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-10: a counterexample round where the original query fails on the round's rows (a data error or QUAACK's statement timeout) reports the new protocol rule `original_failed` with match nil, not a disproof, and the next round runs. The driver tells the LLM its rows made the original fail.
 - 20261012-11: rewrite-test no longer crashes when the original query fails on a scenario's rows. vacuity-guard treats such a fixture like one that won't load, and `s1_load_rule` can now say `original_failed` (added to the protocol's `VacuityDiagnostic::LOAD_RULES`). fixture-compare skips the fixture for every candidate. A candidate compared on no fixture ends with rule `original_failed` and no scenario, and its fate and burndown drop are `original_failed`. The report says the original failed on the test data.
 - 20261012-22: once the original has failed on some fixture, a candidate passes only if the original returned a row with a value that's neither NULL nor zero on some fixture where it ran; otherwise it ends `original_failed`. No new reported field.
+- 20261012-13: fuzz draws values from world knowledge (`Fuzz::WorldValues`) and, in a quarter of worlds, many copies of a row (a query's integer constant up to 100, ±1). A disproof's size per table is capped at 5, meaning "5 or more": the enclave, egress (`Protocol::FuzzResult::MAX_SIZE`), the driver's transport check and the report payload all refuse more, and the report says "5 or more rows".
 
 ## How this file works.
 
@@ -954,53 +955,7 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 - **Design:** llm-counterexamples.
 - **Status:** todo
 
-### 20261012-13. fuzz: value classes from world knowledge, and many copies of a row.
-
-From 20261012-5 (the user, 2026-10-12: keep llm-counterexamples, and teach the mechanical search what only the LLM caught). On 20261012-5's hard corpus (`scratch/corpus-20261012-5/` in the main checkout; the answer key is `cases/index.json`), the spike's swarm and enumeration caught 41 of the 76 wrong rewrites in scope, and the LLM caught all 76. The 35 the search missed need values nowhere near the queries' constants, or more than 4 rows in a table.
-
-Add to the fuzz search's value pools (20261012-2), per column type:
-- **Text:**
-  - the queries' string constants padded with spaces, tabs and newlines;
-  - an all-spaces string and the empty string;
-  - case-fold oddities: the long s (U+017F), the Kelvin sign (U+212A), dotted and dotless i;
-  - a decomposed (NFD) copy of an accented constant;
-  - a multibyte character;
-  - a constant's case variants, so a unique index that's case-sensitive still lets them in;
-  - a string holding the separator a `split_part` or LIKE pattern in the query uses, twice.
-- **Numbers:**
-  - NaN and ±infinity for numeric and float;
-  - .5 values on both sides of 0 for rounding;
-  - a negative value and 0 for a column that's divided by;
-  - a value just past int4's range where a query casts to int.
-- **Dates and times:**
-  - ISO-week and year-end dates (Dec 29 to Jan 3);
-  - Sundays, for dow against isodow;
-  - the same date in two years;
-  - ±infinity;
-  - DST hours: the switch and summer times, in the zones the queries name or else a few common ones.
-- **JSON:** each JSON type for a key the query reads: a number, the same number as a string, 10 against 10.0, JSON null, a missing key, a bare string against an array holding it, a number inside an array.
-- **Arrays:** an array holding NULL; duplicates and a different order.
-
-Add a generator that makes N rows sharing a group or a foreign key, where N is each integer constant in the queries, ±1 (a HAVING threshold, a window frame, a LIMIT or OFFSET).
-
-Keep the trust boundary as in 20261012-2: these values stay in the enclave.
-
-Measure with the harness on the hard corpus, 60 s per rewrite. Report:
-- what the search now catches of the 35;
-- any false disproof on the 23 sound rewrites in scope;
-- the change in time per rewrite.
-
-Some cases need rows that relate to each other in ways a value pool can't plan, such as days missing from a lag. Those, and classes nobody has listed, are why the LLM stage stays. Say so in DESIGN.md's counterexamples section.
-
-Answers (the user, 2026-10-12):
-- The copies generator follows integer constants up to 100, so a world has at most 101 rows in a table. It ignores larger constants.
-- A disproof's size of more than 4 rows in a table leaves the enclave as 5, meaning "5 or more". The enclave check (egress) and the driver's check both accept 5 and nothing higher. So a size can't carry a query constant (see 20261010-47), and 20261012-15's item 3 caps sizes at 5.
-- DST: when the queries name no time zone, use America/New_York, Europe/London and Australia/Sydney.
-
-- **Depends on:** 20261012-2.
-- **Came from:** 20261012-5, 2026-10-12 (the user's decision).
-- **Design:** rewrite-test, llm-counterexamples.
-- **Status:** todo
+### 20261012-13. fuzz: value classes from world knowledge, and many copies of a row. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-14. Report: minors from the reviews of 20261012-6.
 
@@ -1022,7 +977,7 @@ Answers (the user, 2026-10-12):
 
 1. **A counterexample found just as the deadline expires turns into a pass** (`fuzz.rb`: the deadline rescue near the shrink and lift, and `ended`). If the rewrite's deadline expires while a counterexample is being shrunk or lifted, the counterexample is dropped and `ended` returns passed. ScenarioTests then expires at once, and the fuzz pass replaces its `out_of_time`, so the "not tested in time" caution is lost. The fix: a deadline that expires mid-shrink or mid-lift leaves fuzz undecided, so the rewrite goes on as `out_of_time` would.
 2. **`QUAACKS_FUZZ_TRIALS` isn't confined to specs** (`fuzz/stop_rule.rb`). Set on a jump server, it quietly weakens the search, and 0 turns it off. Say so when it's set: a line on stderr, or a count in the fuzz burndown record, so a weakened run can't pass for a normal one.
-3. **Egress doesn't cap a disproof's sizes.** A size is never more than 4, the generator's most rows per table, but `FuzzResult.size?` accepts any positive count. Cap it at the generator's maximum. A shrunk size or a trial count can vary with a query's literal, such as a LIMIT or HAVING threshold. The user asked for both fields, and 20261010-47 is the precedent for counts like these. A cap narrows what a size can carry.
+3. **Done by 20261012-13** (sizes are capped at 5, "5 or more", in the enclave, egress, the driver and the report). **Egress doesn't cap a disproof's sizes.** A size is never more than 4, the generator's most rows per table, but `FuzzResult.size?` accepts any positive count. Cap it at the generator's maximum. A shrunk size or a trial count can vary with a query's literal, such as a LIMIT or HAVING threshold. The user asked for both fields, and 20261010-47 is the precedent for counts like these. A cap narrows what a size can carry.
 4. **No spec checks that fuzz never disproves a sound replayed rewrite.** The replay specs check only that each planted wrong rewrite is disproved. Assert that no rewrite outside a run's `outcome.wrong` gets `fuzz_disproved`.
 5. **The INTERSECT ALL versus INTERSECT trap (e2e case 100) isn't caught at the spec setting.** It needs 4 rows sharing one key. It was missed at 378 and 3,000 trials and found at 5,285, well inside the 30 s production floor, so production catches it. A spec at 40 trials can't show that. Either add a spec at a trial count that catches it, or note in the fuzz spec why it's left out.
 6. **Nothing tests that a number's neighbours go both ways** (`fuzz/dictionary.rb`, `finest`'s `%w[1 -1]`). With neighbours on one side only, every probe still disproved, because with two constants either side's neighbour lands in the gap. Add a test with a single constant that needs its upward neighbour, or say in a comment why one side is enough. This one came from the second review.
@@ -1103,5 +1058,36 @@ Keep the trust boundary as in 20261012-2: these values stay in the enclave. A de
 - **Depends on:** 20261012-13 (it touches the same value pools; build after it).
 - **Came from:** The review of 20261012-22, 2026-10-12 (minor: outside that task).
 - **Design:** rewrite-test, fixture-scenarios.
+- **Status:** todo
+
+### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row.
+
+From the review of 20261012-13 (minor). In a copies world, `Fuzz::Generator::Draw#count` (`enclave/lib/quaack/enclave/fuzz/generator/draw.rb`) gives each table the copies' foreign keys point to at least one row: `copies && parent?(table, copies.table) ? [rows, 1].max : rows`. Replacing that with `rows` keeps all 7 "many copies" examples in `fuzz_world_values_postgres_spec.rb` green. The users/orders OFFSET 21 example passes anyway, because users usually gets a row from the ordinary draw. Without the guard, a copies world whose parent drew 0 rows can't load its copies, so the world is wasted and the copies generator quietly does less.
+
+Add a test that goes red under that mutant, test first against the mutant: a copies world on a child table whose parent's draw is forced to 0 rows (a fixed `Config` or a seed that gives 0), or a direct unit test of `count`. Check the copies load and the parent has a row.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-13, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-25. fuzz: the trial rate fell 25–40% on ORM-shaped queries after 20261012-13.
+
+From the build and review of 20261012-13 (minor). On the same LLM replies under the same load, `main` against the 20261012-13 branch:
+
+| Query | Before | After |
+|---|---|---|
+| orm_join | about 210/s | about 140/s |
+| group_having | 130–210/s | 85–117/s |
+| correlated_exists | 115–145/s | 100–127/s |
+| keyset LIMIT 25 | 33–41/s | 27–32/s |
+
+On the hard corpus, the median rate on passes fell from 271/s to 209/s, and `mr_having_sum` fell from 287/s to 58/s. Nothing the baseline caught was lost, and passes still stop at the 30 s floor, so a pass now covers fewer worlds.
+
+Find where the time goes: copies worlds load up to 101 rows a table, a quarter of worlds are copies worlds (`COPIES_SHARE`), and world values may fail their CHECK or cast more often. Then tune `COPIES_SHARE` and the world-value rate, or make copies worlds cheaper, such as one multi-row INSERT. Measure with the hard corpus harness (`scratch/build-20261012-13/corpus_fuzz.rb` in the main checkout, 60 s per rewrite): keep 75 of 76 caught and 0 false disproofs, and report the rate on passes before and after.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-13, 2026-10-13 (minor).
+- **Design:** rewrite-test.
 - **Status:** todo
 

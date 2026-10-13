@@ -10944,3 +10944,64 @@ Build it on top of branch `task/20261012-11`, on branch `task/20261012-22`, and 
     - 6 of 8 mutants killed: count rows instead of nonzero rows; count any fixture with rows; apply the rule when the original never failed; skip the check and assume nonzero; ignore the cache; `any?` to `all?`. The two survivors are in `shows?`'s error handling, and were filed in 20261012-21.
     - Probes: the task's five wrong rewrites end `original_failed` with the search on and off. ORM-style queries whose original never fails (a Rails `s.*` join with ORDER BY/LIMIT, COUNT(*), aggregates, IN lists) behave as on `main`.
   - **Per-commit check** (the builder's, on the branch tip; `main` had only backlog commits since): only the four accepted failures. Enclave: 6652 examples passed.
+
+### 20261012-13. fuzz: value classes from world knowledge, and many copies of a row.
+
+From 20261012-5 (the user, 2026-10-12: keep llm-counterexamples, and teach the mechanical search what only the LLM caught). On 20261012-5's hard corpus (`scratch/corpus-20261012-5/` in the main checkout; the answer key is `cases/index.json`), the spike's swarm and enumeration caught 41 of the 76 wrong rewrites in scope, and the LLM caught all 76. The 35 the search missed need values nowhere near the queries' constants, or more than 4 rows in a table.
+
+Add to the fuzz search's value pools (20261012-2), per column type:
+- **Text:**
+  - the queries' string constants padded with spaces, tabs and newlines;
+  - an all-spaces string and the empty string;
+  - case-fold oddities: the long s (U+017F), the Kelvin sign (U+212A), dotted and dotless i;
+  - a decomposed (NFD) copy of an accented constant;
+  - a multibyte character;
+  - a constant's case variants, so a unique index that's case-sensitive still lets them in;
+  - a string holding the separator a `split_part` or LIKE pattern in the query uses, twice.
+- **Numbers:**
+  - NaN and ±infinity for numeric and float;
+  - .5 values on both sides of 0 for rounding;
+  - a negative value and 0 for a column that's divided by;
+  - a value just past int4's range where a query casts to int.
+- **Dates and times:**
+  - ISO-week and year-end dates (Dec 29 to Jan 3);
+  - Sundays, for dow against isodow;
+  - the same date in two years;
+  - ±infinity;
+  - DST hours: the switch and summer times, in the zones the queries name or else a few common ones.
+- **JSON:** each JSON type for a key the query reads: a number, the same number as a string, 10 against 10.0, JSON null, a missing key, a bare string against an array holding it, a number inside an array.
+- **Arrays:** an array holding NULL; duplicates and a different order.
+
+Add a generator that makes N rows sharing a group or a foreign key, where N is each integer constant in the queries, ±1 (a HAVING threshold, a window frame, a LIMIT or OFFSET).
+
+Keep the trust boundary as in 20261012-2: these values stay in the enclave.
+
+Measure with the harness on the hard corpus, 60 s per rewrite. Report:
+- what the search now catches of the 35;
+- any false disproof on the 23 sound rewrites in scope;
+- the change in time per rewrite.
+
+Some cases need rows that relate to each other in ways a value pool can't plan, such as days missing from a lag. Those, and classes nobody has listed, are why the LLM stage stays. Say so in DESIGN.md's counterexamples section.
+
+Answers (the user, 2026-10-12):
+- The copies generator follows integer constants up to 100, so a world has at most 101 rows in a table. It ignores larger constants.
+- A disproof's size of more than 4 rows in a table leaves the enclave as 5, meaning "5 or more". The enclave check (egress) and the driver's check both accept 5 and nothing higher. So a size can't carry a query constant (see 20261010-47), and 20261012-15's item 3 caps sizes at 5.
+- DST: when the queries name no time zone, use America/New_York, Europe/London and Australia/Sydney.
+
+- **Depends on:** 20261012-2.
+- **Came from:** 20261012-5, 2026-10-12 (the user's decision).
+- **Design:** rewrite-test, llm-counterexamples.
+- **Status:** done (merged 2026-10-13, be5c120c).
+  - **Decisions** (the main session, 2026-10-12; the user asleep, overnight rules): the size cap is part of this task and covers 20261012-15's item 3. The derived values stay in the enclave. A world the original fails on disproves nothing. Copies worlds are a share of the worlds, not all of them. Derived boundaries such as `100 / col > 2` were left to 20261012-23.
+  - **What landed:**
+    - 4a3c3f2d: sizes capped at 5, "5 or more": `Protocol::FuzzResult::MAX_SIZE` and `size?`, egress, the driver's transport check, and the report's "5 or more rows".
+    - 7428594a: `Fuzz::Facts` reads what the queries do with each column (casts, divisions, `split_part` and LIKE separators, JSON keys, time zones, years), and `Fuzz::WorldValues` builds the classes above from it, cast to each column's type and kept only if its CHECKs pass. A quarter of worlds are copies worlds; 0, 10 or 30% of a world's draws come from the world values. `fuzz_world_values_postgres_spec.rb` covers each class and the copies generator on real Postgres. DESIGN.md's rewrite-test fuzz section and the counterexamples paragraph.
+    - b4a627d5: `Domains#cast`'s column type added to the catalog-names scan's allowlist.
+  - **Measured** (hard corpus, 60 s per rewrite, production `Fuzz.run`): 75 of the 76 wrong rewrites caught (the baseline caught 42). Only `cv_topics_nulls_last` is still missed; the spike's enumeration kills it, so 20261012-3 should. 0 false disproofs on the 23 sound ones. Kill time median 0.12 s, max 4.86 s. Passes take the 30 s floor (median 30 s). The trial rate on passes fell from a median of 271/s to 209/s (`mr_having_sum` 287/s to 58/s).
+  - **Review: no blocking findings.**
+    - False disproofs: none on the spike's Canvas corpus (28 sound; 32 of 34 wrong caught, the two misses missed by `main` too), the e2e corpus (33 sound; 14 of 14 traps caught), or 119 LLM-written replies, LIMIT 25 and 50 queries among them.
+    - 12 of 14 mutants killed, among them the uncapped size in protocol and in fuzz, `COPIES_SHARE = 0`, an original that fails counted as a kill, each value class dropped, and the report's "or more". The parent-row guard in `draw.rb` survived (filed as 20261012-24). Letting copies keep unique columns survived but changes nothing, since `Uniques` replaces or drops a colliding row.
+    - Trust boundary: a planted world value in a size's table name is dropped by `ReportPayload` before the leak scan. Sizes are capped at every hop. `trials` varies with a copies count only through timing, as it already did.
+    - The trial rate falls 25–40% on ORM-shaped queries (filed as 20261012-25).
+    - DESIGN.md's counterexamples paragraph named "a lag over days with one missing" as LLM-only, but fuzz now catches `mr_lag7`. The main session dropped the example at landing.
+  - **Per-commit check** (on the branch tip; `main` had only backlog commits since): RuboCop clean; protocol and enclave (6696 examples) passed; driver and root only the four accepted failures. A first run of the root suite had 117 failures from another runner's stale-container sweep (see 20261012-20); the root suite rerun alone was clean.
