@@ -51,18 +51,26 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(outcome.trials).to be >= 150
   end
 
+  # Only 10.01 tells these apart: one step of the column's scale from either
+  # constant. A step ten times coarser jumps past the gap, and a finer one
+  # rounds back to a constant.
   it "draws a numeric column's neighbours one step of its scale away, so a value between two constants turns up" do
     conn.exec("CREATE TABLE s.invoices (id integer PRIMARY KEY, total numeric(10,2) NOT NULL)")
 
-    outcome = fuzz("SELECT id FROM s.invoices WHERE total > 10", "SELECT id FROM s.invoices WHERE total >= 11")
+    outcome = fuzz("SELECT id FROM s.invoices WHERE total > 10", "SELECT id FROM s.invoices WHERE total >= 10.02")
 
     expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
   end
 
-  it "draws a real column's neighbours at its resolution near the constant, not a fixed step it rounds away" do
+  # As a real, 1000.0002 is three steps of the type's resolution above 1000,
+  # so only the two reals between tell these apart, 1000.00006 and 1000.0001;
+  # a step of 0.001 jumps past them. The constants are reals, so the column
+  # holding the second constant isn't in the gap.
+  it "draws a real column's neighbours at its resolution near the constant, not a coarser step that jumps the gap" do
     conn.exec("CREATE TABLE s.readings (id integer PRIMARY KEY, level real NOT NULL)")
 
-    outcome = fuzz("SELECT id FROM s.readings WHERE level > 1000", "SELECT id FROM s.readings WHERE level >= 1001")
+    outcome = fuzz("SELECT id FROM s.readings WHERE level > REAL '1000'",
+                   "SELECT id FROM s.readings WHERE level >= REAL '1000.0002'")
 
     expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
   end
