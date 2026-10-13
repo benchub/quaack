@@ -21,9 +21,11 @@ module Quaack
       # share of the budget, then up to two, then up to MAX_ROWS. Each loads
       # in its own arena transaction that rolls back (ArenaRunner#with_fixture),
       # and is tested with the guard's own test (VacuityGuard.exercised_atoms).
-      # A trial that won't load or whose query fails (a constraint, a scalar
-      # subquery with two rows, the statement timeout) is discarded: it
-      # tests nothing, and still counts against the budget.
+      # A trial that won't load or on which the original fails (a constraint,
+      # a scalar subquery with two rows, the statement timeout) is
+      # discarded: it tests nothing, and still counts against the budget. A
+      # trial on which only an atom's loosened query fails is kept: that
+      # atom just isn't told apart there (VacuityGuard.exercised_atoms).
       #
       # The budget is TRIALS_PER_ATOM trials for each atom searched, and at
       # most MAX_TRIALS in all. The trial count is the only budget, never the
