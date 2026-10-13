@@ -1074,6 +1074,12 @@ From the first review of 20261012-3 (minor). `Fuzz.search` runs fuzz, then enume
 
 Fix it test first: make enumerate fail after fuzz passes (for example, a session reopen that raises), and check that fuzz's pass and trials stand, enumerate is untested, and both burndown records say so. Catch the error around enumerate in `Search#call`, not in `RewriteFuzz`.
 
+**A cancel QUAACK didn't send is swallowed too** (found while briefing this task, 2026-10-13). `Fuzz::Lift` raises a foreign cancel (`ArenaRunner::Cancel.foreign?`), as its spec says, but `RewriteFuzz::UNTESTED` rescues every `ArenaRunner::Error`, so the cancel becomes an untested fuzz and enumerate, and ScenarioTests runs on. DESIGN.md's rewrite-test says a cancel QUAACK didn't send ends the step and stores nothing for the rewrite. A trial's foreign cancel stays no kill, as DESIGN.md's fuzz section says.
+
+Decisions (made overnight, 2026-10-13, while the user was away; the user can revisit them):
+- Catch, around enumerate in `Search#call`, what `RewriteFuzz` treats as untested (`Fuzz::Error`, `ArenaRunner::Error`, `PG::Error`, `Deadline::Expired`), so a deadline that expires while enumerate builds its kinds is untested enumerate too. Fuzz's outcome stands.
+- A foreign cancel from fuzz or enumerate isn't caught by either rescue: it ends the step, as DESIGN.md says for rewrite-test, with nothing stored for the rewrite.
+
 - **Depends on:** None.
 - **Came from:** The first review of 20261012-3, 2026-10-13 (minor).
 - **Design:** rewrite-test.
