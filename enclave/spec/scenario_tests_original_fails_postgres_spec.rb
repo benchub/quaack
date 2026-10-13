@@ -110,6 +110,33 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
   # The share of course 1's submissions scored 90% or more: count(*) is 0
   # on S0's empty tables, and every other scenario holds a points_possible
   # of 0, so the original fails on every fixture.
+  # Task 20261012-11, review: S0's tables are empty, so a plain SELECT
+  # compares nothing there. With the search off (search: false stands in
+  # for a LIMIT, a volatile function, or a count threshold), the original
+  # fails on every fixture with rows, so only S0 ran.
+  describe "an original that runs only on fixtures with no rows" do
+    let(:wrong) do
+      ["SELECT s.id #{from} WHERE s.course_id = 2 AND (s.score / a.points_possible) >= 0.9",
+       "SELECT s.id #{from} WHERE (s.score / a.points_possible) >= 0.9",
+       "#{ratio} ORDER BY s.id DESC LIMIT 5", "#{ratio} LIMIT 4"]
+    end
+
+    it "doesn't pass a wrong candidate, or an equivalent one, with original_failed and no scenario" do
+      equivalent = "SELECT s.id #{from} WHERE (s.score / a.points_possible) >= 0.9 AND s.course_id = 1"
+
+      report = run(ratio, *wrong, equivalent, search: false)
+
+      expect(outcomes(report)).to eq([[false, nil, :original_failed]] * 5)
+    end
+
+    it "still disproves a candidate that differs on the empty tables" do
+      total = "SELECT sum(s.score / a.points_possible) AS total #{from} WHERE s.course_id = 1"
+      coalesced = "SELECT coalesce(sum(s.score / a.points_possible), 0) AS total #{from} WHERE s.course_id = 1"
+
+      expect(outcomes(run(total, coalesced, search: false))).to eq([[false, :s0, :multiset]])
+    end
+  end
+
   describe "an original that fails on every fixture" do
     let(:share) do
       "SELECT 100 * count(*) FILTER (WHERE (s.score / a.points_possible) >= 0.9) / count(*) AS share " \

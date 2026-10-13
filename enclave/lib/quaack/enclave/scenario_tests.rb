@@ -36,9 +36,12 @@ module Quaack
     # won't load. When a comparison fails other than by a cancel QUAACK
     # didn't send, ResultComparison::OriginalRerun says whether the
     # original failed there. If it did, the fixture is skipped, for this
-    # candidate and the later ones, and the rest run. A candidate compared
-    # on no fixture at all doesn't pass: its Result has the rule
-    # :original_failed and scenario nil, a runner failure to RewriteFate.
+    # candidate and the later ones, and the rest run. A fixture with no
+    # rows at all (S0) still runs and can disprove, but doesn't count as
+    # compared: a plain SELECT compares nothing on empty tables. A
+    # candidate compared on no fixture with rows doesn't pass: its Result
+    # has the rule :original_failed and scenario nil, a runner failure to
+    # RewriteFate.
     #
     # honour is the DenormalizedFixture::Copies of a rule's rewrite under
     # test. Every fixture, the guard's included, then keeps each copy on
@@ -119,19 +122,21 @@ module Quaack
       end
 
       # The first fixture's Result that doesn't pass, else PASSED, or
-      # ORIGINAL_FAILED once every fixture is skipped.
+      # ORIGINAL_FAILED when every fixture with rows is skipped. A fixture
+      # with no rows (S0's empty tables) runs, and can disprove, but a
+      # plain SELECT compares nothing there, so it doesn't count.
       def test(runner, fixtures, sql, candidate)
         fixtures.each do |fixture|
           result = compared(runner, fixture, sql, candidate) unless fixture.skipped
           return result if result && !result.passed
         end
-        fixtures.all?(&:skipped) ? ORIGINAL_FAILED : PASSED
+        fixtures.all? { it.skipped || it.rows.empty? } ? ORIGINAL_FAILED : PASSED
       end
 
       PASSED = Result.new(passed: true, scenario: nil, rule: nil, load_order: nil)
 
-      # A candidate the original failed on every fixture for was compared on
-      # nothing, so it doesn't pass.
+      # A candidate the original failed on every fixture with rows for was
+      # compared on nothing, so it doesn't pass.
       ORIGINAL_FAILED = Result.new(passed: false, scenario: nil, rule: :original_failed, load_order: nil)
 
       # The candidate's Result on fixture, or nil when the original fails
