@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-3: after a fuzz pass, rewrite-test runs a new stage, `enumerate`: every world of up to w rows over each table's row kinds, for at most 30 s. The `rewrite_test` message's `stage` can be `enumerate`, and it gains `worlds` and `bound` (nil or 0 to 4, `Protocol::FuzzResult::MAX_BOUND`), checked in egress and the driver's transport. The report payload gains the fate `enumerate_disproved` and each rewrite's `worlds` and `bound`. The burndown gains the stage `enumerate`, between fuzz and rewrite-test. An enumerate pass counts as tested when ScenarioTests refuses or runs out of time. New spec env var `QUAACKS_ENUMERATE_WORLDS` (0 turns it off).
 - 20261012-23: fuzz's (and so enumerate's) values for a column combined with a constant and compared with another (`100 / x > 2`, `x * 0.9 >= 45`) now include the values that solve the comparison, with their ceiling, floor and neighbours (`Fuzz::Thresholds`, one Postgres query per comparison at setup). No change to any reported field.
 - 20261012-26: an error in enumerate (from the arena, a query it can't take, or the deadline while it builds its kinds) leaves fuzz's pass and trials standing, with enumerate untested, in the message and the burndown. A cancel QUAACK didn't send, in fuzz's or enumerate's lift, now ends rewrite-test with `statement_canceled` and stores nothing for the rewrite, as one in ScenarioTests does; before, it made both searches untested and ScenarioTests ran on.
+- 20261012-27: the `rewrite_test` message's `bound` is nil unless enumerate passed or disproved the rewrite. Before, an untested enumerate sent the bound it had reached (0, or up to 4 when every world it tried was illegal, which made the report and progress line show enumerate's sentence for an enumeration that compared nothing).
 
 ## How this file works.
 
@@ -1070,17 +1071,6 @@ Find where the time goes: copies worlds load up to 101 rows a table, a quarter o
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-27. enumerate: minors from the first review of 20261012-3.
-
-1. **`bound` leaves the enclave when enumerate compared nothing** (`Enumerate::Run#outcome` in `enclave/lib/quaack/enclave/fuzz/enumerate.rb`). `outcome` always sends `@worlds.bound(@done)`, so when every world was illegal (it failed to load, or the original errored) the verdict is untested but `bound` can be up to 4. The driver's `fuzz_line` (`report/rewrites.rb`) and `search_note` (`pipeline.rb`) key on `bound` being 1 to 4, not on the verdict, so the rewrite's section and progress line would say "or on any dataset of up to 4 rows" for an enumeration that compared nothing. Removing `@compared.positive? &&` from `ended` survives every spec. Send `bound` only with a verdict of passed or disproved (nil otherwise), test first, with a spec where every enumerated world is illegal.
-2. **DESIGN.md's value classes overstate what a join key gets.** Its enumerate section says a kind gives a value to each column the queries "read or join on", and that a join or foreign key column gets its key class's values. But a key the plan fills (`:pk`) is fixed by the row's position ("the nth key value"), with no classes. Say which key columns get classes and which are fixed.
-3. **Two surviving mutants** in the enumerate code. Removing the `@lifts >= LIFTS` stop in `Enumerate::Run#step` survives, so nothing checks that enumerate stops after fuzz's limit of unlifted kills. Changing `Kinds::KEY_CLASS` from 3 to 1 survives, so nothing checks that a key column gets more than one key class. Add a test that goes red under each, or say in a comment why it can't. (`viable? || true` in `Worlds` also survives, but it's equivalent: it adds only row splits that yield no worlds.)
-
-- **Depends on:** None.
-- **Came from:** The first review of 20261012-3, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-28. Enumerate's pass sentence: the progress line, and the list of later disproofs.
 
 From the second review of 20261012-3 (minor).
@@ -1193,3 +1183,12 @@ Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's s
 - **Came from:** The overnight measurement, 2026-10-13.
 - **Design:** rewrite-test.
 - **Status:** todo (waits on the user's answer)
+
+### 20261012-36. DESIGN.md's enumerate value classes: a foreign key the plan cuts gets no classes.
+
+From the review of 20261012-27 (minor). DESIGN.md's enumerate section (Value classes) says a join column gets key classes when it "isn't its table's single-column unique key, nor a foreign key the plan fills from a parent row". That clause also covers a foreign key the plan cuts, but `Plan` gives such a column `:null` (`enclave/lib/quaack/enclave/fuzz/plan.rb`, about line 76) and `Kinds` gives it no classes. The paragraph's later "NULL in a foreign key the plan cuts" sentence is right. Add "nor one it cuts" to the clause, or reword it to name the `:key` entries directly.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-27, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
