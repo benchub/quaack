@@ -1068,9 +1068,10 @@ Some cases need rows that relate to each other in ways a value pool can't plan, 
 3. **Egress doesn't cap a disproof's sizes.** A size is never more than 4, the generator's most rows per table, but `FuzzResult.size?` accepts any positive count. Cap it at the generator's maximum. A shrunk size or a trial count can vary with a query's literal, such as a LIMIT or HAVING threshold. The user asked for both fields, and 20261010-47 is the precedent for counts like these. A cap narrows what a size can carry.
 4. **No spec checks that fuzz never disproves a sound replayed rewrite.** The replay specs check only that each planted wrong rewrite is disproved. Assert that no rewrite outside a run's `outcome.wrong` gets `fuzz_disproved`.
 5. **The INTERSECT ALL versus INTERSECT trap (e2e case 100) isn't caught at the spec setting.** It needs 4 rows sharing one key. It was missed at 378 and 3,000 trials and found at 5,285, well inside the 30 s production floor, so production catches it. A spec at 40 trials can't show that. Either add a spec at a trial count that catches it, or note in the fuzz spec why it's left out.
+6. **Nothing tests that a number's neighbours go both ways** (`fuzz/dictionary.rb`, `finest`'s `%w[1 -1]`). With neighbours on one side only, every probe still disproved, because with two constants either side's neighbour lands in the gap. Add a test with a single constant that needs its upward neighbour, or say in a comment why one side is enough. This one came from the second review.
 
 - **Depends on:** 20261012-2.
-- **Came from:** The review of 20261012-2, 2026-10-12 (minor).
+- **Came from:** The two reviews of 20261012-2, 2026-10-12 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 
