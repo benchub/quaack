@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-1: value pools and simple CHECKs read each element of an `ARRAY[...]` under casts for `= ANY` and `<> ALL` (a varchar IN CHECK no longer refuses as `unsatisfiable_check`); no change to any reported field.
 - 20261012-2: rewrite-test runs the fuzz search before ScenarioTests. The `rewrite_test` message gains `stage` and `trials`. The report payload gains the fate `fuzz_disproved` and a disproof's sizes per table. The burndown gains the stage `fuzz`. A fuzz pass counts as tested even when ScenarioTests refuses the query.
 - 20261012-16: result comparison, in fixtures and at production size, compares an `ORDER BY`'s ties group by group, so a rewrite that only adds a tiebreak passes. No change to any reported field.
+- 20261012-10: a counterexample round where the original query fails on the round's rows (a data error or QUAACK's statement timeout) reports the new protocol rule `original_failed` with match nil, not a disproof, and the next round runs. The driver tells the LLM its rows made the original fail.
 
 ## How this file works.
 
@@ -841,6 +842,8 @@ Answers (the user, 2026-10-12):
 - A pass is worded "Found no difference on N random datasets, or on any dataset of up to w rows over its value classes." It shows in the rewrite's section and in the burndown. N, w and the number of worlds tried leave the enclave as integers.
 - An enumerate pass counts as tested even when ScenarioTests refuses the query, as a fuzz pass does.
 
+Like fuzz and the counterexample rounds (20261012-10), a world where the original fails disproves nothing. Only a candidate data error where the original ran counts as a kill, as fuzz's `DataError.candidate_only?` decides.
+
 - **Depends on:** 20261012-2.
 - **Came from:** The user and the disproof spike, 2026-10-12.
 - **Design:** rewrite-test.
@@ -907,16 +910,7 @@ From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`
 - **Design:** literal-sets, index-ideas.
 - **Status:** todo
 
-### 20261012-10. llm-counterexamples counts a round where the ORIGINAL query fails as a disproof.
-
-Found by 20261012-5's corpus work (2026-10-12) and reproduced with the real enclave code (`scratch/corpus-20261012-5/bugdemo.rb` in the main checkout). `Counterexamples.compare` (`enclave/lib/quaack/enclave/counterexamples.rb` ~109) turns any runner failure that isn't a load failure into `match: false`, and the round disproves the rewrite. Its comment assumes the candidate failed, but `ArenaRunner#run_query` raises `query_failed` for either query. So inserts that make the original fail make every rewrite look wrong, even an exactly equivalent one: `SELECT t.id, t.a / t.b FROM public.t t ORDER BY t.id` against the same query with `WHERE true` added, and a row with `b = 0`, comes out disproved with rule `query_failed`. LLMs reach for division by zero, overflow and bad casts on their own, so this drops sound rewrites on realistic data. ScenarioTests doesn't have this bug: it counts `query_failed` as a runner failure (`rewrite_test_failed`), not a disproof.
-
-Fix it test first. A round where the original fails says nothing about the candidate: report it like a load failure (match nil, with its own rule, such as `original_failed`), so the next round runs. Keep the disproof when only the candidate fails while the original ran (that's a real difference: the rewrite errors where the original doesn't). Check which query failed from the runner's error (its step and index), not from the message text. Check `RewriteFate`, the burndown's drop reasons and `rule_bugs` for the new rule, and say in DESIGN.md's counterexamples section that an original that fails disproves nothing. Also check that the disproof search (20261012-2) and the enumeration (20261012-3), when they land, follow the same rule; the spike's code already does (it counts only a candidate data error where the original ran).
-
-- **Depends on:** None.
-- **Came from:** 20261012-5's phase 1, 2026-10-12.
-- **Design:** llm-counterexamples.
-- **Status:** todo
+### 20261012-10. llm-counterexamples counts a round where the ORIGINAL query fails as a disproof. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-11. rewrite-test crashes when the original query fails on a scenario's data.
 
@@ -1059,5 +1053,30 @@ Answers (the user, 2026-10-12):
 - **Depends on:** None.
 - **Came from:** The review of 20261012-16, 2026-10-12 (minor).
 - **Design:** result-comparison.
+- **Status:** todo
+
+### 20261012-19. counterexamples' `original_failed` rerun: two untested branches, and the CutTies run it skips.
+
+From the review of 20261012-10 (minor). When a round's comparison raises a non-load error, `Counterexamples::Failure.rerun` (`enclave/lib/quaack/enclave/counterexamples/failure.rb`) reruns the original against itself, once per distinct load order. If the original fails, the round reports `original_failed`.
+- **The step check is untested.** Changing `e.step == :query ? :query_failed : :not_loaded` to always return `:query_failed` passes every spec. The branch runs only when a rerun's load fails in a later load order after the candidate's error in an earlier one.
+- **The multi-load-order rerun is untested.** Limiting `original_fails?` to the first load order passes every spec.
+- **The CutTies unlimited-original run isn't rerun.** The rerun takes the self-comparison's path, so the run of the original without its LIMIT, which only the candidate's cut triggers, never happens in the rerun. An original that fails only there would still count as a disproof. The reviewer judged it nearly unreachable: the tiebroken runs compute every output column for every row, so a failing original fails there first.
+
+Add tests that go red under the two surviving mutants, using real Postgres. For the CutTies gap, either show it's unreachable on a realistic query, or make the rerun follow the comparison's path.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-10, 2026-10-12 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** todo
+
+### 20261012-20. TestPostgres's PgBouncer specs flake with "Connection refused" on the published port under load.
+
+In 20261012-10's per-commit check, `spec/test_postgres_spec.rb:414`, `:433`, `:462` and `:510` failed with `PG::ConnectionBad: connection to server at "127.0.0.1", port <published port> failed: Connection refused`, from `through_pgbouncer` (`:401`). All four passed when rerun alone. Earlier checks saw `:414` and `:862` fail the same way, and landings have called them "port-forward flakes".
+
+A likely cause: `PgBouncer.wait_until_ready` (`spec/support/test_pgbouncer.rb`) runs `pg_isready` inside the container on 127.0.0.1:6432. But the specs connect from the host through Docker's published port, and that forward can lag behind under load. Confirm the cause first. If it's right, also wait until the published port answers from the host (for example with `PG::Connection.ping`, which stops at PgBouncer's password request and so opens no server backend). Do the same for the server's own port if `wait_until_ready` there has the same gap. Then drop these examples from the "rerun alone" folklore in landing notes.
+
+- **Depends on:** None.
+- **Came from:** The landing of 20261012-10, 2026-10-12.
+- **Design:** none (test harness).
 - **Status:** todo
 

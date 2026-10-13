@@ -10853,3 +10853,31 @@ Find out why load matters before changing anything. If the trial floor isn't a r
   - **What landed:** spec only, no production code (commit 5e78889b). `FUZZ_TO_KILL` (400 trials) in `enclave/spec/spec_helper.rb` is used by the four specs that need a kill: `:468`, "disproves a looser rewrite" (which missed 1 run in 500 at 40), rewrite_3 of the refused-query spec, and `query_failed`. A kill ends the search at once, so these specs still take 0.5 to 3.8 s. Every other default-40 spec expects a pass, and `fuzz_postgres_spec` uses fixed query text.
   - **Review: no blocking findings.** Making `killed?` always return false turned all four specs red.
   - **Per-commit check:** enclave passed, 6622 examples. The only failures were the four accepted ones.
+
+### 20261012-10. llm-counterexamples counts a round where the ORIGINAL query fails as a disproof.
+
+Found by 20261012-5's corpus work (2026-10-12) and reproduced with the real enclave code (`scratch/corpus-20261012-5/bugdemo.rb` in the main checkout). `Counterexamples.compare` (`enclave/lib/quaack/enclave/counterexamples.rb` ~109) turns any runner failure that isn't a load failure into `match: false`, and the round disproves the rewrite. Its comment assumes the candidate failed, but `ArenaRunner#run_query` raises `query_failed` for either query. So inserts that make the original fail make every rewrite look wrong, even an exactly equivalent one: `SELECT t.id, t.a / t.b FROM public.t t ORDER BY t.id` against the same query with `WHERE true` added, and a row with `b = 0`, comes out disproved with rule `query_failed`. LLMs reach for division by zero, overflow and bad casts on their own, so this drops sound rewrites on realistic data. ScenarioTests doesn't have this bug: it counts `query_failed` as a runner failure (`rewrite_test_failed`), not a disproof.
+
+Fix it test first. A round where the original fails says nothing about the candidate: report it like a load failure (match nil, with its own rule, such as `original_failed`), so the next round runs. Keep the disproof when only the candidate fails while the original ran (that's a real difference: the rewrite errors where the original doesn't). Check which query failed from the runner's error (its step and index), not from the message text. Check `RewriteFate`, the burndown's drop reasons and `rule_bugs` for the new rule, and say in DESIGN.md's counterexamples section that an original that fails disproves nothing. Also check that the disproof search (20261012-2) and the enumeration (20261012-3), when they land, follow the same rule; the spike's code already does (it counts only a candidate data error where the original ran).
+
+- **Depends on:** None.
+- **Came from:** 20261012-5's phase 1, 2026-10-12.
+- **Design:** llm-counterexamples.
+- **Status:** done (merged 2026-10-12, ef72a6d5).
+  - **What landed:** a new `Counterexamples::Failure`. ResultComparison runs a varying number of queries (tiebroken, unlimited, catalog), so the runner's index can't name the query that failed. Instead, on a non-load error, `Failure` reruns the original against itself in a fresh fixture transaction, once for each distinct load order.
+    - If the rerun fails at `step == :query` (a data error or QUAACK's statement timeout), the round is `original_failed` with match nil, and the next round runs.
+    - Otherwise the disproof stands with the runner's rule.
+    - A foreign cancel is still re-raised.
+    - In `covered`, a loosened original that fails keeps the round's verdict and covers no atom.
+    - `original_failed` is on `Protocol::ErrorRules::NAMES` and `FixedNotes::INTERNAL`.
+    - The driver tells the LLM its rows made the original fail.
+    - DESIGN.md's counterexample-compare section says so.
+    - Commits: 570a95ff, f7b2c598, 292ef2a6.
+  - **No change needed** to RewriteFate, the burndown or `rule_bugs`: they act only on rounds where the rewrite didn't survive.
+  - **Fuzz already followed the rule.** `Session#candidate_failed` kills only on a candidate data error after the original ran, and `Lift` uses `DataError.candidate_only?`. The rule was carried into 20261012-3's entry.
+  - **Review: no blocking findings.**
+    - Every new "isn't a disproof" test was red on `main`'s code with its own assertion.
+    - 5 of 7 mutants were killed. The two survivors are rare branches (a rerun whose load fails, and an original that fails only in a later load order).
+    - The reviewer's 10 realistic probes all behaved: ordered LIMIT, LIMIT without ORDER BY, `sum()`, integer overflow, bad cast, both queries failing, and a candidate-only failure.
+    - The minors, plus the CutTies unlimited-original run the rerun skips, were filed as 20261012-19.
+  - **Per-commit check:** protocol and enclave (6628) passed. The only failures were the four accepted ones plus PgBouncer `test_postgres_spec.rb:414`, `:433`, `:462` and `:510`, which passed when rerun alone. Those were filed as 20261012-20.
