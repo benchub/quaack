@@ -1050,6 +1050,19 @@ RSpec.describe Quaack::Driver::Report do
           .to include("(3 rows in a.x, 3 in b.y, and 3 in c.z; a value differs)")
       end
 
+      # Task 20261012-13: a size of 5 means 5 or more; a higher one isn't a size.
+      it "says 5 rows in a table as 5 or more, and leaves out a higher count" do
+        lead = "It returned different results from the original query on a random small database built around " \
+               "its own values"
+        expect(fate("fuzz_disproved", sizes: [["public", "orders", 5], ["public", "customers", 5]]))
+          .to eq(esc("#{lead} (5 or more rows in orders and 5 or more in customers), so it's wrong."))
+        expect(fate("fuzz_disproved", sizes: [["public", "orders", 4]]))
+          .to eq(esc("#{lead} (4 rows in orders), so it's wrong."))
+        [6, 37].each do |rows|
+          expect(fate("fuzz_disproved", sizes: [["public", "orders", rows]])).to eq(esc("#{lead}, so it's wrong."))
+        end
+      end
+
       it "leaves out a fuzz disproof's sizes or rule the payload doesn't have, or that aren't sizes" do
         lead = "It returned different results from the original query on a random small database built around " \
                "its own values"

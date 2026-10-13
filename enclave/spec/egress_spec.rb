@@ -531,7 +531,7 @@ RSpec.describe Quaack::Enclave::Egress do
       end
 
       it "sends tables either query names, with their row counts, and trials as a count" do
-        sizes = [["public", "orders", 2], ["sales", "customers", 1], ["sales", "refunds", 1]]
+        sizes = [["public", "orders", 5], ["sales", "customers", 1], ["sales", "refunds", 1]]
         rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
         sent = parsed(report_with({ "sizes" => sizes, "trials" => 41_200 }, sql: rewrite_sql))
         expect(sent["rewrites"].first).to include("sizes" => sizes, "trials" => 41_200)
@@ -544,6 +544,8 @@ RSpec.describe Quaack::Enclave::Egress do
         ["a planted schema", { "sizes" => [[EGRESS_SENTINEL, "orders", 1]] }],
         ["a String in place of a row count", { "sizes" => [["public", "orders", EGRESS_SENTINEL]] }],
         ["a planted fourth value", { "sizes" => [["public", "orders", 1, EGRESS_SENTINEL]] }],
+        ["a row count of 6, past 5 or more (20261012-13)", { "sizes" => [["public", "orders", 6]] }],
+        ["a row count of 37, a query constant's worth", { "sizes" => [["public", "orders", 37]] }],
         ["a String in place of the sizes", { "sizes" => EGRESS_SENTINEL }],
         ["sizes under a Symbol key", { sizes: [["public", EGRESS_SENTINEL, 1]] }],
         ["a String in place of trials", { "trials" => EGRESS_SENTINEL }],

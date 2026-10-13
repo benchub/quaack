@@ -26,8 +26,17 @@ RSpec.describe Quaack::Protocol::FuzzResult do
     expect(refused.map { described_class.sizes?(it) }).to all(be(false))
   end
 
+  # Task 20261012-13: fuzz can put a query's constant's worth of rows in a
+  # table, so a size above 4 leaves as 5, "5 or more", and nothing higher.
+  it "accepts row counts 1 to 5, 5 meaning 5 or more, and nothing higher" do
+    expect((1..5).map { described_class.sizes?([["public", "orders", it]]) }).to all(be(true))
+    expect([6, 37, 38, 101].map { described_class.sizes?([["public", "orders", it]]) }).to all(be(false))
+    expect(described_class::MAX_SIZE).to eq(5)
+  end
+
   it "accepts a report's rewrites only if each one's sizes and trials pass" do
     sound = { "sizes" => [["public", "orders", 2]], "trials" => 41_200 }
+    expect(described_class.rewrites?([sound.merge("sizes" => [["public", "orders", 6]])])).to be(false)
     expect(described_class.rewrites?([sound, {}, { "sizes" => nil, "trials" => nil }])).to be(true)
     expect(described_class.rewrites?([sound, sound.merge("sizes" => [%w[public orders 2]])])).to be(false)
     expect(described_class.rewrites?([sound, sound.merge("trials" => -1)])).to be(false)

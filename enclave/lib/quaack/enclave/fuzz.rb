@@ -2,6 +2,7 @@
 
 require "pg"
 require "pg_query"
+require "quaack/protocol/fuzz_result"
 require_relative "arena_runner"
 require_relative "deadline"
 require_relative "result_comparison"
@@ -221,8 +222,13 @@ module Quaack
           nil
         end
 
+        # Each table's rows, but at most Protocol::FuzzResult::MAX_SIZE,
+        # which means that many or more: a copies world can hold a query
+        # constant's worth of rows, and the count mustn't carry it out.
         def sizes(rows)
-          rows.group_by(&:table).map { |table, group| [table.schema, table.name, group.size] }.sort
+          rows.group_by(&:table).map do |table, group|
+            [table.schema, table.name, [group.size, Protocol::FuzzResult::MAX_SIZE].min]
+          end.sort
         end
       end
     end
