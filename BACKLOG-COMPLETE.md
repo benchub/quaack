@@ -10829,3 +10829,27 @@ Answers (the user, 2026-10-12):
   - **One existing jsonb test was changed.** It asserted the flaw: with two tied rows, its candidate's order was valid. It gained a third row.
   - **Review: no blocking findings.** Every new test was red on `main`'s code with its own assertion's message, and 8 of 9 mutants were killed. The minors were filed as 20261012-17.
   - **Per-commit check** on 643064a2: only the four accepted failures, plus `counterexample_steps_postgres_spec.rb:468`. That spec's query has no ORDER BY, so this diff can't reach it. It's a load-dependent fuzz flake from 20261012-2, filed as 20261012-18.
+
+### 20261012-18. A fuzz spec fails under the full suite's load: `counterexample_steps_postgres_spec.rb:468`.
+
+"rewrite-test the fuzz search before ScenarioTests with sentinel literals in the query disproves the rewrite and sends none of them…" failed in both of 20261012-16's full per-commit runs. It passed 9 of 9 times alone for the builder and 60 of 60 for the reviewer. It passed in 20261012-2's landing check. 20261012-16 can't reach it, since its query has no ORDER BY.
+
+When it fails, fuzz returns no disproof, so the stage is `rewrite-test` instead of `fuzz`. The spec runs at the step's default `QUAACKS_FUZZ_TRIALS` of 40, and the sibling `query_failed` test raises it to 400. The kill needs a world with an order whose `note` is the sentinel, `total` at least the sentinel number, and `status` not `held`.
+
+Find out why load matters before changing anything. If the trial floor isn't a real floor (for example, a deadline or a timed-out statement ends the search under load), that's a bug in fuzz, not just in the spec. Fix it test first. Then make the spec deterministic, for example with a higher floor as the sibling test has. Also check:
+- whether the seed changes from run to run, since the query text holds random sentinels;
+- whether other fuzz specs that rely on the default 40 trials have the same risk.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-16, 2026-10-12.
+- **Design:** rewrite-test.
+- **Status:** done (merged 2026-10-12, a93518c9).
+  - **Load wasn't the cause, and fuzz has no bug.** The query text holds per-run random sentinels, and `Fuzz.seed` hashes it, so each run searches different worlds. About 1 world in 20 kills, so 40 trials miss about 1 run in 7, even with nothing else running.
+    - The failing log shows `"trials" => 40` and stage `rewrite-test`: the floor ran out. No deadline or timeout cut the search short.
+    - Under `QUAACKS_FUZZ_TRIALS`, `StopRule` counts trials with no clock.
+  - **Measured.**
+    - Builder: the example alone failed 20 of 150 runs at 40 trials and 0 of 150 at 400. Over 1,000 fresh sentinel sets, 400 trials never missed, and the slowest kill took 226 trials.
+    - Reviewer: 5 of 40 runs failed at 40 trials, and 0 of 25 at 400.
+  - **What landed:** spec only, no production code (commit 5e78889b). `FUZZ_TO_KILL` (400 trials) in `enclave/spec/spec_helper.rb` is used by the four specs that need a kill: `:468`, "disproves a looser rewrite" (which missed 1 run in 500 at 40), rewrite_3 of the refused-query spec, and `query_failed`. A kill ends the search at once, so these specs still take 0.5 to 3.8 s. Every other default-40 spec expects a pass, and `fuzz_postgres_spec` uses fixed query text.
+  - **Review: no blocking findings.** Making `killed?` always return false turned all four specs red.
+  - **Per-commit check:** enclave passed, 6622 examples. The only failures were the four accepted ones.

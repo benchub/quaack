@@ -1061,18 +1061,3 @@ Answers (the user, 2026-10-12):
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261012-18. A fuzz spec fails under the full suite's load: `counterexample_steps_postgres_spec.rb:468`.
-
-"rewrite-test the fuzz search before ScenarioTests with sentinel literals in the query disproves the rewrite and sends none of them…" failed in both of 20261012-16's full per-commit runs. It passed 9 of 9 times alone for the builder and 60 of 60 for the reviewer. It passed in 20261012-2's landing check. 20261012-16 can't reach it, since its query has no ORDER BY.
-
-When it fails, fuzz returns no disproof, so the stage is `rewrite-test` instead of `fuzz`. The spec runs at the step's default `QUAACKS_FUZZ_TRIALS` of 40, and the sibling `query_failed` test raises it to 400. The kill needs a world with an order whose `note` is the sentinel, `total` at least the sentinel number, and `status` not `held`.
-
-Find out why load matters before changing anything. If the trial floor isn't a real floor (for example, a deadline or a timed-out statement ends the search under load), that's a bug in fuzz, not just in the spec. Fix it test first. Then make the spec deterministic, for example with a higher floor as the sibling test has. Also check:
-- whether the seed changes from run to run, since the query text holds random sentinels;
-- whether other fuzz specs that rely on the default 40 trials have the same risk.
-
-- **Depends on:** None.
-- **Came from:** The build and review of 20261012-16, 2026-10-12.
-- **Design:** rewrite-test.
-- **Status:** todo
-
