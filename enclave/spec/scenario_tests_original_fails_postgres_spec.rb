@@ -107,9 +107,75 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
     expect(report.s1_load_rule).to eq(:original_failed)
   end
 
-  # The share of course 1's submissions scored 90% or more: count(*) is 0
-  # on S0's empty tables, and every other scenario holds a points_possible
-  # of 0, so the original fails on every fixture.
+  # Task 20261012-22. A LIMIT with no ORDER BY gives S1 a further fixture
+  # of its near misses alone (Scenarios::Plan#near_misses_alone). The
+  # original runs there and returns no rows, and fails on every other
+  # fixture with rows, so no fixture shows what it returns.
+  describe "an original that fails on some fixtures and returns no rows on the rest" do
+    let(:limited) { "#{ratio} LIMIT 10" }
+
+    def where(condition) = "SELECT s.id #{from} WHERE #{condition}"
+
+    it "doesn't pass a wrong candidate, or an equivalent one, with original_failed and no scenario" do
+      candidates = [where("s.course_id = 1 AND (s.score / a.points_possible) > 0.9 LIMIT 10"),
+                    where("s.course_id = 1 AND (s.score / a.points_possible) >= 0.95 LIMIT 10"),
+                    where("s.course_id = 1 AND s.score >= 0.9 * a.points_possible LIMIT 10"),
+                    "#{ratio} LIMIT 0", where("false"),
+                    where("(s.score / a.points_possible) >= 0.9 AND s.course_id = 1 LIMIT 10")]
+
+      expect(outcomes(run(limited, *candidates))).to eq([[false, nil, :original_failed]] * 6)
+    end
+
+    # A load that runs the original alone, once, is shows?'s.
+    it "asks what the original returns on a fixture once a run, not once a candidate" do
+      alone = 0
+      original = limited
+      counting = Class.new(SimpleDelegator) do
+        define_method(:with_fixture) do |*args, **kwargs, &block|
+          __getobj__.with_fixture(*args, **kwargs) do |tx|
+            queries = []
+            spy = Class.new(SimpleDelegator) { define_method(:query) { |sql| queries << sql and super(sql) } }
+            block.call(spy.new(tx)).tap { alone += 1 if queries == [original] }
+          end
+        end
+      end
+      builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(limited))
+      fixtures = described_class.fixtures(builder.build, builder.spills)
+      runner = counting.new(Quaack::Enclave::ArenaRunner.new(conn))
+
+      first = described_class.test(runner, fixtures, limited, limited)
+      once = alone
+      second = described_class.test(runner, fixtures, limited, limited)
+
+      expect([first.rule, second.rule]).to eq([:original_failed] * 2)
+      # S0 and S1's near misses alone, the fixtures the original runs on.
+      expect([once, alone]).to eq([2, 2])
+      expect(fixtures.reject(&:skipped).map { [it.name, it.shows] }).to eq([[:s0, false], [:s1, false]])
+    end
+  end
+
+  # Without an original that fails, nothing asks what the original
+  # returned: one that's NULL or zero on every fixture still passes.
+  it "passes an equivalent candidate when the original fails nowhere, though it only ever returns zero" do
+    zero = "SELECT sum(s.score) - sum(s.score) AS d FROM fx.submissions s WHERE s.course_id = 1"
+
+    report = run(zero, zero.sub("s.course_id = 1", "1 = s.course_id"), search: false)
+
+    expect(outcomes(report)).to eq([[true, nil, nil]])
+  end
+
+  # An aggregate always returns a row: sum() gives NULL and count() gives 0
+  # on S0's empty tables, which says nothing more than no rows.
+  it "doesn't count an original's NULL or zero row as showing anything" do
+    total = "SELECT sum(s.score / a.points_possible) AS total #{from} WHERE s.course_id = 1"
+    count = "SELECT count(*) FILTER (WHERE (s.score / a.points_possible) >= 0.9) AS n #{from} WHERE s.course_id = 1"
+
+    outcomes = [run(total, total.sub("s.course_id = 1", "1 = s.course_id"), search: false),
+                run(count, count.sub("s.course_id = 1", "1 = s.course_id"), search: false)].flat_map { outcomes(it) }
+
+    expect(outcomes).to eq([[false, nil, :original_failed]] * 2)
+  end
+
   # Task 20261012-11, review: S0's tables are empty, so a plain SELECT
   # compares nothing there. With the search off (search: false stands in
   # for a LIMIT, a volatile function, or a count threshold), the original
@@ -137,6 +203,9 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
     end
   end
 
+  # The share of course 1's submissions scored 90% or more: count(*) is 0
+  # on S0's empty tables, and every other scenario holds a points_possible
+  # of 0, so the original fails on every fixture.
   describe "an original that fails on every fixture" do
     let(:share) do
       "SELECT 100 * count(*) FILTER (WHERE (s.score / a.points_possible) >= 0.9) / count(*) AS share " \

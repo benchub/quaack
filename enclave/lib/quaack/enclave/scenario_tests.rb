@@ -36,12 +36,15 @@ module Quaack
     # won't load. When a comparison fails other than by a cancel QUAACK
     # didn't send, ResultComparison::OriginalRerun says whether the
     # original failed there. If it did, the fixture is skipped, for this
-    # candidate and the later ones, and the rest run. A fixture with no
-    # rows at all (S0) still runs and can disprove, but doesn't count as
-    # compared: a plain SELECT compares nothing on empty tables. A
-    # candidate compared on no fixture with rows doesn't pass: its Result
-    # has the rule :original_failed and scenario nil, a runner failure to
-    # RewriteFate.
+    # candidate and the later ones, and the rest run. Then a candidate
+    # passes only if, on some fixture left, the original returns a row
+    # holding a value that's neither NULL nor zero (shows?). One that
+    # matched only where the original returned nothing, such as S0's empty
+    # tables, an aggregate's 0 or NULL there, or S1's near misses alone,
+    # was compared on nothing. It doesn't pass: its Result has the rule
+    # :original_failed and scenario nil, a runner failure to RewriteFate.
+    # Those fixtures still run, and can disprove. When the original fails
+    # on no fixture, nothing asks what it returned.
     #
     # honour is the DenormalizedFixture::Copies of a rule's rewrite under
     # test. Every fixture, the guard's included, then keeps each copy on
@@ -110,8 +113,10 @@ module Quaack
       end
 
       # A fixture to compare on, named for its scenario. skipped is set once
-      # the original fails on it, for every candidate after.
-      Fixture = Struct.new(:name, :rows, :skipped)
+      # the original fails on it, for every candidate after. shows is
+      # whether the original returns a nonzero row there (shows?), once
+      # asked.
+      Fixture = Struct.new(:name, :rows, :skipped, :shows)
 
       # Every scenario's fixtures, S0 to S6: its first, then its further
       # ones (spills, see Scenarios::Parts), under its name.
@@ -121,22 +126,43 @@ module Quaack
         end
       end
 
-      # The first fixture's Result that doesn't pass, else PASSED, or
-      # ORIGINAL_FAILED when every fixture with rows is skipped. A fixture
-      # with no rows (S0's empty tables) runs, and can disprove, but a
-      # plain SELECT compares nothing there, so it doesn't count.
+      # The first fixture's Result that doesn't pass, else PASSED. When the
+      # original failed on some fixture, it's ORIGINAL_FAILED instead unless
+      # the original shows a nonzero row on a fixture left (shows?). A
+      # fixture where it returns none, such as S0's empty tables or S1's
+      # near misses alone, runs and can disprove, but doesn't count.
       def test(runner, fixtures, sql, candidate)
         fixtures.each do |fixture|
           result = compared(runner, fixture, sql, candidate) unless fixture.skipped
           return result if result && !result.passed
         end
-        fixtures.all? { it.skipped || it.rows.empty? } ? ORIGINAL_FAILED : PASSED
+        matched(runner, fixtures, sql)
+      end
+
+      # A candidate's Result once it matched on every fixture left.
+      def matched(runner, fixtures, sql)
+        return PASSED if fixtures.none?(&:skipped)
+
+        fixtures.any? { !it.skipped && shows?(runner, it, sql) } ? PASSED : ORIGINAL_FAILED
+      end
+
+      # Whether the original returns a row on fixture holding a value
+      # that's neither NULL nor zero (VacuityGuard.nonzero_rows). It costs
+      # one more load of the fixture, once a run, kept on the fixture.
+      def shows?(runner, fixture, sql)
+        return fixture.shows unless fixture.shows.nil?
+
+        fixture.shows = runner.with_fixture(fixture.rows) { VacuityGuard.nonzero_rows(it.query(sql).rows).positive? }
+      rescue ArenaRunner::Error => e
+        raise if ArenaRunner::Cancel.foreign?(e)
+
+        fixture.shows = false
       end
 
       PASSED = Result.new(passed: true, scenario: nil, rule: nil, load_order: nil)
 
-      # A candidate the original failed on every fixture with rows for was
-      # compared on nothing, so it doesn't pass.
+      # A candidate compared only where the original failed or showed no
+      # nonzero row was compared on nothing, so it doesn't pass.
       ORIGINAL_FAILED = Result.new(passed: false, scenario: nil, rule: :original_failed, load_order: nil)
 
       # The candidate's Result on fixture, or nil when the original fails

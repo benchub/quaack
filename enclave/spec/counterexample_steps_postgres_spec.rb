@@ -224,15 +224,20 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         conn.exec("UPDATE public.orders SET total = total + 1; ANALYZE public.orders")
       end
 
-      it "finishes, testing the rewrite on the fixtures the original runs on" do
+      # Task 20261012-22: the fixtures the original runs on (S0, and the
+      # search's, which tell its atoms apart by rows it doesn't return) show
+      # none of its rows, so an equivalent rewrite was compared on nothing.
+      it "finishes, leaving a rewrite compared on nothing untested, not disproved" do
         ready("SELECT o.note, o.status FROM public.orders o WHERE (o.id / o.total) >= $2 AND o.status = $1")
 
         outcome = step("rewrite-test", "--search", "rewrite_1")
 
         expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-        expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => true, "rule" => nil,
+        expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false,
+                                                "rule" => "original_failed", "scenario" => nil,
                                                 "s1_load_rule" => "original_failed", "s1_rows" => nil)
-        expect(stored.read("rewrite_tested_1")).to include("passed" => true, "s1_load_rule" => "original_failed")
+        expect(stored.read("rewrite_tested_1")).to include("passed" => false, "rule" => "original_failed",
+                                                           "s1_load_rule" => "original_failed")
         expect_no_leaks(sentinels, outcome)
       end
 
