@@ -10729,3 +10729,69 @@ What the Sankey uses from `Funnel` stays, under a name of its own: the stage col
   - **Third review, of that test only.** Every color mutant goes red, the original hole included. Two mutants that drop a layer without changing any color survive it, but the sibling test "draws one layer per state" catches both, so the suite isn't blind to them. Filed as minor.
   - **Per-commit check.** It ran in a Linux container on 963b4478: RuboCop, protocol and enclave passed, with only the four failures the user accepted for a container run (`deploy_spec.rb:92`, `:321`, `test_postgres_spec.rb:751`, `:759`).
   - **Minors filed** as 20261012-14.
+
+### 20261012-2. rewrite-test: a disproof search over small random databases on the queries' own tables.
+
+The user, 2026-10-12: rewrite-test still hits its 5-minute budget on the 583-table schema, and the LLM counterexamples that follow are weak evidence when they find nothing. A spike (`scratch/spike-disproof/` in the main checkout, git-ignored; results in its `RESULTS.md`) built three non-LLM disproof searches and compared them with today's ScenarioTests on four corpora whose labels the searches didn't make: the e2e cases' 14 planted traps and 33 sound queries; 208 mutants of those sound queries (152 wrong, 53 hand-checked equivalent, 3 errors); an 18-query, 62-rewrite hand-labelled corpus on a synthetic 582-table Canvas-like schema; and 121 real LLM rewrites from the recorded runs. The swarm search caught every wrong rewrite (14/14 traps, 152/152 mutants, 34/34 Canvas) with no false disproof, in a 10 to 15 s budget, with a median time to a counterexample of 0.02 s and a maximum of 4.3 s. ScenarioTests caught 10/14, 92/152 and 16/34; on one Canvas query it took about 75 s per rewrite even with the full 5 minutes, and it left out 14 of the 28 sound Canvas rewrites (10 refused by 20261012-1, 4 when a fixture failed to load). This supersedes 20261011-16.
+
+Build it in the enclave, near `vacuity_guard/search/` and `scenario_tests.rb`, called from `Steps::Counterexamples::RewriteTest` before ScenarioTests: a counterexample disproves the rewrite and ScenarioTests doesn't run; a pass goes on to ScenarioTests as today, until 20261012-4 removes it. How it works:
+
+- Footprint: rows go only into the tables the original or the rewrite reads. Inside the arena's rolled-back transaction, the foreign keys from a footprint table to a table outside it are dropped, so no world needs the parent closure. Foreign keys between footprint tables stay enforced.
+- Values: per column, the queries' own constants (a dictionary of every literal in either query, offered to each column of a compatible type, since atoms miss columns read through a CTE or subquery output), their neighbours (one step of the column's type either side), NULL for a nullable column, duplicates, the type's boundaries, and a few typical values. Join and FK columns share a small typed key pool, so joins match.
+- Search: each trial loads a random world of 0 to 4 rows per footprint table under a savepoint, runs both queries, compares them cheaply first and with the official `ResultComparison` on any difference, then rolls back to the savepoint. Seeded, so a run can be repeated by hand.
+- Lift: a candidate counterexample is reloaded in a fresh transaction with every constraint enforced, plus generated parent rows for each out-of-footprint reference (nullable foreign keys on those parents set to NULL), and compared again. Only a lifted counterexample disproves, so no disproof rests on a dropped constraint. The user gave the go for this on 2026-10-12. It amends DESIGN.md's "never bypass constraints" for the search, as rewrite-test's `denormalized_equal` handling already does: update DESIGN.md.
+- Assumptions: honour a rule's `denormalized_equal`, and any other assumption the rewrite states, in every world, as ScenarioTests does.
+- Budget: the existing 5-minute per-rewrite deadline (`Protocol::RewriteBudget`) is the cap. The user, 2026-10-12: 300 s is fine "assuming it's not wasted work; some rewrites will be huge". So stop early once the search has saturated, and use the whole cap only while it keeps reaching new ground.
+- Trust boundary: the worlds hold real literals and never leave the enclave. Only the rule (row_count, multiset, order), counts, and fixed words go to the driver, as for ScenarioTests now. Sentinel tests for both.
+- Burndown (the user, 2026-10-12): the search is its own burndown stage, between plan-pruning and rewrite-test, so the report shows what it caught apart from ScenarioTests and the LLM counterexamples. Its record has `in`, `out`, drops by the comparison's rule, and the trials it ran as an extra. That means a row in DESIGN.md's burndown table, and everything in the driver's report that knows `rewrite-test` by name: the Sankey layer, its color and its unit (`sankey.rb`, `sankey_layers.rb`, and `StageStyle::COLORS` in `report/stage_style.rb`), the stage sentence (`stage_sentences.rb`), the words (`words.rb`, `stages.rb`), and the spec that checks that the recorded stages join up. Also the step's progress line (`pipeline.rb`), a fate of its own in `RewriteFate` with its wording in the rewrite's section (`report/rewrites.rb`), and `rule_bugs`, since a rule-made rewrite the search disproves is a rule bug. A run from before the stage existed must still render.
+
+Spike lessons the build must keep (each one caused a missed disproof or a false refusal there):
+- Key pools are typed: a `timestamptz` join key needs `timestamptz` keys.
+- Never use `ON CONFLICT DO NOTHING`. It silently drops a row that collides on a unique column the query reads; fix the collision instead.
+- Typical values cover `bit(n)`, `money`, `tsvector`, `point`, and a long text (an `overlay(... FOR 13)` needed 19 characters).
+- Steps follow the type: 1 microsecond for a timestamp, 0.000001 for a numeric of scale 6.
+- Expression unique indexes need handling, and a CHECKed unique column cycles through the CHECK's values.
+- Whether a world is legal is decided per query: don't merge the two queries' verdicts.
+
+Answers (the user, 2026-10-12):
+- Stop rule: run at least 30 s, then stop once the search has gone twice as long as it took to find its last new kind of database (a new coverage signature), never past the 5-minute cap.
+- The burndown stage is named `fuzz` (the enumeration in 20261012-3 is `enumerate`).
+- A rewrite's section says how many random databases it survived, such as "It also survived 41,200 random small databases built around its own values".
+- A counterexample is shrunk to a minimal one. The report gives its size per table and the rule (such as 2 rows in orders and 1 in customers; row count differs), never its rows.
+
+Open questions, answered (the user, 2026-10-12):
+- The result stays inside rewrite-test, as above. The `rewrite_test` message gets two new fields:
+  - `stage`: nil, `fuzz` or `rewrite-test`, whichever decided;
+  - `trials`: an Integer count of the random databases tried.
+
+  Egress checks both: `stage` on that fixed list, and `trials` nil or a non-negative Integer. A disproof's size per table goes only to the store and the report payload, as `[schema, table, rows]`, and egress checks those too: names from the queries' footprint, and counts.
+- A coverage signature is plan coverage. For each trial, run `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, FORMAT JSON)` on both queries. The signature records each plan node's rows as 0, 1 or many, and whether a filter removed any rows, plus whether each query errored.
+- A fuzz pass counts as tested even when ScenarioTests refuses the query (`complex_check`, `fk_cycle` and the like): the refusal only skips ScenarioTests. This matters only until 20261012-4 removes ScenarioTests. A fuzz run that tested nothing isn't a pass: an empty footprint, or no legal world in which both queries ran. The rewrite then stays untested, as a refusal leaves it today.
+- A world where the original runs but the rewrite errors (an overflow, a division by zero, an invalid date) disproves the rewrite, under the existing rule `query_failed`. Two conditions:
+  - It counts only once the lift succeeds, so the error happened on a fully legal database.
+  - Statement timeouts and cancels QUAACK didn't send don't count, since they don't come from the data.
+
+  The report says the rewrite failed where the original ran. This matches ScenarioTests and the counterexample rounds, which already treat a rewrite that fails to run as not passing.
+
+From 20261012-5's phase 1 (2026-10-12, `scratch/corpus-20261012-5/REPORT.md` in the main checkout), two traps in the spike's code that the build must avoid:
+- The footprint reads only schema-qualified relations, as `Scenarios.query_tables` does. Production qualifies both queries before rewrite-test, but a spec or harness that feeds raw SQL gets an empty footprint and a pass that tested nothing. Make an empty footprint for a query that reads a table an error, not a pass.
+- After a candidate fails with a data error, the spike's lift read an out-of-footprint parent's catalog on the aborted transaction, so every lift failed with "current transaction is aborted" and the counterexample was lost. Roll back to the world's savepoint before lifting.
+
+- **Depends on:** 20261011-15 (landed), 20261012-6.
+- **Came from:** The user and the disproof spike, 2026-10-12.
+- **Design:** rewrite-test, fixture-scenarios, llm-counterexamples.
+- **Status:** **done.** Landed 2026-10-12 (`task/20261012-2`, bf0f4ca8 through d9b5573d; merged with `--no-ff`).
+  - **What landed.**
+    - Rewrite-test now runs the enclave's `Fuzz` search (`fuzz.rb` and `fuzz/*`, called by `Steps::RewriteFuzz`) before ScenarioTests, under the rewrite's `Deadline`.
+    - The stop rule is the user's, and the signature is plan coverage from `EXPLAIN (ANALYZE ...)`, built only from node types, row buckets and flags.
+    - A counterexample is shrunk a row at a time, then lifted with every constraint enforced. Only a lifted one disproves. A fuzz pass counts as tested, even after a ScenarioTests refusal or timeout.
+    - A data error only the rewrite hits (SQLSTATE class 21 or 22) disproves it under `query_failed` once lifted. Timeouts and foreign cancels never do.
+    - Numeric neighbours step at the column's finest power of ten.
+    - The `rewrite_test` message gains `stage` and `trials`, checked by `Protocol::FuzzResult` at egress and in the driver's reply check. A disproof's sizes per table go only to the store and the report payload, checked at egress by `FuzzSizes`.
+    - The `fuzz` burndown stage, the `fuzz_disproved` fate and its wording, the Sankey layer, sentence and progress line, and `rule_bugs` all landed, and DESIGN.md is updated.
+    - The spec lever `QUAACKS_FUZZ_TRIALS` counts trials instead of seconds. The enclave suite defaults it to 0 (off) and the recorded replays use 40. Production uses the user's rule.
+  - **Hard corpus** (20261012-5's, production settings): 42 of the 76 in-scope wrong rewrites are caught, with 0 false disproofs on the 23 sound ones. Time to a counterexample has a median of 0.09 s and a max of 1.8 s. A pass takes a median of 30 s and a max of 109 s. The spike's swarm caught 41. Most of the remaining misses need 20261012-13's value classes.
+  - **First review: one blocking finding.** Numeric neighbours used a fixed 0.000001 step, which a `numeric(10,2)` column rounds away, so `total > 10` against `total >= 11` passed. Fixed in a352cfed and de3fefe4. The fix round also built the user's `query_failed` decision, in 8e95df26.
+  - **Second review: one blocking finding.** The two scale tests stayed green with a step one decade too coarse. A tests-only round, d9b5573d, gave them gaps only the exact step reaches. A third, fresh reviewer then ran 9 step mutants, and every one turned the right test red.
+  - **Per-commit check** on d9b5573d, in the Linux container: RuboCop, protocol and enclave (6,589 examples) passed. Only the four accepted failures remained, plus `test_postgres_spec.rb:862`, a port-forward flake that passed when rerun alone. Wall time was about 21 minutes, against about 22 before.
+  - **Minors filed** as 20261012-15. 20261012-16, a ResultComparison flaw that predates this task, was filed from the first review.
