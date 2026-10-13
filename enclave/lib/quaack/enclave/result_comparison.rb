@@ -7,6 +7,7 @@ require_relative "supported_sql"
 require_relative "result_comparison/tiebreaker"
 require_relative "result_comparison/load_orders"
 require_relative "result_comparison/cut_ties"
+require_relative "result_comparison/regrouped"
 require_relative "result_comparison/inner_cuts"
 require_relative "result_comparison/limit_sum"
 
@@ -44,7 +45,14 @@ module Quaack
     #   order by luck. So each query runs twice: with the tiebreaker
     #   ascending (T), and with every tiebreaker position DESC NULLS FIRST
     #   (T', the exact reverse). The candidate's T run must match the
-    #   original's T run, row for row, and likewise for T'.
+    #   original's T run, row for row, and likewise for T'. When one
+    #   doesn't, the candidate may still order the original's ties its own
+    #   way, such as ORDER BY a, id for ORDER BY a. Any order of a tie group
+    #   is an answer the original could give, so Regrouped checks
+    #   the runs group by group instead: at each of the original's tie
+    #   groups, both of the candidate's runs must hold exactly that group's
+    #   rows, in any order. A candidate that fails that gets the
+    #   row-for-row verdict.
     #
     #   That holds only when the original's T and T' runs hold the same
     #   multiset of rows. They differ when a LIMIT or OFFSET cuts a tie
@@ -58,7 +66,7 @@ module Quaack
     #   anyway, unless the original's runs through the end of the window
     #   (Shape#through_window) show no tie group crosses its edges. A
     #   candidate with a LIMIT and an OFFSET can do the same with its own
-    #   tie groups, so one that matches row for row runs through its window
+    #   tie groups, so one that matches runs through its window
     #   both ways too. In each case CutTies (result_comparison/cut_ties.rb)
     #   checks the candidate instead: it runs both queries both ways
     #   without their LIMIT and OFFSET to find the tie groups, and the
@@ -81,14 +89,13 @@ module Quaack
     #   passes through gives the same rows in T and T', and a group's rows
     #   sorted in T order can only do that if they're all btree-equal on
     #   every tiebreaker column, so equal to the comparator. So the
-    #   original's answer doesn't depend on how its ties break. A candidate
-    #   matching both runs has the same rows before the cut, in order. Any
-    #   rows it ties with the ones at the cut come out first in T and last
-    #   in T', and both runs show the original's rows there, so those rows
-    #   are equal to the original's too. Two rows the original orders but
-    #   the candidate leaves tied stay put in the original and swap places
-    #   in the candidate between the runs, so one run mismatches, unless
-    #   the comparator can't tell them apart anyway.
+    #   original's answer doesn't depend on how its ties break, beyond the
+    #   order within each tie group. A candidate whose two runs hold each
+    #   of the original's groups at its place gives one of its answers,
+    #   however its own ties break (result_comparison/regrouped.rb says
+    #   why). Two rows the original orders but the candidate leaves tied
+    #   swap places between the runs, so one run fails, unless the
+    #   comparator can't tell them apart anyway.
     #
     #   When some output column is left out of the tiebreaker, rows equal on
     #   every other column can't be split, and can differ in that column.
@@ -154,8 +161,9 @@ module Quaack
     #
     # - DISTINCT ON with no ORDER BY picks rows Postgres is free to vary.
     # - Every unsupported_order refusal above.
-    # - A candidate whose ORDER BY adds its own keys, such as ORDER BY a, id
-    #   for ORDER BY a, orders ties its own way before the tiebreaker.
+    # - A candidate whose two runs fit the original's tie groups but don't
+    #   come back as reversed groups of their own, such as one that sorts
+    #   by a volatile key, is unsupported_order.
     # - Floats within tolerance of each other can sort either way in the
     #   tiebreaker.
     #
@@ -403,7 +411,7 @@ module Quaack
       end
 
       # The verdict from the original's tiebreaker runs: the candidate's
-      # match row for row, unless either query's LIMIT or OFFSET may cut a
+      # match row for row or group by group (tiebroken), unless either query's LIMIT or OFFSET may cut a
       # tie group, and then CutTies' check decides.
       def tiebroken_verdict(transaction, originals, shapes, positions)
         if cut_tie?(transaction, shapes.first, originals, positions)
@@ -418,7 +426,7 @@ module Quaack
 
       # Whether shape's LIMIT or OFFSET may cut a tie group, judged by the
       # original's tiebreaker runs. Called for the original's shape first,
-      # then for a candidate's once it has matched those runs row for row.
+      # then for a candidate's once it has matched those runs (tiebroken).
       def cut_tie?(transaction, shape, originals, positions)
         CutTies.needed?(shape, uncut: ties_uncut?(*originals), kept_rows: originals.first.rows.any?) do
           ties_uncut?(*[false, true].map { transaction.query(shape.through_window(positions, descending: it)) })
@@ -483,14 +491,33 @@ module Quaack
         def contained?(big, small) = ResultComparator.unpartnered_row(@types, big, small).nil?
       end
 
-      def tiebroken(transaction, originals, candidate_shape, positions)
-        verdict = nil
-        originals.zip([false, true]).each do |original, descending|
-          candidate = transaction.query(candidate_shape.with_tiebreaker(positions, descending:))
-          verdict = ResultComparator.compare(original, candidate, mode: :ordered)
-          return verdict unless verdict.match?
+      # Regrouped's source: the candidate's tiebreaker runs, compared as
+      # ResultComparator compares them.
+      class CandidateRuns < FixtureRuns
+        def initialize(transaction, positions, types, shape)
+          super(transaction, positions, types)
+          @shape = shape
         end
-        verdict
+
+        def run(descending) = @transaction.query(@shape.with_tiebreaker(@positions, descending:))
+        def rows(run) = run.rows
+
+        def mismatch(original, run)
+          verdict = ResultComparator.compare(original, run, mode: :ordered)
+          verdict unless verdict.match?
+        end
+      end
+
+      # The candidate's verdict from its T and T' runs (Regrouped).
+      def tiebroken(transaction, originals, candidate_shape, positions)
+        found = Regrouped.tiebroken(originals, CandidateRuns.new(transaction, positions, originals.first.types,
+                                                                 candidate_shape))
+        count = originals.first.rows.size
+        case found
+        when :match then ResultComparator::Verdict.for(:ordered, expected_rows: count, actual_rows: count)
+        when :unsupported_order then refused
+        else found
+        end
       end
     end
   end

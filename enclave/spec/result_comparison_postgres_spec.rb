@@ -215,6 +215,86 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
+    # The original leaves rows tied that the candidate orders, with keys of
+    # its own before the tiebreaker. Any order of a tie group is an answer
+    # the original could give, so the candidate's rows must only come from
+    # the right group, in each run.
+    describe "a candidate that orders the original's ties its own way" do
+      # grp ties 1 and 2, then 3, 4, and 5. label ties 4 and 5 again.
+      let(:tied) do
+        rows_of(%w[id grp label], [1, 1, "b"], [2, 1, "a"], [3, 2, "b"], [4, 2, "a"], [5, 2, "a"], [6, 3, "c"])
+      end
+
+      def matched(original, candidate, rows: tied) = fields(compare(original, candidate, rows:))
+
+      let(:match) { { match: true, mode: :ordered, rule: nil, row: nil, column: nil } }
+
+      it "matches a candidate that adds the key as a tiebreak under a LIMIT" do
+        two = rows_of(%w[id grp], [1, 1], [2, 1])
+
+        expect(matched("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                       "SELECT id, grp FROM items ORDER BY grp, id LIMIT 2", rows: two)).to eq(match)
+      end
+
+      it "matches a tiebreak over several tie groups, with no LIMIT" do
+        expect(matched("SELECT id, grp FROM items ORDER BY grp",
+                       "SELECT id, grp FROM items ORDER BY grp, id DESC")).to eq(match)
+      end
+
+      it "matches a tiebreak that leaves ties of its own inside the original's" do
+        expect(matched("SELECT id, grp, label FROM items ORDER BY grp",
+                       "SELECT id, grp, label FROM items ORDER BY grp, label")).to eq(match)
+      end
+
+      it "matches a tiebreak under a LIMIT and an OFFSET that keep whole tie groups" do
+        expect(matched("SELECT id, grp FROM items ORDER BY grp LIMIT 3 OFFSET 2",
+                       "SELECT id, grp FROM items ORDER BY grp, id DESC LIMIT 3 OFFSET 2")).to eq(match)
+      end
+
+      it "is a value mismatch, at the first row out of place, for a row moved to another group" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp",
+                          "SELECT id, grp FROM items ORDER BY CASE WHEN id = 2 THEN 3 ELSE grp END, id", rows: tied)
+
+        expect(fields(verdict)).to include(match: false, rule: :value, row: 1)
+      end
+
+      it "is a value mismatch for rows that differ, though each group keeps its size" do
+        swapped = "SELECT CASE id WHEN 2 THEN 3 WHEN 3 THEN 2 ELSE id END AS id, grp FROM items ORDER BY grp, id"
+
+        expect(fields(compare("SELECT id, grp FROM items ORDER BY grp", swapped, rows: tied)))
+          .to include(match: false, rule: :value)
+      end
+
+      it "is still a value mismatch for a candidate that drops a key the original orders by" do
+        expect(fields(compare("SELECT id, grp, label FROM items ORDER BY grp, label",
+                              "SELECT id, grp, label FROM items ORDER BY grp", rows: tied)))
+          .to include(match: false, rule: :value)
+      end
+
+      it "is still a value mismatch for a candidate that sorts the other way" do
+        expect(fields(compare("SELECT id, grp FROM items ORDER BY grp",
+                              "SELECT id, grp FROM items ORDER BY grp DESC, id", rows: tied)))
+          .to include(match: false, rule: :value, row: 0)
+      end
+
+      it "is a row_count mismatch for a candidate that keeps another number of rows" do
+        expect(fields(compare("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                              "SELECT id, grp FROM items ORDER BY grp, id LIMIT 3", rows: tied)))
+          .to include(match: false, rule: :row_count)
+      end
+
+      # The sequence gives each run other keys, so the runs fit the
+      # original's groups but grp 2's doesn't come back reversed, and they
+      # can't show what else the candidate could return.
+      it "refuses a candidate whose runs fit but don't show its ties" do
+        conn.exec("CREATE SEQUENCE quaack_keys")
+        candidate = "SELECT id, grp FROM #{forward} ORDER BY grp, nextval('quaack_keys') % 4"
+
+        expect(fields(compare("SELECT id, grp FROM items ORDER BY grp", candidate, rows: tied)))
+          .to eq(match: false, mode: :ordered, rule: :unsupported_order, row: nil, column: nil)
+      end
+    end
+
     # The original's rows depend on how a tie at a LIMIT or OFFSET cut
     # breaks. The rows before the tie must match, in order, and the rest
     # must come from the tie (CutTies), whichever way each query's ties
@@ -648,7 +728,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
 
       it "still compares a jsonb column when no tie holds different values" do
-        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'])
+        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'], [3, 2, '{"a": 3}'])
         original = "SELECT id, jb FROM #{forward} ORDER BY grp"
 
         expect(compare(original, "SELECT id, jb FROM #{reversed} ORDER BY grp", rows:).match?).to be(true)

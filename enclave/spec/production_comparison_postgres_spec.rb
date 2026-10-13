@@ -80,6 +80,50 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       expect(verdict("SELECT 1 ORDER BY 1", "SELECT 1")).to eq(%w[fail candidate_unordered])
     end
 
+    # Any order of the original's tie groups is an answer it could give.
+    describe "a candidate that orders the original's ties its own way" do
+      let(:series) { "SELECT i % 3 AS a, i % 2 AS b, i FROM generate_series(1, 12) i" }
+
+      it "passes a candidate that adds the key as a tiebreak under a LIMIT" do
+        expect(verdict("SELECT 1 AS t, i FROM generate_series(1, 2) i ORDER BY t LIMIT 2",
+                       "SELECT 1 AS t, i FROM generate_series(1, 2) i ORDER BY t, i LIMIT 2")).to eq(["pass", nil])
+      end
+
+      it "passes a tiebreak over several tie groups, with no LIMIT" do
+        expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY a, i DESC")).to eq(["pass", nil])
+      end
+
+      it "passes a tiebreak that leaves ties of its own inside the original's" do
+        expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY a, b")).to eq(["pass", nil])
+      end
+
+      it "fails a row moved to another group with the value rule" do
+        expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY CASE WHEN i = 3 THEN 1 ELSE i % 3 END, i"))
+          .to eq(%w[fail value])
+      end
+
+      it "fails rows that differ, though each group keeps its size, with the value rule" do
+        swapped = "SELECT i % 3 AS a, i % 2 AS b, CASE i WHEN 3 THEN 4 WHEN 4 THEN 3 ELSE i END AS i " \
+                  "FROM generate_series(1, 12) i ORDER BY a, i"
+
+        expect(verdict("#{series} ORDER BY a", swapped)).to eq(%w[fail value])
+      end
+
+      it "still fails a candidate that drops a key the original orders by" do
+        expect(verdict("#{series} ORDER BY a, b", "#{series} ORDER BY a")).to eq(%w[fail value])
+      end
+
+      it "still fails a candidate that sorts the other way" do
+        expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY a DESC, i")).to eq(%w[fail value])
+      end
+
+      it "fails another number of rows with the row_count rule" do
+        expect(verdict("#{series} ORDER BY a",
+                       "SELECT i % 3 AS a, i % 2 AS b, i FROM generate_series(1, 11) i ORDER BY a, i"))
+          .to eq(%w[fail row_count])
+      end
+    end
+
     describe "an original whose LIMIT or OFFSET cuts a tie group" do
       let(:original) { "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3" }
 

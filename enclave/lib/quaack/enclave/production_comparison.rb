@@ -36,7 +36,9 @@ module Quaack
     #   T and T' sorted digests match, and either it has no LIMIT and
     #   OFFSET together or its runs through the end of the window
     #   (Shape#through_window) match too, the candidate's T and T' ordered
-    #   digests must match the original's, and so must the sorted digests
+    #   digests must match the original's, or, when they don't, its runs'
+    #   row hashes must hold each of the original's tie groups at its place,
+    #   in any order (ResultComparison::Regrouped), and so must the sorted digests
     #   of its own runs through its window, when it has a LIMIT and an
     #   OFFSET. Otherwise a LIMIT or OFFSET may cut a tie group, and
     #   ResultComparison::CutTies checks the candidate
@@ -178,18 +180,18 @@ module Quaack
         positions if positions.size == types.size || shapes.none?(&:cut?)
       end
 
-      def tiebroken(run, originals, candidate_shape, positions)
-        originals.zip([false, true]).each do |original, descending|
-          actual = run.digest(candidate_shape.with_tiebreaker(positions, descending:))
-          return fail("row_count") if actual.count != original.count
-          return fail("value") if actual.ordered != original.ordered
-        end
-        pass
+      # The rule for a candidate's run that doesn't match the original's
+      # in order, or nil.
+      def ordered_rule(original, actual)
+        return "row_count" if actual.count != original.count
+
+        "value" if actual.ordered != original.ordered
       end
 
       # The candidate's verdict from the original's tiebreaker runs: they
-      # match row for row, or, when CutTies.needed?, ResultComparison::CutTies'
-      # check runs on row hashes, with this class as its source. Its runs
+      # match by ordered digest or group by group (tiebroken), or, when
+      # CutTies.needed?, ResultComparison::CutTies' check runs on row
+      # hashes, with this class as its source. Its runs
       # without a LIMIT keep only row hashes, and when one times out, the
       # comparison refuses with unsupported_order, as it did before the
       # check could recover a tie at a cut.
@@ -212,7 +214,7 @@ module Quaack
         def verdict(shapes, originals)
           return check(shapes, originals) if cut?(shapes.first, originals)
 
-          verdict = ProductionComparison.tiebroken(@run, originals, shapes.last, @positions)
+          verdict = tiebroken(shapes.last, originals)
           return verdict unless verdict.result == "pass" && cut?(shapes.last, originals)
 
           check(shapes, originals)
@@ -232,7 +234,21 @@ module Quaack
         def key(row) = row
         def contained?(big, small) = ResultComparison::CutTies.tallied?(big, small)
 
+        # Regrouped's source, for the candidate's runs: run(descending),
+        # mismatch, and rows.
+        def run(descending) = @run.digest(@candidate.with_tiebreaker(@positions, descending:))
+        def mismatch(original, actual) = ProductionComparison.ordered_rule(original, actual)
+        def rows(digested) = digested.hashes
+
         private
+
+        # The candidate's verdict from its T and T' runs: by ordered digest,
+        # or, when that fails, by row hashes (ResultComparison::Regrouped).
+        def tiebroken(shape, originals)
+          @candidate = shape
+          found = ResultComparison::Regrouped.tiebroken(originals, self)
+          found == :match ? ProductionComparison.pass : ProductionComparison.fail(found.to_s)
+        end
 
         def check(shapes, originals)
           # ProductionComparison.positions gives a cut query every column, so
@@ -243,7 +259,7 @@ module Quaack
 
         # Whether shape's LIMIT or OFFSET may cut a tie group, judged by the
         # original's tiebreaker runs. Called for the original's shape first,
-        # then for a candidate's once it has matched those runs row for row.
+        # then for a candidate's once it has matched those runs (tiebroken).
         def cut?(shape, originals)
           uncut = originals.map(&:sorted).uniq.one?
           ResultComparison::CutTies.needed?(shape, uncut:, kept_rows: originals.first.hashes.any?) do

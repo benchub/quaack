@@ -82,6 +82,23 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  # Ties on total turn up in almost every world. Any order of a tie is an
+  # answer the original could give, so a tiebreak can't be a disproof.
+  [" LIMIT 2", ""].each do |limit|
+    it "passes a rewrite that only adds a tiebreak to its ORDER BY#{limit}" do
+      outcome = fuzz("SELECT id, total FROM s.orders ORDER BY total#{limit}",
+                     "SELECT id, total FROM s.orders ORDER BY total, id#{limit}")
+
+      expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
+    end
+  end
+
+  it "still disproves a rewrite that drops the tiebreak the original orders by" do
+    outcome = fuzz("SELECT id, total FROM s.orders ORDER BY total, id", "SELECT id, total FROM s.orders ORDER BY total")
+
+    expect(outcome).to have_attributes(verdict: :disproved, rule: :value)
+  end
+
   it "counts only a counterexample that also holds with every constraint enforced" do
     # No customer can exist, so no order can either: the rewrite is wrong
     # only in worlds the dropped foreign key allows.
