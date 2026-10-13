@@ -484,4 +484,78 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       expect([result.match, result.load_failed, result.rule]).to eq([nil, true, :insert_failed])
     end
   end
+
+  # Task 20261012-10: a round whose rows make the original fail says
+  # nothing about the candidate, so it's reported like a load failure, not
+  # as a disproof. A candidate that fails where the original ran still is
+  # one.
+  describe "a round where a query fails on the inserts (task 20261012-10)" do
+    let(:ratio) { "SELECT t.id, t.a / t.b FROM fx.t t ORDER BY t.id" }
+
+    before { conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, a integer, b integer)") }
+
+    def rows(*inserts)
+      described_class.prepare(conn, inserts, placeholder_map: map, tables: [tn("t")])
+    end
+
+    def atoms(sql)
+      Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql), column_names: { tn("t") => %w[id a b] })
+    end
+
+    def compare(prepared, original, candidate, untested: [], with: runner)
+      described_class.compare(with, prepared, original:, candidate:, atoms: atoms(original), untested:)
+    end
+
+    def outcome(round) = [round.match, round.rule, round.load_failed, round.covered]
+
+    it "isn't a disproof when the original fails on the rows, even for an equivalent candidate" do
+      prepared = rows("INSERT INTO fx.t (id, a, b) VALUES (1, 1, 0)")
+
+      round = compare(prepared, ratio, ratio.sub(" ORDER BY", " WHERE true ORDER BY"))
+
+      expect(outcome(round)).to eq([nil, :original_failed, false, []])
+      expect(round.load_order).to be_nil
+    end
+
+    it "is a disproof when the candidate fails on rows the original runs on" do
+      prepared = rows("INSERT INTO fx.t (id, a, b) VALUES (1, 4, 0)")
+      original = "SELECT t.id, t.a FROM fx.t t ORDER BY t.id"
+
+      round = compare(prepared, original, "SELECT t.id, t.a + 0 * (t.a / t.b) AS a FROM fx.t t ORDER BY t.id")
+
+      expect(outcome(round)).to eq([false, :query_failed, false, []])
+    end
+
+    it "keeps the comparison's verdict, covering nothing, when an untested atom's loosened original fails" do
+      prepared = rows("INSERT INTO fx.t (id, a, b) VALUES (1, 4, 0)", "INSERT INTO fx.t (id, a, b) VALUES (2, 4, 2)")
+      original = "SELECT t.id FROM fx.t t WHERE t.b <> 0 AND t.a / t.b > 1"
+      # Atom 0 is t.b <> 0: with it true, the division meets b = 0.
+      expect(atoms(original).map(&:shape).first).to eq("t.b <> $1")
+
+      round = compare(prepared, original, "#{original} AND true", untested: [0])
+
+      expect(outcome(round)).to eq([true, nil, false, []])
+    end
+
+    describe "under a short statement_timeout" do
+      let(:quick) { Quaack::Enclave::ArenaRunner.new(conn, statement_timeout_ms: 300) }
+      let(:sleepy) { "SELECT t.id, (SELECT 1 FROM pg_sleep(5) WHERE t.b = 0) AS slept FROM fx.t t" }
+
+      it "isn't a disproof when the original times out on the rows" do
+        prepared = rows("INSERT INTO fx.t (id, a, b) VALUES (1, 1, 0)")
+
+        round = compare(prepared, sleepy, "#{sleepy} WHERE true", with: quick)
+
+        expect(outcome(round)).to eq([nil, :original_failed, false, []])
+      end
+
+      it "is a disproof when the candidate times out on rows the original runs on" do
+        prepared = rows("INSERT INTO fx.t (id, a, b) VALUES (1, 1, 0)")
+
+        round = compare(prepared, "SELECT t.id, 1 AS slept FROM fx.t t", sleepy, with: quick)
+
+        expect(outcome(round)).to eq([false, :statement_timeout, false, []])
+      end
+    end
+  end
 end
