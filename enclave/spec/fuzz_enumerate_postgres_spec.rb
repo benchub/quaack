@@ -159,10 +159,12 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
   # one the enumerator gives by the weight it says. A brute force over the
   # same kinds checks it, and that one more row isn't covered.
   describe "the bound" do
+    let(:p_id) { "p_id integer REFERENCES s.p" }
+
     before do
       conn.exec(<<~SQL)
         CREATE TABLE s.p (id integer PRIMARY KEY, a integer);
-        CREATE TABLE s.c (cid integer PRIMARY KEY, p_id integer REFERENCES s.p, b text, d boolean);
+        CREATE TABLE s.c (cid integer PRIMARY KEY, #{p_id}, b text, d boolean);
       SQL
     end
 
@@ -199,7 +201,7 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     def each_world(weight, &) = worlds.each(weight, &)
 
     # Every world of at most rows rows, at most 4 a table, over the kinds,
-    # each c row pointing at one of the p rows or NULL.
+    # each c row pointing at one of the p rows, or NULL where p_id allows it.
     def brute_force(rows)
       splits = (0..4).to_a.product((0..4).to_a).select { it.sum <= rows }
       splits.each_with_object(Set.new) do |(np, nc), found|
@@ -209,7 +211,7 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
 
     def wirings(parents, count, found)
       kinds.for(c_table).kinds.repeated_combination(count) do |children|
-        ([nil] + parents).repeated_permutation(count) do |wires|
+        ((p_id.include?("NOT NULL") ? [] : [nil]) + parents).repeated_permutation(count) do |wires|
           found << [parents.sort_by(&:inspect), children.zip(wires).sort_by(&:inspect)]
         end
       end
@@ -224,6 +226,24 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(bound).to eq(2)
       expect(brute_force(bound) - got).to be_empty
       expect(brute_force(bound + 1) - got).not_to be_empty
+    end
+
+    # Task 20261012-3's review (B1): a child whose key can't be NULL has
+    # rows only in a world that has a parent row for it.
+    context "when the child's foreign key is NOT NULL" do
+      let(:p_id) { "p_id integer NOT NULL REFERENCES s.p" }
+
+      it "covers every world of up to bound rows, children wired only to parents, and not every one of one more" do
+        weight = 6
+        bound = worlds.bound(weight)
+        got = yielded(weight)
+
+        expect(bound).to eq(2)
+        expect(brute_force(bound).count { it.last.any? }).to be_positive
+        expect(brute_force(bound) - got).to be_empty
+        expect(brute_force(bound + 1) - got).not_to be_empty
+        expect(got.flat_map(&:last).map(&:last)).not_to include(nil)
+      end
     end
 
     it "gives a bound of 0 before it finishes any weight, and never more than 4" do
