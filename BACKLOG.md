@@ -10,6 +10,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-2: rewrite-test runs the fuzz search before ScenarioTests. The `rewrite_test` message gains `stage` and `trials`. The report payload gains the fate `fuzz_disproved` and a disproof's sizes per table. The burndown gains the stage `fuzz`. A fuzz pass counts as tested even when ScenarioTests refuses the query.
 - 20261012-16: result comparison, in fixtures and at production size, compares an `ORDER BY`'s ties group by group, so a rewrite that only adds a tiebreak passes. No change to any reported field.
 - 20261012-10: a counterexample round where the original query fails on the round's rows (a data error or QUAACK's statement timeout) reports the new protocol rule `original_failed` with match nil, not a disproof, and the next round runs. The driver tells the LLM its rows made the original fail.
+- 20261012-11: rewrite-test no longer crashes when the original query fails on a scenario's rows. vacuity-guard treats such a fixture like one that won't load, and `s1_load_rule` can now say `original_failed` (added to the protocol's `VacuityDiagnostic::LOAD_RULES`). fixture-compare skips the fixture for every candidate. A candidate compared on no fixture ends with rule `original_failed` and no scenario, and its fate and burndown drop are `original_failed`. The report says the original failed on the test data.
+- 20261012-22: once the original has failed on some fixture, a candidate passes only if the original returned a row with a value that's neither NULL nor zero on some fixture where it ran; otherwise it ends `original_failed`. No new reported field.
 
 ## How this file works.
 
@@ -912,20 +914,7 @@ From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`
 
 ### 20261012-10. llm-counterexamples counts a round where the ORIGINAL query fails as a disproof. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-11. rewrite-test crashes when the original query fails on a scenario's data.
-
-Found by 20261012-5's corpus work (2026-10-12). On the Canvas schema, `ScenarioTests.run` raises `ArenaRunner::Error` (`query_failed`) for `SELECT s.id FROM public.submissions s JOIN public.assignments a ON a.id = s.assignment_id WHERE s.course_id = 1 AND (s.score / a.points_possible) >= 0.9`, even with no candidates. A scenario row has `points_possible = 0`, the original divides by it, and VacuityGuard re-raises any runner error that isn't a load (`vacuity_guard.rb`, `loaded_exercised_atoms` and `spill_exercised_atoms`). Nothing in the rewrite-test step (`steps/counterexamples.rb`, `run`) rescues it, so the step fails for the whole query and no rewrite of it is tested. Dividing by a column that can hold 0 is ordinary SQL, and a column's typical values include 0. (Reproduce: `scratch/corpus-20261012-5/` in the main checkout, case `cv_score_ratio`.)
-
-Fix it test first, on a realistic query like this one. A fixture on which the original fails says nothing about a rewrite, the way a fixture that won't load says nothing: treat it like a load failure in the guard (its atoms stay vacuous and are retried) and in the scenario comparison (that scenario is skipped, not a disproof), and test the rewrite on the other scenarios. Say so in DESIGN.md where it says scenarios never crash rewrite-test. Check that 20261012-10 (counterexamples) and the disproof search (20261012-2) follow the same rule: an original that fails disproves nothing.
-
-Decided by the main session during the build (2026-10-12, with the user asleep; overnight rules): a candidate compared on no fixture doesn't pass. It gets `passed: false`, rule `original_failed`, scenario nil, and RewriteFate counts it as a runner failure. A fixture with no rows (S0) still runs and can disprove a candidate, but doesn't count as compared.
-
-Status note (2026-10-12): built on branch `task/20261012-11` (33a1ebb3 … 71974d72), with one fix round. The second review found one more blocking case: a fixture where the original runs but returns no rows (a LIMIT query's near-misses spill) still counts as compared, so wrong rewrites pass. That case is split into 20261012-22, built on top of this branch, and both land together. Nothing from this branch is on `main` yet.
-
-- **Depends on:** None.
-- **Came from:** 20261012-5's phase 2, 2026-10-12.
-- **Design:** rewrite-test, vacuity-guard, fixture-scenarios.
-- **Status:** in progress (waits on 20261012-22 to land)
+### 20261012-11. rewrite-test crashes when the original query fails on a scenario's data. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-12. llm-counterexamples: tell the LLM which values get an insert refused, and what each refusal means.
 
@@ -1092,37 +1081,25 @@ From the build and review of 20261012-11 (minor).
 - **The rerun runs after a load failure too.** `ScenarioTests`' `original_failed?` calls `ResultComparison::OriginalRerun` on any runner error, a load failure included. The rerun's own load then fails and the answer is no, which is right. But it adds 3 to `loads` for each fixture that won't load, per candidate, so the report's load count overstates the work. Skip the rerun when the error's rule or step is a load (`LOAD_RULES` / `LOAD_STEPS`), as `Counterexamples::Failure.round` does.
 - **`VacuityGuard::Compared#compare` swallows a foreign cancel.** It rescues every `ArenaRunner::Error`, including a cancel QUAACK didn't send (`ArenaRunner::Cancel.foreign?`), which everywhere else ends the step. Re-raise it, test first. This predates 20261012-11.
 - **One report-payload check is green on `main`.** The `original_failed` case in report-payload's "isn't a rule bug" list passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
+- **`ScenarioTests`' `shows?` error handling is untested** (from the review of 20261012-22; `enclave/lib/quaack/enclave/scenario_tests.rb`, `shows?`). Two mutants survive: a runner error counted as "shows a nonzero row", and a foreign cancel swallowed. It's barely reachable, since the original has just run fine on that fixture. Add a spy-runner spec that fails only the original-alone load: once with `query_failed` (expect `original_failed`), once with a foreign cancel (expect it raised).
 
 - **Depends on:** None.
-- **Came from:** The build and review of 20261012-11, 2026-10-12.
+- **Came from:** The build and review of 20261012-11, 2026-10-12, and the review of 20261012-22.
 - **Design:** rewrite-test, vacuity-guard.
 - **Status:** todo
 
-### 20261012-22. ScenarioTests: when the original failed on a fixture, count only fixtures where it returned a nonzero row as compared.
+### 20261012-22. ScenarioTests: when the original failed on a fixture, count only fixtures where it returned a nonzero row as compared. Done, see BACKLOG-COMPLETE.md.
 
-Split from 20261012-11 after its second review (blocking there). 20261012-11 skips a fixture the original fails on, and a candidate passes if it matched on the fixtures left. Its fix round stopped fixtures with no rows (S0) from counting as compared. But a fixture with rows where the original returns nothing still counts.
+### 20261012-23. fuzz and scenarios: values for a column that's combined with a constant, such as a constant divided by a column.
 
-Under a top-level LIMIT without an ORDER BY, S1 gets an extra fixture holding only its near misses, so the original runs there and returns 0 rows. On 20261012-11's own Canvas-shaped query with `LIMIT 10` added, where the original fails on every other fixture with rows, these wrong rewrites all came out passed:
-- `> 0.9`;
-- `>= 0.95`;
-- `s.score >= 0.9 * a.points_possible`;
-- `LIMIT 0`;
-- `WHERE false`.
+Found by the review of 20261012-22 (2026-10-12; probe case H, `scratch/review-20261012-22/probe_spec.rb` in the main checkout). The original `SELECT a.id, a.course_id FROM fx.assignments a WHERE a.course_id = 1 AND 100 / a.points_possible > 2` (`points_possible numeric`) against the wrong rewrite with `> 3` passed both the scenarios and the fuzz search, at production's stop rule (30.0 s, 17,586 trials). The two differ only when `points_possible` is in [33⅓, 50). The pools hold the queries' constants and their neighbours (100, 2, 3, 1, 0, ...), so no trial puts the column in that band. Dividing a constant by a column, or comparing a column times a constant against another constant, is ordinary SQL (percentages, ratios, unit conversions).
 
-The second reviewer's probe is `scratch/review-20261012-11-r2/probe_spec.rb` in the main checkout, cases A and B2.
+Fix it test first, on this query and one like `a.points_possible * 0.9 >= 45`. Where a column meets a constant through `/`, `*`, `+` or `-` and the result is compared with another constant, add the values that solve the comparison's boundary (100 / 2 = 50 and 100 / 3 ≈ 33.33 here, and 45 / 0.9 = 50), with the neighbours the pools already give a constant. Do it for fuzz's pools, and for the scenarios' near-miss values if they share the code. A cheaper, broader alternative: add the pairwise quotients and products of the queries' numeric constants. Measure which catches more on the hard corpus (`scratch/corpus-20261012-5/`) without false disproofs.
 
-The rule (decided by the main session, 2026-10-12; the user asleep, overnight rules):
-- **When the original failed on at least one fixture**, a candidate passes only if, on some fixture where the original ran, the original returned at least one row holding a value that isn't NULL or zero. That's the test VacuityGuard's `nonzero_rows` already uses for the S1 diagnostic, so an aggregate's 0 or NULL on S0 doesn't count. Otherwise the candidate gets `passed: false`, rule `original_failed`, scenario nil.
-- **When the original failed on no fixture**, nothing changes from `main`.
-- **Fixtures that don't count** (S0, near-miss spills) still run and can still disprove a candidate.
-- This replaces 20261012-11's "has rows" check.
+Keep the trust boundary as in 20261012-2: these values stay in the enclave. A derived value is a function of the query's constants, so it must never leave in a size, a count or a message.
 
-Fix it test first: the probe's cases on real Postgres, red for passing today. Also check that an equivalent rewrite still passes when the original fails on some fixtures but returns nonzero rows on another. Move the misplaced comment the second review found: "The share of course 1's submissions…" sits above the wrong describe in `scenario_tests_original_fails_postgres_spec.rb`. Update DESIGN.md's sentence on what counts as compared.
-
-Build it on top of branch `task/20261012-11`, on branch `task/20261012-22`, and land both together. 20261012-11 then moves to BACKLOG-COMPLETE.md.
-
-- **Depends on:** 20261012-11 (its branch).
-- **Came from:** The second review of 20261012-11, 2026-10-12.
+- **Depends on:** 20261012-13 (it touches the same value pools; build after it).
+- **Came from:** The review of 20261012-22, 2026-10-12 (minor: outside that task).
 - **Design:** rewrite-test, fixture-scenarios.
 - **Status:** todo
 
