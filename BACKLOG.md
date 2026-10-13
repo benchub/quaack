@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261012-1: value pools and simple CHECKs read each element of an `ARRAY[...]` under casts for `= ANY` and `<> ALL` (a varchar IN CHECK no longer refuses as `unsatisfiable_check`); no change to any reported field.
 - 20261012-2: rewrite-test runs the fuzz search before ScenarioTests. The `rewrite_test` message gains `stage` and `trials`. The report payload gains the fate `fuzz_disproved` and a disproof's sizes per table. The burndown gains the stage `fuzz`. A fuzz pass counts as tested even when ScenarioTests refuses the query.
+- 20261012-16: result comparison, in fixtures and at production size, compares an `ORDER BY`'s ties group by group, so a rewrite that only adds a tiebreak passes. No change to any reported field.
 
 ## How this file works.
 
@@ -1044,27 +1045,34 @@ Answers (the user, 2026-10-12):
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY.
+### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY. Done, see BACKLOG-COMPLETE.md.
 
-The review of 20261012-2 found that `SELECT id, total FROM p.orders ORDER BY total LIMIT 2` against the same query with `ORDER BY total, id LIMIT 2` is disproved with rule `value`. It happened on the first trial, on 2 orders that tie on `total`. The rewrite is sound: its rows, in its order, are an answer the original could give. LLMs often add a tiebreak like this.
+### 20261012-17. Regrouped: minors from the review of 20261012-16.
 
-Why: DESIGN.md's result-comparison section, "`ORDER BY` that doesn't give a total order", adds a tiebreaker to both queries and runs them ascending and descending. "When the original returns the same rows both ways, the candidate must match it row for row in both runs." In the descending run, the original's tied rows come back reversed. The candidate's own `, id` comes before the added tiebreaker, so its order doesn't change, and the two runs can't both match.
-
-The same probably happens without a LIMIT; check. The flaw predates 20261012-2 and is shared by ScenarioTests and the counterexample rounds. Fuzz meets it on almost any data with a tie, and the report then calls the rewrite wrong on a random small database.
-
-The fix: within each of the original's tied groups, accept the candidate's rows in any order. That's the rule already used when a LIMIT cuts through a group: rows in the group must come from the group. Update DESIGN.md's section to match.
-
-Answers (the user, 2026-10-12):
-- The flaw is only on the uncut path (`ResultComparison.tiebroken`), where neither query's LIMIT or OFFSET splits a tied group. CutTies already compares group by group in its `wrong_row` and `covers?` checks.
-- The group-wise compare covers **any** candidate whose two runs fit the original's tied groups, not just one whose own order is total. That reuses CutTies' two checks on the four runs already made:
-  - Each of the original's tied groups, read from its two runs, must hold exactly that group's rows in each of the candidate's runs.
-  - Each tied group of the candidate's own, read from its two runs, may hold only rows that every original group it touches also holds.
-
-  So a partial tiebreak such as `ORDER BY total, status` passes too.
-- **ProductionComparison** gets the same fix in this task. Its `tiebroken` compares ordered digests, so it makes the same false disproof at production size. It already keeps the row hashes in memory.
+1. **A false match on float noise** (`enclave/lib/quaack/enclave/result_comparison/regrouped.rb`, about lines 73–82, and DESIGN.md's sentence "both runs fit only when all its rows are the same").
+   - Row keys round floats to 8 significant digits. So rows in one of the candidate's tied groups can look the same by key while the tiebreaker still sorts them apart, and a middle row with a different label slips through.
+   - Repro (`scratch/review-20261012-16/probe_float_spec.rb` in the main checkout): the original is `SELECT f, label … ORDER BY g`, with groups {(1.0, 'z')} and {(1.0000000002, 'a'), (1.0000000003, 'z')}. The candidate is `SELECT cf AS f, label … ORDER BY cg`, which ties all three rows, with values 1.0, 1.0000000002 and 1.0000000005.
+   - It matches now; `main` before 20261012-16 said `value`. Postgres can return `[1.0000000002, 'a']` first, which the original can't.
+   - It needs values within 1e-9 of each other that differ between the two queries, and DESIGN.md already calls float noise unsupported. So the fix is a clean refusal: build the candidate's layout on exact row text and run CutTies' `covers?`, or refuse with `unsupported_order` when a candidate group's rows differ exactly but match by key.
+2. **ProductionComparison's `unsupported_order` branch is untested** (`production_comparison.rb`, `tiebroken`). Mapping `:unsupported_order` to a pass survives every test in `production_comparison_postgres_spec.rb`. The fixture path's refusal is tested. Add the same volatile-key case for production.
 
 - **Depends on:** None.
-- **Came from:** The review of 20261012-2, 2026-10-12 (minor there, since it predates that task).
-- **Design:** result-comparison, rewrite-test, llm-counterexamples.
+- **Came from:** The review of 20261012-16, 2026-10-12 (minor).
+- **Design:** result-comparison.
+- **Status:** todo
+
+### 20261012-18. A fuzz spec fails under the full suite's load: `counterexample_steps_postgres_spec.rb:468`.
+
+"rewrite-test the fuzz search before ScenarioTests with sentinel literals in the query disproves the rewrite and sends none of them…" failed in both of 20261012-16's full per-commit runs. It passed 9 of 9 times alone for the builder and 60 of 60 for the reviewer. It passed in 20261012-2's landing check. 20261012-16 can't reach it, since its query has no ORDER BY.
+
+When it fails, fuzz returns no disproof, so the stage is `rewrite-test` instead of `fuzz`. The spec runs at the step's default `QUAACKS_FUZZ_TRIALS` of 40, and the sibling `query_failed` test raises it to 400. The kill needs a world with an order whose `note` is the sentinel, `total` at least the sentinel number, and `status` not `held`.
+
+Find out why load matters before changing anything. If the trial floor isn't a real floor (for example, a deadline or a timed-out statement ends the search under load), that's a bug in fuzz, not just in the spec. Fix it test first. Then make the spec deterministic, for example with a higher floor as the sibling test has. Also check:
+- whether the seed changes from run to run, since the query text holds random sentinels;
+- whether other fuzz specs that rely on the default 40 trials have the same risk.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-16, 2026-10-12.
+- **Design:** rewrite-test.
 - **Status:** todo
 

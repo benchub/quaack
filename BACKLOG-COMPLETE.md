@@ -10795,3 +10795,37 @@ From 20261012-5's phase 1 (2026-10-12, `scratch/corpus-20261012-5/REPORT.md` in 
   - **Second review: one blocking finding.** The two scale tests stayed green with a step one decade too coarse. A tests-only round, d9b5573d, gave them gaps only the exact step reaches. A third, fresh reviewer then ran 9 step mutants, and every one turned the right test red.
   - **Per-commit check** on d9b5573d, in the Linux container: RuboCop, protocol and enclave (6,589 examples) passed. Only the four accepted failures remained, plus `test_postgres_spec.rb:862`, a port-forward flake that passed when rerun alone. Wall time was about 21 minutes, against about 22 before.
   - **Minors filed** as 20261012-15. 20261012-16, a ResultComparison flaw that predates this task, was filed from the first review.
+
+### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY.
+
+The review of 20261012-2 found that `SELECT id, total FROM p.orders ORDER BY total LIMIT 2` against the same query with `ORDER BY total, id LIMIT 2` is disproved with rule `value`. It happened on the first trial, on 2 orders that tie on `total`. The rewrite is sound: its rows, in its order, are an answer the original could give. LLMs often add a tiebreak like this.
+
+Why: DESIGN.md's result-comparison section, "`ORDER BY` that doesn't give a total order", adds a tiebreaker to both queries and runs them ascending and descending. "When the original returns the same rows both ways, the candidate must match it row for row in both runs." In the descending run, the original's tied rows come back reversed. The candidate's own `, id` comes before the added tiebreaker, so its order doesn't change, and the two runs can't both match.
+
+The same probably happens without a LIMIT; check. The flaw predates 20261012-2 and is shared by ScenarioTests and the counterexample rounds. Fuzz meets it on almost any data with a tie, and the report then calls the rewrite wrong on a random small database.
+
+The fix: within each of the original's tied groups, accept the candidate's rows in any order. That's the rule already used when a LIMIT cuts through a group: rows in the group must come from the group. Update DESIGN.md's section to match.
+
+Answers (the user, 2026-10-12):
+- The flaw is only on the uncut path (`ResultComparison.tiebroken`), where neither query's LIMIT or OFFSET splits a tied group. CutTies already compares group by group in its `wrong_row` and `covers?` checks.
+- The group-wise compare covers **any** candidate whose two runs fit the original's tied groups, not just one whose own order is total. That reuses CutTies' two checks on the four runs already made:
+  - Each of the original's tied groups, read from its two runs, must hold exactly that group's rows in each of the candidate's runs.
+  - Each tied group of the candidate's own, read from its two runs, may hold only rows that every original group it touches also holds.
+
+  So a partial tiebreak such as `ORDER BY total, status` passes too.
+- **ProductionComparison** gets the same fix in this task. Its `tiebroken` compares ordered digests, so it makes the same false disproof at production size. It already keeps the row hashes in memory.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-2, 2026-10-12 (minor there, since it predates that task).
+- **Design:** result-comparison, rewrite-test, llm-counterexamples.
+- **Status:** done (merged 2026-10-12, bd7c38e9).
+  - **What landed:** a new `ResultComparison::Regrouped`, used by both the fixture path and ProductionComparison (on row hashes).
+    - On the uncut path, a candidate that fails row for row still matches when its ascending and descending runs each hold every one of the original's tied groups in its place, in any order.
+    - Runs that fit but don't split into reversed groups refuse with `unsupported_order`, as a volatile sort key's do.
+    - Anything else keeps the row-for-row verdict (`value` or `row_count`).
+    - The descending run is fetched only after the ascending one fits.
+    - Commits: 62716bf4, 68feb3c1, 3e9f1168, 1be28ef5, 643064a2.
+  - **`covers?` isn't called.** Once both runs fit, every edge between the original's groups holds the same rows on both sides in both of the candidate's runs. So it's an edge of the candidate's groups too, no candidate group crosses one, and `covers?` would always be true. The reviewer confirmed this argument.
+  - **One existing jsonb test was changed.** It asserted the flaw: with two tied rows, its candidate's order was valid. It gained a third row.
+  - **Review: no blocking findings.** Every new test was red on `main`'s code with its own assertion's message, and 8 of 9 mutants were killed. The minors were filed as 20261012-17.
+  - **Per-commit check** on 643064a2: only the four accepted failures, plus `counterexample_steps_postgres_spec.rb:468`. That spec's query has no ORDER BY, so this diff can't reach it. It's a load-dependent fuzz flake from 20261012-2, filed as 20261012-18.
