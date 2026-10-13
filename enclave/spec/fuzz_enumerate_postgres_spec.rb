@@ -109,8 +109,9 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     result = both("SELECT id FROM s.items WHERE id > 1", "SELECT id FROM s.items WHERE id >= 1")
 
     expect(result.fuzz.verdict).to eq(:passed)
-    expect(result.enumerate.rule).to be_nil
-    expect(result.enumerate.verdict).not_to eq(:disproved)
+    expect(result.enumerate).to have_attributes(verdict: :passed, rule: nil)
+    expect(result.enumerate.worlds).to be_positive
+    expect(result.enumerate.bound).to be >= 1
   end
 
   it "runs only after the fuzz search passes" do
