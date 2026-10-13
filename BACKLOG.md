@@ -823,6 +823,7 @@ The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in 
 - **Still open:** the parent closure itself (a joined table that reaches dozens of tables through foreign keys makes every group lift hundreds of parents, times the guard's up-to-4 rebuilds, times many spilled fixtures). Option: set a nullable foreign key to a table outside the query to NULL when neither the query nor the candidate reads that column, so no parent is lifted. It changes which rows the fixtures contain, so it needs the user's go (20261011-18). The user, 2026-10-12, chose instead to replace ScenarioTests with a disproof search that fills only the queries' own tables (20261012-2, 20261012-4), and deprioritized 20261011-18. Close this task once 20261012-2 has been measured on the user's real schema.
 - **Minors:** nothing tests multi-try spill order in `Parts` (changing `lifted`'s `if i == done.size` to `if done.empty?` leaves 584 examples green): add a spec; no spec compares a whole scenario build, with loaded rows dumped, between the old and the new code: add a reference spec.
 - **Status:** in progress (the rest waits on 20261012-2)
+- **Synthetic evidence, 2026-10-13:** on the synthetic 583-table schema, fuzz alone takes the whole 5 minutes on 9 of 28 sound Canvas rewrites at production's stop rule, which has no cap of its own (20261012-35). So rewrite-test's time per sound rewrite is still bounded by the budget, not the work, until fuzz is capped and 20261012-4 removes ScenarioTests.
 
 ### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Dropped, see BACKLOG-COMPLETE.md.
 
@@ -1166,3 +1167,29 @@ From the review of 20261012-23 (minor).
 - **Came from:** The build and review of 20261012-26, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261012-35. fuzz's stop rule rarely stops before the 5-minute deadline, and starves enumerate.
+
+Measured overnight, 2026-10-13. The setup was the spike's Canvas corpus on the synthetic 583-table schema, run on `main` at production's stop rule with a 300 s deadline per rewrite and enumerate on. The results are in `scratch/measure-canvas-prod/` in the main checkout: `results-prod-canvas.jsonl` holds the whole corpus, and `results-sig-canvas.jsonl` holds the slowest sound rewrites again, with each new signature's arrival time.
+
+- **Sound rewrites (28):**
+  - 9 ran fuzz to the 300 s deadline. 8 of those never reached enumerate (bound 0, enumerate untested), and the ninth got 12 s of it.
+  - The other 19 took 60–174 s: 30–144 s of fuzz, then enumerate's 30 s.
+  - In the rerun of the 11 slowest, 8 still ran to 300 s.
+- **Why it doesn't stop.** A signature is a product over every plan node: 3 row buckets times 2 filter flags, for both plans. So new ones keep arriving, at about one every 10–40 s. On those 8 rewrites, the last new signature came at 209–294 s, so "twice as long as the last new signature" never comes before the deadline. Discovery doesn't level off: q05a found 36 signatures by 30 s, 41 by 60 s, 49 by 120 s, and 63 by 300 s.
+- **What the extra time buys.** Across every corpus run since 20261012-2 (hard, Canvas, e2e, the LLM replies), the slowest kill fuzz has found took 8,227 trials. With no other load, every fuzz kill came within 42 s, and 29 of 31 in this run came within 22 s.
+- **Load matters.** Trial rates swing about 6× with the machine's load. The same rewrite did 43,302 trials in 300 s in one run, and 1,691 in 76 s in another. The q16c kill takes 3,207 trials: 37 s in one run, 115 s under heavy load. Under load, q16d's 30 s floor ended after 937 trials, short of the 3,472 its kill needs, so it passed.
+- **Cost.** One sound rewrite in three takes the whole 5-minute budget in fuzz alone, before ScenarioTests. The stronger enumerate sentence then never appears, and enumerate's catches, such as `cv_topics_nulls_last`, are lost on those rewrites. ScenarioTests then runs out of time, and the fuzz pass stands.
+
+**Open question for the user:** cap fuzz's time below the 5-minute deadline? Options:
+1. **Cap fuzz at 60 s** (my recommendation). Fuzz plus enumerate is then at most 90 s per sound rewrite, and enumerate always runs. Every kill seen unloaded fits, and the rule is easy to state.
+2. **Cap fuzz at 90 s**, which leaves more room for a loaded jump server.
+3. **Cap fuzz at 60 s, but also require 10,000 trials before the floor can end it**, up to the cap. This covers the slowest kill seen with room to spare, on a fast machine, and makes a loaded run try harder before it stops.
+4. **Keep the rule as it is.**
+
+Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's schema while ScenarioTests runs out of time there (20261011-13). That ends with 20261012-4. Once the cap is chosen, build it test first in `Fuzz::StopRule` (`from_env`'s production rule gets a cap), and update DESIGN.md's stop rule. Measure the Canvas and hard corpora before and after, for kills and time per rewrite.
+
+- **Depends on:** None.
+- **Came from:** The overnight measurement, 2026-10-13.
+- **Design:** rewrite-test.
+- **Status:** todo (waits on the user's answer)
