@@ -70,7 +70,9 @@ module Quaack
       def run(conn, original, candidate, stop:, **) = search(conn, original, candidate, stop:, enumerate: nil, **).fuzz
 
       # The fuzz search, then, if it passed and enumerate is an
-      # Enumerate::Limit, enumerate in the same session, as Results.
+      # Enumerate::Limit, enumerate in the same session, as Results. An
+      # error in enumerate makes it untested and leaves fuzz's outcome as it
+      # was; a cancel QUAACK didn't send is raised, from either.
       def search(conn, original, candidate, stop:, enumerate:, honour: [], seed: nil, # rubocop:disable Metrics/ParameterLists
                  statement_timeout_ms: ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS)
         queries = [original, candidate]
