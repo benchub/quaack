@@ -1034,7 +1034,16 @@ Why: DESIGN.md's result-comparison section, "`ORDER BY` that doesn't give a tota
 
 The same probably happens without a LIMIT; check. The flaw predates 20261012-2 and is shared by ScenarioTests and the counterexample rounds. Fuzz meets it on almost any data with a tie, and the report then calls the rewrite wrong on a random small database.
 
-The fix: within each of the original's tied groups, accept the candidate's rows in any order, as long as the ascending and descending runs show the same group boundaries. That's the rule already used when a LIMIT cuts through a group: rows in the group must come from the group. A candidate whose own ORDER BY leaves ties keeps today's check. Update DESIGN.md's section to match.
+The fix: within each of the original's tied groups, accept the candidate's rows in any order. That's the rule already used when a LIMIT cuts through a group: rows in the group must come from the group. Update DESIGN.md's section to match.
+
+Answers (the user, 2026-10-12):
+- The flaw is only on the uncut path (`ResultComparison.tiebroken`), where neither query's LIMIT or OFFSET splits a tied group. CutTies already compares group by group in its `wrong_row` and `covers?` checks.
+- The group-wise compare covers **any** candidate whose two runs fit the original's tied groups, not just one whose own order is total. That reuses CutTies' two checks on the four runs already made:
+  - Each of the original's tied groups, read from its two runs, must hold exactly that group's rows in each of the candidate's runs.
+  - Each tied group of the candidate's own, read from its two runs, may hold only rows that every original group it touches also holds.
+
+  So a partial tiebreak such as `ORDER BY total, status` passes too.
+- **ProductionComparison** gets the same fix in this task. Its `tiebroken` compares ordered digests, so it makes the same false disproof at production size. It already keeps the row hashes in memory.
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-2, 2026-10-12 (minor there, since it predates that task).
