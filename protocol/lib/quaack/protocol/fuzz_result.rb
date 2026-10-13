@@ -13,8 +13,10 @@ module Quaack
     #
     # A fuzz disproof's sizes go only to the store and the report: one
     # [schema, table, rows] triple per table the shrunk counterexample put
-    # rows in. Table names are schema; rows is a count. The rows
-    # themselves never leave the enclave.
+    # rows in. Table names are schema; rows is a count from 1 to MAX_SIZE,
+    # which means MAX_SIZE or more: fuzz can put as many rows in a table as
+    # a query constant (task 20261012-13), so a larger count could carry
+    # one out. The rows themselves never leave the enclave.
     #
     #   FuzzResult.rewrite_test?("stage" => "fuzz", "trials" => 12)  # => true
     #   FuzzResult.sizes?([["public", "orders", 2]])                  # => true
@@ -23,6 +25,9 @@ module Quaack
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12
+
+      # The most rows a size says, meaning that many or more.
+      MAX_SIZE = 5
 
       # A Postgres identifier is at most 63 bytes.
       MAX_NAME_BYTES = 63
@@ -45,7 +50,8 @@ module Quaack
       end
 
       def size?(size)
-        size.is_a?(Array) && size.size == 3 && size.take(2).all? { name?(it) } && count?(size[2]) && size[2].positive?
+        size.is_a?(Array) && size.size == 3 && size.take(2).all? { name?(it) } && count?(size[2]) &&
+          size[2].between?(1, MAX_SIZE)
       end
 
       def name?(name) = name.is_a?(String) && !name.empty? && name.bytesize <= MAX_NAME_BYTES

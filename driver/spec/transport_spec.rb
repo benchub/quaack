@@ -910,7 +910,8 @@ RSpec.describe Quaack::Driver::Transport do
 
       expect(result.messages.first["rewrites"].first.slice("sizes", "trials")).to eq(good)
       [{ "sizes" => [["public", "orders", sentinel]] }, { "sizes" => [["public", "orders", 2, sentinel]] },
-       { "sizes" => sentinel }, { "trials" => sentinel }, { "trials" => -1 }].each do |planted|
+       { "sizes" => sentinel }, { "trials" => sentinel }, { "trials" => -1 },
+       { "sizes" => [["public", "orders", 6]] }, { "sizes" => [["public", "orders", 37]] }].each do |planted|
         error = refusal(report.call(planted))
 
         expect(error.rule).to eq("unexpected_output"), "for #{planted}"

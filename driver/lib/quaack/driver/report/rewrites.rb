@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/fuzz_result"
 require "quaack/protocol/rewrite_budget"
 
 module Quaack
@@ -146,15 +147,18 @@ module Quaack
           said.size < 3 ? said.join(" and ") : "#{said[..-2].join(", ")}, and #{said.last}"
         end
 
-        # "2 rows in orders", or just "2 in sales.customers" after the first.
+        # "2 rows in orders", or just "2 in sales.customers" after the first;
+        # 5, the most a size says, is "5 or more".
         def size_words(schema, table, rows, first:)
-          "#{first ? Words.count(rows, "row") : Format.number(rows)} in " \
+          count = first ? Words.count(rows, "row") : Format.number(rows)
+          count = count.sub(/\A\d+/, '\0 or more') if rows == Protocol::FuzzResult::MAX_SIZE
+          "#{count} in " \
             "#{"#{schema}." unless schema == "public"}#{table}"
         end
 
         def size?(size)
           size.is_a?(Array) && size.size == 3 && size.take(2).all?(String) && size[2].is_a?(Integer) &&
-            size[2].positive?
+            size[2].between?(1, Protocol::FuzzResult::MAX_SIZE)
         end
 
         # How many random small databases fuzz compared the rewrite on,
