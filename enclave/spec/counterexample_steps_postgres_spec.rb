@@ -582,6 +582,42 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         end
       end
 
+      # Task 20261012-23: fuzz solves rate * 7 > c for rate, a value that's
+      # in neither query: the sentinel number plus 3/7. A needle for it, and
+      # the sentinel number's own needle, which it starts with, catch it.
+      context "with a comparison whose constants solve to a sentinel" do
+        let(:solved) { LeakCheck::Sentinels.new(extra: { solved: "#{sentinels.number}.4285" }) }
+        let(:query) { "SELECT o.note FROM public.orders o WHERE o.rate * 7 > #{(7 * sentinels.number) + 3}" }
+        let(:candidate) { "SELECT o.note FROM public.orders o WHERE o.rate * 7 > #{(7 * sentinels.number) + 10}" }
+
+        def payload_fields
+          Quaack::Enclave::Steps::ReportPayload.fuzz(stored, "rewrite_1", store.read("qualified_query"), candidate)
+        end
+
+        def seed(conn)
+          super
+          conn.exec("ALTER TABLE public.orders ADD COLUMN rate numeric")
+        end
+
+        it "disproves the rewrite with a value that solves its comparison, and sends none of it" do
+          ready(candidate, arena_sql: "ALTER TABLE public.orders ADD COLUMN rate numeric")
+
+          outcome = fuzz_step("rewrite_1", FUZZ_TO_KILL)
+
+          expect(lines(outcome).first).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
+          expect(store.read("qualified_query")).not_to include(sentinels.number.to_s)
+          expect(payload_fields).to include("sizes" => [["public", "orders", 1]])
+          objects = { tested:, burndown:, payload: payload_fields }
+          expect_no_leaks(sentinels, outcome, objects:)
+          expect_no_leaks(solved, outcome, objects:)
+        end
+
+        it "uses a check that sees the solution planted in the sizes" do
+          planted = { "sizes" => [["public", "orders #{sentinels.number}.42857142857", 1]] }
+          expect(LeakCheck.findings(solved, objects: { payload: planted }).map(&:to_s)).not_to eq([])
+        end
+      end
+
       it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials" do
         ready(same)
 
