@@ -485,7 +485,7 @@ RSpec.describe "quaacks report-payload" do
                                  "untested_atoms" => nil, "untested_unchanged" => nil,
                                  "untested_states" => nil, "covered" => nil,
                                  "evidence" => nil, "dropped" => nil, "out_of_time" => nil,
-                                 "trials" => nil, "sizes" => nil)
+                                 "trials" => nil, "worlds" => nil, "bound" => nil, "sizes" => nil)
       end
     end
   end
@@ -689,7 +689,26 @@ RSpec.describe "quaacks report-payload" do
           stored(store, 6, tested: tested(true).merge("stage" => "fuzz", "trials" => 41_200))
           stored(store, 7, tested: fuzzed(false, REPORT_WORD_SENTINEL, 3, []), survived: false)
           stored(store, 8, tested: fuzzed(false, "query_failed", 9, [["public", "orders", 1]]), survived: false)
+          enumerated = { "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2 }
+          stored(store, 9, tested: tested(false, nil, "value").merge(enumerated, "sizes" => [["public", "orders", 2]]),
+                           survived: false)
+          stored(store, 10, tested: tested(true).merge(enumerated))
+          stored(store, 11, tested: tested(true).merge("stage" => "enumerate", "trials" => 40,
+                                                       "worlds" => sentinel, "bound" => 37))
         end
+      end
+
+      # Task 20261012-3.
+      it "says enumerate disproved one, with the rule, the rows per table, trials, worlds and bound" do
+        expect(rewrite(9)).to include("fate" => "enumerate_disproved", "rule" => "value", "trials" => 40,
+                                      "worlds" => 905, "bound" => 2, "sizes" => [["public", "orders", 2]])
+      end
+
+      it "sends an enumerate pass's worlds and bound, and none that aren't a count and a bound" do
+        expect(rewrite(10)).to include("trials" => 40, "worlds" => 905, "bound" => 2, "sizes" => nil)
+        expect(rewrite(11)).to include("trials" => 40, "worlds" => nil, "bound" => nil)
+        expect(rewrite(6)).to include("worlds" => nil, "bound" => nil)
+        expect_no_leaks(sentinels, outcome)
       end
 
       it "says fuzz disproved one that failed where the original ran, by query_failed, with its rows per table" do
@@ -982,6 +1001,20 @@ RSpec.describe "quaacks report-payload" do
 
         it "names fuzz as the step that disproved it" do
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "fuzz",
+                                               "rules" => %w[key_in_self_join key_in_self_join] }])
+        end
+      end
+
+      context "with a rule-made rewrite enumerate disproved" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "value").merge("stage" => "enumerate", "trials" => 40, "worlds" => 9,
+                                                             "bound" => 1, "sizes" => []), false)
+          end
+        end
+
+        it "names enumerate as the step that disproved it" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "enumerate",
                                                "rules" => %w[key_in_self_join key_in_self_join] }])
         end
       end

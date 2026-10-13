@@ -110,7 +110,7 @@ module Quaack
             [{ type: :rewrite_test, rewrite: search, **result.slice(*MESSAGE_KEYS).transform_keys(&:to_sym) }]
           end
 
-          MESSAGE_KEYS = %w[passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials].freeze
+          MESSAGE_KEYS = %w[passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials worlds bound].freeze
 
           def discarded?(store, number)
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]
@@ -124,7 +124,7 @@ module Quaack
           end
 
           # The result, once its burndown is recorded (RewriteFuzz.call, then
-          # RewriteBurndown.record_test unless fuzz disproved it). A refusal
+          # RewriteBurndown.record_test unless fuzz or enumerate disproved it). A refusal
           # comes from the query, not the rewrite, so the first one is kept as
           # rewrite_test_refusal and every later rewrite gets it. The arena's
           # connection is made only when fuzz or ScenarioTests needs it.
@@ -133,7 +133,7 @@ module Quaack
             connection = nil
             connect = -> { connection ||= Enclave::RunServer.connect(store, :arena) }
             fuzzed = RewriteFuzz.call(store, search, deadline, connect)
-            return RewriteFuzz.disproof(fuzzed) if fuzzed.verdict == :disproved
+            return RewriteFuzz.disproof(fuzzed) if RewriteFuzz.disproved?(fuzzed)
 
             result, report = scenarios(store, search, deadline, connect)
             RewriteFuzz.decided(result, fuzzed).tap { RewriteBurndown.record_test(store, search, it, report) }

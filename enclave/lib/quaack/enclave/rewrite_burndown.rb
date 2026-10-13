@@ -103,6 +103,27 @@ module Quaack
         )
       end
 
+      # Records enumerate's burndown for search (task 20261012-3), for a
+      # rewrite fuzz didn't disprove: in 1, and out 1 unless enumerate
+      # disproved it, dropped then by its rule as fuzz's are. extra worlds
+      # is how many worlds it compared, bound_<w> 1 says it passed having
+      # tried every world of up to w rows, so summed over the rewrites each
+      # counts the passes that reached that bound, and untested 1 says it
+      # decided nothing. outcome is Fuzz::Enumerate's.
+      def record_enumerate(store, search, outcome)
+        disproved = outcome.verdict == :disproved
+        Burndown.record_latest(
+          store, [["enumerate", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
+                                                 out: disproved ? 0 : 1, extra: enumerate_extra(outcome) }]]
+        )
+      end
+
+      def enumerate_extra(outcome)
+        verdict = outcome.verdict
+        { worlds: outcome.worlds, **(verdict == :passed ? { "bound_#{outcome.bound}": 1 } : {}),
+          **(verdict == :untested ? { untested: 1 } : {}) }
+      end
+
       def fuzz_drop(rule) = Steps::RewriteFate::FUZZ_DISPROOFS.include?(rule.to_s) ? rule.to_sym : :failed
 
       # Records rewrite-test's burndown for search, rewrite_<n> (Burndown.record_latest): in 1,

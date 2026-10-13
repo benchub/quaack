@@ -18,6 +18,8 @@ module LeakCheck
   # ~/.quaack. Keep one Quaacks across calls that share a run, such as
   # intake and then a step with --run, and remove it when done.
   class Quaacks
+    SEARCH_ENV = %w[QUAACKS_FUZZ_TRIALS QUAACKS_ENUMERATE_WORLDS].freeze
+
     # What a run gave back: fd 1 and fd 2 as captured, separately, the
     # Process::Status, and the files the child loaded.
     Outcome = Data.define(:stdout, :stderr, :status, :loaded_features)
@@ -72,10 +74,11 @@ module LeakCheck
 
     private
 
-    # The spec process's QUAACKS_FUZZ_TRIALS (spec_helper.rb) goes to the
-    # child unless env says otherwise: Bundler.with_unbundled_env, which
-    # IsolatedInstall runs it in, would drop it.
-    def child_env(env) = { "QUAACKS_FUZZ_TRIALS" => ENV.fetch("QUAACKS_FUZZ_TRIALS", nil), **env, "HOME" => home }
+    # The spec process's QUAACKS_FUZZ_TRIALS and QUAACKS_ENUMERATE_WORLDS
+    # (spec_helper.rb) go to the child unless env says otherwise:
+    # Bundler.with_unbundled_env, which IsolatedInstall runs it in, would
+    # drop them.
+    def child_env(env) = { **SEARCH_ENV.to_h { [it, ENV.fetch(it, nil)] }, **env, "HOME" => home }
 
     def outcome(run)
       Outcome.new(stdout: run.stdout, stderr: run.stderr, status: run.status, loaded_features: run.loaded_features)

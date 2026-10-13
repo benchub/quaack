@@ -39,6 +39,13 @@ FUZZ_ON = { "QUAACKS_FUZZ_TRIALS" => "40" }.freeze
 # time only when a run would otherwise have failed.
 FUZZ_TO_KILL = { "QUAACKS_FUZZ_TRIALS" => "400" }.freeze
 
+# Turns rewrite-test's enumerate stage (Fuzz::Enumerate::Limit.from_env)
+# off the same way, so a spec that turns fuzz on tests the search alone.
+# The specs of enumerate set a count of worlds tried (ENUMERATE_ON), not
+# production's 30 seconds, so their result doesn't depend on the machine.
+ENV["QUAACKS_ENUMERATE_WORLDS"] = "0"
+ENUMERATE_ON = FUZZ_ON.merge("QUAACKS_ENUMERATE_WORLDS" => "1000").freeze
+
 # What a step that reports counts prints when it succeeds: its step_counts
 # line, its counts in whitelist order as egress writes them, then DONE.
 def counts_then_done(**counts)
