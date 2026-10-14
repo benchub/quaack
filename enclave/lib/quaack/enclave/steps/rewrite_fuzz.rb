@@ -17,10 +17,12 @@ module Quaack
       #   fuzzed = RewriteFuzz.call(store, "rewrite_2", deadline, -> { arena })
       #   return RewriteFuzz.disproof(fuzzed) if RewriteFuzz.disproved?(fuzzed)
       #
-      # call gives Fuzz.search's Results, once their burndown is recorded
+      # call gives Fuzz.search's Results. record stores their burndown
       # (RewriteBurndown.record_fuzz, then record_enumerate unless fuzz
       # disproved the rewrite), the fuzz record marked with each spec setting
-      # set (SETTINGS). The stop rule is Fuzz::StopRule.from_env:
+      # set (SETTINGS). RewriteTest records them only once the rewrite's
+      # result is known, with a disproof or after ScenarioTests, so a step
+      # that ends early stores none of them. The stop rule is Fuzz::StopRule.from_env:
       # the user's rule in production, a trial count for specs, or none,
       # when neither search runs and both outcomes are untested.
       # Enumerate's limit is Fuzz::Enumerate::Limit.from_env: 30 seconds in
@@ -55,10 +57,13 @@ module Quaack
 
         # connect gives the arena's connection, made only if the search runs.
         def call(store, search, deadline, connect)
-          search(store, search, deadline, connect).tap do |results|
-            RewriteBurndown.record_fuzz(store, search, results.fuzz, settings(ENV))
-            RewriteBurndown.record_enumerate(store, search, results.enumerate) unless fuzz_disproved?(results)
-          end
+          search(store, search, deadline, connect)
+        end
+
+        # Records results' burndown, once the rewrite's result is known.
+        def record(store, search, results)
+          RewriteBurndown.record_fuzz(store, search, results.fuzz, settings(ENV))
+          RewriteBurndown.record_enumerate(store, search, results.enumerate) unless fuzz_disproved?(results)
         end
 
         # The spec settings that limit the searches, by the extra count that

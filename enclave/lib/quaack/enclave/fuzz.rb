@@ -167,7 +167,7 @@ module Quaack
         rescue Unconfirmed
           Results.new(fuzz: Fuzz.untested, enumerate: Enumerate.untested)
         ensure
-          @session.close
+          close
         end
 
         # One trial on rows in the session.
@@ -189,6 +189,14 @@ module Quaack
         end
 
         private
+
+        # Rolls the session back. A backend that died, in enumerate say, has
+        # nothing left to roll back, and its error mustn't replace the result.
+        def close
+          @session.close
+        rescue PG::Error
+          nil
+        end
 
         def fuzzed(stop, rng)
           search(stop, rng)

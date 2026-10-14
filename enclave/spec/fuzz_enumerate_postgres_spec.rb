@@ -245,6 +245,68 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(result.fuzz).to have_attributes(verdict: :passed)
       expect(result.enumerate).to eq(described_class.untested)
     end
+
+    # Task 20261012-34: an error from the arena that isn't a cancel QUAACK
+    # didn't send. Lift and DataError swallow the real ones, so Kinds raises it.
+    it "keeps the fuzz pass and its trials when enumerate fails on the arena, and calls enumerate untested" do
+      alone = fuzz_alone(*pair)
+      failure = Quaack::Enclave::ArenaRunner::Error.new(:statement_timeout, step: :query, sqlstate: "57014")
+      allow(described_class::Kinds).to receive(:new).and_raise(failure)
+
+      result = nil
+      expect { result = both(*pair) }.not_to raise_error
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    end
+
+    # Task 20261012-34: the backend dies while enumerate builds its kinds, so
+    # enumerate fails, and so does the session's ROLLBACK after it.
+    it "keeps the fuzz pass and its trials when the backend dies during enumerate, and calls enumerate untested" do
+      alone = fuzz_alone(*pair)
+      doomed = racetrack_and_arena.arena.connect
+      allow(described_class::Kinds).to receive(:new).and_wrap_original do |new, *args|
+        conn.exec_params("SELECT pg_terminate_backend($1, 5000)", [doomed.backend_pid])
+        new.call(*args)
+      end
+
+      result = nil
+      expect do
+        result = fuzz.search(doomed, *pair, stop: fuzz::StopRule.trials(40),
+                                            enumerate: described_class::Limit.worlds(3000))
+      end.not_to raise_error
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    ensure
+      doomed&.close
+    end
+
+    # Task 20261012-34: a pairwise covering array over a wide table's read
+    # columns took seconds on the synthetic Canvas schema, so the build
+    # checks the rewrite's deadline. Three read columns of about nine
+    # classes each are past Kinds::MAX_KINDS, so this one is pairwise.
+    it "stops building pairwise kinds at the first check once the rewrite's deadline runs out, and calls " \
+       "enumerate untested" do
+      conn.exec("CREATE TABLE s.wide (id integer PRIMARY KEY, a text, b text, c text)")
+      wide = ["SELECT id FROM s.wide WHERE a IN ('x', 'y') AND b IN ('x', 'y') AND c IN ('x', 'y')",
+              "SELECT id FROM s.wide WHERE c IN ('y', 'x') AND b IN ('y', 'x') AND a IN ('y', 'x')"]
+      alone = fuzz_alone(*wide)
+      checks = 0
+      deadline = Quaack::Enclave::Deadline.new(1, clock: lambda do
+        next 0.0 unless caller_locations.any? { it.base_label == "pairwise" }
+
+        checks += 1
+        1_000.0
+      end)
+
+      result = nil
+      expect { result = within(deadline) { both(*wide) } }.not_to raise_error
+      expect(checks).to eq(1)
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    end
   end
 
   # The bound is true: every world of at most bound rows, each row one of
