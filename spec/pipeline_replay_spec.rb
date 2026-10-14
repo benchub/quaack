@@ -115,6 +115,14 @@ RSpec.describe PipelineReplay do
             end
           end
 
+          # Task 20261012-15: the searches never disprove a sound rewrite.
+          it "never disproves a rewrite at fuzz or enumerate unless it holds the wrong condition" do
+            rewrites = outcome.report ? outcome.report["rewrites"] : []
+            disproved = rewrites.select { %w[fuzz_disproved enumerate_disproved].include?(it["fate"]) }
+            sound = disproved.map { it["rewrite"] } - outcome.wrong.map { "rewrite_#{it}" }
+            expect(sound).to eq([])
+          end
+
           it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
             wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
             if wrong_condition
