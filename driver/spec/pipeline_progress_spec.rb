@@ -387,16 +387,20 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
         .to eq("#{name}: Survived 40 random small databases built around the query's values (rewrite-test)")
     end
 
-    it "keeps enumerate's sentence when a scenario ended without comparing, as the report does" do
-      entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "original_failed",
-                   "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
+    # Some of the enclave's RewriteFate::FAILURES: rules a scenario ends
+    # with when it couldn't compare.
+    %w[original_failed query_failed statement_timeout fixture_load_failed unsupported_order].each do |rule|
+      it "keeps enumerate's sentence when a scenario ended with #{rule}, without comparing, as the report does" do
+        entries.merge!(rewrite(1, rewrite_survived: false))
+        tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => "s3", "rule" => rule,
+                     "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
 
-      run
+        run
 
-      expect(lines_of("rewrite-correctness")[2])
-        .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows over its " \
-               "value classes (rewrite-test)")
+        expect(lines_of("rewrite-correctness")[2])
+          .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows over its " \
+                 "value classes (rewrite-test)")
+      end
     end
 
     it "says nothing of random small databases when the search compared none" do
