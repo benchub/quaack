@@ -91,7 +91,8 @@ module Quaack
           end
 
           def copied(cells, entry, copy) # rubocop:disable Naming/PredicateMethod -- fill's contract: true when filled
-            entry.kind == :fk ? copy(cells, entry.fk, copy.cells) : cells[entry.column] = copy.cells[entry.column]
+            columns = entry.kind == :fk ? entry.fk.columns : [entry.column]
+            columns.each { cells[it] = copy.cells[it] }
             true
           end
 
