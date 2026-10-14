@@ -7,11 +7,11 @@ require_relative "arena_schema"
 require_relative "insert_check"
 require_relative "result_comparison"
 require_relative "scenarios"
-require_relative "vacuity_guard"
 require_relative "counterexamples/evaluated"
 require_relative "counterexamples/parent_rows"
 require_relative "counterexamples/deferral"
 require_relative "counterexamples/clock_binding"
+require_relative "counterexamples/exercised"
 require_relative "counterexamples/failure"
 
 module Quaack
@@ -100,7 +100,7 @@ module Quaack
 
       # counterexample-compare and counterexample-rollback. Runs fixture-compare's comparison on the prepared fixture,
       # in every load order (ResultComparison.compare_in_load_orders: the parent rows reorder, the inserts keep their
-      # order), then vacuity-guard's test for each untested atom (indexes into atoms, the original's PredicateAtoms),
+      # order), then Exercised's test for each untested atom (indexes into atoms, the original's PredicateAtoms),
       # each in its own arena transaction that rolls back. A fixture that fails to load disproves nothing: the round
       # reports the runner's rule, with match nil, load_failed true, and nothing covered.
       #
@@ -128,8 +128,8 @@ module Quaack
       end
 
       # The untested atoms' shapes this round exercised. A loosened original that fails on the fixture says nothing
-      # about the candidate: VacuityGuard drops that atom alone, and the round's verdict stays as it is. Only an
-      # original that fails here (VacuityGuard::OriginalFailed) leaves the round covering nothing.
+      # about the candidate: Exercised drops that atom alone, and the round's verdict stays as it is. Only an
+      # original that fails here (Exercised::OriginalFailed) leaves the round covering nothing.
       def covered(runner, prepared, original, atoms, untested)
         exercised(runner, prepared, original, atoms, untested).map { |i| atoms[i].shape }
       rescue ArenaRunner::Error => e
@@ -142,7 +142,7 @@ module Quaack
         parse = PgQuery.parse(original)
         replaceable = untested.select { |i| atoms[i].replaceable }
         loosened = replaceable.to_h { |i| [i, PredicateAtoms.with_true(parse, atoms[i])] }
-        VacuityGuard.exercised_atoms(runner, prepared.rows, original, loosened, inserts: prepared.inserts)
+        Exercised.atoms(runner, prepared.rows, original, loosened, inserts: prepared.inserts)
       end
 
       def prepare(conn, inserts, placeholder_map:, tables:, queries: nil, settings: nil) # rubocop:disable Metrics/ParameterLists

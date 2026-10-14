@@ -12,8 +12,6 @@ require "quaack/protocol/plan_nodes"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
 require "quaack/protocol/unchanged_atoms"
-require "quaack/protocol/untested_states"
-require "quaack/protocol/vacuity_diagnostic"
 require_relative "fuzz_sizes"
 require_relative "plain_data"
 
@@ -146,18 +144,14 @@ module Quaack
         raise Error, "a value in this step_counts message isn't counts"
       end
 
-      # A rewrite_test message's s1_load_rule must be nil or a rule from the
-      # fixed list and its s1_rows and s1_nonzero_rows each nil or a count (see
-      # Protocol::VacuityDiagnostic.valid?), so no error message or value
-      # rides out in them. Its rule must be nil or a lowercase word, such as
+      # A rewrite_test message's rule must be nil or a lowercase word, such as
       # the budget's out_of_time (Protocol::RewriteBudget.rule?), and its
       # stage and trials nil, a stage from the fixed list, and a count (see
       # Protocol::FuzzResult.rewrite_test?).
       def check_rewrite_test(fields)
-        return if Protocol::VacuityDiagnostic.valid?(fields) && Protocol::RewriteBudget.rule?(fields["rule"]) &&
-                  Protocol::FuzzResult.rewrite_test?(fields)
+        return if Protocol::RewriteBudget.rule?(fields["rule"]) && Protocol::FuzzResult.rewrite_test?(fields)
 
-        raise Error, "a value in this rewrite_test message isn't a vacuity diagnostic"
+        raise Error, "a value in this rewrite_test message isn't a rule, a stage, or counts"
       end
 
       # A report's plans are nested too, so each must be exactly plan nodes
@@ -170,7 +164,7 @@ module Quaack
       # names (see Protocol::IndexSources.valid?), and is needed too. The
       # top, when sent, must carry only kinds from Protocol::CandidateKinds::KINDS.
       # Each rewrite's untested_unchanged must repeat only shapes of its own
-      # untested_atoms. Each rewrite's fuzz sizes and trials must pass
+      # untested_atoms, and its not_tested be nil or a fixed word. Each rewrite's fuzz sizes and trials must pass
       # check_fuzz.
       # The report's other fields still go out unchecked.
       def check_report(fields)
@@ -180,6 +174,7 @@ module Quaack
 
         check_ranking(fields)
         check_untested_atoms(fields["rewrites"])
+        check_not_tested(fields["rewrites"])
         check_suggested_drops(fields["labels"])
         check_fuzz(fields)
         check_hidden_statistics(fields)
@@ -203,15 +198,20 @@ module Quaack
       # Each rewrite's untested_unchanged, if it has one, must be shapes the
       # same rewrite's untested_atoms already carries (see
       # Protocol::UnchangedAtoms.valid?), so it adds no text of its own.
-      # And each rewrite's untested_states, if it has one, must be one fixed
-      # word per untested atom (see Protocol::UntestedStates.valid?).
       def check_untested_atoms(rewrites)
-        unless Protocol::UnchangedAtoms.valid?(rewrites)
-          raise Error, "a value in this report message has unchanged atoms that aren't among the untested atoms"
-        end
-        return if Protocol::UntestedStates.valid?(rewrites)
+        return if Protocol::UnchangedAtoms.valid?(rewrites)
 
-        raise Error, "a value in this report message has untested states that aren't fixed words"
+        raise Error, "a value in this report message has unchanged atoms that aren't among the untested atoms"
+      end
+
+      # Each rewrite's not_tested, why the search couldn't test one that
+      # went on (task 20261012-4), must be nil or a word from
+      # Protocol::FuzzResult::NOT_TESTED, under either kind of key.
+      def check_not_tested(rewrites)
+        reasons = rewrites.flat_map { |rewrite| ["not_tested", :not_tested].map { rewrite[it] } }
+        return if reasons.all? { Protocol::FuzzResult.not_tested?(it) }
+
+        raise Error, "a value in this report message has a not_tested reason that isn't one of QUAACK's"
       end
 
       # Each label's suggested_drops, if it has one, must pass

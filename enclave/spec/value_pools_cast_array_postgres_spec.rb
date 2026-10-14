@@ -3,7 +3,7 @@
 require "pg_query"
 require "quaack/enclave/arena_schema"
 require "quaack/enclave/predicate_atoms"
-require "quaack/enclave/scenario_tests"
+require "quaack/enclave/scenarios"
 require "quaack/enclave/value_pools"
 
 # Postgres prints IN on a character varying column as = ANY over an ARRAY

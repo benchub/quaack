@@ -3,7 +3,7 @@
 require "pg_query"
 require_relative "../rewrite_entry"
 require_relative "../arena_runner"
-require_relative "../atom_position"
+require_relative "../predicate_atoms"
 require_relative "../counterexamples"
 require_relative "../deadline"
 require_relative "../denormalized_fixture"
@@ -11,7 +11,6 @@ require_relative "../redaction"
 require_relative "../rewrite_burndown"
 require_relative "../run_server"
 require_relative "../scenarios"
-require_relative "../scenario_tests"
 require_relative "../table_name"
 require_relative "index_payload"
 require_relative "index_search"
@@ -28,14 +27,15 @@ module Quaack
       # when a rewrite-rules rule wrote it (DenormalizedFixture).
       #
       # Store entries, which the driver resumes by and rewrite-index-ideas reads:
-      #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
-      #                          "untested_atoms" }, rewrite-test's result, plus
-      #                          "dropped", ScenarioTests' count of scenario
-      #                          groups a unique key left out, or
-      #                          "refused" true when rewrite-test couldn't build
-      #                          scenarios for the query: then the rule is
-      #                          the refusal's, and the rewrite is untested
-      #                          and never recommended
+      #   rewrite_tested_<n>   rewrite-test's result (RewriteFuzz.result):
+      #                        { "passed", "rule", "stage", "trials",
+      #                          "worlds", "bound", "untested",
+      #                          "untested_atoms", "untested_unchanged" },
+      #                        plus "sizes" for a disproof. An entry from
+      #                        before task 20261012-4 has ScenarioTests'
+      #                        fields instead: "scenario", "dropped",
+      #                        "refused", "untested_states" and the like
+      #                        (RewriteFate reads both)
       #   rewrite_round_<n>    { "round", "evidence", "rule", "covered" }, the
       #                        last counterexample-compare round run (see
       #                        Round.finish)
@@ -81,21 +81,21 @@ module Quaack
           store.write("rewrite_survived_#{number}", "survived" => survived)
         end
 
-        # `quaacks rewrite-test` (rewrite-test). A rewrite whose
+        # `quaacks rewrite-test` (rewrite-test): the disproof search,
+        # fuzz then enumerate (RewriteFuzz). A rewrite whose
         # rewrite_pruned_<n> says discarded is skipped, with rule discarded.
-        # Sends one rewrite_test: rewrite, passed, scenario, rule. An
-        # fk_cycle refusal also stores cycle, the cycle's [schema, name]
-        # pairs, for the report; it isn't sent here.
+        # Sends one rewrite_test: rewrite, passed, rule, stage, trials,
+        # worlds, bound.
         #
         # deadline is the rewrite's budget (Deadline, five minutes from the
-        # call). A test that runs past it is stopped. The mechanical test can
-        # only disprove a rewrite, so one it didn't finish isn't disproved: it
-        # goes on to counterexamples and the later stages as passed, with rule
-        # out_of_time (Protocol::RewriteBudget) as its caution, nothing
-        # untested, not a refusal, and the next rewrite is tested as usual.
-        # (An entry from before task 20261011-15 has passed false, and
-        # RewriteFate calls it rewrite_test_out_of_time.) The step still
-        # ends cleanly.
+        # call). The search can only disprove a rewrite, so one it couldn't
+        # test, or didn't finish, isn't disproved: it goes on to
+        # counterexamples and the later stages as passed, with why as its
+        # rule, the report's caution (RewriteFuzz), and the next rewrite is
+        # tested as usual. (An entry from before task 20261011-15 has
+        # passed false, and RewriteFate calls it rewrite_test_out_of_time.)
+        # The step still ends cleanly, unless a cancel QUAACK didn't send
+        # ends it.
         module RewriteTest
           module_function
 
@@ -110,104 +110,28 @@ module Quaack
             [{ type: :rewrite_test, rewrite: search, **result.slice(*MESSAGE_KEYS).transform_keys(&:to_sym) }]
           end
 
-          MESSAGE_KEYS = %w[passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials worlds bound].freeze
+          MESSAGE_KEYS = %w[passed rule stage trials worlds bound].freeze
 
           def discarded?(store, number)
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]
           end
 
-          def discarded = untried("discarded")
-
-          def untried(rule)
-            { "passed" => false, "scenario" => nil, "rule" => rule, "untested" => [], "untested_atoms" => [],
+          def discarded
+            { "passed" => false, "rule" => "discarded", "untested" => [], "untested_atoms" => [],
               "untested_unchanged" => [] }
           end
 
-          # The result, once its burndown is recorded (RewriteFuzz.record, then
-          # RewriteBurndown.record_test unless fuzz or enumerate disproved it).
-          # Fuzz's and enumerate's records wait for the result, so a step that
-          # ScenarioTests ends, such as on a foreign cancel, stores none. A refusal
-          # comes from the query, not the rewrite, so the first one is kept as
-          # rewrite_test_refusal and every later rewrite gets it. The arena's
-          # connection is made only when fuzz or ScenarioTests needs it.
+          # The search's result, once its burndown is recorded. The
+          # arena's connection is made only when the search needs it.
           def test(store, search, deadline)
             Counterexamples.arena!(store, "rewrite_test")
             connection = nil
             connect = -> { connection ||= Enclave::RunServer.connect(store, :arena) }
-            fuzzed = RewriteFuzz.call(store, search, deadline, connect)
-            return disproved(store, search, fuzzed) if RewriteFuzz.disproved?(fuzzed)
-
-            result, report = scenarios(store, search, deadline, connect)
-            RewriteFuzz.record(store, search, fuzzed)
-            RewriteFuzz.decided(result, fuzzed).tap { RewriteBurndown.record_test(store, search, it, report) }
+            results = RewriteFuzz.call(store, search, deadline, connect)
+            RewriteFuzz.record(store, search, results)
+            RewriteFuzz.result(store, search, results)
           ensure
             connection&.close
-          end
-
-          # fuzzed's disproof, once its burndown is recorded.
-          def disproved(store, search, fuzzed)
-            RewriteFuzz.record(store, search, fuzzed)
-            RewriteFuzz.disproof(fuzzed)
-          end
-
-          def empty_report(refused)
-            ScenarioTests::Report.new(results: [], untested: [], untested_atoms: [], retries: 0, dropped: 0,
-                                      refused:, cycle: nil, loads: 0, s1_load_rule: nil, s1_rows: nil,
-                                      s1_nonzero_rows: nil)
-          end
-
-          # ScenarioTests' result and report, or the cached refusal's. The
-          # arena transaction an Expired interrupts has rolled back
-          # (ArenaRunner).
-          def scenarios(store, search, deadline, connect)
-            if store.entry?("rewrite_test_refusal")
-              cached = store.read("rewrite_test_refusal")
-              return [cached, empty_report(cached["rule"])]
-            end
-
-            report = Deadline.within(deadline) { scenario_tests(connect.call, store, search) }
-            result = outcome(report, unchanged(store, search, report))
-            [result.tap { store.write("rewrite_test_refusal", it) if it["refused"] }, report]
-          rescue Deadline::Expired
-            [untried(Protocol::RewriteBudget::RULE).merge("passed" => true), empty_report(nil)]
-          end
-
-          def scenario_tests(connection, store, search)
-            original, candidate = Counterexamples.queries(store, search)
-            ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search))
-          end
-
-          # The redacted shapes of the untested atoms the rewrite left
-          # unchanged (AtomPosition), judged on the unbound SQL so a
-          # placeholder's number counts. A shape counts only if every untested
-          # atom with that shape is unchanged. Always a subset of untested.
-          def unchanged(store, search, report)
-            AtomPosition.unchanged_shapes(store.read("anchored_query"), RewriteEntry.run_sql(store.read(search)),
-                                          report.untested, report.untested_paths)
-          end
-
-          # What a tested (not refused) report adds: the dropped count and
-          # vacuity-guard's diagnostic, the rule S1 failed to load with (a
-          # String or nil), the original's row count on S1, and how many of
-          # those rows are nonzero.
-          def diagnostic(report)
-            { "dropped" => report.dropped, "s1_load_rule" => report.s1_load_rule&.to_s, "s1_rows" => report.s1_rows,
-              "s1_nonzero_rows" => report.s1_nonzero_rows }
-          end
-
-          def outcome(report, unchanged = [])
-            result = report.results.first
-            { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
-              **(report.refused ? { "refused" => true } : diagnostic(report)),
-              **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
-              **untested(report, unchanged) }
-          end
-
-          # The untested atoms' shapes, indexes, and state words, and the
-          # shapes the rewrite left unchanged.
-          def untested(report, unchanged)
-            { "untested" => report.untested, "untested_atoms" => report.untested_atoms,
-              "untested_states" => report.untested_states.map(&:to_s), "untested_unchanged" => unchanged }
           end
         end
 
@@ -274,11 +198,10 @@ module Quaack
             inserts
           end
 
-          # The round's outcome, and how many fixtures it loaded. A fuzz pass
-          # lets a round meet a query rewrite-test refused (task 20261012-2),
-          # so inserts whose parent rows rewrite-test's rules can't build,
-          # such as in a NOT NULL foreign key cycle, fail to load, by the
-          # refusal's rule, which disproves nothing.
+          # The round's outcome, and how many fixtures it loaded. Inserts
+          # whose parent rows Scenarios' rules can't build, such as in a NOT
+          # NULL foreign key cycle, fail to load, by the rule (a
+          # Scenarios::Error), which disproves nothing.
           def run(store, search, number, inserts)
             connection = Enclave::RunServer.connect(store, :arena)
             prepared = prepare(connection, store, inserts, Counterexamples.queries(store, search))
@@ -302,14 +225,20 @@ module Quaack
                                                                   settings: Enclave::RunServer.plan_settings(store))
           end
 
-          # The original's atoms are built only to cover untested ones, so a
-          # query ScenarioTests refused, which left none, needs no Builder.
+          # The original's atoms are extracted only to cover untested ones,
+          # as Fuzz::Coverage numbered them: on the schema of both queries'
+          # tables and what their foreign keys reach.
           def compare(runner, connection, prepared, store, search, number) # rubocop:disable Metrics/ParameterLists
             original, candidate = Counterexamples.queries(store, search)
             untested = store.read("rewrite_tested_#{number}")["untested_atoms"]
-            atoms = untested.empty? ? [] : Scenarios::Builder.new(connection, PgQuery.parse(original)).atoms
+            atoms = untested.empty? ? [] : atoms(connection, original, candidate)
             Enclave::Counterexamples.compare(runner, prepared,
                                              original:, candidate:, atoms:, untested:)
+          end
+
+          def atoms(connection, original, candidate)
+            schema = Fuzz::Catalog.new(connection, Fuzz.footprint([original, candidate])).schema
+            PredicateAtoms.extract(PgQuery.parse(original), column_names: schema.column_names)
           end
 
           def tables(store)

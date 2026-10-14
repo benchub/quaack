@@ -168,8 +168,11 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
                  password: TestPostgres::PASSWORD).tap { it.exec(tables_sql) }.close
     end
 
-    def step(*argv, stdin: nil) = quaacks.run(*argv, "--run", store.run_id, stdin:, env: libpq_env)
-    def test(search) = step("rewrite-test", "--search", search)
+    def step(*argv, stdin: nil, env: {}) = quaacks.run(*argv, "--run", store.run_id, stdin:, env: libpq_env.merge(env))
+    # rewrite-test's search with enumerate on: fuzz alone, even at 400
+    # trials, misses the twin that copies the wrong id and the unhonoured
+    # copies, whose kill needs a row matching all three literals at once.
+    def test(search) = step("rewrite-test", "--search", search, env: ENUMERATE_ON)
 
     def round(search, number, inserts)
       step("counterexample-round", "--search", search, "--round", number.to_s,
@@ -215,7 +218,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
     end
 
     # Task 20261010-2: rows of another class get the copy set too, so
-    # rewrite-test's near misses tell them apart, and it never reaches counterexamples.
+    # rewrite-test's search tells them apart, and it never reaches counterexamples.
     it "disproves in rewrite-test a twin that drops the type filter" do
       ready
       search = twin(rewritten.sub("assignments.context_type = $1 AND ", ""))

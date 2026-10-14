@@ -373,8 +373,8 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     end
 
     # The time is measured from the start of each statement, not of the
-    # transaction or the runner: ScenarioTests reuses one runner across
-    # scenarios, so a cancel after the timeout's worth of earlier statements
+    # transaction or the runner: a caller may reuse one runner across
+    # fixtures, so a cancel after the timeout's worth of earlier statements
     # must still read as a cancel. Each sleep is well under the timeout, and
     # together they're well over it.
     it "times each statement from its own start, so earlier statements don't turn a cancel into a timeout" do

@@ -3,7 +3,6 @@
 require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/denormalized_fixture"
-require "quaack/enclave/scenario_tests"
 require "quaack/enclave/table_name"
 require_relative "support/catalog_shadow"
 
@@ -168,32 +167,6 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
       runner = described_class.new(conn, [copy], statement_timeout_ms: 1)
       expect { runner.with_fixture(rows) { it.query("SELECT pg_sleep(1)") } }
         .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect(it.rule).to eq(:statement_timeout) }
-    end
-  end
-
-  describe Quaack::Enclave::ScenarioTests do
-    let(:original) do
-      "SELECT s.id FROM cv.submissions s JOIN cv.assignments a ON a.id = s.assignment_id " \
-        "WHERE a.context_type = 'Course' AND a.context_id = 50 AND s.body = 'SENTINEL_77'"
-    end
-    let(:rewritten) { original.sub("AND s.body", "AND s.course_id = 50 AND s.body") }
-
-    def run(*candidates, honour: [copy])
-      Quaack::Enclave::ScenarioTests.run(conn, original, candidates, honour:).results.map { [it.passed, it.scenario] }
-    end
-
-    it "passes the rule's rewrite on fixtures that honour its assumption, and disproves wrong twins" do
-      expect(run(rewritten, rewritten.sub("s.course_id = 50", "s.course_id = 51")).map(&:first)).to eq([true, false])
-    end
-
-    # Task 20261010-2.
-    it "disproves a twin that drops the type filter, and passes the rule's rewrite" do
-      untyped = rewritten.sub("a.context_type = 'Course' AND ", "")
-      expect(run(rewritten, untyped).map(&:first)).to eq([true, false])
-    end
-
-    it "disproves the same rewrite on fixtures that don't honour the assumption" do
-      expect(run(rewritten, honour: []).first.first).to be(false)
     end
   end
 end

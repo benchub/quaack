@@ -236,58 +236,49 @@ RSpec.describe Quaack::Enclave::Egress do
 
   describe "a rewrite_test message" do
     it "sends out_of_time, the budget's rule, for a rewrite that ran out of time (20261010-53)" do
-      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil,
-                             rule: "out_of_time")
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, rule: "out_of_time")
       expect(JSON.parse(out)).to include("rule" => "out_of_time", "passed" => false)
     end
 
-    it "sends the S1 load rule and row count, and drops other fields" do
-      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: nil, rule: nil,
-                             s1_load_rule: "fixture_load_failed", s1_rows: 3, s1_nonzero_rows: 0,
+    # Task 20261012-4: ScenarioTests is gone, so a rewrite_test carries no
+    # scenario and no S1 vacuity diagnostic.
+    it "drops a scenario, the S1 diagnostic, and other fields" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: EGRESS_SENTINEL,
+                             rule: nil, s1_load_rule: EGRESS_SENTINEL, s1_rows: 3, s1_nonzero_rows: 0,
                              sql: EGRESS_SENTINEL)
 
       expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => true,
-                                    "scenario" => nil, "rule" => nil, "s1_load_rule" => "fixture_load_failed",
-                                    "s1_rows" => 3, "s1_nonzero_rows" => 0)
+                                    "rule" => nil)
     end
 
     it "sends the stage that decided it and fuzz's trials (20261012-2), but never a disproof's sizes" do
-      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil, rule: "row_count",
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, rule: "row_count",
                              stage: "fuzz", trials: 41_200, sizes: [["public", EGRESS_SENTINEL, 2]])
 
       expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => false,
-                                    "scenario" => nil, "rule" => "row_count", "stage" => "fuzz",
+                                    "rule" => "row_count", "stage" => "fuzz",
                                     "trials" => 41_200)
     end
 
     # The user's decision (2026-10-12): fuzz disproves a rewrite that fails
     # where the original ran, by query_failed.
     it "sends fuzz's query_failed disproof by its rule alone" do
-      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, scenario: nil,
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false,
                              rule: "query_failed", stage: "fuzz", trials: 0)
 
       expect(JSON.parse(out)).to include("rule" => "query_failed", "stage" => "fuzz", "trials" => 0)
     end
 
     it "sends enumerate's stage, the worlds it compared, and the bound it finished (20261012-3)" do
-      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, scenario: nil, rule: nil,
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, rule: nil,
                              stage: "enumerate", trials: 41_200, worlds: 905, bound: 4)
 
       expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => true,
-                                    "scenario" => nil, "rule" => nil, "stage" => "enumerate",
+                                    "rule" => nil, "stage" => "enumerate",
                                     "trials" => 41_200, "worlds" => 905, "bound" => 4)
     end
 
     [
-      ["a load rule not on the list", { s1_load_rule: EGRESS_SENTINEL }],
-      ["an error message as the rule", { s1_load_rule: "PG::Error: #{EGRESS_SENTINEL}" }],
-      ["a string where the row count belongs", { s1_rows: EGRESS_SENTINEL }],
-      ["a negative row count", { s1_rows: -1 }],
-      ["a row count just above the cap", { s1_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
-      ["a row count of a trillion", { s1_rows: 10**12 }],
-      ["a string where the nonzero row count belongs", { s1_nonzero_rows: EGRESS_SENTINEL }],
-      ["a nonzero row count just above the cap",
-       { s1_nonzero_rows: Quaack::Protocol::VacuityDiagnostic::MAX_ROWS + 1 }],
       ["an error message as the rewrite's rule", { rule: "PG::Error: #{EGRESS_SENTINEL}" }],
       ["a number as the rewrite's rule", { rule: 5 }],
       ["a stage not on the list", { stage: EGRESS_SENTINEL }],
@@ -302,7 +293,7 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a bound of a query constant's worth", { bound: 37 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
-        message = "a value in this rewrite_test message isn't a vacuity diagnostic"
+        message = "a value in this rewrite_test message isn't a rule, a stage, or counts"
         expect { egress.serialize(type: :rewrite_test, rewrite: "rewrite_1", passed: false, **fields) }
           .to raise_error(described_class::Error, message) { |e|
             expect(e.message).not_to include(EGRESS_SENTINEL)
@@ -511,25 +502,29 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
-    # Task 20261010-43: a rewrite's untested_states is one fixed word per
-    # untested atom (Protocol::UntestedStates.valid?).
-    describe "a rewrite's untested_states" do
+    # Task 20261012-4: why the search couldn't test a rewrite that went on
+    # is a fixed word from Protocol::FuzzResult::NOT_TESTED, or nil.
+    describe "a rewrite's not_tested" do
       def report_with(entry)
-        rewrite = { "rewrite" => "rewrite_1", "plan" => nil, "untested_atoms" => ["o.qty > $2"] }.merge(entry)
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil }.merge(entry)
         { type: :report, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
       end
 
-      it "sends fixed words, one per untested atom" do
-        sent = parsed(report_with("untested_states" => ["searched"]))
-        expect(sent["rewrites"].first).to include("untested_states" => ["searched"])
+      it "sends a reason from the list, or nil" do
+        expect(parsed(report_with("not_tested" => "no_world"))["rewrites"].first).to include("not_tested" => "no_world")
+        expect(parsed(report_with("not_tested" => nil))["rewrites"].first).to include("not_tested" => nil)
       end
 
-      it "refuses a word off the list, without quoting it" do
-        expect { egress.serialize(report_with("untested_states" => [EGRESS_SENTINEL])) }
-          .to raise_error(described_class::Error, "a value in this report message has untested states that " \
-                                                  "aren't fixed words") { |e|
-                expect(e.message).not_to include(EGRESS_SENTINEL)
-              }
+      [["a reason off the list", { "not_tested" => EGRESS_SENTINEL }],
+       ["an error message", { "not_tested" => "PG::Error: #{EGRESS_SENTINEL}" }],
+       ["a reason under a Symbol key", { not_tested: EGRESS_SENTINEL }]].each do |what, planted|
+        it "refuses #{what}, without quoting it" do
+          refusal = "a value in this report message has a not_tested reason that isn't one of QUAACK's"
+          expect { egress.serialize(report_with(planted)) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
       end
     end
 

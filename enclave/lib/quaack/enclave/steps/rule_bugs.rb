@@ -12,20 +12,22 @@ module Quaack
       # a bug in QUAACK, and the report says so prominently.
       #
       #   RuleBugs.call(store)
-      #   # => [{ "rewrite" => "rewrite_1", "rules" => ["key_in_self_join"], "step" => "rewrite-test" }]
+      #   # => [{ "rewrite" => "rewrite_1", "rules" => ["key_in_self_join"], "step" => "fuzz" }]
       #
       # step is what disproved it: fuzz (rewrite-test's fuzz search, task 20261012-2), enumerate
-      # (its enumerate stage, task 20261012-3), rewrite-test,
-      # counterexamples, or result-comparison. rewrite-test and
-      # counterexamples disprove it only with a result mismatch, and fuzz
-      # also with query_failed, as RewriteFate reads
+      # (its enumerate stage, task 20261012-3), counterexamples, or
+      # result-comparison, or rewrite-test for a store from before task
+      # 20261012-4, when ScenarioTests ran after the search. Counterexamples
+      # (and the old rewrite-test) disprove it only with a result mismatch,
+      # and fuzz and enumerate also with query_failed, as RewriteFate reads
       # rewrite_tested_<n> and rewrite_round_<n>. A rewrite plan-pruning
       # pruned for planning as the original does was never tested: its
       # rewrite_tested_<n> says rule discarded, and it isn't a bug.
       #
       # A rewrite resting on a denormalized_equal assumption counts like any
-      # other: rewrite-test and counterexamples keep the copy in their fixtures
-      # (DenormalizedFixture), so a disproof there means the rule is wrong.
+      # other: fuzz honours the copy in its worlds and counterexamples keep it
+      # in their fixtures (DenormalizedFixture), so a disproof there means
+      # the rule is wrong.
       #
       # result-comparison disproves a rewrite only when one of its failing verdicts in
       # result_comparison is a result mismatch, a rule in RewriteFate::MISMATCHES. result-comparison
@@ -42,9 +44,9 @@ module Quaack
       # Trust boundary. Entry names, step names, and rule names through
       # RewriteSource, which sends only QUAACK's own.
       module RuleBugs
-        # RewriteFate's fates that say rewrite-test or counterexamples got different results, or, for
-        # fuzz's and enumerate's query_failed, that the rewrite failed where the original ran. A
-        # scenario or round that ended without comparing (unsupported_order,
+        # RewriteFate's fates that say a test got different results, or, for
+        # fuzz's and enumerate's query_failed, that the rewrite failed where the original ran. An
+        # old scenario or a round that ended without comparing (unsupported_order,
         # query_failed, statement_timeout, and the rest of RewriteFate's
         # FAILURES) is rewrite_test_failed or counterexamples_failed, and
         # says nothing about the rewrite.

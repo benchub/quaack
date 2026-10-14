@@ -25,7 +25,19 @@ module Quaack
     #   FuzzResult.rewrite_test?("stage" => "enumerate", "worlds" => 900, "bound" => 2)  # => true
     #   FuzzResult.sizes?([["public", "orders", 2]])                  # => true
     module FuzzResult
+      # rewrite-test is the stage of a message from before task 20261012-4,
+      # which ran ScenarioTests after the search.
       STAGES = %w[fuzz enumerate rewrite-test].map(&:freeze).freeze
+
+      # Task 20261012-4: why the search couldn't test a rewrite, which then
+      # goes on as passed with this as its rule, the report's caution, as
+      # one out of time does (RewriteBudget::RULE): the queries read no
+      # table, the comparison can't judge them (FETCH FIRST ... WITH TIES),
+      # the session couldn't be set up, no world let both queries run, the
+      # budget ran out while a kill was confirmed, the search failed on the
+      # arena, or a spec turned fuzz off.
+      NOT_TESTED = %w[no_tables not_comparable setup_failed no_world unconfirmed search_failed fuzz_off]
+                   .map(&:freeze).freeze
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12
@@ -53,8 +65,11 @@ module Quaack
       # Whether fields' trials and worlds are nil or counts, and its bound nil or 0 to MAX_BOUND.
       def counts?(fields) = trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"])
 
-      # Whether each of a report's rewrites carries sizes, trials, worlds and bound that pass.
-      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && counts?(it) }
+      # Whether each of a report's rewrites carries sizes, trials, worlds and
+      # bound that pass, and a not_tested that's nil or on NOT_TESTED.
+      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && counts?(it) && not_tested?(it["not_tested"]) }
+
+      def not_tested?(reason) = reason.nil? || NOT_TESTED.include?(reason)
 
       def sizes?(sizes)
         return true if sizes.nil?

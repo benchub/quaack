@@ -23,7 +23,7 @@ module Quaack
   module Enclave
     # rewrite-test's fuzz search (task 20261012-2, DESIGN.md's rewrite-test):
     # random small databases on the two queries' own tables, built around
-    # their own values, to disprove a rewrite before ScenarioTests runs.
+    # their own values, to disprove a rewrite.
     #
     #   Fuzz.run(arena, original, candidate, stop: Fuzz::StopRule.from_env(ENV), honour: copies)
     #   # => Outcome(verdict: :disproved, rule: :row_count, trials: 12, sizes: [["s", "orders", 2]])
@@ -162,7 +162,7 @@ module Quaack
       end
 
       # One search's state.
-      class Search
+      class Search # rubocop:disable Metrics/ClassLength -- one search's state, the atoms' coverage included
         def initialize(conn, footprint, queries, honour:, statement_timeout_ms:)
           @queries = %i[original candidate].zip(queries).to_h
           @catalog = Catalog.new(conn, footprint)

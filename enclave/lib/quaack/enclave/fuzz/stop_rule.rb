@@ -33,7 +33,7 @@ module Quaack
         attr_reader :floor, :cap, :unit, :trials
 
         # The rule ENV asks for, or nil when QUAACKS_FUZZ_TRIALS is 0, which
-        # turns the search off, for the specs that test ScenarioTests alone.
+        # turns the search off, for the specs that don't test it.
         def self.from_env(env)
           value = env[ENV_TRIALS]
           return new(floor: FLOOR_SECONDS, cap: CAP_SECONDS, clock: MONOTONIC) if value.nil?

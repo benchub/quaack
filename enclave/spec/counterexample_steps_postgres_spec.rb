@@ -40,7 +40,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   # status_check, if given, becomes a CHECK on status in the arena, and
   # makes it NOT NULL, so no row fails a status the CHECK pins (a NULL
-  # status would, and vacuity-guard's search would find it), and
+  # status would, and the search would make it false), and
   # extra, if given, runs there after.
   def make_arena(status_check = nil, extra = nil)
     production.server.admin.exec(%(CREATE DATABASE "#{arena_name}"))
@@ -162,31 +162,38 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
   end
 
   describe "rewrite-test" do
+    def searched(search = "rewrite_1", env = FUZZ_ON)
+      quaacks.run("rewrite-test", "--search", search, "--run", store.run_id, env: libpq_env.merge(env))
+    end
+
+    def tested(number = 1) = stored.read("rewrite_tested_#{number}")
+
+    # Task 20261012-4: what a rewrite_test message carries.
+    let(:keys) { %w[type rewrite passed rule stage trials worlds bound] }
+
     it "passes an equivalent rewrite, stores its result, and doesn't decide survival yet" do
       ready(same)
 
-      outcome = step("rewrite-test", "--search", "rewrite_1")
+      outcome = searched
 
       expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
       message = lines(outcome).first
+      expect(message.keys).to eq(keys)
       expect(message).to include("type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
-                                 "scenario" => nil, "rule" => nil, "s1_load_rule" => nil)
-      expect(message["s1_rows"]).to be_a(Integer).and be_positive
-      expect(message["s1_nonzero_rows"]).to be_a(Integer).and be_positive
-      expect(message.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage
-                                    trials worlds bound])
+                                 "rule" => nil, "stage" => "fuzz")
       expect(lines(outcome).last).to eq({ "type" => "done" })
-      expect(stored.read("rewrite_tested_1")).to include("passed" => true, "dropped" => 0, "s1_load_rule" => nil,
-                                                         "s1_rows" => message["s1_rows"],
-                                                         "s1_nonzero_rows" => message["s1_nonzero_rows"])
+      expect(tested).to include("passed" => true, "rule" => nil, "stage" => "fuzz", "untested" => [],
+                                "untested_atoms" => [], "untested_unchanged" => [])
+      expect(tested.keys).not_to include("scenario", "dropped", "s1_load_rule", "untested_states", "refused")
       expect(stored.entry?("rewrite_survived_1")).to be(false)
       expect_no_leaks(sentinels, outcome)
     end
 
-    # Task 20261004-61: WHERE literals, a text and a number, go through
-    # rewrite-test and a counterexample round to a non-empty covered and the
-    # report payload's checks. Only the conditions' redacted shapes come out.
-    describe "the conditions the report names (vacuity-guard)" do
+    # Task 20261004-61, and 20261012-4: the search's worlds never make a
+    # condition both true and false, so the rewrite passes with it named,
+    # by its redacted shape, for the report's caution and the LLM's
+    # counterexamples, and a round covers it. Only shapes come out.
+    describe "the conditions the report names" do
       let(:query) do
         "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
           "AND o.total >= #{sentinels.number}"
@@ -200,8 +207,12 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       it "sends the shapes of what it left untested and what a round covered, and never a literal" do
         # No row can fail o.status = 'held' until the check goes.
         ready(candidate, status_check: "status = 'held'")
-        tested = step("rewrite-test", "--search", "rewrite_1")
-        expect(stored.read("rewrite_tested_1")).to include("untested" => ["o.status = $2"])
+        # The literals are random, so the worlds are too: 40 trials can
+        # miss a world where the other two conditions matter.
+        outcome = searched("rewrite_1", FUZZ_TO_KILL)
+        expect(lines(outcome).first).to include("passed" => true, "rule" => nil)
+        expect(tested).to include("untested" => ["o.status = $2"], "untested_atoms" => [1],
+                                  "untested_unchanged" => ["o.status = $2"])
         arena_exec("ALTER TABLE public.orders DROP CONSTRAINT orders_status_check")
         covering = round(1, "INSERT INTO public.orders (id, note, status, total) VALUES (1, $1, 'open', $3)")
 
@@ -209,57 +220,110 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(checks).to include("untested_atoms" => ["o.status = $2"], "covered" => ["o.status = $2"])
         # The query held both sentinels, so the run was exposed to them.
         expect(store.read("qualified_query")).to include(sentinels.text, sentinels.number.to_s)
-        expect_no_leaks(sentinels, tested, objects: { checks:, tested: stored.read("rewrite_tested_1"),
-                                                      round: stored.read("rewrite_round_1") })
+        expect_no_leaks(sentinels, outcome, objects: { checks:, tested:, round: stored.read("rewrite_round_1") })
         expect_no_leaks(sentinels, covering)
       end
 
       it "uses a check that sees a literal planted in the conditions" do
         ready(candidate, status_check: "status = 'held'")
-        step("rewrite-test", "--search", "rewrite_1")
+        searched
         planted = checks.merge("covered" => ["o.note = '#{sentinels.text}'", "o.total >= #{sentinels.number}"])
 
         expect(LeakCheck.findings(sentinels, objects: { checks: planted }).map(&:to_s)).not_to eq([])
       end
     end
 
-    # Task 20260926-42: the report says how many scenario groups a unique
-    # key left out. The near misses need the hit's note, which is unique.
-    it "stores how many scenario groups it left out because they collide on a unique key" do
-      ready(same, arena_sql: "CREATE UNIQUE INDEX ON public.orders (note)")
+    # Task 20261012-4: a rewrite the search can't test isn't disproved, so
+    # it goes on, passed, with why as its rule: the report's caution.
+    describe "a rewrite the search can't test" do
+      def goes_on(outcome, rule)
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+        counts = { "rule" => rule, "stage" => "fuzz", "trials" => 0, "worlds" => 0, "bound" => nil }
+        expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
+                                        **counts }, { "type" => "done" }])
+        expect(tested).to eq("passed" => true, **counts, "untested" => [], "untested_atoms" => [],
+                             "untested_unchanged" => [])
+        recorded(outcome)
+      end
 
-      outcome = step("rewrite-test", "--search", "rewrite_1")
+      def recorded(outcome) # rubocop:disable Metrics/AbcSize
+        stages = burndown["stages"]
+        fuzz = stages["fuzz"]["rewrite_1"]
+        expect([stored.entry?("rewrite_survived_1"), stages.key?("rewrite-test"), *fuzz.values_at("out", "dropped"),
+                fuzz["extra"]["untested"]]).to eq([false, false, 1, {}, 1])
+        expect_no_leaks(sentinels, outcome, objects: { tested:, burndown: })
+      end
 
-      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-      expect(stored.read("rewrite_tested_1")["dropped"]).to be_positive
-      expect_no_leaks(sentinels, outcome)
-    end
+      it "goes on with fuzz_off when QUAACKS_FUZZ_TRIALS is 0" do
+        ready(looser)
 
-    # Task 20261009-33: why atoms stay untested. A trigger in the arena that
-    # refuses every row, with a sentinel in its message, leaves S1 unloadable:
-    # the message says the rule and no row count, and never the sentinel.
-    it "says S1 failed to load, by rule, without the database's message" do
-      ready(same, arena_sql: <<~SQL)
-        CREATE FUNCTION public.refuse() RETURNS trigger LANGUAGE plpgsql
-          AS $$ BEGIN RAISE EXCEPTION '#{sentinels.text}'; END $$;
-        CREATE TRIGGER refuse BEFORE INSERT ON public.orders FOR EACH ROW EXECUTE FUNCTION public.refuse();
-      SQL
+        goes_on(step("rewrite-test", "--search", "rewrite_1"), "fuzz_off")
+      end
 
-      outcome = step("rewrite-test", "--search", "rewrite_1")
+      context "with an original whose FETCH FIRST ... WITH TIES the comparison can't judge" do
+        let(:query) do
+          "SELECT o.note, o.status FROM public.orders o WHERE o.status = 'held' ORDER BY o.id " \
+            "FETCH FIRST 3 ROWS WITH TIES"
+        end
 
-      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-      expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false,
-                                              "s1_load_rule" => "fixture_load_failed", "s1_rows" => nil,
-                                              "s1_nonzero_rows" => nil)
-      expect(stored.read("rewrite_tested_1")).to include("s1_load_rule" => "fixture_load_failed", "s1_rows" => nil,
-                                                         "s1_nonzero_rows" => nil)
-      expect_no_leaks(sentinels, outcome)
+        it "goes on with not_comparable" do
+          ready("SELECT o.note, o.status FROM public.orders o WHERE o.status = $1 ORDER BY o.id LIMIT $2")
+
+          goes_on(searched, "not_comparable")
+        end
+      end
+
+      # Task 20261009-33's trigger, which once left S1 unloadable: now it
+      # leaves only the empty world legal, on which both queries agree, so
+      # the rewrite passes with every atom of the original cautioned, and
+      # the trigger's message, a sentinel, stays in.
+      it "passes, cautioning every atom, when a trigger refuses every row, without the database's message" do
+        ready(looser, arena_sql: <<~SQL)
+          CREATE FUNCTION public.refuse() RETURNS trigger LANGUAGE plpgsql
+            AS $$ BEGIN RAISE EXCEPTION '#{sentinels.text}'; END $$;
+          CREATE TRIGGER refuse BEFORE INSERT ON public.orders FOR EACH ROW EXECUTE FUNCTION public.refuse();
+        SQL
+
+        outcome = searched
+
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+        expect(lines(outcome).first).to include("passed" => true, "rule" => nil, "stage" => "fuzz")
+        expect(tested).to include("untested" => ["o.note = $1", "o.status = $2"], "untested_atoms" => [0, 1])
+        expect_no_leaks(sentinels, outcome, objects: { tested:, burndown: })
+      end
+
+      # Task 20261012-34: an arena error that isn't a cancel QUAACK didn't
+      # send, such as StatementCheck's refusal of a query.
+      it "goes on with search_failed, raising nothing, when the search fails on the arena with no foreign cancel" do
+        ready(same)
+        failure = Quaack::Enclave::ArenaRunner::Error.new(:statement_not_allowed, step: :query, index: 1)
+        allow(Quaack::Enclave::Fuzz).to receive(:search).and_raise(failure)
+
+        message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
+
+        expect(message).to eq(type: :rewrite_test, rewrite: "rewrite_1", passed: true, rule: "search_failed",
+                              stage: "fuzz", trials: 0, worlds: 0, bound: nil)
+        expect(burndown["stages"]["fuzz"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: marked("trials" => 0, "untested" => 1)))
+        expect(burndown["stages"]["enumerate"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
+      end
+
+      it "calls a rewrite that went on untested no bug, and runs its counterexample rounds" do
+        ready(looser)
+        step("rewrite-test", "--search", "rewrite_1")
+
+        expect(Quaack::Enclave::Steps::RuleBugs.call(stored)).to eq([])
+        fate = Quaack::Enclave::Steps::RewriteFate
+        expect(fate.early(fate.steps(stored, "1"), nil)).to be_nil
+        expect(lines(round(1)).first).to include("type" => "counterexample_round")
+      end
     end
 
     # Task 20261012-11: a query that divides by a column production never
-    # holds 0 in. The scenarios' typical values hold 0, so the original
-    # fails on them, and those fixtures say nothing about the rewrite.
-    describe "an original that fails on the scenarios' data" do
+    # holds 0 in. A world with 0 there fails the original, and says nothing
+    # about the rewrite; one without it compares them.
+    describe "an original that fails on some of the search's worlds" do
       let(:query) { "SELECT o.note, o.status FROM public.orders o WHERE o.status = 'held' AND (o.id / o.total) >= 2" }
 
       def seed(conn)
@@ -267,30 +331,21 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         conn.exec("UPDATE public.orders SET total = total + 1; ANALYZE public.orders")
       end
 
-      # Task 20261012-22: the fixtures the original runs on (S0, and the
-      # search's, which tell its atoms apart by rows it doesn't return) show
-      # none of its rows, so an equivalent rewrite was compared on nothing.
-      it "finishes, leaving a rewrite compared on nothing untested, not disproved" do
+      it "passes an equivalent rewrite" do
         ready("SELECT o.note, o.status FROM public.orders o WHERE (o.id / o.total) >= $2 AND o.status = $1")
 
-        outcome = step("rewrite-test", "--search", "rewrite_1")
+        outcome = searched
 
         expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-        expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false,
-                                                "rule" => "original_failed", "scenario" => nil,
-                                                "s1_load_rule" => "original_failed", "s1_rows" => nil)
-        expect(stored.read("rewrite_tested_1")).to include("passed" => false, "rule" => "original_failed",
-                                                           "s1_load_rule" => "original_failed")
-        expect_no_leaks(sentinels, outcome)
+        expect(lines(outcome).first).to include("passed" => true, "rule" => nil)
       end
 
       it "disproves a wrong rewrite there" do
         ready("SELECT o.note, o.status FROM public.orders o WHERE (o.id / o.total) >= $2")
 
-        outcome = step("rewrite-test", "--search", "rewrite_1")
+        outcome = searched("rewrite_1", FUZZ_TO_KILL)
 
-        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-        expect(lines(outcome).first).to include("type" => "rewrite_test", "passed" => false, "rule" => "row_count")
+        expect(lines(outcome).first).to include("passed" => false, "rule" => "row_count")
       end
     end
 
@@ -299,32 +354,27 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     describe "untested_unchanged" do
       let(:held) { "status = 'held'" }
 
-      def tested = stored.read("rewrite_tested_1")
-
       it "lists an untested atom of a rewrite that left it alone, and sends it on no message" do
-        # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
+        # No row can fail o.status = 'held', so no world makes it false.
         ready(same, status_check: held)
 
-        outcome = step("rewrite-test", "--search", "rewrite_1")
+        outcome = searched
 
         expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => ["o.status = $2"])
-        # The search spent its budget on it, with no difference to find.
-        expect(tested).to include("untested_states" => ["searched"])
-        expect(lines(outcome).first.keys).to eq(%w[type rewrite passed scenario rule s1_load_rule s1_rows
-                                                   s1_nonzero_rows stage trials worlds bound])
+        expect(lines(outcome).first.keys).to eq(keys)
         expect_no_leaks(sentinels, outcome)
       end
 
       it "leaves out an untested atom the rewrite dropped, and one it moved under a subquery" do
         ready(looser, status_check: held)
-        step("rewrite-test", "--search", "rewrite_1")
-        expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => [])
+        searched
+        expect(tested).to include("passed" => true, "untested" => ["o.status = $2"], "untested_unchanged" => [])
 
         subquery = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND " \
                    "EXISTS (SELECT 1 FROM public.orders p WHERE p.id = o.id AND o.status = $2)"
         store.write("rewrite_1", store.read("rewrite_1").merge("sql" => subquery, "anchored_sql" => subquery))
-        step("rewrite-test", "--search", "rewrite_1")
-        expect(tested).to include("untested_unchanged" => [])
+        searched
+        expect(tested).to include("passed" => true, "untested" => ["o.status = $2"], "untested_unchanged" => [])
       end
 
       # Two placeholders that bind the same literal make the bound queries
@@ -337,7 +387,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           swapped = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $2 AND o.status = $1"
           ready(swapped, status_check: held)
 
-          step("rewrite-test", "--search", "rewrite_1")
+          searched
 
           expect(tested).to include("passed" => true, "untested" => ["o.status = $2"], "untested_unchanged" => [])
         end
@@ -359,11 +409,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       ready(looser)
       profile = File.join(quaacks.home, "profile.txt")
 
-      outcome = quaacks.run("rewrite-test", "--search", "rewrite_1", "--run", store.run_id,
-                            env: libpq_env.merge("QUAACKS_PROFILE" => profile))
+      outcome = searched("rewrite_1", FUZZ_TO_KILL.merge("QUAACKS_PROFILE" => profile))
 
       expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-      expect(lines(outcome).first).to include("passed" => false, "scenario" => "s1", "rule" => "row_count")
+      expect(lines(outcome).first).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
       header, *rows = File.read(profile).lines
       expect(header).to match(/\A# quaacks profile: [1-9]\d* samples\./)
       expect(rows).to all(match(/\A\d+\t\d+\t[^\t]+:\d+\n\z/))
@@ -372,100 +421,34 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(LeakCheck.findings(sentinels, stdout: "#{rows.first}#{sentinels.text}\n")).not_to eq([])
     end
 
-    # Task 20260929-29: a cancel QUAACK didn't send says nothing about the
-    # candidate, so the step fails and stores no verdict.
-    it "fails with statement_canceled, storing no verdict, when an operator cancels the candidate" do
-      ready(sleepy)
-
-      outcome, canceled = cancel_arena_sleeper { step("rewrite-test", "--search", "rewrite_1") }
-
-      expect(canceled).to be(true)
-      expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
-                                      "rule" => "statement_canceled", "sqlstate" => "57014" }])
-      expect([stored.entry?("rewrite_tested_1"), stored.entry?("rewrite_survived_1")]).to eq([false, false])
-    end
-
     # Task 20261008-55: rerunning the step after a foreign cancel finishes
-    # it, with one verdict. public.nap sleeps only while public.naps holds a
-    # row, and the canceller empties it, outside any arena transaction.
+    # it, with one verdict. nap() sleeps only the first time it runs in a
+    # lift (napping), so the rerun's lift runs through.
     it "succeeds on a rerun after an operator's cancel, storing one verdict" do
-      ready("#{same} AND public.nap()", arena_sql: <<~SQL)
-        CREATE TABLE public.naps (n int);
-        INSERT INTO public.naps VALUES (1);
-        CREATE FUNCTION public.nap() RETURNS boolean LANGUAGE plpgsql
-          AS 'BEGIN IF EXISTS (SELECT FROM public.naps) THEN PERFORM pg_sleep(30); END IF; RETURN true; END';
-      SQL
+      ready("#{looser} AND public.nap()", arena_sql: napping)
 
-      first, canceled = cancel_arena_sleeper { step("rewrite-test", "--search", "rewrite_1") }
-      arena_exec("DELETE FROM public.naps")
-      second = step("rewrite-test", "--search", "rewrite_1")
+      first, canceled = cancel_arena_sleeper { searched("rewrite_1", FUZZ_TO_KILL) }
+      second = searched("rewrite_1", FUZZ_TO_KILL)
 
       expect([canceled, lines(first).map { it["rule"] }]).to eq([true, ["statement_canceled"]])
       expect([second.stderr, second.status.exitstatus]).to eq(["", 0]), second.stdout
       expect(lines(second).map { it["type"] }.uniq).not_to include("error")
-      expect(stored.read("rewrite_tested_1")).to include("passed" => true)
+      expect(tested).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
       expect(Dir.glob(File.join(stored.path, "rewrite_tested_*.json")).size).to eq(1)
     end
 
-    it "disproves a looser rewrite by scenario and rule, and records that it didn't survive" do
-      ready(looser)
-
-      outcome = step("rewrite-test", "--search", "rewrite_1")
-
-      expect(lines(outcome).first).to include("passed" => false, "scenario" => "s1", "rule" => "row_count")
-      expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
-      expect_no_leaks(sentinels, outcome)
-    end
-
-    it "marks the rewrite untested when rewrite-test can't build scenarios, by the refusal's rule, and goes on" do
+    # Task 20261012-4: a CHECK of an OR, which the scenario fixtures once
+    # refused (complex_check), is only what the search's worlds must keep.
+    it "tests a rewrite on a table whose CHECK is an OR, and disproves a looser one" do
       ready(same, status_check: "status = 'open' OR status = 'closed'")
+      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => looser, "anchored_sql" => looser))
 
-      outcome = step("rewrite-test", "--search", "rewrite_1")
+      first = lines(searched).first
+      second = lines(searched("rewrite_2", FUZZ_TO_KILL)).first
 
-      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
-                                      "scenario" => nil, "rule" => "complex_check", "stage" => "rewrite-test",
-                                      "trials" => 0, "worlds" => 0, "bound" => nil }, { "type" => "done" }])
-      expect(stored.read("rewrite_tested_1"))
-        .to eq("passed" => false, "scenario" => nil, "rule" => "complex_check", "refused" => true,
-               "stage" => "rewrite-test", "trials" => 0, "worlds" => 0, "bound" => nil,
-               "untested" => [], "untested_atoms" => [], "untested_states" => [], "untested_unchanged" => [])
-      expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
-      expect_no_leaks(sentinels, outcome)
-    end
-
-    # The refusal's error names the column and its type; only the rule may
-    # leave rewrite-test, on stdout or into the store that report-payload reads.
-    it "keeps the column and type a refusal names out of its output and the store" do
-      column = LeakCheck::Sentinels.new
-      domain = LeakCheck::Sentinels.new
-      ready(same, arena_sql: "CREATE DOMAIN public.#{domain.word} AS int CHECK (VALUE > 5 AND VALUE < 3); " \
-                             "ALTER TABLE public.orders ADD COLUMN #{column.word} public.#{domain.word} NOT NULL")
-
-      outcome = step("rewrite-test", "--search", "rewrite_1")
-
-      tested = stored.read("rewrite_tested_1")
-      expect(tested).to include("refused" => true)
-      [column, domain].each { expect_no_leaks(it, outcome, objects: { tested: }) }
-      expect(tested).to include("rule" => "domain_check")
-    end
-
-    # An fk_cycle refusal keeps the cycle's tables, which are schema, in the
-    # store for the report: never a row of theirs, on stdout or in the store.
-    it "stores the tables of an fk_cycle refusal, in the order their foreign keys point, and no row value" do
-      rows = LeakCheck::Sentinels.new
-      ready(same, arena_sql: cycle_sql(rows))
-
-      outcome = step("rewrite-test", "--search", "rewrite_1")
-
-      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
-                                      "scenario" => nil, "rule" => "fk_cycle", "stage" => "rewrite-test",
-                                      "trials" => 0, "worlds" => 0, "bound" => nil }, { "type" => "done" }])
-      tested = stored.read("rewrite_tested_1")
-      expect(tested).to include("refused" => true, "rule" => "fk_cycle",
-                                "cycle" => [%w[public orders], %w[public accounts], %w[public orders]])
-      expect_no_leaks(rows, outcome, objects: { tested: })
-      expect_no_leaks(sentinels, outcome, objects: { tested: })
+      expect(first).to include("passed" => true, "rule" => nil, "stage" => "fuzz")
+      expect(second).to include("passed" => false, "rule" => "row_count", "stage" => "fuzz")
+      expect(stored.entry?("rewrite_test_refusal")).to be(false)
     end
 
     # 20261003-41: a crash between the two stored results must not leave
@@ -474,44 +457,22 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       ready(looser)
       FileUtils.mkdir_p(File.join(stored.path, "rewrite_survived_1.json"))
 
-      outcome = step("rewrite-test", "--search", "rewrite_1")
+      outcome = searched("rewrite_1", FUZZ_TO_KILL)
 
       expect(outcome.status.exitstatus).not_to eq(0)
       expect(stored.entry?("rewrite_tested_1")).to be(false)
     end
 
-    # A refusal comes from the query, so it's recorded once per run.
-    it "reuses the first refusal for a later rewrite, without connecting to the arena again" do
-      ready(same, status_check: "status = 'open' OR status = 'closed'")
-      step("rewrite-test", "--search", "rewrite_1")
-      production.server.admin.exec(%(DROP DATABASE "#{arena_name}" WITH (FORCE)))
-      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => looser, "anchored_sql" => looser))
-
-      outcome = step("rewrite-test", "--search", "rewrite_2")
-
-      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => false,
-                                      "scenario" => nil, "rule" => "complex_check", "stage" => "rewrite-test",
-                                      "trials" => 0, "worlds" => 0, "bound" => nil }, { "type" => "done" }])
-      expect(stored.read("rewrite_tested_2")).to eq(stored.read("rewrite_tested_1"))
-      none = { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }
-      expect(burndown["stages"]["rewrite-test"]["rewrite_2"]).to eq(counted(dropped: { "complex_check" => 1 },
-                                                                            extra: none))
-    end
-
-    # Task 20261012-2: the fuzz search runs first, inside the rewrite's
-    # budget. A lifted counterexample disproves the rewrite and ScenarioTests
-    # doesn't run; a pass goes on to ScenarioTests, and stands if
-    # ScenarioTests refuses the query or runs out of time.
-    describe "the fuzz search before ScenarioTests" do
+    # Task 20261012-2: the fuzz search, inside the rewrite's budget. A
+    # lifted counterexample disproves the rewrite; a pass goes on to
+    # enumerate, when it's on (task 20261012-3), and then stands (task
+    # 20261012-4).
+    describe "the fuzz search" do
       def fuzz_step(search = "rewrite_1", env = FUZZ_ON) = step_with(env, search)
 
       def step_with(env, search)
         quaacks.run("rewrite-test", "--search", search, "--run", store.run_id, env: libpq_env.merge(env))
       end
-
-      def tested(number = 1) = stored.read("rewrite_tested_#{number}")
-      def none = { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }
 
       it "disproves a looser rewrite with a counterexample's rule, stage, trials, and size, and no value" do
         ready(looser)
@@ -520,9 +481,9 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
         expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
         message = lines(outcome).first
-        expect(message.keys).to eq(%w[type rewrite passed scenario rule stage trials worlds bound])
-        expect(message).to include("passed" => false, "scenario" => nil, "rule" => "row_count", "stage" => "fuzz",
-                                   "worlds" => 0, "bound" => nil)
+        expect(message.keys).to eq(keys)
+        expect(message).to include("passed" => false, "rule" => "row_count", "stage" => "fuzz", "worlds" => 0,
+                                   "bound" => nil)
         expect(message["trials"]).to be_a(Integer).and be_positive
         expect(tested).to include("passed" => false, "rule" => "row_count", "stage" => "fuzz",
                                   "trials" => message["trials"], "sizes" => [["public", "orders", 1]])
@@ -666,57 +627,22 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         end
       end
 
-      it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials" do
+      it "passes an equivalent rewrite by stage fuzz, with fuzz's trials, and records it as gone on" do
         ready(same)
 
         message = lines(fuzz_step).first
 
-        expect(message).to include("passed" => true, "rule" => nil, "stage" => "rewrite-test")
+        expect(message).to include("passed" => true, "rule" => nil, "stage" => "fuzz", "worlds" => 0, "bound" => nil)
         expect(message["trials"]).to be_a(Integer).and be >= 40
-        expect(tested).to include("passed" => true, "stage" => "rewrite-test", "trials" => message["trials"])
+        expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message["trials"])
         expect(tested).not_to have_key("sizes")
         expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1,
                                                                       extra: marked("trials" => message["trials"])))
-        expect(burndown["stages"]["rewrite-test"]["rewrite_1"]).to include("in" => 1, "out" => 1)
-      end
-
-      it "makes a rewrite whose query ScenarioTests refuses tested and passed, the first time and from the cache" do
-        ready(same, status_check: "status = 'open' OR status = 'closed'")
-        store.write("rewrite_2", stored.read("rewrite_1"))
-        store.write("rewrite_3", stored.read("rewrite_1").merge("sql" => looser, "anchored_sql" => looser))
-
-        outcomes = [fuzz_step("rewrite_1"), fuzz_step("rewrite_2"), fuzz_step("rewrite_3", FUZZ_TO_KILL)]
-
-        first, second, third = outcomes.map { lines(it).first }
-        [first, second].each do |message|
-          expect(message).to include("passed" => true, "scenario" => nil, "rule" => nil, "stage" => "fuzz")
-          expect(message["trials"]).to be_a(Integer).and be_positive
-        end
-        expect(stored.read("rewrite_test_refusal")).to include("refused" => true, "rule" => "complex_check")
-        [1, 2].each do |number|
-          expect(tested(number)).to include("passed" => true, "stage" => "fuzz")
-          expect(tested(number)).not_to have_key("refused")
-          expect(stored.entry?("rewrite_survived_#{number}")).to be(false)
-          expect(burndown["stages"]["rewrite-test"]["rewrite_#{number}"]).to eq(counted(out: 1, extra: none))
-        end
-        expect(third).to include("passed" => false, "rule" => "row_count", "stage" => "fuzz")
-        outcomes.each { expect_no_leaks(sentinels, it) }
-      end
-
-      # The rewrite fails on every world, but not on the data (42P01), so
-      # no world is compared and nothing disproves it.
-      it "leaves a refused rewrite untested when fuzz compared nothing, as without it" do
-        ready("#{same} AND CAST('public.quaack_no_such_table' AS regclass) IS NOT NULL",
-              status_check: "status = 'open' OR status = 'closed'")
-
-        message = lines(fuzz_step).first
-
-        expect(message).to eq("type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
-                              "scenario" => nil, "rule" => "complex_check", "stage" => "rewrite-test",
-                              "trials" => 0, "worlds" => 0, "bound" => nil)
-        expect(tested).to include("refused" => true, "rule" => "complex_check")
-        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
-                                                                                            "untested" => 1)))
+        expect(burndown["stages"]["enumerate"]["rewrite_1"])
+          .to eq(counted(out: 1,
+                         extra: { "worlds" => 0, "untested" => 1,
+                                  "untested_atoms" => tested["untested_atoms"].size }))
+        expect(burndown["stages"].keys).not_to include("rewrite-test")
       end
 
       # Task 20261012-15: QUAACKS_FUZZ_TRIALS and QUAACKS_ENUMERATE_WORLDS
@@ -734,45 +660,16 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         in_process("rewrite_3", spent, unset.merge("QUAACKS_ENUMERATE_WORLDS" => "0"))
         in_process("rewrite_4", spent, FUZZ_ON.merge("QUAACKS_ENUMERATE_WORLDS" => "7"))
 
-        untested = { "trials" => 0, "untested" => 1 }
+        untimed = { "trials" => 0, "not_tested_in_time" => 1 }
         expect((1..4).map { burndown["stages"]["fuzz"]["rewrite_#{it}"]["extra"] })
-          .to eq([untested, untested.merge("fuzz_trials_setting" => 1),
-                  untested.merge("enumerate_worlds_setting" => 1),
-                  untested.merge("fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)])
-      end
-
-      it "runs ScenarioTests alone when QUAACKS_FUZZ_TRIALS is 0, recording fuzz as untested" do
-        ready(looser)
-
-        message = lines(step("rewrite-test", "--search", "rewrite_1")).first
-
-        expect(message).to include("passed" => false, "scenario" => "s1", "rule" => "row_count",
-                                   "stage" => "rewrite-test", "trials" => 0)
-        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
-                                                                                            "untested" => 1)))
-      end
-
-      # Task 20261012-34: an arena error that isn't a cancel QUAACK didn't
-      # send, such as StatementCheck's refusal of a query, leaves both
-      # searches untested and the rewrite to ScenarioTests.
-      it "leaves both searches untested, and raises nothing, when the search fails on the arena with no foreign " \
-         "cancel" do
-        ready(same)
-        failure = Quaack::Enclave::ArenaRunner::Error.new(:statement_not_allowed, step: :query, index: 1)
-        allow(Quaack::Enclave::Fuzz).to receive(:search).and_raise(failure)
-
-        message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
-
-        expect(message).to include(passed: true, rule: nil, stage: "rewrite-test", trials: 0, worlds: 0, bound: nil)
-        expect(burndown["stages"]["fuzz"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: marked("trials" => 0, "untested" => 1)))
-        expect(burndown["stages"]["enumerate"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
+          .to eq([untimed, { "trials" => 0, "untested" => 1, "fuzz_trials_setting" => 1 },
+                  untimed.merge("enumerate_worlds_setting" => 1),
+                  untimed.merge("fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)])
       end
 
       # Task 20261012-26: a cancel QUAACK didn't send, of a lift, says
       # nothing about the rewrite, so the step fails and stores nothing for
-      # it, as for ScenarioTests.
+      # it.
       it "fails with statement_canceled, storing nothing for the rewrite, when an operator cancels fuzz's lift" do
         ready("#{looser} AND public.nap()", arena_sql: napping)
 
@@ -783,36 +680,16 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                         "rule" => "statement_canceled", "sqlstate" => "57014" }])
         expect(stored_nothing?).to be(true)
       end
-
-      # Task 20261012-34: the same for a cancel in ScenarioTests after both
-      # searches passed. Fuzz and enumerate drop orders' foreign key, so
-      # nap() first sleeps in ScenarioTests, and their records are stored
-      # only once the rewrite's result is known.
-      it "fails with statement_canceled, storing no fuzz or enumerate record either, when an operator cancels " \
-         "ScenarioTests after the searches pass" do
-        ready("#{same} AND public.nap()", arena_sql: napping)
-
-        outcome, canceled = cancel_arena_sleeper { fuzz_step("rewrite_1", ENUMERATE_ON) }
-
-        expect(canceled).to be(true)
-        expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
-                                        "rule" => "statement_canceled", "sqlstate" => "57014" }])
-        expect(burndown.fetch("stages", {}).select { |_, records| records.key?("rewrite_1") }.keys).to eq([])
-        expect(stored_nothing?).to be(true)
-      end
     end
 
     # Task 20261012-3: enumerate runs after a fuzz pass, in the same
     # budget, and tries every small world over the row kinds. A lifted
-    # kill disproves the rewrite by stage enumerate; a pass goes on to
-    # ScenarioTests and stands, with stage enumerate, if ScenarioTests
-    # refuses the query.
+    # kill disproves the rewrite by stage enumerate; a pass stands, with
+    # stage enumerate.
     describe "the enumerate stage after a fuzz pass" do
       def enumerate_step(env = ENUMERATE_ON)
         quaacks.run("rewrite-test", "--search", "rewrite_1", "--run", store.run_id, env: libpq_env.merge(env))
       end
-
-      def tested = stored.read("rewrite_tested_1")
 
       # NULLS LAST matters only with a NULL created_at and a non-NULL one
       # among the rows the query keeps, which 40 random worlds miss here.
@@ -835,9 +712,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
           expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
           message = lines(outcome).first
-          expect(message.keys).to eq(%w[type rewrite passed scenario rule stage trials worlds bound])
-          expect(message).to include("passed" => false, "scenario" => nil, "rule" => "value",
-                                     "stage" => "enumerate")
+          expect(message.keys).to eq(keys)
+          expect(message).to include("passed" => false, "rule" => "value", "stage" => "enumerate")
           expect(message["trials"]).to be_a(Integer).and be >= 40
           expect(message["worlds"]).to be_a(Integer).and be_positive
           expect(message["bound"]).to be_a(Integer).and be_between(0, 4)
@@ -857,15 +733,15 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           expect_no_leaks(sentinels, outcome, objects: { tested:, burndown: })
         end
 
-        it "leaves it to ScenarioTests, which misses it too, when enumerate is off, recording enumerate as untested" do
+        it "passes it by stage fuzz when enumerate is off, recording enumerate as untested" do
           ready(candidate)
 
           message = lines(enumerate_step(FUZZ_ON)).first
 
-          expect(message).to include("passed" => true, "stage" => "rewrite-test", "worlds" => 0, "bound" => nil)
+          expect(message).to include("passed" => true, "stage" => "fuzz", "worlds" => 0, "bound" => nil)
           expect(message["trials"]).to be_a(Integer).and be >= 40
           expect(burndown["stages"]["enumerate"]["rewrite_1"])
-            .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
+            .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1, "untested_atoms" => 0 }))
         end
 
         # Task 20261012-26: as for fuzz's lift. Fuzz misses the dropped
@@ -883,50 +759,40 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         end
       end
 
-      it "goes on to ScenarioTests after a pass, which decides it, with fuzz's trials and enumerate's counts" do
+      it "passes after enumerate, by stage enumerate, with fuzz's trials and enumerate's counts" do
         ready(same)
 
         message = lines(enumerate_step).first
 
-        expect(message).to include("passed" => true, "rule" => nil, "stage" => "rewrite-test")
+        expect(message).to include("passed" => true, "rule" => nil, "stage" => "enumerate")
         expect(message["trials"]).to be_a(Integer).and be >= 40
         expect(message["worlds"]).to be_a(Integer).and be_positive
         expect(message["bound"]).to be_a(Integer).and be_between(1, 4)
-        expect(tested).to include("stage" => "rewrite-test", "worlds" => message["worlds"],
-                                  "bound" => message["bound"])
-        expect(burndown["stages"]["enumerate"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: { "worlds" => message["worlds"], "bound_#{message["bound"]}" => 1 }))
-        expect(burndown["stages"]["rewrite-test"]["rewrite_1"]).to include("in" => 1, "out" => 1)
-      end
-
-      it "makes a rewrite whose query ScenarioTests refuses tested and passed by stage enumerate" do
-        ready(same, status_check: "status = 'open' OR status = 'closed'")
-
-        message = lines(enumerate_step).first
-
-        expect(message).to include("passed" => true, "scenario" => nil, "rule" => nil, "stage" => "enumerate")
-        expect(message["trials"]).to be_a(Integer).and be >= 40
-        expect(message["bound"]).to be_a(Integer).and be_between(1, 4)
-        expect(tested).to include("passed" => true, "stage" => "enumerate", "bound" => message["bound"])
-        expect(tested).not_to have_key("refused")
+        expect(tested).to include("stage" => "enumerate", "worlds" => message["worlds"],
+                                  "bound" => message["bound"], "untested" => [])
         expect(stored.entry?("rewrite_survived_1")).to be(false)
+        expect(burndown["stages"]["enumerate"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: { "worlds" => message["worlds"], "bound_#{message["bound"]}" => 1,
+                                          "untested_atoms" => 0 }))
       end
 
       # Task 20261012-26: an error in enumerate after a fuzz pass leaves
-      # that pass standing, so it still covers a query ScenarioTests refuses.
-      it "lets a fuzz pass stand for a refused query when enumerate fails, recording enumerate as untested" do
-        ready(same, status_check: "status = 'open' OR status = 'closed'")
+      # that pass standing.
+      it "lets a fuzz pass stand when enumerate fails, recording enumerate as untested" do
+        ready(same)
         allow(Quaack::Enclave::Fuzz::Enumerate::Kinds).to receive(:new).and_raise(Quaack::Enclave::Fuzz::Error)
 
         message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
 
-        expect(message).to include(passed: true, scenario: nil, rule: nil, stage: "fuzz", worlds: 0, bound: nil)
+        expect(message).to include(passed: true, rule: nil, stage: "fuzz", worlds: 0, bound: nil)
         expect(message[:trials]).to be_a(Integer).and be >= 40
         expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message[:trials])
         expect(burndown["stages"]["fuzz"]["rewrite_1"])
           .to eq(counted(out: 1, extra: marked("trials" => message[:trials])))
         expect(burndown["stages"]["enumerate"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
+          .to eq(counted(out: 1,
+                         extra: { "worlds" => 0, "untested" => 1,
+                                  "untested_atoms" => tested["untested_atoms"].size }))
       end
     end
 
@@ -942,10 +808,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         store.write("rewrite_1", stored.read("rewrite_1").merge("source" => "rule", "rules" => ["key_in_self_join"]))
         store.write("rewrite_2", stored.read("rewrite_1"))
 
-        messages = in_process("rewrite_1", spent)
+        messages = in_process("rewrite_1", spent, FUZZ_ON)
 
-        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, scenario: nil,
-                                  rule: "out_of_time", stage: "rewrite-test", trials: 0, worlds: 0, bound: nil }])
+        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, rule: "out_of_time",
+                                  stage: "fuzz", trials: 0, worlds: 0, bound: nil }])
         line = Quaack::Enclave::Egress.serialize(messages.first)
         expect(JSON.parse(line)).to include("passed" => true, "rule" => "out_of_time")
         expect(stored.read("rewrite_tested_1")).to include("passed" => true, "rule" => "out_of_time",
@@ -958,41 +824,38 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         old = { "tested" => { "passed" => false, "scenario" => nil, "rule" => "out_of_time" } }
         expect(fate.early(old, nil)).to include("fate" => "rewrite_test_out_of_time")
         expect(Quaack::Enclave::Steps::RuleBugs.call(stored)).to eq([])
-        expect(burndown["stages"]["rewrite-test"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: { "untested_atoms" => 0, "vacuity_guard_retries" => 0,
-                                          "not_tested_in_time" => 1 }))
+        expect(burndown["stages"]["fuzz"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: marked("trials" => 0, "not_tested_in_time" => 1)))
         expect_no_leaks(sentinels, stdout: line, stderr: JSON.generate(stored.read("rewrite_tested_1")))
 
         expect(lines(round(1)).first).to include("type" => "counterexample_round")
 
-        outcome = step("rewrite-test", "--search", "rewrite_2")
+        outcome = searched("rewrite_2")
         expect(lines(outcome).first).to include("rewrite" => "rewrite_2", "passed" => true, "rule" => nil)
       end
 
-      # Task 20261012-2: fuzz finished its search, so its pass stands; only
-      # a budget that ran out before fuzz compared anything leaves the
-      # rewrite out of time.
-      it "lets a fuzz pass stand when ScenarioTests runs out of time after it, but not a budget spent before it" do
+      # Task 20261012-2: a budget that runs out once fuzz has compared
+      # worlds ends its search as a pass; only one that ran out before fuzz
+      # compared anything leaves the rewrite out of time.
+      it "lets fuzz's pass stand when the budget runs out partway, but not a budget spent before it" do
         ready(same)
         store.write("rewrite_2", stored.read("rewrite_1"))
-        after_fuzz = Quaack::Enclave::Deadline.new(
-          1, clock: -> { caller_locations.any? { it.path.end_with?("/scenario_tests.rb") } ? 1_000.0 : 0.0 }
-        )
+        calls = 0
+        partway = Quaack::Enclave::Deadline.new(1, clock: -> { (calls += 1) > 40 ? 1_000.0 : 0.0 })
 
-        passed, = in_process("rewrite_1", after_fuzz, FUZZ_ON)
+        passed, = in_process("rewrite_1", partway, FUZZ_TO_KILL)
         spent_first, = in_process("rewrite_2", spent, FUZZ_ON)
 
-        expect(passed).to include(passed: true, scenario: nil, rule: nil, stage: "fuzz")
-        expect(passed[:trials]).to be_a(Integer).and be >= 40
-        expect(burndown["stages"]["rewrite-test"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }))
-        expect(spent_first).to include(passed: true, rule: "out_of_time", stage: "rewrite-test", trials: 0)
+        expect(passed).to include(passed: true, rule: nil, stage: "fuzz")
+        expect(passed[:trials]).to be_a(Integer).and be_positive
+        expect(burndown["stages"]["fuzz"]["rewrite_1"]["extra"]).not_to have_key("not_tested_in_time")
+        expect(spent_first).to include(passed: true, rule: "out_of_time", stage: "fuzz", trials: 0)
       end
 
       # Task 20261012-15: a kill the budget cuts off while fuzz lifts it is
-      # likely a counterexample, so fuzz claims no pass, and the rewrite
-      # goes on out of time, with its caution.
-      it "leaves a rewrite out of time, with no trials, when the budget runs out while fuzz lifts a kill" do
+      # likely a counterexample, so fuzz claims no pass. Task 20261012-4: the
+      # rewrite goes on untested, with unconfirmed as its caution.
+      it "leaves a rewrite untested, unconfirmed, with no trials, when the budget runs out while fuzz lifts a kill" do
         ready(looser)
         expired = false
         lifting = Quaack::Enclave::Deadline.new(1, clock: lambda do
@@ -1003,11 +866,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         messages = in_process("rewrite_1", lifting, FUZZ_TO_KILL)
 
         expect(expired).to be(true)
-        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, scenario: nil,
-                                  rule: "out_of_time", stage: "rewrite-test", trials: 0, worlds: 0, bound: nil }])
+        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, rule: "unconfirmed",
+                                  stage: "fuzz", trials: 0, worlds: 0, bound: nil }])
         expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
                                                                                             "untested" => 1)))
-        expect(burndown["stages"]["rewrite-test"]["rewrite_1"]["extra"]).to include("not_tested_in_time" => 1)
       end
 
       it "leaves the arena with no row and no session open after a rewrite runs out of time partway" do
@@ -1015,7 +877,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         calls = 0
         partway = Quaack::Enclave::Deadline.new(1, clock: -> { (calls += 1) > 40 ? 1_000.0 : 0.0 })
 
-        expect(in_process("rewrite_1", partway).first).to include(rule: "out_of_time")
+        expect(in_process("rewrite_1", partway, FUZZ_TO_KILL).first).to include(passed: true)
         expect(calls).to be > 40
         expect(arena_exec("SELECT count(*) FROM public.orders").getvalue(0, 0)).to eq("0")
         expect(arena_exec("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() " \
@@ -1036,7 +898,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     it "reports rewrite-test and survival progress in status" do
       ready(looser)
       before = JSON.parse(step("status").stdout.lines.first)["entries"]
-      step("rewrite-test", "--search", "rewrite_1")
+      searched("rewrite_1", FUZZ_TO_KILL)
       after = JSON.parse(step("status").stdout.lines.first)["entries"]
 
       expect([before, after].map { it.slice("rewrite_tested_1", "rewrite_survived_1") })
@@ -1078,43 +940,40 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                                                "anchored_sql" => format(candidate,
                                                                                         "quaack.clock_anchor()")))
 
-        expect(lines(step("rewrite-test", "--search", "rewrite_1")).first).to include("passed" => true)
+        expect(lines(searched).first).to include("passed" => true, "rule" => nil)
       end
     end
   end
 
+  # Task 20261012-4: rewrite-test's burndown is the search's two stages,
+  # fuzz and enumerate; there's no rewrite-test stage after them.
   describe "rewrite-test's burndown" do
-    def test = step("rewrite-test", "--search", "rewrite_1")
-    def none = { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }
-
-    it "records a rewrite that passed under its search, with untested atoms, vacuity-guard retries, and loads" do
-      # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
-      ready(same, status_check: "status = 'held'")
-
-      test
-
-      expect(burndown["stages"]).to eq(
-        "fuzz" => { "rewrite_1" => counted(out: 1, extra: marked("trials" => 0, "untested" => 1)) },
-        "enumerate" => { "rewrite_1" => counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }) },
-        "rewrite-test" => { "rewrite_1" => counted(out: 1, extra: { "untested_atoms" => 1,
-                                                                    "vacuity_guard_retries" => 3 }) }
-      )
-      # A load that repeats an earlier one isn't run (20261008-33), but each comparison counts as
-      # its three load orders however many it runs (20261010-47).
-      expect(burndown["totals"]).to eq("fixture_loads" => 25)
+    def test(env = FUZZ_ON)
+      quaacks.run("rewrite-test", "--search", "rewrite_1", "--run", store.run_id,
+                  env: libpq_env.merge(env))
     end
 
-    it "drops a disproved rewrite by its scenario, and an untested one by the refusal's rule" do
-      ready(looser)
-      test
-      expect(burndown["stages"]["rewrite-test"]).to eq("rewrite_1" => counted(dropped: { "s1" => 1 }, extra: none))
+    it "records a rewrite that passed in fuzz and enumerate, with the atoms its worlds never showed both ways" do
+      # No row can fail o.status = 'held', so no world makes it false.
+      ready(same, status_check: "status = 'held'")
 
-      production.server.admin.exec(%(DROP DATABASE "#{arena_name}" WITH (FORCE)))
-      make_arena("status = 'open' OR status = 'closed'")
-      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => same, "anchored_sql" => same))
-      step("rewrite-test", "--search", "rewrite_2")
-      expect(burndown["stages"]["rewrite-test"]["rewrite_2"]).to eq(counted(dropped: { "complex_check" => 1 },
-                                                                            extra: none))
+      test(ENUMERATE_ON)
+
+      fuzz, enumerate = burndown["stages"].values_at("fuzz", "enumerate").map { it["rewrite_1"] }
+      expect(burndown["stages"].keys).to eq(%w[fuzz enumerate])
+      expect(fuzz).to include("in" => 1, "out" => 1, "dropped" => {})
+      expect(enumerate).to include("in" => 1, "out" => 1, "dropped" => {})
+      expect(enumerate["extra"]).to include("untested_atoms" => 1)
+      expect(burndown["totals"]).to eq({})
+    end
+
+    it "drops a disproved rewrite by its rule, in the stage that disproved it" do
+      ready(looser)
+
+      test(FUZZ_TO_KILL)
+
+      expect(burndown["stages"].keys).to eq(%w[fuzz])
+      expect(burndown["stages"]["fuzz"]["rewrite_1"]).to include("dropped" => { "row_count" => 1 }, "out" => 0)
     end
 
     it "records nothing for a rewrite plan-pruning pruned, which never reached rewrite-test" do
@@ -1128,31 +987,28 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
     it "counts nothing twice when a call that died before its entry is run again" do
       ready(looser)
-      test
+      test(FUZZ_TO_KILL)
       first = burndown
       %w[rewrite_tested_1 rewrite_survived_1].each { remove(it) }
 
-      test
+      test(FUZZ_TO_KILL)
 
       expect(stored.read("rewrite_tested_1")).to include("passed" => false)
       expect(burndown).to eq(first)
     end
 
     # Task 20261004-69: the rerun's outcome differs (here, the rewrite is
-    # now the equivalent one), so its record replaces the dead call's. The
-    # fixtures the dead call loaded stay counted once.
+    # now the equivalent one), so its record replaces the dead call's.
     it "keeps the latest outcome's record when a call that died before its entry is run again differently" do
       ready(looser)
-      test
-      loads = burndown["totals"]
+      test(FUZZ_TO_KILL)
       %w[rewrite_tested_1 rewrite_survived_1].each { remove(it) }
       store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same, "anchored_sql" => same))
 
       test
 
       expect(stored.read("rewrite_tested_1")).to include("passed" => true)
-      expect(burndown["stages"]["rewrite-test"]["rewrite_1"]).to include("in" => 1, "dropped" => {}, "out" => 1)
-      expect(burndown["totals"]).to eq(loads)
+      expect(burndown["stages"]["fuzz"]["rewrite_1"]).to include("in" => 1, "dropped" => {}, "out" => 1)
     end
   end
 
@@ -1239,9 +1095,11 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
 
     it "sends rewrite-test's untested atom shapes" do
-      # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
+      # No row can fail o.status = 'held', so no world makes it false.
       ready(same, status_check: "status = 'held'")
-      expect(lines(step("rewrite-test", "--search", "rewrite_1")).first).to include("passed" => true)
+      tested = quaacks.run("rewrite-test", "--search", "rewrite_1", "--run", store.run_id,
+                           env: libpq_env.merge(FUZZ_ON))
+      expect(lines(tested).first).to include("passed" => true)
 
       sent = lines(step("counterexample-payload", "--search", "rewrite_1")).first
 
@@ -1446,10 +1304,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       end
     end
 
-    # Task 20261012-2: a fuzz pass tests a rewrite whose query ScenarioTests
-    # refuses, so its rounds run on a query rewrite-test built no atoms for.
-    # They need none: it left no untested atom to cover.
-    it "runs a round for a rewrite fuzz passed on a query ScenarioTests refused as complex_check" do
+    # Task 20261012-2: a fuzz pass tests a rewrite on a table with a CHECK
+    # the counterexamples' parent rows can't fill (complex_check), and its
+    # rounds run with no untested atom to cover.
+    it "runs a round for a rewrite fuzz passed on a table whose CHECK is complex" do
       ready(looser, status_check: "status = 'open' OR status = 'closed'")
       store.write("rewrite_tested_1", "passed" => true, "stage" => "fuzz", "untested" => [], "untested_atoms" => [])
 
@@ -1461,7 +1319,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
-    it "fails to load inserts that need a parent row on a table whose CHECK rewrite-test refuses, by complex_check" do
+    it "fails to load inserts that need a parent row on a table whose CHECK is complex, by complex_check" do
       ready(looser, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY, lo int, hi int CHECK (hi >= lo));
                                 ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
       store.write("rewrite_tested_1", "passed" => true, "stage" => "fuzz", "untested" => [], "untested_atoms" => [])

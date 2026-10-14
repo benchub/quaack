@@ -1,146 +1,85 @@
 # frozen_string_literal: true
 
-require "pg_query"
-require "quaack/enclave/scenarios"
-require "quaack/enclave/scenario_tests"
+require "quaack/enclave/fuzz"
 
-# A standing trust-boundary guard (20261010-47): rewrite-test's report
-# crosses the boundary as counts, shapes and fixed words, never values. So
-# when only a query's literals change (a LIMIT, an OFFSET, an IN list's
-# values, BETWEEN's bounds, a count threshold) and nothing else, everything
-# it reports must come out byte-identical: the results, the untested set
-# and its states, the retries, dropped, the fixture loads, S1's diagnostics,
-# and the spills (which feed the loads).
-#
-# Each family runs one query shape over several literal values. A literal
-# can still decide what a fixture can reach: no scenario has more than one
-# child per parent, so count(*) > 0 is reachable and count(*) > 1 isn't,
-# and LIMIT 0 returns nothing. Values across such a step are a different
-# question, outside this guard; each family's values stay on one side of it.
-RSpec.describe "Reports across literals" do
+# A standing trust-boundary guard (20261010-47, made the search's by task
+# 20261012-4): the per-atom caution crosses the boundary as the redacted
+# shapes of the atoms the search never showed both true and false. Whether a
+# random world reaches an atom can follow a count threshold (fuzz's copies
+# stop at 101 rows a table, so HAVING count(*) > 200 is never true), so for a
+# query whose reach can follow a literal the search reports the worst case,
+# every atom untested, the same for every literal (Fuzz::Reach, DESIGN.md's
+# 20261011-2 rule). Here every count threshold from 0 to 10, under every
+# comparison operator, must give a byte-identical caution and verdict.
+RSpec.describe "The search's caution across literals" do
   let(:conn) { racetrack_and_arena.arena.connection }
-
-  # The corpus's schema, read from its spec so as not to load its examples.
-  schema = File.read(File.join(__dir__, "vacuity_guard_corpus_postgres_spec.rb"))[/SCHEMA = <<~SQL\n(.*?)\n  SQL\n/m, 1]
-               .gsub(/^    /, "")
+  let(:fuzz) { Quaack::Enclave::Fuzz }
 
   before do
-    conn.exec(schema)
+    conn.exec(<<~SQL)
+      CREATE SCHEMA fx;
+      CREATE TABLE fx.users (id integer PRIMARY KEY, name text NOT NULL);
+      CREATE TABLE fx.posts (id integer PRIMARY KEY, user_id integer NOT NULL REFERENCES fx.users,
+                             score integer NOT NULL, published boolean NOT NULL);
+    SQL
   end
 
-  # Every field of the report, the paths into the parse aside (they stay in
-  # the enclave), and how many spills each scenario has.
-  def outgoing(sql, candidates)
-    report = Quaack::Enclave::ScenarioTests.run(conn, sql, candidates)
-    builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
-    builder.build
-    report.to_h.except(:untested_paths).merge(results: report.results.map(&:to_h),
-                                              spills: builder.spills.transform_values(&:size))
+  # The verdict and its rule, and the caution (the paths into the parse stay
+  # in the enclave). How many trials a search ran isn't held to this: it
+  # follows how long each trial takes, under the real stop rule.
+  def outgoing(original, candidate)
+    results = fuzz.search(conn, original, candidate, stop: fuzz::StopRule.trials(8), enumerate: nil, seed: 7)
+    [results.fuzz.verdict, results.fuzz.rule, results.coverage.to_h.except(:untested_paths)]
   end
 
   thresholds = (0..10).to_a.freeze
   operators = %w[> >= = < <= <>].freeze
-
-  count = ->(child, parent, key) { "(SELECT count(*) FROM fx.#{child} WHERE fx.#{child}.#{key} = fx.#{parent}.id)" }
-  posts = "SELECT fx.posts.id FROM fx.posts WHERE"
   users = "SELECT fx.users.id FROM fx.users WHERE"
+  count = "(SELECT count(*) FROM fx.posts WHERE fx.posts.user_id = fx.users.id)"
 
-  families = {
-    "LIMIT" => [[1, 2, 3, 5, 10, 25, 100], lambda { |n|
-      ["#{posts} fx.posts.published = true AND fx.posts.score > 3 LIMIT #{n}",
-       "#{posts} fx.posts.published AND fx.posts.score > 3 LIMIT #{n}"]
-    }],
-    "ORDER BY ... LIMIT" => [[2, 3, 5, 10, 25, 100], lambda { |n|
-      ["#{posts} fx.posts.published = true AND fx.posts.score > 3 ORDER BY fx.posts.id LIMIT #{n}",
-       "#{posts} fx.posts.published AND fx.posts.score > 3 ORDER BY fx.posts.id LIMIT #{n}"]
-    }],
-    "OFFSET" => [[2, 3, 5, 20, 40], lambda { |n|
-      ["#{posts} fx.posts.published = true AND fx.posts.score > 3 ORDER BY fx.posts.id LIMIT 20 OFFSET #{n}",
-       "#{posts} fx.posts.published AND fx.posts.score > 3 ORDER BY fx.posts.id LIMIT 20 OFFSET #{n}"]
-    }],
-    "BETWEEN bounds" => [[0, 1, 5, 50, 1000], lambda { |n|
-      ["#{posts} fx.posts.score BETWEEN #{n} AND #{n + 7}",
-       "#{posts} fx.posts.score >= #{n} AND fx.posts.score <= #{n + 7}"]
-    }],
-    "BETWEEN bounds, repeated (the search)" => [[0, 1, 5, 50, 1000], lambda { |n|
-      ["#{posts} fx.posts.score BETWEEN #{n} AND #{n + 7} AND fx.posts.score BETWEEN #{n} AND #{n + 7}",
-       "#{posts} fx.posts.score BETWEEN #{n} AND #{n + 7}"]
-    }],
-    "IN-list values" => [[1, 2, 7, 100], lambda { |n|
-      ["#{posts} fx.posts.user_id IN (#{n}, #{n + 3}, #{n + 9}) AND fx.posts.published",
-       "#{posts} (fx.posts.user_id = #{n} OR fx.posts.user_id = #{n + 3} OR fx.posts.user_id = #{n + 9}) " \
-       "AND fx.posts.published"]
-    }],
-    "IN-list values, repeated (the search)" => [[1, 2, 7, 100], lambda { |n|
-      list = "(#{n}, #{n + 3}, #{n + 9})"
-      ["#{posts} fx.posts.score IN #{list} AND fx.posts.score IN #{list}", "#{posts} fx.posts.score IN #{list}"]
-    }],
-    "IN list and count(*) >= threshold" => [thresholds, lambda { |n|
-      c = count.call("comments", "posts", "post_id")
-      ["#{posts} fx.posts.user_id IN (1, 2) AND #{c} >= #{n}",
-       "#{posts} fx.posts.user_id IN (1, 2) AND #{c} >= #{n} AND true"]
-    }]
-  }.merge(
-    # A count compared with a constant, for every operator and threshold
-    # (20261011-2): no scenario has more than one child per parent, so what
-    # the guard can reach follows the threshold, and nothing outgoing may.
+  families = operators.to_h do |op|
+    ["count(*) #{op} threshold", ->(n) { "#{users} #{count} #{op} #{n}" }]
+  end.merge(
     operators.to_h do |op|
-      ["count(*) #{op} threshold", [thresholds, lambda { |n|
-        c = count.call("posts", "users", "user_id")
-        ["#{users} #{c} #{op} #{n}", "#{users} #{c} #{op} #{n} AND true"]
-      }]]
+      ["derived count #{op} threshold", lambda { |n|
+        "SELECT t.uid FROM (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts " \
+          "GROUP BY fx.posts.user_id) t WHERE t.k #{op} #{n}"
+      }]
     end,
     operators.to_h do |op|
-      ["derived count #{op} threshold", [thresholds, lambda { |n|
-        inner = "SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id"
-        q = "SELECT t.uid FROM (#{inner}) t WHERE t.k #{op} #{n}"
-        [q, "#{q} AND true"]
-      }]]
+      ["CTE count #{op} threshold", lambda { |n|
+        "WITH t AS (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id) " \
+          "SELECT t.uid FROM t WHERE #{n} #{op} t.k"
+      }]
     end,
     operators.to_h do |op|
-      ["CTE count #{op} threshold", [thresholds, lambda { |n|
-        cte = "WITH t AS (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts GROUP BY fx.posts.user_id) "
-        q = "#{cte}SELECT t.uid FROM t WHERE #{n} #{op} t.k"
-        [q, "#{q} AND true"]
-      }]]
-    end,
-    operators.to_h do |op|
-      ["nested derived count #{op} threshold", [thresholds, lambda { |n|
-        inner = "SELECT u.uid, u.k FROM (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts " \
-                "GROUP BY fx.posts.user_id) u"
-        q = "SELECT t.uid FROM (#{inner}) t WHERE t.k #{op} #{n}"
-        [q, "#{q} AND true"]
-      }]]
-    end,
-    operators.to_h do |op|
-      ["HAVING count() #{op} threshold", [thresholds, lambda { |n|
-        join = "SELECT fx.users.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
-               "GROUP BY fx.users.id HAVING count(fx.posts.id) #{op} #{n}"
-        [join, "#{join} AND true"]
-      }]]
+      ["HAVING count() #{op} threshold", lambda { |n|
+        "SELECT fx.users.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
+          "GROUP BY fx.users.id HAVING count(fx.posts.id) #{op} #{n} AND max(fx.posts.score) > 2"
+      }]
     end
   ).freeze
 
-  families.each do |name, (values, make)|
-    it "reports the same for every #{name} value" do
-      by_value = values.to_h { |n| [n, outgoing(*make.call(n).then { [it.first, it.drop(1)] })] }
-      # A repeated condition is redundant, so it stays untested and the
-      # search runs on it.
-      expect(by_value.values.first[:untested_states]).not_to be_empty if name.end_with?("(the search)")
-      classes = by_value.group_by { |_, report| report }.map { |report, pairs| "#{pairs.map(&:first)}: #{report}" }
-      expect(by_value.values.uniq.size).to eq(1), classes.join("\n")
+  def classes(by_value) = by_value.group_by { |_, out| out }.map { |out, pairs| "#{pairs.map(&:first)}: #{out}" }
+
+  families.each do |name, make|
+    it "cautions the same for every #{name} value" do
+      by_value = thresholds.to_h { |n| [n, outgoing(make.call(n), "#{make.call(n)} AND true")] }
+      expect(by_value.values.uniq.size).to eq(1), classes(by_value).join("\n")
+      caution = by_value.values.first.last
+      expect(caution[:untested_atoms]).to eq((0...caution[:atoms]).to_a)
     end
   end
-  # The worst case a count threshold reports (VacuityGuard.worst_case), even
-  # at a threshold S1 reaches: count(*) > 0 exercises both atoms, and still
-  # neither is reported tested. Loads count each of S1's four attempts, so
-  # they don't follow how many the guard needed, and S1's row counts stay
-  # in.
-  it "reports a count threshold's worst case, never an atom tested" do
-    c = count.call("posts", "users", "user_id")
-    report = outgoing("#{users} #{c} > 0", ["#{users} #{c} > 0 AND true"])
-    expect(report).to include(untested: ["#{c} > $1", "fx.posts.user_id = fx.users.id"],
-                              untested_states: %i[not_searched not_searched], retries: 6,
-                              s1_rows: nil, s1_nonzero_rows: nil, loads: 25)
+
+  # The guard catches a caution that follows the threshold: with the worst
+  # case turned off, count(*) >= 0 is never false and count(*) > 0 is both,
+  # so the two caution differently, and the comparison above says so.
+  it "catches a caution that follows the threshold, when the worst case is planted away" do
+    allow(fuzz::Reach).to receive(:worst_case?).and_return(false)
+    make = families.fetch("count(*) >= threshold")
+
+    by_value = [0, 1].to_h { |n| [n, outgoing(make.call(n), "#{make.call(n)} AND true")] }
+
+    expect(by_value.values.uniq.size).to eq(2), classes(by_value).join("\n")
   end
 end

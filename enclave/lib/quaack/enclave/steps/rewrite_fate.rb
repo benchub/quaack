@@ -3,7 +3,6 @@
 require "quaack/protocol/rewrite_budget"
 require_relative "../arena_fixture"
 require_relative "../result_comparator"
-require_relative "../scenarios"
 require_relative "cycle_tables"
 
 module Quaack
@@ -15,8 +14,7 @@ module Quaack
       #
       #   context = RewriteFate.context(store)
       #   RewriteFate.call(store, "rewrite_2", context)
-      #   # => { "fate" => "rewrite_test_disproved", "scenario" => "s3", "rule" => "multiset",
-      #   #      "round" => nil, "after" => nil }
+      #   # => { "fate" => "fuzz_disproved", "rule" => "multiset", "round" => nil, "after" => nil, "cycle" => nil }
       #
       # A rewrite has several measured labels and one fate. The first of
       # these that holds is its fate:
@@ -31,20 +29,32 @@ module Quaack
       #   enumerate_disproved      rewrite-test's enumerate stage (task
       #                            20261012-3) found one, among every small
       #                            database over the row kinds; with the rule
-      #   rewrite_test_disproved          a rewrite-test scenario got different results;
-      #                            with the scenario and the rule
-      #   rewrite_test_untested           rewrite-test couldn't build scenarios for the
-      #                            query (rewrite_tested_<n> says refused),
-      #                            so the rewrite was never tested; with the
+      #   rewrite_test_disproved   before task 20261012-4: a rewrite-test
+      #                            scenario got different results; with the
+      #                            rule
+      #   rewrite_test_untested    before task 20261012-4: rewrite-test
+      #                            couldn't build scenarios for the query
+      #                            (rewrite_tested_<n> says refused), so the
+      #                            rewrite was never tested; with the
       #                            refusal's rule, and for fk_cycle the
       #                            cycle's tables
-      #   rewrite_test_failed             a rewrite-test scenario ended without comparing
-      #                            results (the original's order can't be
-      #                            checked, or a statement failed in arena);
-      #                            with the scenario and the rule
-      #   rewrite_test_out_of_time  rewrite-test ran past its budget per rewrite
-      #                            (rule out_of_time, Protocol::RewriteBudget),
-      #                            so the rewrite was left out untested
+      #   rewrite_test_failed      a rewrite-test that didn't pass ended
+      #                            without comparing results (before task
+      #                            20261012-4, a scenario whose original's
+      #                            order can't be checked, or whose statement
+      #                            failed in arena); with the rule
+      #   rewrite_test_out_of_time before task 20261011-15: rewrite-test ran
+      #                            past its budget per rewrite (rule
+      #                            out_of_time, Protocol::RewriteBudget), so
+      #                            the rewrite was left out untested
+      #
+      # A store written before task 20261012-4, when ScenarioTests ran after
+      # the search, holds the four rewrite_test_ fates' entries. No run
+      # since writes a rewrite_test_disproved, rewrite_test_untested or
+      # rewrite_test_out_of_time one: a rewrite the search couldn't test
+      # goes on as passed, with its reason as its rule
+      # (Protocol::FuzzResult::NOT_TESTED, or out_of_time), so it has no
+      # rewrite-test fate. Their scenario is never sent.
       #   counterexamples_disproved         a counterexample-compare round got different results; with
       #                            the round and the rule
       #   counterexamples_failed            a counterexample-compare round ended without comparing
@@ -75,8 +85,7 @@ module Quaack
       #
       # Trust boundary. Everything this returns is one of this module's own
       # constants: a fate from FATES, a rule from MISMATCHES, FAILURES,
-      # REFUSALS, or PRODUCTION_FAILURES, a scenario from Scenarios::NAMES,
-      # a round from ROUNDS, and an after from AFTER. A stored value that
+      # REFUSALS, or PRODUCTION_FAILURES, a round from ROUNDS, and an after from AFTER. A stored value that
       # isn't on its list goes out as nil, never as it is. The one
       # exception is an fk_cycle's cycle: table names, which are schema,
       # each the schema_subset entry's own (the catalog's relations). A
@@ -98,11 +107,12 @@ module Quaack
         # The rules that end a rewrite-test scenario or a counterexample-compare round with nothing
         # compared: the comparison's refusal, unsupported_order, every one of
         # ArenaRunner::RULES, ArenaRunner's and ArenaFixture's failures, and
-        # original_failed, the original failing on every fixture (ScenarioTests)
-        # or on a round's rows (Counterexamples).
+        # original_failed, the original failing on every fixture (ScenarioTests,
+        # before task 20261012-4) or on a round's rows (Counterexamples).
         FAILURES = ["unsupported_order", *ArenaRunner::RULES.keys.map(&:to_s), "original_failed"].freeze
 
-        # Scenarios::Error's rules: why rewrite-test couldn't build scenarios.
+        # Scenarios::Error's rules before task 20261012-4: why rewrite-test
+        # couldn't build scenarios.
         REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
                       domain_check exclusion_constraint].freeze
 
@@ -113,15 +123,13 @@ module Quaack
         # result-comparison's failing rules that compare nothing.
         PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
 
-        SCENARIOS = Scenarios::NAMES.map(&:to_s).freeze
         ROUNDS = [1, 2, 3].freeze
         AFTER = %w[rewrite-test counterexamples measurement].freeze
 
         # selection's reasons for a label that result-comparison didn't drop, strongest first.
         EXCLUDED = %w[below_top_three footprint_tie not_better].freeze
 
-        BLANK = { "fate" => nil, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil,
-                  "cycle" => nil }.freeze
+        BLANK = { "fate" => nil, "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil }.freeze
 
         # What every rewrite's fate reads from candidate-runs on, read once.
         # tables is the schema subset's relations (schema-dump), as "schema.name".
@@ -180,11 +188,10 @@ module Quaack
 
           return fuzz(tested) if fuzz?(tested)
 
-          scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
-          return fate("rewrite_test_disproved", scenario:, rule: mismatch) if mismatch
+          return fate("rewrite_test_disproved", rule: mismatch) if mismatch
 
-          fate("rewrite_test_failed", scenario:, rule: known(FAILURES, tested["rule"]))
+          fate("rewrite_test_failed", rule: known(FAILURES, tested["rule"]))
         end
 
         # A disproof by fuzz or enumerate, which carry the same rules.

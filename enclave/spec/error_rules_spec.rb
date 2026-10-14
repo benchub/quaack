@@ -22,6 +22,8 @@ RSpec.describe Quaack::Protocol::ErrorRules do
   never_sent = {
     "discarded" => "rewrite-test's stored result for a pruned rewrite (steps/counterexamples.rb)",
     "subset_timed_out" => "a ProductionComparison verdict",
+    "out_of_time" => "a rewrite the search didn't test in time, stored as passed (steps/rewrite_fuzz.rb)",
+    "search_failed" => "a rewrite the search couldn't test, stored as passed (steps/rewrite_fuzz.rb)",
     "hypopg_refused" => "a SingleCandidateTest refusal, stored in the candidate's result",
     "unrenderable" => "a SingleCandidateTest refusal, stored in the candidate's result",
     "too_many" => "rewrite-check's Rejected, rescued into the rewrite's outcome",

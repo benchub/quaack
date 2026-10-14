@@ -27,7 +27,8 @@ end
 ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 
 # Turns rewrite-test's fuzz search (Fuzz::StopRule.from_env) off in every
-# quaacks this suite starts, so the specs of ScenarioTests test it alone.
+# quaacks this suite starts, so rewrite-test passes each rewrite untested
+# (fuzz_off) unless a spec turns the search on.
 # The specs of the search itself set a trial count (FUZZ_ON), which makes
 # the search do the same work on any machine.
 ENV["QUAACKS_FUZZ_TRIALS"] = "0"

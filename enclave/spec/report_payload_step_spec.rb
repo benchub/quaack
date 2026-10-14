@@ -97,11 +97,12 @@ RSpec.describe "quaacks report-payload" do
     store.write("rewrite_1", "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
                              "transformation" => "moved #{sentinel}", "assumptions" => [{ "kind" => sentinel }],
                              "source" => "rule", "rules" => ["key_in_self_join"])
-    # untested holds vacuity-guard's redacted shapes, and untested_atoms
-    # their indexes into the original's atoms, for counterexamples.
-    store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil,
+    # untested holds the redacted shapes of the atoms the search never
+    # showed both ways, and untested_atoms their indexes into the
+    # original's atoms, for counterexamples.
+    store.write("rewrite_tested_1", "passed" => true, "rule" => nil, "stage" => "fuzz", "trials" => 900,
                                     "untested" => ["o.note = $2", "o.created_at > (now() - $1)"],
-                                    "untested_atoms" => [0, 3], "dropped" => 2,
+                                    "untested_atoms" => [0, 3],
                                     "untested_unchanged" => ["o.created_at > (now() - $1)"])
     store.write("rewrite_round_1", "round" => 3, "evidence" => true, "rule" => nil, "covered" => ["o.note = $2"])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
@@ -316,7 +317,7 @@ RSpec.describe "quaacks report-payload" do
       expect(rewrite(1)).to include(
         "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
         "untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"], "covered" => ["o.note = $2"],
-        "untested_unchanged" => ["o.created_at > (now() - $1)"], "evidence" => false, "dropped" => 2
+        "untested_unchanged" => ["o.created_at > (now() - $1)"], "evidence" => false
       )
       expect(rewrite(1)["plan"]).to eq(
         [{ "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 5, "actual_rows" => 5,
@@ -343,37 +344,23 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
-    # Task 20261010-43: how each untested atom stayed unproven, one fixed
-    # word per untested shape, or nothing when the stored list isn't that.
-    describe "untested_states" do
-      it "sends nil for a stored entry from before the search" do
-        expect(rewrite(1)).to include("untested_states" => nil)
-      end
-
-      context "with one fixed word per untested shape" do
-        let(:outcome) do
-          payload_of do |store|
-            store.write("rewrite_tested_1",
-                        store.read("rewrite_tested_1").merge("untested_states" => %w[searched not_searched]))
-          end
-        end
-
-        it "sends them as they are" do
-          expect(rewrite(1)["untested_states"]).to eq(%w[searched not_searched])
+    # Task 20261012-4: a store from before it holds the vacuity guard's
+    # untested_states and ScenarioTests' dropped scenario groups, and a
+    # scenario. None of them goes out any more.
+    context "with a rewrite_tested_<n> from before the search replaced the scenarios" do
+      let(:outcome) do
+        payload_of do |store|
+          store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge(
+                                            "stage" => "rewrite-test", "scenario" => "s3", "dropped" => 2,
+                                            "untested_states" => %w[searched not_searched], "s1_rows" => 4
+                                          ))
         end
       end
 
-      context "with a word off the list, or one too few" do
-        let(:outcome) do
-          payload_of do |store|
-            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("untested_states" => [sentinel, "x"]))
-          end
-        end
-
-        it "sends nil, and nothing of what it held" do
-          expect(rewrite(1)["untested_states"]).to be_nil
-          expect_no_leaks(sentinels, outcome)
-        end
+      it "sends its untested shapes, and no scenario, dropped count, or untested states" do
+        expect(rewrite(1)).to include("untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"],
+                                      "trials" => 900, "fate" => "ranked")
+        expect(rewrite(1).keys & %w[scenario dropped untested_states s1_rows]).to eq([])
       end
     end
 
@@ -424,6 +411,68 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    # Task 20261012-4: a rewrite the search couldn't test went on as
+    # passed, with the reason as its rule. The reason goes out only as a
+    # word from Protocol::FuzzResult::NOT_TESTED.
+    describe "not_tested" do
+      it "sends nil for a rewrite the search tested" do
+        expect(rewrite(1)).to include("not_tested" => nil)
+      end
+
+      Quaack::Protocol::FuzzResult::NOT_TESTED.each do |reason|
+        context "with a rewrite that went on untested, as #{reason}" do
+          let(:outcome) do
+            payload_of do |store|
+              store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("passed" => true, "rule" => reason))
+            end
+          end
+
+          it "sends the reason, and no out_of_time" do
+            expect(rewrite(1)).to include("not_tested" => reason, "out_of_time" => false)
+          end
+        end
+      end
+
+      context "with a rewrite that ran out of time" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("passed" => true,
+                                                                                 "rule" => "out_of_time"))
+          end
+        end
+
+        it "sends out_of_time, not a not_tested reason" do
+          expect(rewrite(1)).to include("not_tested" => nil, "out_of_time" => true)
+        end
+      end
+
+      context "with a reason that isn't one of QUAACK's" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("passed" => true, "rule" => sentinel))
+          end
+        end
+
+        it "sends nil, and nothing of what it held" do
+          expect(rewrite(1)["not_tested"]).to be_nil
+          expect_no_leaks(sentinels, outcome)
+        end
+      end
+
+      context "with a reason on a test that didn't pass" do
+        let(:outcome) do
+          payload_of do |store|
+            store.write("rewrite_tested_1",
+                        store.read("rewrite_tested_1").merge("passed" => false, "rule" => "no_world"))
+          end
+        end
+
+        it "sends nil" do
+          expect(rewrite(1)["not_tested"]).to be_nil
+        end
+      end
+    end
+
     context "with an untested_unchanged in rewrite_tested_<n> that isn't a list" do
       let(:outcome) do
         payload_of do |store|
@@ -434,31 +483,6 @@ RSpec.describe "quaacks report-payload" do
       it "sends none" do
         expect(rewrite(1)["untested_unchanged"]).to be_nil
         expect_no_leaks(sentinels, outcome)
-      end
-    end
-
-    # Task 20260926-42: only a count leaves, never what else the entry holds.
-    context "with a dropped count in rewrite_tested_<n> that isn't a count" do
-      let(:outcome) do
-        payload_of do |store|
-          store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("dropped" => "#{sentinel} 7"))
-        end
-      end
-
-      it "sends no dropped count, and nothing of what it held" do
-        expect(rewrite(1)["dropped"]).to be_nil
-        expect_no_leaks(sentinels, outcome)
-      end
-    end
-
-    # Task 20261008-58: a count below zero isn't a count either.
-    context "with a negative dropped count in rewrite_tested_<n>" do
-      let(:outcome) do
-        payload_of { |store| store.write("rewrite_tested_1", store.read("rewrite_tested_1").merge("dropped" => -1)) }
-      end
-
-      it "sends no dropped count" do
-        expect(rewrite(1)["dropped"]).to be_nil
       end
     end
 
@@ -480,11 +504,10 @@ RSpec.describe "quaacks report-payload" do
       it "sends its SQL and source all the same, with nothing it doesn't have" do
         expect(report["rewrites"].map { it["rewrite"] }).to eq(%w[rewrite_1 rewrite_2])
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
-                                 "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
+                                 "rules" => nil, "empirical" => nil, "fate" => "unfinished",
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "untested_unchanged" => nil,
-                                 "untested_states" => nil, "covered" => nil,
-                                 "evidence" => nil, "dropped" => nil, "out_of_time" => nil,
+                                 "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
+                                 "evidence" => nil, "out_of_time" => nil, "not_tested" => nil,
                                  "trials" => nil, "worlds" => nil, "bound" => nil, "sizes" => nil)
       end
     end
@@ -529,7 +552,7 @@ RSpec.describe "quaacks report-payload" do
       store.write("result_comparison", Quaack::Enclave::Steps::ResultComparison.entry(verdicts))
     end
 
-    def fate(number) = rewrite(number).slice("fate", "scenario", "rule", "round", "after").compact
+    def fate(number) = rewrite(number).slice("fate", "rule", "round", "after").compact
 
     let(:outcome) do
       payload_of do |store|
@@ -593,9 +616,9 @@ RSpec.describe "quaacks report-payload" do
     {
       1 => { "fate" => "ranked" },
       2 => { "fate" => "same_plans" },
-      3 => { "fate" => "rewrite_test_disproved", "scenario" => "s3", "rule" => "multiset" },
-      4 => { "fate" => "rewrite_test_failed", "scenario" => "s0", "rule" => "unsupported_order" },
-      5 => { "fate" => "rewrite_test_failed", "scenario" => "s2", "rule" => "query_failed" },
+      3 => { "fate" => "rewrite_test_disproved", "rule" => "multiset" },
+      4 => { "fate" => "rewrite_test_failed", "rule" => "unsupported_order" },
+      5 => { "fate" => "rewrite_test_failed", "rule" => "query_failed" },
       6 => { "fate" => "counterexamples_disproved", "round" => 2, "rule" => "row_count" },
       7 => { "fate" => "counterexamples_failed", "round" => 1, "rule" => "statement_timeout" },
       8 => { "fate" => "production_mismatch", "rule" => "multiset" },
@@ -613,7 +636,7 @@ RSpec.describe "quaacks report-payload" do
       20 => { "fate" => "counterexamples_disproved" },
       21 => { "fate" => "same_plans" },
       22 => { "fate" => "ranked" },
-      23 => { "fate" => "rewrite_test_disproved", "scenario" => "s1", "rule" => "value" },
+      23 => { "fate" => "rewrite_test_disproved", "rule" => "value" },
       24 => { "fate" => "rewrite_test_untested", "rule" => "complex_check" },
       25 => { "fate" => "rewrite_test_untested", "rule" => "fk_cycle" },
       26 => { "fate" => "rewrite_test_untested" },
@@ -622,13 +645,19 @@ RSpec.describe "quaacks report-payload" do
       29 => { "fate" => "rewrite_test_untested", "rule" => "unsupported_type" },
       30 => { "fate" => "rewrite_test_untested", "rule" => "domain_check" },
       31 => { "fate" => "rewrite_test_untested", "rule" => "exclusion_constraint" },
-      32 => { "fate" => "rewrite_test_failed", "scenario" => "s1", "rule" => "transaction_closed" },
+      32 => { "fate" => "rewrite_test_failed", "rule" => "transaction_closed" },
       33 => { "fate" => "counterexamples_failed", "round" => 2, "rule" => "transaction_closed" },
       34 => { "fate" => "rewrite_test_failed", "rule" => "original_failed" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
       end
+    end
+
+    # Stores from before task 20261012-4 hold rewrite-test's scenarios
+    # (rewrite_3, 4, 5, 23 and 32): their fates still read, with no scenario.
+    it "sends no scenario, though a stored entry from before the search replaced the scenarios holds one" do
+      expect(report["rewrites"].flat_map(&:keys).uniq).not_to include("scenario")
     end
 
     it "sends counterexamples evidence only for a rewrite that survived counterexamples" do
@@ -717,8 +746,7 @@ RSpec.describe "quaacks report-payload" do
       end
 
       it "says fuzz disproved it, with the rule, the rows per table, and the trials" do
-        expect(rewrite(2)).to include("fate" => "fuzz_disproved", "rule" => "row_count", "scenario" => nil,
-                                      "trials" => 120,
+        expect(rewrite(2)).to include("fate" => "fuzz_disproved", "rule" => "row_count", "trials" => 120,
                                       "sizes" => [["billing", "accounts", 1], ["public", "orders", 2]])
       end
 

@@ -32,7 +32,7 @@ module Quaack
       # compares again. A load failure isn't a disproof, and nor is a query
       # failure, unless the original runs and the candidate fails on the
       # data (DataError), which is query_failed; a cancel that wasn't
-      # QUAACK's statement_timeout ends the step, as in ScenarioTests.
+      # QUAACK's statement_timeout ends the step, as in the counterexample rounds.
       class Lift
         DEPTH = 20
         # Past the generator's fresh values, so a built key never meets a world's.

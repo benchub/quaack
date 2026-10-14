@@ -63,8 +63,7 @@ module Quaack
           "the arena connection can't start a transaction: it's closed, broken, or busy"
       }.freeze
 
-      # A fixture row, the stand-in for what scenario building (task
-      # 20260922-45) will produce. A fixture is an Array of these, loaded in
+      # A fixture row, such as a counterexample round's. A fixture is an Array of these, loaded in
       # order, so parents must come before the rows that reference them.
       # columns are the real column names, unquoted. values are in Postgres
       # text input form, one per column, with nil for NULL. No columns means

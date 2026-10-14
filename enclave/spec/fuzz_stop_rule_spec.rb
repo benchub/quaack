@@ -107,7 +107,7 @@ RSpec.describe Quaack::Enclave::Fuzz::StopRule do
       expect([rule.floor, rule.cap, rule.unit]).to eq([40, 400, :trials])
     end
 
-    it "is nil, turning the search off, when QUAACKS_FUZZ_TRIALS is 0, for specs that test ScenarioTests alone" do
+    it "is nil, turning the search off, when QUAACKS_FUZZ_TRIALS is 0, for specs that don't test the search" do
       expect(described_class.from_env({ "QUAACKS_FUZZ_TRIALS" => "0" })).to be_nil
     end
 

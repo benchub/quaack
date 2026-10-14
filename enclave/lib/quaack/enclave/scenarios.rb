@@ -1,119 +1,32 @@
 # frozen_string_literal: true
 
 require "pg_query"
-require_relative "arena_fixture"
 require_relative "arena_schema"
-require_relative "predicate_atoms"
 require_relative "table_name"
 require_relative "value_pools"
-require_relative "scenarios/branches"
 require_relative "scenarios/checks"
-require_relative "scenarios/free_values"
-require_relative "scenarios/parts"
-require_relative "scenarios/picker"
-require_relative "scenarios/pinned_keys"
-require_relative "scenarios/plan"
+require_relative "scenarios/nulls"
 require_relative "scenarios/reads"
-require_relative "scenarios/retries"
-require_relative "scenarios/siblings"
-require_relative "scenarios/row_set"
-require_relative "scenarios/slots"
-require_relative "scenarios/ties"
 require_relative "scenarios/topology"
-require_relative "scenarios/unmatched"
 require_relative "scenarios/values"
 
 module Quaack
   module Enclave
-    # rewrite-test: scenarios S0 through S6, built from the value pools.
+    # What's left of rewrite-test's scenario fixtures, which task
+    # 20261012-4 replaced with the disproof search: the rules a
+    # counterexample round's parent rows follow (Counterexamples::ParentRows,
+    # Deferral) and the tables a query names, which the search reads too.
     #
-    #   Scenarios.build(arena_connection, parse)                  # => { s0: [FixtureRow, ...], ..., s6: [...] }
-    #   Scenarios.build(arena_connection, parse, variants: { 2 => 1 })
-    #   builder = Scenarios::Builder.new(arena_connection, parse)  # atoms, pools, and build(variants)
+    # - Checks: a column's simple CHECKs, and the value one allows.
+    # - Values: a column's typical value, by its type (Types, Literals).
+    # - Nulls: whether a row may leave a column NULL.
+    # - Reads: the columns the queries read.
+    # - Topology: the load order, parents first, and the foreign keys in a
+    #   cycle it cuts, with their columns deferred.
     #
-    # The fixture holds the query's plain tables and every table they
-    # reference by foreign key. Rows are built in groups. A group has one
-    # row per table, and its rows join each other: each set of columns tied
-    # together by an equality join atom (a.k = b.k) or a foreign key shares
-    # one key value per group. The groups:
-    #
-    # - hit: every pooled atom satisfied.
-    # - near miss, one per pooled atom: that atom failed, every other one on
-    #   the column still satisfied. And one per equality join atom that no
-    #   foreign key backs: the right side's table gets a key of its own.
-    # - nulls: every nullable join key and predicate column NULL.
-    # - copy: another row for one table, sharing another group's keys, but
-    #   with its own value for a key its table holds unique.
-    # - cross: a group whose row points one foreign key at the hit's parent
-    #   (see Topology#crossings), with no parent of its own for it.
-    # - orphan: one side of a join with no foreign key, alone (with the
-    #   tables it references).
-    # - unmatched: a parent with no child, for a foreign-key join an outer
-    #   join or correlated subquery leaves optional (see Unmatched), with
-    #   every atom satisfied, and one per pooled atom on the parent's
-    #   tables that fails it. Last in S1 through S5.
-    # - boundary: the hit group, with type boundary values wherever they
-    #   still satisfy the atoms and CHECKs.
-    # - empty: only the tables that reference no other fixture table
-    #   through a foreign key the load order keeps. A cut column there is
-    #   NULL, since its parent's table has no row in the group.
-    #
-    # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
-    # S3: S1, crosses, and a copy of each table's hit row; S4: S1 and orphans; S5: S1
-    # and two boundary groups; S6: hit, a group with two more copies of each
-    # table's row, and empty. Under a top-level LIMIT with no ORDER BY, S1
-    # also gets a further fixture of its near misses alone, with no hit
-    # (see Plan#near_misses_alone).
-    #
-    # Column values. A pooled atom's column takes the first pool value that
-    # satisfies (or for its near miss, fails) the atom and satisfies every
-    # other atom and CHECK on the column (see Picker). variants rotates an
-    # atom's pool lists, by atom index, for vacuity-guard's retries. An atom no pool
-    # value satisfies (r.id IS NULL on a NOT NULL key) is ignored, so
-    # it can't drop every group, and a unique column it reads still varies. A key column takes
-    # a generated value per group (an identity key too, when a key class
-    # ties it to another column), and a unique column one per distinct
-    # row, even with a DEFAULT. A unique index counts, a partial one as
-    # always unique. Every column an expression unique index reads counts as
-    # unique too, and RowSet evaluates the index's keys in Postgres to catch
-    # rows whose expression values still collide (lower('A') = lower('a')).
-    # An expression unique index that calls a function outside pg_catalog,
-    # or reads a generated column, raises Error(:expression_unique_index). An exclusion constraint
-    # counts as a unique key over its = columns, or over its && range
-    # columns when it has none (see ArenaSchema::Exclusions); any other
-    # raises Error(:exclusion_constraint). Another column with a DEFAULT (or
-    # an identity) is left out, so the default
-    # applies. The rest take the type's typical value (0, '', the epoch),
-    # or a value that satisfies the column's CHECKs. S1 has no NULLs but
-    # those an atom needs (x IS NULL).
-    #
-    # Every row satisfies every validated constraint. A group whose row
-    # collides with an earlier row on a unique key first tries its pooled
-    # columns' later fitting values (see Retries and RowSet#add_any?). So
-    # does a group with a row whose foreign key points at a parent row
-    # that isn't there. A group that still doesn't fit goes in a further
-    # fixture of its scenario, with the parent rows it points at, or as a
-    # near miss there (see Parts): a parent with no child, when the filter
-    # pins a unique value the hit's parent holds. A group that fits none,
-    # or for which no value fails its near-miss atom, is left out, and vacuity-guard
-    # catches an atom left vacuous. CHECKs must be simple (see Checks), or the build raises
-    # Error(:complex_check). A foreign-key cycle between tables is broken
-    # where it can be: foreign keys in the cycle whose columns are all
-    # nullable are cut from the load order (see Topology), preferring ones
-    # no atom reads. A cut column still gets its value, as without the
-    # cycle, but its rows defer it (ArenaRunner::FixtureRow#deferred): it
-    # loads as NULL and is set once every row has loaded. It's NULL in a
-    # group that leaves its parent's table out, except a copy or a cross,
-    # which keeps its parent (RowSet drops a copy whose parent is
-    # missing). A cycle with no nullable
-    # foreign key raises
-    # Error(:fk_cycle). Rows come table by table, parents first, each
-    # table's rows together, as fixture-compare's reverse load needs.
-    #
-    # Trust boundary: the rows hold real values and stay in the enclave.
-    # Errors name a rule, and for unsupported_type and domain_check the
-    # table, column, and type rewrite-test can't fill, which are schema, never a
-    # row value.
+    # Trust boundary: the values stay in the enclave. Errors name a rule,
+    # and for unsupported_type and domain_check the table, column, and
+    # type no value can fill, which are schema, never a row value.
     module Scenarios
       class Error < StandardError
         attr_reader :rule, :column, :cycle
@@ -129,71 +42,7 @@ module Quaack
         end
       end
 
-      NAMES = %i[s0 s1 s2 s3 s4 s5 s6].freeze
-      # The scenarios that build on S1's near misses, and so take the
-      # keyset tie rows too.
-      TIE_SCENARIOS = %i[s1 s2 s3 s4 s5].freeze
-      TIE_KEY = 50_000
-      # How many later values a colliding group tries.
-      SHIFTS = 3
-
-      # copy tells rows apart that are alike in every other way. cross, when
-      # set, points one foreign key of the group's row at another group's
-      # parent (see Cross). shift moves each pooled column to a later value
-      # that fits (see Picker#pick), for a group that collides.
-      # also holds the further atoms a masking near miss fails (see Branches).
-      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross, :shift, :also) do
-        # The key a column of table takes in this group: the hit's where a
-        # cross points it, the split table's own, and a copy's own where its
-        # table's unique keys need one (own, see Topology#own_key?).
-        def key_for(table, name, own:)
-          return cross.key if cross&.points?(table, name)
-
-          (split == table ? key + SPLIT_KEY : key) + (own ? COPY_KEY * copy : 0)
-        end
-      end
-      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil, shift: 0, also: [].freeze }.freeze
-      SPLIT_KEY = 100_000
-      COPY_KEY = 200_000
-      AVOID_KEY = 10_000_000
-
-      # A foreign key of table, on columns, whose row points at the parent
-      # row in the group with key (the hit, which S3 holds).
-      Cross = Data.define(:table, :columns, :key) do
-        def points?(table, name) = self.table == table && columns.include?(name)
-      end
-
       module_function
-
-      def build(conn, parse, variants: {}) = Builder.new(conn, parse).build(variants)
-
-      def group(key, tables, **) = Group.new(key:, tables:, **GROUP_DEFAULTS, **)
-
-      # The type's boundary values a boundary group prefers, in its order,
-      # or none for another group.
-      def boundaries(type, mode)
-        return [] unless mode.to_s.start_with?("boundary")
-
-        values = ValuePools.boundaries(type)
-        mode == :boundary_reversed ? values.reverse : values
-      end
-
-      # The atom's scope: the path to the SELECT, or set operation branch,
-      # it's in. A JOIN's larg and rarg aren't scopes.
-      def scope(atom) = atom.path[0..atom.path.each_index.select { select_step?(atom.path, it) }.last]
-
-      # Whether the path's step at k leads to a SelectStmt.
-      def select_step?(path, step)
-        path[step] == "select_stmt" ||
-          (%w[larg rarg].include?(path[step]) && step.positive? && select_step?(path, step - 1))
-      end
-
-      def scopes(atoms) = atoms.each_index.to_h { [it, scope(atoms[it])] }
-
-      def refuse_user_functions(schema)
-        raise Error, :expression_unique_index if schema.tables.any? { unworkable_index?(schema, it) }
-        raise Error, :exclusion_constraint if schema.tables.any? { |t| schema.constraints(t).unequal_exclusion }
-      end
 
       # The plain tables a parse names.
       def query_tables(node, found = [])
@@ -202,210 +51,6 @@ module Quaack
         end
         ValuePools::Sides.children(node).each { |c| query_tables(c, found) }
         found.uniq
-      end
-
-      # An expression unique index on the table that calls user code, or
-      # reads a generated column, which a fixture row leaves out, so its
-      # keys would be worked out on a NULL.
-      def unworkable_index?(schema, table)
-        constraints = schema.constraints(table)
-        constraints.user_function || constraints.expressions.any? do |index|
-          index.columns.any? { |c| schema.column(table, c).default == "generated" }
-        end
-      end
-
-      # Builds the scenarios for one query.
-      class Builder # rubocop:disable Metrics/ClassLength
-        # dropped counts the groups the last build left out of their
-        # scenario's first fixture, over every scenario. spills holds, by
-        # scenario, the last build's further fixtures (see Parts): rows the
-        # first can't hold beside its own.
-        attr_reader :atoms, :pools, :parse, :dropped, :spills, :schema, :topology
-
-        UNIQUE = FreeValues::UNIQUE
-
-        def initialize(conn, parse)
-          @conn = conn
-          @parse = parse
-          @schema = ArenaSchema.load_closure(conn, Scenarios.query_tables(parse.tree))
-          Scenarios.refuse_user_functions(@schema)
-          @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
-          @pools = ValuePools.build(conn, parse, @atoms, @schema, probes)
-          @topology = Topology.new(@schema, @atoms)
-          @checks = Checks.new(conn, @schema)
-          @values = Values.new(conn)
-          @evaluated = {}
-        end
-
-        # Adds fixtures to the scenario's further ones (VacuityGuard::Search's).
-        def add_spills(name, fixtures) = fixtures.empty? || (@spills[name] = [*@spills.fetch(name, []), *fixtures])
-
-        def build(variants = {})
-          start(variants)
-          ties = tie_groups
-          plan = Plan.new(@topology, @atoms, @pools.keys, masked, siblings, @parse.tree)
-          plan.scenarios.to_h { |name, groups| scenario!.then { [name, fixtures(name, groups, ties, plan)] } }
-        end
-
-        private
-
-        def start(variants)
-          @picker = Picker.new(@pools, probes, @checks, variants, Scenarios.scopes(@atoms))
-          @identities = {}
-          scenario!
-          @spills = {}.tap { @dropped = 0 }
-        end
-
-        # Each scenario ranks its own pinned keys (see PinnedKeys), so a
-        # list's values go round the groups of one scenario, not the whole
-        # build: S5's boundary groups and S6's copies each get a list value
-        # of their own. A group's rows depend on its rank, so they're built
-        # again in each scenario.
-        def scenario! = (@built = {}).then { @pinned = PinnedKeys.new(@topology, slots, @picker, &method(:key_value)) }
-
-        # The masking near misses' also atoms, by atom (see Branches).
-        def masked = Branches.new(@parse.tree, @atoms, @pools.keys).masked(@topology.order) { build_group(it) }
-
-        def siblings = Siblings.new(@topology, @atoms, @pools.keys).tables
-
-        # The pools and the picker share these, so each asks once per value.
-        def probes = @probes ||= ValuePools.probes(@conn, @parse, @atoms, @schema)
-
-        # The scenario's first fixture; the rest go in spills. S1's take
-        # the near misses alone (see Plan#near_misses_alone), built in S1's
-        # turn so their rows are S1's. They aren't counted as dropped: S1's
-        # first fixture holds them already.
-        def fixtures(name, groups, ties, plan)
-          first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
-          rest += fill(plan.near_misses_alone, [], counted: false).reject(&:empty?) if name == :s1
-          first.tap { @spills[name] = rest unless rest.empty? }
-        end
-
-        def fill(groups, tie_rows, counted: true)
-          parts = Parts.new(@schema, @conn, @evaluated)
-          (groups.filter_map { retries.for(it) } + tie_rows.map { [[it]] }).each { parts.add(it) }
-          @dropped += parts.dropped if counted
-          parts.in_order(@topology.order)
-        end
-
-        def retries = @retries ||= Retries.new(@pools.keys) { build_group(it) }
-
-        # For each pooled keyset row comparison, groups whose row ties it on
-        # its leading columns (see Ties): a hit on the keyset's table and its
-        # ancestors, with the tie columns set. A tie that would set a join
-        # key or generated column, or break a CHECK, is left out.
-        def tie_groups
-          keysets = @atoms.values_at(*@pools.keys)
-          Ties.all(@conn, @parse, keysets, @schema).each_with_index.filter_map do |(table, set), n|
-            next unless Ties.allowed?(table, set, @topology, @checks, @schema)
-
-            build_group(Scenarios.group(TIE_KEY + n, @topology.ancestors(table)))&.then do |rows|
-              Ties.apply(rows, table, set, @schema)
-            end
-          end
-        end
-
-        # The group's rows, or nil when a near miss has no value. A group
-        # builds the same rows every time, and Parts tries a colliding
-        # group's retries against every fixture, so each is built once a
-        # build.
-        def build_group(group)
-          @built.fetch(group) do
-            rows = @topology.order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
-            @built[group] = (rows.freeze unless rows.include?(:skip))
-          end
-        end
-
-        def row(table, group)
-          pairs = @schema.columns(table).map { |col| [col.name, column_value(table, col, group)] }
-          return :skip if pairs.any? { |_, v| v == :skip }
-
-          pairs = identify(table, group, pairs.reject { |_, v| v == :omit }).to_h
-          ArenaRunner::FixtureRow.new(table:, columns: pairs.keys, values: pairs.values,
-                                      deferred: pairs.keys & @topology.cut_columns(table))
-        end
-
-        def column_value(table, col, group)
-          keyed = @topology.keyed?(table, col.name)
-          # An identity column a key class ties to another takes the key's
-          # value (the runner overrides the identity), or else its own.
-          return :omit if generated?(col, keyed)
-          return nil if @topology.null_cut?(table, col.name, group)
-
-          slot = @topology.slot(table, col.name)
-          atoms = slots.atoms(slot)
-          return nil if nulled?(group, col, keyed || atoms.any?)
-
-          bound_value(slot, @picker.satisfiable(atoms), group, table, col)
-        end
-
-        # The value of a column no rule above settles: an atom's, a key's,
-        # or a free one. An IS NULL atom on a nullable foreign key picks
-        # NULL for its whole key class, so a NOT NULL member, the parent key,
-        # skips the pick and takes the key's own value: only the child holds
-        # NULL.
-        def bound_value(slot, atoms, group, table, col)
-          picked = @pinned.value(slot, atoms, group, table, col.name) if atoms.any?
-          return picked unless picked.nil? && (atoms.empty? || !col.nullable)
-          return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
-
-          free_values.value(table, col, group.mode, apart: apart(table, group))
-        end
-
-        # What tells a cross group's other rows from the hit's: the parent
-        # a cross's foreign key doesn't point at gets values of its own, so
-        # a row reached through one foreign key differs from the hit's
-        # reached through another (a message's sender and its recipient).
-        # A pooled near miss's rows get values of their own too (in the
-        # columns the query reads, see FreeValues), so a projection that
-        # leaves out the atom's column (SELECT DISTINCT state ... WHERE
-        # admin) can't fold the near miss into the hit.
-        def apart(table, group) = (group.key if group.near || (group.cross && group.cross.table != table))
-
-        def free_values
-          @free_values ||= FreeValues.new(@schema, @topology, @checks, @values,
-                                          Reads.new(@parse, @schema.column_names), &method(:pooled?))
-        end
-
-        # Whether an atom some stored value satisfies fills the slot.
-        def pooled?(slot) = @picker.satisfiable(slots.atoms(slot)).any?
-
-        def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
-
-        def nulled?(group, col, constrained) = group.mode == :nulls && col.nullable && constrained
-
-        def slots = @slots ||= Slots.new(@topology, @pools, @schema)
-
-        # The key's value (see Group#key_for), one every column of the slot
-        # reads.
-        def key_value(slot, group, table, name)
-          columns = slots.columns(slot)
-          number = group.key_for(table, name, own: @topology.own_key?(table, name))
-          (0..).lazy.map { @values.shared_nth(columns, number + (AVOID_KEY * it)) }.find { !pooled_value?(it) }
-        end
-
-        # A group's own key steers clear of every value a pool holds: the
-        # query's literals and the values beside them. Else whether a
-        # group's own key happens to be a list's value (a.id IN (1, 4, 10)
-        # holds the first group's key, IN (7, 10, 16) doesn't) would decide
-        # whether it takes its own key or a list value, and so which groups
-        # collide, and dropped, the spills and the fixture loads would carry
-        # the list's values out of the enclave (20261010-47). A clash moves
-        # the key by AVOID_KEY until it's clear.
-        def pooled_value?(value)
-          @pooled_values ||= @pools.values.flat_map { [*it.satisfying, *it.failing, *it.boundaries] }.to_set(&:to_s)
-          @pooled_values.include?(value.to_s)
-        end
-
-        # Unique columns get a value per distinct row: rows alike in every
-        # other column, and in copy, are the same row.
-        def identify(table, group, pairs)
-          identity = [table, pairs.reject { |_, v| v.equal?(UNIQUE) }, group.copy]
-          n = (@identities[identity] ||= @identities.size + 1)
-          pairs.map do |name, v|
-            v.equal?(UNIQUE) ? [name, @values.nth(@schema.column(table, name), n, table:)] : [name, v]
-          end
-        end
       end
     end
   end
