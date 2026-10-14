@@ -38,41 +38,23 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ## Foundations.
 
-### 20260922-6. LLM client. Done, see BACKLOG-COMPLETE.md.
-
 ## Trust boundary.
-
-### 20260922-12. Inbound check for step 10 inserts. Done, see BACKLOG-COMPLETE.md.
 
 ## Input.
 
-### 20260922-15. Canonical plan form. Done, see BACKLOG-COMPLETE.md.
-
 ## Production inventory.
-
-### 20260922-16. Production inventory. Done, see BACKLOG-COMPLETE.md.
 
 ## Schema, statistics, and classification.
 
-### 20260922-24. 3h clock anchoring. Done, see BACKLOG-COMPLETE.md.
-
 ## Run server.
-
-### 20260922-66. Run teardown. Done, see BACKLOG-COMPLETE.md.
 
 ## Added later.
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-16. Harness loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260923-18. Runtime checker test loose ends. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260923-21. index-from-query loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-24. index-from-plan loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-30. Predicate atom loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -84,41 +66,21 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ### 20260923-57. Rewrite candidate check loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-3. Intake loose ends. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-9. Load-order loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260924-10. index-rank loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-24. Production inventory loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-25. redact loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-28. literals loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260924-29. Run server check loose ends. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260924-31. Keyset pagination with row comparisons. Done, see BACKLOG-COMPLETE.md.
-
-### 20260929-16. PgBouncer support: minor findings. Done, see BACKLOG-COMPLETE.md.
-
-### 20260929-22. The subset dump takes a query table in a system schema. Done, see BACKLOG-COMPLETE.md.
-
-### 20260930-13. Run server check shadowing: one untested qualification, and operators. Done, see BACKLOG-COMPLETE.md.
-
-### 20260930-14. Unqualified catalog names elsewhere in the enclave. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-19. Record the rewrite stages in the burndown. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-1. Rule generator: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-2. Running the rules: minor findings. Done, see BACKLOG-COMPLETE.md.
-
-### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data. Done, see BACKLOG-COMPLETE.md.
-
-### 20261002-6. 6c rule: `shared_scan_cte`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-41. Support DML statements.
 
@@ -237,33 +199,15 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-59. Keyset tie rows are dropped on realistic schemas. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260927-17. Covering-check and volatility-list gaps. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-5. An LLM error reads the reason out of a JSON array body. Done, see BACKLOG-COMPLETE.md.
-
-### 20261001-10. The full schema dump finds the schemas its objects reference, and takes overrides. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-7. Intake unreadable causes: minor findings. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261003-3. Report payload: minor findings. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-5. Report payload: what the index accountability table still lacks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-19. Name the tables in an `fk_cycle` refusal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-28. `shared_scan_cte`: widenings. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-30. Finish 20261003-23: a skipped group's cut-column key class. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-31. Step 9: two false passes on ordinary joins. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-39. rewrite-test: more variety in self-references and repeated parents. Done, see BACKLOG-COMPLETE.md.
 
@@ -286,19 +230,7 @@ These are minor findings from building and reviewing 20261003-40:
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-44. `existence_in_flip`: loose ends from 20261003-29. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-2. Step 9 re-probes CHECK constraints thousands of times. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-3. Tighten 20261003-38's SQLSTATE filtering. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-6. Pin the type part of rewrite-test's probe cache key. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261004-8. rewrite-test gaps found by the FK-cycle review. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-9. Report `polymorphic_key_copy` disproofs in rewrite-test and counterexamples as rule bugs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
@@ -326,16 +258,6 @@ These are minor findings from building and reviewing 20261003-40:
 - **Decided by the user (2026-10-09):** still holding; the user will send the profile later.
 - **Status:** todo (item 1 needs the user)
 
-### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-77. Index burndown loose ends from 20261001-20. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-80. Indexes table: which source proposed each built index. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-88. ambiguous_user_schema: minors and the operator's own schema. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-94. Result comparison: loose ends of the edge check.
@@ -357,73 +279,11 @@ From the reviews of 20260924-7.
 
 ### 20261004-95. Insert check: clock words, loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-2. Structured columns: minors from 20261004-91. Done, see BACKLOG-COMPLETE.md.
-
-### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values. Done, see BACKLOG-COMPLETE.md.
-
-### 20261006-6. Clock words and defaults: minors from 20261004-95. Done, see BACKLOG-COMPLETE.md.
-
-### 20261006-10. Stats trimming: minor findings from 20261001-7. Done, see BACKLOG-COMPLETE.md.
-
-### 20261006-17. Clock binding: overloaded user functions. Done, see BACKLOG-COMPLETE.md.
-
-### 20261006-28. Stats trimming: join aliases with column lists, and a boundary test. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification). Done, see BACKLOG-COMPLETE.md.
-
-### 20261007-38. `not_in_to_not_exists`: extensions. Done, see BACKLOG-COMPLETE.md.
-
-### 20261007-47. `or_to_union`: extensions. Done, see BACKLOG-COMPLETE.md.
-
-### 20261007-51. Equality: refuse a half-exact `=` too. Done, see BACKLOG-COMPLETE.md.
-
-### 20261007-58. Equality: planted operators on domains and same-signature shadows. Done, see BACKLOG-COMPLETE.md.
-
-### 20261007-64. Intake unreadable reasons: new causes, and one shared list. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-4. `not_in_to_not_exists`: support `NOT IN` outside the top-level WHERE. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-5. `not_in_to_not_exists`: support `<> ALL`. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-7. `or_to_union`: support a query with GROUP BY. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-8. `or_to_union`: support outer joins. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-9. `or_to_union`: support a bare `*` in the select list. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-18. `or_to_union` composite keys: minors from 20261008-6. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-20. `not_in_to_not_exists` over a UNION: minors from 20261008-3. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-22. Live EXPLAIN JSON parses with JSON's default nesting limit. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-23. index-from-plan booleans and MCV coverage: minors from 20260923-24. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-25. index-from-query join reduction and pattern keys: minors from 20260923-21. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-26. NATURAL JOIN marker: minors from 20260923-30. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-28. Boolean folding in index-dedupe: minors from 20260923-36. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-29. Rewrite candidate relation check: minors from 20260923-57. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-30. Production inventory: minors from 20260924-24, and silent packet drops. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-31. Rewrite candidates: a regclass literal reveals that a relation exists. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-32. Rewrite candidates: whether a function, type, collation, or operator exists is visible. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-33. Load orders: minors from 20260924-9, and skipping a redundant rotated run. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-34. Statistics a non-owner production role can't see: extended statistics, expression indexes, and row security. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-41. Candidate name lockdown: keyword operators and the failure for a pinned name. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-47. Scenario loading: minors from 20260927-18. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261008-50. Orphan index-build notes: advice that's moot after teardown. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-51. `quaack start --database`: name production's database. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-53. redact: the rest of 20260924-25.
 
@@ -484,8 +344,6 @@ The review of 20261008-55 found two gaps:
 
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-63. Report: calls, wait time, and tokens for each LLM model. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
 
 1. **A dead guard (second review of 20261008-61).** The `|| select[:larg]` guard in `InnerCuts.sole_table` never fires, since a set-operation node has no `from_clause`. Remove it.
@@ -514,10 +372,6 @@ Carried from 20260927-28. As of 2026-10-08 the lockfile has pg_query 6.2.3 and t
 - **Design:** none.
 - **Status:** blocked
 
-### 20261009-28. Hidden-statistics caveat: its Details link lands on a section that doesn't explain it. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-29. Timed-out caveats: their Details link lands on a section that doesn't explain them. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261009-32. Report: reword the fate of a rewrite that regressed, and drop its correctness caution. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261009-33. Ranked rewrites carry the "unproven" caution: find out why, and fix the cause.
@@ -540,22 +394,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Decided by the user (2026-10-09):** the caution should warn only about untested atoms in the part the rewrite changed. That's task 20261009-40. This task builds the diagnostic (why an atom stayed vacuous) first; the cause of the untested atoms in the user's run is still unknown and waits on that diagnostic.
 - **Landed so far:** 2026-10-09 (task/20261009-33): the diagnostic only. Each tested rewrite's `rewrite_test` message and `rewrite_tested_<n>` entry now carry `s1_load_rule` (nil, or a rule from `Protocol::VacuityDiagnostic::LOAD_RULES`) and `s1_rows` (the original's row count on S1). Next: a run on a build with it tells whether S1 failed to load or loaded and returned nothing; then fix the cause. The caution's scope is 20261009-40. Minor finding: 20261009-46.
 - **Status:** todo (waits on a run with the diagnostic)
-
-### 20261009-34. Report: sticky collapse bar, in pale rose, for the not-ranked and index-ideas sections. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-35. Ranking: set each kind's heading apart from its rows. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-38. Report: drop the "Tried for" column from "Indexes QUAACK thought of that you already have". Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-41. Burndown funnel: the top band is a rectangle, not a triangle. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-42. Burndown: explain "set aside", drop "came in", no gap between bands, shorter hovers. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-57. Redaction re-check: a jsonb `?` operator in a partial index fails the whole negative result. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-58. Redaction re-check for the other DDL fields that leave the enclave. Done, see BACKLOG-COMPLETE.md.
-
-### 20261009-63. Unchanged atoms: an added constant conjunct isn't a new atom. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261010-4. rewrite-test variety: a unique self-FK, and the cases the review didn't check.
 
