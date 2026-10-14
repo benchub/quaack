@@ -1093,7 +1093,12 @@ Measured overnight, 2026-10-13. The setup was the spike's Canvas corpus on the s
 
 Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's schema while ScenarioTests runs out of time there (20261011-13). That ends with 20261012-4. Once the cap is chosen, build it test first in `Fuzz::StopRule` (`from_env`'s production rule gets a cap), and update DESIGN.md's stop rule. Measure the Canvas and hard corpora before and after, for kills and time per rewrite.
 
-**Since 20261012-25 (2026-10-13), the numbers above are stale.** The measurement ran on `main` before 20261012-25, when dead rows from rolled-back trials piled up in the arena's tables for the whole run. So later rewrites in a run ran slower, and some of the "load" swing above was probably that bloat: main ran 456–621 trials/s on fresh databases and 290/s on reused ones. 20261012-25 raised the rate on passes about 2.5× on the hard corpus and 8–25× on the LLM replies, so the slowest kill seen (8,227 trials) now takes about 5 s, not 40. Plans no longer change as the tables bloat, which may also change how often new signatures arrive. Re-measure Canvas at production's rule before choosing the cap; the answer may now be a smaller cap, or the rule may stop on its own more often.
+**Re-measured after 20261012-25 (2026-10-13).** The numbers above ran on `main` before 20261012-25, when dead rows from rolled-back trials piled up in the arena's tables for the whole run, so part of the "load" swing above was that bloat. The same corpus, run again on `main` after 20261012-25 in two shards with no other load, is in `scratch/measure-canvas-post25/` in the main checkout: `results-post25-canvas.jsonl` holds the results, and `compare.rb` sets them beside the run above.
+
+- **Kills:** 32 of 34 wrong rewrites, up from 31: q16d's 30 s floor now covers the 3,930 trials its kill needs. Every kill came within 7.4 s and 3,930 trials, most within 2 s. The two misses (q05c, q07d) are the same as before, and no sound rewrite was disproved.
+- **Sound rewrites still don't stop.** Fuzz on a pass now runs 325–1,730 trials/s, 3–21 times the rates above, but the faster trials find new signatures faster, so the rule converges no sooner. 8 of 28 ran fuzz to the 300 s deadline (before: 9) and never reached enumerate, after 174,000–334,000 trials each, 20–40 times the slowest kill seen in any corpus (8,227 trials). The set moved: q05b and q07a now stop (70 s and 87 s), while q01a and q16b now run to the deadline. 12 stopped at the 30 s floor, and the median time in fuzz fell from 55 s to 40 s.
+
+So the cap is still needed, and 60 s still fits: at the slowest pass rate seen here (q09a, 325 trials/s), 60 s is about 20,000 trials, 2.4 times the slowest kill seen. Option 3's 10,000-trial floor would have changed one rewrite here (q09a's floor ended at 9,781 trials), and it guards a loaded server.
 
 - **Depends on:** None.
 - **Came from:** The overnight measurement, 2026-10-13.
@@ -1149,5 +1154,17 @@ Add a spec, test first against that mutant: a session over two footprint tables 
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-25, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-45. Enumerate's Value classes bullet: say the generated-column exception once, and qualify the key fallback's "fresh value".
+
+From the review of 20261012-40, 2026-10-13 (minor). Wording only; the code is right.
+
+1. **The generated-column exception is said twice.** DESIGN.md's enumerate Value classes bullet now says "unless the column is generated" in its first sentence, and "A generated column gets no classes even when the queries read it" further down. Keep one: the later sentence can begin "Postgres computes a generated column from the rest of the row…".
+2. **The key fallback's "fresh value" isn't always fresh.** `Fuzz::Enumerate::Worlds#fixed` falls back to `@domains.unique(...)`, which for a pinned column cycles through the queries' constants, so the value can repeat one already in the world. The `Uniques` check then refuses the duplicate. The wording predates 20261012-40. Say what the fallback draws, or say "the next unique value", whichever matches the code.
+
+- **Depends on:** 20261012-40.
+- **Came from:** The review of 20261012-40, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
