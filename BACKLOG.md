@@ -25,6 +25,7 @@ The user, 2026-10-14: close this batch (bump, `rake full`, stamp) once 20261012-
 - 20261012-33: fuzz gives a comparison's solved values only to the qualified column's own table (`o.total / 3 > 2` no longer gives them to a joined table's `total`); an unqualified column, or one of a subquery, CTE or function, still matches by name. No change to any reported field.
 - 20261012-24: in fuzz's copies worlds, each copy keeps the first row's foreign-key values, so a copies world on a child table loads. Before, the copies took the first row's own key values as their foreign key, and the world failed to load. No change to any reported field.
 - 20261012-25: fuzz empties the footprint's tables with `TRUNCATE` at the start of each session transaction, after dropping the foreign keys that point into them from outside the footprint, all inside the rolled-back transaction. Rows from rolled-back trials then no longer pile up in the arena's files, which the run server's autovacuum never cleans, so the trial rate on passes is 2–25× higher. No change to any reported field.
+- 20261012-30: enumerate gives a key column the queries compare with a constant (`id > 100`, keyset's `id > $1`, `IN`, `= ANY`) the queries' constants and their neighbours first, then its key values, including a primary key a child's foreign key points at, which got none before. A repeated primary-key value gets a fresh one, so the key stays unique. No change to any reported field.
 
 ## How this file works.
 
@@ -892,16 +893,7 @@ The replay example 20261012-15 added, that no rewrite outside a run's `outcome.w
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-30. enumerate: a primary key the queries read gets only a few key classes.
-
-From the build of 20261012-3. In `Fuzz::Enumerate::Kinds` (`enclave/lib/quaack/enclave/fuzz/enumerate/kinds.rb`), a key column gets the first three values of its key class and the first two of the shared key pool (`KEY_CLASS`, `KEYS`), even when the queries compare it with a constant, as in `id > 100` or keyset pagination's `id > $1`. So the queries' constants and their neighbours, which a read column gets first, may never be a key's class, and enumerate can't put a row on each side of the boundary. Fuzz's random worlds cover some of this.
-
-Check it on a query that reads its key with a range (such as keyset pagination over `id`) against a rewrite that moves the boundary by one. If enumerate misses it, give a key column the queries compare with a constant its read classes too (the constants and their neighbours first), while keeping the key unique in a world. Measure on the hard corpus: no false disproofs, and the bound w on passes before and after.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261012-3, 2026-10-13.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-30. enumerate: a primary key the queries read gets only a few key classes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-31. enumerate's pass sentence at w = 1.
 
@@ -1002,5 +994,27 @@ From the review of 20261012-40, 2026-10-13 (minor). Wording only; the code is ri
 
 - **Depends on:** 20261012-40.
 - **Came from:** The review of 20261012-40, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-46. enumerate: a key compared with a constant lowers the bound on keyset pages.
+
+From the review of 20261012-30, 2026-10-14 (minor). Since 20261012-30, a key column the queries compare with a constant gets its read classes and then its key classes, so `orders.id` in a keyset page goes from 1 kind to 9. Enumerate then covers fewer rows in its 30 s: on `o.id > 100 AND o.status = 'paid' AND i.qty > 0 ORDER BY o.id, i.id LIMIT 10` against a sound rewrite, `main` before 20261012-30 reached w=2 at 3,000 and at 10,000 worlds, and after it only w=1 even at 10,000. The plain keyset page still reaches w=2. A lower bound is a weaker claim, not a wrong one, and under 20261012-31's rule the report then falls back to fuzz's sentence on a join.
+
+Give a compared key fewer classes without losing the boundary catch, test first: for example, its read classes plus the shared keys only (dropping the key-class values), or count the key-class values as cost-2 changes, so the base-choice kinds stay small. Check that 20261012-30's probe pairs are still disproved, and measure the bound w on its sound keyset pairs and the hard corpus before and after (no false disproofs).
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-30, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-47. enumerate's primary-key freshening: test three rows of one kind, and keep fresh values out of later rows.
+
+From the review of 20261012-30, 2026-10-14 (minor). `Fuzz::Enumerate::Worlds` gives a `:pk` value a row's kind repeats a fresh value (20261012-30). Two gaps:
+1. **Under-tested.** The spec covers only two rows of one kind, so a mutant that gives every repeat the same fresh value survives. A world with three same-kind rows would then get two equal fresh values, and `Uniques` would drop rows. The code is right today. Add a spec with three or more same-kind rows, test first against that mutant.
+2. **A fresh value isn't added to the taken set.** A later row whose kind value equals an earlier row's fresh value (`100001+n`, or a CHECK-pinned constant) could repeat it. Rare, but add the fresh value to `taken`, test first.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-30, 2026-10-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo

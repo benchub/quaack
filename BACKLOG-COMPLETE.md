@@ -11375,3 +11375,30 @@ From the review of 20261012-39, 2026-10-13 (minor). Wording only; the code is ri
 **Review.** Landable, no blocking findings. Each new sentence was checked against the code: `Plan#entry` returns nil for any `attgenerated` column (STORED or VIRTUAL), and the fallback fires only when the row count passes that column's key values. Two minor findings were filed as 20261012-45: the generated-column exception is now said twice, and the fallback's value isn't always fresh for a pinned column (that predates this task).
 
 **Checks.** RuboCop clean, `transform_docs_spec` passed, and the per-commit check had only the four accepted failures.
+
+### 20261012-30. enumerate: a primary key the queries read gets only a few key classes.
+
+From the build of 20261012-3. In `Fuzz::Enumerate::Kinds` (`enclave/lib/quaack/enclave/fuzz/enumerate/kinds.rb`), a key column gets the first three values of its key class and the first two of the shared key pool (`KEY_CLASS`, `KEYS`), even when the queries compare it with a constant, as in `id > 100` or keyset pagination's `id > $1`. So the queries' constants and their neighbours, which a read column gets first, may never be a key's class, and enumerate can't put a row on each side of the boundary. Fuzz's random worlds cover some of this.
+
+Check it on a query that reads its key with a range (such as keyset pagination over `id`) against a rewrite that moves the boundary by one. If enumerate misses it, give a key column the queries compare with a constant its read classes too (the constants and their neighbours first), while keeping the key unique in a world. Measure on the hard corpus: no false disproofs, and the bound w on passes before and after.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-3, 2026-10-13.
+- **Design:** rewrite-test.
+- **Status:** done (merged 2026-10-14, 1d22db62)
+
+**What the build found.** The task was real, but the path differs from what the entry guessed. A single-table `id > 100` plans `id` as `:read`, so its constants came first and enumerate already caught a boundary move there. When the key is joined to a child's foreign key, the plan makes it `:pk`: Kinds gave it no classes, and Worlds gave the nth row the nth key-class value, so only the first 4 values could ever appear. `:key` columns had the same gap.
+
+**What landed.**
+- `Domains#compared?` says whether a query tests the column against a constant (a pooled atom, such as `id > 100`, `id > $1`, `IN (...)`, `= ANY(...)`), per table.
+- In `Kinds`, a `:key` or `:pk` column that's compared gets its read classes first (the constants and their neighbours), then its key classes. A `:pk` that isn't compared still gets none.
+- In `Worlds`, a `:pk` value repeated by a row's kind gets a fresh value before foreign keys point at it, so the key stays unique.
+- DESIGN.md's Value classes bullet and the `Kinds` and `Worlds` comments say so.
+
+**Measurement.**
+- Probe pairs, enumerate only (fuzz at 1 trial, 1000 worlds): `o.id > 100` vs `> 101` with `qty BETWEEN 5 AND 50` passed on `main` (missed, w=2) and is disproved in 12 worlds; the plain join version went from 131 worlds to 11. Sound keyset pairs still pass, at w=1 where `main` reached w=2.
+- Hard corpus (110 items, 60 s deadline): the same counts before and after at production settings (80 kills, 4 misses, 0 false disproofs) and at `QUAACKS_FUZZ_TRIALS=1` (41 kills, 13 by enumerate). No corpus item compares a key with a constant.
+
+**Review.** Landable, no blocking findings. The new specs failed on their assertions against `main`'s lib files (`passed, w=2`; `nil` for `"101"`; `"10"` for `"26"`). Five of six mutants went red. Every world of four realistic schemas loaded (orders/items keyset, self-referencing, composite key, a three-table chain), and seven sound pairs passed with no false disproof. `compared?` is per table and handles bind parameters, `IN`, `= ANY`, CTEs and qualified columns. Nothing new crosses the trust boundary. Minor findings filed: 20261012-46 (the bound drops on keyset pages, since a compared key goes from 1 kind to 9) and 20261012-47 (the freshening's spec covers only two rows of one kind, and a fresh value isn't added to the taken set).
+
+**Checks.** The per-commit check had the four accepted failures, plus `spec/test_postgres_spec.rb:799`, which passed when rerun alone.
