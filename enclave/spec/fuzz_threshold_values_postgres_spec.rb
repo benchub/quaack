@@ -56,16 +56,25 @@ RSpec.describe "Quaack::Enclave::Fuzz's values that solve a comparison's boundar
   end
 
   describe "a column's base values" do
-    def values(original, candidate)
+    def values(original, candidate) = with_nulls(original, candidate).compact
+
+    def with_nulls(original, candidate)
       queries = [select + original, select + candidate]
       footprint = fuzz.send(:footprint, queries)
       catalog = Quaack::Enclave::Fuzz::Catalog.new(conn, footprint)
-      Quaack::Enclave::Fuzz::Domains.new(conn, catalog, queries).values(footprint.first, "points_possible").compact
+      Quaack::Enclave::Fuzz::Domains.new(conn, catalog, queries).values(footprint.first, "points_possible")
     end
 
     it "puts the solutions and their neighbours right after the column's first value" do
       expect(values("100 / a.points_possible > 2", "100 / a.points_possible > 3").first(10))
         .to eq(%w[2 50 33.3333333333333333 34 33 51 49 50.000001 49.999999 34.3333333333333333])
+    end
+
+    it "puts them right after the column's first value that isn't NULL, when its values start with NULL" do
+      got = with_nulls("(a.points_possible IS NULL OR 100 / a.points_possible > 2)",
+                       "(a.points_possible IS NULL OR 100 / a.points_possible > 3)")
+
+      expect(got.first(6)).to match([nil, a_kind_of(String), "50", "33.3333333333333333", "34", "33"])
     end
 
     it "writes them as the column's type writes them" do
