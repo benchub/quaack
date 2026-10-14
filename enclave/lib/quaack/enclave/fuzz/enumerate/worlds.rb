@@ -23,13 +23,14 @@ module Quaack
         # each multiset of kinds per table whose costs add up to w - n, and
         # each way to point each row's foreign keys at a row of the parent
         # table in the world, or NULL where the key allows it. A row's other
-        # planned columns hold one fixed value each: NULL in a cut key, the
-        # nth of its key class's values and shared keys in a key the plan
-        # fills (:pk), a fresh value in a unique one, and an ordinary one
-        # in a required one. A row whose kind repeats a unique key's values
-        # already in the world gets a fresh value in one of the key's
-        # columns instead, as the fuzz search's do (Generator::Uniques), and
-        # is left out when none can take one.
+        # planned columns hold one fixed value each: NULL in a cut key; the
+        # nth of its key class's values and shared keys in a key class's
+        # single-column unique key (:pk), or a fresh value when the table
+        # has more rows than those; a fresh value in a unique one; and an
+        # ordinary one in a required one. A row whose kind repeats a unique
+        # key's values already in the world gets a fresh value in one of the
+        # key's columns instead, as the fuzz search's do
+        # (Generator::Uniques), and is left out when none can take one.
         class Worlds # rubocop:disable Metrics/ClassLength -- the enumeration and its bound, which must agree
           MAX_PER_TABLE = 4
           MAX_COST = 2

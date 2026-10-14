@@ -20,13 +20,13 @@ module Quaack
         # own values (the queries' constants, their neighbours, ValuePools'
         # pools), the queries' first, then two typical ones, at most DOMAIN;
         # a key column's first three key-class values and first two shared
-        # keys; and NULL in either when the column allows it. The kinds are
-        # the base-choice kinds first, a base row (each column's first
-        # non-NULL class, which the pools put first because it passes the
-        # queries' tests) and then each single-column change of it, then
-        # the full product of the columns' classes when it's at most
-        # MAX_KINDS, else a pairwise covering array of it: every pair of
-        # two columns' classes in some kind.
+        # keys; and NULL in either when the column allows it or has no other
+        # class. The kinds are the base-choice kinds first, a base row (each
+        # column's first non-NULL class, which the pools put first because
+        # it passes the queries' tests) and then each single-column change
+        # of it, then the full product of the columns' classes when it's at
+        # most MAX_KINDS, else a pairwise covering array of it: every pair
+        # of two columns' classes in some kind.
         #
         # Trust boundary: kinds hold real values, so they stay here.
         class Kinds
