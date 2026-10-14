@@ -81,11 +81,25 @@ RSpec.describe Quaack::Enclave::Fuzz::StopRule do
   end
 
   describe ".from_env" do
-    it "is the user's rule by default: a 30-second floor on the monotonic clock, with no cap of its own" do
+    it "is the user's rule by default: a 30-second floor and a 60-second cap, on the monotonic clock" do
       rule = described_class.from_env({})
       expect(rule.floor).to eq(30)
-      expect(rule.cap).to be_nil
+      expect(rule.cap).to eq(60)
       expect(rule.unit).to eq(:seconds)
+    end
+
+    it "by default, stops at 60 seconds even while new signatures keep coming, and not before" do
+      stub_const("#{described_class}::MONOTONIC", clock)
+      rule = described_class.from_env({})
+      59.times do |i|
+        now[0] = i + 1.0
+        rule.observe(i)
+      end
+      now[0] = 59.9
+      rule.observe(:still_new)
+      expect(rule.stop?).to be(false)
+      now[0] = 60.0
+      expect(rule.stop?).to be(true)
     end
 
     it "counts trials when QUAACKS_FUZZ_TRIALS names a floor, for specs" do
