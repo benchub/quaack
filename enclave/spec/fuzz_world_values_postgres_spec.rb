@@ -183,6 +183,33 @@ RSpec.describe "Quaack::Enclave::Fuzz's value classes and copies" do
       expect(outcome).to have_attributes(verdict: :disproved, sizes: [["w", "notes", 5]])
     end
 
+    # A world whose ordinary draw gives the copies' parent no rows still
+    # gives it one, so the copies have a row to point at and load.
+    it "gives the table the copies' foreign key points to a row when its draw gave none" do
+      table("CREATE TABLE w.users (id bigint PRIMARY KEY, name text NOT NULL); " \
+            "CREATE TABLE w.orders (id bigint PRIMARY KEY, user_id bigint NOT NULL REFERENCES w.users)")
+      sql = "SELECT u.id FROM w.users u WHERE (SELECT count(*) FROM w.orders o WHERE o.user_id = u.id) > 20"
+      fuzz = Quaack::Enclave::Fuzz
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      generator = fuzz::Generator.new(catalog, fuzz::Domains.new(conn, catalog, [sql]))
+      users, orders = %w[users orders].map { |name| generator.order.find { it.name == name } }
+      config = fuzz::Generator::Config.new(
+        rows: { users => 0, orders => 0 }, key_pool: 2, null_rate: 0.0, literal_bias: 0.8, dup_rate: 0.0,
+        boundary_rate: 0.0, world_rate: 0.0, copies: fuzz::Generator::Copies.new(table: orders, count: 21, vary: 0.0)
+      )
+      allow(fuzz::Generator).to receive(:config).and_return(config)
+
+      rows = generator.world(Random.new(1))
+      rows.each do |row|
+        columns = row.cells.keys.map { conn.quote_ident(it) }.join(", ")
+        values = row.cells.values.map { it.nil? ? "NULL" : conn.escape_literal(it) }.join(", ")
+        conn.exec("INSERT INTO #{row.table} (#{columns}) VALUES (#{values})")
+      end
+
+      expect(conn.exec("SELECT count(*) FROM w.users").getvalue(0, 0).to_i).to eq(1)
+      expect(conn.exec("SELECT count(*) FROM w.orders WHERE user_id IS NOT NULL").getvalue(0, 0).to_i).to eq(21)
+    end
+
     it "ignores a constant past 100" do
       table("CREATE TABLE w.notes (id bigint PRIMARY KEY, user_id bigint NOT NULL, unread boolean NOT NULL)")
 
