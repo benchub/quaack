@@ -374,6 +374,31 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                "value classes (rewrite-test)")
     end
 
+    # Task 20261012-28: the progress line says what the rewrite's section
+    # in the report says.
+    it "keeps fuzz's sentence, not enumerate's, when rewrite-test's scenarios disproved the rewrite" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => "s3", "rule" => "multiset",
+                   "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to eq("#{name}: Survived 40 random small databases built around the query's values (rewrite-test)")
+    end
+
+    it "keeps enumerate's sentence when a scenario ended without comparing, as the report does" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "original_failed",
+                   "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows over its " \
+               "value classes (rewrite-test)")
+    end
+
     it "says nothing of random small databases when the search compared none" do
       entries.merge!(rewrite(1, rewrite_survived: false))
       tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
