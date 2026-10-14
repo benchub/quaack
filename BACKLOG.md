@@ -1018,9 +1018,10 @@ From the build and review of 20261012-11 (minor).
 - **`VacuityGuard::Compared#compare` swallows a foreign cancel.** It rescues every `ArenaRunner::Error`, including a cancel QUAACK didn't send (`ArenaRunner::Cancel.foreign?`), which everywhere else ends the step. Re-raise it, test first. This predates 20261012-11.
 - **One report-payload check is green on `main`.** The `original_failed` case in report-payload's "isn't a rule bug" list passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
 - **`ScenarioTests`' `shows?` error handling is untested** (from the review of 20261012-22; `enclave/lib/quaack/enclave/scenario_tests.rb`, `shows?`). Two mutants survive: a runner error counted as "shows a nonzero row", and a foreign cancel swallowed. It's barely reachable, since the original has just run fine on that fixture. Add a spy-runner spec that fails only the original-alone load: once with `query_failed` (expect `original_failed`), once with a foreign cancel (expect it raised).
+- **A driver spec's `original_failed` message isn't the enclave's** (from the review of 20261012-37, minor). `driver/spec/pipeline_progress_spec.rb`'s failure-rule example sends every rule with scenario `"s3"`, but the enclave's `ORIGINAL_FAILED` result has a nil scenario. `search_note` never reads it, so it does no harm. Send nil for `original_failed`.
 
 - **Depends on:** None.
-- **Came from:** The build and review of 20261012-11, 2026-10-12, and the review of 20261012-22.
+- **Came from:** The build and review of 20261012-11, 2026-10-12, the review of 20261012-22, and the review of 20261012-37.
 - **Design:** rewrite-test, vacuity-guard.
 - **Status:** todo
 
@@ -1144,21 +1145,6 @@ Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's s
 - **Came from:** The overnight measurement, 2026-10-13.
 - **Design:** rewrite-test.
 - **Status:** todo (waits on the user's answer)
-
-### 20261012-37. Enumerate's pass sentence: minors from the review of 20261012-28.
-
-From the review of 20261012-28, 2026-10-13 (minor). `search_note` (`driver/lib/quaack/driver/pipeline.rb`) shows fuzz's sentence when a `rewrite_test` message has `passed` false and a mismatch rule (`Report::Words::MISMATCHES`), and enumerate's otherwise. The report's `fuzz_line` (`report/rewrites.rb`) keeps fuzz's sentence for a fate in `Accountability::OUTCOMES`' wrong-results column (`later_disproof?`).
-
-1. **The failure-rule guard covers one rule.** `pipeline_progress_spec.rb`'s `original_failed` example is the only one where `passed` is false without a mismatch. A mutant that shows fuzz's line for any `passed` false rule except `original_failed` survives, so a scenario that ended with `query_failed` or `statement_timeout` could show fuzz's line while the report keeps enumerate's. Add a second failure rule to the spec.
-2. **No spec pins that `not_better` keeps enumerate's sentence** in the report (`OUTCOMES` column 2). A mutant where `later_disproof?` is true for every fate but `ranked` survives. Realistic runs hit it. The gap was there under the old hand-kept list too.
-3. **Two hand-kept lists of mismatch rules.** The progress line agrees with the report only while the driver's `Report::Words::MISMATCHES` matches the enclave's `ResultComparator::MISMATCHES`. They match today, with 7 rules each, but nothing checks it. Add a root cross-gem spec that they agree, or derive one from a protocol constant.
-4. **DESIGN.md's wording is loose.** It says the later disproofs are "the fates its accountability table counts as wrong results". That set also holds fuzz's and enumerate's own disproofs, which aren't later and which `fuzz_line` skips first. Say "other than the searches' own".
-5. **Nit:** the `stub_const` spec in `report_spec.rb` writes the column as `1`, not `Accountability::WRONG`.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-28, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
 
 ### 20261012-38. A deadline while confirming a kill: minors from the review of 20261012-15.
 
