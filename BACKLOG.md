@@ -1145,15 +1145,6 @@ Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's s
 - **Design:** rewrite-test.
 - **Status:** todo (waits on the user's answer)
 
-### 20261012-36. DESIGN.md's enumerate value classes: a foreign key the plan cuts gets no classes.
-
-From the review of 20261012-27 (minor). DESIGN.md's enumerate section (Value classes) says a join column gets key classes when it "isn't its table's single-column unique key, nor a foreign key the plan fills from a parent row". That clause also covers a foreign key the plan cuts, but `Plan` gives such a column `:null` (`enclave/lib/quaack/enclave/fuzz/plan.rb`, about line 76) and `Kinds` gives it no classes. The paragraph's later "NULL in a foreign key the plan cuts" sentence is right. Add "nor one it cuts" to the clause, or reword it to name the `:key` entries directly.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-27, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-37. Enumerate's pass sentence: minors from the review of 20261012-28.
 
 From the review of 20261012-28, 2026-10-13 (minor). `search_note` (`driver/lib/quaack/driver/pipeline.rb`) shows fuzz's sentence when a `rewrite_test` message has `passed` false and a mismatch rule (`Report::Words::MISMATCHES`), and enumerate's otherwise. The report's `fuzz_line` (`report/rewrites.rb`) keeps fuzz's sentence for a fate in `Accountability::OUTCOMES`' wrong-results column (`later_disproof?`).
@@ -1182,15 +1173,20 @@ From the review of 20261012-15, 2026-10-13 (minor). A deadline that expires whil
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-39. DESIGN.md's fuzz session close and burndown wording: minors from the review of 20261012-34.
+### 20261012-39. DESIGN.md's fuzz session close, burndown and value-classes wording: minors from the reviews of 20261012-34 and -36.
 
-From the review of 20261012-34, 2026-10-13 (minor). Wording only; the code is right.
+From the reviews of 20261012-34 and 20261012-36, 2026-10-13 (minor). Wording only; the code is right.
 
 1. **The session's `ROLLBACK` can fail for more than a dead backend** (DESIGN.md's enumerate Verdicts bullet; `Fuzz::Search#close` in `enclave/lib/quaack/enclave/fuzz.rb`). The bullet says it fails "when the backend died", but `close` swallows any `PG::Error`. A cancelled `ROLLBACK` on a live connection leaves a transaction open, and ScenarioTests then fails the step with `already_in_transaction`, storing nothing. That's safe, and it's what `main` did before 20261012-34, but DESIGN.md doesn't say it. Say it fails on a dead backend or, rarely, a cancel, and that the step then ends in ScenarioTests.
 2. **"Leaves both outcomes as they were" holds only inside `Fuzz.search`.** At the step's level, a dead backend still ends the step when ScenarioTests next uses the connection (`PG::ConnectionBad`), so fuzz's pass is never recorded. Add a clause saying so.
 3. **An awkward phrase in the foreign-cancel paragraph** (DESIGN.md, about line 1334): "and nothing includes fuzz's and enumerate's burndown records". Write "and 'nothing' includes fuzz's and enumerate's burndown records", or reword.
+4. **Enumerate's Value classes bullet** (DESIGN.md, about line 1174), from 20261012-36's build and review:
+   - "NULL in either when the column allows it" is incomplete: `Kinds#classes` (`enclave/lib/quaack/enclave/fuzz/enumerate/kinds.rb`) also adds NULL when a column has no values (`|| values.empty?`).
+   - "Every other column, but a kept foreign key's, holds one fixed value" leaves out a column the plan gives no kind (`Fuzz::Generator::Plan#filler` returns nil for a nullable, non-unique column, or one with a default), which takes its default, and a volatile default such as `nextval` isn't one fixed value. Generated columns (skipped in `Plan#entry`) aren't mentioned either.
+   - "but a kept foreign key's" reads better as "except a kept foreign key's", and "fills" now means both a kept foreign key "the plan fills from a parent row" and a key "the plan fills" by position. Pick one word for each.
+   - "They're never fuzz's world values" has an unclear "They" (it means the classes).
 
 - **Depends on:** None.
-- **Came from:** The review of 20261012-34, 2026-10-13 (minor).
+- **Came from:** The reviews of 20261012-34 and 20261012-36, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
