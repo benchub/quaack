@@ -26,7 +26,9 @@ RSpec.describe "Quaack::Enclave::Fuzz's values that solve a comparison's boundar
     "the column times a constant, strict" => ["a.points_possible * 0.9 >= 45", "a.points_possible * 0.9 > 45"],
     "the column times a constant, a fraction off" => ["a.points_possible * 0.9 > 45",
                                                       "a.points_possible * 0.9 > 45.5"],
-    "an integer column under integer division" => ["100 / a.points > 2", "100 / a.points > 3"]
+    "an integer column under integer division" => ["100 / a.points > 2", "100 / a.points > 3"],
+    "an integer column cast to numeric" => ["a.points::numeric / 3 > 2", "a.points::numeric / 3 > 2.5"],
+    "an integer column under CAST" => ["CAST(a.points AS numeric) / 3 > 2", "CAST(a.points AS numeric) / 3 > 2.5"]
   }
 
   describe "the fuzz search" do
@@ -124,6 +126,17 @@ RSpec.describe "Quaack::Enclave::Fuzz's values that solve a comparison's boundar
                           "a.p * a.r > 3", "a.p || 'x' = 'yx'", "a.p * 2 > a.r", "a.p * 2 > 1e200000")
       expect(solved.values("p")).to eq([])
       expect(solved.values("q")).to eq(%w[4.5 5 4])
+    end
+
+    it "looks through a cast on the column, as :: or CAST, nested or not" do
+      solved = thresholds("a.p::numeric / 3 > 2", "CAST(a.p AS numeric) / 3 > 2.5", "a.p::int4::numeric * 2 = 9")
+      expect(solved.values("p")).to eq(%w[6 7.5 8 7 4.5 5 4])
+    end
+
+    it "skips nested arithmetic, IN lists and parameters without raising" do
+      solved = thresholds("(a.p * 2) + 3 > 9", "a.p * 2 IN (4, 6)", "a.p IN (4, 6)", "a.p * 2 > $1",
+                          "a.p * $1 > 4", "(a.p::numeric * 2) + 3 > 9")
+      expect(solved.values("p")).to eq([])
     end
   end
 end
