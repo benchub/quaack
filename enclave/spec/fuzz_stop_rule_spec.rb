@@ -96,7 +96,7 @@ RSpec.describe Quaack::Enclave::Fuzz::StopRule do
         rule.observe(i)
       end
       now[0] = 59.9
-      rule.observe(:new_at_59_9)
+      rule.observe(:still_new)
       expect(rule.stop?).to be(false)
       now[0] = 60.0
       expect(rule.stop?).to be(true)
