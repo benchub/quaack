@@ -26,8 +26,10 @@ module Quaack
         # planned columns hold one fixed value each: NULL in a cut key; the
         # nth of its key class's values and shared keys in a key class's
         # single-column unique key (:pk), or a fresh value when the table
-        # has more rows than those; a fresh value in a unique one; and an
-        # ordinary one in a required one. A row whose kind repeats a unique
+        # has more rows than those, unless the queries compare it with a
+        # constant, when its kind gives it one, and a fresh one when an
+        # earlier row of the table has it; a fresh value in a unique one;
+        # and an ordinary one in a required one. A row whose kind repeats a unique
         # key's values already in the world gets a fresh value in one of the
         # key's columns instead, as the fuzz search's do
         # (Generator::Uniques), and is left out when none can take one.
@@ -142,13 +144,28 @@ module Quaack
             fresh = 0
             @tables.flat_map do |table|
               keys = pk_values(table, choice.fetch(table).size)
-              choice.fetch(table).each_with_index.map { |kind, nth| row(table, kind, keys, nth, fresh += 1) }
+              rows = choice.fetch(table).each_with_index.map { |kind, nth| row(table, kind, keys, nth, fresh += 1) }
+              distinct(table, rows, fresh)
             end
           end
 
           def row(table, kind, keys, nth, fresh)
             cells = @plan.entries_for(table).to_h { [it.column, fixed(table, it, keys, nth, fresh)] }
             Generator::Row.new(table, cells.reject { |_, v| v == :none }.merge(@kinds[table].kinds[kind]))
+          end
+
+          # A kind gives a :pk the queries compare with a constant its value
+          # (Kinds), so a row can repeat an earlier row's. It gets a fresh
+          # one here, before a foreign key points at it.
+          def distinct(table, rows, fresh)
+            @plan.entries_for(table).select { it.kind == :pk }.each do |entry|
+              taken = Set.new
+              rows.each do |row|
+                row.cells[entry.column] = @domains.unique(table, entry.column, fresh += 1) unless
+                  taken.add?(row.cells[entry.column])
+              end
+            end
+            rows
           end
 
           # An entry's one value in the nth row, or :none for a column a kind

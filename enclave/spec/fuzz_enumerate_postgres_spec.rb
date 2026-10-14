@@ -114,6 +114,25 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(result.enumerate.bound).to be >= 1
   end
 
+  # Task 20261012-30: keyset pagination over orders.id, which the plan
+  # fixes by position since items' foreign key puts it in a key class. 101
+  # comes fifth among its key class's values, after the other constants, so
+  # no world of at most 4 orders held it. At one trial the fuzz search
+  # misses it.
+  it "disproves a keyset rewrite that moves a primary key's boundary by one" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.orders (id integer PRIMARY KEY);
+      CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders, qty integer);
+    SQL
+    page = "SELECT o.id, i.qty FROM s.orders o JOIN s.items i ON i.order_id = o.id " \
+           "WHERE o.id > %d AND i.qty BETWEEN 5 AND 50 ORDER BY o.id LIMIT 10"
+
+    result = both(format(page, 100), format(page, 101), worlds: 200, stop: fuzz::StopRule.trials(1))
+
+    expect(result.fuzz.verdict).to eq(:passed)
+    expect(result.enumerate).to have_attributes(verdict: :disproved, sizes: [["s", "items", 1], ["s", "orders", 1]])
+  end
+
   it "runs only after the fuzz search passes" do
     disproved = both("SELECT id FROM s.topics WHERE kind = 'news'", "SELECT id FROM s.topics")
     off = fuzz.search(conn, "SELECT id FROM s.topics WHERE kind = 'news'",
@@ -452,6 +471,27 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(four.map { |rows| rows.map { it.cells["id"] }.uniq.size }).to all(eq(4))
   end
 
+  # Task 20261012-30: two orders of the same kind share their id until one
+  # gets a fresh one, which must happen before an item points at it, or
+  # the item points at the other order and the world repeats another.
+  it "gives a row whose kind repeats a primary key a fresh one before a child points at it" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.orders (id integer PRIMARY KEY);
+      CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders);
+    SQL
+    sql = "SELECT o.id FROM s.orders o JOIN s.items i ON i.order_id = o.id WHERE o.id > 100"
+    catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+    domains = fuzz::Domains.new(conn, catalog, [sql])
+    plan = fuzz::Generator.new(catalog, domains).plan
+    worlds = described_class::Worlds.new(catalog, plan, domains, described_class::Kinds.new(catalog, plan, domains))
+    found = (0..3).flat_map { worlds.enum_for(:each, it).to_a }
+    databases = found.map { |rows| rows.map { [it.table.name, it.cells.sort] }.sort }
+    pointed = found.select { |rows| rows.size == 3 && rows.count { it.table.name == "orders" } == 2 }
+
+    expect(pointed).not_to be_empty
+    expect(databases.size).to eq(databases.uniq.size)
+  end
+
   describe "Kinds" do
     before do
       conn.exec("CREATE TABLE s.wide (id integer PRIMARY KEY, a integer, b integer, c integer, d integer)")
@@ -524,6 +564,49 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(domains.class_values(orders, "customer_id").size).to be > 3
       expect(described_class::Kinds.new(catalog, plan, domains).domains(orders)["customer_id"])
         .to eq(domains.class_values(orders, "customer_id").first(3) + %w[1 2] + [nil])
+    end
+
+    # Task 20261012-30: orders.id is in items.order_id's key class, so the
+    # plan fixes it by position (:pk), but the queries compare it with a
+    # constant, so it gets its own values first, as a read column does,
+    # then its key class's and the shared keys.
+    it "gives a primary key the queries compare with a constant its own values first, then its key classes" do
+      conn.exec(<<~SQL)
+        CREATE TABLE s.orders (id integer PRIMARY KEY);
+        CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders, qty integer);
+      SQL
+      sql = "SELECT o.id FROM s.orders o JOIN s.items i ON i.order_id = o.id WHERE o.id > 100 AND i.qty > 5"
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      domains = fuzz::Domains.new(conn, catalog, [sql])
+      plan = fuzz::Generator.new(catalog, domains).plan
+      orders = catalog.footprint.find { it.name == "orders" }
+      ids = described_class::Kinds.new(catalog, plan, domains).domains(orders).fetch("id", [])
+
+      expect(plan.kind(orders, "id")).to eq(:pk)
+      expect(ids.first).to eq(domains.values(orders, "id").compact.first)
+      expect(ids).to include("100", "101", *domains.class_values(orders, "id").first(3), "1", "2")
+      expect(ids).not_to include(nil)
+    end
+
+    # orders.customer_id is a key the plan draws (:key), and the queries
+    # compare it with 25, which isn't among its key class's first values.
+    it "gives a key column the queries compare with a constant its own values first, then its key classes" do
+      conn.exec(<<~SQL)
+        CREATE TABLE s.customers (id integer PRIMARY KEY, name text);
+        CREATE TABLE s.orders (id integer PRIMARY KEY, customer_id integer NOT NULL);
+      SQL
+      sql = "SELECT o.id FROM s.orders o JOIN s.customers c ON c.id = o.customer_id " \
+            "WHERE c.id IN (10, 20, 30, 40) AND o.customer_id > 25"
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      domains = fuzz::Domains.new(conn, catalog, [sql])
+      plan = fuzz::Generator.new(catalog, domains).plan
+      orders = catalog.footprint.find { it.name == "orders" }
+      keys = described_class::Kinds.new(catalog, plan, domains).domains(orders)["customer_id"]
+
+      expect(plan.kind(orders, "customer_id")).to eq(:key)
+      expect(domains.class_values(orders, "customer_id").first(3)).not_to include("25", "26")
+      expect(keys.first).to eq(domains.values(orders, "customer_id").compact.first)
+      expect(keys).to include("25", "26", *domains.class_values(orders, "customer_id").first(3), "1", "2")
     end
   end
 

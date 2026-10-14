@@ -9,7 +9,8 @@ module Quaack
         # Each footprint table's row kinds: what a row holds in the columns
         # the queries read and the key columns the plan draws (:key), each
         # from the column's value classes. A key the plan fixes by position
-        # (:pk) or fills from a parent row (:fk) is Worlds'.
+        # (:pk) is Worlds', unless the queries compare it with a constant,
+        # and so is one it fills from a parent row (:fk).
         #
         #   kinds = Kinds.new(catalog, plan, domains)
         #   kinds.for(table)       # => Table(kinds: [{ "status" => "shipped", ... }, ...], base: 4)
@@ -20,8 +21,10 @@ module Quaack
         # own values (the queries' constants, their neighbours, ValuePools'
         # pools), the queries' first, then two typical ones, at most DOMAIN;
         # a key column's first three key-class values and first two shared
-        # keys; and NULL in either when the column allows it or has no other
-        # class. The kinds are the base-choice kinds first, a base row (each
+        # keys, after its read classes when the queries compare it with a
+        # constant (Domains#compared?), as in id > 100, so a world can put a
+        # row on each side of the boundary; and NULL in either when the
+        # column allows it or has no other class. The kinds are the base-choice kinds first, a base row (each
         # column's first non-NULL class, which the pools put first because
         # it passes the queries' tests) and then each single-column change
         # of it, then the full product of the columns' classes when it's at
@@ -29,7 +32,7 @@ module Quaack
         # of two columns' classes in some kind.
         #
         # Trust boundary: kinds hold real values, so they stay here.
-        class Kinds
+        class Kinds # rubocop:disable Metrics/ClassLength -- the kinds and their covering array
           DOMAIN = 8
           MAX_KINDS = 64
           SEED = 7
@@ -73,6 +76,7 @@ module Quaack
             values = case entry.kind
                      when :read then read(table, entry.column)
                      when :key then key(table, entry.column)
+                     when :pk then @domains.compared?(table, entry.column) ? key(table, entry.column) : return
                      else return
                      end
             values += [nil] if @catalog.column(table, entry.column).nullable || values.empty?
@@ -85,7 +89,8 @@ module Quaack
           end
 
           def key(table, column)
-            (@domains.class_values(table, column).first(KEY_CLASS) +
+            own = @domains.compared?(table, column) ? read(table, column) : []
+            (own + @domains.class_values(table, column).first(KEY_CLASS) +
               @domains.base_keys(table, column).first(KEYS)).uniq
           end
 
