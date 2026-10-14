@@ -195,7 +195,7 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       result = within(Quaack::Enclave::Deadline.new(1, clock:)) { both(original, candidate) }
 
       expect(expired).to be(true)
-      expect(result).to eq(fuzz::Results.new(fuzz: fuzz.untested, enumerate: described_class.untested))
+      expect([result.fuzz, result.enumerate]).to eq([fuzz.untested(:unconfirmed), described_class.untested])
       expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
     end
   end
@@ -225,7 +225,7 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(unhurried.enumerate.bound).to be >= 1
     expect(expired).to be(true)
     expect(result.enumerate).to have_attributes(verdict: :untested, bound: nil)
-    expect(result).to eq(fuzz::Results.new(fuzz: fuzz.untested, enumerate: described_class.untested))
+    expect([result.fuzz, result.enumerate]).to eq([fuzz.untested(:unconfirmed), described_class.untested])
   end
 
   # Task 20261012-26: enumerate failing after a fuzz pass leaves that pass,

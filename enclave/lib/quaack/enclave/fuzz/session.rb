@@ -80,9 +80,25 @@ module Quaack
 
           plans, results, failed = queries
           signature = Signature.trial(*plans)
+          @last = results&.first
           return Trial.new(signature:, compared: false, rule: failed) unless results
 
           Trial.new(signature:, compared: true, rule: compare(*results))
+        end
+
+        # Whether sql, a loosened original (Coverage), gives a result on the
+        # world of the last trial both queries ran on that the official
+        # comparison calls a mismatch with the original's. Rows equal to the
+        # original's, a refusal, or a failure: false.
+        def differs?(sql)
+          @conn.exec("SAVEPOINT quaack_atoms")
+          loosened = @conn.exec(sql)
+          differs = !same?(@last, loosened) && !official(sql).nil?
+          @conn.exec("RELEASE SAVEPOINT quaack_atoms")
+          differs
+        rescue PG::Error, *UNJUDGED
+          @conn.exec("ROLLBACK TO SAVEPOINT quaack_atoms")
+          false
         end
 
         private
@@ -126,8 +142,8 @@ module Quaack
           nil
         end
 
-        def official
-          original, candidate = @queries
+        def official(candidate = @queries.last)
+          original = @queries.first
           verdict = ResultComparison.compare(ArenaRunner::Transaction.new(method(:run_query)), original:, candidate:)
           verdict.rule if !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
         end
@@ -142,6 +158,16 @@ module Quaack
           left = original.values
           right = candidate.values
           left == right || (left.size == right.size && sorted(left) == sorted(right))
+        end
+
+        # The same rows in the same order, or as multisets when the
+        # original's order doesn't count.
+        def same?(original, loosened)
+          return false unless original.nfields == loosened.nfields
+
+          left = original.values
+          right = loosened.values
+          left == right || (@mode == :multiset && left.size == right.size && sorted(left) == sorted(right))
         end
 
         def sorted(rows) = rows.sort_by { |row| row.map { it.nil? ? [0, ""] : [1, it] } }

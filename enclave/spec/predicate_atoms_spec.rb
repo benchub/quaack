@@ -379,6 +379,19 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
                                   ])
     end
 
+    # Task 20261012-4: the search's per-atom coverage loosens each atom both
+    # ways.
+    it "replaces it by FALSE too, in WHERE and in a simple CASE's WHEN" do
+      sql = "SELECT CASE o.status WHEN 5 THEN 1 WHEN 6 THEN 2 END FROM public.orders o WHERE NOT o.active"
+      parse = PgQuery.parse(sql)
+      falsified = described_class.extract(parse, column_names:).map { described_class.with_value(parse, it, false) }
+      expect(falsified).to eq(
+        ["SELECT CASE WHEN false THEN 1 WHEN o.status = 6 THEN 2 END FROM public.orders o WHERE NOT o.active",
+         "SELECT CASE WHEN o.status = 5 THEN 1 WHEN false THEN 2 END FROM public.orders o WHERE NOT o.active",
+         "SELECT CASE o.status WHEN 5 THEN 1 WHEN 6 THEN 2 END FROM public.orders o WHERE NOT false"]
+      )
+    end
+
     it "leaves the parse it was given alone" do
       parse = PgQuery.parse(where("o.status = 1"))
       described_class.with_true(parse, described_class.extract(parse, column_names:).first)

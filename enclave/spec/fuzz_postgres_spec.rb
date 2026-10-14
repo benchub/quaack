@@ -198,8 +198,19 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
   end
 
-  it "is untested when the queries read no table" do
-    expect(fuzz("SELECT 1", "SELECT 2")).to have_attributes(verdict: :untested, trials: 0, sizes: [])
+  it "is untested when the queries read no table, saying so" do
+    expect(fuzz("SELECT 1", "SELECT 2")).to have_attributes(verdict: :untested, reason: :no_tables, trials: 0, sizes: [])
+  end
+
+  # Task 20261012-4: an untested outcome says why, by a fixed word.
+  it "is untested when the comparison can't judge the original, as FETCH FIRST ... WITH TIES" do
+    sql = "SELECT id FROM s.orders ORDER BY total FETCH FIRST 2 ROWS WITH TIES"
+    expect(fuzz(sql, sql)).to have_attributes(verdict: :untested, reason: :not_comparable, trials: 0)
+  end
+
+  it "has no reason when it passed or disproved" do
+    passed = fuzz("SELECT id FROM s.orders WHERE total > 100", "SELECT id FROM s.orders WHERE 100 < total")
+    expect(passed).to have_attributes(verdict: :passed, reason: nil)
   end
 
   it "refuses a query that names a table without its schema, whose footprint it can't read" do
@@ -216,7 +227,7 @@ RSpec.describe Quaack::Enclave::Fuzz do
   it "is untested when no world is one the original runs on" do
     outcome = fuzz("SELECT id, 1 / 0 FROM s.orders", "SELECT id, 2 FROM s.orders")
 
-    expect(outcome).to have_attributes(verdict: :untested, trials: 0)
+    expect(outcome).to have_attributes(verdict: :untested, reason: :no_world, trials: 0)
   end
 
   it "takes a world the original fails on as one it needn't answer, not a disproof" do
@@ -267,9 +278,19 @@ RSpec.describe Quaack::Enclave::Fuzz do
              "SELECT id FROM s.orders WHERE status = 'shipped' AND total >= 100")
       end
 
-      expect(outcome).to eq(described_class.untested)
+      expect(outcome).to eq(described_class.untested(:unconfirmed))
       expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
     end
+  end
+
+  it "is untested, out of time, when the rewrite's deadline runs out before it compares a world" do
+    times = [0.0]
+    deadline = Quaack::Enclave::Deadline.new(1, clock: -> { times.shift || 1_000.0 })
+    outcome = Quaack::Enclave::Deadline.within(deadline) do
+      fuzz("SELECT id FROM s.orders WHERE total > 100", "SELECT id FROM s.orders WHERE 100 < total")
+    end
+
+    expect(outcome).to have_attributes(verdict: :untested, reason: :out_of_time, trials: 0)
   end
 
   # Task 20261012-38: a kill that didn't lift isn't a disproof, so a deadline

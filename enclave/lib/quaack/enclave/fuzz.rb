@@ -16,6 +16,8 @@ require_relative "fuzz/generator"
 require_relative "fuzz/session"
 require_relative "fuzz/lift"
 require_relative "fuzz/enumerate"
+require_relative "fuzz/coverage"
+require_relative "predicate_atoms"
 
 module Quaack
   module Enclave
@@ -54,7 +56,7 @@ module Quaack
     # query that names a table without its schema, whose footprint can't
     # be read: a search on it would test nothing.
     module Fuzz
-      Outcome = Data.define(:verdict, :rule, :trials, :sizes)
+      Outcome = Data.define(:verdict, :rule, :trials, :sizes, :reason)
 
       class Error < StandardError
         def initialize(message = "a fuzz query names a table without its schema") = super
@@ -66,14 +68,23 @@ module Quaack
         def initialize(message = "the rewrite's time budget ran out while a kill was confirmed") = super
       end
 
+      # Why an outcome is untested (task 20261012-4): the queries read no
+      # table, the comparison can't judge them (FETCH FIRST ... WITH TIES,
+      # say), the session couldn't be set up, no world let both queries
+      # run, the deadline ran out before a world was compared, or while a
+      # kill was confirmed (Unconfirmed). Steps::RewriteFuzz adds its own.
+      REASONS = %i[no_tables not_comparable setup_failed no_world out_of_time unconfirmed].freeze
+
       LIFTS = 5
       SHRINKS = 200
       UNJUDGED = [ResultComparison::Error, SupportedSql::Error].freeze
 
       module_function
 
-      # The fuzz search's Outcome and enumerate's (Enumerate::Outcome).
-      Results = Data.define(:fuzz, :enumerate)
+      # The fuzz search's Outcome and enumerate's (Enumerate::Outcome), and
+      # which of the original's atoms their worlds showed both ways
+      # (Coverage::Result), or nil when no search ran.
+      Results = Data.define(:fuzz, :enumerate, :coverage)
 
       def run(conn, original, candidate, stop:, **) = search(conn, original, candidate, stop:, enumerate: nil, **).fuzz
 
@@ -86,7 +97,8 @@ module Quaack
         queries = [original, candidate]
         queries.each_with_index { |sql, i| ArenaRunner::StatementCheck.check(sql, :query, i) }
         footprint = footprint(queries)
-        return Results.new(fuzz: untested, enumerate: Enumerate.untested) if footprint.empty? || unjudged?(*queries)
+        return unsearched(:no_tables) if footprint.empty?
+        return unsearched(:not_comparable) if unjudged?(*queries)
 
         quietly(conn) do
           Search.new(conn, footprint, queries, honour:, statement_timeout_ms:)
@@ -102,7 +114,10 @@ module Quaack
         conn.set_notice_receiver(&previous) unless conn.finished?
       end
 
-      def untested = Outcome.new(verdict: :untested, rule: nil, trials: 0, sizes: [])
+      # An untested Outcome, with why (REASONS).
+      def untested(reason) = Outcome.new(verdict: :untested, rule: nil, trials: 0, sizes: [], reason:)
+
+      def unsearched(reason) = Results.new(fuzz: untested(reason), enumerate: Enumerate.untested, coverage: nil)
 
       # The tables both queries name, raising Error for one named without
       # its schema that isn't a CTE's.
@@ -155,23 +170,26 @@ module Quaack
           @generator = Generator.new(@catalog, @domains)
           @session = Session.new(conn, @catalog, queries, honour:, statement_timeout_ms:)
           @lift = Lift.new(conn, @catalog, @domains, honour:, statement_timeout_ms:)
+          @coverage = Coverage.new(PredicateAtoms.extract(PgQuery.parse(queries.first),
+                                                          column_names: @catalog.schema.column_names), queries.first)
           @compared = 0
           @lifts = 0
         end
 
         def call(stop, rng, limit)
-          return Results.new(fuzz: Fuzz.untested, enumerate: Enumerate.untested) unless open
+          return results(Fuzz.untested(:setup_failed)) unless open
 
           fuzz = fuzzed(stop, rng)
-          Results.new(fuzz:, enumerate: fuzz.verdict == :passed && limit ? enumerate(limit) : Enumerate.untested)
+          results(fuzz, fuzz.verdict == :passed && limit ? enumerate(limit) : Enumerate.untested)
         rescue Unconfirmed
-          Results.new(fuzz: Fuzz.untested, enumerate: Enumerate.untested)
+          results(Fuzz.untested(:unconfirmed))
         ensure
           close
         end
 
-        # One trial on rows in the session.
-        def trial(rows) = @session.trial(rows)
+        # One trial on rows in the session, its world observed for the
+        # atoms' coverage.
+        def trial(rows) = observed(@session.trial(rows))
 
         # A kill shrunk and lifted, as [rule, sizes], or nil, with the
         # session open again to go on. Raises Unconfirmed if the deadline
@@ -190,6 +208,14 @@ module Quaack
 
         private
 
+        def results(fuzz, enumerate = Enumerate.untested) = Results.new(fuzz:, enumerate:, coverage: @coverage.result)
+
+        # trial, once Coverage has seen its world if it compared and didn't kill.
+        def observed(trial)
+          @coverage.observe(@session) if trial.compared && !trial.kill?
+          trial
+        end
+
         # Rolls the session back. A backend that died, in enumerate say, has
         # nothing left to roll back, and its error mustn't replace the result.
         def close
@@ -201,7 +227,7 @@ module Quaack
         def fuzzed(stop, rng)
           search(stop, rng)
         rescue Deadline::Expired
-          ended
+          ended(:out_of_time)
         end
 
         # Enumerate's outcome, or untested if it fails, so fuzz's pass
@@ -229,7 +255,7 @@ module Quaack
 
         # Runs a trial on rows, and gives whether it killed.
         def killed?(stop, rows)
-          trial = @session.trial(rows)
+          trial = trial(rows)
           stop.observe(trial.signature)
           @compared += 1 if trial.compared
           trial.kill?
@@ -242,10 +268,11 @@ module Quaack
           false
         end
 
-        def ended = @compared.zero? ? Fuzz.untested : outcome(:passed)
+        # A pass, or untested, by why, when no world was compared.
+        def ended(why = :no_world) = @compared.zero? ? Fuzz.untested(why) : outcome(:passed)
 
         def outcome(verdict, rule = nil, sizes = [])
-          Outcome.new(verdict:, rule:, trials: @compared, sizes:)
+          Outcome.new(verdict:, rule:, trials: @compared, sizes:, reason: nil)
         end
 
         # The kill shrunk and lifted, as a disproof, or nil, with the
