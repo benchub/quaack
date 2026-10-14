@@ -14,7 +14,7 @@ Employees who manage nobody, written with `NOT IN`. Because the subquery returns
 
 ## Expected result.
 
-QUAACK must reject the tempting `NOT EXISTS` rewrite (`fast.sql`), which returns 499 rows. The stated assumption (`manager_id` is `NOT NULL`) fails assumption-check, so an LLM candidate is rejected there. An operator candidate only gets a warning, and then rewrite-test's S2 scenario (NULLs in nullable columns) disproves it.
+QUAACK must reject the tempting `NOT EXISTS` rewrite (`fast.sql`), which returns 499 rows. The stated assumption (`manager_id` is `NOT NULL`) fails assumption-check, so an LLM candidate is rejected there. An operator candidate only gets a warning, and then rewrite-test's search disproves it with a NULL in `manager_id`.
 
 ## Proof.
 
