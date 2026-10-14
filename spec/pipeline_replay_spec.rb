@@ -190,8 +190,10 @@ RSpec.describe PipelineReplay do
         %w[plan-pruning fuzz rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
         # The spec_helper's QUAACKS_FUZZ_TRIALS: a floor of 40 trials and a
         # cap of 400, not the 30 seconds a production run takes. trials
-        # counts only the worlds both queries ran on.
-        expect(stages.dig("fuzz", "rewrite_1", "extra")).to match("trials" => be_between(1, 400))
+        # counts only the worlds both queries ran on. Each setting set marks
+        # the record (task 20261012-15).
+        expect(stages.dig("fuzz", "rewrite_1", "extra"))
+          .to match("trials" => be_between(1, 400), "fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)
         # The spec_helper's QUAACKS_ENUMERATE_WORLDS 0: enumerate (task
         # 20261012-3) is off in the replays, so it records the rewrite
         # untested and lets it go on.

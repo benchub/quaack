@@ -19,7 +19,8 @@ module Quaack
       # trial one unit, with a floor of n trials and a cap of CAP_FLOORS
       # times that, so the search does the same work on any machine and a
       # spec's verdict never depends on its speed. QUAACKS_FUZZ_TRIALS=0
-      # turns the search off.
+      # turns the search off. When it's set, the rewrite's fuzz record in
+      # the burndown says so (Steps::RewriteFuzz::SETTINGS).
       class StopRule
         ENV_TRIALS = "QUAACKS_FUZZ_TRIALS"
         FLOOR_SECONDS = 30

@@ -147,6 +147,10 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
   def burndown = Quaack::Enclave::Burndown.read(stored)
   def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
 
+  # The spec_helper sets both search settings, so every fuzz record carries
+  # their marks (Steps::RewriteFuzz::SETTINGS).
+  def marked(extra) = extra.merge("fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)
+
   def counted(**counts)
     { "in" => 1, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 0, "extra" => {} }
       .merge(counts.transform_keys(&:to_s))
@@ -524,7 +528,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                   "trials" => message["trials"], "sizes" => [["public", "orders", 1]])
         expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
         expect(burndown["stages"]["fuzz"]["rewrite_1"])
-          .to eq(counted(dropped: { "row_count" => 1 }, extra: { "trials" => message["trials"] }))
+          .to eq(counted(dropped: { "row_count" => 1 }, extra: marked("trials" => message["trials"])))
         expect(burndown["stages"].fetch("rewrite-test", {})).not_to have_key("rewrite_1")
         expect(burndown["stages"].fetch("enumerate", {})).not_to have_key("rewrite_1")
         expect_no_leaks(sentinels, outcome, objects: { tested:, burndown: })
@@ -580,7 +584,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           expect(message).to include("passed" => false, "stage" => "fuzz", "rule" => "query_failed")
           expect(tested).to include("rule" => "query_failed", "sizes" => [["public", "orders", 1]])
           expect(burndown["stages"]["fuzz"]["rewrite_1"])
-            .to eq(counted(dropped: { "query_failed" => 1 }, extra: { "trials" => message["trials"] }))
+            .to eq(counted(dropped: { "query_failed" => 1 }, extra: marked("trials" => message["trials"])))
           payload = Quaack::Enclave::Steps::ReportPayload.fuzz(stored, "rewrite_1", store.read("qualified_query"),
                                                                failing)
           expect(payload).to include("sizes" => [["public", "orders", 1]])
@@ -666,7 +670,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(message["trials"]).to be_a(Integer).and be >= 40
         expect(tested).to include("passed" => true, "stage" => "rewrite-test", "trials" => message["trials"])
         expect(tested).not_to have_key("sizes")
-        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: { "trials" => message["trials"] }))
+        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1,
+                                                                      extra: marked("trials" => message["trials"])))
         expect(burndown["stages"]["rewrite-test"]["rewrite_1"]).to include("in" => 1, "out" => 1)
       end
 
@@ -705,8 +710,30 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                               "scenario" => nil, "rule" => "complex_check", "stage" => "rewrite-test",
                               "trials" => 0, "worlds" => 0, "bound" => nil)
         expect(tested).to include("refused" => true, "rule" => "complex_check")
-        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: { "trials" => 0,
-                                                                                       "untested" => 1 }))
+        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
+                                                                                            "untested" => 1)))
+      end
+
+      # Task 20261012-15: QUAACKS_FUZZ_TRIALS and QUAACKS_ENUMERATE_WORLDS
+      # are for specs, and they weaken the searches, 0 turning each off, so
+      # the fuzz record, written for every rewrite tested, says when either
+      # is set. A spent budget ends the search at once without them.
+      it "marks the fuzz record with each search setting that's set, 0 included, and with neither when none is" do
+        ready(same)
+        (2..4).each { store.write("rewrite_#{it}", stored.read("rewrite_1")) }
+        unset = { "QUAACKS_FUZZ_TRIALS" => nil, "QUAACKS_ENUMERATE_WORLDS" => nil }
+        spent = Quaack::Enclave::Deadline.new(0)
+
+        in_process("rewrite_1", spent, unset)
+        in_process("rewrite_2", spent, unset.merge("QUAACKS_FUZZ_TRIALS" => "0"))
+        in_process("rewrite_3", spent, unset.merge("QUAACKS_ENUMERATE_WORLDS" => "0"))
+        in_process("rewrite_4", spent, FUZZ_ON.merge("QUAACKS_ENUMERATE_WORLDS" => "7"))
+
+        untested = { "trials" => 0, "untested" => 1 }
+        expect((1..4).map { burndown["stages"]["fuzz"]["rewrite_#{it}"]["extra"] })
+          .to eq([untested, untested.merge("fuzz_trials_setting" => 1),
+                  untested.merge("enumerate_worlds_setting" => 1),
+                  untested.merge("fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)])
       end
 
       it "runs ScenarioTests alone when QUAACKS_FUZZ_TRIALS is 0, recording fuzz as untested" do
@@ -716,8 +743,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
         expect(message).to include("passed" => false, "scenario" => "s1", "rule" => "row_count",
                                    "stage" => "rewrite-test", "trials" => 0)
-        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: { "trials" => 0,
-                                                                                       "untested" => 1 }))
+        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
+                                                                                            "untested" => 1)))
       end
 
       # Task 20261012-26: a cancel QUAACK didn't send, of a lift, says
@@ -780,7 +807,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                     "sizes" => [["public", "orders", 2]])
           expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
           expect(burndown["stages"]["fuzz"]["rewrite_1"])
-            .to eq(counted(out: 1, extra: { "trials" => message["trials"] }))
+            .to eq(counted(out: 1, extra: marked("trials" => message["trials"])))
           expect(burndown["stages"]["enumerate"]["rewrite_1"])
             .to eq(counted(dropped: { "value" => 1 }, extra: { "worlds" => message["worlds"] }))
           expect(burndown["stages"].fetch("rewrite-test", {})).not_to have_key("rewrite_1")
@@ -857,7 +884,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(message[:trials]).to be_a(Integer).and be >= 40
         expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message[:trials])
         expect(burndown["stages"]["fuzz"]["rewrite_1"])
-          .to eq(counted(out: 1, extra: { "trials" => message[:trials] }))
+          .to eq(counted(out: 1, extra: marked("trials" => message[:trials])))
         expect(burndown["stages"]["enumerate"]["rewrite_1"])
           .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
       end
@@ -938,8 +965,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(expired).to be(true)
         expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, scenario: nil,
                                   rule: "out_of_time", stage: "rewrite-test", trials: 0, worlds: 0, bound: nil }])
-        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: { "trials" => 0,
-                                                                                       "untested" => 1 }))
+        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
+                                                                                            "untested" => 1)))
         expect(burndown["stages"]["rewrite-test"]["rewrite_1"]["extra"]).to include("not_tested_in_time" => 1)
       end
 
@@ -1027,7 +1054,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       test
 
       expect(burndown["stages"]).to eq(
-        "fuzz" => { "rewrite_1" => counted(out: 1, extra: { "trials" => 0, "untested" => 1 }) },
+        "fuzz" => { "rewrite_1" => counted(out: 1, extra: marked("trials" => 0, "untested" => 1)) },
         "enumerate" => { "rewrite_1" => counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }) },
         "rewrite-test" => { "rewrite_1" => counted(out: 1, extra: { "untested_atoms" => 1,
                                                                     "vacuity_guard_retries" => 3 }) }

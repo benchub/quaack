@@ -103,6 +103,10 @@ module Quaack
                    "untested_atoms" => "conditions the test data never exercised",
                    "trials" => "random small databases compared", "untested" => "not tested by the random search",
                    "worlds" => "small databases enumerated",
+                   "fuzz_trials_setting" => "searched with QUAACKS_FUZZ_TRIALS set, a test setting that limits " \
+                                            "the random search",
+                   "enumerate_worlds_setting" => "searched with QUAACKS_ENUMERATE_WORLDS set, a test setting that " \
+                                                 "limits enumeration",
                    **(1..Protocol::FuzzResult::MAX_BOUND).to_h do |rows|
                      ["bound_#{rows}", "passed every database of up to #{rows} row#{"s" unless rows == 1}"]
                    end,

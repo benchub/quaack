@@ -93,13 +93,15 @@ module Quaack
       # rewrite, dropped then by its rule, a constant of
       # RewriteFate::FUZZ_DISPROOFS (failed for any other). extra trials is how
       # many worlds it compared, and untested 1 says it compared none.
-      # outcome is Fuzz.run's.
-      def record_fuzz(store, search, outcome)
+      # outcome is Fuzz.run's. settings are more extra counts, each 1, for
+      # the spec settings that limit the searches (Steps::RewriteFuzz::SETTINGS).
+      def record_fuzz(store, search, outcome, settings = {})
         disproved = outcome.verdict == :disproved
         untested = outcome.verdict == :untested ? { untested: 1 } : {}
+        extra = { trials: outcome.trials, **untested, **settings }
         Burndown.record_latest(
           store, [["fuzz", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
-                                            out: disproved ? 0 : 1, extra: { trials: outcome.trials, **untested } }]]
+                                            out: disproved ? 0 : 1, extra: }]]
         )
       end
 
