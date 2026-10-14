@@ -109,6 +109,24 @@ RSpec.describe Quaack::Enclave::Fuzz do
     end
   end
 
+  # e2e case 100 (task 20261012-15). INTERSECT ALL and INTERSECT differ
+  # only when a key turns up at least twice on each side, so the shrunk
+  # world has 4 rows sharing one customer_id. Before copies worlds (task
+  # 20261012-13) the search missed it at 3,000 trials. A copies world of
+  # the constant's 100 rows finds it within a few dozen trials now: 1 to 67
+  # over ten seeds, measured for this task.
+  it "disproves INTERSECT ALL turned into INTERSECT, with a copies world of rows sharing one key" do
+    conn.exec("CREATE TABLE s.visits (id integer PRIMARY KEY, customer_id integer NOT NULL, " \
+              "created_at timestamptz NOT NULL)")
+    original = "SELECT customer_id FROM s.visits WHERE customer_id <= 100 AND created_at < '2025-07-01 00:00:00+00' " \
+               "INTERSECT ALL " \
+               "SELECT customer_id FROM s.visits WHERE customer_id <= 100 AND created_at >= '2025-07-01 00:00:00+00'"
+
+    outcome = fuzz(original, original.sub("INTERSECT ALL", "INTERSECT"))
+
+    expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count, sizes: [["s", "visits", 4]])
+  end
+
   it "still disproves a rewrite that drops the tiebreak the original orders by" do
     outcome = fuzz("SELECT id, total FROM s.orders ORDER BY total, id", "SELECT id, total FROM s.orders ORDER BY total")
 
