@@ -181,6 +181,34 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     end
   end
 
+  # Task 20261012-38: the same once enumerate has finished a bound before
+  # its kill, here 1, the kill needing two rows. Before 20261012-15 it
+  # passed with that bound. One fuzz trial, which this pair's seed misses
+  # it with, leaves the kill to enumerate.
+  it "claims no bound when the rewrite's deadline runs out while enumerate shrinks a kill found after one" do
+    original = "SELECT count(*) > 1 FROM s.topics"
+    candidate = "SELECT count(*) > 2 FROM s.topics"
+    expired = false
+    clock = lambda do
+      locations = caller_locations
+      expired ||= locations.any? { it.base_label == "smaller" } &&
+                  locations.any? { it.path.end_with?("fuzz/enumerate.rb") }
+      expired ? 1_000.0 : 0.0
+    end
+
+    search = -> { both(original, candidate, stop: fuzz::StopRule.trials(1)) }
+
+    unhurried = search.call
+    result = within(Quaack::Enclave::Deadline.new(1, clock:), &search)
+
+    expect(unhurried.fuzz).to have_attributes(verdict: :passed)
+    expect(unhurried.enumerate).to have_attributes(verdict: :disproved)
+    expect(unhurried.enumerate.bound).to be >= 1
+    expect(expired).to be(true)
+    expect(result.enumerate).to have_attributes(verdict: :untested, bound: nil)
+    expect(result).to eq(fuzz::Results.new(fuzz: fuzz.untested, enumerate: described_class.untested))
+  end
+
   # Task 20261012-26: enumerate failing after a fuzz pass leaves that pass,
   # with its trials, standing, and enumerate untested.
   describe "a failure in enumerate" do
