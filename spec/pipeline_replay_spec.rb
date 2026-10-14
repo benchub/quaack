@@ -115,6 +115,14 @@ RSpec.describe PipelineReplay do
             end
           end
 
+          # Task 20261012-15: the searches never disprove a sound rewrite.
+          it "never disproves a rewrite at fuzz or enumerate unless it holds the wrong condition" do
+            rewrites = outcome.report ? outcome.report["rewrites"] : []
+            disproved = rewrites.select { %w[fuzz_disproved enumerate_disproved].include?(it["fate"]) }
+            sound = disproved.map { it["rewrite"] } - outcome.wrong.map { "rewrite_#{it}" }
+            expect(sound).to eq([])
+          end
+
           it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
             wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
             if wrong_condition
@@ -190,8 +198,10 @@ RSpec.describe PipelineReplay do
         %w[plan-pruning fuzz rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
         # The spec_helper's QUAACKS_FUZZ_TRIALS: a floor of 40 trials and a
         # cap of 400, not the 30 seconds a production run takes. trials
-        # counts only the worlds both queries ran on.
-        expect(stages.dig("fuzz", "rewrite_1", "extra")).to match("trials" => be_between(1, 400))
+        # counts only the worlds both queries ran on. Each setting set marks
+        # the record (task 20261012-15).
+        expect(stages.dig("fuzz", "rewrite_1", "extra"))
+          .to match("trials" => be_between(1, 400), "fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)
         # The spec_helper's QUAACKS_ENUMERATE_WORLDS 0: enumerate (task
         # 20261012-3) is off in the replays, so it records the rewrite
         # untested and lets it go on.

@@ -2674,6 +2674,20 @@ RSpec.describe Quaack::Driver::Report do
                                    "random small databases compared: 40; not tested by the random search: 1"))
     end
 
+    # Task 20261012-15: a run with a spec setting that limits the searches
+    # says so, so it can't pass for a normal one.
+    it "words the marks of the spec settings that limit the searches" do
+      extra = { "trials" => 40, "fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1 }
+      stages = { "fuzz" => { "rewrite_1" => rec(1, 1, extra:), "rewrite_2" => rec(1, 1, extra:) },
+                 "rewrite-test" => { "rewrite_1" => rec(2, 2) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+
+      expect(table).to include(row("Testing on random small databases", 2, "none", "none", 0, 2,
+                                   "random small databases compared: 80; searched with QUAACKS_FUZZ_TRIALS set, " \
+                                   "a test setting that limits the random search: 2; searched with " \
+                                   "QUAACKS_ENUMERATE_WORLDS set, a test setting that limits enumeration: 2"))
+    end
+
     # Task 20261012-3: enumerate, between fuzz and rewrite-test.
     it "shows enumerate between fuzz and rewrite-test, with its drops by rule, worlds, and bounds in words" do
       stages = { "fuzz" => { "rewrite_1" => rec(1, 1, extra: { "trials" => 40 }),

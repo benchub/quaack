@@ -9,7 +9,9 @@ module Quaack
         # the rewrite's Deadline. For specs, QUAACKS_ENUMERATE_WORLDS=<n>
         # caps it at n worlds tried instead, so a spec's verdict never
         # depends on the machine's speed, and 0 turns it off, as
-        # QUAACKS_FUZZ_TRIALS does the fuzz search (StopRule).
+        # QUAACKS_FUZZ_TRIALS does the fuzz search (StopRule). When it's set,
+        # the rewrite's fuzz record in the burndown says so
+        # (Steps::RewriteFuzz::SETTINGS).
         #
         #   limit = Limit.from_env(ENV)
         #   started = limit.start

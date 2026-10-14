@@ -155,6 +155,32 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(result.enumerate.worlds).to be < finished.worlds
   end
 
+  # Task 20261012-15: a kill the deadline cuts off before it's shrunk and
+  # lifted is likely a counterexample, so neither search claims anything,
+  # not even the fuzz pass before it. The clock runs out, and stays out,
+  # once a call from within enumerate's shrink or lift reads it.
+  {
+    "shrinks" => ->(location) { location.base_label == "smaller" },
+    "lifts" => ->(location) { location.path.end_with?("fuzz/lift.rb") }
+  }.each do |doing, confirming|
+    it "leaves both searches untested when the rewrite's deadline runs out while enumerate #{doing} a kill" do
+      expired = false
+      clock = lambda do
+        locations = caller_locations
+        expired ||= locations.any?(&confirming) && locations.any? { it.path.end_with?("fuzz/enumerate.rb") }
+        expired ? 1_000.0 : 0.0
+      end
+      original = "SELECT id FROM s.topics WHERE kind = 'news' ORDER BY posted_at DESC NULLS LAST, id DESC LIMIT 10"
+      candidate = "SELECT id FROM s.topics WHERE kind = 'news' ORDER BY posted_at DESC, id DESC LIMIT 10"
+
+      result = within(Quaack::Enclave::Deadline.new(1, clock:)) { both(original, candidate) }
+
+      expect(expired).to be(true)
+      expect(result).to eq(fuzz::Results.new(fuzz: fuzz.untested, enumerate: described_class.untested))
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+  end
+
   # Task 20261012-26: enumerate failing after a fuzz pass leaves that pass,
   # with its trials, standing, and enumerate untested.
   describe "a failure in enumerate" do

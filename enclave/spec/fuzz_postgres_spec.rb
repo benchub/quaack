@@ -62,6 +62,22 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
   end
 
+  # Task 20261012-15: with one constant, only its neighbour one step up
+  # (10.01) tells the first pair apart, and only the one a step down (9.99)
+  # the second, since rounding moves 10.5 and 9.5 to the other side.
+  {
+    "up" => ["total > 10", "round(total) > 10"],
+    "down" => ["total < 10", "round(total) < 10"]
+  }.each do |side, (original, candidate)|
+    it "draws a single numeric constant's neighbour one step #{side}, when only that one tells two queries apart" do
+      conn.exec("CREATE TABLE s.invoices (id integer PRIMARY KEY, total numeric(10,2) NOT NULL)")
+
+      outcome = fuzz("SELECT id FROM s.invoices WHERE #{original}", "SELECT id FROM s.invoices WHERE #{candidate}")
+
+      expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
+    end
+  end
+
   # As a real, 1000.0002 is three steps of the type's resolution above 1000,
   # so only the two reals between tell these apart, 1000.00006 and 1000.0001;
   # a step of 0.001 jumps past them. The constants are reals, so the column
@@ -91,6 +107,24 @@ RSpec.describe Quaack::Enclave::Fuzz do
 
       expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
     end
+  end
+
+  # e2e case 100 (task 20261012-15). INTERSECT ALL and INTERSECT differ
+  # only when a key turns up at least twice on each side, so the shrunk
+  # world has 4 rows sharing one customer_id. Before copies worlds (task
+  # 20261012-13) the search missed it at 3,000 trials. A copies world of
+  # the constant's 100 rows finds it within a few dozen trials now: 1 to 67
+  # over ten seeds, measured for this task.
+  it "disproves INTERSECT ALL turned into INTERSECT, with a copies world of rows sharing one key" do
+    conn.exec("CREATE TABLE s.visits (id integer PRIMARY KEY, customer_id integer NOT NULL, " \
+              "created_at timestamptz NOT NULL)")
+    original = "SELECT customer_id FROM s.visits WHERE customer_id <= 100 AND created_at < '2025-07-01 00:00:00+00' " \
+               "INTERSECT ALL " \
+               "SELECT customer_id FROM s.visits WHERE customer_id <= 100 AND created_at >= '2025-07-01 00:00:00+00'"
+
+    outcome = fuzz(original, original.sub("INTERSECT ALL", "INTERSECT"))
+
+    expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count, sizes: [["s", "visits", 4]])
   end
 
   it "still disproves a rewrite that drops the tiebreak the original orders by" do
@@ -153,6 +187,34 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(outcome.verdict).to eq(:passed)
     expect(outcome.trials).to be_between(1, 149)
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
+  # Task 20261012-15: a kill the deadline cuts off before it's shrunk and
+  # lifted is likely a counterexample, so the search claims no pass and no
+  # trials. The clock runs out, and stays out, once a call from within
+  # the shrink or the lift reads it.
+  def expiring(within)
+    expired = false
+    clock = lambda do
+      expired ||= caller_locations.any?(&within)
+      expired ? 1_000.0 : 0.0
+    end
+    Quaack::Enclave::Deadline.new(1, clock:)
+  end
+
+  {
+    "shrinks" => ->(location) { location.base_label == "smaller" },
+    "lifts" => ->(location) { location.path.end_with?("fuzz/lift.rb") }
+  }.each do |doing, within|
+    it "is untested, claiming no trials, when the rewrite's deadline runs out while it #{doing} a kill" do
+      outcome = Quaack::Enclave::Deadline.within(expiring(within)) do
+        fuzz("SELECT id FROM s.orders WHERE status = 'shipped' AND total > 100",
+             "SELECT id FROM s.orders WHERE status = 'shipped' AND total >= 100")
+      end
+
+      expect(outcome).to eq(described_class.untested)
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
   end
 
   it "refuses a query that isn't one SELECT before it touches the arena" do
