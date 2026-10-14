@@ -26,6 +26,7 @@ The user, 2026-10-14: close this batch (bump, `rake full`, stamp) once 20261012-
 - 20261012-24: in fuzz's copies worlds, each copy keeps the first row's foreign-key values, so a copies world on a child table loads. Before, the copies took the first row's own key values as their foreign key, and the world failed to load. No change to any reported field.
 - 20261012-25: fuzz empties the footprint's tables with `TRUNCATE` at the start of each session transaction, after dropping the foreign keys that point into them from outside the footprint, all inside the rolled-back transaction. Rows from rolled-back trials then no longer pile up in the arena's files, which the run server's autovacuum never cleans, so the trial rate on passes is 2–25× higher. No change to any reported field.
 - 20261012-30: enumerate gives a key column the queries compare with a constant (`id > 100`, keyset's `id > $1`, `IN`, `= ANY`) the queries' constants and their neighbours first, then its key values, including a primary key a child's foreign key points at, which got none before. A repeated primary-key value gets a fresh one, so the key stays unique. No change to any reported field.
+- 20261012-35: production's fuzz stop rule stops at 60 s at the latest (the 30 s floor and "twice the last new signature" unchanged), so enumerate runs on every sound rewrite. No change to any reported field.
 
 ## How this file works.
 
@@ -911,40 +912,7 @@ Answers (the user, 2026-10-14):
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-35. fuzz's stop rule rarely stops before the 5-minute deadline, and starves enumerate.
-
-Measured overnight, 2026-10-13. The setup was the spike's Canvas corpus on the synthetic 583-table schema, run on `main` at production's stop rule with a 300 s deadline per rewrite and enumerate on. The results are in `scratch/measure-canvas-prod/` in the main checkout: `results-prod-canvas.jsonl` holds the whole corpus, and `results-sig-canvas.jsonl` holds the slowest sound rewrites again, with each new signature's arrival time.
-
-- **Sound rewrites (28):**
-  - 9 ran fuzz to the 300 s deadline. 8 of those never reached enumerate (bound 0, enumerate untested), and the ninth got 12 s of it.
-  - The other 19 took 60–174 s: 30–144 s of fuzz, then enumerate's 30 s.
-  - In the rerun of the 11 slowest, 8 still ran to 300 s.
-- **Why it doesn't stop.** A signature is a product over every plan node: 3 row buckets times 2 filter flags, for both plans. So new ones keep arriving, at about one every 10–40 s. On those 8 rewrites, the last new signature came at 209–294 s, so "twice as long as the last new signature" never comes before the deadline. Discovery doesn't level off: q05a found 36 signatures by 30 s, 41 by 60 s, 49 by 120 s, and 63 by 300 s.
-- **What the extra time buys.** Across every corpus run since 20261012-2 (hard, Canvas, e2e, the LLM replies), the slowest kill fuzz has found took 8,227 trials. With no other load, every fuzz kill came within 42 s, and 29 of 31 in this run came within 22 s.
-- **Load matters.** Trial rates swing about 6× with the machine's load. The same rewrite did 43,302 trials in 300 s in one run, and 1,691 in 76 s in another. The q16c kill takes 3,207 trials: 37 s in one run, 115 s under heavy load. Under load, q16d's 30 s floor ended after 937 trials, short of the 3,472 its kill needs, so it passed.
-- **Cost.** One sound rewrite in three takes the whole 5-minute budget in fuzz alone, before ScenarioTests. The stronger enumerate sentence then never appears, and enumerate's catches, such as `cv_topics_nulls_last`, are lost on those rewrites. ScenarioTests then runs out of time, and the fuzz pass stands.
-
-**Open question for the user:** cap fuzz's time below the 5-minute deadline? Options:
-1. **Cap fuzz at 60 s** (my recommendation). Fuzz plus enumerate is then at most 90 s per sound rewrite, and enumerate always runs. Every kill seen unloaded fits, and the rule is easy to state.
-2. **Cap fuzz at 90 s**, which leaves more room for a loaded jump server.
-3. **Cap fuzz at 60 s, but also require 10,000 trials before the floor can end it**, up to the cap. This covers the slowest kill seen with room to spare, on a fast machine, and makes a loaded run try harder before it stops.
-4. **Keep the rule as it is.**
-
-Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's schema while ScenarioTests runs out of time there (20261011-13). That ends with 20261012-4. Once the cap is chosen, build it test first in `Fuzz::StopRule` (`from_env`'s production rule gets a cap), and update DESIGN.md's stop rule. Measure the Canvas and hard corpora before and after, for kills and time per rewrite.
-
-**Re-measured after 20261012-25 (2026-10-13).** The numbers above ran on `main` before 20261012-25, when dead rows from rolled-back trials piled up in the arena's tables for the whole run, so part of the "load" swing above was that bloat. The same corpus, run again on `main` after 20261012-25 in two shards with no other load, is in `scratch/measure-canvas-post25/` in the main checkout: `results-post25-canvas.jsonl` holds the results, and `compare.rb` sets them beside the run above.
-
-- **Kills:** 32 of 34 wrong rewrites, up from 31: q16d's 30 s floor now covers the 3,930 trials its kill needs. Every kill came within 7.4 s and 3,930 trials, most within 2 s. The two misses (q05c, q07d) are the same as before, and no sound rewrite was disproved.
-- **Sound rewrites still don't stop.** Fuzz on a pass now runs 325–1,730 trials/s, 3–21 times the rates above, but the faster trials find new signatures faster, so the rule converges no sooner. 8 of 28 ran fuzz to the 300 s deadline (before: 9) and never reached enumerate, after 174,000–334,000 trials each, 20–40 times the slowest kill seen in any corpus (8,227 trials). The set moved: q05b and q07a now stop (70 s and 87 s), while q01a and q16b now run to the deadline. 12 stopped at the 30 s floor, and the median time in fuzz fell from 55 s to 40 s.
-
-So the cap is still needed, and 60 s still fits: at the slowest pass rate seen here (q09a, 325 trials/s), 60 s is about 20,000 trials, 2.4 times the slowest kill seen. Option 3's 10,000-trial floor would have changed one rewrite here (q09a's floor ended at 9,781 trials), and it guards a loaded server.
-
-**Answer (the user, 2026-10-14):** option 1, cap fuzz at 60 s. Fuzz plus enumerate is then at most 90 s per sound rewrite.
-
-- **Depends on:** None.
-- **Came from:** The overnight measurement, 2026-10-13.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-35. fuzz's stop rule rarely stops before the 5-minute deadline, and starves enumerate. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments. Done, see BACKLOG-COMPLETE.md.
 
@@ -1017,5 +985,16 @@ From the review of 20261012-30, 2026-10-14 (minor). `Fuzz::Enumerate::Worlds` gi
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-30, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-48. fuzz's 60 s cap: say "about 90 seconds", and watch the slowest kill's margin.
+
+From the review of 20261012-35, 2026-10-14 (minor).
+1. **"At most 90 seconds" is a soft bound.** DESIGN.md's Stop rule bullet and `Fuzz::StopRule`'s comment (`enclave/lib/quaack/enclave/fuzz/stop_rule.rb`) say fuzz plus enumerate takes at most 90 s per sound rewrite. Three things can run past it: the trial in progress when the cap fires; shrinking and lifting a kill found just before the cap (up to `SHRINKS` = 200 trials, `fuzz.rb`), whose lift then fails; and building enumerate's kinds, which happens before its 30 s `Limit` starts (`Fuzz::Search#enumerate`). The rewrite's 5-minute Deadline still bounds all three. Say "about 90 seconds", and name what can run over, wording only.
+2. **The slowest kill's margin.** The slowest kill in any corpus, `cv_topics_nulls_last`, comes at trial 8,227: 25–28 s with four measurement shards running, about half the cap. A jump server about twice as slow would lose it. The user chose the plain 60 s cap (20261012-35's option 1) knowing this; option 3 there (a 10,000-trial floor up to the cap) is the fix if the user's real-schema run shows trial rates that low. Check the rates in that run's burndown (`fuzz` trials and times) and ask the user before changing the rule.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-35, 2026-10-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
