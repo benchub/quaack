@@ -217,6 +217,31 @@ RSpec.describe Quaack::Enclave::Fuzz do
     end
   end
 
+  # Task 20261012-38: a kill that didn't lift isn't a disproof, so a deadline
+  # that runs out after it ends the search as any other, and the trials
+  # before it stand. The session's reopen checks no deadline, so the clock
+  # runs out at the first check after the lift, the search's next. No
+  # customer can exist, as in "counts only a counterexample that also holds
+  # with every constraint enforced", so no kill lifts.
+  it "passes on the trials it compared when the rewrite's deadline runs out after a kill that didn't lift" do
+    conn.exec("ALTER TABLE s.customers ADD CHECK (id < 0 AND id > 0)")
+    lifted = false
+    clock = lambda do
+      lifting = caller_locations.any? { it.path.end_with?("fuzz/lift.rb") }
+      lifted ||= lifting
+      lifted && !lifting ? 1_000.0 : 0.0
+    end
+
+    outcome = Quaack::Enclave::Deadline.within(Quaack::Enclave::Deadline.new(1, clock:)) do
+      fuzz("SELECT id FROM s.orders WHERE total > 100", "SELECT id FROM s.orders WHERE total >= 100")
+    end
+
+    expect(lifted).to be(true)
+    expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
+    expect(outcome.trials).to be_between(1, 149)
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
   it "refuses a query that isn't one SELECT before it touches the arena" do
     expect { fuzz("SELECT id FROM s.orders", "DELETE FROM s.orders") }
       .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect(it.rule).to eq(:statement_not_allowed) }
