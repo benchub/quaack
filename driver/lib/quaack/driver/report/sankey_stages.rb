@@ -30,7 +30,7 @@ module Quaack
           sources, sinks = state == :unknown ? [[], []] : sankey_flows(record, stage, sentence)
           SankeyParts::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:, sinks:,
                                  color: StageStyle::COLORS.fetch(stage, StageStyle::BLUE), keys: [stage],
-                                 sentences: [sentence, StageStyle.untimed_note(record)].compact)
+                                 sentences: [sentence, *StageStyle.went_on_notes(record, stage)].compact)
         end
 
         # Whether the run counted all, only what came in, or none of the stage.

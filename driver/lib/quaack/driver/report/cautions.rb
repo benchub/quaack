@@ -34,8 +34,8 @@ module Quaack
         # and each caution reads once.
         def warning(entry, body: false)
           said = body ? [] : data_caution(entry)
-          # UNTIMED comes before the unproven caution, whose first form says every test passed.
-          caution(said, UNTIMED) if entry["out_of_time"] == true
+          # UNTIMED or NOT_TESTED comes before the unproven caution, whose first form says every test passed.
+          caution(said, untested_caution(entry))
           said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
           caution(said, pairing_warning(entry))
           "Read it with care: #{said.join(" ")}" unless said.empty?
@@ -58,6 +58,18 @@ module Quaack
         # 20261011-15): the payload's out_of_time is true.
         UNTIMED = "its test on made-up data didn't finish within #{Protocol::RewriteBudget.minutes} minutes, so " \
                   "QUAACK checked it only on test data the LLM wrote to break it and on the real data.".freeze
+
+        # Why the search couldn't test a rewrite that went on (task
+        # 20261012-4), by the payload's not_tested, a fixed word.
+        def not_tested_caution(entry)
+          why = Words::NOT_TESTED[entry["not_tested"]]
+          return unless why
+
+          "QUAACK didn't test it on made-up data, since #{why}, so it checked it only on test data the LLM wrote " \
+            "to break it and on the real data."
+        end
+
+        def untested_caution(entry) = entry["out_of_time"] == true ? UNTIMED : not_tested_caution(entry)
 
         # The summary's warning about a rewrite's pairing, when it wasn't
         # met or couldn't be checked, or nil.

@@ -792,7 +792,7 @@ RSpec.describe Quaack::Driver::Transport do
     # Egress sends a rewrite_test only if its rule passes
     # Protocol::RewriteBudget.rule? (20261010-53), so the driver checks the same.
     it "reads a rewrite_test whose rule is out_of_time, and refuses one whose rule is free text" do
-      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"out_of_time"})
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"rule":"out_of_time"})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
       expect(result.messages.first).to include("type" => "rewrite_test", "rule" => "out_of_time")
@@ -804,7 +804,7 @@ RSpec.describe Quaack::Driver::Transport do
     # Egress sends a rewrite_test only if its stage and trials pass
     # Protocol::FuzzResult.rewrite_test? (20261012-2), so the driver checks the same.
     it "reads a rewrite_test with fuzz's stage and trials, and refuses one whose stage or trials isn't on the list" do
-      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"row_count",) +
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"rule":"row_count",) +
              %("stage":"fuzz","trials":41200})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
@@ -820,7 +820,7 @@ RSpec.describe Quaack::Driver::Transport do
 
     # Task 20261012-3: enumerate's worlds and bound, checked as egress does.
     it "reads a rewrite_test with enumerate's stage, worlds and bound, and refuses one whose worlds or bound isn't" do
-      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"scenario":null,"rule":"value",) +
+      good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"rule":"value",) +
              %("stage":"enumerate","trials":40,"worlds":905,"bound":2})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 

@@ -292,7 +292,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     # Task 20261010-53: a rewrite whose test ran past its budget.
     it "says, under the rewrite's name, that it couldn't be tested within 5 minutes and was left out" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "out_of_time" })
+      tests.push({ "type" => "rewrite_test", "passed" => false, "rule" => "out_of_time" })
 
       run
 
@@ -306,7 +306,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     # so the rewrite goes on to counterexamples.
     it "says a rewrite whose test ran out of time goes on, and sends it to counterexamples" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => "out_of_time" })
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => "out_of_time" })
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
 
       run
@@ -320,10 +320,44 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 0 passed, 1 went on though not tested in time"])
     end
 
+    # Task 20261012-4: a rewrite the search couldn't test isn't disproved
+    # either: it goes on, and progress says why, by a fixed reason word.
+    it "says why a rewrite the search couldn't test goes on, and sends it to counterexamples" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => "no_world", "stage" => "fuzz",
+                   "trials" => 0 })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness").first(4))
+        .to eq(["Testing each rewrite for wrong results (rewrite-correctness)",
+                "#{name}: Testing the rewrite on generated rows (rewrite-test)",
+                "#{name}: Couldn't test the rewrite on made-up data, since no small database QUAACK built let " \
+                "both queries run, so QUAACK goes on to check it with the LLM's rows and the real data (rewrite-test)",
+                "#{name}: Trying to break the rewrite with rows from the LLM (counterexamples)"])
+      expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 0 passed, 1 went on though not tested on " \
+                                                    "made-up data"])
+    end
+
+    it "counts rewrites the search couldn't test apart from those not tested in time" do
+      entries.merge!(rewrite(1, rewrite_survived: false), rewrite(2, rewrite_survived: false),
+                     rewrite(3, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => "out_of_time" },
+                 { "type" => "rewrite_test", "passed" => true, "rule" => "setup_failed", "stage" => "fuzz" }, true)
+      9.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(closing("rewrite-correctness"))
+        .to eq(["Tested 3 rewrites, 1 passed, 1 went on though not tested in time, 1 went on though not tested on " \
+                "made-up data"])
+    end
+
     # Task 20261012-2: the fuzz search runs inside rewrite-test.
     it "says, under the rewrite's name, that a random small database proved it wrong" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "row_count",
+      tests.push({ "type" => "rewrite_test", "passed" => false, "rule" => "row_count",
                    "stage" => "fuzz", "trials" => 12 })
 
       run
@@ -337,8 +371,8 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
     it "says how many random small databases a rewrite survived, before it goes on" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
-                   "stage" => "rewrite-test", "trials" => 41_200 })
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
+                   "stage" => "fuzz", "trials" => 41_200 })
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
 
       run
@@ -351,7 +385,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     # Task 20261012-3: enumerate runs after a fuzz pass, inside rewrite-test.
     it "says, under the rewrite's name, that a small database QUAACK enumerated proved it wrong" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => nil, "rule" => "value",
+      tests.push({ "type" => "rewrite_test", "passed" => false, "rule" => "value",
                    "stage" => "enumerate", "trials" => 40, "worlds" => 12, "bound" => nil })
 
       run
@@ -363,8 +397,8 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
     it "says, in the user's words, that no random dataset nor any dataset up to the bound differed" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
-                   "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
+                   "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2 })
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
 
       run
@@ -374,39 +408,10 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                "value classes (rewrite-test)")
     end
 
-    # Task 20261012-28: the progress line says what the rewrite's section
-    # in the report says.
-    it "keeps fuzz's sentence, not enumerate's, when rewrite-test's scenarios disproved the rewrite" do
-      entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => "s3", "rule" => "multiset",
-                   "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
-
-      run
-
-      expect(lines_of("rewrite-correctness")[2])
-        .to eq("#{name}: Survived 40 random small databases built around the query's values (rewrite-test)")
-    end
-
-    # Some of the enclave's RewriteFate::FAILURES: rules a scenario ends
-    # with when it couldn't compare.
-    %w[original_failed query_failed statement_timeout fixture_load_failed unsupported_order].each do |rule|
-      it "keeps enumerate's sentence when a scenario ended with #{rule}, without comparing, as the report does" do
-        entries.merge!(rewrite(1, rewrite_survived: false))
-        tests.push({ "type" => "rewrite_test", "passed" => false, "scenario" => "s3", "rule" => rule,
-                     "stage" => "rewrite-test", "trials" => 40, "worlds" => 905, "bound" => 2 })
-
-        run
-
-        expect(lines_of("rewrite-correctness")[2])
-          .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows over its " \
-                 "value classes (rewrite-test)")
-      end
-    end
-
     it "says nothing of random small databases when the search compared none" do
       entries.merge!(rewrite(1, rewrite_survived: false))
-      tests.push({ "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => nil,
-                   "stage" => "rewrite-test", "trials" => 0 })
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
+                   "stage" => "fuzz", "trials" => 0 })
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
 
       run
@@ -417,7 +422,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     it "counts several rewrites not tested in time apart from those that passed" do
       entries.merge!(rewrite(1, rewrite_survived: false), rewrite(2, rewrite_survived: false),
                      rewrite(3, rewrite_survived: false))
-      untimed = { "type" => "rewrite_test", "passed" => true, "scenario" => nil, "rule" => "out_of_time" }
+      untimed = { "type" => "rewrite_test", "passed" => true, "rule" => "out_of_time" }
       tests.push(untimed, untimed, true)
       9.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
 

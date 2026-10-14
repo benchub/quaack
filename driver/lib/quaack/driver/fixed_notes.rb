@@ -158,12 +158,6 @@ module Quaack
                            "this query.",
         "unsatisfiable_check" => "A table the query reads has a CHECK that rejects every value QUAACK tries " \
                                  "for a column, so it can't test rewrites of this query.",
-        "exclusion_constraint" => "A table the query reads has an exclusion constraint with no column compared " \
-                                  "with =. QUAACK v1 can't keep its test rows apart, so it can't test rewrites " \
-                                  "of this query.",
-        "expression_unique_index" => "A table the query reads has a unique index on an expression that calls " \
-                                     "a function outside pg_catalog. QUAACK won't run user code, so it can't " \
-                                     "test rewrites of this query.",
 
         # Production, from the jump server.
         "production_read_failed" => "QUAACK connected to the production server, but reading its catalog failed. " \

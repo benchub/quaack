@@ -82,14 +82,19 @@ module Quaack
       end
 
       # rewrite-correctness', from whether each rewrite tested passed: true,
-      # false, or :untimed for one that went on though its test on made-up
-      # data didn't finish in time (task 20261011-15).
+      # false, :untimed for one that went on though its test on made-up
+      # data didn't finish in time (task 20261011-15), or :untested for one
+      # that went on though the search couldn't test it (task 20261012-4).
       def tested(passed)
         return "No rewrites left to test" if passed.empty?
 
-        untimed = passed.count(:untimed)
         "Tested #{count(passed.size, "rewrite")}, #{passed.count(true)} passed" \
-          "#{", #{untimed} went on though not tested in time" if untimed.positive?}"
+          "#{went_on(passed, :untimed, "in time")}#{went_on(passed, :untested, "on made-up data")}"
+      end
+
+      def went_on(passed, how, words)
+        many = passed.count(how)
+        ", #{many} went on though not tested #{words}" if many.positive?
       end
 
       # A step that went through each rewrite, from whether it did anything
