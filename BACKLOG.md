@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-23: fuzz's (and so enumerate's) values for a column combined with a constant and compared with another (`100 / x > 2`, `x * 0.9 >= 45`) now include the values that solve the comparison, with their ceiling, floor and neighbours (`Fuzz::Thresholds`, one Postgres query per comparison at setup). No change to any reported field.
 - 20261012-26: an error in enumerate (from the arena, a query it can't take, or the deadline while it builds its kinds) leaves fuzz's pass and trials standing, with enumerate untested, in the message and the burndown. A cancel QUAACK didn't send, in fuzz's or enumerate's lift, now ends rewrite-test with `statement_canceled` and stores nothing for the rewrite, as one in ScenarioTests does; before, it made both searches untested and ScenarioTests ran on.
 - 20261012-27: the `rewrite_test` message's `bound` is nil unless enumerate passed or disproved the rewrite. Before, an untested enumerate sent the bound it had reached (0, or up to 4 when every world it tried was illegal, which made the report and progress line show enumerate's sentence for an enumeration that compared nothing).
+- 20261012-15: a deadline that expires while fuzz or enumerate shrinks or lifts a kill leaves both searches untested (trials 0, bound nil), so the rewrite goes on as `out_of_time`; before, the kill was dropped and fuzz passed. When `QUAACKS_FUZZ_TRIALS` or `QUAACKS_ENUMERATE_WORLDS` is set (0 included), the rewrite's fuzz burndown record gets the extra `fuzz_trials_setting` or `enumerate_worlds_setting` 1, and the report has words for both.
 
 ## How this file works.
 
@@ -964,24 +965,6 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 - **Design:** report, burndown.
 - **Status:** todo
 
-### 20261012-15. fuzz: minors from the review of 20261012-2.
-
-1. **A counterexample found just as the deadline expires turns into a pass** (`fuzz.rb`: the deadline rescue near the shrink and lift, and `ended`). If the rewrite's deadline expires while a counterexample is being shrunk or lifted, the counterexample is dropped and `ended` returns passed. ScenarioTests then expires at once, and the fuzz pass replaces its `out_of_time`, so the "not tested in time" caution is lost. The fix: a deadline that expires mid-shrink or mid-lift leaves fuzz undecided, so the rewrite goes on as `out_of_time` would.
-2. **`QUAACKS_FUZZ_TRIALS` isn't confined to specs** (`fuzz/stop_rule.rb`). Set on a jump server, it quietly weakens the search, and 0 turns it off. Say so when it's set: a line on stderr, or a count in the fuzz burndown record, so a weakened run can't pass for a normal one. 20261012-3 added `QUAACKS_ENUMERATE_WORLDS` (`fuzz/enumerate/limit.rb`), which has the same problem: it caps enumerate at n worlds instead of 30 s, and 0 turns it off. Cover both.
-3. **Done by 20261012-13** (sizes are capped at 5, "5 or more", in the enclave, egress, the driver and the report). **Egress doesn't cap a disproof's sizes.** A size is never more than 4, the generator's most rows per table, but `FuzzResult.size?` accepts any positive count. Cap it at the generator's maximum. A shrunk size or a trial count can vary with a query's literal, such as a LIMIT or HAVING threshold. The user asked for both fields, and 20261010-47 is the precedent for counts like these. A cap narrows what a size can carry.
-4. **No spec checks that fuzz never disproves a sound replayed rewrite.** The replay specs check only that each planted wrong rewrite is disproved. Assert that no rewrite outside a run's `outcome.wrong` gets `fuzz_disproved`.
-5. **The INTERSECT ALL versus INTERSECT trap (e2e case 100) isn't caught at the spec setting.** It needs 4 rows sharing one key. It was missed at 378 and 3,000 trials and found at 5,285, well inside the 30 s production floor, so production catches it. A spec at 40 trials can't show that. Either add a spec at a trial count that catches it, or note in the fuzz spec why it's left out.
-6. **Nothing tests that a number's neighbours go both ways** (`fuzz/dictionary.rb`, `finest`'s `%w[1 -1]`). With neighbours on one side only, every probe still disproved, because with two constants either side's neighbour lands in the gap. Add a test with a single constant that needs its upward neighbour, or say in a comment why one side is enough. This one came from the second review.
-
-Decisions (made overnight, 2026-10-13, while the user was away; the user can revisit them):
-- **Item 1 covers enumerate too.** Enumerate's `Run#call` rescues the deadline and returns `ended`, so a kill it finds just before the deadline, dropped mid-shrink or mid-lift, can pass with the bound it finished, which prints the stronger sentence. A deadline that expires while either search confirms a kill (shrink or lift) leaves both searches untested, with no trials or bound claimed, so no sentence says the rewrite survived. ScenarioTests then runs out of time, and the rewrite goes on as `out_of_time`, with its "not tested in time" caution. A deadline at any other point keeps today's behaviour.
-- **Item 2 marks the burndown, not stderr.** The enclave sends stderr to the null device (`ErrorFilter.silence_stderr!`), so a line there would never be seen. When `QUAACKS_FUZZ_TRIALS` or `QUAACKS_ENUMERATE_WORLDS` is set, 0 included, a record that is always written for the rewrite carries the setting as an extra count, so the burndown report shows it. The setting is a number the operator set, not data.
-
-- **Depends on:** 20261012-2.
-- **Came from:** The two reviews of 20261012-2, 2026-10-12 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-17. Regrouped: minors from the review of 20261012-16.
@@ -1080,6 +1063,8 @@ Find where the time goes: copies worlds load up to 101 rows a table, a quarter o
 From the build of 20261012-3. The root suite sets `QUAACKS_ENUMERATE_WORLDS=0` for the replays' `quaacks` children, so no recorded run sends an enumerate pass or disproof through the driver: its transport check, the report's enumerate sentence, the `enumerate_disproved` fate, the burndown's `enumerate` stage and its Sankey layer are only covered by specs that build the messages by hand. With enumerate on at 30 s, the `key_in_self_join` replay spent 30 s for a bound of 1, which is why the builder left it off.
 
 Add a replay variant that turns enumerate on with a small world cap, so its verdict doesn't depend on the machine's speed, and check that it reaches the report: a rewrite whose section shows the enumerate sentence with its bound, and the `enumerate` stage in the burndown. If a planted run can be made to have a rewrite only enumerate catches (such as a NULLS LAST change, like `cv_topics_nulls_last`), check its `enumerate_disproved` fate too. Keep the per-commit check's run time about the same: put the variant in `rake full` if it's slow.
+
+The replay example 20261012-15 added, that no rewrite outside a run's `outcome.wrong` is `fuzz_disproved` or `enumerate_disproved`, can't fail on enumerate until a replay runs it (the review of 20261012-15). Make sure the variant runs that example too.
 
 - **Depends on:** None.
 - **Came from:** The build of 20261012-3, 2026-10-13.
@@ -1197,5 +1182,18 @@ From the review of 20261012-28, 2026-10-13 (minor). `search_note` (`driver/lib/q
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-28, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-38. A deadline while confirming a kill: minors from the review of 20261012-15.
+
+From the review of 20261012-15, 2026-10-13 (minor). A deadline that expires while fuzz or enumerate confirms a kill (`Search#confirm` in `enclave/lib/quaack/enclave/fuzz.rb`) raises `Fuzz::Unconfirmed`, and `Search#call` returns both searches untested.
+
+1. **One enumerate case isn't tested.** The decision covers a kill enumerate finds after it has already finished a bound, which before the fix passed with that bound. The specs in `fuzz_enumerate_postgres_spec.rb` cover only a kill with no bound finished. The fix handles both, and the fuzz verdict still tells base from fix, but add an example where enumerate finishes a bound of at least 1 before its kill, and assert `bound` nil.
+2. **A deadline while `confirm` re-opens the session** after a kill that didn't lift also gives untested, rather than keeping the search going or keeping fuzz's pass. That's conservative, and the timing is very narrow. Decide whether it should count as mid-confirm. If not, raise `Unconfirmed` only from the shrink and the lift, test first.
+3. **The specs' fake clock keys on names in the code.** It expires when `smaller`, `fuzz/lift.rb` or `fuzz/enumerate.rb` is on the stack (`caller_locations`). A rename turns the specs red, not green, so they aren't vacuous, but they're brittle. If a cleaner seam turns up, such as a deadline that expires after k checks, use it.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-15, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
