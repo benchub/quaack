@@ -11294,3 +11294,61 @@ Add a test that goes red under that mutant, test first against the mutant: a cop
 **Minor finding, filed as 20261012-43.** A `copied` regression shows up as a Postgres error rather than an assertion failure. It still goes red for the right reason.
 
 **Checks.** The per-commit check had only the four accepted failures.
+
+### 20261012-25. fuzz: the trial rate fell 25–40% on ORM-shaped queries after 20261012-13.
+
+From the build and review of 20261012-13 (minor). On the same LLM replies under the same load, `main` against the 20261012-13 branch:
+
+| Query | Before | After |
+|---|---|---|
+| orm_join | about 210/s | about 140/s |
+| group_having | 130–210/s | 85–117/s |
+| correlated_exists | 115–145/s | 100–127/s |
+| keyset LIMIT 25 | 33–41/s | 27–32/s |
+
+On the hard corpus, the median rate on passes fell from 271/s to 209/s, and `mr_having_sum` fell from 287/s to 58/s. Nothing the baseline caught was lost, and passes still stop at the 30 s floor, so a pass now covers fewer worlds.
+
+Find where the time goes: copies worlds load up to 101 rows a table, a quarter of worlds are copies worlds (`COPIES_SHARE`), and world values may fail their CHECK or cast more often. Then tune `COPIES_SHARE` and the world-value rate, or make copies worlds cheaper, such as one multi-row INSERT. Measure with the hard corpus harness (`scratch/build-20261012-13/corpus_fuzz.rb` in the main checkout, 60 s per rewrite): keep 75 of 76 caught and 0 false disproofs, and report the rate on passes before and after.
+
+Since 20261012-24 (2026-10-13), a copies world on a child table loads; before, it failed at its first copy's INSERT. Those worlds now cost a full load and two queries instead of a failed INSERT. So take the "before" numbers on `main` after 20261012-24, not from the table above. That review saw no change in the rate on one users/orders pass (about 20 trials/s at 30 s, both before and after).
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-13, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (merged 2026-10-13, 7e407c8d)
+
+**What the build found.** Copies worlds weren't the cause. The run server has autovacuum off (run-server), so rows from rolled-back trials stayed as dead tuples in the arena's table files for the rest of the run, and every later trial's scans read them. Copies worlds load about 7× more rows, so the tables grew faster after 20261012-13, and that is probably what its measurements saw. One spike database's `orders` had reached 31 MB.
+
+On `mr_having_sum` on `main`, a trial took about 2.4–2.6 ms whatever the world type, about 2.2 ms of it in the two queries. Loading was already one multi-row INSERT per table in one round trip, so batching had nothing to win.
+
+**What landed.**
+- At the start of each session transaction, `Fuzz::Session::Loader#prepare` empties the footprint's tables with `TRUNCATE`. The trials' rows then go into new files that the ROLLBACK throws away, and the session restarts its transaction every 500 trials.
+- The arena's tables are empty, so the `TRUNCATE` takes nothing away. The arena has no injected statistics, so resetting `relpages` and `reltuples` changes nothing fuzz relies on.
+- Foreign keys that point at a footprint table, or at a partition or `INHERITS` child of one, from a table outside the footprint would block the `TRUNCATE`, so they're dropped first. A partition's inherited key is dropped where it was declared. Dropping them is about 35 ms on Canvas `users`, against about 470 ms for `TRUNCATE ... CASCADE`.
+- `COPIES_SHARE` and the world-value rate are unchanged.
+- DESIGN.md's fuzz Footprint and Search bullets are updated, and so are the comments in `session.rb` and `loader.rb`.
+- Four new specs are in `enclave/spec/fuzz_postgres_spec.rb`: no dead rows are left in the footprint's tables; a foreign key into the footprint from outside it; a partition whose parent is referenced from outside; and an `INHERITS` child referenced from outside.
+
+**Trial rate on passes**, with main and the branch run at the same time on fresh databases, twice, 60 s per rewrite:
+
+| Query | Before | After |
+|---|---|---|
+| Hard corpus, median (26 passes) | 694 / 701 | 1721 / 1703 |
+| `mr_having_sum` | about 350 | about 1250 |
+| LLM `orm_join` | 33 / 34 | 270 / 278 |
+| LLM `group_having` | 42 / 43 | 494 / 483 |
+| LLM `correlated_exists` | 58 / 56 | 318 / 310 |
+| LLM keyset | 16 / 16 | 383 / 404 |
+
+Catches didn't change: 80 of 84 wrong rewrites on both sides, and the 4 misses are the out-of-scope ones. There were 0 false disproofs.
+
+**Review.** Landable, with no blocking findings.
+- Twelve schema setups gave the same verdicts and trial counts on main and the branch, each with a sound and a wrong rewrite. They covered a self-reference, a deferrable foreign key cycle, outside references in many forms, partitions, `INHERITS` and quoted names. The full list is in the reviewer's report.
+- Views, materialized views, partitioned parents and foreign tables are refused before fuzz (relkind `r` only), so they never reach the footprint.
+- After a pass, a kill with lift, and a deadline mid-run, every foreign key was back and the tables were empty with zero file size. The lift runs after the session closes, in a fresh transaction with every constraint enforced. Enumerate reuses the session, so it gets the same speedup.
+- Locks: each run has its own arena database, the enclave doesn't run things in parallel, and the driver runs steps one after another. `SET LOCAL statement_timeout` comes before `prepare`, so a lock wait can't hang.
+- Measurement on 10 hard-corpus rewrites: main ran at 456–621/s on fresh databases but 290/s on reused, bloated ones; the branch ran at 1351–1538/s. Production shares one arena across a run's rewrites, so the gain there should be bigger.
+- Mutants, all killed: no `TRUNCATE`, no outside drops, no `INHERITS` walk, no `conparentid` climb, and no parent-key filter.
+- Minor finding, filed as 20261012-44: removing the `NOT conrelid … emptied` clause survives every fuzz spec.
+
+**Checks.** The per-commit check had only the four accepted failures.

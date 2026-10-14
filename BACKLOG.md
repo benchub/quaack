@@ -22,6 +22,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-32: fuzz's solved comparison values look through a cast on the column (`x::numeric / 3 > 2`, `CAST(x AS numeric)`), so such a comparison's boundary values reach fuzz and enumerate. No change to any reported field.
 - 20261012-33: fuzz gives a comparison's solved values only to the qualified column's own table (`o.total / 3 > 2` no longer gives them to a joined table's `total`); an unqualified column, or one of a subquery, CTE or function, still matches by name. No change to any reported field.
 - 20261012-24: in fuzz's copies worlds, each copy keeps the first row's foreign-key values, so a copies world on a child table loads. Before, the copies took the first row's own key values as their foreign key, and the world failed to load. No change to any reported field.
+- 20261012-25: fuzz empties the footprint's tables with `TRUNCATE` at the start of each session transaction, after dropping the foreign keys that point into them from outside the footprint, all inside the rolled-back transaction. Rows from rolled-back trials then no longer pile up in the arena's files, which the run server's autovacuum never cleans, so the trial rate on passes is 2–25× higher. No change to any reported field.
 
 ## How this file works.
 
@@ -1034,27 +1035,7 @@ From the build and review of 20261012-11 (minor).
 
 ### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-25. fuzz: the trial rate fell 25–40% on ORM-shaped queries after 20261012-13.
-
-From the build and review of 20261012-13 (minor). On the same LLM replies under the same load, `main` against the 20261012-13 branch:
-
-| Query | Before | After |
-|---|---|---|
-| orm_join | about 210/s | about 140/s |
-| group_having | 130–210/s | 85–117/s |
-| correlated_exists | 115–145/s | 100–127/s |
-| keyset LIMIT 25 | 33–41/s | 27–32/s |
-
-On the hard corpus, the median rate on passes fell from 271/s to 209/s, and `mr_having_sum` fell from 287/s to 58/s. Nothing the baseline caught was lost, and passes still stop at the 30 s floor, so a pass now covers fewer worlds.
-
-Find where the time goes: copies worlds load up to 101 rows a table, a quarter of worlds are copies worlds (`COPIES_SHARE`), and world values may fail their CHECK or cast more often. Then tune `COPIES_SHARE` and the world-value rate, or make copies worlds cheaper, such as one multi-row INSERT. Measure with the hard corpus harness (`scratch/build-20261012-13/corpus_fuzz.rb` in the main checkout, 60 s per rewrite): keep 75 of 76 caught and 0 false disproofs, and report the rate on passes before and after.
-
-Since 20261012-24 (2026-10-13), a copies world on a child table loads; before, it failed at its first copy's INSERT. Those worlds now cost a full load and two queries instead of a failed INSERT. So take the "before" numbers on `main` after 20261012-24, not from the table above. That review saw no change in the rate on one users/orders pass (about 20 trials/s at 30 s, both before and after).
-
-- **Depends on:** None.
-- **Came from:** The build and review of 20261012-13, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-25. fuzz: the trial rate fell 25–40% on ORM-shaped queries after 20261012-13. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-29. The recorded pipeline replays never run enumerate.
 
@@ -1112,6 +1093,8 @@ Measured overnight, 2026-10-13. The setup was the spike's Canvas corpus on the s
 
 Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's schema while ScenarioTests runs out of time there (20261011-13). That ends with 20261012-4. Once the cap is chosen, build it test first in `Fuzz::StopRule` (`from_env`'s production rule gets a cap), and update DESIGN.md's stop rule. Measure the Canvas and hard corpora before and after, for kills and time per rewrite.
 
+**Since 20261012-25 (2026-10-13), the numbers above are stale.** The measurement ran on `main` before 20261012-25, when dead rows from rolled-back trials piled up in the arena's tables for the whole run. So later rewrites in a run ran slower, and some of the "load" swing above was probably that bloat: main ran 456–621 trials/s on fresh databases and 290/s on reused ones. 20261012-25 raised the rate on passes about 2.5× on the hard corpus and 8–25× on the LLM replies, so the slowest kill seen (8,227 trials) now takes about 5 s, not 40. Plans no longer change as the tables bloat, which may also change how often new signatures arrive. Re-measure Canvas at production's rule before choosing the cap; the answer may now be a smaller cap, or the rule may stop on its own more often.
+
 - **Depends on:** None.
 - **Came from:** The overnight measurement, 2026-10-13.
 - **Design:** rewrite-test.
@@ -1155,5 +1138,16 @@ From the review of 20261012-24, 2026-10-13 (minor). The spec 20261012-24 added i
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-24, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-44. fuzz's Loader: test that foreign keys between footprint tables stay enforced in the session.
+
+From the review of 20261012-25, 2026-10-13 (minor). `Fuzz::Session::Loader::REFERENCES_SQL` (`enclave/lib/quaack/enclave/fuzz/session/loader.rb`) finds the foreign keys that would block the footprint's `TRUNCATE`, and keeps only those from tables outside the footprint with `AND NOT c.conrelid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT relid FROM emptied))`. Removing that clause keeps every fuzz spec green (`fuzz_postgres_spec.rb`, plus the enumerate, world-values and threshold specs, 98 examples). Without it, `prepare` would also drop the foreign keys between footprint tables. DESIGN.md says those stay enforced during trials. The generator builds worlds that respect them anyway, so the gap would show only while shrinking: dropping a parent row could leave a counterexample that then fails to lift.
+
+Add a spec, test first against that mutant: a session over two footprint tables joined by a foreign key, where loading a child row whose parent is missing is refused inside the session, or the key is still in `pg_constraint` after `prepare`.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-25, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
