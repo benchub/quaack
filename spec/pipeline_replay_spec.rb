@@ -197,7 +197,7 @@ RSpec.describe PipelineReplay do
                  "counterexamples" => ["rewrite_1"])
         %w[plan-pruning fuzz rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
         # The spec_helper's QUAACKS_FUZZ_TRIALS: a floor of 40 trials and a
-        # cap of 400, not the 30 seconds a production run takes. trials
+        # cap of 400, not production's 30-to-60 seconds. trials
         # counts only the worlds both queries ran on. Each setting set marks
         # the record (task 20261012-15).
         expect(stages.dig("fuzz", "rewrite_1", "extra"))

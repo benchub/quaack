@@ -13,17 +13,20 @@ module Quaack
       #   rule = StopRule.from_env(ENV)
       #   rule.observe(signature) until rule.stop?
       #
-      # The units are seconds on the monotonic clock in production (a floor
-      # of 30 and no cap of its own: the rewrite's five-minute Deadline is
-      # the cap). For specs, QUAACKS_FUZZ_TRIALS=<n> makes each observed
-      # trial one unit, with a floor of n trials and a cap of CAP_FLOORS
-      # times that, so the search does the same work on any machine and a
-      # spec's verdict never depends on its speed. QUAACKS_FUZZ_TRIALS=0
-      # turns the search off. When it's set, the rewrite's fuzz record in
-      # the burndown says so (Steps::RewriteFuzz::SETTINGS).
+      # The units are seconds on the monotonic clock in production: a floor
+      # of 30 and a cap of 60 (task 20261012-35), so the search never runs
+      # past 60 seconds, nor past the rewrite's five-minute Deadline, and
+      # leaves enumerate its time. For specs, QUAACKS_FUZZ_TRIALS=<n> makes
+      # each observed trial one unit, with a floor of n trials and a cap of
+      # CAP_FLOORS times that, so the search does the same work on any
+      # machine and a spec's verdict never depends on its speed.
+      # QUAACKS_FUZZ_TRIALS=0 turns the search off. When it's set, the
+      # rewrite's fuzz record in the burndown says so
+      # (Steps::RewriteFuzz::SETTINGS).
       class StopRule
         ENV_TRIALS = "QUAACKS_FUZZ_TRIALS"
         FLOOR_SECONDS = 30
+        CAP_SECONDS = 60
         CAP_FLOORS = 10
         MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
 
@@ -33,7 +36,7 @@ module Quaack
         # turns the search off, for the specs that test ScenarioTests alone.
         def self.from_env(env)
           value = env[ENV_TRIALS]
-          return new(floor: FLOOR_SECONDS, cap: nil, clock: MONOTONIC) if value.nil?
+          return new(floor: FLOOR_SECONDS, cap: CAP_SECONDS, clock: MONOTONIC) if value.nil?
           raise ArgumentError, "#{ENV_TRIALS} must be a whole number" unless value.match?(/\A(0|[1-9]\d*)\z/)
 
           trials(Integer(value)) unless value == "0"
