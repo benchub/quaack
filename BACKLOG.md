@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+The user, 2026-10-14: close this batch (bump, `rake full`, stamp) once 20261012-35 and 20261012-4 have landed, so the user can try them on the real schema.
+
 - 20261012-1: value pools and simple CHECKs read each element of an `ARRAY[...]` under casts for `= ANY` and `<> ALL` (a varchar IN CHECK no longer refuses as `unsatisfiable_check`); no change to any reported field.
 - 20261012-2: rewrite-test runs the fuzz search before ScenarioTests. The `rewrite_test` message gains `stage` and `trials`. The report payload gains the fate `fuzz_disproved` and a disproof's sizes per table. The burndown gains the stage `fuzz`. A fuzz pass counts as tested even when ScenarioTests refuses the query.
 - 20261012-16: result comparison, in fixtures and at production size, compares an `ORDER BY`'s ties group by group, so a rewrite that only adds a tiebreak passes. No change to any reported field.
@@ -669,6 +671,7 @@ The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in 
 - **Minors:** nothing tests multi-try spill order in `Parts` (changing `lifted`'s `if i == done.size` to `if done.empty?` leaves 584 examples green): add a spec; no spec compares a whole scenario build, with loaded rows dumped, between the old and the new code: add a reference spec.
 - **Status:** in progress (the rest waits on 20261012-2)
 - **Synthetic evidence, 2026-10-13:** on the synthetic 583-table schema, fuzz alone takes the whole 5 minutes on 9 of 28 sound Canvas rewrites at production's stop rule, which has no cap of its own (20261012-35). So rewrite-test's time per sound rewrite is still bounded by the budget, not the work, until fuzz is capped and 20261012-4 removes ScenarioTests.
+- **Closing (2026-10-14).** Two things fill the budget now: ScenarioTests' parent closure, and fuzz's uncapped stop rule. 20261012-4 removes the first, and 20261012-35 caps the second at 60 s, so a sound rewrite takes at most about 90 s and a wrong one a few seconds. Close this task when both have landed; the user's next run on the real schema, after the batch is released, confirms it.
 
 ### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Dropped, see BACKLOG-COMPLETE.md.
 
@@ -689,7 +692,7 @@ From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables m
 
 ### 20261012-4. rewrite-test: replace ScenarioTests with the disproof search.
 
-The user, 2026-10-12: replace ScenarioTests entirely, not just run the search before it. Once 20261012-2 and 20261012-3 have landed and been measured on the user's real schema, remove the scenario builder from rewrite-test and everything that names it:
+The user, 2026-10-12: replace ScenarioTests entirely, not just run the search before it. Once 20261012-2 and 20261012-3 have landed, remove the scenario builder from rewrite-test and everything that names it:
 - `ScenarioTests` and `Scenarios`, keeping whatever the search reuses, such as `Checks` and `ValuePools`.
 - The vacuity guard's replay of its fixtures into scenarios.
 - RewriteFate's `SCENARIOS` and the fates' `scenario` field.
@@ -706,6 +709,7 @@ Stored entries and messages from older versions must still read, as `out_of_time
 Answers (the user, 2026-10-12):
 - **Vacuity guard.** The search reports which of the original's atoms came out both true and false across its trials. If an atom never did, the rewrite still passes, with a caution that names those atoms.
 - **"Why disproved".** In place of the scenario's name, the report and burndown give the stage (`fuzz` or `enumerate`), the rule, and the disproving database's rows per table.
+- **No measurement on the real schema first** (the user, 2026-10-14). ScenarioTests is too slow, and a non-starter on the user's schema, so it goes whatever the search measures there. The synthetic measurements stand in: the hard corpus (80 of 84 wrong rewrites caught, the 4 misses out of scope) and Canvas (32 of 34), with no false disproofs.
 
 - **Depends on:** 20261012-2, 20261012-3.
 - **Came from:** The user, 2026-10-12.
@@ -905,10 +909,14 @@ From the build of 20261012-3. A pass with w = 1 says only that every one-row dat
 
 Open question for the user: at w = 1, should the rewrite's section keep fuzz's sentence ("It also survived N random small databases built around its own values."), use the enumerate sentence as now, or word it another way? The same choice applies to the progress line and to the burndown's `bound_1` count.
 
+Answers (the user, 2026-10-14):
+- **When to claim the bound.** The report's rewrite section and the progress line mention enumerate's bound only when it gives every table the query reads at least one row. Otherwise they use fuzz's sentence. Enumerate still tries w = 1 first, since it's cheap and catches real bugs (an inner join turned outer differs with the second table empty, and a single-table query is fully covered at w = 1); only the pass claim changes. The burndown keeps its exact bound counts.
+- **No "value classes".** The user didn't know the term, so readers won't either. The new sentence: "Found no difference on N random datasets, or on any dataset of up to W rows built from the query's own values (its constants, values next to them, and NULL)." Use the same words in the progress line, and check the report's other enumerate words (stage sentences, Sankey layer, burndown words) for the term.
+
 - **Depends on:** None.
 - **Came from:** The build of 20261012-3, 2026-10-13.
 - **Design:** rewrite-test.
-- **Status:** todo (open question for the user)
+- **Status:** todo
 
 ### 20261012-35. fuzz's stop rule rarely stops before the 5-minute deadline, and starves enumerate.
 
@@ -938,10 +946,12 @@ Whatever the cap, a sound rewrite still takes the full 5 minutes on the user's s
 
 So the cap is still needed, and 60 s still fits: at the slowest pass rate seen here (q09a, 325 trials/s), 60 s is about 20,000 trials, 2.4 times the slowest kill seen. Option 3's 10,000-trial floor would have changed one rewrite here (q09a's floor ended at 9,781 trials), and it guards a loaded server.
 
+**Answer (the user, 2026-10-14):** option 1, cap fuzz at 60 s. Fuzz plus enumerate is then at most 90 s per sound rewrite.
+
 - **Depends on:** None.
 - **Came from:** The overnight measurement, 2026-10-13.
 - **Design:** rewrite-test.
-- **Status:** todo (waits on the user's answer)
+- **Status:** todo
 
 ### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments. Done, see BACKLOG-COMPLETE.md.
 
