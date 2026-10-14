@@ -922,6 +922,27 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(spent_first).to include(passed: true, rule: "out_of_time", stage: "rewrite-test", trials: 0)
       end
 
+      # Task 20261012-15: a kill the budget cuts off while fuzz lifts it is
+      # likely a counterexample, so fuzz claims no pass, and the rewrite
+      # goes on out of time, with its caution.
+      it "leaves a rewrite out of time, with no trials, when the budget runs out while fuzz lifts a kill" do
+        ready(looser)
+        expired = false
+        lifting = Quaack::Enclave::Deadline.new(1, clock: lambda do
+          expired ||= caller_locations.any? { it.path.end_with?("fuzz/lift.rb") }
+          expired ? 1_000.0 : 0.0
+        end)
+
+        messages = in_process("rewrite_1", lifting, FUZZ_TO_KILL)
+
+        expect(expired).to be(true)
+        expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, scenario: nil,
+                                  rule: "out_of_time", stage: "rewrite-test", trials: 0, worlds: 0, bound: nil }])
+        expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: { "trials" => 0,
+                                                                                       "untested" => 1 }))
+        expect(burndown["stages"]["rewrite-test"]["rewrite_1"]["extra"]).to include("not_tested_in_time" => 1)
+      end
+
       it "leaves the arena with no row and no session open after a rewrite runs out of time partway" do
         ready(same)
         calls = 0

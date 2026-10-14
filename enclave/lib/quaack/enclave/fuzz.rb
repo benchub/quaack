@@ -38,8 +38,10 @@ module Quaack
     # verdict is :disproved, :passed (the search ran out its stop rule or
     # the deadline with at least one world compared), or :untested (no
     # footprint, a query the comparison can't judge, a session that
-    # couldn't be set up, such as honoured copies that can't be kept, or no
-    # world in which both queries ran). trials counts the worlds compared.
+    # couldn't be set up, such as honoured copies that can't be kept, no
+    # world in which both queries ran, or a deadline that ran out while a
+    # kill was shrunk or lifted, which leaves enumerate untested too).
+    # trials counts the worlds compared.
     # sizes are a disproof's rows per table, as [schema, table, count] for
     # each footprint table with rows, sorted; the rows themselves never
     # leave here.
@@ -56,6 +58,12 @@ module Quaack
 
       class Error < StandardError
         def initialize(message = "a fuzz query names a table without its schema") = super
+      end
+
+      # The rewrite's Deadline ran out while a kill was shrunk or lifted
+      # (Search#confirm), so both searches are untested.
+      class Unconfirmed < StandardError
+        def initialize(message = "the rewrite's time budget ran out while a kill was confirmed") = super
       end
 
       LIFTS = 5
@@ -156,6 +164,8 @@ module Quaack
 
           fuzz = fuzzed(stop, rng)
           Results.new(fuzz:, enumerate: fuzz.verdict == :passed && limit ? enumerate(limit) : Enumerate.untested)
+        rescue Unconfirmed
+          Results.new(fuzz: Fuzz.untested, enumerate: Enumerate.untested)
         ensure
           @session.close
         end
@@ -164,7 +174,8 @@ module Quaack
         def trial(rows) = @session.trial(rows)
 
         # A kill shrunk and lifted, as [rule, sizes], or nil, with the
-        # session open again to go on.
+        # session open again to go on. Raises Unconfirmed if the deadline
+        # runs out meanwhile.
         def confirm(rows)
           rows = shrink(rows)
           @session.close
@@ -173,6 +184,8 @@ module Quaack
 
           @session.open
           nil
+        rescue Deadline::Expired
+          raise Unconfirmed
         end
 
         private

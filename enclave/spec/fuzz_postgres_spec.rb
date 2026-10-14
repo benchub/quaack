@@ -155,6 +155,34 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  # Task 20261012-15: a kill the deadline cuts off before it's shrunk and
+  # lifted is likely a counterexample, so the search claims no pass and no
+  # trials. The clock runs out, and stays out, once a call from within
+  # the shrink or the lift reads it.
+  def expiring(within)
+    expired = false
+    clock = lambda do
+      expired ||= caller_locations.any?(&within)
+      expired ? 1_000.0 : 0.0
+    end
+    Quaack::Enclave::Deadline.new(1, clock:)
+  end
+
+  {
+    "shrinks" => ->(location) { location.base_label == "smaller" },
+    "lifts" => ->(location) { location.path.end_with?("fuzz/lift.rb") }
+  }.each do |doing, within|
+    it "is untested, claiming no trials, when the rewrite's deadline runs out while it #{doing} a kill" do
+      outcome = Quaack::Enclave::Deadline.within(expiring(within)) do
+        fuzz("SELECT id FROM s.orders WHERE status = 'shipped' AND total > 100",
+             "SELECT id FROM s.orders WHERE status = 'shipped' AND total >= 100")
+      end
+
+      expect(outcome).to eq(described_class.untested)
+      expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+  end
+
   it "refuses a query that isn't one SELECT before it touches the arena" do
     expect { fuzz("SELECT id FROM s.orders", "DELETE FROM s.orders") }
       .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect(it.rule).to eq(:statement_not_allowed) }
