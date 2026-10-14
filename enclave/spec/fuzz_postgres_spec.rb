@@ -98,6 +98,61 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  def pages(table) = conn.exec("SELECT pg_relation_size('#{table}')").getvalue(0, 0).to_i
+
+  # Task 20261012-25: the run server has autovacuum off, so a trial's
+  # rolled-back rows would stay in the table's file for the rest of the run,
+  # and every later scan would read them.
+  it "leaves no dead rows from its trials in the footprint's tables" do
+    outcome = fuzz("SELECT id FROM s.orders WHERE status = 'shipped' AND total > 100",
+                   "SELECT id FROM s.orders WHERE total > 100 AND status = 'shipped'")
+
+    expect(outcome.trials).to be >= 150
+    expect(pages("s.orders")).to eq(0)
+  end
+
+  it "empties a footprint table that a table outside the footprint references, and puts the reference back" do
+    outcome = fuzz("SELECT id FROM s.customers WHERE name = 'ann' AND id > 1",
+                   "SELECT id FROM s.customers WHERE id > 1 AND name = 'ann'")
+
+    expect(outcome).to have_attributes(verdict: :passed)
+    expect(pages("s.customers")).to eq(0)
+    expect(foreign_keys).to eq([["orders_customer_id_fkey"]])
+  end
+
+  it "empties a partition the queries name when a table outside the footprint references its parent" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.events (id integer, at date, PRIMARY KEY (id, at)) PARTITION BY RANGE (at);
+      CREATE TABLE s.events_2024 PARTITION OF s.events FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+      CREATE TABLE s.notes (id integer PRIMARY KEY, event_id integer, event_at date,
+                            FOREIGN KEY (event_id, event_at) REFERENCES s.events);
+    SQL
+
+    outcome = fuzz("SELECT id FROM s.events_2024 WHERE id > 1 AND at > '2024-06-01'",
+                   "SELECT id FROM s.events_2024 WHERE at > '2024-06-01' AND id > 1")
+
+    expect(outcome).to have_attributes(verdict: :passed)
+    expect(pages("s.events_2024")).to eq(0)
+    expect(conn.exec("SELECT count(*) FROM pg_constraint WHERE conrelid = 's.notes'::regclass AND contype = 'f'")
+               .getvalue(0, 0)).not_to eq("0")
+  end
+
+  it "empties a footprint table whose child, which a table outside the footprint references, TRUNCATE empties too" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.vehicles (id integer PRIMARY KEY, wheels integer NOT NULL);
+      CREATE TABLE s.cars (PRIMARY KEY (id)) INHERITS (s.vehicles);
+      CREATE TABLE s.trips (id integer PRIMARY KEY, car_id integer REFERENCES s.cars);
+    SQL
+
+    outcome = fuzz("SELECT id FROM s.vehicles WHERE wheels > 2 AND id > 1",
+                   "SELECT id FROM s.vehicles WHERE id > 1 AND wheels > 2")
+
+    expect(outcome).to have_attributes(verdict: :passed)
+    expect(pages("s.vehicles")).to eq(0)
+    expect(conn.exec("SELECT conname FROM pg_constraint WHERE conrelid = 's.trips'::regclass AND contype = 'f'")
+               .values).to eq([["trips_car_id_fkey"]])
+  end
+
   # Ties on total turn up in almost every world. Any order of a tie is an
   # answer the original could give, so a tiebreak can't be a disproof.
   [" LIMIT 2", ""].each do |limit|
