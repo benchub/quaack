@@ -11352,3 +11352,26 @@ Catches didn't change: 80 of 84 wrong rewrites on both sides, and the 4 misses a
 - Minor finding, filed as 20261012-44: removing the `NOT conrelid … emptied` clause survives every fuzz spec.
 
 **Checks.** The per-commit check had only the four accepted failures.
+
+### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments.
+
+From the review of 20261012-39, 2026-10-13 (minor). Wording only; the code is right.
+
+1. **A generated column.** DESIGN.md's enumerate Value classes bullet says a column the plan gives no value, "such as a generated one", takes its default. Postgres computes a generated column from the rest of the row, so it's not one fixed value either. Say so, beside the volatile default.
+2. **A generated column the queries read gets no classes** (`Fuzz::Generator::Plan#entry` skips it), but the bullet's first sentence says a kind gives a value to each read column. Name the exception there.
+3. **"The nth key value in a key class's single-column unique key"** leaves out the fallback: when a table has more rows than key values, the row gets a fresh value (`Fuzz::Enumerate::Worlds#fixed`: `keys.dig(...) || @domains.unique(...)`).
+4. **Two code comments keep the old wording:** `enclave/lib/quaack/enclave/fuzz/enumerate/kinds.rb`'s class comment says "NULL in either when the column allows it" (it's also added when a column has no other class), and `enclave/lib/quaack/enclave/fuzz/enumerate/worlds.rb` (about line 27) says "a key the plan fills (:pk)" (DESIGN.md now says "a key class's single-column unique key").
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-39, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (merged 2026-10-14, 498052e1)
+
+**What landed.** Wording only; no code changed.
+- DESIGN.md's enumerate Value classes bullet now names the generated-column exception: a kind gives a value to each column the queries read unless the column is generated, and Postgres computes a generated column from the rest of the row, so like a volatile default it isn't one fixed value.
+- The same bullet now gives the key fallback: when a table has more rows than its key column has key values, the row gets a fresh value (`Fuzz::Enumerate::Worlds#fixed`).
+- `kinds.rb`'s class comment now says NULL is a class when the column allows it or has no other class, and `worlds.rb`'s comment names the key as DESIGN.md does.
+
+**Review.** Landable, no blocking findings. Each new sentence was checked against the code: `Plan#entry` returns nil for any `attgenerated` column (STORED or VIRTUAL), and the fallback fires only when the row count passes that column's key values. Two minor findings were filed as 20261012-45: the generated-column exception is now said twice, and the fallback's value isn't always fresh for a pinned column (that predates this task).
+
+**Checks.** RuboCop clean, `transform_docs_spec` passed, and the per-commit check had only the four accepted failures.

@@ -1105,19 +1105,7 @@ So the cap is still needed, and 60 s still fits: at the slowest pass rate seen h
 - **Design:** rewrite-test.
 - **Status:** todo (waits on the user's answer)
 
-### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments.
-
-From the review of 20261012-39, 2026-10-13 (minor). Wording only; the code is right.
-
-1. **A generated column.** DESIGN.md's enumerate Value classes bullet says a column the plan gives no value, "such as a generated one", takes its default. Postgres computes a generated column from the rest of the row, so it's not one fixed value either. Say so, beside the volatile default.
-2. **A generated column the queries read gets no classes** (`Fuzz::Generator::Plan#entry` skips it), but the bullet's first sentence says a kind gives a value to each read column. Name the exception there.
-3. **"The nth key value in a key class's single-column unique key"** leaves out the fallback: when a table has more rows than key values, the row gets a fresh value (`Fuzz::Enumerate::Worlds#fixed`: `keys.dig(...) || @domains.unique(...)`).
-4. **Two code comments keep the old wording:** `enclave/lib/quaack/enclave/fuzz/enumerate/kinds.rb`'s class comment says "NULL in either when the column allows it" (it's also added when a column has no other class), and `enclave/lib/quaack/enclave/fuzz/enumerate/worlds.rb` (about line 27) says "a key the plan fills (:pk)" (DESIGN.md now says "a key class's single-column unique key").
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-39, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-41. A deadline after a kill that didn't lift: assert the spec's clock fired.
 
