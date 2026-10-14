@@ -1130,6 +1130,10 @@ From the review of 20261012-23 (minor).
 4. **ScenarioTests' foreign cancel stores fuzz's records.** `RewriteFuzz.call` writes the fuzz and enumerate burndown records before ScenarioTests runs. So a cancel QUAACK didn't send in ScenarioTests ends the step with those records already stored for the rewrite, against DESIGN.md's "store nothing for the rewrite". Decide whether the burndown records count as storing something. If they do, write them only once the rewrite's result is known.
 5. **Kinds and Worlds never check the deadline.** Building enumerate's kinds and worlds never calls `Deadline.check!`, so a large pairwise kinds build can't be stopped by the rewrite's budget. Check whether it's ever slow enough to matter, on the synthetic 583-table schema's widest footprint. If it is, check the deadline in the build.
 
+Decisions (made overnight, 2026-10-13, while the user was away; the user can revisit them):
+- **Item 4: the burndown records count.** 20261012-26 meant a foreign cancel in fuzz's lift to end the step "before any burndown is recorded", so one in ScenarioTests should store nothing either. `RewriteFuzz` stops recording when it searches. Fuzz's and enumerate's records are written only once the rewrite's result is known: with the disproof, or with rewrite-test's own record after ScenarioTests. A rerun still replaces them (`Burndown.record_latest`).
+- **Item 1 describes the code as it stands after 20261012-15.** That task made a deadline during a kill's shrink or lift leave both searches untested. The sentence must say what each point a deadline can land at does now. Read the code for each.
+
 - **Depends on:** None.
 - **Came from:** The build and review of 20261012-26, 2026-10-13 (minor).
 - **Design:** rewrite-test.
