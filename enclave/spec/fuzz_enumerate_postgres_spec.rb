@@ -259,6 +259,28 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(result.fuzz).to have_attributes(verdict: :passed)
       expect(result.enumerate).to eq(described_class.untested)
     end
+
+    # Task 20261012-34: the backend dies while enumerate builds its kinds, so
+    # enumerate fails, and so does the session's ROLLBACK after it.
+    it "keeps the fuzz pass and its trials when the backend dies during enumerate, and calls enumerate untested" do
+      alone = fuzz_alone(*pair)
+      doomed = racetrack_and_arena.arena.connect
+      allow(described_class::Kinds).to receive(:new).and_wrap_original do |new, *args|
+        conn.exec_params("SELECT pg_terminate_backend($1, 5000)", [doomed.backend_pid])
+        new.call(*args)
+      end
+
+      result = nil
+      expect do
+        result = fuzz.search(doomed, *pair, stop: fuzz::StopRule.trials(40),
+                                            enumerate: described_class::Limit.worlds(3000))
+      end.not_to raise_error
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    ensure
+      doomed&.close
+    end
   end
 
   # The bound is true: every world of at most bound rows, each row one of
