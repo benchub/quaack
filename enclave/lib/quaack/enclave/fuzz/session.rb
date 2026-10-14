@@ -18,9 +18,9 @@ module Quaack
       #   session.close                 # ROLLBACK
       #
       # open begins the transaction, turns index scans off (as the lift's
-      # compare_in_load_orders does), has the Loader drop the foreign keys
-      # that leave the footprint and work out the honoured copies, and marks
-      # a savepoint. Each trial loads the world there, and runs EXPLAIN
+      # compare_in_load_orders does), has the Loader empty the footprint's
+      # tables, drop the foreign keys that leave the footprint and work out
+      # the honoured copies, and marks a savepoint. Each trial loads the world there, and runs EXPLAIN
       # ANALYZE of both queries for the signature, then both queries. A
       # world either query can't run on is illegal for it, judged per query:
       # a world that fails to load is illegal for both and is never
@@ -33,8 +33,9 @@ module Quaack
       # with the official ResultComparison, whose mismatching rule
       # (ResultComparator::MISMATCHES) makes the trial a kill.
       #
-      # Every RESTART trials the transaction starts again, so the dead rows
-      # rolled-back trials leave can be vacuumed.
+      # Every RESTART trials the transaction starts again, so the rows
+      # rolled-back trials leave behind, which every scan in it reads, go
+      # with the files its TRUNCATE made.
       #
       # Trust boundary: a trial's world, results, and errors stay here. A
       # Trial holds only a Signature, a boolean, and a rule symbol.
