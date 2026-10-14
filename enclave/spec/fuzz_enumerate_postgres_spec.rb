@@ -245,6 +245,20 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(result.fuzz).to have_attributes(verdict: :passed)
       expect(result.enumerate).to eq(described_class.untested)
     end
+
+    # Task 20261012-34: an error from the arena that isn't a cancel QUAACK
+    # didn't send. Lift and DataError swallow the real ones, so Kinds raises it.
+    it "keeps the fuzz pass and its trials when enumerate fails on the arena, and calls enumerate untested" do
+      alone = fuzz_alone(*pair)
+      failure = Quaack::Enclave::ArenaRunner::Error.new(:statement_timeout, step: :query, sqlstate: "57014")
+      allow(described_class::Kinds).to receive(:new).and_raise(failure)
+
+      result = nil
+      expect { result = both(*pair) }.not_to raise_error
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    end
   end
 
   # The bound is true: every world of at most bound rows, each row one of
