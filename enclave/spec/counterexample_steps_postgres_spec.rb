@@ -625,13 +625,15 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         end
       end
 
-      # Task 20261012-23: fuzz solves rate * 7 > c for rate, a value that's
-      # in neither query: the sentinel number plus 3/7. A needle for it, and
-      # the sentinel number's own needle, which it starts with, catch it.
+      # Task 20261012-23: fuzz solves n / rate > 0.7 for rate, a value
+      # that's in neither query: n * 10 / 7, and n / 0.8 for the rewrite.
+      # Their integer parts are the needles. Neither holds the sentinel number n, so only needles for them, not
+      # n's own, catch them (task 20261012-33).
       context "with a comparison whose constants solve to a sentinel" do
-        let(:solved) { LeakCheck::Sentinels.new(extra: { solved: "#{sentinels.number}.4285" }) }
-        let(:query) { "SELECT o.note FROM public.orders o WHERE o.rate * 7 > #{(7 * sentinels.number) + 3}" }
-        let(:candidate) { "SELECT o.note FROM public.orders o WHERE o.rate * 7 > #{(7 * sentinels.number) + 10}" }
+        let(:solutions) { [sentinels.number * 10 / 7, sentinels.number * 5 / 4].map(&:to_s) }
+        let(:solved) { LeakCheck::Sentinels.new(extra: { solved: solutions[0], solved_rewrite: solutions[1] }) }
+        let(:query) { "SELECT o.note FROM public.orders o WHERE #{sentinels.number} / o.rate > 0.7" }
+        let(:candidate) { "SELECT o.note FROM public.orders o WHERE #{sentinels.number} / o.rate > 0.8" }
 
         def payload_fields
           Quaack::Enclave::Steps::ReportPayload.fuzz(stored, "rewrite_1", store.read("qualified_query"), candidate)
@@ -648,16 +650,19 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           outcome = fuzz_step("rewrite_1", FUZZ_TO_KILL)
 
           expect(lines(outcome).first).to include("passed" => false, "stage" => "fuzz", "rule" => "row_count")
-          expect(store.read("qualified_query")).not_to include(sentinels.number.to_s)
+          expect(solutions).to all(satisfy { !it.include?(sentinels.number.to_s) })
           expect(payload_fields).to include("sizes" => [["public", "orders", 1]])
           objects = { tested:, burndown:, payload: payload_fields }
           expect_no_leaks(sentinels, outcome, objects:)
           expect_no_leaks(solved, outcome, objects:)
         end
 
-        it "uses a check that sees the solution planted in the sizes" do
-          planted = { "sizes" => [["public", "orders #{sentinels.number}.42857142857", 1]] }
-          expect(LeakCheck.findings(solved, objects: { payload: planted }).map(&:to_s)).not_to eq([])
+        it "uses a check that sees each solution planted in the sizes, which the sentinel number's doesn't" do
+          solutions.each do |solution|
+            planted = { "sizes" => [["public", "orders #{solution}", 1]] }
+            expect(LeakCheck.findings(sentinels, objects: { payload: planted }).map(&:to_s)).to eq([])
+            expect(LeakCheck.findings(solved, objects: { payload: planted }).map(&:to_s)).not_to eq([])
+          end
         end
       end
 
