@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-15: a deadline that expires while fuzz or enumerate shrinks or lifts a kill leaves both searches untested (trials 0, bound nil), so the rewrite goes on as `out_of_time`; before, the kill was dropped and fuzz passed. When `QUAACKS_FUZZ_TRIALS` or `QUAACKS_ENUMERATE_WORLDS` is set (0 included), the rewrite's fuzz burndown record gets the extra `fuzz_trials_setting` or `enumerate_worlds_setting` 1, and the report has words for both.
 - 20261012-34: fuzz's and enumerate's burndown records are written only once the rewrite's result is known, so a cancel QUAACK didn't send in ScenarioTests stores neither. A failed `ROLLBACK` when fuzz's session closes (a dead backend) no longer turns fuzz's pass and enumerate's outcome into untested. Building enumerate's pairwise kinds checks the rewrite's deadline, so a wide footprint's build (8 s measured) can't overrun the budget; it leaves enumerate untested. No change to any reported field.
 - 20261012-32: fuzz's solved comparison values look through a cast on the column (`x::numeric / 3 > 2`, `CAST(x AS numeric)`), so such a comparison's boundary values reach fuzz and enumerate. No change to any reported field.
+- 20261012-33: fuzz gives a comparison's solved values only to the qualified column's own table (`o.total / 3 > 2` no longer gives them to a joined table's `total`); an unqualified column, or one of a subquery, CTE or function, still matches by name. No change to any reported field.
 
 ## How this file works.
 
@@ -1096,22 +1097,6 @@ Open question for the user: at w = 1, should the rewrite's section keep fuzz's s
 - **Design:** rewrite-test.
 - **Status:** todo (open question for the user)
 
-### 20261012-33. fuzz's solved comparison values: test gaps, and matching by column name.
-
-From the review of 20261012-23 (minor).
-
-1. **Two surviving mutants.** Removing the `COMPARES` gate in `Fuzz::Facts` (`enclave/lib/quaack/enclave/fuzz/facts.rb`, about line 82) survives, so nothing checks that only a comparison's operands are solved. Setting `Domains`' `cut` to 1 survives, so nothing checks where the solutions go when a column's value list starts with NULL. Add a test that goes red under each: a nested expression such as `(a.p * 2) + 3 > 9`, and a column whose first value is NULL.
-2. **The sentinel test's needle contains the sentinel's own digits** (`enclave/spec/counterexample_steps_postgres_spec.rb`, the solved-value example), so the plain sentinel check would catch the same leak. Use a comparison whose solution shares no digits with the query's constants (such as `100 / x > 7`, solving to 14.28…), so the test proves the solved value itself is checked.
-3. **Combinations match columns by name only** (`enclave/lib/quaack/enclave/fuzz/thresholds.rb`, about line 38), as `Facts.divided` does. A same-named column on another table in the query, such as `total` or `amount` on a joined table, gets the solutions too, and they take slots in its first six enumerate classes. Match on the column's table (the range variable's relation) where the query names it, and fall back to the name only where it doesn't. Measure enumerate's bound on the hard corpus before and after.
-4. **A cast that rounds is solved as if it weren't there** (from the review of 20261012-32, minor). 20261012-32 looks through a cast on the column, so `amount::int / 3 > 2` on a numeric `amount` is solved as `amount / 3 > 2`, giving 6 and its neighbours, but the comparison flips where the cast rounds, at 8.5. It's harmless (no crash, no false disproof), and fuzz may still find the flip by chance. Say so in DESIGN.md's fuzz Values bullet, or, if it's cheap, solve through an integer cast too (the cast's rounding boundary, n ± 0.5).
-
-Since 20261012-32, `enclave/spec/fuzz_threshold_values_postgres_spec.rb` has a skipped-shapes example (nested arithmetic, `IN (...)`, `$1` give no values). It may already kill item 1's `COMPARES` mutant; check that first, and add a test only if it doesn't.
-- **Depends on:** None.
-- **Came from:** The review and build of 20261012-23, 2026-10-13 (minor), and the review of 20261012-32 (item 4).
-- **Design:** rewrite-test.
-- **Status:** todo
-
-
 ### 20261012-35. fuzz's stop rule rarely stops before the 5-minute deadline, and starves enumerate.
 
 Measured overnight, 2026-10-13. The setup was the spike's Canvas corpus on the synthetic 583-table schema, run on `main` at production's stop rule with a 300 s deadline per rewrite and enumerate on. The results are in `scratch/measure-canvas-prod/` in the main checkout: `results-prod-canvas.jsonl` holds the whole corpus, and `results-sig-canvas.jsonl` holds the slowest sound rewrites again, with each new signature's arrival time.
@@ -1158,5 +1143,14 @@ From the review of 20261012-38, 2026-10-13 (minor). 20261012-38's item 2 spec (`
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-38, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-42. fuzz's RangeTables: a TABLESAMPLE hides the table's alias.
+
+From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclave/lib/quaack/enclave/fuzz/range_tables.rb`) registers each FROM item's alias, but a `TABLESAMPLE` wraps the table in a `range_table_sample`, so `FROM orders o TABLESAMPLE SYSTEM (10) WHERE o.total / 3 > 2` doesn't find `o`, and the column falls back to matching by name. That's harmless: the solutions still reach `orders.total`, and a same-named column elsewhere in the query gets them too, as before 20261012-33. Look through `range_table_sample` to its relation, test first, or leave it and say so in DESIGN.md beside the other fallbacks.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-33, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
