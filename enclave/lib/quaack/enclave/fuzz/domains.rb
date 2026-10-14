@@ -51,6 +51,7 @@ module Quaack
           @values = Hash.new { |h, k| h[k] = [] }
           @classes = KeyClasses.new
           @read = Set.new
+          @compared = Set.new
           @legal = Legal.new(conn, catalog)
           @memo = {}
           absorb_all(sqls.map { PgQuery.parse(it) })
@@ -59,6 +60,10 @@ module Quaack
         def read?(table, column) = @read.include?([table, column])
 
         def key?(table, column) = @classes.member?([table, column])
+
+        # Whether a query tests the column against constants: a pooled atom
+        # (ValuePools), such as id > 100 or a keyset's leading column.
+        def compared?(table, column) = @compared.include?([table, column])
 
         # Works out everything the generator may ask of a column now, since
         # its probes can't run in the session's transaction, which a failed
@@ -197,8 +202,10 @@ module Quaack
         end
 
         def pooled(pool)
+          column = [pool.column.table, pool.column.name]
+          @compared << column
           extra = pool.nullable ? [nil] : []
-          @values[[pool.column.table, pool.column.name]] |= pool.satisfying + pool.failing + pool.boundaries + extra
+          @values[column] |= pool.satisfying + pool.failing + pool.boundaries + extra
         end
 
         # Which footprint columns the query names. A star reads every
