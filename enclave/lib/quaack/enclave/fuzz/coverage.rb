@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "../deparse"
 require_relative "../predicate_atoms"
 require_relative "reach"
+require_relative "uncut"
 
 module Quaack
   module Enclave
@@ -12,27 +13,31 @@ module Quaack
       # search's and enumerate's worlds showed both true and false (task
       # 20261012-4, DESIGN.md's rewrite-test).
       #
-      #   coverage = Coverage.new(session, atoms, original)
+      #   coverage = Coverage.new(atoms, original)
       #   coverage.observe(session)  # after each compared trial that didn't kill
       #   coverage.result            # => Result(atoms: 3, untested_atoms: [2], ...)
       #
-      # It judges by replacement. On a compared world, the original with an
-      # atom replaced by TRUE (PredicateAtoms.with_value) giving a result
-      # the official comparison calls a mismatch with the original's shows
-      # the atom wasn't true somewhere it mattered; replaced by FALSE, that
-      # it wasn't false. An atom seen both ways is tested. Rows equal to
-      # the original's, a comparison that refuses, or a query that fails
-      # see nothing, so it can only call an atom untested that in fact came
-      # out both ways (under a LIMIT that hid the difference, say), never
-      # the other way round. An atom with_value can't replace (a USING
-      # column, a NATURAL JOIN marker, a deparse it can't trust) is
-      # untested, and so is every atom of a query Reach.worst_case? names,
-      # with nothing checked.
+      # It judges by replacement, on the original with every LIMIT, OFFSET,
+      # and FETCH FIRST removed (Uncut), since which rows a page keeps
+      # follows the cut's literal. On a compared world, that uncut original
+      # with an atom replaced by TRUE (PredicateAtoms.with_value) giving a
+      # result the official comparison calls a mismatch with the uncut
+      # original's shows the atom wasn't true somewhere it mattered;
+      # replaced by FALSE, that it wasn't false (Differ). An atom seen both
+      # ways is tested, even if the rows that showed it fall outside the
+      # original's page. Rows equal to the original's, a comparison that
+      # refuses, or a query that fails see nothing, so it can only call an
+      # atom untested that in fact came out both ways, never the other way
+      # round. An atom with_value can't replace (a USING column, a NATURAL
+      # JOIN marker, a deparse it can't trust) is untested, and so is every
+      # atom of a query Reach.worst_case? names, or whose uncut original
+      # doesn't deparse faithfully, with nothing checked.
       #
-      # A direction is checked only until it's seen: on each of the first
-      # FIRST worlds observed, then on FIRST worlds in each doubling of the
-      # count after that, so a direction no world shows costs a few hundred
-      # queries in a long search, never one per trial.
+      # A direction is checked only until it's seen: on each world up to
+      # twice FIRST, then on FIRST worlds in each doubling of the count
+      # after that (Coverage.due?), every pending direction in one
+      # statement (Differ), so a direction no world shows costs a few
+      # hundred statements in a long search, never one per trial.
       #
       # Trust boundary: Result's shapes are PredicateAtoms' redacted shapes;
       # the worlds and results stay in Session.
@@ -47,7 +52,7 @@ module Quaack
 
         def initialize(atoms, original)
           @atoms = atoms
-          @pending = Reach.worst_case?(original) ? {} : loosened(PgQuery.parse(original))
+          @pending = Reach.worst_case?(original) ? {} : pending(original)
           @seen = Hash.new { |h, k| h[k] = Set.new }
           @observed = 0
         end
@@ -55,13 +60,13 @@ module Quaack
         # Checks each pending direction on the world session's last trial
         # compared, if this observation is due.
         def observe(session)
-          return if @pending.empty? || !due?(@observed += 1)
+          return if @pending.empty? || !Coverage.due?(@observed += 1)
 
-          @pending.select! do |(index, value), sql|
-            next true unless session.differs?(sql)
-
+          directions = @pending.keys
+          session.differing(@original, @pending.values).each do |at|
+            index, value = directions[at]
             @seen[index] << value
-            false
+            @pending.delete([index, value])
           end
         end
 
@@ -71,16 +76,27 @@ module Quaack
                      untested_paths: untested.map { @atoms[it].path })
         end
 
-        private
-
-        def due?(count)
+        # Whether the count-th world observed is checked.
+        def self.due?(count)
           return true if count <= FIRST
 
           spacing = 2**Math.log2(count / FIRST).floor
           (count % spacing).zero?
         end
 
-        # Each replaceable atom's two loosened queries, by [index, value].
+        private
+
+        # The original uncut, and each replaceable atom's two loosened
+        # queries of it, by [index, value]; none, so every atom untested,
+        # when the uncut original doesn't deparse faithfully.
+        def pending(original)
+          parse = Uncut.parse(original)
+          @original = parse.query
+          loosened(parse)
+        rescue Deparse::Error
+          {}
+        end
+
         def loosened(parse)
           @atoms.each_with_index.with_object({}) do |(atom, index), pending|
             [true, false].each { pending[[index, it]] = PredicateAtoms.with_value(parse, atom, it) }

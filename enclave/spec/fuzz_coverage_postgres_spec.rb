@@ -102,4 +102,21 @@ RSpec.describe Quaack::Enclave::Fuzz::Coverage do
   it "gives no coverage when no search ran" do
     expect(search("SELECT 1 WHERE 1 > 0").coverage).to be_nil
   end
+
+  it "judges a query's atoms with its LIMIT and OFFSET removed, so a page past every world's rows still shows them" do
+    expect(untested("SELECT id FROM s.orders WHERE total > 100 ORDER BY id LIMIT 5 OFFSET 100000")).to eq([])
+  end
+
+  # Checking every world costs a round trip each, so a direction no world
+  # shows is checked on each world up to twice FIRST, then on FIRST of
+  # each doubling of the count: log-many checks in a long search.
+  it "checks a pending direction on every early world, then FIRST worlds in each doubling" do
+    first = described_class::FIRST
+    due = (1..(first * 16)).select { described_class.due?(it) }
+
+    expect(due.first((2 * first) - 1)).to eq((1...(2 * first)).to_a)
+    expect(due.count { it.between?(2 * first, (4 * first) - 1) }).to eq(first)
+    expect(due.count { it.between?(8 * first, (16 * first) - 1) }).to eq(first)
+    expect(due.grep((4 * first)..((8 * first) - 1))).to eq((4 * first).step((8 * first) - 1, 4).to_a)
+  end
 end

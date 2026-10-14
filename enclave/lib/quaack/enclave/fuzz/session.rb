@@ -5,6 +5,7 @@ require_relative "../arena_runner"
 require_relative "../result_comparator"
 require_relative "../result_comparison"
 require_relative "data_error"
+require_relative "differ"
 require_relative "signature"
 
 module Quaack
@@ -80,26 +81,15 @@ module Quaack
 
           plans, results, failed = queries
           signature = Signature.trial(*plans)
-          @last = results&.first
           return Trial.new(signature:, compared: false, rule: failed) unless results
 
           Trial.new(signature:, compared: true, rule: compare(*results))
         end
 
-        # Whether sql, a loosened original (Coverage), gives a result on the
-        # world of the last trial both queries ran on that the official
-        # comparison calls a mismatch with the original's. Rows equal to the
-        # original's, a refusal, or a failure: false.
-        def differs?(sql)
-          @conn.exec("SAVEPOINT quaack_atoms")
-          loosened = @conn.exec(sql)
-          differs = !same?(@last, loosened) && !official(sql).nil?
-          @conn.exec("RELEASE SAVEPOINT quaack_atoms")
-          differs
-        rescue PG::Error, *UNJUDGED
-          @conn.exec("ROLLBACK TO SAVEPOINT quaack_atoms")
-          false
-        end
+        # The indexes of sqls, loosened originals (Coverage), that give a
+        # result on the arena's current data, the last trial's world, that
+        # the official comparison calls a mismatch with original's (Differ).
+        def differing(original, sqls) = Differ.differing(@conn, original, sqls)
 
         private
 
@@ -158,16 +148,6 @@ module Quaack
           left = original.values
           right = candidate.values
           left == right || (left.size == right.size && sorted(left) == sorted(right))
-        end
-
-        # The same rows in the same order, or as multisets when the
-        # original's order doesn't count.
-        def same?(original, loosened)
-          return false unless original.nfields == loosened.nfields
-
-          left = original.values
-          right = loosened.values
-          left == right || (@mode == :multiset && left.size == right.size && sorted(left) == sorted(right))
         end
 
         def sorted(rows) = rows.sort_by { |row| row.map { it.nil? ? [0, ""] : [1, it] } }

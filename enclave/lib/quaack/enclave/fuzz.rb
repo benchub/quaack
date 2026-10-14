@@ -17,6 +17,8 @@ require_relative "fuzz/session"
 require_relative "fuzz/lift"
 require_relative "fuzz/enumerate"
 require_relative "fuzz/coverage"
+require_relative "fuzz/differ"
+require_relative "fuzz/uncut"
 require_relative "predicate_atoms"
 
 module Quaack
