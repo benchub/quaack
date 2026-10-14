@@ -312,11 +312,20 @@ module Quaack
           trials, bound = message.values_at("trials", "bound")
           return unless trials.is_a?(Integer) && trials.positive?
           return "Survived #{Report::Words.count(trials, "random small database")} built around the query's values" \
-            unless bound.is_a?(Integer) && bound.positive?
+            unless enumerated?(message)
 
           "Found no difference on #{Report::Words.count(trials, "random dataset")}, or on any dataset of up to " \
             "#{Report::Words.count(bound, "row")} over its value classes"
         end
+
+        # Whether enumerate finished a bound and nothing after it disproved
+        # the rewrite.
+        def enumerated?(message) = message["bound"].then { it.is_a?(Integer) && it.positive? } && !differed?(message)
+
+        # Whether rewrite-test's scenarios got different results, which the
+        # report words as rewrite_test_disproved. One that ended without
+        # comparing disproved nothing.
+        def differed?(message) = message["passed"] == false && Report::Words::MISMATCHES.key?(message["rule"])
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)
         # isn't disproved: it goes on (passed, task 20261011-15), and

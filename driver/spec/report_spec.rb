@@ -823,6 +823,16 @@ RSpec.describe Quaack::Driver::Report do
           expect(text).not_to include("Found no difference")
         end
       end
+
+      # Task 20261012-28: the accountability table's wrong results are the
+      # disproofs, so a new one there gets fuzz's sentence too.
+      it "keeps fuzz's sentence for a disproof fate the accountability table gains" do
+        stub_const("Quaack::Driver::Report::Accountability::OUTCOMES",
+                   Quaack::Driver::Report::Accountability::OUTCOMES.merge("new_stage_disproved" => 1))
+        text = enumerated(2, "new_stage_disproved")
+        expect(text).to include("It also survived 40 random small databases built around its own values.")
+        expect(text).not_to include("Found no difference")
+      end
     end
 
     describe "the conditions no test ever exercised (vacuity-guard)" do
