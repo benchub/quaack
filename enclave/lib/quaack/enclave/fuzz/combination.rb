@@ -7,7 +7,9 @@ module Quaack
     module Fuzz
       # A column combined with a number and compared with another, such as
       # 100 / points > 2: column "points", operator "/", constant "100",
-      # column_first false, compared "2". Facts finds them.
+      # column_first false, compared "2". A cast on the column is looked
+      # through, so points::numeric / 3 > 2 gives column "points". Facts
+      # finds them.
       #
       #   Combination.of(node, "2")  # => a Combination, or nil
       Combination = Data.define(:column, :operator, :constant, :column_first, :compared)
@@ -34,7 +36,14 @@ module Quaack
           end
         end
 
-        def self.column(node) = node.is_a?(Hash) ? node.dig(:column_ref, :fields)&.last&.dig(:string, :sval) : nil
+        # node's column name if it's a column, or a column under one or
+        # more casts (points::numeric), else nil.
+        def self.column(node)
+          return unless node.is_a?(Hash)
+          return column(node.dig(:type_cast, :arg)) if node[:type_cast]
+
+          node.dig(:column_ref, :fields)&.last&.dig(:string, :sval)
+        end
 
         # node's value as text if it's a number constant, else nil.
         def self.number(node) = node.is_a?(Hash) && node[:a_const] ? Tree.value(node[:a_const]) : nil
