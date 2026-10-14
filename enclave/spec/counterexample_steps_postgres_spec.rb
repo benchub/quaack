@@ -747,6 +747,24 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                                                                             "untested" => 1)))
       end
 
+      # Task 20261012-34: an arena error that isn't a cancel QUAACK didn't
+      # send, such as StatementCheck's refusal of a query, leaves both
+      # searches untested and the rewrite to ScenarioTests.
+      it "leaves both searches untested, and raises nothing, when the search fails on the arena with no foreign " \
+         "cancel" do
+        ready(same)
+        failure = Quaack::Enclave::ArenaRunner::Error.new(:statement_not_allowed, step: :query, index: 1)
+        allow(Quaack::Enclave::Fuzz).to receive(:search).and_raise(failure)
+
+        message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
+
+        expect(message).to include(passed: true, rule: nil, stage: "rewrite-test", trials: 0, worlds: 0, bound: nil)
+        expect(burndown["stages"]["fuzz"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: marked("trials" => 0, "untested" => 1)))
+        expect(burndown["stages"]["enumerate"]["rewrite_1"])
+          .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1 }))
+      end
+
       # Task 20261012-26: a cancel QUAACK didn't send, of a lift, says
       # nothing about the rewrite, so the step fails and stores nothing for
       # it, as for ScenarioTests.
