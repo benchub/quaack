@@ -11265,3 +11265,32 @@ Since 20261012-32, `enclave/spec/fuzz_threshold_values_postgres_spec.rb` has a s
   - **Measured:** no hard-corpus query has a combination on a column name another table in the query shares. On the two with combinations (`nm_int_div_gt`, `nm_int_div_ge`, on `products.price_cents`), the same before and after at 60 s: gt a fuzz kill in 8 trials, ge a pass at bound 2. No new false disproofs.
   - **Review: landable**, no blocking findings. 32 realistic shapes through `Facts` (Rails and Django quoted names, schema-qualified, by table name, self-join, `JOIN USING`, `NATURAL JOIN`, ON clause, CASE in the SELECT list, window, IN and scalar subqueries, correlated `EXISTS` and LEFT JOIN LATERAL finding the outer alias, recursive CTE, ROWS FROM, XMLTABLE, JSON_TABLE, ONLY, UNION and INTERSECT arms; CTEs, subqueries, VALUES, function and join aliases fall back to the name; HAVING aggregates skipped as before): no crash, each to the right table or the fallback. 11 of 11 mutants killed (8 on `RangeTables`, 3 elsewhere in the diff), plus both of item 1's. One minor finding went to 20261012-42 (TABLESAMPLE hides the alias).
   - **Per-commit check** (on dd37507b; `main` had only BACKLOG.md commits the branch lacked): RuboCop clean; protocol and enclave passed; driver and root only the four accepted failures.
+
+### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row.
+
+From the review of 20261012-13 (minor). In a copies world, `Fuzz::Generator::Draw#count` (`enclave/lib/quaack/enclave/fuzz/generator/draw.rb`) gives each table the copies' foreign keys point to at least one row: `copies && parent?(table, copies.table) ? [rows, 1].max : rows`. Replacing that with `rows` keeps all 7 "many copies" examples in `fuzz_world_values_postgres_spec.rb` green. The users/orders OFFSET 21 example passes anyway, because users usually gets a row from the ordinary draw. Without the guard, a copies world whose parent drew 0 rows can't load its copies, so the world is wasted and the copies generator quietly does less.
+
+Add a test that goes red under that mutant, test first against the mutant: a copies world on a child table whose parent's draw is forced to 0 rows (a fixed `Config` or a seed that gives 0), or a direct unit test of `count`. Check the copies load and the parent has a row.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-13, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (merged 2026-10-13, afb4d0db)
+
+**What landed.**
+- A test in the "many copies of a row" block of `enclave/spec/fuzz_world_values_postgres_spec.rb`. It fixes `Generator.config` so users and orders draw 0 rows and orders gets 21 copies, inserts the world into real Postgres, and expects users to have 1 row and orders 21 rows with a `user_id`. Fixing the config is like fixing a seed: it's the random draw of the world's settings, and `Draw` itself isn't stubbed.
+- **A real bug, found while writing the test.** `Draw#copied` filled a copy's foreign key from the first row's own key columns, since it read the parent's column names (`orders.id`) from the child row instead of `orders.user_id`. So the copies pointed at users that didn't exist, and a copies world on a child table failed to load. Now each copy keeps the first row's foreign-key columns. This is an enclave change, so it's on the unreleased list.
+
+**Review.** Landable, with no blocking findings. The reviewer loaded copies worlds 20 times per shape on the branch and on `main`:
+- On the branch, every shape loaded every time: a composite foreign key, a nullable one (a NULL first row makes every copy NULL), a self-reference, two foreign keys to one parent, matching child and parent column names, a key that's a unique non-primary column, a foreign key inside a composite primary key, a 1:1 key (1 row, since copies can't fit), and a parent with 3 rows.
+- `main` loaded 0–7 of 20 in six of those shapes. The other three loaded every time, but the self-reference's copies were split across two managers.
+- Trials to disproof on three copies-dependent wrong rewrites, at 30 s and 3 seeds, were about the same as on `main`, since ordinary worlds catch them too. The trial rate on a pass didn't change.
+
+**Mutants.**
+- The guard replaced by `rows`: red on the users count (expected 1, got 0).
+- `copied` reverted: red with `PG::ForeignKeyViolation` while the world is inserted. That's deterministic, since the seed is fixed.
+- The guard applied to every table survives. It only adds rows, so it's harmless.
+
+**Minor finding, filed as 20261012-43.** A `copied` regression shows up as a Postgres error rather than an assertion failure. It still goes red for the right reason.
+
+**Checks.** The per-commit check had only the four accepted failures.

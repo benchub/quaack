@@ -21,6 +21,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-34: fuzz's and enumerate's burndown records are written only once the rewrite's result is known, so a cancel QUAACK didn't send in ScenarioTests stores neither. A failed `ROLLBACK` when fuzz's session closes (a dead backend) no longer turns fuzz's pass and enumerate's outcome into untested. Building enumerate's pairwise kinds checks the rewrite's deadline, so a wide footprint's build (8 s measured) can't overrun the budget; it leaves enumerate untested. No change to any reported field.
 - 20261012-32: fuzz's solved comparison values look through a cast on the column (`x::numeric / 3 > 2`, `CAST(x AS numeric)`), so such a comparison's boundary values reach fuzz and enumerate. No change to any reported field.
 - 20261012-33: fuzz gives a comparison's solved values only to the qualified column's own table (`o.total / 3 > 2` no longer gives them to a joined table's `total`); an unqualified column, or one of a subquery, CTE or function, still matches by name. No change to any reported field.
+- 20261012-24: in fuzz's copies worlds, each copy keeps the first row's foreign-key values, so a copies world on a child table loads. Before, the copies took the first row's own key values as their foreign key, and the world failed to load. No change to any reported field.
 
 ## How this file works.
 
@@ -1031,16 +1032,7 @@ From the build and review of 20261012-11 (minor).
 
 ### 20261012-23. fuzz and scenarios: values for a column that's combined with a constant, such as a constant divided by a column. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row.
-
-From the review of 20261012-13 (minor). In a copies world, `Fuzz::Generator::Draw#count` (`enclave/lib/quaack/enclave/fuzz/generator/draw.rb`) gives each table the copies' foreign keys point to at least one row: `copies && parent?(table, copies.table) ? [rows, 1].max : rows`. Replacing that with `rows` keeps all 7 "many copies" examples in `fuzz_world_values_postgres_spec.rb` green. The users/orders OFFSET 21 example passes anyway, because users usually gets a row from the ordinary draw. Without the guard, a copies world whose parent drew 0 rows can't load its copies, so the world is wasted and the copies generator quietly does less.
-
-Add a test that goes red under that mutant, test first against the mutant: a copies world on a child table whose parent's draw is forced to 0 rows (a fixed `Config` or a seed that gives 0), or a direct unit test of `count`. Check the copies load and the parent has a row.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-13, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-25. fuzz: the trial rate fell 25–40% on ORM-shaped queries after 20261012-13.
 
@@ -1056,6 +1048,8 @@ From the build and review of 20261012-13 (minor). On the same LLM replies under 
 On the hard corpus, the median rate on passes fell from 271/s to 209/s, and `mr_having_sum` fell from 287/s to 58/s. Nothing the baseline caught was lost, and passes still stop at the 30 s floor, so a pass now covers fewer worlds.
 
 Find where the time goes: copies worlds load up to 101 rows a table, a quarter of worlds are copies worlds (`COPIES_SHARE`), and world values may fail their CHECK or cast more often. Then tune `COPIES_SHARE` and the world-value rate, or make copies worlds cheaper, such as one multi-row INSERT. Measure with the hard corpus harness (`scratch/build-20261012-13/corpus_fuzz.rb` in the main checkout, 60 s per rewrite): keep 75 of 76 caught and 0 false disproofs, and report the rate on passes before and after.
+
+Since 20261012-24 (2026-10-13), a copies world on a child table loads; before, it failed at its first copy's INSERT. Those worlds now cost a full load and two queries instead of a failed INSERT. So take the "before" numbers on `main` after 20261012-24, not from the table above. That review saw no change in the rate on one users/orders pass (about 20 trials/s at 30 s, both before and after).
 
 - **Depends on:** None.
 - **Came from:** The build and review of 20261012-13, 2026-10-13 (minor).
@@ -1152,5 +1146,14 @@ From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclav
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-33, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-43. fuzz copies spec: assert that the copies' foreign keys point at a parent row.
+
+From the review of 20261012-24, 2026-10-13 (minor). The spec 20261012-24 added in `enclave/spec/fuzz_world_values_postgres_spec.rb` ("many copies of a row") is the only test of `Draw#copied`'s fix. Reverting the fix turns it red, but with `PG::ForeignKeyViolation` while the world is inserted, not on an `expect`. Add an explicit assertion that every copy's `user_id` is a `users.id` in the world, test first against the reverted `copied`. Check the world's rows before the insert, so the assertion fails before Postgres does.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-24, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
