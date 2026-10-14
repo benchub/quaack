@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../deadline"
+
 module Quaack
   module Enclave
     module Fuzz
@@ -111,7 +113,9 @@ module Quaack
           end
 
           # A greedy (AETG) pairwise covering array: each kind is the best of
-          # TRIES greedy picks at covering pairs not yet covered.
+          # TRIES greedy picks at covering pairs not yet covered. On a wide
+          # table that takes seconds, so each pick checks the rewrite's
+          # Deadline.
           def pairwise(domains, rng)
             names = domains.keys
             uncovered = uncovered(domains, names)
@@ -125,6 +129,7 @@ module Quaack
           end
 
           def best(domains, names, uncovered, rng)
+            Deadline.check!
             Array.new(TRIES) { greedy(domains, names, uncovered, rng) }.max_by { gained(names, it, uncovered) }
           end
 

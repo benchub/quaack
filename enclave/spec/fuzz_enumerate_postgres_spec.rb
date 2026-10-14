@@ -281,6 +281,32 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     ensure
       doomed&.close
     end
+
+    # Task 20261012-34: a pairwise covering array over a wide table's read
+    # columns took seconds on the synthetic Canvas schema, so the build
+    # checks the rewrite's deadline. Three read columns of about nine
+    # classes each are past Kinds::MAX_KINDS, so this one is pairwise.
+    it "stops building pairwise kinds at the first check once the rewrite's deadline runs out, and calls " \
+       "enumerate untested" do
+      conn.exec("CREATE TABLE s.wide (id integer PRIMARY KEY, a text, b text, c text)")
+      wide = ["SELECT id FROM s.wide WHERE a IN ('x', 'y') AND b IN ('x', 'y') AND c IN ('x', 'y')",
+              "SELECT id FROM s.wide WHERE c IN ('y', 'x') AND b IN ('y', 'x') AND a IN ('y', 'x')"]
+      alone = fuzz_alone(*wide)
+      checks = 0
+      deadline = Quaack::Enclave::Deadline.new(1, clock: lambda do
+        next 0.0 unless caller_locations.any? { it.base_label == "pairwise" }
+
+        checks += 1
+        1_000.0
+      end)
+
+      result = nil
+      expect { result = within(deadline) { both(*wide) } }.not_to raise_error
+      expect(checks).to eq(1)
+      expect(result.fuzz).to eq(alone)
+      expect(result.fuzz).to have_attributes(verdict: :passed)
+      expect(result.enumerate).to eq(described_class.untested)
+    end
   end
 
   # The bound is true: every world of at most bound rows, each row one of
