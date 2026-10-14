@@ -1075,18 +1075,6 @@ Find where the time goes: copies worlds load up to 101 rows a table, a quarter o
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-28. Enumerate's pass sentence: the progress line, and the list of later disproofs.
-
-From the second review of 20261012-3 (minor).
-
-1. **The progress line doesn't follow the report's rule.** DESIGN.md's enumerate section says the rewrite's section shows "Found no difference on N random datasets, or on any dataset of up to w rows over its value classes." only when nothing later disproved the rewrite, and that "the progress line says the same". But `search_note` (`driver/lib/quaack/driver/pipeline.rb`) shows that sentence whenever `bound` is positive, even on a `rewrite_test` message with stage `rewrite-test` and `passed` false, the case where the scenarios disproved the rewrite. The report section for the same rewrite shows fuzz's sentence. Fix test first in `driver/spec/pipeline_progress_spec.rb`: when the message has `passed` false, show fuzz's "Survived N random small databases…" line.
-2. **`LATER_DISPROOFS` is a hand-kept list** (`driver/lib/quaack/driver/report/rewrites.rb`). It names the three fates where a later stage disproved the rewrite: `rewrite_test_disproved`, `counterexamples_disproved` and `production_mismatch`. A disproof fate added later would get the enumerate sentence by default. Derive it from `Accountability::OUTCOMES` (the disproof fates, less `SEARCH_FAILED`'s), or add a spec that the two agree.
-
-- **Depends on:** None.
-- **Came from:** The second review of 20261012-3, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-29. The recorded pipeline replays never run enumerate.
 
 From the build of 20261012-3. The root suite sets `QUAACKS_ENUMERATE_WORLDS=0` for the replays' `quaacks` children, so no recorded run sends an enumerate pass or disproof through the driver: its transport check, the report's enumerate sentence, the `enumerate_disproved` fate, the burndown's `enumerate` stage and its Sankey layer are only covered by specs that build the messages by hand. With enumerate on at 30 s, the `key_in_self_join` replay spent 30 s for a bound of 1, which is why the builder left it off.
@@ -1194,5 +1182,20 @@ From the review of 20261012-27 (minor). DESIGN.md's enumerate section (Value cla
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-27, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-37. Enumerate's pass sentence: minors from the review of 20261012-28.
+
+From the review of 20261012-28, 2026-10-13 (minor). `search_note` (`driver/lib/quaack/driver/pipeline.rb`) shows fuzz's sentence when a `rewrite_test` message has `passed` false and a mismatch rule (`Report::Words::MISMATCHES`), and enumerate's otherwise. The report's `fuzz_line` (`report/rewrites.rb`) keeps fuzz's sentence for a fate in `Accountability::OUTCOMES`' wrong-results column (`later_disproof?`).
+
+1. **The failure-rule guard covers one rule.** `pipeline_progress_spec.rb`'s `original_failed` example is the only one where `passed` is false without a mismatch. A mutant that shows fuzz's line for any `passed` false rule except `original_failed` survives, so a scenario that ended with `query_failed` or `statement_timeout` could show fuzz's line while the report keeps enumerate's. Add a second failure rule to the spec.
+2. **No spec pins that `not_better` keeps enumerate's sentence** in the report (`OUTCOMES` column 2). A mutant where `later_disproof?` is true for every fate but `ranked` survives. Realistic runs hit it. The gap was there under the old hand-kept list too.
+3. **Two hand-kept lists of mismatch rules.** The progress line agrees with the report only while the driver's `Report::Words::MISMATCHES` matches the enclave's `ResultComparator::MISMATCHES`. They match today, with 7 rules each, but nothing checks it. Add a root cross-gem spec that they agree, or derive one from a protocol constant.
+4. **DESIGN.md's wording is loose.** It says the later disproofs are "the fates its accountability table counts as wrong results". That set also holds fuzz's and enumerate's own disproofs, which aren't later and which `fuzz_line` skips first. Say "other than the searches' own".
+5. **Nit:** the `stub_const` spec in `report_spec.rb` writes the column as `1`, not `Accountability::WRONG`.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-28, 2026-10-13 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
