@@ -168,7 +168,7 @@ module Quaack
         # classes enumerate takes. Legalize then drops those its CHECKs
         # forbid.
         def solved(table, column)
-          solutions = @thresholds.values(column)
+          solutions = @thresholds.values(table, column)
           return if solutions.empty?
 
           derived = typed(@catalog.column(table, column), solutions)

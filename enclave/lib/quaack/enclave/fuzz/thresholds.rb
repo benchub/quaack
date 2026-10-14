@@ -11,7 +11,11 @@ module Quaack
       # points * 0.9 >= 45 at 50 too. Each solution, then its ceiling and
       # floor, which an integer column can hold, in the queries' order.
       #
-      #   Thresholds.new(conn, facts).values("points")  # => ["50", "33.3333333333333333", "34", "33"]
+      #   Thresholds.new(conn, facts).values(table, "points")  # => ["50", "33.3333333333333333", "34", "33"]
+      #
+      # A column's solutions go to its table's column where the query
+      # qualifies it, and to every table's column of its name where it
+      # doesn't (Facts' combinations).
       #
       # A solution needs a nonzero divisor (a division by zero, or a
       # constant numeric can't hold, gives none), and a column combined
@@ -34,8 +38,9 @@ module Quaack
           @facts = facts
         end
 
-        def values(column)
-          @facts.combinations.select { it.column == column }.flat_map { solve(it) }.uniq
+        def values(table, column)
+          @facts.combinations.select { it.column == column && [nil, table].include?(it.table) }
+                .flat_map { solve(it) }.uniq
         end
 
         private
