@@ -824,11 +824,17 @@ RSpec.describe Quaack::Driver::Report do
         end
       end
 
+      it "keeps enumerate's sentence for a rewrite that passed every test but wasn't faster" do
+        expect(enumerated(2, "not_better")).to include('<p class="fuzz">Found no difference on 40 random datasets, ' \
+                                                       "or on any dataset of up to 2 rows over its value classes.</p>")
+      end
+
       # Task 20261012-28: the accountability table's wrong results are the
       # disproofs, so a new one there gets fuzz's sentence too.
       it "keeps fuzz's sentence for a disproof fate the accountability table gains" do
-        stub_const("Quaack::Driver::Report::Accountability::OUTCOMES",
-                   Quaack::Driver::Report::Accountability::OUTCOMES.merge("new_stage_disproved" => 1))
+        accountability = Quaack::Driver::Report::Accountability
+        stub_const("#{accountability}::OUTCOMES",
+                   accountability::OUTCOMES.merge("new_stage_disproved" => accountability::WRONG))
         text = enumerated(2, "new_stage_disproved")
         expect(text).to include("It also survived 40 random small databases built around its own values.")
         expect(text).not_to include("Found no difference")
