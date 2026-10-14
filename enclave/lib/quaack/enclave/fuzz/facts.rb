@@ -3,6 +3,7 @@
 require "json"
 require_relative "tree"
 require_relative "combination"
+require_relative "range_tables"
 
 module Quaack
   module Enclave
@@ -12,7 +13,9 @@ module Quaack
       # split_part or LIKE uses, the keys a JSON operator reads, the columns
       # a query divides by, whether it casts to a small integer type, the
       # columns it groups or partitions on, and each column it combines with
-      # a number and compares with another (combinations).
+      # a number and compares with another (combinations), with its table
+      # where its qualifier names one in the FROM of its query or one
+      # around it.
       #
       #   facts = Facts.new(trees)
       #   facts.integers     # => [5, 2025]
@@ -35,6 +38,7 @@ module Quaack
         def initialize(trees)
           @strings, @numbers, @separators, @like_patterns, @json_keys, @json_leaves, @combinations = Array.new(7) { [] }
           @divided, @int_casts, @grouped = Array.new(3) { Set.new }
+          @tables = RangeTables.new
           trees.each { walk(it) }
           @integers = @numbers.filter_map { Integer(it, exception: false) }.uniq
           json_constants
@@ -46,8 +50,12 @@ module Quaack
         def walk(node)
           case node
           when Hash
+            # A SELECT's body is the only node with a :limit_option.
+            select = node.key?(:limit_option)
+            @tables.enter(node[:from_clause]) if select
             visit(node)
             node.each_value { walk(it) }
+            @tables.leave if select
           when Array then node.each { walk(it) }
           end
         end
@@ -87,7 +95,7 @@ module Quaack
         end
 
         def combined(node, other)
-          combination = Combination.of(node, Combination.number(other))
+          combination = Combination.of(node, Combination.number(other)) { @tables.table(it) }
           @combinations << combination if combination
         end
 
