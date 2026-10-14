@@ -62,6 +62,22 @@ RSpec.describe Quaack::Enclave::Fuzz do
     expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
   end
 
+  # Task 20261012-15: with one constant, only its neighbour one step up
+  # (10.01) tells the first pair apart, and only the one a step down (9.99)
+  # the second, since rounding moves 10.5 and 9.5 to the other side.
+  {
+    "up" => ["total > 10", "round(total) > 10"],
+    "down" => ["total < 10", "round(total) < 10"]
+  }.each do |side, (original, candidate)|
+    it "draws a single numeric constant's neighbour one step #{side}, when only that one tells two queries apart" do
+      conn.exec("CREATE TABLE s.invoices (id integer PRIMARY KEY, total numeric(10,2) NOT NULL)")
+
+      outcome = fuzz("SELECT id FROM s.invoices WHERE #{original}", "SELECT id FROM s.invoices WHERE #{candidate}")
+
+      expect(outcome).to have_attributes(verdict: :disproved, rule: :row_count)
+    end
+  end
+
   # As a real, 1000.0002 is three steps of the type's resolution above 1000,
   # so only the two reals between tell these apart, 1000.00006 and 1000.0001;
   # a step of 0.001 jumps past them. The constants are reals, so the column
