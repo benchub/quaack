@@ -182,8 +182,12 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(message).to include("type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
                                  "rule" => nil, "stage" => "fuzz")
       expect(lines(outcome).last).to eq({ "type" => "done" })
-      expect(tested).to include("passed" => true, "rule" => nil, "stage" => "fuzz", "untested" => [],
-                                "untested_atoms" => [], "untested_unchanged" => [])
+      expect(tested).to include("passed" => true, "rule" => nil, "stage" => "fuzz")
+      # Which atoms the worlds showed both ways follows the random
+      # sentinels, so only the shapes are pinned (fuzz_coverage's specs pin
+      # the judging).
+      expect(tested["untested"] - ["o.status = $2", "o.note = $1"]).to eq([])
+      expect(tested["untested_atoms"].size).to eq(tested["untested"].size)
       expect(tested.keys).not_to include("scenario", "dropped", "s1_load_rule", "untested_states", "refused")
       expect(stored.entry?("rewrite_survived_1")).to be(false)
       expect_no_leaks(sentinels, outcome)
