@@ -123,8 +123,10 @@ module Quaack
               "untested_unchanged" => [] }
           end
 
-          # The result, once its burndown is recorded (RewriteFuzz.call, then
-          # RewriteBurndown.record_test unless fuzz or enumerate disproved it). A refusal
+          # The result, once its burndown is recorded (RewriteFuzz.record, then
+          # RewriteBurndown.record_test unless fuzz or enumerate disproved it).
+          # Fuzz's and enumerate's records wait for the result, so a step that
+          # ScenarioTests ends, such as on a foreign cancel, stores none. A refusal
           # comes from the query, not the rewrite, so the first one is kept as
           # rewrite_test_refusal and every later rewrite gets it. The arena's
           # connection is made only when fuzz or ScenarioTests needs it.
@@ -133,12 +135,19 @@ module Quaack
             connection = nil
             connect = -> { connection ||= Enclave::RunServer.connect(store, :arena) }
             fuzzed = RewriteFuzz.call(store, search, deadline, connect)
-            return RewriteFuzz.disproof(fuzzed) if RewriteFuzz.disproved?(fuzzed)
+            return disproved(store, search, fuzzed) if RewriteFuzz.disproved?(fuzzed)
 
             result, report = scenarios(store, search, deadline, connect)
+            RewriteFuzz.record(store, search, fuzzed)
             RewriteFuzz.decided(result, fuzzed).tap { RewriteBurndown.record_test(store, search, it, report) }
           ensure
             connection&.close
+          end
+
+          # fuzzed's disproof, once its burndown is recorded.
+          def disproved(store, search, fuzzed)
+            RewriteFuzz.record(store, search, fuzzed)
+            RewriteFuzz.disproof(fuzzed)
           end
 
           def empty_report(refused)

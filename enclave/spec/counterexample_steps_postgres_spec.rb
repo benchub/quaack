@@ -778,6 +778,23 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                         "rule" => "statement_canceled", "sqlstate" => "57014" }])
         expect(stored_nothing?).to be(true)
       end
+
+      # Task 20261012-34: the same for a cancel in ScenarioTests after both
+      # searches passed. Fuzz and enumerate drop orders' foreign key, so
+      # nap() first sleeps in ScenarioTests, and their records are stored
+      # only once the rewrite's result is known.
+      it "fails with statement_canceled, storing no fuzz or enumerate record either, when an operator cancels " \
+         "ScenarioTests after the searches pass" do
+        ready("#{same} AND public.nap()", arena_sql: napping)
+
+        outcome, canceled = cancel_arena_sleeper { fuzz_step("rewrite_1", ENUMERATE_ON) }
+
+        expect(canceled).to be(true)
+        expect(lines(outcome)).to eq([{ "type" => "error", "step" => "rewrite-test",
+                                        "rule" => "statement_canceled", "sqlstate" => "57014" }])
+        expect(burndown.fetch("stages", {}).select { |_, records| records.key?("rewrite_1") }.keys).to eq([])
+        expect(stored_nothing?).to be(true)
+      end
     end
 
     # Task 20261012-3: enumerate runs after a fuzz pass, in the same
@@ -954,7 +971,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         ready(same)
         store.write("rewrite_2", stored.read("rewrite_1"))
         after_fuzz = Quaack::Enclave::Deadline.new(
-          1, clock: -> { Quaack::Enclave::Burndown.read(stored).dig("stages", "fuzz", "rewrite_1") ? 1_000.0 : 0.0 }
+          1, clock: -> { caller_locations.any? { it.path.end_with?("/scenario_tests.rb") } ? 1_000.0 : 0.0 }
         )
 
         passed, = in_process("rewrite_1", after_fuzz, FUZZ_ON)
