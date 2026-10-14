@@ -1168,6 +1168,8 @@ From the review of 20261012-15, 2026-10-13 (minor). A deadline that expires whil
 2. **A deadline while `confirm` re-opens the session** after a kill that didn't lift also gives untested, rather than keeping the search going or keeping fuzz's pass. That's conservative, and the timing is very narrow. Decide whether it should count as mid-confirm. If not, raise `Unconfirmed` only from the shrink and the lift, test first.
 3. **The specs' fake clock keys on names in the code.** It expires when `smaller`, `fuzz/lift.rb` or `fuzz/enumerate.rb` is on the stack (`caller_locations`). A rename turns the specs red, not green, so they aren't vacuous, but they're brittle. If a cleaner seam turns up, such as a deadline that expires after k checks, use it.
 
+Decision on item 2 (made overnight, 2026-10-13, while the user was away; the user can revisit it): it looks stale. `Deadline::Expired` comes only from `Deadline.check!`, and `Fuzz::Session#open` sends raw `exec`s (`BEGIN`, `SET LOCAL`, the loader's `prepare`, `SAVEPOINT`) that never call it, so a deadline can't expire while `confirm` reopens the session. A deadline that runs out after a kill that didn't lift is caught by the search's next `Deadline.check!`, which ends fuzz as `ended` (a pass, if it compared any trial). That's the right outcome: the kill wasn't confirmed, so it's not a disproof, and the trials before it stand. Verify this reading. If it holds, pin it with a spec (a kill that doesn't lift, then the deadline: fuzz passes, it isn't untested) and change no code. If some path does raise `Expired` during the reopen, report it instead of choosing.
+
 - **Depends on:** None.
 - **Came from:** The review of 20261012-15, 2026-10-13 (minor).
 - **Design:** rewrite-test.
