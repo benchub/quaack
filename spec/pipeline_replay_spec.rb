@@ -101,7 +101,7 @@ RSpec.describe PipelineReplay do
           end
 
           it "never reports the subtly wrong rewrite as a winning fix" do
-            # Disproved at fuzz, rewrite-test, or counterexamples: never marked for rewrite-index-ideas, and
+            # Disproved at fuzz, enumerate, or counterexamples: never marked for rewrite-index-ideas, and
             # so never measured or ranked. The report sends it with that fate.
             labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
             fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
@@ -110,7 +110,7 @@ RSpec.describe PipelineReplay do
               expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
               if outcome.report
                 expect(fates["rewrite_#{n}"])
-                  .to eq("fuzz_disproved").or eq("rewrite_test_disproved").or eq("counterexamples_disproved")
+                  .to eq("fuzz_disproved").or eq("enumerate_disproved").or eq("counterexamples_disproved")
               end
             end
           end
@@ -193,9 +193,8 @@ RSpec.describe PipelineReplay do
         stages = outcome.report["burndown"]["stages"]
         went_on = { "in" => 1, "out" => 1 }
         expect(stages.slice("plan-pruning", "fuzz", "rewrite-test", "counterexamples").transform_values(&:keys))
-          .to eq("plan-pruning" => ["rewrite_1"], "fuzz" => ["rewrite_1"], "rewrite-test" => ["rewrite_1"],
-                 "counterexamples" => ["rewrite_1"])
-        %w[plan-pruning fuzz rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
+          .to eq("plan-pruning" => ["rewrite_1"], "fuzz" => ["rewrite_1"], "counterexamples" => ["rewrite_1"])
+        %w[plan-pruning fuzz counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
         # The spec_helper's QUAACKS_FUZZ_TRIALS: a floor of 40 trials and a
         # cap of 400, not production's 30-to-60 seconds. trials
         # counts only the worlds both queries ran on. Each setting set marks
@@ -204,9 +203,11 @@ RSpec.describe PipelineReplay do
           .to match("trials" => be_between(1, 400), "fuzz_trials_setting" => 1, "enumerate_worlds_setting" => 1)
         # The spec_helper's QUAACKS_ENUMERATE_WORLDS 0: enumerate (task
         # 20261012-3) is off in the replays, so it records the rewrite
-        # untested and lets it go on.
+        # untested and lets it go on. Fuzz's pass counts the atoms its
+        # worlds never showed both true and false (task 20261012-4): none
+        # here.
         expect(stages.dig("enumerate", "rewrite_1"))
-          .to include(went_on).and include("extra" => { "worlds" => 0, "untested" => 1 })
+          .to include(went_on).and include("extra" => { "worlds" => 0, "untested" => 1, "untested_atoms" => 0 })
         %w[rewrite-index-ideas measurement].each { expect(stages[it]["rewrites"]).to include(went_on) }
         expect(outcome.report["burndown"]["totals"].slice("indexes_built", "measurement_runs", "fixture_loads"))
           .to match("indexes_built" => be_positive, "measurement_runs" => be_positive, "fixture_loads" => be_positive)
@@ -276,12 +277,14 @@ RSpec.describe PipelineReplay do
       # counted at every rewrite stage it reached, the wrong one dropped.
       it "record every rewrite stage of a run with the LLM's and the operator's rewrites" do
         stages = run("group_having").report["burndown"]["stages"]
-        rewrite_stages = Quaack::Driver::Report::Words::REWRITE_STAGES.keys - ["rewrite-rules"] +
+        # rewrite-test's own record is an older run's (task 20261012-4).
+        rewrite_stages = Quaack::Driver::Report::Words::REWRITE_STAGES.keys - %w[rewrite-rules rewrite-test] +
                          Quaack::Driver::Report::Words::LATE_STAGES.keys
         expect(rewrite_stages - stages.keys).to eq([])
+        expect(stages.keys).not_to include("rewrite-test")
         expect(stages.dig("llm-rewrites", "rewrites", "added")).to include("llm" => be_positive)
         expect(stages.dig("operator-rewrites", "rewrites", "added")).to include("operator" => be_positive)
-        expect(stages["rewrite-test"].keys + stages["counterexamples"].keys).to include("rewrite_2")
+        expect(stages["fuzz"].keys).to include("rewrite_2")
       end
 
       # Task 20261001-20: the replayed rewrite-llm-index-ideas-1's ideas,

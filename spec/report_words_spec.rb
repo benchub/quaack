@@ -16,8 +16,8 @@ RSpec.describe Quaack::Driver::Report::Words do
   end
 
   # Task 20261012-37: the progress line's search sentence and the report's
-  # rewrite_test_disproved read a mismatch by these words' rules, so they
-  # must be the rules the enclave's comparison calls a mismatch.
+  # search disproofs read a mismatch by these words' rules, so they must be
+  # the rules the enclave's comparison calls a mismatch.
   it "has words for exactly the rules the enclave's result comparison calls a mismatch" do
     expect(described_class::MISMATCHES.keys.sort)
       .to eq(Quaack::Enclave::ResultComparator::MISMATCHES.map(&:to_s).sort)

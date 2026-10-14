@@ -176,8 +176,8 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
 
   # Runs the block with rewrite-test's fuzz search off in every quaacks
   # child it starts (QUAACKS_FUZZ_TRIALS 0), for a run whose subject is a
-  # stage fuzz would now reach first: the LLM's counterexamples, or a
-  # ScenarioTests refusal that leaves a rewrite untested.
+  # stage fuzz would now reach first, the LLM's counterexamples, or a
+  # rewrite that goes on untested (task 20261012-4).
   def without_fuzz
     saved = ENV.fetch("QUAACKS_FUZZ_TRIALS", nil)
     ENV["QUAACKS_FUZZ_TRIALS"] = "0"

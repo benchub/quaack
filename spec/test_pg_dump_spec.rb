@@ -143,7 +143,7 @@ RSpec.describe TestPgDump do
   end
 end
 
-# The load-time gate the replay and scenario-refusal specs use: with a
+# The load-time gate the replay and not-tested specs use: with a
 # pg_dump, the group gets its examples; without one, it gets a single
 # example that fails with what to install or set.
 RSpec.describe "TestPgDump.examples" do
