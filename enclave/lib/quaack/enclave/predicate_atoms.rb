@@ -233,7 +233,7 @@ module Quaack
 
         # Rewrites it, in place, as CASE WHEN x = v ..., with WHEN number
         # index TRUE, or value.
-        def searched(case_expr, index, value = true)
+        def searched(case_expr, index, value)
           case_expr.args.each_with_index do |node, i|
             case_when = node.case_when
             case_when.expr = i == index ? Tree.boolean_node(value) : test(case_expr.arg, case_when.expr)

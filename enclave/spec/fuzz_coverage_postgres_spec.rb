@@ -61,8 +61,9 @@ RSpec.describe Quaack::Enclave::Fuzz::Coverage do
     sql = "SELECT id FROM s.orders WHERE total > 100 OR status = 'returned'"
     coverage = search(sql).coverage
 
-    atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql),
-                                                    column_names: { Quaack::Enclave::TableName.new(schema: "s", name: "orders") => %w[id customer_id status total] })
+    orders = Quaack::Enclave::TableName.new(schema: "s", name: "orders")
+    columns = { orders => %w[id customer_id status total] }
+    atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql), column_names: columns)
     expect(coverage.untested_atoms).to eq([1])
     expect(coverage.untested_paths).to eq([atoms[1].path])
   end

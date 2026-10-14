@@ -199,7 +199,8 @@ RSpec.describe Quaack::Enclave::Fuzz do
   end
 
   it "is untested when the queries read no table, saying so" do
-    expect(fuzz("SELECT 1", "SELECT 2")).to have_attributes(verdict: :untested, reason: :no_tables, trials: 0, sizes: [])
+    expect(fuzz("SELECT 1", "SELECT 2"))
+      .to have_attributes(verdict: :untested, reason: :no_tables, trials: 0, sizes: [])
   end
 
   # Task 20261012-4: an untested outcome says why, by a fixed word.
