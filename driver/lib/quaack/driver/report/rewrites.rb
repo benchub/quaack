@@ -2,6 +2,7 @@
 
 require "quaack/protocol/fuzz_result"
 require "quaack/protocol/rewrite_budget"
+require_relative "accountability"
 
 module Quaack
   module Driver
@@ -61,10 +62,6 @@ module Quaack
         ENUMERATE_FAILED = "It failed on a small database QUAACK enumerated from its own values%<fuzz>s, where " \
                            "the original query ran, so it's wrong."
         SEARCH_FAILED = { "fuzz_disproved" => FUZZ_FAILED, "enumerate_disproved" => ENUMERATE_FAILED }.freeze
-
-        # The fates of a rewrite a stage after the searches disproved, whose
-        # section keeps fuzz's sentence rather than enumerate's.
-        LATER_DISPROOFS = %w[rewrite_test_disproved counterexamples_disproved production_mismatch].freeze
 
         # An unfinished rewrite, by the last stage it finished.
         UNFINISHED = { nil => "QUAACK kept it, but the run ended before testing it.",
@@ -180,11 +177,16 @@ module Quaack
           bound = entry["bound"]
           return "It also survived #{Words.count(trials, "random small database")} built around its own values." \
             unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND) &&
-                   !LATER_DISPROOFS.include?(entry["fate"])
+                   !later_disproof?(entry["fate"])
 
           "Found no difference on #{Words.count(trials, "random dataset")}, or on any dataset of up to " \
             "#{Words.count(bound, "row")} over its value classes."
         end
+
+        # Whether a stage after the searches disproved the rewrite: a fate
+        # the accountability table counts as wrong results. fuzz_line says
+        # nothing for fuzz's and enumerate's own, so it never asks of them.
+        def later_disproof?(fate) = Accountability::OUTCOMES[fate] == Accountability::WRONG
 
         def fate_text(entry)
           return not_better_text(entry) if entry["fate"] == "not_better"

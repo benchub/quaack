@@ -36,10 +36,13 @@ module Quaack
         REWRITE_SOURCES = { "rule" => ["Transform rules", "rewrite-rules"], "llm" => ["The LLM", "llm-rewrites"],
                             "operator" => %w[You operator-rewrites] }.freeze
 
+        # The outcome column of the fates that proved a rewrite wrong.
+        WRONG = 1
+
         # The outcome column a fate counts in. Any other fate is the last.
-        OUTCOMES = { "same_plans" => 0, "fuzz_disproved" => 1, "enumerate_disproved" => 1,
-                     "rewrite_test_disproved" => 1,
-                     "counterexamples_disproved" => 1, "production_mismatch" => 1, "not_better" => 2,
+        OUTCOMES = { "same_plans" => 0, "fuzz_disproved" => WRONG, "enumerate_disproved" => WRONG,
+                     "rewrite_test_disproved" => WRONG,
+                     "counterexamples_disproved" => WRONG, "production_mismatch" => WRONG, "not_better" => 2,
                      "ranked" => 3 }.freeze
         OTHER = 4
 
