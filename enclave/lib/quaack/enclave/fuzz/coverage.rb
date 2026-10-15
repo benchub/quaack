@@ -31,7 +31,8 @@ module Quaack
       # round. An atom with_value can't replace (a USING column, a NATURAL
       # JOIN marker, a deparse it can't trust) is untested, and so is every
       # atom of a query Reach.worst_case? names, or whose uncut original
-      # doesn't deparse faithfully, with nothing checked.
+      # doesn't deparse faithfully or whose cut holds more than a constant
+      # or a parameter (Uncut), with nothing checked.
       #
       # A direction is checked only until it's seen: on each world up to
       # twice FIRST, then on FIRST worlds in each doubling of the count
@@ -88,7 +89,7 @@ module Quaack
 
         # The original uncut, and each replaceable atom's two loosened
         # queries of it, by [index, value]; none, so every atom untested,
-        # when the uncut original doesn't deparse faithfully.
+        # when Uncut can't give the uncut original.
         def pending(original)
           parse = Uncut.parse(original)
           @original = parse.query

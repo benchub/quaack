@@ -19,7 +19,9 @@ module Quaack
       # literal out of the enclave (task 20261012-4's fix round). Without
       # the cuts, the same for every literal, the WHERE and JOIN atoms are
       # evaluated as they are with them. Raises Deparse::Error when the
-      # result doesn't deparse to a parse QUAACK trusts; Coverage then
+      # result doesn't deparse to a parse QUAACK trusts, or when a cut holds
+      # anything but a constant or a parameter, since an atom in it (a
+      # subquery's, say) would be gone (task 20261012-49); Coverage then
       # reports the worst case, never the cut query.
       module Uncut
         module_function
@@ -32,8 +34,12 @@ module Quaack
           Deparse.faithful_parse(tree)
         end
 
+        CUTS = %i[a_const param_ref].freeze
+
         def uncut!(node)
           if node.is_a?(PgQuery::SelectStmt)
+            raise Deparse::Error if [node.limit_count, node.limit_offset].compact.any? { !CUTS.include?(it.node) }
+
             node.limit_count = nil
             node.limit_offset = nil
             node.limit_option = :LIMIT_OPTION_DEFAULT

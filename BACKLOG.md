@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261012-47
+- 20261012-49
 
 ## How this file works.
 
@@ -708,20 +709,6 @@ From the review of 20261012-35, 2026-10-14 (minor).
 - **Depends on:** None.
 - **Came from:** The review of 20261012-35, 2026-10-14 (minor).
 - **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261012-49. Fuzz coverage: a subquery in LIMIT crashes the step, and four untested branches.
-
-From the reviews of 20261012-4 (minor). Check each first:
-- `… LIMIT (SELECT count(*) FROM t WHERE name = 'x')` raises `NoMethodError` at `predicate_atoms.rb:204` (`Tree.dig`) through `fuzz/coverage.rb`'s `loosened`: `Fuzz::Uncut` removes the node an atom's path points into, and `RewriteFuzz` rescues only `FAILED`, so rewrite-test crashes. The message carries no literal. Fix so it takes the worst case (every atom untested), e.g. `Uncut.parse` raises `Deparse::Error` when a cut holds anything but a constant or a parameter.
-- The worst-case fallback isn't pinned: changing `coverage.rb`'s `rescue Deparse::Error` to judge the cut query stays green. Add a spec (stub `Uncut.parse` to raise; expect every atom untested).
-- `Fuzz::Differ#official?` (`fuzz/differ.rb`): dropping the `MISMATCHES.include?` check stays green, so nothing pins that a refusal such as `unsupported_order` doesn't count as coverage.
-- `counterexample_steps_postgres_spec.rb:189` was relaxed (its query's coverage depends on random sentinels) and no longer pins coverage end to end: reporting every atom untested, or never observing, stays green there (`fuzz_coverage_postgres_spec.rb` catches both). Pin coverage end to end in a deterministic spec instead.
-- `fuzz.rb:215`: observing coverage on kill trials too stays green (near-equivalent; decide whether it's worth a spec).
-
-- **Depends on:** None.
-- **Came from:** The reviews of 20261012-4, 2026-10-14 (minor).
-- **Design:** rewrite-test (coverage).
 - **Status:** todo
 
 ### 20261012-50. Fuzz coverage: check more worlds now that a check is one statement, and a literal 0.
