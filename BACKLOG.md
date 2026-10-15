@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-(none. Closed at 0.1.35.)
+- 20261012-47
 
 ## How this file works.
 
@@ -693,17 +693,6 @@ From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclav
 From the review of 20261012-30, 2026-10-14 (minor). Since 20261012-30, a key column the queries compare with a constant gets its read classes and then its key classes, so `orders.id` in a keyset page goes from 1 kind to 9. Enumerate then covers fewer rows in its 30 s: on `o.id > 100 AND o.status = 'paid' AND i.qty > 0 ORDER BY o.id, i.id LIMIT 10` against a sound rewrite, `main` before 20261012-30 reached w=2 at 3,000 and at 10,000 worlds, and after it only w=1 even at 10,000. The plain keyset page still reaches w=2. A lower bound is a weaker claim, not a wrong one, and under 20261012-31's rule the report then falls back to fuzz's sentence on a join.
 
 Give a compared key fewer classes without losing the boundary catch, test first: for example, its read classes plus the shared keys only (dropping the key-class values), or count the key-class values as cost-2 changes, so the base-choice kinds stay small. Check that 20261012-30's probe pairs are still disproved, and measure the bound w on its sound keyset pairs and the hard corpus before and after (no false disproofs).
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-30, 2026-10-14 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261012-47. enumerate's primary-key freshening: test three rows of one kind, and keep fresh values out of later rows.
-
-From the review of 20261012-30, 2026-10-14 (minor). `Fuzz::Enumerate::Worlds` gives a `:pk` value a row's kind repeats a fresh value (20261012-30). Two gaps:
-1. **Under-tested.** The spec covers only two rows of one kind, so a mutant that gives every repeat the same fresh value survives. A world with three same-kind rows would then get two equal fresh values, and `Uniques` would drop rows. The code is right today. Add a spec with three or more same-kind rows, test first against that mutant.
-2. **A fresh value isn't added to the taken set.** A later row whose kind value equals an earlier row's fresh value (`100001+n`, or a CHECK-pinned constant) could repeat it. Rare, but add the fresh value to `taken`, test first.
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-30, 2026-10-14 (minor).

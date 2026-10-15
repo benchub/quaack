@@ -2,6 +2,7 @@
 
 require "quaack/enclave/deadline"
 require "quaack/enclave/fuzz"
+require "timeout"
 
 # rewrite-test's enumerate stage (task 20261012-3, DESIGN.md's rewrite-test):
 # after the fuzz search passes, every small world over each table's row
@@ -490,6 +491,80 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
 
     expect(pointed).not_to be_empty
     expect(databases.size).to eq(databases.uniq.size)
+  end
+
+  # Task 20261012-47: three orders of the base kind share their id until
+  # the second and third each get their own fresh one. Were the third to
+  # get the second's, Uniques would give it another only after an item
+  # pointed at it, so the item would point at the second and the world
+  # would repeat another.
+  it "gives each of three rows whose kind repeats a primary key its own fresh one" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.orders (id integer PRIMARY KEY);
+      CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders);
+    SQL
+    sql = "SELECT o.id FROM s.orders o JOIN s.items i ON i.order_id = o.id WHERE o.id > 100"
+    catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+    domains = fuzz::Domains.new(conn, catalog, [sql])
+    plan = fuzz::Generator.new(catalog, domains).plan
+    worlds = described_class::Worlds.new(catalog, plan, domains, described_class::Kinds.new(catalog, plan, domains))
+    found = worlds.enum_for(:each, 4).to_a
+    databases = found.map { |rows| rows.map { [it.table.name, it.cells.sort] }.sort }
+    three = found.select { |rows| rows.count { it.table.name == "orders" } == 3 && rows.size == 4 }
+
+    expect(three).not_to be_empty
+    expect(databases.size).to eq(databases.uniq.size)
+  end
+
+  # Task 20261012-47: of three orders, the first two of the base kind
+  # (100005), the second gets the next unique id, 100004, which the
+  # third order's kind, the constant's, holds too, and of three base-kind
+  # orders the third's next unique id, 100005, is the first's. Each must
+  # get an id no earlier order holds, or Uniques, which gives a repeat
+  # the next unique value of the whole world, gives it one that repeats
+  # too and leaves the order out. So every world keeps all its orders: a
+  # world of weight 4 with no items holds n orders as often as there are
+  # multisets of n kinds of orders costing 4 - n.
+  it "gives a row whose primary key repeats an earlier row's fresh one, or whose fresh one repeats an earlier row's, " \
+     "one no earlier row holds" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.orders (id integer PRIMARY KEY);
+      CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders);
+    SQL
+    sql = "SELECT o.id FROM s.orders o JOIN s.items i ON i.order_id = o.id WHERE o.id > 100004"
+    catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+    domains = fuzz::Domains.new(conn, catalog, [sql])
+    plan = fuzz::Generator.new(catalog, domains).plan
+    kinds = described_class::Kinds.new(catalog, plan, domains)
+    orders = kinds.for(catalog.footprint.find { it.name == "orders" })
+    worlds = described_class::Worlds.new(catalog, plan, domains, kinds)
+    alone = worlds.enum_for(:each, 4).reject { |rows| rows.any? { it.table.name == "items" } }
+    costs = orders.kinds.each_index.map { orders.cost(it) }
+    expected = (1..4).to_h { |n| [n, costs.repeated_combination(n).count { it.sum == 4 - n }] }.reject { _2.zero? }
+
+    expect(orders.kinds.map { it["id"] }.first(3)).to eq(%w[100005 2147483647 100004])
+    expect(alone.map(&:size).tally).to eq(expected)
+  end
+
+  # Task 20261012-47: a CHECK pins orders.id to two values, so a third
+  # order's next unique id must repeat one. It takes the next after a try
+  # for each, rather than looking for a free one forever, and Uniques
+  # leaves the order out.
+  it "gives up looking for a fresh primary key no earlier row holds once a CHECK's values are all taken" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.orders (id integer PRIMARY KEY CHECK (id IN (1, 2)));
+      CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders);
+    SQL
+    sql = "SELECT o.id FROM s.orders o JOIN s.items i ON i.order_id = o.id WHERE o.id > 1"
+    catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+    domains = fuzz::Domains.new(conn, catalog, [sql])
+    plan = fuzz::Generator.new(catalog, domains).plan
+    worlds = described_class::Worlds.new(catalog, plan, domains, described_class::Kinds.new(catalog, plan, domains))
+    found = Timeout.timeout(30) { (0..3).flat_map { worlds.enum_for(:each, it).to_a } }
+    ids = found.map { |rows| rows.select { it.table.name == "orders" }.map { it.cells["id"] } }
+
+    expect(ids).to include(%w[2 1])
+    expect(ids.map(&:size).max).to eq(2)
   end
 
   describe "Kinds" do
