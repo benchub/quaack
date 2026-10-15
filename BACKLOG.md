@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-47
 - 20261012-49
 - 20261004-27
+- 20261008-56
 
 ## How this file works.
 
@@ -219,19 +220,6 @@ Split from 20260924-25, with that task's review findings:
 - **Status:** todo. Items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil) landed 2026-10-10. Items 1 to 4 are open; 1 and 2 need design decisions, 3 and 4 are refactors to split.
 
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-56. Rule generator: leftovers from 20261002-1.
-
-1. **Three or more INs.** A query with three or more matching INs never gets its fully rewritten form, given depth two and the cap.
-2. **Wider coverage.** Nested SELECTs and derived tables, unqualified columns, an IN in a join's ON, and `= ANY (subquery)`.
-3. **The standalone spec's rule count.** `rewrite_rules_standalone_spec.rb` hard-codes 12 rules. Derive the count, or check that it's more than zero.
-4. **A grandchild chain.** No test covers a legacy-inheritance chain where the table's only child has its own child.
-
-- **Depends on:** 20261002-1.
-- **Came from:** The build and review of 20261002-1, 2026-10-08.
-- **Design:** rewrite-rules.
-- **Landed so far:** items 3 and 4, 2026-10-10 (task/20261008-56; spec-only). Items 1 and 2 are open.
-- **Status:** todo
 
 ### 20261008-57. Running the rules: leftovers from 20261002-2.
 

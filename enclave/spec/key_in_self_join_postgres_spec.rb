@@ -53,6 +53,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
         CREATE UNIQUE INDEX t_tag ON public.t (tag) NULLS NOT DISTINCT;
         CREATE TABLE public.u (id int PRIMARY KEY, t_id int, y int);
         CREATE TABLE public."my t" (id int PRIMARY KEY, x int);
+        CREATE TABLE public.w (z int);
         CREATE SCHEMA other;
         CREATE TABLE other.t (id int PRIMARY KEY, x int);
         INSERT INTO public.t VALUES (1, 1, 'a', 'a', 1), (2, 2, 'b', 'b', 1), (3, NULL, 'c', NULL, 3), (4, 1, NULL, 'd', 4);
@@ -202,25 +203,126 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       expect(rewritten(sql)).to eq(["SELECT t.id FROM public.t WHERE t.id > 0 AND t.x > 0 AND t.x = 1"])
     end
 
-    it "gives one rewrite per matching IN, and the generator's second pass rewrites both" do
+    it "gives one rewrite that rewrites every matching IN, then one per IN, which the generator keeps first" do
       sql = "SELECT t.id FROM public.t WHERE t.id IN (SELECT a.id FROM public.t a WHERE a.x = 1) " \
             "AND t.id IN (SELECT b.id FROM public.t b JOIN public.u ON u.t_id = b.id WHERE u.y = 1)"
 
       generated = Quaack::Enclave::RewriteRules.generate(PgQuery.parse(sql), catalog)
 
-      expect(rewritten(sql)).to eq(generated.rewrites.first(2).map(&:sql))
+      expect(rewritten(sql)).to eq(generated.rewrites.map(&:sql))
       expect(generated.rewrites.map(&:sql)).to eq(
-        ["SELECT t.id FROM public.t WHERE t.x = 1 AND t.id IN " \
+        ["SELECT t.id FROM public.t WHERE t.x = 1 AND " \
+         "EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.y = 1 AND u_1.t_id = t.id)",
+         "SELECT t.id FROM public.t WHERE t.x = 1 AND t.id IN " \
          "(SELECT b.id FROM public.t b JOIN public.u ON u.t_id = b.id WHERE u.y = 1)",
          "SELECT t.id FROM public.t WHERE t.id IN (SELECT a.id FROM public.t a WHERE a.x = 1) AND " \
-         "EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.y = 1 AND u_1.t_id = t.id)",
-         "SELECT t.id FROM public.t WHERE t.x = 1 AND " \
          "EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.y = 1 AND u_1.t_id = t.id)"]
       )
-      expect(generated.rewrites.map { |rewrite| rewrite.rules.map(&:name) })
-        .to eq([%w[key_in_self_join], %w[key_in_self_join], %w[key_in_self_join key_in_self_join]])
-      expect(generated.duplicates).to eq(1)
+      expect(generated.rewrites.map { |rewrite| rewrite.rules.map(&:name) }).to all(eq(%w[key_in_self_join]))
+      expect(generated.duplicates).to eq(2)
       expect(same_rows(sql, generated.rewrites.map(&:sql))).to eq([["1"]])
+    end
+
+    # Task 20261008-56: with the generator two rules deep, a third IN was
+    # never rewritten along with the other two.
+    it "rewrites three matching INs in one rewrite, which the generator keeps" do
+      sql = "SELECT t.id FROM public.t WHERE t.id IN (SELECT a.id FROM public.t a WHERE a.x = 1) " \
+            "AND t.id IN (SELECT b.id FROM public.t b JOIN public.u ON u.t_id = b.id WHERE u.y = 1) " \
+            "AND t.id IN (SELECT c.id FROM public.t c WHERE c.loose = 1)"
+      every = "SELECT t.id FROM public.t WHERE t.x = 1 AND " \
+              "EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.y = 1 AND u_1.t_id = t.id) AND t.loose = 1"
+
+      rewrites = rewritten(sql)
+      generated = Quaack::Enclave::RewriteRules.generate(PgQuery.parse(sql), catalog)
+
+      expect(rewrites.size).to eq(4)
+      expect(rewrites.first).to eq(every)
+      expect(rewrites.drop(1).map { it.scan(" IN (SELECT").size }).to eq([2, 2, 2])
+      expect(generated.rewrites.first.sql).to eq(every)
+      expect(same_rows(sql, rewrites)).to eq([["1"]])
+    end
+
+    # Task 20261008-56's wider coverage.
+    {
+      "in a nested SELECT's WHERE" =>
+        ["SELECT u.id FROM public.u WHERE EXISTS " \
+         "(SELECT 1 FROM public.t WHERE t.id = u.t_id AND t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1))",
+         "SELECT u.id FROM public.u WHERE EXISTS (SELECT 1 FROM public.t WHERE t.id = u.t_id AND t.x = 1)",
+         [["1"], ["2"], ["4"]]],
+      "in a derived table" =>
+        ["SELECT s.id FROM (SELECT t.id FROM public.t WHERE t.id IN " \
+         "(SELECT t2.id FROM public.t t2 JOIN public.u ON u.t_id = t2.id WHERE u.y = 1)) s",
+         "SELECT s.id FROM (SELECT t.id FROM public.t WHERE " \
+         "EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.y = 1 AND u_1.t_id = t.id)) s",
+         [["1"], ["2"]]],
+      "in a CTE" =>
+        ["WITH w AS (SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)) " \
+         "SELECT w.id FROM w",
+         "WITH w AS (SELECT t.id FROM public.t WHERE t.x = 1) SELECT w.id FROM w",
+         [["1"], ["4"]]],
+      "in an arm of a UNION" =>
+        ["SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1) " \
+         "UNION ALL SELECT u.id FROM public.u WHERE u.y = 2",
+         "SELECT t.id FROM public.t WHERE t.x = 1 UNION ALL SELECT u.id FROM public.u WHERE u.y = 2",
+         [["1"], ["4"], ["4"]]],
+      "with a bare tested column" =>
+        ["SELECT t.id FROM public.t WHERE id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+         "SELECT t.id FROM public.t WHERE t.x = 1",
+         [["1"], ["4"]]],
+      "with bare columns in the subquery, its own table's though the outer table has them too" =>
+        ["SELECT t.id FROM public.t WHERE t.id IN (SELECT id FROM public.t t2 WHERE x = 1)",
+         "SELECT t.id FROM public.t WHERE t.x = 1",
+         [["1"], ["4"]]],
+      "with bare columns of each of the subquery's tables" =>
+        ["SELECT t.id FROM public.t WHERE t.id IN " \
+         "(SELECT t2.id FROM public.t t2 JOIN public.u ON t_id = t2.id WHERE y = 1 AND loose = 1)",
+         "SELECT t.id FROM public.t WHERE t.loose = 1 AND " \
+         "EXISTS (SELECT 1 FROM public.u u_1 WHERE u_1.y = 1 AND u_1.t_id = t.id)",
+         [["1"], ["2"]]],
+      "with a bare column named as the subquery's table is" =>
+        ["SELECT t.id FROM public.t WHERE t.id IN (SELECT x.id FROM public.t x WHERE x = 1)",
+         "SELECT t.id FROM public.t WHERE t.x = 1",
+         [["1"], ["4"]]],
+      "in an inner join's ON" =>
+        ["SELECT t.id, u.id FROM public.t JOIN public.u ON u.t_id = t.id AND " \
+         "t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+         "SELECT t.id, u.id FROM public.t JOIN public.u ON u.t_id = t.id AND t.x = 1",
+         [%w[1 1], %w[1 2], %w[4 4]]],
+      "in a LEFT JOIN's ON, testing the nullable side" =>
+        ["SELECT u.id, t.id FROM public.u LEFT JOIN public.t ON t.id = u.t_id AND " \
+         "t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 2)",
+         "SELECT u.id, t.id FROM public.u LEFT JOIN public.t ON t.id = u.t_id AND t.x = 2",
+         [["1", nil], ["2", nil], %w[3 2], ["4", nil], ["5", nil]]],
+      "in a FULL JOIN's ON" =>
+        ["SELECT t.id, u.id FROM public.t FULL JOIN public.u ON u.t_id = t.id AND " \
+         "t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+         "SELECT t.id, u.id FROM public.t FULL JOIN public.u ON u.t_id = t.id AND t.x = 1",
+         [%w[1 1], %w[1 2], ["2", nil], ["3", nil], %w[4 4], [nil, "3"], [nil, "5"]]],
+      "as = ANY" =>
+        ["SELECT t.id FROM public.t WHERE t.id = ANY (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+         "SELECT t.id FROM public.t WHERE t.x = 1",
+         [["1"], ["4"]]],
+      "as = SOME" =>
+        ["SELECT t.id FROM public.t WHERE t.id = SOME (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+         "SELECT t.id FROM public.t WHERE t.x = 1",
+         [["1"], ["4"]]]
+    }.each do |where, (sql, rewrite, expected)|
+      it "fires #{where}, and returns the same rows" do
+        rewrites = rewritten(sql)
+
+        expect(rewrites).to eq([rewrite])
+        expect(same_rows(sql, rewrites)).to eq(expected)
+      end
+    end
+
+    it "would be wrong on an ON it refuses: the rows differ if the predicates are moved anyway" do
+      sql = "SELECT u.id, u2.id FROM public.u LEFT JOIN (public.u u2 LEFT JOIN public.t ON t.id = u2.t_id) " \
+            "ON u2.id = u.id AND t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x IS NULL)"
+      moved = "SELECT u.id, u2.id FROM public.u LEFT JOIN (public.u u2 LEFT JOIN public.t ON t.id = u2.t_id) " \
+              "ON u2.id = u.id AND t.x IS NULL"
+
+      expect(rewritten(sql)).to eq([])
+      expect(rows(sql)).not_to eq(rows(moved))
     end
 
     # Each is the query that fires, changed in one way that makes it unsafe
@@ -239,13 +341,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
         "SELECT t.id FROM public.t WHERE t.x = 2 OR t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "the IN is in the select list" =>
         "SELECT t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1) FROM public.t",
-      "it's = ANY" => "SELECT t.id FROM public.t WHERE t.id = ANY (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "it's <> ALL" => "SELECT t.id FROM public.t WHERE t.id <> ALL (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "it's EXISTS already" => "SELECT t.id FROM public.t WHERE EXISTS (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "the tested expression is a row" =>
         "SELECT t.id FROM public.t WHERE (t.id, t.x) IN (SELECT t2.id, t2.x FROM public.t t2 WHERE t2.x = 1)",
-      "the tested column isn't qualified" =>
-        "SELECT t.id FROM public.t WHERE id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "the subquery gives another column" =>
         "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.x FROM public.t t2 WHERE t2.x = 1)",
       "the subquery gives two columns, the first the key" =>
@@ -303,10 +402,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       "the subquery's join condition has a subquery" =>
         "SELECT t.id FROM public.t WHERE t.id IN " \
         "(SELECT t2.id FROM public.t t2 JOIN public.u ON EXISTS (SELECT 1 FROM public.u u2 WHERE u2.t_id = t2.id))",
-      "the subquery has an unqualified column" =>
-        "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE x = 1)",
-      "the subquery has an unqualified column with a table's name" =>
-        "SELECT t.id FROM public.t WHERE t.id IN (SELECT x.id FROM public.t x WHERE x = 1)",
       "the subquery refers to the outer query" =>
         "SELECT o.id FROM public.t o WHERE o.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = o.x)",
       "the subquery has a three-part column" =>
@@ -361,9 +456,34 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       "the outer table is a CTE" =>
         "WITH t AS (SELECT * FROM public.t) SELECT t.id FROM t WHERE t.id IN " \
         "(SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
-      "the query is a UNION" =>
-        "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1) " \
-        "UNION ALL SELECT u.id FROM public.u"
+      "it's = ANY with a schema-qualified operator" =>
+        "SELECT t.id FROM public.t WHERE t.id OPERATOR(pg_catalog.=) ANY " \
+        "(SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+      "it's < ANY" => "SELECT t.id FROM public.t WHERE t.id < ANY (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+      "the IN is in a HAVING" =>
+        "SELECT t.id FROM public.t GROUP BY t.id HAVING t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+      "the IN is in a nested SELECT, and tests an enclosing query's table" =>
+        "SELECT t.id FROM public.t WHERE EXISTS " \
+        "(SELECT 1 FROM public.u WHERE u.t_id = t.id AND t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1))",
+      "the IN is in a join's ON, and the table is on the nullable side of a join inside it" =>
+        "SELECT u.id FROM public.u LEFT JOIN (public.u u2 LEFT JOIN public.t ON t.id = u2.t_id) " \
+        "ON u2.id = u.id AND t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x IS NULL)",
+      "the IN is in a join's ON, and tests a table outside the join" =>
+        "SELECT u.id FROM public.t, public.u JOIN public.u u2 " \
+        "ON u2.id = u.id AND t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+      "a bare column of the subquery is the outer query's" =>
+        "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id " \
+        "WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE y = 1)",
+      "a bare column of the subquery is in two of its tables" =>
+        "SELECT t.id FROM public.t WHERE t.id IN " \
+        "(SELECT t2.id FROM public.t t2 JOIN public.u ON u.t_id = t2.id WHERE id = 1)",
+      "the bare tested column is in two FROM tables" =>
+        "SELECT t.id FROM public.t JOIN public.u ON u.t_id = t.id " \
+        "WHERE id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+      "the bare tested column is read beside a subquery, whose columns the catalog doesn't know" =>
+        "SELECT t.id FROM public.t, (SELECT 1 AS z) s WHERE id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+      "the bare tested column is read beside a table whose alias renames a column to it" =>
+        "SELECT t.id FROM public.t, public.w v (id) WHERE id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)"
     }.each do |why, sql|
       it "doesn't fire when #{why}" do
         expect(rewritten(fires).size).to eq(1)
