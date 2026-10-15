@@ -150,13 +150,16 @@ module Quaack
 
       # The query with this one atom replaced by TRUE, deparsed. The parse
       # must be the one the atom came from, and it isn't changed.
-      def with_true(parse, atom)
+      def with_true(parse, atom) = with_value(parse, atom, true)
+
+      # The same with the atom replaced by value, TRUE or FALSE.
+      def with_value(parse, atom, value)
         unreplaceable!(atom) unless atom.replaceable
 
         tree = Tree.copy(parse.tree)
         case_expr = Tree.simple_case(tree, atom.path)
-        if case_expr then SimpleCase.searched(case_expr, atom.path[-3])
-        else Tree.set(tree, atom.path, Tree.true_node)
+        if case_expr then SimpleCase.searched(case_expr, atom.path[-3], value)
+        else Tree.set(tree, atom.path, Tree.boolean_node(value))
         end
         Deparse.faithfully(tree)
       end
@@ -204,7 +207,11 @@ module Quaack
           dig(tree, path[0...-1])[path.last] = value
         end
 
-        def true_node = PgQuery::Node.new(a_const: PgQuery::A_Const.new(boolval: PgQuery::Boolean.new(boolval: true)))
+        def true_node = boolean_node(true)
+
+        def boolean_node(value)
+          PgQuery::Node.new(a_const: PgQuery::A_Const.new(boolval: PgQuery::Boolean.new(boolval: value)))
+        end
 
         # The CASE x, when the path leads to one of its WHEN values.
         def simple_case(tree, path)
@@ -225,11 +232,11 @@ module Quaack
         end
 
         # Rewrites it, in place, as CASE WHEN x = v ..., with WHEN number
-        # index TRUE.
-        def searched(case_expr, index)
+        # index TRUE, or value.
+        def searched(case_expr, index, value)
           case_expr.args.each_with_index do |node, i|
             case_when = node.case_when
-            case_when.expr = i == index ? Tree.true_node : test(case_expr.arg, case_when.expr)
+            case_when.expr = i == index ? Tree.boolean_node(value) : test(case_expr.arg, case_when.expr)
           end
           case_expr.arg = nil
         end

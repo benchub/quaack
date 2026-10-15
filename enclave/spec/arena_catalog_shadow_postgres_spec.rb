@@ -5,6 +5,7 @@ require "quaack/enclave/arena"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/denormalized_fixture"
+require "quaack/enclave/fuzz"
 require "quaack/enclave/scenarios"
 require_relative "support/catalog_shadow"
 
@@ -63,8 +64,8 @@ end
 # Task 20261007-31: the arena's catalog reads, when public's relations,
 # functions, operators, and types sit ahead of pg_catalog's on the
 # search_path, as an arena loaded from a production dump can have them (see
-# CatalogShadow and ArenaShadow). The scenarios rewrite-test builds, the
-# counterexamples it prepares, and what they load are the same as with
+# CatalogShadow and ArenaShadow). The schema a search reads, the
+# counterexamples a round prepares, and what they load are the same as with
 # nothing planted.
 RSpec.describe "the arena's catalog reads with catalog names shadowed" do
   let(:conn) { racetrack_and_arena.arena.connection }
@@ -95,21 +96,8 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
     SQL
   end
 
-  describe "rewrite-test's scenarios" do
-    # The query's own operators resolve on the search_path, as they do in
-    # production, so it compares only types nothing here plants an
-    # operator for.
-    let(:parse) do
-      PgQuery.parse(<<~SQL)
-        SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.mood > o.mood
-        WHERE o.qty > 3 AND c.mood <= 'happy' AND o.placed >= '2026-02-01' AND c.email >= 'a'
-          AND o.span @> 4 AND o.tags = '{x}' AND (o.placed, o.id) > ('2026-02-01', 5)
-        ORDER BY o.placed, o.id LIMIT 5
-      SQL
-    end
-
+  describe "the schema a search reads" do
     def schema = Quaack::Enclave::ArenaSchema.load_closure(conn, [tn("orders")])
-    def scenarios = Quaack::Enclave::Scenarios.build(conn, parse)
 
     it "reads the same tables, columns, and constraints" do
       baseline = schema
@@ -118,19 +106,25 @@ RSpec.describe "the arena's catalog reads with catalog names shadowed" do
       expect(bare(schema)).to eq(bare(baseline))
     end
 
-    it "builds the same scenarios, and each loads as it did" do
-      baseline = scenarios
-      expect(baseline.values.flatten.map(&:table).uniq).to contain_exactly(tn("orders"), tn("customers"))
-      loaded = load(baseline)
+    # The query's own operators resolve on the search_path, as they do in
+    # production, so it compares only types nothing here plants an
+    # operator for (int4 = int4 is planted). The search's values
+    # (ValuePools, Checks) read the catalog too.
+    it "searches with the same outcome and the same atoms shown both ways" do
+      original = "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.mood = o.mood " \
+                 "WHERE o.qty > 3 AND c.mood <= 'happy' AND o.placed >= '2026-02-01' AND c.email >= 'a' " \
+                 "ORDER BY o.placed, o.id LIMIT 5"
+      wrong = original.sub("o.qty > 3 AND ", "")
+      search = lambda do |candidate|
+        results = Quaack::Enclave::Fuzz.search(conn, original, candidate, enumerate: nil, seed: 7,
+                                                                          stop: Quaack::Enclave::Fuzz::StopRule.trials(60))
+        [results.fuzz.verdict, results.fuzz.rule, results.coverage&.untested_shapes]
+      end
+      baseline = [original, wrong].map(&search)
+      expect(baseline.map(&:first)).to eq(%i[passed disproved])
       plant
 
-      expect(bare(scenarios)).to eq(bare(baseline))
-      expect(load(scenarios)).to eq(loaded)
-    end
-
-    # Each scenario's row counts, once loaded.
-    def load(scenarios)
-      scenarios.transform_values { |rows| runner.with_fixture(rows) { |tx| tx.query(ArenaShadow::COUNTS).rows } }
+      expect([original, wrong].map(&search)).to eq(baseline)
     end
   end
 

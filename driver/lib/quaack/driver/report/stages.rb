@@ -28,13 +28,15 @@ module Quaack
         # their own table (rewrite_index_rows). A run from before fuzz
         # (task 20261012-2) recorded rewrite-test but never fuzz, so it
         # gets no fuzz row; one from before enumerate (20261012-3), none
-        # for it.
+        # for it. The search replaced rewrite-test's scenarios (20261012-4),
+        # so only a run from before that gets a rewrite-test row.
         def rewrite_rows = summed(rewrite_stages) + summed(Words::LATE_STAGES)
 
         def rewrite_stages
           stages = burndown["stages"]
-          before = %w[fuzz enumerate].reject { stages.key?("rewrite-test") && !stages.key?(it) }
-          Words::REWRITE_STAGES.except(*(%w[fuzz enumerate] - before))
+          return Words::REWRITE_STAGES.except("rewrite-test") unless stages.key?("rewrite-test")
+
+          Words::REWRITE_STAGES.except(*%w[fuzz enumerate].reject { stages.key?(it) })
         end
 
         # The rewrites' own index searches, totaled per stage.
@@ -77,17 +79,27 @@ module Quaack
 
         def counted_as(name, rule, stage) = rule ? "by the transform rule #{name}" : counted(name, stage)
 
-        # A name in words. rewrite-test drops a rewrite it never tested by
-        # the rule of the refusal or the failure, said as the rewrite's fate
-        # says it; any rule it has no words for is a statement that failed.
-        # fuzz and enumerate drop one by the comparison's rule.
+        # A name in words. An older run's rewrite-test (from before task
+        # 20261012-4) dropped a rewrite by the scenario that disproved it,
+        # s0 to s6, said without naming the scenario, or one it never tested
+        # by the rule of the refusal or the failure, said as the rewrite's
+        # fate says it; any rule it has no words for is a statement that
+        # failed. fuzz and enumerate drop one by the comparison's rule.
         def counted(name, stage)
           return fuzz_drop(name, stage) if SEARCH_DROPS.key?(stage) && !Words::COUNTS.key?(name)
           return Words::COUNTS.fetch(name) { Words.plain(name) } unless stage == "rewrite-test" &&
-                                                                        !Words::SCENARIOS.key?(name)
+                                                                        !Words::COUNTS.key?(name)
+
+          legacy_test_drop(name)
+        end
+
+        def legacy_test_drop(name)
+          return "wrong on made-up test data" if SCENARIO.match?(name)
 
           "never tested, because #{Words::REFUSALS.fetch(name) { Words::FAILURES.fetch(name, Words::FAILED) }}"
         end
+
+        SCENARIO = /\As\d\z/
 
         SEARCH_DROPS = { "fuzz" => "a random small database",
                          "enumerate" => "a small database QUAACK enumerated" }.freeze

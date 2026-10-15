@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "quaack/enclave/scenario_tests"
+require "quaack/enclave/scenarios"
 
 # Columns with the same CHECK text share one cached probe only when their
 # types match (20261004-6). A probe binds the value as the column's type, so

@@ -27,13 +27,13 @@ module Quaack
           "ranked" => "It beat the original query and is ranked below.",
           "same_plans" => "Postgres plans it exactly as it plans the original query, so it can't run any " \
                           "differently. QUAACK didn't test it further.",
-          "rewrite_test_disproved" => "#{DIFFERENT} made-up test data%<scenario>s, so it's wrong.",
+          "rewrite_test_disproved" => "#{DIFFERENT} made-up test data, so it's wrong.",
           "fuzz_disproved" => "#{DIFFERENT} a random small database built around its own values%<fuzz>s, so it's " \
                               "wrong.",
           "enumerate_disproved" => "#{DIFFERENT} a small database QUAACK enumerated from its own values%<fuzz>s, " \
                                    "so it's wrong.",
           "counterexamples_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
-          "rewrite_test_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
+          "rewrite_test_failed" => "A test on made-up data #{UNCOMPARED}",
           "counterexamples_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
           "rewrite_test_untested" => "QUAACK couldn't make up test data for the original query%<refusal>s, so it " \
                                      "never tested this rewrite and won't recommend it. That says nothing about " \
@@ -70,26 +70,38 @@ module Quaack
                        "measurement" => "It was measured, and the run ended before QUAACK judged it." }.freeze
 
         # A rewrite whose rewrite-test ran out of time and went on (task
-        # 20261011-15) never passed the tests on made-up data, so its later
-        # fate's opening says what happened instead, by the first of these
-        # that matches.
+        # 20261011-15), or that the search couldn't test and went on (task
+        # 20261012-4, the payload's not_tested), never passed the tests on
+        # made-up data, so its later fate's opening says what happened
+        # instead, by the first of went_on's pairs that matches.
         UNTIMED_SHORT = "Its test on made-up data didn't finish within " \
                         "#{Protocol::RewriteBudget.minutes} minutes".freeze
-        UNTIMED_LEAD = "#{UNTIMED_SHORT}, so QUAACK checked it only on test data the LLM wrote to break it and on " \
-                       "the real data".freeze
-        UNTIMED = [["It passed the tests on made-up data, and the run ended", "#{UNTIMED_SHORT}, and the run ended"],
-                   ["It passed every test, and the run ended",
-                    "#{UNTIMED_SHORT}, it passed the LLM's test data, and the run ended"],
-                   ["It passed the tests on made-up data, but QUAACK", "#{UNTIMED_LEAD}, but QUAACK"],
-                   ["It passed the tests on made-up data, but", "#{UNTIMED_LEAD}, and it"],
-                   ["It passed every test and beat", "#{UNTIMED_LEAD}, and it beat"],
-                   ["It passed every test,", "#{UNTIMED_LEAD},"]].freeze
+        CHECKED_ONLY = "so QUAACK checked it only on test data the LLM wrote to break it and on the real data"
 
-        # text, reworded by UNTIMED when entry's test ran out of time.
+        # Why a rewrite went on untested, as the opening of its fate, or nil
+        # if it didn't.
+        def went_on_short(entry)
+          return UNTIMED_SHORT if entry["out_of_time"] == true
+
+          why = Words::NOT_TESTED[entry["not_tested"]]
+          "QUAACK didn't test it on made-up data, since #{why}" if why
+        end
+
+        def went_on(short)
+          lead = "#{short}, #{CHECKED_ONLY}"
+          [["It passed the tests on made-up data, and the run ended", "#{short}, and the run ended"],
+           ["It passed every test, and the run ended", "#{short}, it passed the LLM's test data, and the run ended"],
+           ["It passed the tests on made-up data, but QUAACK", "#{lead}, but QUAACK"],
+           ["It passed the tests on made-up data, but", "#{lead}, and it"],
+           ["It passed every test and beat", "#{lead}, and it beat"],
+           ["It passed every test,", "#{lead},"]]
+        end
+
+        # text, reworded by went_on when entry went on untested.
         def untimed(entry, text)
-          return text unless entry["out_of_time"] == true
+          short = went_on_short(entry) or return text
 
-          from, to = UNTIMED.find { text.start_with?(it.first) }
+          from, to = went_on(short).find { text.start_with?(it.first) }
           from ? text.sub(from, to) : text
         end
 
@@ -133,7 +145,7 @@ module Quaack
 
         # The fate sentences' bracketed details.
         def fills(entry)
-          { scenario: bracket(Words::SCENARIOS[entry["scenario"]]), fuzz: bracket(fuzz(entry)),
+          { fuzz: bracket(fuzz(entry)),
             round: bracket(entry["round"] && "round #{entry["round"]}") }
         end
 
@@ -229,32 +241,11 @@ module Quaack
                    "and they are in a part the rewrite changed, so they can't show the rewrite handles them the " \
                    "same way:"
 
-        # How a condition stayed unproven, by vacuity-guard's search state
-        # (Protocol::UntestedStates::WORDS; the budget is DESIGN.md's).
-        HOW = {
-          "searched" => "QUAACK also tried 150 small made-up databases for it and found none where it changes " \
-                        "the result.",
-          "not_searched" => "QUAACK didn't search small made-up databases for it in full: it ran out of search " \
-                            "time, or the query has a LIMIT or OFFSET, compares a count with a number, or calls a " \
-                            "function whose results change from run to run."
-        }.freeze
-
-        # The conditions of the original query that rewrite-test's made-up rows never
-        # exercised (vacuity-guard), by their redacted shapes. Anything else
+        # The conditions of the original query that the search's small
+        # databases never showed both true and false (Fuzz::Coverage, task
+        # 20261012-4; vacuity-guard's before it), by their redacted shapes. Anything else
         # the payload holds there, such as an atom's index, isn't one.
         def atoms(entry) = Array(entry["untested_atoms"]).grep(String).uniq
-
-        # What HOW says for the atom, or nil when the entry's untested_states
-        # isn't one known word per untested atom (or it's missing, as in a
-        # message from before the search).
-        def how(entry, atom)
-          states = entry["untested_states"]
-          list = entry["untested_atoms"]
-          return unless states.is_a?(Array) && list.is_a?(Array) && states.size == list.size
-          return unless states.all? { HOW.key?(it) }
-
-          HOW[states[list.index(atom)]]
-        end
 
         # Those a counterexample round's rows exercised afterwards.
         def checked_later(entry) = atoms(entry) & Array(entry["covered"]).grep(String)
@@ -269,15 +260,6 @@ module Quaack
 
         # Those no test exercised, in a part the rewrite changed.
         def unchecked_atoms(entry) = atoms(entry) - checked_later(entry) - unchanged_atoms(entry)
-
-        # How many of rewrite-test's scenario groups it left out because
-        # their rows would collide on a unique key, or nil for none.
-        def dropped_line(entry)
-          count = entry["dropped"]
-          return unless count.is_a?(Integer) && count.positive?
-
-          "QUAACK left out #{Words.count(count, "test case")}, since their made-up rows would have broken a unique key."
-        end
 
         # DESIGN.md's rewrite-rules: the rule-made rewrites a test disproved.
         def rule_bugs = @payload["rule_bugs"] || []

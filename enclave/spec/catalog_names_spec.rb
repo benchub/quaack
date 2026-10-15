@@ -109,7 +109,7 @@ RSpec.describe "catalog names in the enclave's SQL" do
       expect(CatalogNames.scan(dir).fetch("y.rb")).to eq(["line 1: type quaack_x", "line 1: type quaack_x"])
     end
 
-    # Task 20261007-41: a cast built on its own, such as scenarios/row_set.rb's.
+    # Task 20261007-41: a cast built on its own, as the old scenarios/row_set.rb built.
     it "reads a string that starts with a placeholder cast as an expression, and not one with no cast" do
       source = <<~RUBY
         A = "$1::text"

@@ -45,7 +45,7 @@ module CatalogNames
                  SAVEPOINT|RELEASE|BEGIN|COMMIT|ROLLBACK|VALUES|TABLE)\b/x
 
   # A string that starts with a placeholder, $ or $n, and casts somewhere,
-  # such as scenarios/row_set.rb's "$#{i + 1}::#{type}", is an expression
+  # such as "$#{i + 1}::#{type}", is an expression
   # SQL is built from (task 20261007-41). The scan reads it after SELECT.
   CAST_START = /\A\$(?:\d|\z)/
 
@@ -77,8 +77,6 @@ module CatalogNames
   TYPE_NAME_HOLES = {
     ["quaack/enclave/value_pools.rb", "col.type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/value_pools.rb", "@col.type"] => "an ArenaSchema column's type, read on the arena connection",
-    ["quaack/enclave/scenarios/row_set.rb", "@schema.column(table, c).type"] =>
-      "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/fuzz/dictionary.rb", "col.type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/fuzz/legal.rb", "type"] => "an ArenaSchema column's type, read on the arena connection",
     ["quaack/enclave/fuzz/domains.rb", "type"] => "an ArenaSchema column's type, read on the arena connection",

@@ -61,4 +61,15 @@ RSpec.describe Quaack::Protocol::FuzzResult do
     expect(described_class.rewrites?([sound, sound.merge("worlds" => "900")])).to be(false)
     expect(described_class.rewrites?([sound, sound.merge("bound" => 7)])).to be(false)
   end
+
+  # Task 20261012-4: why the search couldn't test a rewrite is a fixed word.
+  it "accepts a report's rewrites only if each one's not_tested is nil or a reason from the list" do
+    expect(described_class::NOT_TESTED).to eq(%w[no_tables not_comparable setup_failed no_world unconfirmed
+                                                 search_failed fuzz_off])
+    sound = { "trials" => 41_200 }
+    accepted = [{}, { "not_tested" => nil }, *described_class::NOT_TESTED.map { { "not_tested" => it } }]
+    expect(accepted.map { described_class.rewrites?([sound, sound.merge(it)]) }).to all(be(true))
+    refused = ["PG::Error: QUAACK_SENTINEL", "out_of_time", :no_world, 3, ["no_world"]]
+    expect(refused.map { described_class.rewrites?([sound, sound.merge("not_tested" => it)]) }).to all(be(false))
+  end
 end

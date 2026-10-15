@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "quaack/protocol/burndown"
-require "quaack/protocol/rewrite_budget"
 require_relative "burndown"
 require_relative "rewrite_candidate_check"
 require_relative "steps/index_search"
@@ -92,12 +91,16 @@ module Quaack
       # Burndown.record_latest): in 1, and out 1 unless it disproved the
       # rewrite, dropped then by its rule, a constant of
       # RewriteFate::FUZZ_DISPROOFS (failed for any other). extra trials is how
-      # many worlds it compared, and untested 1 says it compared none.
+      # many worlds it compared. A rewrite it couldn't test goes on (task
+      # 20261012-4), counted by untested 1, or by not_tested_in_time 1
+      # instead when that's because its budget ran out (task 20261011-15),
+      # so the two never count the same rewrite.
       # outcome is Fuzz.run's. settings are more extra counts, each 1, for
       # the spec settings that limit the searches (Steps::RewriteFuzz::SETTINGS).
       def record_fuzz(store, search, outcome, settings = {})
         disproved = outcome.verdict == :disproved
-        untested = outcome.verdict == :untested ? { untested: 1 } : {}
+        kind = outcome.reason == :out_of_time ? :not_tested_in_time : :untested
+        untested = outcome.verdict == :untested ? { kind => 1 } : {}
         extra = { trials: outcome.trials, **untested, **settings }
         Burndown.record_latest(
           store, [["fuzz", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
@@ -111,58 +114,28 @@ module Quaack
       # is how many worlds it compared, bound_<w> 1 says it passed having
       # tried every world of up to w rows, so summed over the rewrites each
       # counts the passes that reached that bound, and untested 1 says it
-      # decided nothing. outcome is Fuzz::Enumerate's.
-      def record_enumerate(store, search, outcome)
+      # decided nothing. outcome is Fuzz::Enumerate's. untested_atoms, for
+      # a rewrite the search passed, is how many of the original's atoms
+      # its worlds never showed both true and false (Fuzz::Coverage), extra
+      # untested_atoms (task 20261012-4), so summed over the rewrites it
+      # counts the report's cautions' atoms; nil leaves it out.
+      def record_enumerate(store, search, outcome, untested_atoms = nil)
         disproved = outcome.verdict == :disproved
+        extra = enumerate_extra(outcome, disproved ? nil : untested_atoms)
         Burndown.record_latest(
           store, [["enumerate", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
-                                                 out: disproved ? 0 : 1, extra: enumerate_extra(outcome) }]]
+                                                 out: disproved ? 0 : 1, extra: }]]
         )
       end
 
-      def enumerate_extra(outcome)
+      def enumerate_extra(outcome, untested_atoms)
         verdict = outcome.verdict
         { worlds: outcome.worlds, **(verdict == :passed ? { "bound_#{outcome.bound}": 1 } : {}),
-          **(verdict == :untested ? { untested: 1 } : {}) }
+          **(verdict == :untested ? { untested: 1 } : {}),
+          **({ untested_atoms: } if untested_atoms) }
       end
 
       def fuzz_drop(rule) = Steps::RewriteFate::FUZZ_DISPROOFS.include?(rule.to_s) ? rule.to_sym : :failed
-
-      # Records rewrite-test's burndown for search, rewrite_<n> (Burndown.record_latest): in 1,
-      # out 1 if it passed, or dropped by why it didn't (test_drop), with
-      # extra untested_atoms and vacuity_guard_retries, and the fixtures it
-      # loaded as the total fixture_loads. A rewrite whose test ran out of
-      # time goes on (out 1) with extra not_tested_in_time 1. result is the
-      # rewrite_tested_<n> entry, and report the ScenarioTests::Report.
-      def record_test(store, search, result, report)
-        passed = result["passed"]
-        Burndown.record_latest(
-          store, [["rewrite-test", search.to_sym,
-                   { in: 1, dropped: passed ? {} : { test_drop(result) => 1 }, out: passed ? 1 : 0,
-                     extra: test_extra(result, report) }]],
-          totals: { fixture_loads: report.loads }
-        )
-      end
-
-      def test_extra(result, report)
-        untimed = result["passed"] && result["rule"] == Protocol::RewriteBudget::RULE
-        { untested_atoms: report.untested_atoms.size, vacuity_guard_retries: report.retries,
-          **({ not_tested_in_time: 1 } if untimed) }
-      end
-
-      # Why rewrite-test dropped a rewrite: the scenario that got different
-      # results, s0 to s6, or the rule of a scenario that compared nothing or
-      # of a refusal to build scenarios, each a constant of RewriteFate's, or
-      # out_of_time for a test that ran past its budget (Protocol::RewriteBudget).
-      # Anything else is failed.
-      def test_drop(result)
-        scenario, rule = result.values_at("scenario", "rule")
-        return scenario.to_sym if Steps::RewriteFate::MISMATCHES.include?(rule) &&
-                                  Steps::RewriteFate::SCENARIOS.include?(scenario)
-        return rule.to_sym if Steps::RewriteFate::UNTESTED.include?(rule)
-
-        :failed
-      end
 
       # Records counterexamples' burndown for search, rewrite_<n>
       # (Burndown.record_latest), once survival is decided: in 1, and out 1 for a survivor of the last

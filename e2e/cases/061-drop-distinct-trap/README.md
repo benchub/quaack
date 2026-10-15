@@ -14,7 +14,7 @@ Which regions ordered recently.
 
 ## Expected result.
 
-QUAACK must reject dropping `DISTINCT`: every recent order repeats its region. An LLM that claims `region` is unique per row fails assumption-check, and rewrite-test's S3 scenario disproves an operator's version.
+QUAACK must reject dropping `DISTINCT`: every recent order repeats its region. An LLM that claims `region` is unique per row fails assumption-check, and rewrite-test's search disproves an operator's version with two orders in one region.
 
 ## Proof.
 

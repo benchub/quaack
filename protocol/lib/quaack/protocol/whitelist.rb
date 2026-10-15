@@ -132,20 +132,18 @@ module Quaack
       rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
       # rewrite-test's verdict on one stored rewrite, from `quaacks rewrite-test`.
       # rewrite is the entry name, such as rewrite_2. passed is true or
-      # false. scenario is nil or a scenario name (s0 to s6), and rule nil
-      # or one of the enclave's rule constants, such as row_count or
-      # discarded. s1_load_rule is nil or the rule S1 failed to load with, and
-      # s1_rows how many rows the original returned on S1 (nil when it didn't
-      # load), and s1_nonzero_rows how many of them hold a nonzero value,
-      # checked by Protocol::VacuityDiagnostic.valid?. stage is the stage
-      # that decided it (nil, fuzz, or rewrite-test) and trials how many
+      # false. rule is nil or one of the enclave's rule constants, such as
+      # row_count or discarded, or, for a rewrite that went on untested, the
+      # budget's out_of_time or a reason from FuzzResult::NOT_TESTED. Task
+      # 20261012-4 dropped ScenarioTests' scenario and S1 vacuity
+      # diagnostic. stage is the stage
+      # that decided it (nil or fuzz) and trials how many
       # small random databases fuzz compared it on (nil or a count). Task
       # 20261012-3 adds enumerate: stage may be enumerate, worlds is how many
       # small databases enumerate compared (nil or a count), and bound the
       # most rows of every database it tried (nil or 0 to 4). All are
       # checked by Protocol::FuzzResult.rewrite_test?. Never SQL or a row.
-      rewrite_test: %i[rewrite passed scenario rule s1_load_rule s1_rows s1_nonzero_rows stage trials worlds
-                       bound].freeze,
+      rewrite_test: %i[rewrite passed rule stage trials worlds bound].freeze,
       # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
       # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound
@@ -175,8 +173,8 @@ module Quaack
       # its $n SQL, its source (rule, llm, or operator) and, if a rewrite-rules rule
       # made it, the rule names and the tables and columns of the
       # denormalized_equal assumptions it rests on (only names its SQL
-      # already holds, never the type value), its fate with the scenario,
-      # rule, round, or last stage that goes with it (and, for an fk_cycle
+      # already holds, never the type value), its fate with the rule,
+      # round, or last stage that goes with it (and, for an fk_cycle
       # refusal, the cycle's table names, each a relation of the run's
       # schema subset), its plan's node shapes, its
       # untested atoms (rewrite-test's redacted shapes), the shapes of those
@@ -211,7 +209,7 @@ module Quaack
       # Protocol::IndexSources.entries_valid? (each entry's sources are names
       # from the fixed list), and only if each rewrite's
       # untested_unchanged passes Protocol::UnchangedAtoms.valid?. The rest go out unchecked, so the enclave's
-      # ReportPayload step is where they're reviewed. Sources, rule names, fates, scenarios, and steps are the
+      # ReportPayload step is where they're reviewed. Sources, rule names, fates, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
       # one only if it's on their own lists, never what a store entry holds
       # as it is.

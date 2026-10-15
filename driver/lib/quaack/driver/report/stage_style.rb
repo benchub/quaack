@@ -48,11 +48,25 @@ module Quaack
           count if count.is_a?(Integer) && count.positive?
         end
 
-        # The note a stage with untimed rewrites gets in its hover, or nil.
-        def self.untimed_note(record)
-          count = untimed(record) or return
-          "#{Format.number(count)} not tested in time on made-up data went on, checked only on the LLM's test " \
-            "data and the real data."
+        # How many rewrites fuzz's record carried on though the search
+        # couldn't test them (task 20261012-4's extra untested), or nil for
+        # none. enumerate's untested ones passed fuzz.
+        def self.untested(record, stage)
+          return unless stage == "fuzz" && record.is_a?(Hash) && record["extra"].is_a?(Hash)
+
+          count = record["extra"]["untested"]
+          count if count.is_a?(Integer) && count.positive?
+        end
+
+        CHECKED_ONLY = "went on, checked only on the LLM's test data and the real data."
+
+        # The notes a stage with rewrites that went on untested gets in its
+        # hover: those not tested in time, and those the search couldn't test.
+        def self.went_on_notes(record, stage)
+          untimed = untimed(record)
+          untested = untested(record, stage)
+          [untimed && "#{Format.number(untimed)} not tested in time on made-up data #{CHECKED_ONLY}",
+           untested && "#{Format.number(untested)} not tested on made-up data #{CHECKED_ONLY}"].compact
         end
 
         # A record's [in, out], [in, nil] if it has no out, or [nil, nil] if

@@ -72,7 +72,7 @@ RSpec.describe Quaack::Driver::Report do
 
   def fated(number, fate, **details)
     { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
-      "fate" => fate, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
+      "fate" => fate, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
       "untested_atoms" => nil, "covered" => nil, "evidence" => nil }.merge(details.transform_keys(&:to_s))
   end
 
@@ -97,7 +97,7 @@ RSpec.describe Quaack::Driver::Report do
       ],
       "rewrites" => [
         { "rewrite" => "rewrite_1", "sql" => "SELECT id FROM t WHERE a < $1 ORDER BY id", "source" => "rule",
-          "rules" => ["key_in_self_join"], "fate" => "ranked", "scenario" => nil, "rule" => nil, "round" => nil,
+          "rules" => ["key_in_self_join"], "fate" => "ranked", "rule" => nil, "round" => nil,
           "after" => nil,
           "plan" => [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
                        "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0, "shared_hit_blocks" => nil,
@@ -757,22 +757,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(queries).to include("<code>SELECT FROM WHERE &lt;b&gt; $1</code>")
     end
 
-    # Task 20260926-42: rewrite-test's dropped count.
-    describe "the test cases a unique key left out" do
-      def dropped(count)
-        payload["rewrites"].first["dropped"] = count
-        section(render(payload), "queries")
-      end
-
-      it "says how many test cases QUAACK left out, and why" do
-        expect(dropped(2)).to include('<p class="dropped">QUAACK left out 2 test cases, since their made-up rows ' \
-                                      "would have broken a unique key.</p>")
-        expect(dropped(1)).to include("QUAACK left out 1 test case, since")
-      end
-
-      it "says nothing when it left none out, or the count isn't one" do
-        [0, nil, -1, "2"].each { expect(dropped(it)).not_to include('class="dropped"') }
-      end
+    # Task 20260926-42 counted the scenario groups a unique key left out;
+    # task 20261012-4 removed the scenarios, so an older entry's count says
+    # nothing now.
+    it "says nothing of the test cases an older run's unique key left out" do
+      payload["rewrites"].first["dropped"] = 2
+      expect(section(render(payload), "queries")).not_to include("test case")
     end
 
     # Task 20261012-2: how many random small databases the fuzz search
@@ -885,26 +875,15 @@ RSpec.describe Quaack::Driver::Report do
         expect(queries).not_to include("never made these conditions")
       end
 
-      # Task 20261010-43: how each one stayed unproven, from vacuity-guard's search.
-      def with_states(atoms, states)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "untested_states" => states, "covered" => nil)
-        section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
-      end
-
-      it "says after each condition whether QUAACK's search tried it in full" do
-        out = with_states(["a < $1", "t.b IS NULL"], %w[searched not_searched])
-        expect(out.scan(%r{<li>.*?</li>})).to eq(
-          [%(<li><code class="sql">a &lt; $1</code> <span class="how">#{esc(described_class::Rewrites::HOW["searched"])}</span></li>),
-           %(<li><code class="sql">t.b IS NULL</code> <span class="how">#{esc(described_class::Rewrites::HOW["not_searched"])}</span></li>)]
-        )
-        expect(described_class::Rewrites::HOW["searched"]).to include("150 small made-up databases")
-      end
-
-      it "says nothing more when the states are missing, off the list, or don't line up" do
-        [nil, %w[searched], %w[bogus searched], "searched"].each do |states|
-          out = with_states(["a < $1", "t.b IS NULL"], states)
-          expect(out).not_to include('class="how"'), states.inspect
-        end
+      # Task 20261010-43 said, from vacuity-guard's search state, how each
+      # stayed unproven; task 20261012-4 removed that search, so an older
+      # entry's states say nothing now.
+      it "lists an older entry's conditions without their vacuity-guard states" do
+        payload["rewrites"].first.merge!("untested_atoms" => ["a < $1", "t.b IS NULL"],
+                                         "untested_states" => %w[searched not_searched], "covered" => nil)
+        out = section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
+        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>),
+                                                  %(<li><code class="sql">t.b IS NULL</code></li>)])
       end
 
       it "never lists a value that isn't a condition's SQL, such as an atom's index" do
@@ -1034,11 +1013,12 @@ RSpec.describe Quaack::Driver::Report do
                                              "can't run any differently. QUAACK didn't test it further."))
       end
 
-      it "says which made-up data proved a rewrite wrong" do
+      # Task 20261012-4: an entry stored before the search replaced
+      # rewrite-test's scenarios may still name one; the report doesn't.
+      it "says made-up data proved an older run's rewrite wrong, without naming its scenario" do
         expect(fate("rewrite_test_disproved", scenario: "s2", rule: "multiset"))
-          .to eq(esc("It returned different results from the original query on made-up test data (NULLs), " \
-                     "so it's wrong."))
-        expect(fate("rewrite_test_disproved", scenario: "s3", rule: "row_count")).to include("(duplicate join keys)")
+          .to eq(esc("It returned different results from the original query on made-up test data, so it's wrong."))
+        expect(fate("rewrite_test_disproved", scenario: "s3", rule: "row_count")).not_to include("duplicate join")
       end
 
       it "says which round of LLM-written data proved a rewrite wrong" do
@@ -1064,7 +1044,7 @@ RSpec.describe Quaack::Driver::Report do
 
       it "says why a test compared nothing" do
         expect(fate("rewrite_test_failed", scenario: "s0", rule: "unsupported_order"))
-          .to eq(esc("A test on made-up data (empty tables) ended without comparing results, because the order " \
+          .to eq(esc("A test on made-up data ended without comparing results, because the order " \
                      "of the original query's rows can't be checked, so QUAACK dropped it. That says nothing about " \
                      "whether it's right."))
         expect(fate("counterexamples_failed", round: 1, rule: "statement_timeout"))
@@ -2068,14 +2048,13 @@ RSpec.describe Quaack::Driver::Report do
         .to eq(["Rewrite Smooth Kayak", "Rewrite Dainty Bloom", "Rewrite Bright Island", "Rewrite Trim Falcon",
                 "Rewrite Wise Slipper"])
       expect(list).to include(esc("<li>Rewrite Smooth Kayak (source not recorded): It returned different results " \
-                                  "from the original query on made-up test data (duplicate join keys), " \
-                                  "so it's wrong.</li>"))
+                                  "from the original query on made-up test data, so it's wrong.</li>"))
       expect(list).to include("<li>Rewrite Dainty Bloom (suggested by the LLM): It returned different results")
       expect(list)
         .to include(esc("<li>Rewrite Bright Island (made by transform rule key_in_self_join): It passed"))
       expect(list).to include("<li>Rewrite Trim Falcon (your own rewrite): Postgres plans it exactly as")
-      expect(list).to include("<li>Rewrite Wise Slipper (source not recorded): A test on made-up data (empty tables) " \
-                              "ended without comparing results")
+      expect(list).to include("<li>Rewrite Wise Slipper (source not recorded): A test on made-up data ended without " \
+                              "comparing results")
     end
 
     it "labels a rule-made rewrite that rewrite-test disproved with its rules" do
@@ -2084,8 +2063,7 @@ RSpec.describe Quaack::Driver::Report do
       list = section(render(negative_payload.merge("rewrites" => [line])), "negative-result")
       expect(list).to include(esc("<li>Rewrite Smooth Kayak (made by transform rules or_to_union, then " \
                                   "key_in_self_join): It returned different results from the original query on " \
-                                  "made-up " \
-                                  "test data (duplicate join keys), so it's wrong.</li>"))
+                                  "made-up test data, so it's wrong.</li>"))
     end
 
     it "says so when no rewrite was kept" do
@@ -2622,7 +2600,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(rewrite_index_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
         .to eq(["Index ideas for the rewrites: removing duplicates and indexes you already have"])
       expect(rewrite_table).to include(row("Testing on made-up edge-case data", 2, "none",
-                                           "wrong on duplicate join keys: 1", 0, 1,
+                                           "wrong on made-up test data: 1", 0, 1,
                                            "conditions the test data never exercised: 2"))
       expect(rewrite_table).to include("#{tr("Rewrites from the LLM")}" \
                                        '<td colspan="5" class="missing">not recorded</td></tr>')
@@ -2677,7 +2655,8 @@ RSpec.describe Quaack::Driver::Report do
       expect(table).to include(row("Testing on random small databases", 3, "none",
                                    "wrong on a random small database, where the row count differs: 1; wrong on a " \
                                    "random small database, where it failed and the original query ran: 1", 0, 1,
-                                   "random small databases compared: 40; not tested by the random search: 1"))
+                                   "random small databases compared: 40; not tested by the random search, so " \
+                                   "checked only on the LLM&#39;s test data and the real data: 1"))
     end
 
     # Task 20261012-15: a run with a spec setting that limits the searches
@@ -2717,6 +2696,30 @@ RSpec.describe Quaack::Driver::Report do
                                    "not tested by enumeration: 1"))
     end
 
+    # Task 20261012-4: the search replaced rewrite-test's scenarios, so a
+    # run since records no rewrite-test, and the burndown leaves it out
+    # rather than saying the run didn't count it.
+    it "leaves rewrite-test out of a run since the search replaced it, in the table and the diagram" do
+      stages = { "fuzz" => { "rewrite_1" => rec(1, 1, extra: { "trials" => 40 }) },
+                 "enumerate" => { "rewrite_1" => rec(1, 1, extra: { "worlds" => 9 }) },
+                 "counterexamples" => { "rewrite_1" => rec(1, 1) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+      expect(table).to include("Testing on every small database up to a few rows")
+      expect(table).not_to include("edge-case")
+    end
+
+    # An older run's rewrite-test dropped a rewrite by the scenario that
+    # disproved it; the report no longer names scenarios.
+    it "words an older run's rewrite-test drops by scenario as wrong on made-up test data" do
+      stages = { "rewrite-test" => { "rewrite_1" => rec(2, 0, dropped: { "s3" => 1, "s6" => 1 },
+                                                              extra: { "vacuity_guard_retries" => 3 }) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+      expect(table).to include(row("Testing on made-up edge-case data", 2, "none",
+                                   "wrong on made-up test data: 1; wrong on made-up test data: 1", 0, 0,
+                                   "retries to make sure every condition mattered: 3"))
+      expect(table).not_to include("duplicate join keys")
+    end
+
     # A run stored before enumerate existed recorded fuzz but never enumerate.
     it "leaves enumerate out of a run from before it, rather than saying the run didn't count it" do
       stages = { "fuzz" => { "rewrite_1" => rec(1, 1, extra: { "trials" => 40 }) },
@@ -2751,10 +2754,12 @@ RSpec.describe Quaack::Driver::Report do
       html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }))
       table = section(html, "burndown")
 
-      tested = "wrong on NULLs: 1; never tested, because a CHECK constraint on its tables is too complex for " \
-               "QUAACK to satisfy: 1; never tested, because a statement timed out: 1; never tested, because a " \
-               "statement failed on the test database: 1; never tested, because a statement failed on the test " \
-               "database: 1; never tested, because its test didn't finish within 5 minutes: 1"
+      tested = ["wrong on made-up test data: 1",
+                "never tested, because a CHECK constraint on its tables is too complex for QUAACK to satisfy: 1",
+                "never tested, because a statement timed out: 1",
+                "never tested, because a statement failed on the test database: 1",
+                "never tested, because a statement failed on the test database: 1",
+                "never tested, because its test didn't finish within 5 minutes: 1"].join("; ")
       expect(table).to include(row("Testing on made-up edge-case data", 6, "none", esc(tested), 0, 0, "none"))
       expect(table).to include(row("Testing on data the LLM wrote to break them", 2, "none",
                                    "wrong in round 1: 1; failed to run in round 3: 1", 0, 0, "none"))
@@ -2860,8 +2865,9 @@ RSpec.describe Quaack::Driver::Report do
       expect(burndown_section).not_to include("<b>")
     end
 
+    # Not rewrite-test, which a run since task 20261012-4 never records.
     it "says every stage wasn't recorded when the payload has no burndown" do
-      expect(section(html, "burndown").scan('class="missing">not recorded').size).to eq(19)
+      expect(section(html, "burndown").scan('class="missing">not recorded').size).to eq(18)
     end
   end
 

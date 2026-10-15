@@ -7,8 +7,7 @@ module Quaack
   module Enclave
     module ResultComparison
       # Whether the original query, not the candidate, failed when a comparison of the two (compare_in_load_orders)
-      # raised a runner error that isn't a load's: counterexample-compare's rounds (Counterexamples::Failure) and
-      # rewrite-test's fixtures (ScenarioTests) ask it.
+      # raised a runner error that isn't a load's: counterexample-compare's rounds (Counterexamples::Failure) ask it.
       #
       #   OriginalRerun.fails?(runner, rows, original, inserts:)  # => true or false
       #

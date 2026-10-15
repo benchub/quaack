@@ -36,8 +36,6 @@ require_relative "enclave/racetrack"
 require_relative "enclave/arena_schema"
 require_relative "enclave/value_pools"
 require_relative "enclave/scenarios"
-require_relative "enclave/vacuity_guard"
-require_relative "enclave/scenario_tests"
 require_relative "enclave/counterexamples"
 
 module Quaack

@@ -8,15 +8,14 @@ module Quaack
     # 20261010-53, Protocol::RewriteBudget).
     #
     #   deadline = Deadline.new                 # five minutes from now
-    #   Deadline.within(deadline) { ScenarioTests.run(...) }
+    #   Deadline.within(deadline) { Fuzz.search(...) }
     #
     # Code that can run long checks Deadline.check! (the block's deadline, or
     # none outside one): ArenaRunner before each statement, so between
-    # loads, queries, and scenarios too, and Scenarios::RowSet in the
-    # scenario build's loops, where the profile found the time going. A check past the deadline
+    # loads and queries too, and the search between its trials. A check past the deadline
     # raises Expired. An ArenaRunner transaction rolls back however its
     # block ends, so an Expired leaves the arena as it was. The caller
-    # (Steps::Counterexamples::RewriteTest) catches it and reports the
+    # (Steps::RewriteFuzz) catches it and reports the
     # rewrite as out of time.
     class Deadline
       SECONDS = Protocol::RewriteBudget::SECONDS

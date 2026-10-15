@@ -8,7 +8,7 @@ require "quaack/driver/report"
 RSpec.describe Quaack::Driver::Report do
   def fated(number, fate, **details)
     { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
-      "fate" => fate, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
+      "fate" => fate, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
       "untested_atoms" => nil, "covered" => nil, "evidence" => nil }.merge(details.transform_keys(&:to_s))
   end
 

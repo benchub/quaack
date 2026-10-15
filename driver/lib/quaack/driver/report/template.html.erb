@@ -143,10 +143,7 @@
 <%= sql(r["sql"]) %>
 <% unless unchecked_atoms(r).empty? %>
 <div class="untested"><p><%= h Rewrites::UNTESTED %></p>
-<ul><% unchecked_atoms(r).each do |a| %><li><%= sql_code(a) %><% if (said = how(r, a)) %> <span class="how"><%= h said %></span><% end %></li><% end %></ul></div>
-<% end %>
-<% if (left = dropped_line(r)) %>
-<p class="dropped"><%= h left %></p>
+<ul><% unchecked_atoms(r).each do |a| %><li><%= sql_code(a) %></li><% end %></ul></div>
 <% end %>
 <% if (survived = fuzz_line(r)) %>
 <p class="fuzz"><%= h survived %></p>

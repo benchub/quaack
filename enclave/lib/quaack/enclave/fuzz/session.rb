@@ -5,6 +5,7 @@ require_relative "../arena_runner"
 require_relative "../result_comparator"
 require_relative "../result_comparison"
 require_relative "data_error"
+require_relative "differ"
 require_relative "signature"
 
 module Quaack
@@ -27,8 +28,8 @@ module Quaack
       # compared; one where the original fails is illegal for the original
       # and not compared. One where only the candidate fails is not compared
       # either, but a failure on the data (DataError) makes it a kill, by
-      # query_failed, as in ScenarioTests and the counterexample rounds; a
-      # timeout or a cancel doesn't.
+      # query_failed, as in the counterexample rounds; a timeout or a cancel
+      # doesn't.
       # Otherwise the results are compared cheaply, and on any difference
       # with the official ResultComparison, whose mismatching rule
       # (ResultComparator::MISMATCHES) makes the trial a kill.
@@ -85,6 +86,11 @@ module Quaack
           Trial.new(signature:, compared: true, rule: compare(*results))
         end
 
+        # The indexes of sqls, loosened originals (Coverage), that give a
+        # result on the arena's current data, the last trial's world, that
+        # the official comparison calls a mismatch with original's (Differ).
+        def differing(original, sqls) = Differ.differing(@conn, original, sqls)
+
         private
 
         def restart
@@ -126,8 +132,8 @@ module Quaack
           nil
         end
 
-        def official
-          original, candidate = @queries
+        def official(candidate = @queries.last)
+          original = @queries.first
           verdict = ResultComparison.compare(ArenaRunner::Transaction.new(method(:run_query)), original:, candidate:)
           verdict.rule if !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
         end

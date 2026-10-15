@@ -13,7 +13,7 @@ module Quaack
       attr_reader :loads
 
       # Runs the block, then puts loads back as it was, for loads whose
-      # number mustn't leave the enclave (VacuityGuard::Search's trials).
+      # number mustn't leave the enclave (a search's trials).
       def uncounted
         before = @loads
         yield

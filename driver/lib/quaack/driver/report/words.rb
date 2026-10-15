@@ -10,7 +10,7 @@ module Quaack
     module Report
       # The report's fixed English for the names the payload carries. The
       # payload's names are QUAACK's own constants (stages, reasons, fates,
-      # scenarios), which mean nothing to a reader who hasn't read
+      # rules), which mean nothing to a reader who hasn't read
       # DESIGN.md, so the report never prints one where it has words.
       module Words # rubocop:disable Metrics/ModuleLength
         MISSING = "not recorded"
@@ -18,10 +18,16 @@ module Quaack
         SETS = { "slow" => "slow", "worst_case" => "worst case", "typical" => "typical" }.freeze
         VERDICTS = { "better" => "better", "no_worse" => "no worse", "worse" => "worse" }.freeze
 
-        # rewrite-test's scenarios, by the test data each one loads.
-        SCENARIOS = { "s0" => "empty tables", "s1" => "rows that just match and just miss", "s2" => "NULLs",
-                      "s3" => "duplicate join keys", "s4" => "rows with no join partner",
-                      "s5" => "extreme values", "s6" => "groups of one, many, and none" }.freeze
+        # Why the search couldn't test a rewrite that went on, by the
+        # payload's not_tested (Protocol::FuzzResult::NOT_TESTED, task
+        # 20261012-4).
+        NOT_TESTED = { "no_tables" => "its queries read no table",
+                       "not_comparable" => "QUAACK can't compare the results of FETCH FIRST ... WITH TIES row for row",
+                       "setup_failed" => "QUAACK couldn't build small databases for its tables",
+                       "no_world" => "no small database QUAACK built let both queries run",
+                       "unconfirmed" => "time ran out while QUAACK was confirming a difference it may have found",
+                       "search_failed" => "the test stopped on an error",
+                       "fuzz_off" => "a test setting turned the test off" }.freeze
 
         # Why a test ended without comparing results. Any other rule is a
         # statement that failed on the test database.
@@ -101,7 +107,9 @@ module Quaack
                    "failed_to_plan" => "didn't plan", "output_mismatch" => "returned different columns",
                    "same_plans" => "planned the same as the original query",
                    "untested_atoms" => "conditions the test data never exercised",
-                   "trials" => "random small databases compared", "untested" => "not tested by the random search",
+                   "trials" => "random small databases compared",
+                   "untested" => "not tested by the random search, so checked only on the LLM's test data and the " \
+                                 "real data",
                    "worlds" => "small databases enumerated",
                    "fuzz_trials_setting" => "searched with QUAACKS_FUZZ_TRIALS set, a test setting that limits " \
                                             "the random search",
@@ -113,6 +121,7 @@ module Quaack
                    "too_many" => "over the limit of five", "bad_assumption" => "assumed something QUAACK can't check",
                    "unmet_assumption" => "assumed something your data doesn't hold",
                    "operator_warnings" => "warnings on your own rewrites",
+                   # An older run's rewrite-test, from before task 20261012-4.
                    "vacuity_guard_retries" => "retries to make sure every condition mattered",
                    "not_tested_in_time" => "not tested in time, so checked only on the LLM's test data and the " \
                                            "real data",
@@ -145,7 +154,6 @@ module Quaack
                    "combinations" => "combinations tried",
                    "combination_unused_index" => "a combination that left an index unused",
                    "combination_not_chosen" => "a combination that wasn't the best",
-                   **SCENARIOS.transform_values { "wrong on #{it}" },
                    **(1..3).to_h { ["round_#{it}", "wrong in round #{it}"] },
                    **(1..3).to_h { ["failed_in_round_#{it}", "failed to run in round #{it}"] } }.freeze
 

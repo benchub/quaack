@@ -244,7 +244,7 @@ module Quaack
       # and, if the rewrite passed, the three llm-counterexamples to counterexample-rollback rounds (Counterexamples)
       # on counterexample-payload, each round a numbered counterexample-round. The enclave records survival. It
       # returns whether each rewrite it tested passed both steps.
-      module CounterexampleStage
+      module CounterexampleStage # rubocop:disable Metrics/ModuleLength -- both steps' calls and progress notes
         module_function
 
         def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL, record: NONE, **) # rubocop:disable Metrics/ParameterLists
@@ -281,14 +281,16 @@ module Quaack
           survived = Pipeline.step(progress, "counterexamples") do
             survives_counterexamples?(transport, client, args, progress, record)
           end
-          survived && untimed ? :untimed : survived
+          survived && untimed ? untimed : survived
         end
 
-        # Notes what rewrite-test found under the rewrite's name, and
-        # whether it went on untested in time.
+        # Notes what rewrite-test found under the rewrite's name, and how
+        # it went on untested: :untimed, :untested, or false if it didn't.
         def noted_untimed?(progress, reply)
           fuzz_note(progress, reply)
-          went_on_untimed?(progress, reply)
+          return :untimed if went_on_untimed?(progress, reply)
+
+          went_on_untested?(progress, reply) && :untested
         end
 
         # What rewrite-test's fuzz search (task 20261012-2) and enumerate
@@ -318,14 +320,8 @@ module Quaack
             "#{Report::Words.count(bound, "row")} over its value classes"
         end
 
-        # Whether enumerate finished a bound and nothing after it disproved
-        # the rewrite.
-        def enumerated?(message) = message["bound"].then { it.is_a?(Integer) && it.positive? } && !differed?(message)
-
-        # Whether rewrite-test's scenarios got different results, which the
-        # report words as rewrite_test_disproved. One that ended without
-        # comparing disproved nothing.
-        def differed?(message) = message["passed"] == false && Report::Words::MISMATCHES.key?(message["rule"])
+        # Whether enumerate finished a bound.
+        def enumerated?(message) = message["bound"].then { it.is_a?(Integer) && it.positive? }
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)
         # isn't disproved: it goes on (passed, task 20261011-15), and
@@ -342,6 +338,19 @@ module Quaack
                                                "Couldn't test the rewrite #{within}, so QUAACK left it out"
                                              end)
           message["passed"] == true
+        end
+
+        # A rewrite the search couldn't test (task 20261012-4) isn't
+        # disproved either: it goes on, its rule a reason word from
+        # Protocol::FuzzResult::NOT_TESTED, and progress says why under its
+        # name. Whether it went on so.
+        def went_on_untested?(progress, message)
+          why = Report::Words::NOT_TESTED[message["rule"]]
+          return false unless why && message["passed"] == true
+
+          progress.step_note("rewrite-test", "Couldn't test the rewrite on made-up data, since #{why}, so QUAACK " \
+                                             "goes on to check it with the LLM's rows and the real data")
+          true
         end
 
         # Whether no round of counterexamples disproved the rewrite. Each
