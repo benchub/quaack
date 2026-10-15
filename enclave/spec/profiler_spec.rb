@@ -72,6 +72,16 @@ RSpec.describe Quaack::Enclave::Profiler do
     expect(File.stat(path).mode & 0o777).to eq(0o600)
   end
 
+  it "makes a profile that already exists readable only by its owner" do
+    File.write(path, "old profile")
+    File.chmod(0o644, path)
+
+    described_class.during(path) { nil }
+
+    expect(File.stat(path).mode & 0o777).to eq(0o600)
+    expect(File.read(path)).to start_with("# quaacks profile: ")
+  end
+
   it "stops sampling when the block ends" do
     before = Thread.list
     described_class.during(path) { spin(0.05) }

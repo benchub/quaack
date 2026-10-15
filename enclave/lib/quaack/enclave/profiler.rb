@@ -62,7 +62,11 @@ module Quaack
       end
 
       def write(path, counts)
-        File.open(path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) { |file| file.write(report(counts)) }
+        File.open(path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
+          # The open mode applies only when it creates the file.
+          file.chmod(0o600)
+          file.write(report(counts))
+        end
       rescue SystemCallError, IOError
         nil
       end

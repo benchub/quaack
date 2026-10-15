@@ -11730,3 +11730,20 @@ From the reviews of 20261012-4 (minor). Check each first:
   4. Stale. Coverage is already pinned end to end, deterministically, by other `counterexample_steps_postgres_spec.rb` examples that expect exact untested lists (`untested_unchanged`'s three, "the conditions the report names", the enumerate stage's two, the burndown's, and `counterexample-payload`'s). Reporting every atom untested and never observing each sent 8 of its 70 examples red. No new spec.
   5. No spec. Observing a kill trial's world too only matters in a search that passes after a kill it couldn't lift, and that world is a real compared world both queries ran on, so judging it can't mark an atom tested that no world showed, and it carries no literal. A spec would need a kill that doesn't lift, contrived and slow, to pin a near-equivalent choice.
 - **Status:** done
+
+### 20261004-27. Profile file mode, and an invoices query that fails compared with itself (leftovers of 20261004-23).
+
+Two items left from the review of 20261004-23 and its builder:
+
+1. **Profile file mode.** When the `QUAACKS_PROFILE` file already exists, it keeps its old mode, but README and DESIGN.md promise 0600. `profiler.rb` passes `0o600` to `File.open`, which applies only when it creates the file, and never calls `chmod`. Set the mode explicitly.
+2. **An invoices query fails when compared with itself** (`GROUP BY i.number ORDER BY i.number LIMIT 10`), on main too, from the builder. Check whether result comparison still fails it, and split it into its own task if it's real.
+
+Trimmed 2026-10-14 after 20261012-4: removed items 1–3 (confirm rewrite-test's CPU on the user's schema, RowSet's linear scans, run-store reuse of the original's scenarios), item 4 (RowSet's evaluate key) and item 6 (the Shape memo's timing margin, whose spec is gone), since ScenarioTests and RowSet are gone; and item 7's two `unsatisfiable_check` findings, since `Checks` now runs only from llm-counterexamples' `ParentRows`.
+
+- **Depends on:** 20261004-23.
+- **Came from:** The review of 20261004-23, and its builder.
+- **Design:** Where QUAACK runs, result comparison.
+- **Landed:**
+  1. `Profiler.write` now `chmod`s the open file to 0600 before writing, so a profile that already exists with another mode ends 0600, as README and DESIGN.md say. A spec that writes over a 0644 file went red (`got: 420`), then green; dropping the `chmod` sends it red again.
+  2. Not real any more. The failure was in `ScenarioTests`, which 20261012-4 removed. The builder's fixture (`rails_style_schema.sql` from 0afd0f17) with five invoices queries of that shape, each run against itself: at deec2263, `ScenarioTests.run` failed one (`SELECT i.number, sum(l.quantity * l.unit_cents) AS total FROM invoices i INNER JOIN invoice_lines l ON l.invoice_id = i.id WHERE i.status = 'open' GROUP BY i.number ORDER BY i.number LIMIT 10`). Today `Fuzz.search` passes all five, fuzz and enumerate both (that one: 361 trials, 300 worlds). Production comparison runs both queries on the same rows, so a query compared with itself matches there. No new task.
+- **Status:** done

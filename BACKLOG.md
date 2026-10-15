@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261012-47
 - 20261012-49
+- 20261004-27
 
 ## How this file works.
 
@@ -177,22 +178,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20261003-3. Report payload: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-39. rewrite-test: more variety in self-references and repeated parents. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
-
-### 20261004-27. Profile file mode, and an invoices query that fails compared with itself (leftovers of 20261004-23).
-
-Two items left from the review of 20261004-23 and its builder:
-
-1. **Profile file mode.** When the `QUAACKS_PROFILE` file already exists, it keeps its old mode, but README and DESIGN.md promise 0600. `profiler.rb` passes `0o600` to `File.open`, which applies only when it creates the file, and never calls `chmod`. Set the mode explicitly.
-2. **An invoices query fails when compared with itself** (`GROUP BY i.number ORDER BY i.number LIMIT 10`), on main too, from the builder. Check whether result comparison still fails it, and split it into its own task if it's real.
-
-Trimmed 2026-10-14 after 20261012-4: removed items 1–3 (confirm rewrite-test's CPU on the user's schema, RowSet's linear scans, run-store reuse of the original's scenarios), item 4 (RowSet's evaluate key) and item 6 (the Shape memo's timing margin, whose spec is gone), since ScenarioTests and RowSet are gone; and item 7's two `unsatisfiable_check` findings, since `Checks` now runs only from llm-counterexamples' `ParentRows`.
-
-- **Depends on:** 20261004-23.
-- **Came from:** The review of 20261004-23, and its builder.
-- **Design:** Where QUAACK runs, result comparison.
-- **Status:** todo
 
 ### 20261004-94. Result comparison: loose ends of the edge check.
 
