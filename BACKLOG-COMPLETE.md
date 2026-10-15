@@ -11747,3 +11747,19 @@ Trimmed 2026-10-14 after 20261012-4: removed items 1–3 (confirm rewrite-test's
   1. `Profiler.write` now `chmod`s the open file to 0600 before writing, so a profile that already exists with another mode ends 0600, as README and DESIGN.md say. A spec that writes over a 0644 file went red (`got: 420`), then green; dropping the `chmod` sends it red again.
   2. Not real any more. The failure was in `ScenarioTests`, which 20261012-4 removed. The builder's fixture (`rails_style_schema.sql` from 0afd0f17) with five invoices queries of that shape, each run against itself: at deec2263, `ScenarioTests.run` failed one (`SELECT i.number, sum(l.quantity * l.unit_cents) AS total FROM invoices i INNER JOIN invoice_lines l ON l.invoice_id = i.id WHERE i.status = 'open' GROUP BY i.number ORDER BY i.number LIMIT 10`). Today `Fuzz.search` passes all five, fuzz and enumerate both (that one: 361 trials, 300 worlds). Production comparison runs both queries on the same rows, so a query compared with itself matches there. No new task.
 - **Status:** done
+
+### 20261008-56. Rule generator: leftovers from 20261002-1.
+
+1. **Three or more INs.** A query with three or more matching INs never gets its fully rewritten form, given depth two and the cap.
+2. **Wider coverage.** Nested SELECTs and derived tables, unqualified columns, an IN in a join's ON, and `= ANY (subquery)`.
+3. **The standalone spec's rule count.** `rewrite_rules_standalone_spec.rb` hard-codes 12 rules. Derive the count, or check that it's more than zero.
+4. **A grandchild chain.** No test covers a legacy-inheritance chain where the table's only child has its own child.
+
+- **Depends on:** 20261002-1.
+- **Came from:** The build and review of 20261002-1, 2026-10-08.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:**
+  - Items 3 and 4: 2026-10-10 (task/20261008-56; spec-only).
+  - Item 1: 2026-10-15 (task/20261008-56). `key_in_self_join`, given two or more INs it can rewrite, gives first one rewrite of all of them, then one per IN. A query with three or more INs gets its fully rewritten form at depth one, with no change to the generator's depth or cap (DESIGN.md, rewrite-rules).
+  - Item 2: 2026-10-15 (task/20261008-56). The rule takes an IN, or `= ANY`/`= SOME` with a bare `=`, that's a conjunct of the WHERE of any plain SELECT in the statement (subquery, derived table, CTE, UNION arm) or of any join's ON. In an ON the table must be on one of that join's sides and not nullable among them, so a LEFT JOIN's right table counts in its own ON. A bare column is read as the one table that has it by the catalog, and written qualified when moved. It still refuses an IN under OR or NOT, in a select list or HAVING, one that tests an enclosing query's table, a nested outer join's nullable side, an ambiguous bare column or one that reads the outer query, and an `=` with a schema or another operator. On the unreleased list.

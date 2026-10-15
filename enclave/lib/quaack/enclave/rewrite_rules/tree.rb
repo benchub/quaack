@@ -141,8 +141,10 @@ module Quaack
         def bare_name(ref) = (ref.fields.first.string.sval if ref.fields.size == 1 && ref.fields.first.node == :string)
 
         def qualify!(column_ref, qualifier)
-          column_ref.fields[0] = PgQuery::Node.new(string: PgQuery::String.new(sval: qualifier))
+          column_ref.fields[0] = string(qualifier)
         end
+
+        def string(sval) = PgQuery::Node.new(string: PgQuery::String.new(sval:))
 
         # The name a query refers to the table by.
         def refname(range) = range.alias ? range.alias.aliasname : range.relname

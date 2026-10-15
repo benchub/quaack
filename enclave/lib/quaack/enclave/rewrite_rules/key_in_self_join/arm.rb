@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "../tree"
+require_relative "columns"
 
 module Quaack
   module Enclave
@@ -10,8 +11,9 @@ module Quaack
         # One SELECT of the IN's subquery: the whole subquery, or one arm of
         # its UNION or UNION ALL (IN gives the same for both, since it
         # doesn't count rows). inner is the name the arm reads the outer
-        # table by, others the Tree::Items of its other tables, and
-        # predicates every condition of its WHERE and its joins' ONs.
+        # table by, others the Tree::Items of its other tables, predicates
+        # every condition of its WHERE and its joins' ONs, and columns the
+        # Columns that reads its columns by its own tables.
         #
         # Arm.all gives the arms, or nil unless every arm is one the rule
         # can rewrite:
@@ -28,13 +30,14 @@ module Quaack
         #   by plain inner or cross joins: no outer join, NATURAL, USING, or
         #   join alias. So the FROM is the list of its tables, and the ONs
         #   are more WHERE conditions.
-        # - Every column in its conditions is written name.column, where
-        #   name is one of the arm's own tables, and no condition has a
-        #   subquery. So each condition can be moved by renaming, and none
-        #   reads the outer query.
-        Arm = Data.define(:inner, :others, :predicates) do
-          def self.all(select, table, key)
-            arms = selects(select)&.map { read(it, table, key) }
+        # - Every column in its conditions is one of the arm's own tables':
+        #   written name.column, or bare and found in just one of its
+        #   tables by the catalog (see Columns). No condition has a
+        #   subquery. So each condition can be moved by qualifying and
+        #   renaming, and none reads the outer query.
+        Arm = Data.define(:inner, :others, :predicates, :columns) do
+          def self.all(select, table, key, catalog)
+            arms = selects(select)&.map { read(it, table, key, catalog) }
             arms if arms&.all?
           end
 
@@ -49,22 +52,23 @@ module Quaack
             left + right if left && right
           end
 
-          def self.read(select, table, key)
+          def self.read(select, table, key, catalog)
             items = Tree.from_items(select.from_clause)
             conditions = Tree.inner_conditions(select.from_clause)
             return unless Tree.plain_select?(select) && conditions && Tree.tables?(items)
 
-            arm = new(inner: key_table(select, key), others: items, predicates: Tree.conjuncts(select.where_clause) +
-                                                                                conditions)
+            columns = Columns.new(items:, catalog:)
+            arm = new(inner: key_table(select, key, columns), others: items,
+                      predicates: Tree.conjuncts(select.where_clause) + conditions, columns:)
             arm.without_inner(table)
           end
 
-          # The qualifier of the select list's one column, if that's key.
-          def self.key_table(select, key)
+          # The table of the select list's one column, if that's key.
+          def self.key_table(select, key, columns)
             target = select.target_list.first.res_target if select.target_list.size == 1
             return unless target&.val&.node == :column_ref
 
-            name, column = Tree.qualified(target.val.column_ref)
+            name, column = columns.resolve(target.val.column_ref)
             name if column == key
           end
 
@@ -89,13 +93,20 @@ module Quaack
 
           private
 
-          # Renames the table of every column in the conditions: inner to
-          # outer, and each other table to a fresh alias. It returns the
-          # new name for each old one.
+          # Writes every column in the conditions as name.column, with its
+          # table renamed: inner to outer, and each other table to a fresh
+          # alias. It returns the new name for each old one.
           def rename!(outer, names)
             renames = { inner => outer, **others.to_h { [it.name, names.fresh(it.name)] } }
-            columns(predicates).each { Tree.qualify!(it, renames.fetch(Tree.qualified(it).first)) }
+            refs(predicates).each { requalify!(it, renames) }
             renames
+          end
+
+          # Writes ref as name.column, name the new name of its table.
+          def requalify!(ref, renames)
+            table, column = columns.resolve(ref)
+            ref.fields.clear
+            [renames.fetch(table), column].each { ref.fields << Tree.string(it) }
           end
 
           def movable?
@@ -103,11 +114,11 @@ module Quaack
             Tree.find(predicates, PgQuery::SubLink).empty? && (qualifiers(predicates) - names).empty?
           end
 
-          def columns(nodes) = Tree.find(nodes, PgQuery::ColumnRef)
+          def refs(nodes) = Tree.find(nodes, PgQuery::ColumnRef)
 
-          # The name each column in nodes is qualified by, nil for a column
-          # that isn't written name.column.
-          def qualifiers(nodes) = columns(nodes).map { Tree.qualified(it)&.first }.uniq
+          # The table each column in nodes is of, nil for a column that
+          # isn't one of the arm's tables' (see Columns).
+          def qualifiers(nodes) = refs(nodes).map { columns.resolve(it)&.first }.uniq
 
           def exists(kept, renames)
             link = Tree.exists

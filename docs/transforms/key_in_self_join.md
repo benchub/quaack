@@ -8,6 +8,14 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 The rule applies to `t.k IN (SELECT t2.k FROM t t2 ... WHERE P)`, where the subquery reads the outer table again by a key. The rule removes the inner `t2`, and moves its predicates to the outer `t`. It keeps an `EXISTS` on what remains of the subquery, correlated on `t.k`. If nothing remains, only the predicates remain. The rule handles each arm of a `UNION ALL` in the subquery separately, and joins the arms with `OR`.
 
+`t.k = ANY (SELECT ...)` is the same test as `IN`, so the rule takes it too. It takes an `IN` anywhere in the statement where it's one of the conditions ANDed together in a `WHERE` or a join's `ON`: in the top query, a `UNION` arm, a subquery, a derived table, or a CTE. There, as in any `WHERE` or `ON`, a row the `IN` makes `NULL` is dropped as one it makes false is. The outer table must be one that `WHERE` or `ON` can name: in that SELECT's `FROM`, or on either side of that join. It must not be on the nullable side of an outer join among them, where it could be a `NULL` row that `IN` never matches but a moved predicate such as `t.x IS NULL` would. A `LEFT JOIN`'s right table is fine in that join's own `ON`, which sees the table's rows before the join fills it with `NULL`s.
+
+A column needn't be written `name.column`. The rule reads a bare column as Postgres does, as the column of the one table that has it, by the catalog, and writes it qualified when it moves it. It refuses a bare column that none of the subquery's tables has, which would read the outer query, or that two have, and a bare tested column when the `FROM` it could name holds anything but plain tables whose columns the catalog knows.
+
+The rule gives one rewrite for each `IN` it can rewrite. With two or more, it first gives one rewrite of all of them, so a query with more `IN`s than the generator chains rules deep still gets its fully rewritten form.
+
+The rule refuses an `IN` under `OR` or `NOT`, in a select list, or in a `HAVING`, and an `IN` that tests a table of an enclosing query.
+
 ## What it rests on.
 
 The rule needs `k` to be unique and not null. The rule applies only when it can prove this. It states the catalog facts that it relies on as assumptions. assumption-check checks these assumptions again, as it checks all other assumptions.
