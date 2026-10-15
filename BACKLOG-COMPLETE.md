@@ -11653,3 +11653,13 @@ From the first review of 20261012-4 (minor). Nothing calls these any more: `Scen
 - **Came from:** The first review of 20261012-4, 2026-10-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** done
+
+### 20261012-41. A deadline after a kill that didn't lift: assert the spec's clock fired.
+
+From the review of 20261012-38, 2026-10-13 (minor). 20261012-38's item 2 spec (`enclave/spec/`, a kill that never lifts, then the deadline: fuzz passes with its trials) never checks that its fake clock actually expired. With the clock changed to always return 0.0, it stays green: fuzz ends after `LIFTS` kills that don't lift, still `passed`. It isn't vacuous today, since every mutant of the behaviour it pins goes red, but a change to the setup could leave it passing without a deadline. The item 1 spec checks its clock fired (`expired`). Do the same here: record when the clock first expires and assert it, test first against a clock that never expires.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-38, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Landed:** The item 2 spec in `enclave/spec/fuzz_postgres_spec.rb` records `expired` when its clock returns the expired time and asserts it. Red with a clock that always returns 0.0 (expected true, got false), green with the real clock. Spec only.
+- **Status:** done

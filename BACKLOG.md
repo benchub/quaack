@@ -679,15 +679,6 @@ Answers (the user, 2026-10-14):
 
 ### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-41. A deadline after a kill that didn't lift: assert the spec's clock fired.
-
-From the review of 20261012-38, 2026-10-13 (minor). 20261012-38's item 2 spec (`enclave/spec/`, a kill that never lifts, then the deadline: fuzz passes with its trials) never checks that its fake clock actually expired. With the clock changed to always return 0.0, it stays green: fuzz ends after `LIFTS` kills that don't lift, still `passed`. It isn't vacuous today, since every mutant of the behaviour it pins goes red, but a change to the setup could leave it passing without a deadline. The item 1 spec checks its clock fired (`expired`). Do the same here: record when the clock first expires and assert it, test first against a clock that never expires.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-38, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-42. fuzz's RangeTables: a TABLESAMPLE hides the table's alias.
 
 From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclave/lib/quaack/enclave/fuzz/range_tables.rb`) registers each FROM item's alias, but a `TABLESAMPLE` wraps the table in a `range_table_sample`, so `FROM orders o TABLESAMPLE SYSTEM (10) WHERE o.total / 3 > 2` doesn't find `o`, and the column falls back to matching by name. That's harmless: the solutions still reach `orders.total`, and a same-named column elsewhere in the query gets them too, as before 20261012-33. Look through `range_table_sample` to its relation, test first, or leave it and say so in DESIGN.md beside the other fallbacks.
