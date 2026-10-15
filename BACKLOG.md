@@ -785,15 +785,6 @@ From the second review of 20261012-4 (minor). Coverage checks every world for th
 - **Design:** rewrite-test (coverage).
 - **Status:** todo
 
-### 20261012-51. After 20261012-4: dead scenario code and stale words.
-
-From the first review of 20261012-4 (minor). Nothing calls these any more: `Scenarios::Topology`'s `null_cut?`, `cross_tables`, `free_joins`, `crossings`, `unique_key?` and `own_key?`, with their scenario-group comments (check each with grep first; remove only what nothing uses, and keep their specs only for what stays). Stale words: DESIGN.md's step table (~lines 200–206) still lists 9a–9e (`vacuity-guard` and the fixture steps) under rewrite-test; comments still naming the vacuity guard in `predicate_atoms.rb:12,91`, `index_search.rb:56`, `arena_runner.rb:45` and `driver/lib/quaack/driver/counterexamples.rb:16`. No behaviour change.
-
-- **Depends on:** None.
-- **Came from:** The first review of 20261012-4, 2026-10-14 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-52. After 20261012-4: the builder's flags.
 
 From the build of 20261012-4. Check each first; drop any that isn't real:

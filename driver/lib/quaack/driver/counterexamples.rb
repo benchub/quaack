@@ -13,7 +13,7 @@ module Quaack
     # payload is the shape-only payload the enclave sent: original (the
     # redacted query), candidate (its SQL, transformation, and
     # assumptions), placeholders (each $n's shape), schema (the subset
-    # schema), constraints, and untested_atoms (vacuity-guard's shapes). It goes to
+    # schema), constraints, and untested_atoms (rewrite-test's shapes). It goes to
     # the LLM as it is. The LLM writes $n where it wants one of the query's
     # literals, and the enclave binds the real value and fills any
     # foreign-key gaps (Enclave::Counterexamples).

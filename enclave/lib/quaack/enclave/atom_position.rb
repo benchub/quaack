@@ -5,7 +5,7 @@ require "pg_query"
 module Quaack
   module Enclave
     # DESIGN.md's unchanged-atoms: which of the original's untested atoms
-    # (vacuity-guard) the rewrite left alone, by structural position.
+    # (rewrite-test's coverage) the rewrite left alone, by structural position.
     #
     #   AtomPosition.unchanged(original_sql, candidate_sql, paths)
     #   # => [true, false, ...], one per path, true only when that atom is unchanged

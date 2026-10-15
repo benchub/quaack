@@ -53,7 +53,7 @@ module Quaack
       #                 that index-test found unused but that index-build builds for real
       #                 anyway (see UnusedSetAside)
       #   "parameter_types" => { $n => the type Postgres infers for it }
-      #                 (the original only: llm-index-ideas, llm-rewrites, and vacuity-guard send it)
+      #                 (the original only: llm-index-ideas, llm-rewrites, and llm-counterexamples send it)
       # "plan" is the EXPLAIN redacted through redact (Redaction.plan) against
       # that set's own literals, so it holds placeholders, never a literal.
       # Raw plans aren't saved.
