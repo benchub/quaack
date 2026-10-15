@@ -27,6 +27,7 @@ The user, 2026-10-14: close this batch (bump, `rake full`, stamp) once 20261012-
 - 20261012-25: fuzz empties the footprint's tables with `TRUNCATE` at the start of each session transaction, after dropping the foreign keys that point into them from outside the footprint, all inside the rolled-back transaction. Rows from rolled-back trials then no longer pile up in the arena's files, which the run server's autovacuum never cleans, so the trial rate on passes is 2–25× higher. No change to any reported field.
 - 20261012-30: enumerate gives a key column the queries compare with a constant (`id > 100`, keyset's `id > $1`, `IN`, `= ANY`) the queries' constants and their neighbours first, then its key values, including a primary key a child's foreign key points at, which got none before. A repeated primary-key value gets a fresh one, so the key stays unique. No change to any reported field.
 - 20261012-35: production's fuzz stop rule stops at 60 s at the latest (the 30 s floor and "twice the last new signature" unchanged), so enumerate runs on every sound rewrite. No change to any reported field.
+- 20261012-4: rewrite-test is fuzz then enumerate; ScenarioTests, the scenario builder and the vacuity guard are gone. The `rewrite_test` message no longer gets `scenario`, `s1_*` or `dropped`, and the burndown no longer gets a `rewrite-test` stage (old ones still read). Fuzz's coverage fills the existing `untested`, `untested_atoms` and `untested_unchanged` fields (redacted atom shapes never seen both true and false, judged without LIMIT/OFFSET/FETCH; every atom for a count threshold or volatile function), and the enumerate burndown record gains the count `untested_atoms`. A rewrite the search couldn't test goes on as passed with a `not_tested` field holding a fixed reason (`no_tables`, `not_comparable`, `setup_failed`, `no_world`, `unconfirmed`, `search_failed`, `fuzz_off`), checked in egress and the driver. A fixture that fails to load is no longer `rewrite_test_failed`. Protocol drops `VacuityDiagnostic` and `UntestedStates`, and the error rules `exclusion_constraint` and `expression_unique_index` (old fates still read).
 
 ## How this file works.
 
@@ -661,30 +662,7 @@ From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyw
 - **Built, not merged:** branch `task/20261011-12` (head `6270cc2a`), two Opus reviews clean (the first found the refusal too coarse for citext and hstore in `public`; the fix narrows it to operators with a reachable argument type, `rewrite_candidate_check/keyword_reach.rb`). Held until after the 0.1.33 bump so `main` stays deployable; merge it as the first change of the next batch and put `20261011-12` on the unreleased list. Minors: a relation's row type (`pg_class.reltype`) isn't among the seen types, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through (add `reltype`, or refuse whole-row operands of keyword forms); the example at `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it; one earlier full run had a single unidentified failure in `rewrite_candidate_check_spec.rb` that didn't recur: watch for it.
 - **Status:** todo
 
-### 20261011-13. rewrite-test is still too slow on the user's 583-table schema.
-
-The user's first run on 0.1.33 (2026-10-11): arena of 583 tables, 5 rewrites in rewrite-correctness; the first took 2 s and the other four each hit the 5-minute budget (`out_of_time`, "Couldn't test the rewrite within 5 minutes"), so 0 of 5 passed in 20m15s. The budget works as designed, but it hides that testing is still far too slow. The RowSet fix (20261011-4) removed one quadratic cost, and something else dominates at this table count. Reproduce on a synthetic ~580-table schema, profile, fix the top hot spots test-first without changing any reported field (across-literals spec and corpus stay green). Also get the user's own profile from a by-hand run of `quaacks rewrite-test --search rewrite_N` on 0.1.33 (the per-rewrite deadline now ends the step and the profile is written at the end).
-
-- **Depends on:** 20261011-4 (landed), 20261010-53 (landed), 20261012-2.
-- **Came from:** The user's run, 2026-10-11. Priority: high, the pipeline can't test rewrites on the real schema.
-- **Design:** rewrite-test, scenarios.
-- **Landed so far:** 2026-10-11 (task/20261011-13; Opus review: no blocking findings, the full report byte-identical on main and the branch for 40 and 580 tables, with and without an extra join). `Parts#spill?` no longer re-runs `parents_of` for every fixture each try is offered to (it was cubic: 3.3M calls became 55k); a new `Scenarios::Held` index replaces `RowSet`'s group scans in `parents_of` and `orphan?`; `Sequences.advance` sends one statement per load (`json_to_recordset`) instead of one `setval` per integer column; `Values#shared_nth` is memoized; `FixtureRow` keeps its hash. On the synthetic 580-table schema with a joined table whose FK parent closure reaches 20 tables: 300.7 s to 21.7 s; 34 tables: at least 207 s to 105 s; 168 tables: still minutes. Not yet measured on the user's real schema.
-- **Still open:** the parent closure itself (a joined table that reaches dozens of tables through foreign keys makes every group lift hundreds of parents, times the guard's up-to-4 rebuilds, times many spilled fixtures). Option: set a nullable foreign key to a table outside the query to NULL when neither the query nor the candidate reads that column, so no parent is lifted. It changes which rows the fixtures contain, so it needs the user's go (20261011-18). The user, 2026-10-12, chose instead to replace ScenarioTests with a disproof search that fills only the queries' own tables (20261012-2, 20261012-4), and deprioritized 20261011-18. Close this task once 20261012-2 has been measured on the user's real schema.
-- **Minors:** nothing tests multi-try spill order in `Parts` (changing `lifted`'s `if i == done.size` to `if done.empty?` leaves 584 examples green): add a spec; no spec compares a whole scenario build, with loaded rows dumped, between the old and the new code: add a reference spec.
-- **Status:** in progress (the rest waits on 20261012-2)
-- **Synthetic evidence, 2026-10-13:** on the synthetic 583-table schema, fuzz alone takes the whole 5 minutes on 9 of 28 sound Canvas rewrites at production's stop rule, which has no cap of its own (20261012-35). So rewrite-test's time per sound rewrite is still bounded by the budget, not the work, until fuzz is capped and 20261012-4 removes ScenarioTests.
-- **Closing (2026-10-14).** Two things fill the budget now: ScenarioTests' parent closure, and fuzz's uncapped stop rule. 20261012-4 removes the first, and 20261012-35 caps the second at 60 s, so a sound rewrite takes at most about 90 s and a wrong one a few seconds. Close this task when both have landed; the user's next run on the real schema, after the batch is released, confirms it.
-
 ### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Dropped, see BACKLOG-COMPLETE.md.
-
-### 20261011-18. rewrite-test: narrow the foreign-key parent closure (nullable keys to tables outside the query).
-
-From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables makes every group lift all those parents' rows into every fixture (and the guard rebuilds up to four times, across many spilled fixtures), which is the remaining cost at the user's scale (583 tables; 168-table closures still take minutes). Idea: when a foreign key column is nullable, the table it points at isn't one the query or the candidate reads, and the column itself isn't read by the query or the candidate (select list, join, filter, group, order, a function, a window; use the existing read-column analysis in `scenarios/reads.rb`), set it to NULL instead of lifting a parent; a NOT NULL key still needs its parent. Soundness: the fixtures then hold NULL in a column nobody reads, so no query result can depend on it; check for CHECKs, unique and exclusion constraints, generated columns and triggers (disabled in the arena) that read it, and cascades. Measure on the synthetic 580-table schema (`scratchpad/build-20261011-13/gen.rb`): expect the 168-table case to drop from minutes to seconds. Reported values must stay identical where the closure was unnecessary; add a reference build-level spec comparing fixtures and reports old versus new on several schema shapes (also the review's minors: a multi-try spill order spec, a whole-build reference spec with loaded rows dumped). Opus builder and reviewer. Needs the user's go because fixtures change.
-
-- **Depends on:** 20261011-13 (landed).
-- **Came from:** 20261011-13's builder and review, 2026-10-11.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo (deprioritized by the user, 2026-10-12: 20261012-2's search fills only the queries' own tables, so it needs no closure; drop this when 20261012-4 removes ScenarioTests)
 
 ### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal. Done, see BACKLOG-COMPLETE.md.
 
@@ -692,32 +670,7 @@ From 20261011-13. A joined table whose foreign keys reach 20, 34 or 168 tables m
 
 ### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-4. rewrite-test: replace ScenarioTests with the disproof search.
-
-The user, 2026-10-12: replace ScenarioTests entirely, not just run the search before it. Once 20261012-2 and 20261012-3 have landed, remove the scenario builder from rewrite-test and everything that names it:
-- `ScenarioTests` and `Scenarios`, keeping whatever the search reuses, such as `Checks` and `ValuePools`.
-- The vacuity guard's replay of its fixtures into scenarios.
-- RewriteFate's `SCENARIOS` and the fates' `scenario` field.
-- The burndown's `rewrite-test` stage, with its per-scenario reasons (s0 to s6), and its Sankey layer, sentence and words in the driver. The search's and the enumeration's stages, added by 20261012-2 and 20261012-3, stay in the burndown and take its place (the user, 2026-10-12), so rewrite-correctness still shows what each mechanical stage caught.
-- The report's untested shapes and dropped scenario groups.
-- `rule_bugs`' scenario rules.
-- DESIGN.md's fixture-scenarios and vacuity-guard sections.
-- The specs and recorded pipeline replays that pin all of these.
-
-Stored entries and messages from older versions must still read, as `out_of_time` ones from before 20261011-15 do. A fixture that fails to load stops being a rewrite-level failure: today it leaves the rewrite out as `rewrite_test_failed` (4 sound Canvas rewrites in the spike), but in the search it's just an illegal world. Decide with the user:
-- What replaces the vacuity guard's guarantee that every atom of the original was exercised. The search can report which atoms came out both true and false across its trials, and caution or refuse when one never did.
-- What replaces a scenario's name where the report and burndown say why a rewrite was disproved.
-
-Answers (the user, 2026-10-12):
-- **Vacuity guard.** The search reports which of the original's atoms came out both true and false across its trials. If an atom never did, the rewrite still passes, with a caution that names those atoms.
-- **"Why disproved".** In place of the scenario's name, the report and burndown give the stage (`fuzz` or `enumerate`), the rule, and the disproving database's rows per table.
-- **No measurement on the real schema first** (the user, 2026-10-14). ScenarioTests is too slow, and a non-starter on the user's schema, so it goes whatever the search measures there. The synthetic measurements stand in: the hard corpus (80 of 84 wrong rewrites caught, the 4 misses out of scope) and Canvas (32 of 34), with no false disproofs.
-- **A rewrite the search can't test** (the user, 2026-10-14). Fuzz skips only a few rewrites without trying: a query that reads no table, FETCH FIRST … WITH TIES (nothing in QUAACK can compare those), a setup that fails (the footprint can't be built, or no world lets both queries run), and a budget that runs out while a kill is being confirmed. Today ScenarioTests gets a second try at these. Once it's gone, such a rewrite goes on to llm-counterexamples and the later stages with a caution, the way an `out_of_time` one has since 20261011-15 (passed, rule `out_of_time` as its caution, the report's `UNTIMED` sentence). The caution says why it wasn't tested; reword `UNTIMED` or add a sibling sentence so it fits each reason. (An earlier answer, "left out", rested on my wrong claim that `out_of_time` rewrites are left out; the user corrected it once told.)
-
-- **Depends on:** 20261012-2, 20261012-3.
-- **Came from:** The user, 2026-10-12.
-- **Design:** rewrite-test, fixture-scenarios, vacuity-guard.
-- **Status:** todo
+### 20261012-4. rewrite-test: replace ScenarioTests with the disproof search. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-5. Measure what the LLM counterexamples catch that the mechanical search and enumeration don't. Done, see BACKLOG-COMPLETE.md.
 
@@ -737,7 +690,7 @@ From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` pri
 From the build and review of 20261012-1. Two readers of array sides in `ValuePools::Sides.sides` still get the wrong values. Check each first:
 - An array literal, not `ARRAY[...]`: `CHECK (f = ANY ('{u,v}'::text[]))` gives `Checks#values` `[]` and then `unsatisfiable_check`, and a query's `s.a::text = ANY ('{x,y}'::text[])` gets a pool with nothing satisfying and `"{x,y}"` as its only literal. Postgres never prints an IN list this way, but drivers that bind a list as one array (node-postgres, Ecto, `= ANY($1)`) give queries in this shape. Split it into its elements in Postgres (`unnest`), not by parsing the text.
 - A bare, uncast `ARRAY[...]` compared with `=` on an array column (`tags = ARRAY['a', 'b']`) is split into elements, so its pool comes out empty. 20261012-1 keeps the cast form whole; do the same for the bare one.
-- Also from the builder: `VacuityGuard::Search::Skips#column_compared?` doesn't count `col = ANY (ARRAY[...])`, cast or not, as a column compared with constants. Drop this bullet if 20261012-4 lands first, since it removes the vacuity guard.
+- Also from the builder, carried into fuzz by 20261012-4: `Fuzz::Reach#column_compared?` (`enclave/lib/quaack/enclave/fuzz/reach.rb:52`, which replaced the vacuity guard's `Skips#column_compared?`) counts only a constant or a list (IN, BETWEEN) as a constant side, not `col = ANY (ARRAY[...])`, cast or not. So a derived aggregate compared as `t.k = ANY (ARRAY[2, 3])` may not get the worst case, and the coverage caution could follow those literals. Read from the code, not yet run: reproduce first. If real, it's a trust-boundary fix (add the family to `across_literals_postgres_spec.rb`).
 
 Unsupported in v1 instead, if any of these turns out hard: list it in DESIGN.md.
 
@@ -996,5 +949,51 @@ From the review of 20261012-35, 2026-10-14 (minor).
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-35, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-49. Fuzz coverage: a subquery in LIMIT crashes the step, and four untested branches.
+
+From the reviews of 20261012-4 (minor). Check each first:
+- `… LIMIT (SELECT count(*) FROM t WHERE name = 'x')` raises `NoMethodError` at `predicate_atoms.rb:204` (`Tree.dig`) through `fuzz/coverage.rb`'s `loosened`: `Fuzz::Uncut` removes the node an atom's path points into, and `RewriteFuzz` rescues only `FAILED`, so rewrite-test crashes. The message carries no literal. Fix so it takes the worst case (every atom untested), e.g. `Uncut.parse` raises `Deparse::Error` when a cut holds anything but a constant or a parameter.
+- The worst-case fallback isn't pinned: changing `coverage.rb`'s `rescue Deparse::Error` to judge the cut query stays green. Add a spec (stub `Uncut.parse` to raise; expect every atom untested).
+- `Fuzz::Differ#official?` (`fuzz/differ.rb`): dropping the `MISMATCHES.include?` check stays green, so nothing pins that a refusal such as `unsupported_order` doesn't count as coverage.
+- `counterexample_steps_postgres_spec.rb:189` was relaxed (its query's coverage depends on random sentinels) and no longer pins coverage end to end: reporting every atom untested, or never observing, stays green there (`fuzz_coverage_postgres_spec.rb` catches both). Pin coverage end to end in a deterministic spec instead.
+- `fuzz.rb:215`: observing coverage on kill trials too stays green (near-equivalent; decide whether it's worth a spec).
+
+- **Depends on:** None.
+- **Came from:** The reviews of 20261012-4, 2026-10-14 (minor).
+- **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261012-50. Fuzz coverage: check more worlds now that a check is one statement, and a literal 0.
+
+From the second review of 20261012-4 (minor). Coverage checks every world for the first 64 observations, then 32 per doubling of the trial count (`Fuzz::Coverage#due?`). Since 20261012-4's fix round a check is one statement per world, so a denser schedule is now cheap. The reviewer saw why it matters: `SELECT s.id FROM (… ORDER BY id LIMIT 20 OFFSET n) s WHERE s.id <> 4` leaves `s.id <> $4` untested at OFFSET 0 in 2 of 3 seeds at 20,000 trials, and at OFFSET 1, 2 or 5 in none of 21. It isn't the cut (coverage removes it): a literal `0` anywhere changes which worlds get drawn (`s.id <> 0` at OFFSET 2 does the same, `s.id <> 9` doesn't). DESIGN accepts that literals shape the worlds, so this isn't a leak of the kind 20261011-2 forbids, but with every world checked OFFSET 0 settled by 1,500 trials. Try a denser schedule (every world, or a much higher FIRST), measure the trial rate on Canvas and the hard corpus against 20261012-4's numbers (0.92x and 1.13x; target no worse than about 0.85x), and add an across-literals family with a `<> k` atom over OFFSET 0 at production-like trial counts. Also q15a on Canvas swings between 0 and 5 of 5 atoms untested from run to run, since the search rarely gets a row for it: check whether a denser schedule settles it.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261012-4, 2026-10-14 (minor).
+- **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261012-51. After 20261012-4: dead scenario code and stale words.
+
+From the first review of 20261012-4 (minor). Nothing calls these any more: `Scenarios::Topology`'s `null_cut?`, `cross_tables`, `free_joins`, `crossings`, `unique_key?` and `own_key?`, with their scenario-group comments (check each with grep first; remove only what nothing uses, and keep their specs only for what stays). Stale words: DESIGN.md's step table (~lines 200–206) still lists 9a–9e (`vacuity-guard` and the fixture steps) under rewrite-test; comments still naming the vacuity guard in `predicate_atoms.rb:12,91`, `index_search.rb:56`, `arena_runner.rb:45` and `driver/lib/quaack/driver/counterexamples.rb:16`. No behaviour change.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261012-4, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261012-52. After 20261012-4: the builder's flags.
+
+From the build of 20261012-4. Check each first; drop any that isn't real:
+- A rewrite the search couldn't test goes on with no untested atoms, so llm-counterexamples gets nothing to aim at for it. Decide whether it should send every atom as untested (it was never tested), and whether that changes any prompt (prompt drift in the replays).
+- A cancel QUAACK didn't send, during a coverage check (`Fuzz::Differ`), isn't told apart from QUAACK's own: check it ends the step with `statement_canceled`, as one in fuzz's trials does, with a Postgres test.
+- The `fk_cycle` wrong-rewrite corpus went with ScenarioTests' specs. Re-create a few of its wrong rewrites (FK cycles, a nullable cycle edge) as fuzz regression specs, so fuzz is shown to catch them.
+- Fuzz alone, even at 962 trials, misses the polymorphic `$2 + 1` twin and the unhonoured copies; enumerate catches them, so `polymorphic_key_copy_step_postgres_spec.rb` now runs with enumerate on. Note this in DESIGN.md's fuzz section if it isn't there.
+- `counterexample_steps_postgres_spec.rb:207` failed once in about 30 runs (clean in 25 after); find the cause if it recurs.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-4, 2026-10-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
