@@ -11663,3 +11663,13 @@ From the review of 20261012-38, 2026-10-13 (minor). 20261012-38's item 2 spec (`
 - **Design:** rewrite-test.
 - **Landed:** The item 2 spec in `enclave/spec/fuzz_postgres_spec.rb` records `expired` when its clock returns the expired time and asserts it. Red with a clock that always returns 0.0 (expected true, got false), green with the real clock. Spec only.
 - **Status:** done
+
+### 20261012-43. fuzz copies spec: assert that the copies' foreign keys point at a parent row.
+
+From the review of 20261012-24, 2026-10-13 (minor). The spec 20261012-24 added in `enclave/spec/fuzz_world_values_postgres_spec.rb` ("many copies of a row") is the only test of `Draw#copied`'s fix. Reverting the fix turns it red, but with `PG::ForeignKeyViolation` while the world is inserted, not on an `expect`. Add an explicit assertion that every copy's `user_id` is a `users.id` in the world, test first against the reverted `copied`. Check the world's rows before the insert, so the assertion fails before Postgres does.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-24, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Landed:** The "gives the table the copies' foreign key points to a row" spec in `enclave/spec/fuzz_world_values_postgres_spec.rb` now checks the world's rows before inserting them: 21 orders, and every order's `user_id` is a users row's `id`. Red with `Draw#copied` reverted on the expect (orders' user_id ["19", "21"] not in users' id ["19"]), not on `PG::ForeignKeyViolation`; green with the fix. Spec only.
+- **Status:** done

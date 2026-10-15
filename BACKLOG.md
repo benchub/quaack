@@ -688,15 +688,6 @@ From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclav
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-43. fuzz copies spec: assert that the copies' foreign keys point at a parent row.
-
-From the review of 20261012-24, 2026-10-13 (minor). The spec 20261012-24 added in `enclave/spec/fuzz_world_values_postgres_spec.rb` ("many copies of a row") is the only test of `Draw#copied`'s fix. Reverting the fix turns it red, but with `PG::ForeignKeyViolation` while the world is inserted, not on an `expect`. Add an explicit assertion that every copy's `user_id` is a `users.id` in the world, test first against the reverted `copied`. Check the world's rows before the insert, so the assertion fails before Postgres does.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-24, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-44. fuzz's Loader: test that foreign keys between footprint tables stay enforced in the session.
 
 From the review of 20261012-25, 2026-10-13 (minor). `Fuzz::Session::Loader::REFERENCES_SQL` (`enclave/lib/quaack/enclave/fuzz/session/loader.rb`) finds the foreign keys that would block the footprint's `TRUNCATE`, and keeps only those from tables outside the footprint with `AND NOT c.conrelid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT relid FROM emptied))`. Removing that clause keeps every fuzz spec green (`fuzz_postgres_spec.rb`, plus the enumerate, world-values and threshold specs, 98 examples). Without it, `prepare` would also drop the foreign keys between footprint tables. DESIGN.md says those stay enforced during trials. The generator builds worlds that respect them anyway, so the gap would show only while shrinking: dropping a parent row could leave a counterexample that then fails to lift.
