@@ -200,6 +200,12 @@ RSpec.describe "Quaack::Enclave::Fuzz's value classes and copies" do
       allow(fuzz::Generator).to receive(:config).and_return(config)
 
       rows = generator.world(Random.new(1))
+      user_ids = rows.select { it.table == users }.map { it.cells["id"] }
+      order_user_ids = rows.select { it.table == orders }.map { it.cells["user_id"] }
+      expect(order_user_ids.size).to eq(21)
+      expect(order_user_ids - user_ids).to be_empty,
+                                           "orders' user_id #{order_user_ids.uniq} not in users' id #{user_ids}"
+
       rows.each do |row|
         columns = row.cells.keys.map { conn.quote_ident(it) }.join(", ")
         values = row.cells.values.map { it.nil? ? "NULL" : conn.escape_literal(it) }.join(", ")
