@@ -234,19 +234,6 @@ Split from 20260924-25, with that task's review findings:
 - **Landed so far:** items 2, 3 and 4, 2026-10-11 (task/20261008-57; Opus review clean). Item 2: `RewriteStage.run` returns the status entries it read after rewrite-rules, llm-rewrites and operator-rewrites, and the later stages use them (no second `status` call; the guard stays). Item 3: stored rewrites dedupe on the SQL and the stated assumptions together, so the same SQL with different assumptions gets its own entry (DESIGN.md, rewrite-rules). Item 4 was already done. Open: item 1 (needs a counting decision: count a rule rewrite that fails the checks in `failed_checks`, in plan-pruning's drops, or both labelled as overlapping).
 - **Status:** todo
 
-### 20261008-60. Foreign cancels on BEGIN and ROLLBACK: DESIGN.md and a Postgres test.
-
-The review of 20261008-55 found two gaps:
-
-1. **DESIGN.md is out of date.** Its rewrite-test section, around line 1225, still says the runner records the closing ROLLBACK being canceled. That case now ends the step.
-2. **No real Postgres test for the new steps.** Only the unit spec covers `:begin`, `:rollback`, and `:transaction`. Add a Postgres-backed test, if there's a reliable way to cancel a BEGIN or ROLLBACK from a second session.
-
-- **Depends on:** 20261008-55.
-- **Came from:** The review of 20261008-55, 2026-10-08.
-- **Design:** rewrite-test.
-- **Landed so far:** item 1, 2026-10-08 (task/20261008-50, commit e5cf49f8). Item 2 is still open.
-- **Status:** todo
-
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
