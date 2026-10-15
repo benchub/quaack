@@ -57,25 +57,13 @@ The user, 2026-10-14: close this batch (bump, `rake full`, stamp) once 20261012-
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-21. index-from-query loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260923-24. index-from-plan loose ends. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260923-30. Predicate atom loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-33. Fail closed on unsupported SQL constructs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-35. Volatility check loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-36. index-dedupe loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260923-57. Rewrite candidate check loose ends. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260924-9. Load-order loose ends. Done, see BACKLOG-COMPLETE.md.
-
-### 20260924-24. Production inventory loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-25. redact loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -208,62 +196,23 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-3. Report payload: minor findings. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-19. Name the tables in an `fk_cycle` refusal. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261003-39. rewrite-test: more variety in self-references and repeated parents. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents. Done, see BACKLOG-COMPLETE.md.
-
-### 20261003-42. rewrite-test further fixtures: loose ends from 20261003-40.
-
-These are minor findings from building and reviewing 20261003-40:
-
-- **A self-join regression, from a refusal to an untested pass.** Take `messages m JOIN users s ON s.id = m.sender_id JOIN users r ON r.id = m.recipient_id WHERE s.email = 'a@b' AND r.email = 'c@d'`. The rewrite with the emails swapped now passes with every atom marked untested; main refused it. DESIGN's self-join limit covers it, but it should be disproved.
-- **Two FKs into one table, with a non-unique filter column** (also on main). The rewrite that filters on `recipient_id` instead of `sender_id` passes with no untested atoms, because the S3 cross users all share the hit's email. This overlaps 20261003-39's "two FKs into the same parent".
-- **The untested-atom check (vacuity-guard) looks only at S1's first fixture.** An S1 near miss that moved to a further fixture is marked untested, which is cautious. Have it look at further fixtures too.
-- **Further fixtures copy the parents but not the hit's sibling rows** that create fan-out. Also, no step-9-level test needs `parents_of` to recurse; only a unit test guards that.
-- **The picker can repeat candidates on a retry,** and a retry shifts every pooled column, not just the one that collided.
-- **S6 has less variety under a single-value unique filter.**
-- **Further fixtures add runtime.** Measure it on a realistic query.
-
-- **Depends on:** 20261003-40.
-- **Came from:** The build and reviews of 20261003-40, 2026-10-03.
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261004-8. rewrite-test gaps found by the FK-cycle review. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-27. rewrite-test CPU: confirm on the user's schema, and the open items from 20261004-23.
+### 20261004-27. Profile file mode, and an invoices query that fails compared with itself (leftovers of 20261004-23).
 
-20261004-23 cut rewrite-test's CPU on a 19-table fixture from about 25 s to about 3 s. It did that by memoizing `Topology#members` (now `Slots`), the result-comparison Shape, each build's rows, and shared expression-index keys. Still open:
+Two items left from the review of 20261004-23 and its builder:
 
-1. **Confirm on the user's schema.** Ask the user to rerun with `QUAACKS_PROFILE=<path>` on 0.1.5 and share the profile. That's 20261004-23's step 4.
-2. **RowSet's linear scans** are unchanged: `include?`, `parent`'s `find`, `clash?` and `parents_of`. The task suggested them, but the profile on the fixture didn't show them. Fix them if the user's profile does, test first.
-3. **Run-store reuse** of the original query's scenarios across `quaacks` processes isn't done. Do it only if the profile calls for it.
-4. **Untested evaluate-key parts.** Dropping `index` or `row.table` from `RowSet`'s evaluate key leaves every spec green. Add a test with two expression unique indexes over equal-valued columns, e.g. `lower(email)` and `lower(username)` both filled with `k5`.
-5. **Profile file mode.** When the `QUAACKS_PROFILE` file already exists, it keeps its old mode, but README and DESIGN.md promise 0600. Set the mode explicitly.
-6. **Timing margin.** Reverting only the Shape memo gives 12.4 s against the 12 s bound. The memo's own count test covers it, but consider a tighter bound or a larger gap.
-7. **Builder findings to check:**
-   - A `character varying NOT NULL CHECK (col IN (...))` column refuses with `unsatisfiable_check`.
-   - `priority >= 3` under `CHECK (priority BETWEEN 1 AND 5)` also refuses with `unsatisfiable_check`.
-   - An invoices query (`GROUP BY i.number ORDER BY i.number LIMIT 10`) fails when compared with itself, on main too.
-   Split these into their own tasks if they're real.
+1. **Profile file mode.** When the `QUAACKS_PROFILE` file already exists, it keeps its old mode, but README and DESIGN.md promise 0600. `profiler.rb` passes `0o600` to `File.open`, which applies only when it creates the file, and never calls `chmod`. Set the mode explicitly.
+2. **An invoices query fails when compared with itself** (`GROUP BY i.number ORDER BY i.number LIMIT 10`), on main too, from the builder. Check whether result comparison still fails it, and split it into its own task if it's real.
+
+Trimmed 2026-10-14 after 20261012-4: removed items 1–3 (confirm rewrite-test's CPU on the user's schema, RowSet's linear scans, run-store reuse of the original's scenarios), item 4 (RowSet's evaluate key) and item 6 (the Shape memo's timing margin, whose spec is gone), since ScenarioTests and RowSet are gone; and item 7's two `unsatisfiable_check` findings, since `Checks` now runs only from llm-counterexamples' `ParentRows`.
 
 - **Depends on:** 20261004-23.
 - **Came from:** The review of 20261004-23, and its builder.
-- **Design:** rewrite-test, Where QUAACK runs.
-- **Decided by the user (2026-10-06):** the user will provide a profile later. Do items 4-7 now, and leave items 1-3 open in a follow-up task.
-- **Decided by the user (2026-10-08):** hold until the user sends a CPU profile.
-- **Decided by the user (2026-10-09):** still holding; the user will send the profile later.
-- **Status:** todo (item 1 needs the user)
-
-### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
+- **Design:** Where QUAACK runs, result comparison.
+- **Status:** todo
 
 ### 20261004-94. Result comparison: loose ends of the edge check.
 
@@ -281,8 +230,6 @@ From the reviews of 20260924-7.
 - **Landed so far:** items 1 to 5, 2026-10-10 (task/20261004-92; Opus review clean). 1: the edge query's LIMIT is `CASE WHEN l IS NULL THEN NULL ELSE LEAST(l, 9223372036854775807 - o) + o END` with bigint casts (verified on Postgres 18 against LIMIT/OFFSET edge cases; negative values error in the original first, so they can't match); 2: `COALESCE(o, 0)` (a NULL offset is 0); 3: a full run over `HashedRuns::FULL_RUN_ROW_CAP` (2,000,000) rows refuses as `unsupported_order` (only inside CutTies' full runs, so it costs candidates on big result sets with a cut tie, never a false match); 4: `through_offset!` raises on a missing LIMIT or OFFSET; 5: `all_columns?` removed from production comparison (dead there) and its guard moved into fixture-compare's `cut_tie`, with the first test that exercises it. On the unreleased list. Item 6 needs a decision from the user (below). Minor findings: 20261010-7.
 - **Item 6, waiting on the user:** reproduced on real Postgres: original `ORDER BY grp DESC LIMIT n` against candidate `ORDER BY grp DESC NULLS LAST, id LIMIT n` passes when the LIMIT cuts a tie (n=3) and fails with `value` when it doesn't (n=4). Two ways to make the paths agree: (a) accept more: when the candidate's tiebreaker runs don't match row for row, fall back to the CutTies layout check, which already accepts these candidates when a tie is cut (correct, since the candidate's rows are a valid result of the original, but it is the risky direction: it makes the comparison accept more); (b) refuse more: refuse with `unsupported_order` when the candidate's order is stricter than the original's and the original's LIMIT doesn't cut a tie, instead of reporting `value` (honest; costs a candidate). Both the builder and the Opus reviewer lean toward accepting-or-refusing only after the user decides; the reviewer recommends (b), failing closed.
 - **Status:** todo
-
-### 20261004-95. Insert check: clock words, loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification). Done, see BACKLOG-COMPLETE.md.
 
@@ -384,41 +331,22 @@ Carried from 20260927-28. As of 2026-10-08 the lockfile has pg_query 6.2.3 and t
 The user, 2026-10-09, from their own report (`quaack-20261009T212424Z-7f4c43c1.html` in the repo root, untracked; it's a real report with production schema and table names, so never commit it, quote it in a fixture, or send it anywhere; reproduce with synthetic data). Every rewrite in it, including the ranked ones (Steady Lute, Tidy Trout, Plucky Spoon), says "Read it with care: every test QUAACK ran passed, but the test data never exercised some of its conditions, so those parts are unproven." The user reads that as "QUAACK didn't logically test it", which is a problem when it sits on the query QUAACK recommends. The run's burndown says why it shows: rewrite-test's vacuity-guard counted 132 conditions the test data never exercised (after 396 retries), and the LLM's data exercised 85 of them. The conditions left (about 47, if those counts are what the caution counts) mark every rewrite, because `Report::Cautions#warning` adds the caution whenever `unchecked_atoms(entry)` is non-empty. The query is a large one: an OR of ANDs over `assignments` and `submissions`, with `IN` lists and a `UNION ALL` subquery. Long `IN` lists aren't suspected: the user's own queries have lists of hundreds of items, and the untested list below holds simple conditions too.
 
 Work out which of these is true, and fix it:
-1. **Which atoms are left, and why.** From the run's store (ask the user for the run ID and for the shapes of the untested atoms; the report doesn't list them), say which atoms stay untested, and why vacuity-guard can't exercise them: an OR branch that can't be reached with a loadable row, a condition that the unique keys or the foreign-key cut rule out, or a bug.
+1. **Which atoms are left, and why.** From the run's store (ask the user for the run ID and for the shapes of the untested atoms; the report doesn't list them), say which atoms stay untested, and why the search can't exercise them (vacuity-guard, until 20261012-4): an OR branch that can't be reached with a loadable row, a condition that the unique keys or the foreign-key cut rule out, or a bug.
 2. **Whether an untested atom makes the rewrite unproven at all.** If the atom sits in a part of the query the rewrite left exactly as the original had it, no test could tell the two apart there, so the caution says nothing about the rewrite. Consider warning only when an untested atom lies in a part the rewrite changed. This needs a check against DESIGN.md's counterexamples and result-comparison design: is the caution meant to be about the whole query, or only the rewrite's difference?
-3. **Whether to raise coverage** (more fixture variety for the atoms found in 1), which overlaps 20261003-39 and 20261003-42.
+3. **Whether to raise coverage** (more variety in fuzz's worlds for the atoms found in 1).
 4. **Wording**, if the caution stays: it must not read as "no logical testing" (see 20261009-32, which rewords the not-better case; do these two together, or keep the wording the same in both).
 
 Take the decision between 2 and 3 to the user before building, with the finding from step 1.
 
-**Finding from the user's run (2026-10-09, from `quaacks counterexample-payload` for rewrite_1 to rewrite_7; the shapes hold no values):** rewrite_1 has no untested atoms (it's the rewrite planned the same as the original, so it's never tested). Each of rewrite_2 to rewrite_7 lists the same atoms, in the same order: about two dozen, and they're the original query's whole predicate set. They include the join key (`submissions.assignment_id = assignments.id`), every `IN` list, the `type`, `workflow_state` and `context_type` comparisons, `muted IS NULL`, the user filter, the date range, and one atom for the whole `assignments.id IN (SELECT ... UNION ALL SELECT ...)` subquery. 132 untested in all is that list's length times the 6 tested rewrites. So the caution isn't about anything a rewrite changed. It says that rewrite-test's fixtures exercised almost none of the original's conditions at all. Treat that as the lead: the likely cause is that scenarios didn't load or didn't reach the query's rows (DESIGN.md's counterexamples section says a scenario that won't load "exercises nothing: its atoms stay vacuous ... and end untested"), not that the rewrites differ in untested ways. Step 1 should reproduce this on a synthetic schema of the same shape (two tables joined on a key, an OR of ANDs, an `IN` list, a `UNION ALL` subquery under an `IN`), and check the case where every scenario fails to load first and find where the atoms go vacuous. The user's run store is on the jump server; if the builder needs more from it (rewrite-test's scenario results for this run), ask the user for a redacted copy.
+**Finding from the user's run (2026-10-09, from `quaacks counterexample-payload` for rewrite_1 to rewrite_7; the shapes hold no values):** rewrite_1 has no untested atoms (it's the rewrite planned the same as the original, so it's never tested). Each of rewrite_2 to rewrite_7 lists the same atoms, in the same order: about two dozen, and they're the original query's whole predicate set. They include the join key (`submissions.assignment_id = assignments.id`), every `IN` list, the `type`, `workflow_state` and `context_type` comparisons, `muted IS NULL`, the user filter, the date range, and one atom for the whole `assignments.id IN (SELECT ... UNION ALL SELECT ...)` subquery. 132 untested in all is that list's length times the 6 tested rewrites. So the caution isn't about anything a rewrite changed. It says that rewrite-test's fixtures exercised almost none of the original's conditions at all. Under ScenarioTests, the likely cause was that scenarios didn't load or didn't reach the query's rows, not that the rewrites differ in untested ways. Step 1 should reproduce the new run's result on a synthetic schema of the same shape (two tables joined on a key, an OR of ANDs, an `IN` list, a `UNION ALL` subquery under an `IN`) and find where the atoms stay untested under fuzz's coverage. The user's run store is on the jump server; if the builder needs more from it (the run's rewrite-test results), ask the user for a redacted copy.
 
-- **Depends on:** None. Related: 20261009-32, 20261009-18, 20261003-39, 20261003-42.
+- **Depends on:** None. Related: 20261009-32, 20261009-18, 20261003-39.
 - **Came from:** The user, 2026-10-09.
-- **Design:** rewrite-test (vacuity-guard), counterexamples, report.
+- **Design:** rewrite-test (coverage), counterexamples, report.
 - **Decided by the user (2026-10-09):** the caution should warn only about untested atoms in the part the rewrite changed. That's task 20261009-40. This task builds the diagnostic (why an atom stayed vacuous) first; the cause of the untested atoms in the user's run is still unknown and waits on that diagnostic.
-- **Landed so far:** 2026-10-09 (task/20261009-33): the diagnostic only. Each tested rewrite's `rewrite_test` message and `rewrite_tested_<n>` entry now carry `s1_load_rule` (nil, or a rule from `Protocol::VacuityDiagnostic::LOAD_RULES`) and `s1_rows` (the original's row count on S1). Next: a run on a build with it tells whether S1 failed to load or loaded and returned nothing; then fix the cause. The caution's scope is 20261009-40. Minor finding: 20261009-46.
-- **Status:** todo (waits on a run with the diagnostic)
-
-### 20261010-4. rewrite-test variety: a unique self-FK, and the cases the review didn't check.
-
-From the review of 20261003-39 (minor, and gaps in the review's coverage).
-- With `parent_id bigint UNIQUE REFERENCES` its own table, a wrong rewrite (a filter on the child instead of the parent) still passes: `childless_parent` excludes self-references, so a unique self-FK's cross gets no fresh target and no distinguishing row. The task didn't promise it. Make the cross target a fresh parent row (a row that has no child) for a unique self-FK too, and add a wrong-twin test that passes today.
-- The review did not check composite self-FKs, ON DELETE CASCADE self-FKs, partitioned tables or exclusion constraints, nor the row counts and runtime for a schema with ten FKs (by reading the code S3 grows linearly: 1 plus one row per pooled atom per self-FK, 2 per unique FK). Probe each with a correct and a wrong rewrite, measure the row count and time for a ten-FK schema (see 20261004-27 about rewrite-test CPU), and file any failures.
-
-- **Depends on:** 20261003-39.
-- **Came from:** The review of 20261003-39, 2026-10-10.
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261010-5. rewrite-test: a unique cut foreign key's cross row.
-
-From the review of 20261004-8 (minor). With `course_template_id bigint UNIQUE` (a cycle through a unique key) the cross row collides with the hit account's template, so that group is dropped: the correct twin still passes, but the wrong rewrite ("own template" rewritten as EXISTS own courses) passes too and goes undetected (the ORDER BY drop is still caught). Point a unique cut key's cross at a parent the hit doesn't hold (as 20261003-39 did for a unique FK with `childless_parent`), or list the case as a v1 gap in DESIGN.md. Enclave change: unreleased list. Related: 20261010-4 (a unique self-FK has the same shape).
-
-- **Depends on:** 20261004-8, 20261003-39.
-- **Came from:** The review of 20261004-8, 2026-10-10 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
+- **Landed so far:** 2026-10-09 (task/20261009-33): a diagnostic (`s1_load_rule` and `s1_rows` on each tested rewrite's `rewrite_test` message) to tell whether S1 failed to load or loaded and returned nothing. The caution's scope is 20261009-40. Minor finding: 20261009-46.
+- **Trimmed 2026-10-14 after 20261012-4:** 20261012-4 removed ScenarioTests, the vacuity guard and that diagnostic (`s1_load_rule`, `s1_rows`, `VacuityDiagnostic`), so the vacuity guard can't be the cause any more, and "a run with the diagnostic" can't happen. What's left: once the user runs 0.1.35 on the real schema, check whether its ranked rewrites still show every atom untested under fuzz's coverage (`Fuzz::Coverage`). `Fuzz::Reach`'s worst case (a count threshold or a volatile function) or a cut copy that won't deparse (`Fuzz::Uncut`) would do that. If they do, find the cause and fix it, as in steps 1 to 4 above, with coverage in place of the vacuity guard.
+- **Status:** todo (waits on the user's next real-schema run)
 
 ### 20261010-7. Result comparison and literals: two small gaps from the review of 20261004-92 and -94.
 
@@ -457,44 +385,7 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Design:** LLM client.
 - **Status:** todo
 
-
-
-### 20261010-38. Aggregated columns: untested CHECK guard and the `MIN_APART` wrap.
-
-From the review of 20261010-36:
-1. **The CHECK guard in `Scenarios::FreeValues#default_value` has no test.** Replacing `value && @checks.allows?(table, col, value) ? value : :omit` with `value || :omit` leaves every focused spec green. Add a spec: a defaulted, aggregated column whose CHECK rejects the near miss's own value; the scenario must load and the atom be reported untested; red when the guard is dropped.
-2. **`MIN_APART` (999_999) wraps negative on narrow numeric types** (`Literals.numeric` wraps above the type's maximum: smallint becomes -16989, `numeric(5,2)` goes negative), so a min() near miss silently stays untested. Clamp the value to the type's maximum, or skip the wrap for it; test with a smallint column.
-3. A column read by both min() and max() gets only the max treatment; under `MIN_APART` a min-only column in a boundary group loses its boundary values (builder's known gaps).
-
-- **Depends on:** 20261010-36 (landed).
-- **Came from:** The review and build of 20261010-36, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34.
-
-Still in the corpus's `PENDING`, causes unconfirmed unless noted:
-- CTE with an outer filter (`posts.created_at > $1`); scalar subquery in WHERE (`p2.published = $1`: the near miss must move avg() across the hit's score); a second column-to-column tie between the same two tables (`comments.user_id = posts.user_id`).
-- A sibling that must fail every other scope the parent could pass through (20261010-34 fixed one level with `Plan#scope_mate`): a variant whose second UNION branch is `published = true AND score > 9` still leaves `score > $6` untested because the sibling fails `published` but passes `score > 9`, which satisfies branch 1.
-- `SELECT count(*) FROM posts JOIN comments ... WHERE posts.id IN (SELECT posts.id FROM posts WHERE published AND title <> 'draft' AND user_id IN (...) AND id IN (501..504)) AND comments.user_id = 7` leaves `published`, `title` and the `id IN` untested.
-- A count over an IN subquery whose second UNION ALL branch pins `posts.id IN (11..14)` leaves that branch's `score`, `title` and `id IN` untested.
-- A manager self-join with both `m.id IN` and `e.id IN` lists gives an S1 that returns no rows; three atoms untested.
-- A `HAVING count(*) > 1` query with a pinned `users.id IN` list leaves three atoms untested.
-Add each to the corpus (`PENDING` with the shape and atoms), confirm each cause, fix what is cheap or clear and file the rest.
-
-- **Depends on:** 20261010-36 and 20261010-34 (landed).
-- **Came from:** The work on 20261010-36, -33 and -34, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-### 20261010-40. Scenarios: copies' child rows don't follow their copy's parent (possible fixture bug).
-
-Found while building 20261010-33: in S6, with copies of posts under `posts.id IN (201..204)`, all three copied comments point at post 202, not at their own copy's post. If real, a copy's children attach to the wrong parent, so what S6 tests differs from what its description says (it can hide or invent differences between a rewrite and the original). Reproduce on the corpus schema, find whether it is by design (copies of one table's row share a parent) or a bug, and fix or document it with a test.
-
-- **Depends on:** 20261010-33 (landed).
-- **Came from:** The work on 20261010-33, 2026-10-10.
-- **Design:** scenarios.
-- **Status:** todo
+### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261010-41. Winner summary: minors from 20261010-37.
 
@@ -510,15 +401,6 @@ Found while building 20261010-33: in S6, with copies of posts under `posts.id IN
 - **Design:** report.
 - **Status:** todo
 
-### 20261010-42. `s1_nonzero_rows`: what counts as empty.
-
-From the review of 20261010-22. Only NULL and numeric zeros (regex `/\A[-+]?(0+(\.0*)?|\.0+)\z/`) count as empty, so values that read as empty but aren't numeric zeros count as nonzero: `bool_or`/`bool_and` returning `f`, a zero interval (`00:00:00`), an empty string, an epoch-like date. It is a heuristic, not a security issue. Say so in DESIGN.md (only NULL and numeric zero count as empty), and decide whether `bool_or` (the existence-check shapes) needs `f` counted as empty.
-
-- **Depends on:** 20261010-22 (landed).
-- **Came from:** The review of 20261010-22, 2026-10-10.
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261010-44. Burndown: minors from 20261010-20.
 
 1. **index-rank's added count is combinations, not ideas.** The funnel this item was about is gone (20261012-6). The Sankey draws index-rank in its own unit, sets, with a note on why it tries that many combinations (`sankey.rb` `COMBINATIONS`), and the table says "combinations tried". Check that the Sankey's index-rank layer can't be read as more ideas going on than came in. If it can't, drop this item.
@@ -530,64 +412,21 @@ From the review of 20261010-22. Only NULL and numeric zeros (regex `/\A[-+]?(0+(
 - **Design:** report, burndown.
 - **Status:** todo
 
-### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`).
+### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`). Dropped, see BACKLOG-COMPLETE.md.
 
-From the review of 20261010-35, pre-existing on `main` and the branch: `(SELECT count(*) ...) > 2 AND title = 'x' AND score > 3` leaves `title` and `score` untested, because their near misses have one child and so fail the count too. A near miss for a non-count atom needs the parent to keep its n+1 children (and fail only its own atom). Find the cause in the scenario build, fix it without weakening the guard, and add the corpus shape.
+### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals through per-trial cost.
 
-- **Depends on:** 20261010-35 (landed when its fix round lands).
-- **Came from:** The review of 20261010-35, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
+Reported counts must not depend on literal values (DESIGN: shapes, counts and fixed names cross, never values). The counts the search sends out are fuzz's `trials`, enumerate's `worlds` and its `bound` (`protocol/lib/quaack/protocol/fuzz_result.rb`; `steps/rewrite_fuzz.rb` puts them on the `rewrite_test` message), and the burndown's fuzz and enumerate records. `enclave/spec/across_literals_postgres_spec.rb` deliberately doesn't hold the trial count to its byte-identical check (its comment, ~lines 27–29: it follows how long each trial takes, under the real stop rule), and nothing else does. Under the time-based stop rule (`Fuzz::StopRule`: a 30 s floor, twice the last new signature, a 60 s cap) and enumerate's 30 s limit, these counts follow per-trial cost, which can shift with a literal: a larger LIMIT or OFFSET returns more rows per trial, and an IN list's values can change which worlds get drawn and so how much each costs. Find out how much a count can move with only a literal changed (LIMIT, OFFSET, IN-list values, BETWEEN bounds, count thresholds) on realistic queries, and whether that's more than noise. Then decide with the user whether to bucket the counts, report them in a coarser unit, or accept and document the timing channel in DESIGN.md, and extend the across-literals spec for whatever is decided. This is a Security/Privacy-relevant boundary check; have an Opus reviewer.
 
-### 20261010-47. Trust boundary: counts that leave the enclave vary with query literals (LIMIT, IN-list values).
+Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `fixture_loads` following the LIMIT, `dropped` and the spills following IN-list values, `distinct_loads`' part in the scenario loads, and the "also cover the vacuity-guard search's untested set and `untested_states`" item. 20261012-4 removed all of them, and rebuilt the across-literals spec for fuzz's verdict, rule and coverage. 20261011-2, which carried the rest, is done.
 
-Found by the second review of 20261010-35, pre-existing on `main`. Reported counts depend on literal values, which must not cross the boundary (DESIGN: shapes, counts and fixed names cross, never values):
-- `fixture_loads` (the burndown total, via `ScenarioTests::Report` `loads`) varies with the LIMIT value at equal untested sets: with no ORDER BY, `LIMIT 1` gives 26 and `LIMIT >= 2` gives 22; with ORDER BY, `LIMIT 0` gives 23 and `LIMIT 1` gives 47.
-- `dropped`, `fixture_loads` and the spills vary with IN-list values (not just their count): `user_id IN (7,10,16)` gives dropped 3 and an extra S5 spill; `(1,4,10)`, `(2,5,11)` and `(100,103,109)` give 2.
-- The cause of the loads steps: `ResultComparison::LoadOrders.distinct_loads` skips the rotated run when a table run has fewer than 3 rows (the same mechanism that carried the count threshold in the rejected 20261010-35 extra-children feature).
-Work out which reported fields can vary with a literal, using the reviewer's experiment as the starting point (scratchpad `review-20261010-35-r2/` of that session: a spec that runs `ScenarioTests.run` per query family varying only the literal, comparing every outgoing field: results, untested shapes, retries, dropped, loads, s1 diagnostics, spills; rebuild it as a committed spec), then make each reported count independent of literal values: bucket it, report a value that doesn't depend on the data, or compute it from shape only (for example count a fixed number of load orders per comparison). The `(a, b, c)` values of an IN list are values; the number of elements is shape. Add the across-literals spec for LIMIT, OFFSET, IN-list values, BETWEEN bounds and count thresholds, as a standing guard (byte-identical outgoing messages when only literals change). This is a Security/Privacy-relevant boundary check; have an Opus reviewer.
-
-- **Also cover (from the review of 20261010-43, 2026-10-10):** the vacuity-guard search's pools hold IN-list values and BETWEEN bounds, so which atoms stay untested, and their `untested_states` words, can change when only those literals change. Extend the across-literals spec to the untested set and `untested_states`.
-- **Depends on:** 20261010-35 (landed).
+- **Depends on:** None.
 - **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
-- **Design:** What goes into the enclave; the burndown.
-- **Landed so far:** 2026-10-11 (task/20261010-47; Opus review: no regression, a strict improvement). `across_literals_postgres_spec.rb` (11 families, byte-identical reports across literal values within one side of a reach boundary); each fixture compare counts as 3 loads and the guard's LIMIT/OFFSET comparisons count none; a group's own pinned key avoids every pooled value. Still open, carried by 20261011-2.
-- **Status:** todo (see 20261011-2)
-
-### 20261010-48. Untested conditions: a correlated count threshold, built without leaking the threshold.
-
-20261010-35 built n+1 children for a correlated scalar count compared to an integer literal (so `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > 2` is fully tested), but its second review found the threshold leaked through `fixture_loads` (`distinct_loads` steps at 3 rows), and the feature was removed before landing. Rebuild it so that no reported count depends on the threshold (do 20261010-47 first or together: the standing across-literals spec must pass for thresholds 0..9 and every operator), with these findings from the reviews: children only for count(*)/count(x) with no GROUP BY, window and a single target (a non-aggregate scalar subquery returning several rows crashed the guard: `(SELECT p.score FROM posts p WHERE p.user_id = u.id) > 3`); also a count sharing its child table with a non-count scalar subquery crashed S1 (`count(*) > 1 AND (SELECT p2.score ...) > 3`); the child count follows the operator and its side (n+1 for `>`, n for `>=`, `=` and `<=`, n-1 for `<`, 2 for `<> 1` else 1, within 1..10); `count > n` vs `count >= n` rewrites pass rewrite-test for n = 2 and 4..9 because no parent has exactly n children (main misses it too): add a boundary parent with exactly n children and one with n+1; near misses of other atoms under a count threshold keep their children (20261010-46); tighten `Protocol::VacuityDiagnostic.valid?` to nil, 0 or 1 for `s1_rows` and `s1_nonzero_rows` (defense in depth). The rejected branch's code is in git history (task/20261010-35's earlier commits c556f60e and 950568a2).
-
-- **Depends on:** 20261010-47, 20261010-35.
-- **Came from:** The reviews of 20261010-35, 2026-10-10. Priority: the untested conditions.
-- **Design:** rewrite-test, scenarios.
-- **Also (review of 20261011-2, 2026-10-11):** `loads` follow a candidate's verdict, not the fixed worst case: with a non-equivalent candidate, results flip between n <= 1 (S1 row_count fail) and n >= 2 (pass), and loads flip 10 vs 25 with them, because testing stops at the first failing scenario. About one bit (whether n is at or below S1's reach) is recoverable. Include `loads` and the verdict in the work.
+- **Design:** What goes into the enclave; the burndown; rewrite-test.
+- **Landed so far:** 2026-10-11 (task/20261010-47): the first `across_literals_postgres_spec.rb`, for ScenarioTests' reports (since replaced by 20261012-4's version for fuzz).
 - **Status:** todo
 
-### 20261010-49. Minors from 20261010-35 and -23.
-
-1. The across-thresholds spec in `scenarios_unmatched_postgres_spec.rb` doesn't compare `untested_atoms` (its size goes to the burndown, its indices to counterexamples), `s1_load_rule` or `results`; add them.
-2. In `vacuity_guard_postgres_spec.rb` (around line 47) "records no load failure and the original's row count on S1" asserts `eq([expected, 2].min)`; the cap is now 1: use `REPORTED_ROWS`.
-3. `Protocol::VacuityDiagnostic.valid?` still accepts any Integer up to `MAX_ROWS` for `s1_rows` and `s1_nonzero_rows`: tighten to nil, 0 or 1 (defense in depth; also in 20261010-48).
-4. A weak test for the Branches look-ahead (`.map(&:first)` vs `.map(&:last)` survived before the fix round; check it is now killed).
-
-- **Depends on:** 20261010-35 (landed).
-- **Came from:** The reviews of 20261010-35 and -23, 2026-10-10.
-- **Design:** rewrite-test, scenarios.
-- **Status:** todo
-
-### 20261010-51. Vacuity-guard search: loose ends from 20261010-43.
-
-1. The search skips every query with a LIMIT or OFFSET (it made the threshold-invariance spec fail). That leaves out ORM `find_by ... LIMIT 1` queries. Find a way to search them without letting the result vary with the LIMIT value (do 20261010-47 first).
-2. `untested_states` isn't in the counterexample payload.
-3. There's no separate word for "no difference within the search bound" (the exhaustive small pass finished). Add one only if the report can say it truthfully.
-4. The README sample doesn't show the state sentence.
-5. `Search::Trials` treats each column of a composite unique key as unique on its own (`uniques.flatten`). That wastes trials and is safe; make only the whole key unique.
-
-- **Depends on:** 20261010-43 (landed), 20261010-47 for item 1.
-- **Came from:** The build and review of 20261010-43, 2026-10-10.
-- **Design:** rewrite-test, scenarios, report.
-- **Status:** todo
+### 20261010-48. Untested conditions: a correlated count threshold, built without leaking the threshold. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling.
 
@@ -600,29 +439,28 @@ From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, 
 
 ### 20261011-5. Denormalized fixture: a UNIQUE or CHECK on the copy column (minors from 20261010-2).
 
-The review of 20261010-2 found: if the copy column has a UNIQUE (or exclusion) constraint, update 3 gives every parentless row the same class-parent id, and update 2 can repeat ids too, so the load fails (`fixture_load_failed`, a refusal, not a false disproof) where the old single update loaded. A CHECK on the copy column that another class's parent id violates fails the load the same way. A unique denormalized copy such as `course_id` isn't realistic, so both are minor. Possible fix: skip updates 2 and 3, or limit update 3 to one row, when the copy column has a unique index; with a CHECK, skip them too. Postgres-backed tests for each, red first.
+The review of 20261010-2 found: if the copy column has a UNIQUE (or exclusion) constraint, update 3 gives every parentless row the same class-parent id, and update 2 can repeat ids too, so the load fails where the old single update loaded. A CHECK on the copy column that another class's parent id violates fails the load the same way. Since 20261012-4, `DenormalizedFixture`'s UPDATEs run in fuzz's worlds (`fuzz/session/loader.rb`, `fuzz/lift.rb`), so such a world fails to load and fuzz treats it as illegal: fewer worlds get tested on that table, not a false disproof. A unique denormalized copy such as `course_id` isn't realistic, so both are minor. Possible fix: skip updates 2 and 3, or limit update 3 to one row, when the copy column has a unique index; with a CHECK, skip them too. Postgres-backed tests for each, red first.
+
+Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 - **Depends on:** 20261010-2 (landed).
 - **Came from:** The review of 20261010-2, 2026-10-11 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261011-6. Duplicate IN-list values leak whether two literals are equal.
-
-From the reviews of 20261011-2 and its builder. `email IN ('a','a')` and `('x','x')` report dropped 9 and loads 49, while `('a','b')` reports 5 and 34, so the fact that two literals are equal crosses the boundary (not the values). Duplicates are rare in app SQL. Dedupe the IN-list values (or refuse a duplicate) before the scenarios are built, so the report doesn't depend on it, and add a family to `across_literals_postgres_spec.rb`: `IN ('a','a')`, `('a','b')`, `('x','y')`, red first. Enclave change.
-
-- **Depends on:** 20261010-47 (landed).
-- **Came from:** The review of 20261011-2, 2026-10-11 (minor, trust boundary).
-- **Design:** What goes into the enclave.
-- **Status:** todo
-
 ### 20261011-7. A count threshold makes every atom of the query untested; keep the atoms outside the aggregate's scope.
 
-From the review of 20261011-2 (minor, usefulness). Since 20261011-2, any query that compares an aggregate with a constant reports every atom as untested, including atoms unrelated to the count (`published = true` next to `HAVING count(*) > 5`). That is common in reporting and ORM SQL, so the guard says nothing useful for those queries. Keep the real result for atoms outside the aggregate's scope (WHERE atoms of the grouped query whose S1 reach doesn't depend on the threshold); only the threshold atom, and atoms inside its correlated subquery, get the worst case. It needs its own across-literals proof (thresholds 0..10, all operators, every outgoing field identical, with the other atoms' states real), red first, and the corpus HAVING entries then expect the other atoms tested again. Opus builder and reviewer.
+From the review of 20261011-2 (minor, usefulness). Any query that compares an aggregate with a constant reports every atom as untested, including atoms unrelated to the count (`published = true` next to `HAVING count(*) > 5`). Since 20261012-4 that's fuzz's coverage: `Fuzz::Coverage` (`fuzz/coverage.rb`, ~line 53) skips every atom when `Fuzz::Reach.worst_case?` holds, and `Reach#threshold_bound?` (`fuzz/reach.rb`, ~lines 35–38) is true for any aggregate compared with a constant, or any constant comparison over a derived table or CTE with an aggregate. That is common in reporting and ORM SQL, so the caution says nothing useful for those queries. Keep the real result for atoms outside the aggregate's scope (WHERE atoms of the grouped query, whose chance of being reached by a world doesn't depend on the threshold); only the threshold atom, and atoms inside its correlated subquery, get the worst case.
+- It needs its own across-literals proof in `enclave/spec/across_literals_postgres_spec.rb` (thresholds 0..10, all operators, every outgoing field identical, with the other atoms' states real), red first. Shapes to cover include `HAVING count(*) > 1` with a pinned `users.id IN` list (from 20261010-39) and `count(...) > 2 AND title = 'x' AND score > 3` (from 20261010-46).
+- **Folded in from 20261010-48 (2026-10-14):** test the atoms under a correlated count threshold too (`(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > 2`), so a `count > n` vs `count >= n` rewrite is caught, without letting any reported count or the caution depend on the threshold. 20261010-35's earlier attempt (n+1 children per parent, in the removed scenario builder) leaked the threshold through the load count and was rejected; its findings that may still apply: handle only count(*)/count(x) with no GROUP BY, window or second target; a non-aggregate scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code; the boundary needs a parent with exactly n children and one with n+1.
+
+Opus builder and reviewer.
+
+Reworded 2026-10-14 after 20261012-4: the vacuity guard and its S1 reach became `Fuzz::Coverage` and `Fuzz::Reach`, and the corpus's HAVING entries are gone, so the proof goes in the across-literals spec.
 
 - **Depends on:** 20261011-2 (landed with its fix round).
 - **Came from:** The review of 20261011-2, 2026-10-11 (minor).
-- **Design:** rewrite-test, scenarios.
+- **Design:** rewrite-test (coverage).
 - **Status:** todo
 
 ### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale.
@@ -636,11 +474,13 @@ Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized 
 
 ### 20261011-10. Rewrite budget: minors from 20261010-53.
 
-(1) DESIGN.md's budget sentence doesn't say a running statement can overrun the deadline by up to its 10 s `statement_timeout`: add one clause. (2) An out-of-time rewrite-test records an empty report, so the burndown loses the fixture loads and retries it really used and under-counts the work done; carry the counts the test had reached into the burndown (as fixed small counts, not literals; check 20261011-2's worst-case rules and 20261010-47's across-literals spec so the count doesn't vary with a literal), or say in DESIGN.md that out-of-time rewrites count as 0. (3) Counterexample rounds have no overall budget (only the 10 s per statement); say in DESIGN.md why that's fine (they load only the LLM's inserts), or add one if rounds can pile up.
+(1) DESIGN.md's budget paragraph (rewrite-test, ~line 1149) doesn't say a running statement can overrun the deadline by up to its 10 s `statement_timeout`: add one clause. (3) Counterexample rounds have no overall budget (only the 10 s per statement). DESIGN.md says they "load only the LLM's inserts and have no such budget", but not why that's fine; add that, or add a budget if rounds can pile up.
+
+Trimmed 2026-10-14 after 20261012-4: removed (2), the burndown losing an out-of-time rewrite-test's fixture loads and retries. rewrite-test no longer loads scenarios, and an out-of-time rewrite records fuzz's record with `not_tested_in_time` 1 (`RewriteBurndown#record_fuzz`).
 
 - **Depends on:** 20261010-53 (landed).
 - **Came from:** The review of 20261010-53, 2026-10-11 (minor).
-- **Design:** rewrite-test, burndown.
+- **Design:** rewrite-test, counterexamples.
 - **Status:** todo
 
 ### 20261011-11. Rewrite dedupe: normalize the stated assumptions, and say what happens to the same SQL with different assumptions.
@@ -662,11 +502,7 @@ From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyw
 - **Built, not merged:** branch `task/20261011-12` (head `6270cc2a`), two Opus reviews clean (the first found the refusal too coarse for citext and hstore in `public`; the fix narrows it to operators with a reachable argument type, `rewrite_candidate_check/keyword_reach.rb`). Held until after the 0.1.33 bump so `main` stays deployable; merge it as the first change of the next batch and put `20261011-12` on the unreleased list. Minors: a relation's row type (`pg_class.reltype`) isn't among the seen types, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through (add `reltype`, or refuse whole-row operands of keyword forms); the example at `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it; one earlier full run had a single unidentified failure in `rewrite_candidate_check_spec.rb` that didn't recur: watch for it.
 - **Status:** todo
 
-### 20261011-16. A standalone randomized differential test of each rewrite (hundreds of small databases). Dropped, see BACKLOG-COMPLETE.md.
-
 ### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal. Done, see BACKLOG-COMPLETE.md.
-
-### 20261012-2. rewrite-test: a disproof search over small random databases on the queries' own tables. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says. Done, see BACKLOG-COMPLETE.md.
 
@@ -678,11 +514,11 @@ From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyw
 
 ### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`.
 
-From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` prints as `((g)::text <> ALL ((ARRAY['bad'::character varying, 'worse'::character varying])::text[]))`. `Scenarios::Checks::KINDS` (`enclave/lib/quaack/enclave/scenarios/checks.rb:21`) doesn't hold `AEXPR_OP_ALL`, so `Checks.new` raises `complex_check` and rewrite-test refuses every query whose fixtures need a row in that table (the reviewer saw `[[false, :complex_check, nil]]` end to end). `Sides.sides` already reads `<> ALL` over a cast ARRAY since 20261012-1, so accepting it should be small. DESIGN.md doesn't list NOT IN as simple today, so update its simple-CHECK sentence. Also add the specs the review found missing, for behaviour it checked by hand: a CHECK IN list holding NULL (`IN ('p', NULL)` gives values `["p"]` and, as in Postgres, rejects nothing), and a one-element IN list (which prints as `= 'only'`). Still worth doing after 20261012-4 only if the search reuses `Checks`; if it doesn't, drop this when 20261012-4 lands.
+From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` prints as `((g)::text <> ALL ((ARRAY['bad'::character varying, 'worse'::character varying])::text[]))`. `Scenarios::Checks::KINDS` (`enclave/lib/quaack/enclave/scenarios/checks.rb:21`) doesn't hold `AEXPR_OP_ALL`, so `Checks.new` raises `complex_check`. fuzz doesn't use `Checks`, but llm-counterexamples' `Counterexamples::ParentRows` does (`counterexamples/parent_rows.rb`, ~line 44), so when a counterexample round's accepted inserts need a parent row, and any table in their foreign-key closure (`ArenaSchema.load_closure`) has such a CHECK, the round fails with `complex_check` instead of testing the LLM's rows. That hits every rewrite's rounds on a schema that uses NOT IN CHECKs on varchar columns near the queries' tables. `Sides.sides` already reads `<> ALL` over a cast ARRAY since 20261012-1, so accepting it should be small. DESIGN.md doesn't list NOT IN as simple today, so update its simple-CHECK sentence. Also add the specs the review found missing, for behaviour it checked by hand: a CHECK IN list holding NULL (`IN ('p', NULL)` gives values `["p"]` and, as in Postgres, rejects nothing), and a one-element IN list (which prints as `= 'only'`). Reworded 2026-10-14 after 20261012-4 for the ParentRows path (kept by the user, 2026-10-14).
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-1, 2026-10-12 (minor).
-- **Design:** fixture-scenarios.
+- **Design:** llm-counterexamples.
 - **Status:** todo
 
 ### 20261012-8. Value pools: an array literal under `= ANY` isn't split, and a bare `ARRAY[...]` compared with an array column is.
@@ -696,7 +532,7 @@ Unsupported in v1 instead, if any of these turns out hard: list it in DESIGN.md.
 
 - **Depends on:** None.
 - **Came from:** The build and review of 20261012-1, 2026-10-12 (minor).
-- **Design:** fixture-scenarios, vacuity-guard.
+- **Design:** rewrite-test (coverage), llm-counterexamples.
 - **Status:** todo
 
 ### 20261012-9. LiteralSet and CastlessIndex don't read an `ARRAY[$1, ...]` under a cast.
@@ -793,7 +629,9 @@ From the review of 20261012-10 (minor). When a round's comparison raises a non-l
 
 Add tests that go red under the two surviving mutants, using real Postgres. For the CutTies gap, either show it's unreachable on a realistic query, or make the rerun follow the comparison's path.
 
-20261012-11 moved the rerun to `ResultComparison::OriginalRerun`, and ScenarioTests now uses it too. So the gap reaches rewrite-test: if the original fails only in a variant that the candidate's comparison triggers (say its tiebroken or unlimited run) on a fixture where the plain original runs, ScenarioTests skips that fixture when the candidate should have failed, and a wrong candidate could pass. That still needs rare SQL. Cover both callers.
+20261012-11 moved the rerun to `ResultComparison::OriginalRerun`; its only caller is `Counterexamples::Failure`.
+
+Trimmed 2026-10-14 after 20261012-4: removed the paragraph about ScenarioTests also using the rerun, since ScenarioTests is gone.
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-10, 2026-10-12 (minor).
@@ -813,23 +651,16 @@ Another candidate, found while landing 20261012-13 (2026-10-13), and to rule out
 - **Design:** none (test harness).
 - **Status:** todo
 
-### 20261012-21. `original_failed`'s leftovers: a rerun after a load failure, and a swallowed cancel in `Compared#compare`.
+### 20261012-21. report-payload: the `original_failed` "isn't a rule bug" check was green before 20261012-11.
 
-From the build and review of 20261012-11 (minor).
-- **The rerun runs after a load failure too.** `ScenarioTests`' `original_failed?` calls `ResultComparison::OriginalRerun` on any runner error, a load failure included. The rerun's own load then fails and the answer is no, which is right. But it adds 3 to `loads` for each fixture that won't load, per candidate, so the report's load count overstates the work. Skip the rerun when the error's rule or step is a load (`LOAD_RULES` / `LOAD_STEPS`), as `Counterexamples::Failure.round` does.
-- **`VacuityGuard::Compared#compare` swallows a foreign cancel.** It rescues every `ArenaRunner::Error`, including a cancel QUAACK didn't send (`ArenaRunner::Cancel.foreign?`), which everywhere else ends the step. Re-raise it, test first. This predates 20261012-11.
-- **One report-payload check is green on `main`.** The `original_failed` case in report-payload's "isn't a rule bug" list passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
-- **`ScenarioTests`' `shows?` error handling is untested** (from the review of 20261012-22; `enclave/lib/quaack/enclave/scenario_tests.rb`, `shows?`). Two mutants survive: a runner error counted as "shows a nonzero row", and a foreign cancel swallowed. It's barely reachable, since the original has just run fine on that fixture. Add a spy-runner spec that fails only the original-alone load: once with `query_failed` (expect `original_failed`), once with a foreign cancel (expect it raised).
-- **A driver spec's `original_failed` message isn't the enclave's** (from the review of 20261012-37, minor). `driver/spec/pipeline_progress_spec.rb`'s failure-rule example sends every rule with scenario `"s3"`, but the enclave's `ORIGINAL_FAILED` result has a nil scenario. `search_note` never reads it, so it does no harm. Send nil for `original_failed`.
+From the build and review of 20261012-11 (minor). The `original_failed` case in report-payload's "isn't a rule bug" list (`enclave/spec/report_payload_step_spec.rb`, ~lines 1155–1162) passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
+
+Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' rerun after a load failure, `VacuityGuard::Compared#compare` swallowing a foreign cancel, `ScenarioTests#shows?`'s error handling, and `pipeline_progress_spec.rb`'s `original_failed` message with scenario `"s3"`. 20261012-4 removed the first three's code, and the driver spec no longer sends that message.
 
 - **Depends on:** None.
-- **Came from:** The build and review of 20261012-11, 2026-10-12, the review of 20261012-22, and the review of 20261012-37.
-- **Design:** rewrite-test, vacuity-guard.
+- **Came from:** The build and review of 20261012-11, 2026-10-12.
+- **Design:** report.
 - **Status:** todo
-
-### 20261012-22. ScenarioTests: when the original failed on a fixture, count only fixtures where it returned a nonzero row as compared. Done, see BACKLOG-COMPLETE.md.
-
-### 20261012-23. fuzz and scenarios: values for a column that's combined with a constant, such as a constant divided by a column. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row. Done, see BACKLOG-COMPLETE.md.
 
