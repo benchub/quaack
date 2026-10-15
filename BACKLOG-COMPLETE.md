@@ -11698,3 +11698,15 @@ From the review of 20261012-40, 2026-10-13 (minor). Wording only; the code is ri
 - **Design:** rewrite-test.
 - **Landed:** DESIGN.md's enumerate Value classes bullet says the generated-column exception once ("Postgres computes a generated column from the rest of the row…"), and says "the column's next unique value" where it said "a fresh value", defining it once: the next of a run of distinct values of the column's type, or, when a CHECK pins the column, the next of the CHECK's constants in turn, so it can repeat a value already in the world (the constants are the CHECK's, not the queries'). The `Fuzz::Enumerate::Worlds` comments say the same. Wording only.
 - **Status:** done
+
+### 20261012-47. enumerate's primary-key freshening: test three rows of one kind, and keep fresh values out of later rows.
+
+From the review of 20261012-30, 2026-10-14 (minor). `Fuzz::Enumerate::Worlds` gives a `:pk` value a row's kind repeats a fresh value (20261012-30). Two gaps:
+1. **Under-tested.** The spec covers only two rows of one kind, so a mutant that gives every repeat the same fresh value survives. A world with three same-kind rows would then get two equal fresh values, and `Uniques` would drop rows. The code is right today. Add a spec with three or more same-kind rows, test first against that mutant.
+2. **A fresh value isn't added to the taken set.** A later row whose kind value equals an earlier row's fresh value (`100001+n`, or a CHECK-pinned constant) could repeat it. Rare, but add the fresh value to `taken`, test first.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-30, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Landed:** A spec with three base-kind orders and an item (each wiring a distinct world) goes red under the mutant that gives every repeat the same fresh id. `Worlds#distinct` now adds each fresh value to the table's taken set, and skips a next unique value an earlier row already holds (the reverse case, which its spec found: three base-kind orders got 100005, 100004, 100005). It tries one more value than the set holds, so a CHECK whose constants are all taken takes a repeat and leaves it to `Uniques`, rather than looping. Specs: worlds of orders alone keep every order (counted against the kinds' multisets), and a CHECK-pinned id stops. DESIGN.md's enumerate Value classes bullet and the `Worlds` comments say so.
+- **Status:** done

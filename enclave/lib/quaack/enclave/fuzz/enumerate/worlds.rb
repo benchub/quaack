@@ -28,13 +28,13 @@ module Quaack
         # single-column unique key (:pk), or the column's next unique value
         # (Domains#unique) when the table has more rows than those, unless
         # the queries compare it with a constant, when its kind gives it
-        # one, and the next unique value when an earlier row of the table
-        # has it; the next unique value in a unique one; and an ordinary one
-        # in a required one. The next unique value cycles through a CHECK's
-        # constants when a CHECK pins the column, so it can repeat one
-        # already in the world. A row that repeats a unique key's values
-        # already in the world gets the next unique value in one of the
-        # key's columns instead, as the fuzz search's do
+        # one, and, when an earlier row of the table has it, the first next
+        # unique value no earlier row has; the next unique value in a unique
+        # one; and an ordinary one in a required one. The next unique value
+        # cycles through a CHECK's constants when a CHECK pins the column,
+        # so it can repeat one already in the world. A row that repeats a
+        # unique key's values already in the world gets the next unique
+        # value in one of the key's columns instead, as the fuzz search's do
         # (Generator::Uniques), and is left out when none can take one or
         # the value it takes repeats one too.
         class Worlds # rubocop:disable Metrics/ClassLength -- the enumeration and its bound, which must agree
@@ -159,18 +159,29 @@ module Quaack
           end
 
           # A kind gives a :pk the queries compare with a constant its value
-          # (Kinds), so a row can repeat an earlier row's. It gets the next
-          # unique value here, before a foreign key points at it; Uniques
-          # catches one that still repeats.
+          # (Kinds), so a row can repeat an earlier row's. It gets the first
+          # next unique value no earlier row holds here, before a foreign key
+          # points at it; Uniques catches one that still repeats.
           def distinct(table, rows, fresh)
-            @plan.entries_for(table).select { it.kind == :pk }.each do |entry|
-              taken = Set.new
-              rows.each do |row|
-                row.cells[entry.column] = @domains.unique(table, entry.column, fresh += 1) unless
-                  taken.add?(row.cells[entry.column])
-              end
-            end
+            @plan.entries_for(table).select { it.kind == :pk }.each { freshen(table, it.column, rows, fresh) }
             rows
+          end
+
+          def freshen(table, column, rows, fresh)
+            taken = Set.new
+            rows.each do |row|
+              next if taken.add?(row.cells[column])
+
+              fresh = untaken(table, column, taken, fresh)
+              taken << row.cells[column] = @domains.unique(table, column, fresh)
+            end
+          end
+
+          # The nth after fresh whose unique value isn't taken, or, when a
+          # CHECK pins the column to values all taken, the last one tried:
+          # one try more than taken has values finds a free one otherwise.
+          def untaken(table, column, taken, fresh)
+            ((fresh + 1)..).find { |n| n > fresh + taken.size || !taken.include?(@domains.unique(table, column, n)) }
           end
 
           # An entry's one value in the nth row, or :none for a column a kind
