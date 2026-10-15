@@ -688,17 +688,6 @@ From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclav
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-44. fuzz's Loader: test that foreign keys between footprint tables stay enforced in the session.
-
-From the review of 20261012-25, 2026-10-13 (minor). `Fuzz::Session::Loader::REFERENCES_SQL` (`enclave/lib/quaack/enclave/fuzz/session/loader.rb`) finds the foreign keys that would block the footprint's `TRUNCATE`, and keeps only those from tables outside the footprint with `AND NOT c.conrelid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT relid FROM emptied))`. Removing that clause keeps every fuzz spec green (`fuzz_postgres_spec.rb`, plus the enumerate, world-values and threshold specs, 98 examples). Without it, `prepare` would also drop the foreign keys between footprint tables. DESIGN.md says those stay enforced during trials. The generator builds worlds that respect them anyway, so the gap would show only while shrinking: dropping a parent row could leave a counterexample that then fails to lift.
-
-Add a spec, test first against that mutant: a session over two footprint tables joined by a foreign key, where loading a child row whose parent is missing is refused inside the session, or the key is still in `pg_constraint` after `prepare`.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-25, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-45. Enumerate's Value classes bullet: say the generated-column exception once, and qualify the key fallback's "fresh value".
 
 From the review of 20261012-40, 2026-10-13 (minor). Wording only; the code is right.

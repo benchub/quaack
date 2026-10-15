@@ -153,6 +153,26 @@ RSpec.describe Quaack::Enclave::Fuzz do
                .values).to eq([["trips_car_id_fkey"]])
   end
 
+  # Task 20261012-44: prepare drops only the foreign keys that would stop the
+  # TRUNCATE from outside the footprint. One between two footprint tables
+  # stays enforced in the session, so a child row whose parent is missing
+  # doesn't load.
+  it "keeps a foreign key between two footprint tables enforced in the session" do
+    orders = Quaack::Enclave::TableName.new(schema: "s", name: "orders")
+    customers = Quaack::Enclave::TableName.new(schema: "s", name: "customers")
+    catalog = Quaack::Enclave::Fuzz::Catalog.new(conn, [orders, customers])
+    query = "SELECT o.id FROM s.orders o JOIN s.customers c ON c.id = o.customer_id"
+    cells = { "id" => "1", "customer_id" => "7", "status" => "new" }
+    orphan = [Quaack::Enclave::Fuzz::Generator::Row.new(orders, cells)]
+    session = Quaack::Enclave::Fuzz::Session.new(conn, catalog, [query, query], honour: [], statement_timeout_ms: 5000)
+    session.open
+
+    expect(foreign_keys).to eq([["orders_customer_id_fkey"]])
+    expect(session.trial(orphan).signature).to eq(Quaack::Enclave::Fuzz::Session::ILLEGAL)
+  ensure
+    session&.close
+  end
+
   # Ties on total turn up in almost every world. Any order of a tie is an
   # answer the original could give, so a tiebreak can't be a disproof.
   [" LIMIT 2", ""].each do |limit|
