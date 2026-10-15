@@ -7,7 +7,7 @@ require "quaack/enclave/predicate_atoms"
 require_relative "support/server_clock"
 
 # counterexample-compare and counterexample-rollback: load one round's counterexamples, compare with fixture-compare,
-# recheck vacuity-guard's untested atoms on them, and roll back.
+# recheck rewrite-test's untested atoms on them, and roll back.
 RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }

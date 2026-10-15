@@ -42,8 +42,8 @@ module Quaack
     #   end
     #
     # with_fixture returns the block's value. A block can run any number of
-    # queries against the one loaded fixture, which vacuity-guard needs to run the
-    # original twice. Retrying with rebuilt rows is another with_fixture call.
+    # queries against the one loaded fixture, as Counterexamples::Exercised
+    # runs the original and its loosened copies. Retrying with rebuilt rows is another with_fixture call.
     #
     # Each insert must be one INSERT and each query one SELECT. pg_query
     # checks that before anything runs.

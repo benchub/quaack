@@ -36,8 +36,8 @@ module Quaack
     # - set_aside: how many it held back untested, such as index-dedupe's GIN and
     #   GiST candidates.
     # - out: how many went on.
-    # - extra: counts that don't move items, such as untested atoms or vacuity-guard
-    #   retries. They're kept, not summed.
+    # - extra: counts that don't move items, such as untested atoms. They're
+    #   kept, not summed.
     #
     # in and out are required. The rest default to none.
     #

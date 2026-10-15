@@ -8,8 +8,8 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # rewrite-test: the predicate atoms of a query, for the value pools and the
-    # vacuity guard (vacuity-guard).
+    # rewrite-test: the predicate atoms of a query, for the value pools and
+    # coverage (Fuzz::Coverage, Counterexamples::Exercised).
     #
     #   parse = PgQuery.parse(sql)
     #   atoms = PredicateAtoms.extract(parse, column_names: { table_name => ["id", ...] })
@@ -88,10 +88,9 @@ module Quaack
     # merges the two columns into one, so replaceable is false and with_true
     # raises Error, rule using_column_unreplaceable. A NATURAL JOIN marker
     # can't be replaced either, rule natural_join_unreplaceable, so
-    # vacuity-guard always counts it untested (unsupported in v1). The
-    # deparsed SQL must
-    # parse back to the changed tree, or with_true raises Deparse::Error
-    # (rule deparse_mismatch).
+    # coverage always counts it untested (unsupported in v1). The
+    # deparsed SQL must parse back to the changed tree, or with_true
+    # raises Deparse::Error (rule deparse_mismatch).
     # Deparse::Parentheses puts back the parentheses the deparser leaves
     # out. A construct it still deparses differently, such as 't'::boolean,
     # is refused that way for every atom but those that replace it whole.

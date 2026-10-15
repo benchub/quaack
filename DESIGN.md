@@ -201,7 +201,7 @@ Earlier versions of this document numbered the steps, and BACKLOG-COMPLETE.md st
 | 9 | rewrite-test |
 | 9a | fixture-open |
 | 9b | fixture-load |
-| 9c | vacuity-guard |
+| 9c | vacuity-guard (removed by task 20261012-4; coverage, under rewrite-test, replaced it) |
 | 9d | fixture-compare |
 | 9e | fixture-rollback |
 | 10 | counterexamples |
