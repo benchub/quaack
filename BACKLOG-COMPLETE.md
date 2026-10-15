@@ -11673,3 +11673,15 @@ From the review of 20261012-24, 2026-10-13 (minor). The spec 20261012-24 added i
 - **Design:** rewrite-test.
 - **Landed:** The "gives the table the copies' foreign key points to a row" spec in `enclave/spec/fuzz_world_values_postgres_spec.rb` now checks the world's rows before inserting them: 21 orders, and every order's `user_id` is a users row's `id`. Red with `Draw#copied` reverted on the expect (orders' user_id ["19", "21"] not in users' id ["19"]), not on `PG::ForeignKeyViolation`; green with the fix. Spec only.
 - **Status:** done
+
+### 20261012-44. fuzz's Loader: test that foreign keys between footprint tables stay enforced in the session.
+
+From the review of 20261012-25, 2026-10-13 (minor). `Fuzz::Session::Loader::REFERENCES_SQL` (`enclave/lib/quaack/enclave/fuzz/session/loader.rb`) finds the foreign keys that would block the footprint's `TRUNCATE`, and keeps only those from tables outside the footprint with `AND NOT c.conrelid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT relid FROM emptied))`. Removing that clause keeps every fuzz spec green (`fuzz_postgres_spec.rb`, plus the enumerate, world-values and threshold specs, 98 examples). Without it, `prepare` would also drop the foreign keys between footprint tables. DESIGN.md says those stay enforced during trials. The generator builds worlds that respect them anyway, so the gap would show only while shrinking: dropping a parent row could leave a counterexample that then fails to lift.
+
+Add a spec, test first against that mutant: a session over two footprint tables joined by a foreign key, where loading a child row whose parent is missing is refused inside the session, or the key is still in `pg_constraint` after `prepare`.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-25, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Landed:** The "keeps a foreign key between two footprint tables enforced in the session" spec in `enclave/spec/fuzz_postgres_spec.rb` opens a session over `s.orders` and `s.customers`, asserts `orders_customer_id_fkey` is still in `pg_constraint` after `prepare`, and that a trial loading an order whose customer is missing comes back illegal. Red with the `AND NOT c.conrelid ...` clause removed, on each assertion alone (expected [["orders_customer_id_fkey"]], got []; expected :illegal, got the trial's signature); green with it restored. Spec only.
+- **Status:** done
