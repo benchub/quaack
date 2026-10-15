@@ -688,18 +688,6 @@ From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclav
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-45. Enumerate's Value classes bullet: say the generated-column exception once, and qualify the key fallback's "fresh value".
-
-From the review of 20261012-40, 2026-10-13 (minor). Wording only; the code is right.
-
-1. **The generated-column exception is said twice.** DESIGN.md's enumerate Value classes bullet now says "unless the column is generated" in its first sentence, and "A generated column gets no classes even when the queries read it" further down. Keep one: the later sentence can begin "Postgres computes a generated column from the rest of the row…".
-2. **The key fallback's "fresh value" isn't always fresh.** `Fuzz::Enumerate::Worlds#fixed` falls back to `@domains.unique(...)`, which for a pinned column cycles through the queries' constants, so the value can repeat one already in the world. The `Uniques` check then refuses the duplicate. The wording predates 20261012-40. Say what the fallback draws, or say "the next unique value", whichever matches the code.
-
-- **Depends on:** 20261012-40.
-- **Came from:** The review of 20261012-40, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261012-46. enumerate: a key compared with a constant lowers the bound on keyset pages.
 
 From the review of 20261012-30, 2026-10-14 (minor). Since 20261012-30, a key column the queries compare with a constant gets its read classes and then its key classes, so `orders.id` in a keyset page goes from 1 kind to 9. Enumerate then covers fewer rows in its 30 s: on `o.id > 100 AND o.status = 'paid' AND i.qty > 0 ORDER BY o.id, i.id LIMIT 10` against a sound rewrite, `main` before 20261012-30 reached w=2 at 3,000 and at 10,000 worlds, and after it only w=1 even at 10,000. The plain keyset page still reaches w=2. A lower bound is a weaker claim, not a wrong one, and under 20261012-31's rule the report then falls back to fuzz's sentence on a join.

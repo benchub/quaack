@@ -11685,3 +11685,16 @@ Add a spec, test first against that mutant: a session over two footprint tables 
 - **Design:** rewrite-test.
 - **Landed:** The "keeps a foreign key between two footprint tables enforced in the session" spec in `enclave/spec/fuzz_postgres_spec.rb` opens a session over `s.orders` and `s.customers`, asserts `orders_customer_id_fkey` is still in `pg_constraint` after `prepare`, and that a trial loading an order whose customer is missing comes back illegal. Red with the `AND NOT c.conrelid ...` clause removed, on each assertion alone (expected [["orders_customer_id_fkey"]], got []; expected :illegal, got the trial's signature); green with it restored. Spec only.
 - **Status:** done
+
+### 20261012-45. Enumerate's Value classes bullet: say the generated-column exception once, and qualify the key fallback's "fresh value".
+
+From the review of 20261012-40, 2026-10-13 (minor). Wording only; the code is right.
+
+1. **The generated-column exception is said twice.** DESIGN.md's enumerate Value classes bullet now says "unless the column is generated" in its first sentence, and "A generated column gets no classes even when the queries read it" further down. Keep one: the later sentence can begin "Postgres computes a generated column from the rest of the row…".
+2. **The key fallback's "fresh value" isn't always fresh.** `Fuzz::Enumerate::Worlds#fixed` falls back to `@domains.unique(...)`, which for a pinned column cycles through the queries' constants, so the value can repeat one already in the world. The `Uniques` check then refuses the duplicate. The wording predates 20261012-40. Say what the fallback draws, or say "the next unique value", whichever matches the code.
+
+- **Depends on:** 20261012-40.
+- **Came from:** The review of 20261012-40, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Landed:** DESIGN.md's enumerate Value classes bullet says the generated-column exception once ("Postgres computes a generated column from the rest of the row…"), and says "the column's next unique value" where it said "a fresh value", defining it once: the next of a run of distinct values of the column's type, or, when a CHECK pins the column, the next of the CHECK's constants in turn, so it can repeat a value already in the world (the constants are the CHECK's, not the queries'). The `Fuzz::Enumerate::Worlds` comments say the same. Wording only.
+- **Status:** done

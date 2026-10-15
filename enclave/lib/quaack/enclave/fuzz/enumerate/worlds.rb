@@ -25,14 +25,18 @@ module Quaack
         # table in the world, or NULL where the key allows it. A row's other
         # planned columns hold one fixed value each: NULL in a cut key; the
         # nth of its key class's values and shared keys in a key class's
-        # single-column unique key (:pk), or a fresh value when the table
-        # has more rows than those, unless the queries compare it with a
-        # constant, when its kind gives it one, and a fresh one when an
-        # earlier row of the table has it; a fresh value in a unique one;
-        # and an ordinary one in a required one. A row whose kind repeats a unique
-        # key's values already in the world gets a fresh value in one of the
+        # single-column unique key (:pk), or the column's next unique value
+        # (Domains#unique) when the table has more rows than those, unless
+        # the queries compare it with a constant, when its kind gives it
+        # one, and the next unique value when an earlier row of the table
+        # has it; the next unique value in a unique one; and an ordinary one
+        # in a required one. The next unique value cycles through a CHECK's
+        # constants when a CHECK pins the column, so it can repeat one
+        # already in the world. A row that repeats a unique key's values
+        # already in the world gets the next unique value in one of the
         # key's columns instead, as the fuzz search's do
-        # (Generator::Uniques), and is left out when none can take one.
+        # (Generator::Uniques), and is left out when none can take one or
+        # the value it takes repeats one too.
         class Worlds # rubocop:disable Metrics/ClassLength -- the enumeration and its bound, which must agree
           MAX_PER_TABLE = 4
           MAX_COST = 2
@@ -155,8 +159,9 @@ module Quaack
           end
 
           # A kind gives a :pk the queries compare with a constant its value
-          # (Kinds), so a row can repeat an earlier row's. It gets a fresh
-          # one here, before a foreign key points at it.
+          # (Kinds), so a row can repeat an earlier row's. It gets the next
+          # unique value here, before a foreign key points at it; Uniques
+          # catches one that still repeats.
           def distinct(table, rows, fresh)
             @plan.entries_for(table).select { it.kind == :pk }.each do |entry|
               taken = Set.new
