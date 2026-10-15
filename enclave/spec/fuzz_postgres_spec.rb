@@ -303,10 +303,13 @@ RSpec.describe Quaack::Enclave::Fuzz do
   it "passes on the trials it compared when the rewrite's deadline runs out after a kill that didn't lift" do
     conn.exec("ALTER TABLE s.customers ADD CHECK (id < 0 AND id > 0)")
     lifted = false
+    expired = false
     clock = lambda do
       lifting = caller_locations.any? { it.path.end_with?("fuzz/lift.rb") }
       lifted ||= lifting
-      lifted && !lifting ? 1_000.0 : 0.0
+      now = lifted && !lifting ? 1_000.0 : 0.0
+      expired ||= now >= 1
+      now
     end
 
     outcome = Quaack::Enclave::Deadline.within(Quaack::Enclave::Deadline.new(1, clock:)) do
@@ -314,6 +317,7 @@ RSpec.describe Quaack::Enclave::Fuzz do
     end
 
     expect(lifted).to be(true)
+    expect(expired).to be(true)
     expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
     expect(outcome.trials).to be_between(1, 149)
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
