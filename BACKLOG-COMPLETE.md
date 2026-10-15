@@ -11710,3 +11710,23 @@ From the review of 20261012-30, 2026-10-14 (minor). `Fuzz::Enumerate::Worlds` gi
 - **Design:** rewrite-test.
 - **Landed:** A spec with three base-kind orders and an item (each wiring a distinct world) goes red under the mutant that gives every repeat the same fresh id. `Worlds#distinct` now adds each fresh value to the table's taken set, and skips a next unique value an earlier row already holds (the reverse case, which its spec found: three base-kind orders got 100005, 100004, 100005). It tries one more value than the set holds, so a CHECK whose constants are all taken takes a repeat and leaves it to `Uniques`, rather than looping. Specs: worlds of orders alone keep every order (counted against the kinds' multisets), and a CHECK-pinned id stops. DESIGN.md's enumerate Value classes bullet and the `Worlds` comments say so.
 - **Status:** done
+
+### 20261012-49. Fuzz coverage: a subquery in LIMIT crashes the step, and four untested branches.
+
+From the reviews of 20261012-4 (minor). Check each first:
+- `… LIMIT (SELECT count(*) FROM t WHERE name = 'x')` raises `NoMethodError` at `predicate_atoms.rb:204` (`Tree.dig`) through `fuzz/coverage.rb`'s `loosened`: `Fuzz::Uncut` removes the node an atom's path points into, and `RewriteFuzz` rescues only `FAILED`, so rewrite-test crashes. The message carries no literal. Fix so it takes the worst case (every atom untested), e.g. `Uncut.parse` raises `Deparse::Error` when a cut holds anything but a constant or a parameter.
+- The worst-case fallback isn't pinned: changing `coverage.rb`'s `rescue Deparse::Error` to judge the cut query stays green. Add a spec (stub `Uncut.parse` to raise; expect every atom untested).
+- `Fuzz::Differ#official?` (`fuzz/differ.rb`): dropping the `MISMATCHES.include?` check stays green, so nothing pins that a refusal such as `unsupported_order` doesn't count as coverage.
+- `counterexample_steps_postgres_spec.rb:189` was relaxed (its query's coverage depends on random sentinels) and no longer pins coverage end to end: reporting every atom untested, or never observing, stays green there (`fuzz_coverage_postgres_spec.rb` catches both). Pin coverage end to end in a deterministic spec instead.
+- `fuzz.rb:215`: observing coverage on kill trials too stays green (near-equivalent; decide whether it's worth a spec).
+
+- **Depends on:** None.
+- **Came from:** The reviews of 20261012-4, 2026-10-14 (minor).
+- **Design:** rewrite-test (coverage).
+- **Landed:**
+  1. Real. `Fuzz::Uncut.parse` raises `Deparse::Error` when a `LIMIT` or `OFFSET` (or `FETCH FIRST`) holds anything but a constant or a parameter, so `Coverage` takes the worst case, every atom untested with nothing checked, and never judges the cut query. A spec with `LIMIT (SELECT count(*) ... WHERE name = 'x')` went red with the `NoMethodError` in `Tree.dig`/`Tree.set`, then green; dropping the raise sends it red again. DESIGN.md's coverage "Without the cuts" bullet and the `Uncut`/`Coverage` comments say so.
+  2. Real. A spec stubs `Uncut.parse` to raise `Deparse::Error` and expects every atom untested; it goes red (`got: []`) when the rescue judges the cut query instead.
+  3. Real. A `Fuzz::Differ` spec gives a database with a nondeterministic collation, so the ordered comparison refuses (`unsupported_order`); the replaced query differs as a multiset but counts as nothing. Dropping the `MISMATCHES.include?` check sends it red (`got: [0]`).
+  4. Stale. Coverage is already pinned end to end, deterministically, by other `counterexample_steps_postgres_spec.rb` examples that expect exact untested lists (`untested_unchanged`'s three, "the conditions the report names", the enumerate stage's two, the burndown's, and `counterexample-payload`'s). Reporting every atom untested and never observing each sent 8 of its 70 examples red. No new spec.
+  5. No spec. Observing a kill trial's world too only matters in a search that passes after a kill it couldn't lift, and that world is a real compared world both queries ran on, so judging it can't mark an atom tested that no world showed, and it carries no literal. A spec would need a kill that doesn't lift, contrived and slow, to pin a near-equivalent choice.
+- **Status:** done

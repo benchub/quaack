@@ -57,6 +57,19 @@ RSpec.describe Quaack::Enclave::Fuzz::Differ do
     expect(differing(original, sqls)).to eq([0])
   end
 
+  # Task 20261012-49: only a mismatch shows the atom mattered; a comparison
+  # that refuses, as an ordered one does while any column uses a
+  # nondeterministic collation, shows nothing.
+  it "doesn't count rows the official comparison refuses to judge" do
+    conn.exec(<<~SQL)
+      CREATE COLLATION d.loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+      CREATE TABLE d.named (id integer PRIMARY KEY, name text COLLATE d.loose);
+    SQL
+    original = "SELECT d.t.id FROM d.t WHERE d.t.g = 1 ORDER BY d.t.id"
+
+    expect(differing(original, ["SELECT d.t.id FROM d.t WHERE true ORDER BY d.t.id"])).to eq([])
+  end
+
   it "doesn't count a query that fails, and still judges the rest" do
     original = "SELECT d.t.id FROM d.t WHERE d.t.g = 1"
     sqls = ["SELECT d.t.id FROM d.t WHERE 1 / (d.t.g - 1) > 0", "SELECT d.t.id FROM d.t WHERE true"]
