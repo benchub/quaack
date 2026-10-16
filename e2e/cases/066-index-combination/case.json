@@ -1,5 +1,5 @@
 {
-  "title": "Two missing indexes on two tables",
+  "title": "Two missing indices on two tables",
   "category": "index",
   "compare": "multiset",
   "features": [

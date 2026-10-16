@@ -14,7 +14,7 @@ Gold customers with a big order. The join returns one row per qualifying order, 
 
 ## Expected result.
 
-The obvious rewrite is `EXISTS` (`fast.sql`), which is correct. Stated assumption: `customers.id` is unique. But with these indexes, Postgres 18 already plans the `DISTINCT` join about as well as the semi-join, so blocks-metric and minimax must reject the rewrite. The generator-one indexes already exist, so index-dedupe drops them as duplicates. `indexes.sql` tries `orders (total_cents) INCLUDE (customer_id)`, a range-first alternative, which doesn't help either. QUAACK should report a negative result (negative-result) that names the rewrite and why it lost.
+The obvious rewrite is `EXISTS` (`fast.sql`), which is correct. Stated assumption: `customers.id` is unique. But with these indices, Postgres 18 already plans the `DISTINCT` join about as well as the semi-join, so blocks-metric and minimax must reject the rewrite. The generator-one indices already exist, so index-dedupe drops them as duplicates. `indexes.sql` tries `orders (total_cents) INCLUDE (customer_id)`, a range-first alternative, which doesn't help either. QUAACK should report a negative result (negative-result) that names the rewrite and why it lost.
 
 ## Proof.
 

@@ -63,7 +63,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
         "original" => { "sql" => payload["original_sql"],
                         "plan" => [{ "step" => "Seq Scan", "table" => "public.t", "index" => nil,
                                      "estimated_rows" => 50, "actual_rows" => 50, "depth" => 0, "blocks" => 1_234 }],
-                        "plan_source" => "how Postgres runs the original query now, on the indexes the database has" },
+                        "plan_source" => "how Postgres runs the original query now, on the indices the database has" },
         "winner" => { "is" => "a rewrite of the original query",
                       "rewrite" => { "name" => "Rewrite Steady Lute", "source" => "rule", "rules" => ["in_to_exists"],
                                      "rule_purposes" => {}, "rule_preconditions" => {},
@@ -180,7 +180,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       system = ask.body[:system]
 
       expect(ask.body[:messages].first[:content]).to include("```json")
-      expect(system).to include("only with the original query as it runs now, on the indexes the database already has")
+      expect(system).to include("only with the original query as it runs now, on the indices the database already has")
         .and include("Say only what the SQL, plans, and numbers in the payload show")
         .and include("Don't guess at a cause you can't see")
         .and include("three to five short sentences").and include("under 700 characters")
@@ -268,7 +268,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       end
     end
 
-    it "refuses any rewrite's name when the winner is the original query with new indexes" do
+    it "refuses any rewrite's name when the winner is the original query with new indices" do
       payload["top"][0]["label"] = "original:top:1"
       payload["labels"][0]["label"] = "original:top:1"
 
@@ -440,7 +440,7 @@ RSpec.describe Quaack::Driver::WinnerSummary do
 
       expect(body).to match(%r{<h2>Why the winner reads fewer blocks</h2>\n<div class="llm-summary" id="llm-summary">})
       expect(body).to include("Summary written by an LLM (groq, <code>m-1</code>), not measured.")
-        .and include("on the indexes your database already has. The measurements and plans below are the facts.")
+        .and include("on the indices your database already has. The measurements and plans below are the facts.")
         .and include("<p>#{good.gsub("'", "&#39;")}</p>")
       expect(body.index("Summary written by an LLM")).to be < body.index("How Postgres runs the original query now")
     end

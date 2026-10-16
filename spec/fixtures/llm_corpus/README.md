@@ -69,12 +69,13 @@ Every prompt's system section ends with "Reply with only the JSON object, with n
 
 ## Replies that answer an older prompt
 
-The replies were collected on September 27 and 28, 2026, after the pack was regenerated for 20260927-20. Since then, four tasks changed a prompt's wording without rerunning the pack. Each updated the `prompt.md` files (and `chat.md`, where there is one) to match the driver, so the replay's drift check passes, and kept the replies. So those replies answer the older wording below, not the `prompt.md` beside them:
+The replies were collected on September 27 and 28, 2026, after the pack was regenerated for 20260927-20. Since then, five tasks changed a prompt's wording without rerunning the pack. Each updated the `prompt.md` files (and `chat.md`, where there is one) to match the driver, so the replay's drift check passes, and kept the replies. So those replies answer the older wording below, not the `prompt.md` beside them:
 
 - **20260927-24** (September 27): `orm_join`'s `llm-counterexamples-1` and `llm-counterexamples-4`. Their replies were collected minutes before this task, which regenerated the prompts rather than editing them by hand, but kept the replies. The system section now says to write OVERRIDING SYSTEM VALUE to set a GENERATED ALWAYS identity column, and no longer lists OVERRIDING among what gets an insert refused. The payload's row estimates changed a little too. The replies answer the older sentence, which forbade OVERRIDING.
 - **20261001-28** (October 6): every query's `llm-rewrites-1`. The system section now says the payload holds `rule_rewrites` and not to repeat them. The replies answer a prompt with no `rule_rewrites`.
 - **20261004-95** (October 6): every query's `llm-counterexamples-<n>`. The system section now says not to read the clock and to write fixed dates and times. The replies answer a prompt without that sentence, and some use `now()` or `CURRENT_TIMESTAMP`, which the enclave refuses as `not_immutable`.
 - **20261007-14** (October 7): every query's `llm-index-refine-1` and `rewrite-llm-index-refine-<n>`. The prompt now says "An LLM already proposed candidates" and "The candidates' results". The replies answer "You already proposed candidates" and "Your candidates' results".
+- **20261016-5** (October 16): every query's `llm-index-ideas-<n>`, `llm-index-refine-1`, `rewrite-llm-index-ideas-<n>`, and `rewrite-llm-index-refine-<n>`. The system section now says "indices" where it said "indexes", such as "Propose up to five indices". The replies answer "indexes". The JSON key stays `indexes`.
 
 Any other ask directory's replies answer its `prompt.md` as it is. A task that hand-edits a prompt again adds its entry here. Rerunning the pack for an ask, with new replies, removes its entry.
 

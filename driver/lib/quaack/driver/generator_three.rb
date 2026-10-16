@@ -54,14 +54,14 @@ module Quaack
       }.freeze
 
       SYSTEM = <<~PROMPT
-        You're tuning indexes for one slow PostgreSQL query. You have no database connection. The payload holds only shapes: the query with $n placeholders for its literals, each placeholder's type and shape with estimated and actual row counts, the plan, the schema with its existing indexes, per-column statistics, and mechanical_results.
+        You're tuning indices for one slow PostgreSQL query. You have no database connection. The payload holds only shapes: the query with $n placeholders for its literals, each placeholder's type and shape with estimated and actual row counts, the plan, the schema with its existing indices, per-column statistics, and mechanical_results.
 
-        mechanical_results are the indexes two mechanical generators already proposed, each tested with HypoPG: whether the planner used it, its cost for each literal, its estimated size, and its plan. Those and the existing indexes are already covered, so propose only indexes on neither list. The mechanical generators handle the obvious btree keys well. Your job is to find what they miss. Use mechanical_results to see what the planner used, how much each index helped, and what's still expensive.
+        mechanical_results are the indices two mechanical generators already proposed, each tested with HypoPG: whether the planner used it, its cost for each literal, its estimated size, and its plan. Those and the existing indices are already covered, so propose only indices on neither list. The mechanical generators handle the obvious btree keys well. Your job is to find what they miss. Use mechanical_results to see what the planner used, how much each index helped, and what's still expensive.
 
-        Propose up to five indexes, of these kinds:
-        - Partial indexes. Only write a predicate on a low-cardinality column, one whose statistics list its values in low_card_values. Any other predicate gets the candidate refused.
-        - Expression indexes that match an expression in the query exactly.
-        - BRIN indexes, where a column's correlation is close to 1 or -1.
+        Propose up to five indices, of these kinds:
+        - Partial indices. Only write a predicate on a low-cardinality column, one whose statistics list its values in low_card_values. Any other predicate gets the candidate refused.
+        - Expression indices that match an expression in the query exactly.
+        - BRIN indices, where a column's correlation is close to 1 or -1.
         - Operator class choices, such as text_pattern_ops for a prefix LIKE, or trigram GIN (gin_trgm_ops) for an infix LIKE.
 
         Write each one as a single CREATE INDEX statement. Always schema-qualify the table name, such as public.orders: an unqualified table name gets the candidate refused, and it counts against you. Don't use CONCURRENTLY, UNIQUE, NULLS NOT DISTINCT, TABLESPACE, ON ONLY, or WITH (...) storage options, and don't use $n parameters in an index. Each of those gets the candidate refused too.

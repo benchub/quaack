@@ -5,7 +5,7 @@ module Quaack
     module Report
       # The "Who proposed it" cell of the "Measured, and not ranked" table
       # (DESIGN.md's report): who proposed the label's rewrite, then
-      # "indexes:" and the sources that proposed the new indexes it ran with,
+      # "indices:" and the sources that proposed the new indexes it ran with,
       # from each entry's sources in the payload's indexes.
       #
       #   proposers("rewrite_1:top:1", "made by transform rule x")
@@ -28,9 +28,9 @@ module Quaack
           return who && Words.upper(who) if names.to_a.empty?
 
           found = index_sources_of(names)
-          return Words.upper([who, "indexes: #{listed(found, names)}"].compact.join("; ")) unless found.empty?
+          return Words.upper([who, "indices: #{listed(found, names)}"].compact.join("; ")) unless found.empty?
 
-          who && Words.upper("#{who}; indexes: #{Words::MISSING}")
+          who && Words.upper("#{who}; indices: #{Words::MISSING}")
         end
 
         # The found sources, then "and others not recorded" if any named index has none recorded.

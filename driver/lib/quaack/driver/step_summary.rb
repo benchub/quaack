@@ -125,13 +125,13 @@ module Quaack
         "rewrite-rules" => ->(reply) { rules(reply) },
         "llm-rewrites" => ->(result) { rewrites(result) },
         "operator-rewrites" => ->(result) { operator(result) },
-        "plan-pruning" => ->(ran) { per_rewrite(ran, "Searched for indexes for", "No rewrites to search") },
+        "plan-pruning" => ->(ran) { per_rewrite(ran, "Searched for indices for", "No rewrites to search") },
         "arena-setup" => ->(reply) { CountedSummary.arena(reply) },
         "rewrite-correctness" => ->(passed) { tested(passed) },
         "rewrite-index-ideas" => lambda { |ran|
           per_rewrite(ran, "Asked for index ideas for", "No rewrites needed index ideas")
         },
-        "index-build" => ->(n) { n.zero? ? "No index to build" : "Built #{count(n, "index", "indexes")}" },
+        "index-build" => ->(n) { n.zero? ? "No index to build" : "Built #{count(n, "index", "indices")}" },
         "baseline" => ->(reply) { CountedSummary.baseline(reply) },
         "index-baseline" => ->(reply) { CountedSummary.index_baseline(reply) },
         "candidate-runs" => ->(reply) { CountedSummary.candidate_runs(reply) },

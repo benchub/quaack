@@ -192,7 +192,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(counted["The LLM: not recorded"]).to eq(["not recorded", "not recorded", "1", "0", "0", "0", "0"])
     end
 
-    it "splits the LLM's indexes row by provider for what the record counts, and says not recorded for the rest" do
+    it "splits the LLM's indices row by provider for what the record counts, and says not recorded for the rest" do
       counted = rows("accountability-indexes")
       expect(counted.keys.take(5)).to eq([esc("From the query's text"),
                                           esc("From the query's plan"), "The LLM", "The LLM: groq",

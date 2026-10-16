@@ -93,7 +93,7 @@ module Quaack
         def winner = top.first
 
         def tried
-          "It built and measured #{Words.count(indexes.size, "index", "indexes")} and kept " \
+          "It built and measured #{Words.count(indexes.size, "index", "indices")} and kept " \
             "#{Words.count(rewrites.size, "rewrite")}. The sections below say what became of each."
         end
 
@@ -130,7 +130,7 @@ module Quaack
         def hidden_indexes(names)
           return [] if names.empty?
 
-          ["#{names.size == 1 ? "this expression index" : "these expression indexes"}: " \
+          ["#{names.size == 1 ? "this expression index" : "these expression indices"}: " \
            "#{names.map { Format.sql_span(it) }.join(", ")}"]
         end
 

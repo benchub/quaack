@@ -166,7 +166,7 @@ Diagnosed on the runs of 2026-09-26/27. Each is a candidate backlog task. None i
 ### C. Grouping and ordering columns go to INCLUDE instead of the key (index-from-query).
 
 - Cases: 013 (top 13 blocks, bound 6), 073 (candidate unused, bound 257).
-- Proposals seen: 013 `tickets (tenant_id) INCLUDE (status)` for `WHERE tenant_id = $1 GROUP BY status`; 073 `sessions (account_id) INCLUDE (started_at)` for `... USING (account_id) ORDER BY account_id, s.started_at`. The cases' indexes are `(tenant_id, status)` and `(account_id, started_at)`, which give a sorted scan the plan can use for the GROUP BY or ORDER BY. The case features name this as index-from-query's job ("GROUP BY columns after the equality column (index-from-query)").
+- Proposals seen: 013 `tickets (tenant_id) INCLUDE (status)` for `WHERE tenant_id = $1 GROUP BY status`; 073 `sessions (account_id) INCLUDE (started_at)` for `... USING (account_id) ORDER BY account_id, s.started_at`. The cases' indices are `(tenant_id, status)` and `(account_id, started_at)`, which give a sorted scan the plan can use for the GROUP BY or ORDER BY. The case features name this as index-from-query's job ("GROUP BY columns after the equality column (index-from-query)").
 - Case 096 has the same query shape plus `GROUP BY DISTINCT`, and there index-from-plan adds `(tenant_id, status)` from the plan, so it can pass (see F on why it doesn't always).
 
 ### D. No atoms from correlated subqueries (index-from-query).

@@ -43,7 +43,7 @@ begin
 
   schema = { type: "object", properties: { indexes: { type: "array", items: { type: "string" } } },
              required: ["indexes"], additionalProperties: false }
-  json = client.ask(step: "llm-index-ideas", system: "You propose PostgreSQL indexes.", schema:, max_tokens: 500,
+  json = client.ask(step: "llm-index-ideas", system: "You propose PostgreSQL indices.", schema:, max_tokens: 500,
                     messages: [{ role: "user", content: "Propose one index for: SELECT * FROM t WHERE a = $1" }])
   puts "json: #{json}"
 rescue llm::Error, llm::ConfigError, Quaack::Driver::DriverConfig::Bad => e

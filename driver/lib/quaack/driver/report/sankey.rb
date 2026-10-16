@@ -51,14 +51,14 @@ module Quaack
           sets: "Unit: index sets. An idea on its own is a set of one, and each combination QUAACK tries is a set " \
                 "of two or three. Every width in this diagram counts sets.",
           rewrites: "Unit: rewrites. Every width in this diagram counts rewrites.",
-          candidates: "Unit: candidates. A candidate is a rewrite with the indexes chosen for it. Every width in " \
+          candidates: "Unit: candidates. A candidate is a rewrite with the indices chosen for it. Every width in " \
                       "this diagram counts candidates."
         }.freeze
 
         # Why the ranking tries as many combinations as it does (index-rank is greedy).
         COMBINATIONS = "Why this many combinations: QUAACK doesn't try every combination. It takes the " \
                        "best single index and pairs it with each of the others, then tries triples the same way, " \
-                       "keeping an addition only while it lowers the cost, up to three indexes. So n ideas take " \
+                       "keeping an addition only while it lowers the cost, up to three indices. So n ideas take " \
                        "about n - 1 pairs and up to n - 2 triples."
 
         # The Sankey diagrams for a table's rows, as Stages gives them, one

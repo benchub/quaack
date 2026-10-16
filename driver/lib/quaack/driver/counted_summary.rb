@@ -53,14 +53,14 @@ module Quaack
       end
 
       def searched(reply)
-        measured(reply, %w[found used], "Searched for indexes", "Found no possible index mechanically") do |found, used|
-          "Found #{count(found, "possible index", "possible indexes")} mechanically, #{used} used by the planner"
+        measured(reply, %w[found used], "Searched for indices", "Found no possible index mechanically") do |found, used|
+          "Found #{count(found, "possible index", "possible indices")} mechanically, #{used} used by the planner"
         end
       end
 
       def ranked(reply)
         measured(reply, %w[ranked combined], "Ranked the index ideas", "No index to rank") do |ranked, combined|
-          "Ranked the top #{count(ranked, "index", "indexes")}" \
+          "Ranked the top #{count(ranked, "index", "indices")}" \
             "#{", and a combination of #{combined}" if combined.positive?}"
         end
       end
@@ -76,8 +76,8 @@ module Quaack
       end
 
       def index_baseline(reply)
-        measured(reply, %w[combinations timed_out], "Measured the original query with each set of indexes") do |n, out|
-          "Measured the original query with #{count(n, "set of indexes", "sets of indexes")}#{timed_out(out)}"
+        measured(reply, %w[combinations timed_out], "Measured the original query with each set of indices") do |n, out|
+          "Measured the original query with #{count(n, "set of indices", "sets of indices")}#{timed_out(out)}"
         end
       end
 

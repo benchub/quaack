@@ -106,7 +106,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
     run
 
-    expect(closing("index-search")).to eq(["Searched for indexes"])
+    expect(closing("index-search")).to eq(["Searched for indices"])
     expect(closing("llm-index-ideas"))
       .to eq(["Got 3 index ideas from the LLM, 1 of them new and tested, 1 held back untested"])
     expect(closing("llm-index-refine")).to eq(["No index ideas needed improving"])
@@ -197,7 +197,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
     run
 
-    expect(closing("plan-pruning")).to eq(["Searched for indexes for 1 rewrite, 2 already done"])
+    expect(closing("plan-pruning")).to eq(["Searched for indices for 1 rewrite, 2 already done"])
     expect(closing("rewrite-correctness")).to eq(["Tested 2 rewrites, 1 passed"])
     expect(closing("rewrite-index-ideas")).to eq(["Asked for index ideas for 1 rewrite, 1 already done"])
   end
@@ -249,7 +249,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       .to eq([["No rewrites to search"], ["No rewrites left to test"], ["No rewrites needed index ideas"]])
   end
 
-  it "says how many indexes index-build built, what the measuring steps did, and where the report went" do
+  it "says how many indices index-build built, what the measuring steps did, and where the report went" do
     entries.merge!(%w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
                       selection].to_h { [it, false] })
     streamed["index-build"] = [{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => nil },
@@ -260,8 +260,8 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     steps = %w[arena-setup index-build baseline index-baseline candidate-runs minimax result-comparison selection
                report]
     expect(steps.map { closing(it) })
-      .to eq([["Set up the arena"], ["Built 2 indexes"], ["Measured the original query"],
-              ["Measured the original query with each set of indexes"], ["Measured each rewrite"],
+      .to eq([["Set up the arena"], ["Built 2 indices"], ["Measured the original query"],
+              ["Measured the original query with each set of indices"], ["Measured each rewrite"],
               ["Checked each choice against the original on every literal"],
               ["Checked each rewrite's rows on production data"], ["Picked the top choices"],
               ["Wrote the report to #{out}"]])
@@ -623,15 +623,15 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
   describe "step counts from the enclave" do
     def counts(**fields) = [{ "type" => "step_counts", **fields.transform_keys(&:to_s) }]
 
-    it "says how many indexes index-search found and the planner used, and what index-rank ranked" do
+    it "says how many indices index-search found and the planner used, and what index-rank ranked" do
       entries.merge!("index_search_original" => false, "index_ranking_original" => false)
       replies["index-search"] = counts(found: 12, used: 3)
       replies["index-rank"] = counts(ranked: 3, combined: 2)
 
       run
 
-      expect(closing("index-search")).to eq(["Found 12 possible indexes mechanically, 3 used by the planner"])
-      expect(closing("index-rank")).to eq(["Ranked the top 3 indexes, and a combination of 2"])
+      expect(closing("index-search")).to eq(["Found 12 possible indices mechanically, 3 used by the planner"])
+      expect(closing("index-rank")).to eq(["Ranked the top 3 indices, and a combination of 2"])
     end
 
     it "says when index-search found nothing and index-rank had nothing to rank" do
@@ -674,7 +674,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       steps = %w[arena-setup baseline index-baseline candidate-runs minimax result-comparison selection]
       expect(steps.map { closing(it) })
         .to eq([["Set up the arena with 12 tables"], ["Measured the original query on 3 literal sets, 1 timed out"],
-                ["Measured the original query with 4 sets of indexes"], ["Measured 5 rewrite runs, 2 timed out"],
+                ["Measured the original query with 4 sets of indices"], ["Measured 5 rewrite runs, 2 timed out"],
                 ["Checked 6 choices against the original on every literal, 2 held up"],
                 ["Checked the rows of 3 rewrites on production data, 1 differed, 2 checks partial"],
                 ["Picked 2 top choices, 4 left out"]])
@@ -712,7 +712,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(%w[index-rank result-comparison selection].map { closing(it) })
-        .to eq([["Ranked the top 2 indexes"], ["Checked the rows of 1 rewrite on production data, 0 differed"],
+        .to eq([["Ranked the top 2 indices"], ["Checked the rows of 1 rewrite on production data, 0 differed"],
                 ["Picked 1 top choice"]])
     end
 
@@ -723,7 +723,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect([closing("index-search"), closing("baseline")])
-        .to eq([["Searched for indexes"], ["Measured the original query"]])
+        .to eq([["Searched for indices"], ["Measured the original query"]])
     end
 
     it "refuses a forged step_counts, with a string where a count belongs or a name not on the list" do
@@ -736,7 +736,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect([closing("index-search"), closing("arena-setup"), closing("rewrite-rules")])
-        .to eq([["Searched for indexes"], ["Set up the arena"], ["The transform rules made 1 rewrite, 1 kept"]])
+        .to eq([["Searched for indices"], ["Set up the arena"], ["The transform rules made 1 rewrite, 1 kept"]])
       expect(stderr.string).not_to include(PROGRESS_SENTINEL)
     end
   end
@@ -788,7 +788,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       expect(steps.map { closing(it) })
         .to eq([["Got 1 index idea from the LLM, 1 of them new"], ["The transform rules made 1 rewrite, 1 kept"],
                 ["Got 1 rewrite from the LLM, 1 kept"], ["Checked your 1 rewrite, 1 kept"],
-                ["Searched for indexes for 1 rewrite"], ["Tested 1 rewrite, 1 passed"],
+                ["Searched for indices for 1 rewrite"], ["Tested 1 rewrite, 1 passed"],
                 ["Asked for index ideas for 1 rewrite"], ["Built 1 index"]])
       expect(leaks?(stderr.string)).to be(false)
     end

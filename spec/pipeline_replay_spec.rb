@@ -167,7 +167,7 @@ RSpec.describe PipelineReplay do
                                      "AND o.created_at < $2) OR o.status = $3 ORDER BY o.id")
       end
 
-      it "sends the original query, and every measured label with its blocks and its indexes" do
+      it "sends the original query, and every measured label with its blocks and its indices" do
         expect(outcome.report["original_sql"])
           .to eq("SELECT o.id, o.total_cents FROM public.orders o WHERE o.id IN (SELECT o2.id FROM public.orders o2 " \
                  "WHERE o2.created_at >= $1 AND o2.created_at < $2 UNION ALL SELECT o3.id FROM public.orders o3 " \

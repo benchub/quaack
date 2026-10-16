@@ -32,9 +32,9 @@ module Quaack
         SQL = /\A[^\u0000]{1,20000}\z/
         MOST_INDEXES = 20
         MOST_NODES = 200
-        ORIGINAL_PLAN = "how Postgres runs the original query now, on the indexes the database has"
-        MEASURED = "measured on the slow values, with the winner's new indexes if it has any"
-        ESTIMATED = "estimated by Postgres without running the query and without the winner's new indexes, so " \
+        ORIGINAL_PLAN = "how Postgres runs the original query now, on the indices the database has"
+        MEASURED = "measured on the slow values, with the winner's new indices if it has any"
+        ESTIMATED = "estimated by Postgres without running the query and without the winner's new indices, so " \
                     "it counts no blocks"
 
         # Each rule's one-line purpose, from DESIGN.md's transform list, as

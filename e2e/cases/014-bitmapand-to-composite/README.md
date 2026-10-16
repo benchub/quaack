@@ -1,8 +1,8 @@
-# Case 014: Two single-column indexes combined with BitmapAnd.
+# Case 014: Two single-column indices combined with BitmapAnd.
 
 **Category:** `index`, new index only.
 
-**Exercises:** BitmapAnd of single-column indexes (index-from-plan); two equality columns ranked by selectivity (index-from-query).
+**Exercises:** BitmapAnd of single-column indices (index-from-plan); two equality columns ranked by selectivity (index-from-query).
 
 ## Setup.
 
@@ -10,7 +10,7 @@
 
 ## Slow query (`slow.sql`).
 
-Search by city and size. Postgres combines the two indexes (or uses the city index and filters). Either way it reads index entries and heap pages for rows that match only one condition.
+Search by city and size. Postgres combines the two indices (or uses the city index and filters). Either way it reads index entries and heap pages for rows that match only one condition.
 
 ## Expected result.
 

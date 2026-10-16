@@ -14,7 +14,7 @@ Login lookup by email, ignoring case. The unique index on `email` can't serve `l
 
 ## Expected result.
 
-An expression index on `users (lower(email))`. Only the LLM generator proposes expression indexes.
+An expression index on `users (lower(email))`. Only the LLM generator proposes expression indices.
 
 ## Proof.
 

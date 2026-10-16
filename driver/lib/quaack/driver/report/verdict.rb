@@ -13,10 +13,10 @@ module Quaack
         HEADLINES = { substantial: "The verdict: substantial improvements possible",
                       minor: "The verdict: minor improvements possible",
                       nothing: "The verdict: QUAACK found nothing that could help" }.freeze
-        PLANS = { "rewrite_new_indexes" => "Best rewrite, with new indexes",
-                  "rewrite_same_indexes" => "Best rewrite, with the same indexes",
-                  "original_new_indexes" => "The original query, with new indexes" }.freeze
-        SAME = "The original query, with the same indexes"
+        PLANS = { "rewrite_new_indexes" => "Best rewrite, with new indices",
+                  "rewrite_same_indexes" => "Best rewrite, with the same indices",
+                  "original_new_indexes" => "The original query, with new indices" }.freeze
+        SAME = "The original query, with the same indices"
 
         def headline
           HEADLINES[headline_kind]
@@ -89,14 +89,14 @@ module Quaack
           return no_rewrite_tried(kind) unless kind == "original_new_indexes"
 
           ["No new index found that the original query could use",
-           "QUAACK built #{Words.count(indexes.size, "index", "indexes")} in all, and none was measured with " \
+           "QUAACK built #{Words.count(indexes.size, "index", "indices")} in all, and none was measured with " \
            "the original query."]
         end
 
         def no_rewrite_tried(kind)
           return ["No rewrite survived testing", "QUAACK kept no rewrite of the original query."] if rewrites.empty?
 
-          how = kind == "rewrite_same_indexes" ? "with no new indexes" : "with new indexes"
+          how = kind == "rewrite_same_indexes" ? "with no new indices" : "with new indices"
           ["No rewrite was measured #{how}",
            "QUAACK kept #{Words.count(rewrites.size, "rewrite")}, and none was measured #{how}. " \
            "The queries section says what became of each."]
@@ -109,7 +109,7 @@ module Quaack
                   "The ranking section says why."
           reason = case kind
                    when "rewrite_same_indexes" then "No rewrite beat the original without an index"
-                   when "rewrite_new_indexes" then "No rewrite with new indexes beat the original"
+                   when "rewrite_new_indexes" then "No rewrite with new indices beat the original"
                    else "No new index beat the original query"
                    end
           [reason, hover]

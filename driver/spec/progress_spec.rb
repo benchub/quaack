@@ -27,7 +27,7 @@ RSpec.describe Quaack::Driver::Progress do
 
     it "closes the step with its summary of the step's result, then its time" do
       times.replace([0.0, 15.0])
-      result = progress.step("index-search", "Searching for indexes", summary:) { %w[a b c] }
+      result = progress.step("index-search", "Searching for indices", summary:) { %w[a b c] }
 
       expect(result).to eq(%w[a b c])
       expect(io.string.lines.last)
@@ -62,10 +62,10 @@ RSpec.describe Quaack::Driver::Progress do
 
   it "numbers each step and skip in turn, and prints a skip line that says what's skipped" do
     p = progress
-    p.skip("index-search", "Searching for indexes")
+    p.skip("index-search", "Searching for indices")
     p.step("llm-index-ideas", "Asking the LLM for index ideas") { nil }
 
-    expect(io.string.lines.first).to eq("quaack: [1/3] Already done, skipping: Searching for indexes (index-search)\n")
+    expect(io.string.lines.first).to eq("quaack: [1/3] Already done, skipping: Searching for indices (index-search)\n")
     expect(io.string.lines[1]).to eq("quaack: [2/3] Asking the LLM for index ideas (llm-index-ideas)\n")
   end
 
@@ -155,7 +155,7 @@ RSpec.describe Quaack::Driver::Progress do
     end
 
     it "puts no clock on a line that ends within the step's first second, and ends whole lines between steps" do
-      live.skip("index-search", "Searching for indexes")
+      live.skip("index-search", "Searching for indices")
       live.step("llm-index-ideas", "Asking the LLM for index ideas") do
         live.note("Testing the index ideas (index-test)")
         now[0] = 0.4
@@ -164,7 +164,7 @@ RSpec.describe Quaack::Driver::Progress do
       live.note("Between steps")
 
       expect(terminal.string).to eq(
-        "quaack: [1/3] Already done, skipping: Searching for indexes (index-search)\n" \
+        "quaack: [1/3] Already done, skipping: Searching for indices (index-search)\n" \
         "quaack: [2/3] Asking the LLM for index ideas (llm-index-ideas)\n" \
         "quaack: [2/3] Testing the index ideas (index-test)\n" \
         "quaack: [2/3] Testing again (index-test)\r\e[Kquaack: [2/3] Testing again (index-test) 0s\n" \
@@ -523,14 +523,14 @@ RSpec.describe Quaack::Driver::Progress do
       end
 
       it "freezes the last note at the step's final reading when a step without a summary ends" do
-        live.step("plan-pruning", "Searching for indexes for each rewrite") do
+        live.step("plan-pruning", "Searching for indices for each rewrite") do
           now[0] = 3.0
           live.within("Rewrite Silver Fox").step("rewrite-prune", "Dropping the rewrite") { now[0] = 5.0 }
         end
 
         expect(terminal.string).to eq(
-          "quaack: [1/3] Searching for indexes for each rewrite (plan-pruning)" \
-          "\r\e[Kquaack: [1/3] Searching for indexes for each rewrite (plan-pruning) 3s\n" \
+          "quaack: [1/3] Searching for indices for each rewrite (plan-pruning)" \
+          "\r\e[Kquaack: [1/3] Searching for indices for each rewrite (plan-pruning) 3s\n" \
           "quaack: [1/3] Rewrite Silver Fox: Dropping the rewrite (rewrite-prune)" \
           "\r\e[Kquaack: [1/3] Rewrite Silver Fox: Dropping the rewrite (rewrite-prune) 5s\n"
         )
@@ -799,13 +799,13 @@ RSpec.describe Quaack::Driver::Progress do
   describe "#within" do
     it "prints sub-steps and their skips as notes under the step, without numbering them" do
       p = progress
-      p.step("plan-pruning", "Searching for indexes for each rewrite") do
+      p.step("plan-pruning", "Searching for indices for each rewrite") do
         sub = p.within("Rewrite 1")
-        expect(sub.step("index-search", "Searching for indexes") { :ran }).to eq(:ran)
+        expect(sub.step("index-search", "Searching for indices") { :ran }).to eq(:ran)
         sub.skip("index-rank", "Ranking the index ideas")
       end
 
-      expect(io.string.lines[1..2]).to eq(["quaack: [1/3] Rewrite 1: Searching for indexes (index-search)\n",
+      expect(io.string.lines[1..2]).to eq(["quaack: [1/3] Rewrite 1: Searching for indices (index-search)\n",
                                            "quaack: [1/3] Rewrite 1: Already done, skipping: " \
                                            "Ranking the index ideas (index-rank)\n"])
       expect(io.string.lines.last).to start_with("quaack: [1/3] Done")

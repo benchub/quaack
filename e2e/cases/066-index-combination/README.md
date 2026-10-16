@@ -1,4 +1,4 @@
-# Case 066: Two missing indexes on two tables.
+# Case 066: Two missing indices on two tables.
 
 **Category:** `index`, new index only.
 

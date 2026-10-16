@@ -5,7 +5,7 @@
   "features": [
     "OR across a join",
     "UNION rewrite",
-    "existing indexes are enough"
+    "existing indices are enough"
   ],
   "literal_sets": [
     {

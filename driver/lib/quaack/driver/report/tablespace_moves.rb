@@ -23,10 +23,10 @@ module Quaack
           moves = @payload.fetch("tablespace_moves", nil) or return
           return if moves.empty?
 
-          "These tables, or their TOAST tables or indexes, sit in a different tablespace on the run server than " \
+          "These tables, or their TOAST tables or indices, sit in a different tablespace on the run server than " \
             "in production: #{moved_tables(moves)}. A tablespace on other storage can change the plans Postgres " \
             "picks and the blocks it reads, so the counts below may not match what production would read. To " \
-            "check, compare pg_class.reltablespace for these tables, their TOAST tables and their indexes on " \
+            "check, compare pg_class.reltablespace for these tables, their TOAST tables and their indices on " \
             "both servers. QUAACK went on, since the tablespaces themselves match."
         end
 
