@@ -7,11 +7,13 @@ require_relative "support/fake_llm"
 require_relative "support/routers"
 
 # The winner summary explains why the winner wins, as a conditional lesson
-# a developer can reuse (20261010-28, 20261010-37): the precondition in the
-# query or schema, the transformation it allowed, why that helps here, and
-# when it wouldn't. An index-only winner gets a sentence or two. The
-# LLM is faked at the client's edge. Every query, plan, and name here is
-# synthetic.
+# a developer can reuse (20261010-28, 20261010-37): what about the query,
+# its schema, or its data made the original's shape a poor fit, what the
+# winner does differently, and what to look for next time, as advice in
+# plain words for a developer who may not know SQL well, not a retelling
+# of the plans (20261016-10). An index-only winner gets a sentence or two.
+# The LLM is faked at the client's edge. Every query, plan, and name here
+# is synthetic.
 # Synthetic fixtures for the spec below.
 module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
   # Each family: its payload, an answer in the shape the prompt asks for
@@ -27,11 +29,12 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
               "ON u.id = o.user_id WHERE u.region = $2) s",
       original_plan: %i[hash_join seq_orders seq_users],
       winner_plan: %i[unique append index_orders index_users],
-      good: "The original query put conditions on two different tables inside one OR, and Rewrite Quiet Heron " \
-            "split it into a UNION with one arm per condition. Each arm filters a single table, so the planner " \
-            "could use an Index Scan in each arm where the original ran a Seq Scan on public.orders under a " \
-            "Hash Join. The winner read 40 blocks on the slow values against 9,000. Look for an OR whose arms " \
-            "test columns of different tables.",
+      good: "Your query asked for orders matching either a condition on the order or one on its user, in one OR. " \
+            "Because the two conditions sit on different tables, the database couldn't use an index for either " \
+            "and read every order to check both, 9,000 blocks on the slow values. Rewrite Quiet Heron asks each " \
+            "question on its own and combines the answers with a UNION, so each half goes straight to its few " \
+            "rows through an index, and the winner read 40. Look for an OR whose sides test columns of " \
+            "different tables and each match few rows; when one side matches most rows, splitting gains little.",
       bad: "Rewrite Quiet Heron split the OR, so the planner could use a Bitmap Heap Scan. It read 40 blocks."
     },
     "not_in_to_not_exists" => {
@@ -40,10 +43,12 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
       winner: "SELECT id FROM public.users u WHERE NOT EXISTS (SELECT 1 FROM public.bans b WHERE b.user_id = u.id)",
       original_plan: %i[seq_users_subplan seq_bans],
       winner_plan: %i[hash_join_anti seq_users seq_bans_hash],
-      good: "Rewrite Quiet Heron turned the NOT IN subquery into a NOT EXISTS correlated on user_id. Because " \
-            "both columns are not null, the planner could run it as a Hash Join instead of rescanning " \
-            "public.bans for each row of the Seq Scan on public.users. The winner read 300 blocks against " \
-            "9,000. Look for NOT IN over columns that can't be null.",
+      good: "The query used NOT IN to leave out banned users. NOT IN has to allow for a null in the subquery, " \
+            "so the database rechecked the bans for each user. The schema says both columns can't be null, so " \
+            "Rewrite Quiet Heron wrote it as NOT EXISTS, which means the same thing here and let the database " \
+            "match the two tables in one pass with a Hash Join. The winner read 300 blocks against 9,000 on the " \
+            "slow values. When you exclude rows found in another table on columns that can't be null, reach " \
+            "for NOT EXISTS; if a column can be null, the two forms give different answers.",
       bad: "Rewrite Quiet Heron used NOT EXISTS, so the planner chose a Merge Join. It read 300 blocks."
     },
     "existence_in_flip" => {
@@ -54,11 +59,12 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
               "WHERE o.user_id = u.id) LIMIT 1",
       original_plan: %i[limit seq_orders],
       winner_plan: %i[limit nested_loop index_users index_orders],
-      good: "The original query checked for any order whose user is in a region by scanning orders first. " \
-            "Rewrite Quiet Heron made the users in the region drive, with an EXISTS on their orders, so the " \
-            "planner could stop at the first match with a Nested Loop over two Index Scan steps instead of a " \
-            "Seq Scan on public.orders. The winner read 40 blocks against 9,000. Look for an existence check " \
-            "under LIMIT 1 whose IN list is small.",
+      good: "The query only needs to know whether any order exists for a user in one region, but it started " \
+            "from orders and read through them looking for a match, 9,000 blocks on the slow values. Rewrite " \
+            "Quiet Heron starts from the few users in that region and checks each for an order through an " \
+            "index, so it stops almost at once, and the winner read 40. When a yes-or-no question under LIMIT 1 " \
+            "pairs a small, well-filtered set with a big table, start from the small side; if that side is " \
+            "large, the original order can do as well.",
       bad: "Rewrite Quiet Heron flipped the check, so a Memoize step helped. It read 40 blocks."
     },
     "shared_scan_cte" => {
@@ -69,10 +75,11 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
               "SELECT a.id FROM s a JOIN s b ON b.parent_id = a.id",
       original_plan: %i[hash_join seq_orders seq_orders],
       winner_plan: %i[hash_join cte_scan cte_scan seq_orders],
-      good: "The original query read public.orders twice with the same state filter. Rewrite Quiet Heron read " \
-            "it once into a materialized CTE that both sides join, so the plan has one Seq Scan on " \
-            "public.orders feeding two CTE Scan steps instead of two Seq Scan steps. The winner read 4,500 " \
-            "blocks against 9,000. Look for a table joined to itself with the same filter on both copies.",
+      good: "The query joins orders to itself with the same state filter on both copies, so the database read " \
+            "the orders table twice, 9,000 blocks on the slow values. Rewrite Quiet Heron reads the filtered " \
+            "orders once into a materialized CTE that both sides share, and the winner read 4,500. When a table " \
+            "appears twice in one query with the same filter, and that filter still leaves many rows, read it " \
+            "once and reuse it; if an index already finds those rows cheaply, the extra step can cost more.",
       bad: "Rewrite Quiet Heron read the table once, so an Index Only Scan did the rest. It read 4,500 blocks."
     },
     "union_outer_filter_removal" => {
@@ -83,10 +90,11 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
               "SELECT id, state FROM public.archived WHERE state = $1) s",
       original_plan: %i[subquery_scan unique append seq_orders],
       winner_plan: %i[subquery_scan unique append index_orders],
-      good: "The original query filtered the UNION's output on state, which every arm already filters. Rewrite " \
-            "Quiet Heron removed the outer filter, and the winner's plan reads public.orders with an Index Scan " \
-            "where the original ran a Seq Scan. The winner read 40 blocks against 9,000. Look for a filter " \
-            "outside a UNION that each arm already applies.",
+      good: "The query filtered on state inside each half of its UNION and then again on the combined result. " \
+            "The outer filter added nothing, since each half already applied it, yet with it the database read " \
+            "all of orders, 9,000 blocks on the slow values. Rewrite Quiet Heron drops the outer filter, and the " \
+            "winner found its rows through the index on state and read 40. When you filter a UNION's result, " \
+            "check whether each half already filters the same way; only then is the outer copy safe to drop.",
       bad: "Rewrite Quiet Heron removed the filter, so a Gather step ran it in parallel. It read 40 blocks."
     },
     "key_in_self_join" => {
@@ -95,10 +103,12 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
       winner: "SELECT id FROM public.orders WHERE state = $1",
       original_plan: %i[hash_join seq_orders seq_orders],
       winner_plan: [:index_orders],
-      good: "The original query read public.orders again in an IN subquery keyed on its own id. Rewrite Quiet " \
-            "Heron moved the subquery's filter onto the outer table, so the planner could drop the Hash Join " \
-            "and read the table once with an Index Scan. The winner read 40 blocks against 9,000. Look for an " \
-            "IN subquery that selects the outer table's own key from the same table.",
+      good: "The query asked for orders whose id is in a subquery that reads orders again with a state filter. " \
+            "Since id is the table's own unique key, that's a roundabout way to filter orders on state, and " \
+            "written this way the database read the table twice, 9,000 blocks on the slow values. Rewrite " \
+            "Quiet Heron puts the state filter on the outer query, so the table is read once through an index, " \
+            "and the winner read 40. When a subquery picks a table's own key from that same table, filter the " \
+            "table directly.",
       bad: "Rewrite Quiet Heron removed the self-join, leaving a Bitmap Index Scan. It read 40 blocks."
     },
     "an index-only win" => {
@@ -107,10 +117,11 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
       winner: nil,
       original_plan: [:seq_orders],
       winner_plan: [:index_only_orders],
-      good: "The query is unchanged, and the winner adds an index on state and id. Because the index holds " \
-            "every column the query reads, the planner could answer it with an Index Only Scan instead of a " \
-            "Seq Scan on public.orders. The winner read 12 blocks against 9,000. Look for a query that filters " \
-            "on one column and selects only a few others.",
+      good: "The query is unchanged: it filters orders on state and returns only id, and the filter matched " \
+            "few rows, yet the database read the whole table, 9,000 blocks on the slow values. The new index on " \
+            "state and id holds both columns, so the database answers from the index alone and read 12. When a " \
+            "query filters on one column and returns only one or two others, an index on just those columns " \
+            "can serve it without reading the table.",
       bad: "The new index let the planner use an Index Scan. It read 12 blocks against 9,000."
     }
   }.freeze
@@ -284,6 +295,39 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     end
   end
 
+  # Advice, not the plans retold (20261016-10): a summary may name a plan
+  # step's type once or twice, where the advice needs it, but not three
+  # times. Only names of several words, and run-together ones such as
+  # HashAggregate, count, since a one-word type such as Limit or Unique is
+  # also a SQL keyword or a plain word.
+  describe "the plan-retelling check" do
+    let(:base) { family_payload("or_to_union") }
+
+    it "refuses an answer that names plan step types three times or more, even ones the plans have" do
+      retold = "Rewrite Quiet Heron split the OR into a UNION. The original ran a Hash Join over a Seq Scan on " \
+               "public.orders, and the winner runs an Index Scan in each arm, reading 40 blocks against 9,000."
+      expect(run(retold, base)).to have_attributes(text: nil, outcome: "rejected")
+      expect(run("The original ran a Seq Scan, then a Seq Scan, then a seq scan again.", base))
+        .to have_attributes(outcome: "rejected")
+    end
+
+    it "keeps an answer that names plan step types twice" do
+      text = "The original read every order with a Seq Scan, while the winner's Index Scan went straight to the " \
+             "few matching rows, 40 blocks against 9,000."
+      expect(run(text, base)).to have_attributes(text:, outcome: "used")
+    end
+
+    it "counts a run-together type such as HashAggregate, but not a one-word type such as Unique or Append" do
+      grouped = base.merge("original_plan" => plan_of(%i[hash_join seq_orders seq_users], 9_000) +
+                                              [node("HashAggregate", nil, nil, rows: 10, blocks: 0, depth: 1)])
+      three = "The original ran a HashAggregate over a Hash Join and a Seq Scan, 9,000 blocks against 40."
+      expect(run(three, grouped)).to have_attributes(outcome: "rejected")
+      plain = "Unique rows come out of an Append in the winner, after an Index Scan in each arm, where the " \
+              "original ran a Seq Scan, with LIMIT nowhere, 40 blocks against 9,000."
+      expect(run(plain, base)).to have_attributes(outcome: "used")
+    end
+  end
+
   describe "universal advice" do
     let(:base) { family_payload("or_to_union") }
 
@@ -351,13 +395,35 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       fake.asks.fetch(0).body[:system]
     end
 
-    it "asks for the precondition, the transformation it allowed, why it helps, and when it wouldn't" do
-      expect(system).to include("First, the precondition")
+    it "writes for a developer who may not know SQL well, as advice, not the plans retold" do
+      expect(system).to include("You're writing for a developer who writes SQL but may not know it well")
+        .and include("when to write a query more like the winner")
+        .and include("Your job is advice, not a retelling of the plans")
+        .and include("don't walk through them")
+        .and include("in everyday words")
+        .and include("Name a plan step's type at most once or twice")
+      expect(system).not_to include("database engineer")
+    end
+
+    it "asks whether the original was too general for the schema, whether the data made it a poor fit, and " \
+       "what to look for next time" do
+      expect(system).to include("Was the original query more general than it needed to be, given the constraints " \
+                                "the schema provides?")
+        .and include("Did the data make some feature of the query a poor fit?")
+        .and include("estimated and actual rows show how many rows a condition matched")
+        .and include("What should the developer look for next time?")
+        .and include("a sign they can spot in their own query, schema, or data without reading a plan")
+    end
+
+    it "asks a rewrite for what made the original a poor fit, what the winner does, why, and the heuristic" do
+      expect(system).to include("First, what about the original query, its schema, or its data made its shape a " \
+                                "poor fit")
         .and include("rule_preconditions")
-        .and include("Second, name the transformation that precondition allowed")
+        .and include("Second, what the winner does differently, in plain words")
         .and include("rule_purposes")
-        .and include("why it helps in this situation, grounded in a difference between the two plans")
-        .and include("the condition under which the same change would help, and when it would not")
+        .and include("Third, why that paid off here, in a phrase rather than a walk through the plans")
+        .and include("Last, the heuristic")
+        .and include("when the same change would help, and when it would not")
     end
 
     it "asks for a conditional lesson, never universal advice, and a length that follows the situation" do
@@ -370,11 +436,13 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     it "asks an index-only winner for one or two sentences that name no transformation" do
       expect(system).to include("there is no transformation to name. In one or two sentences")
         .and include("that no rewrite was needed")
+        .and include("what to look for in other queries")
     end
 
     it "allows a causal claim only when a plan difference in the payload backs it, and keeps the old bans" do
       expect(system).to include("only when a difference between the two plans in the payload backs it")
-        .and include("caching, table bloat, statistics, or data distribution")
+        .and include("caching, table bloat, or statistics")
+        .and include("it shows the data only through its row counts")
         .and include("never carry one step's row count to another step")
         .and include("Don't mention any other rewrite or index")
         .and include("No markdown")
