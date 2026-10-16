@@ -196,6 +196,7 @@ From the reviews of 20260924-7.
 - **Design:** fixture-compare, result comparison.
 - **Landed so far:** items 1 to 5, 2026-10-10 (task/20261004-92; Opus review clean). 1: the edge query's LIMIT is `CASE WHEN l IS NULL THEN NULL ELSE LEAST(l, 9223372036854775807 - o) + o END` with bigint casts (verified on Postgres 18 against LIMIT/OFFSET edge cases; negative values error in the original first, so they can't match); 2: `COALESCE(o, 0)` (a NULL offset is 0); 3: a full run over `HashedRuns::FULL_RUN_ROW_CAP` (2,000,000) rows refuses as `unsupported_order` (only inside CutTies' full runs, so it costs candidates on big result sets with a cut tie, never a false match); 4: `through_offset!` raises on a missing LIMIT or OFFSET; 5: `all_columns?` removed from production comparison (dead there) and its guard moved into fixture-compare's `cut_tie`, with the first test that exercises it. On the unreleased list. Item 6 needs a decision from the user (below). Minor findings: 20261010-7.
 - **Item 6, waiting on the user:** reproduced on real Postgres: original `ORDER BY grp DESC LIMIT n` against candidate `ORDER BY grp DESC NULLS LAST, id LIMIT n` passes when the LIMIT cuts a tie (n=3) and fails with `value` when it doesn't (n=4). Two ways to make the paths agree: (a) accept more: when the candidate's tiebreaker runs don't match row for row, fall back to the CutTies layout check, which already accepts these candidates when a tie is cut (correct, since the candidate's rows are a valid result of the original, but it is the risky direction: it makes the comparison accept more); (b) refuse more: refuse with `unsupported_order` when the candidate's order is stricter than the original's and the original's LIMIT doesn't cut a tie, instead of reporting `value` (honest; costs a candidate). Both the builder and the Opus reviewer lean toward accepting-or-refusing only after the user decides; the reviewer recommends (b), failing closed.
+- **Decided by the user (2026-10-15):** item 6 is (b): refuse with `unsupported_order` when the candidate's order is stricter than the original's and the original's LIMIT doesn't cut a tie.
 - **Status:** todo
 
 ### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification). Done, see BACKLOG-COMPLETE.md.
@@ -233,6 +234,7 @@ Split from 20260924-25, with that task's review findings:
 - **Came from:** The build and review of 20261002-2, 2026-10-08.
 - **Design:** rewrite-rules, report.
 - **Landed so far:** items 2, 3 and 4, 2026-10-11 (task/20261008-57; Opus review clean). Item 2: `RewriteStage.run` returns the status entries it read after rewrite-rules, llm-rewrites and operator-rewrites, and the later stages use them (no second `status` call; the guard stays). Item 3: stored rewrites dedupe on the SQL and the stated assumptions together, so the same SQL with different assumptions gets its own entry (DESIGN.md, rewrite-rules). Item 4 was already done. Open: item 1 (needs a counting decision: count a rule rewrite that fails the checks in `failed_checks`, in plan-pruning's drops, or both labelled as overlapping).
+- **Decided by the user (2026-10-15):** item 1: count a rule-made rewrite that fails the checks only in rewrite-rules' `failed_checks`, not in plan-pruning's drops.
 - **Status:** todo
 
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
@@ -245,6 +247,7 @@ Split from 20260924-25, with that task's review findings:
 - **Depends on:** 20261008-61.
 - **Came from:** The build and second review of 20261008-61, 2026-10-08.
 - **Design:** fixture-compare.
+- **Decided by the user (2026-10-15):** item 2: check inner arbitrary picks (`DISTINCT ON` without a full order, `GROUP BY` with `any_value` and the like, `DISTINCT` or `UNION` dropping rows that differ in a left-out column) the way inner cuts are checked: detect when the pick mattered on the test data.
 - **Status:** todo
 
 ### 20261008-72. `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
@@ -693,4 +696,13 @@ From the fix round of 20261008-60. `enclave/spec/counterexample_steps_postgres_s
 - **Depends on:** None.
 - **Came from:** The fix round of 20261008-60, 2026-10-15.
 - **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report.
+
+From the first review of 20261010-17 (minor). `Placement.moves` uses Postgres's `quote_ident`, which can emit a quoted non-ASCII identifier such as `public."café"`, but `Protocol::TablespaceMoves` allows printable ASCII only, so Egress refuses the report instead of carrying the warning. Accept valid UTF-8 quoted identifiers, keeping the control-character, length, quoting, membership and count checks. Test first.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261010-17, 2026-10-15 (minor).
+- **Design:** What goes into the enclave, report.
 - **Status:** todo
