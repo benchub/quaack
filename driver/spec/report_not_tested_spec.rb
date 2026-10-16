@@ -55,11 +55,11 @@ RSpec.describe Quaack::Driver::Report do
     expect(html).not_to include("didn't test it on made-up data")
   end
 
-  it "opens with why it went untested when there are untested conditions too, never saying every test passed" do
+  it "says only why it went untested when there are untested conditions too" do
     rewrites.first["untested_atoms"] = ["a < $1"]
     expect(html[%r{<p class="warn body-warn">(.*?)</p>}m, 1])
-      .to start_with("Read it with care: QUAACK didn't test it on made-up data, since no small database")
-    expect(html).not_to include("every test QUAACK ran passed")
+      .to eq(caution("no small database QUAACK built let both queries run"))
+    expect(summary(html[%r{<h3>Rewrite ([^<]+)</h3>}, 1])).not_to include("both true and false")
   end
 
   it "counts it in the burndown as not tested by the random search, gone on, not dropped" do

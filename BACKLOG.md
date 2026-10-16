@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-17
 - 20261008-56
 - 20261008-67
+- 20261016-4
 
 ## How this file works.
 
@@ -682,33 +683,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Depends on:** None.
 - **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
 - **Design:** fixture-compare, result comparison.
-- **Status:** todo
-
-### 20261016-2. Report: drop the "Read it with care … never made some conditions … both true and false" caveat.
-
-Every tested rewrite carries it, so it says nothing: fuzz can only disprove a rewrite, never prove it, and the report accepts rewrites QED would refuse. Decided by the user (2026-10-16): drop the caveat from the queries section (and the verdict, if it appears there). Keep the other "Read it with care" sentences (such as relying on what the data holds today). The untested atoms stay internal: llm-counterexamples still aims at them.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report, rewrite-test (coverage).
-- **Status:** todo
-
-### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived.
-
-The list of conditions QUAACK had trouble testing, at the end of each rewrite, isn't actionable. Decided by the user (2026-10-16): don't show it. Say instead, for example: "Modest Coin survived 1,790 mechanically generated data sets trying to show it gives different results from the original query. It also survived 3 rounds of test data meant to break it from copilot_cli using opus-5.5." Use the real counts (fuzz trials, plus enumerate's worlds where it ran), the provider and model of the counterexample rounds, and say nothing about a stage that didn't run. 20261012-50 (coverage checks more worlds) stays open; it makes the internal list better.
-
-- **Depends on:** None. Do with 20261016-2 and 20261016-4.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
-
-### 20261016-4. Report: say why rewrites got different numbers of generated data sets.
-
-One rewrite got 1,790 data sets, another 752, another 2,207. Decided by the user (2026-10-16): explain it per rewrite, from fuzz's stop rule: it runs at least 30 s, then stops once it has run twice as long as it took to find its last new coverage signature, never past 60 s or the rewrite's deadline, and at once on a counterexample. Say which applied and the times, such as "stopped after 41 s: no new plan behaviour for the last 20 s", so a reader sees the count depends on query speed and when the search ran dry. The burndown may need the stop reason and times from the enclave (the reason and seconds are not literals).
-
-- **Depends on:** None. Do with 20261016-3.
-- **Came from:** The user, 2026-10-16.
-- **Design:** rewrite-test (fuzz's stop rule), report.
 - **Status:** todo
 
 ### 20261016-5. Say "indices", not "indexes".

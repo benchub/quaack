@@ -919,14 +919,23 @@ RSpec.describe Quaack::Driver::Transport do
         JSON.generate({ "type" => "report", "original_plan" => [], "labels" => [], "index_sources" => index_sources,
                         "rewrites" => [{ "rewrite" => "rewrite_1", "plan" => nil, **fields }] })
       end
-      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200, "worlds" => 905, "bound" => 2 }
+      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200, "worlds" => 905, "bound" => 2,
+               "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
       result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
-      expect(result.messages.first["rewrites"].first.slice("sizes", "trials", "worlds", "bound")).to eq(good)
+      expect(result.messages.first["rewrites"].first.slice(*good.keys)).to eq(good)
       [{ "sizes" => [["public", "orders", sentinel]] }, { "sizes" => [["public", "orders", 2, sentinel]] },
        { "sizes" => sentinel }, { "trials" => sentinel }, { "trials" => -1 },
        { "sizes" => [["public", "orders", 6]] }, { "sizes" => [["public", "orders", 37]] },
-       { "worlds" => sentinel }, { "worlds" => -1 }, { "bound" => sentinel }, { "bound" => 5 }].each do |planted|
+       { "worlds" => sentinel }, { "worlds" => -1 }, { "bound" => sentinel }, { "bound" => 5 },
+       { "fuzz_stop" => { "reason" => sentinel, "seconds" => 41, "quiet" => 20 } },
+       { "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20, "why" => sentinel } },
+       { "fuzz_stop" => sentinel },
+       # Task 20261016-4's fix round: times the reason can't have.
+       { "fuzz_stop" => { "reason" => "dry", "seconds" => nil, "quiet" => nil } },
+       { "fuzz_stop" => { "reason" => "cap", "seconds" => 60, "quiet" => nil } },
+       { "fuzz_stop" => { "reason" => "deadline", "seconds" => 13, "quiet" => 11 } },
+       { "fuzz_stop" => { "reason" => "trials", "seconds" => 41, "quiet" => 20 } }].each do |planted|
         error = refusal(report.call(planted))
 
         expect(error.rule).to eq("unexpected_output"), "for #{planted}"

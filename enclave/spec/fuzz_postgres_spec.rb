@@ -12,6 +12,11 @@ require "quaack/enclave/table_name"
 RSpec.describe Quaack::Enclave::Fuzz do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:stop) { Quaack::Enclave::Fuzz::StopRule.trials(150) }
+  # A rule on seconds whose clock ticks a second a read, bounded as stop is.
+  let(:clocked) do
+    reads = 0
+    Quaack::Enclave::Fuzz::StopRule.new(floor: 1500, cap: 3000, clock: -> { reads += 1 })
+  end
 
   before do
     conn.exec(<<~SQL)
@@ -49,6 +54,8 @@ RSpec.describe Quaack::Enclave::Fuzz do
 
     expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
     expect(outcome.trials).to be >= 150
+    # Task 20261016-4: why it stopped, here a spec's trial count, which gives no times.
+    expect(outcome.stop).to eq("reason" => "trials", "seconds" => nil, "quiet" => nil)
   end
 
   # Only 10.01 tells these apart: one step of the column's scale from either
@@ -213,9 +220,13 @@ RSpec.describe Quaack::Enclave::Fuzz do
     # only in worlds the dropped foreign key allows.
     conn.exec("ALTER TABLE s.customers ADD CHECK (id < 0 AND id > 0)")
 
-    outcome = fuzz("SELECT id FROM s.orders WHERE total > 100", "SELECT id FROM s.orders WHERE total >= 100")
+    pair = ["SELECT id FROM s.orders WHERE total > 100", "SELECT id FROM s.orders WHERE total >= 100"]
 
-    expect(outcome).to have_attributes(verdict: :passed, rule: nil, sizes: [])
+    expect(fuzz(*pair)).to have_attributes(verdict: :passed, rule: nil, sizes: [])
+    # Task 20261016-4: it gave up after LIFTS kills that didn't lift, which
+    # a rule on seconds says, with no quiet time.
+    expect(described_class.run(conn, *pair, stop: clocked).stop)
+      .to match("reason" => "unlifted", "seconds" => an_instance_of(Integer), "quiet" => nil)
   end
 
   it "is untested when the queries read no table, saying so" do
@@ -232,6 +243,14 @@ RSpec.describe Quaack::Enclave::Fuzz do
   it "has no reason when it passed or disproved" do
     passed = fuzz("SELECT id FROM s.orders WHERE total > 100", "SELECT id FROM s.orders WHERE 100 < total")
     expect(passed).to have_attributes(verdict: :passed, reason: nil)
+  end
+
+  # Task 20261016-4: only a pass says why the search stopped.
+  it "says no stop for a disproof, which stops at once, or an untested outcome" do
+    disproved = fuzz("SELECT id FROM s.orders WHERE status = 'shipped' AND total > 100",
+                     "SELECT id FROM s.orders WHERE total > 100")
+    expect(disproved).to have_attributes(verdict: :disproved, stop: nil)
+    expect(fuzz("SELECT 1", "SELECT 2")).to have_attributes(verdict: :untested, stop: nil)
   end
 
   it "refuses a query that names a table without its schema, whose footprint it can't read" do
@@ -273,7 +292,20 @@ RSpec.describe Quaack::Enclave::Fuzz do
 
     expect(outcome.verdict).to eq(:passed)
     expect(outcome.trials).to be_between(1, 149)
+    expect(outcome.stop).to eq("reason" => "trials", "seconds" => nil, "quiet" => nil)
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
+  # Task 20261016-4: a rule on seconds says the deadline stopped it.
+  it "says the deadline stopped it, on a rule that counts seconds" do
+    ticks = 0
+    deadline = Quaack::Enclave::Deadline.new(40, clock: -> { ticks += 1 })
+    outcome = Quaack::Enclave::Deadline.within(deadline) do
+      described_class.run(conn, "SELECT id FROM s.orders WHERE total > 100",
+                          "SELECT id FROM s.orders WHERE 100 < total", stop: clocked)
+    end
+
+    expect(outcome.stop).to match("reason" => "deadline", "seconds" => an_instance_of(Integer), "quiet" => nil)
   end
 
   # Task 20261012-15: a kill the deadline cuts off before it's shrunk and

@@ -141,10 +141,6 @@
 <p class="empirical"><%= h assumed %></p>
 <% end %>
 <%= sql(r["sql"]) %>
-<% unless unchecked_atoms(r).empty? %>
-<div class="untested"><p><%= h Rewrites::UNTESTED %></p>
-<ul><% unchecked_atoms(r).each do |a| %><li><%= sql_code(a) %></li><% end %></ul></div>
-<% end %>
 <% if (survived = fuzz_line(r)) %>
 <p class="fuzz"><%= h survived %></p>
 <% end %>

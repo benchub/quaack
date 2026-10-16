@@ -18,6 +18,7 @@ require_relative "plans"
 require_relative "stages"
 require_relative "sankey"
 require_relative "providers"
+require_relative "survival"
 require_relative "usage"
 require_relative "failed_branches"
 require_relative "cautions"
@@ -46,6 +47,7 @@ module Quaack
         include Stages
         include Sankey
         include Providers
+        include Survival
         include Usage
         include FailedBranches
         include Cautions

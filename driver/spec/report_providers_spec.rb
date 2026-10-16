@@ -24,7 +24,7 @@ RSpec.describe Quaack::Driver::Report do
   def counts(written, rules = {}) = { "written" => written, "outcomes" => {}, "rules" => rules }
 
   let(:rewrites) do
-    [fated(1, "not_better", source: "llm", covered: []), fated(2, "same_plans", source: "llm"),
+    [fated(1, "not_better", source: "llm", covered: [], trials: 12), fated(2, "same_plans", source: "llm"),
      fated(3, "ranked", source: "llm"), fated(4, "same_plans", source: "rule", rules: ["key_in_self_join"],
                                                                covered: [])]
   end
@@ -82,11 +82,31 @@ RSpec.describe Quaack::Driver::Report do
       expect(summary(2)).to include("Where it came from: suggested by the LLM (its model wasn&#39;t recorded).")
     end
 
-    it "says which providers ran each rewrite's counterexample rounds, and why a fresh start began" do
+    # Task 20261016-3, in the user's words (2026-10-16).
+    it "says how many counterexample rounds a rewrite survived, from which providers and models, and why a fresh " \
+       "start began" do
       expect(details(1)).to include(
-        "<p class=\"counterexamples\">groq wrote the test data meant to break it in round 1, then opus in rounds " \
-        "2 and 3, starting fresh after groq was rate limited.</p>"
+        "<p class=\"counterexamples\">It also survived 3 rounds of test data meant to break it: 1 from groq using " \
+        "llama-&lt;b&gt;4&lt;/b&gt;, then 2 from opus using claude-opus-5-5, starting fresh after groq was rate " \
+        "limited.</p>"
       )
+    end
+
+    it "names the rewrite when no generated data set came first, and says when a provider's model wasn't recorded" do
+      record["counterexamples"]["rewrite_3"] = [{ "entry" => "mystery", "rounds" => 3 }]
+      name = summary(3)[%r{<h3>Rewrite ([^<]+)</h3>}, 1]
+      expect(details(3)).to include("<p class=\"counterexamples\">#{name} survived 3 rounds of test data meant to " \
+                                    "break it from mystery (its model wasn&#39;t recorded).</p>")
+    end
+
+    it "says who wrote the test data, and not that the rewrite survived it, when a round proved it wrong or failed" do
+      %w[counterexamples_disproved counterexamples_failed].each do |fate|
+        rewrites[0] = fated(1, fate, source: "llm", covered: [], trials: 12, round: 2)
+        expect(details(1)).to include(
+          "<p class=\"counterexamples\">groq wrote the test data meant to break it in round 1, then opus in " \
+          "rounds 2 and 3, starting fresh after groq was rate limited.</p>"
+        )
+      end
     end
 
     it "says who wrote a rewrite's test data wasn't recorded when rounds ran and the record lacks them" do
@@ -101,11 +121,12 @@ RSpec.describe Quaack::Driver::Report do
   # summary when the pairing wasn't met or couldn't be checked.
   describe "the counterexample pairing" do
     let(:rewrites) do
-      [fated(1, "not_better", source: "llm", covered: []), fated(2, "not_better", source: "llm", covered: []),
-       fated(3, "not_better", source: "llm", covered: []), fated(4, "not_better", source: "rule", covered: []),
-       fated(5, "not_better", source: "operator", covered: []), fated(6, "not_better", source: "llm", covered: []),
-       fated(7, "not_better", source: "llm", covered: []),
-       fated(8, "not_better", source: "llm", untested_atoms: ["a < $1"], covered: [])]
+      tested = { covered: [], trials: 5 }
+      [fated(1, "not_better", source: "llm", **tested), fated(2, "not_better", source: "llm", **tested),
+       fated(3, "not_better", source: "llm", **tested), fated(4, "not_better", source: "rule", **tested),
+       fated(5, "not_better", source: "operator", **tested), fated(6, "not_better", source: "llm", **tested),
+       fated(7, "not_better", source: "llm", **tested),
+       fated(8, "not_better", source: "llm", out_of_time: true, covered: [])]
     end
     let(:record) do
       unit = ->(entry, pairing, **more) { { "entry" => entry, "rounds" => 1, "pairing" => pairing, **more } }
@@ -124,9 +145,9 @@ RSpec.describe Quaack::Driver::Report do
     def warn(number) = summary(number)[%r{<span class="warn">(.*?)</span>}, 1]
 
     it "says the pairing was met, with no warning" do
-      expect(line(1)).to eq("opus wrote #{Quaack::Driver::Report::Providers::TEST_DATA} in round 1. " \
-                            "The pairing was met: a different model from the one that wrote the rewrite wrote all " \
-                            "its test data.")
+      expect(line(1)).to eq("It also survived 1 round of test data meant to break it from opus using opus-m. " \
+                            "The pairing was met: a different model from the one that wrote the rewrite wrote " \
+                            "all its test data.")
       expect(warn(1)).to be_nil
     end
 
@@ -139,11 +160,10 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "capitalizes the pairing's warning when it follows another warning in the summary" do
-      expect(warn(8)).to eq("Read it with care: every test QUAACK ran passed, but the test data " \
-                            "never made some conditions in a part the rewrite changed both true and false, so " \
-                            "the tests cannot show whether those parts behave the same in the rewrite. A model " \
-                            "checked its own work, since the one that wrote it also wrote test data meant to " \
-                            "break it.")
+      expect(warn(8)).to eq("Read it with care: its test on made-up data didn&#39;t finish within 5 minutes, so " \
+                            "QUAACK checked it only on test data the LLM wrote to break it and on the real data. " \
+                            "A model checked its own work, since the one that wrote it also wrote test data " \
+                            "meant to break it.")
     end
 
     it "says the pairing couldn't be checked for an LLM rewrite whose author wasn't recorded, with a warning" do
@@ -154,7 +174,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says nothing of pairing for a rule-made or operator rewrite, or when the pairing is any or unrecorded" do
       [4, 5, 6, 7].each do |number|
-        expect(line(number)).to eq("groq wrote #{Quaack::Driver::Report::Providers::TEST_DATA} in round 1.")
+        expect(line(number)).to eq("It also survived 1 round of test data meant to break it from groq " \
+                                   "using llama.")
         expect(warn(number)).to be_nil
       end
     end

@@ -62,6 +62,55 @@ RSpec.describe Quaack::Protocol::FuzzResult do
     expect(described_class.rewrites?([sound, sound.merge("bound" => 7)])).to be(false)
   end
 
+  # Task 20261016-4: why fuzz stopped, a fixed word, and its rounded
+  # seconds, never literals.
+  it "accepts a report's rewrites only if each one's fuzz_stop is nil or a reason with whole seconds or none" do
+    expect(described_class::STOP_REASONS).to eq(%w[dry floor cap deadline unlifted trials])
+    sound = { "trials" => 1790 }
+    accepted = [nil, { "reason" => "dry", "seconds" => 41, "quiet" => 20 },
+                { "reason" => "trials", "seconds" => nil, "quiet" => nil },
+                { "reason" => "deadline", "seconds" => 0, "quiet" => nil },
+                { "reason" => "unlifted", "seconds" => 22, "quiet" => nil },
+                { "reason" => "floor", "seconds" => 30, "quiet" => 0 },
+                { "reason" => "cap", "seconds" => 60, "quiet" => 60 }]
+    accepted.each { expect(described_class.rewrites?([sound.merge("fuzz_stop" => it)])).to be(true), it.inspect }
+    refused = [{ "reason" => "secret", "seconds" => 41, "quiet" => 20 },
+               { "reason" => "dry", "seconds" => "41", "quiet" => 20 },
+               { "reason" => "dry", "seconds" => 41.5, "quiet" => 20 },
+               { "reason" => "dry", "seconds" => 41, "quiet" => 42 },
+               { "reason" => "deadline", "seconds" => -1, "quiet" => nil },
+               { "reason" => "deadline", "seconds" => described_class::MAX_STOP_SECONDS + 1, "quiet" => nil },
+               { "reason" => "dry", "seconds" => nil, "quiet" => 20 },
+               { "reason" => "dry", "seconds" => 41, "quiet" => 20, "sql" => "x" },
+               { "reason" => "dry", "seconds" => 41 },
+               { "reason" => "dry", "seconds" => 41, "quiet" => 20, quiet: 1 },
+               { reason: "dry", seconds: 41, quiet: 20 },
+               { "reason" => "dry", "seconds" => 41, "why" => "x" },
+               "dry", [["dry", 41, 20]]]
+    refused.each { expect(described_class.rewrites?([sound.merge("fuzz_stop" => it)])).to be(false), it.inspect }
+  end
+
+  # Task 20261016-4's fix round: the times a reason has, so no record says
+  # what no stop could. Only a spec's trial count gives no seconds; dry,
+  # floor and cap say how long nothing new came, and a deadline or kills
+  # that didn't lift don't.
+  it "refuses a fuzz_stop whose times its reason can't have" do
+    impossible = [{ "reason" => "dry", "seconds" => nil, "quiet" => nil },
+                  { "reason" => "floor", "seconds" => nil, "quiet" => nil },
+                  { "reason" => "cap", "seconds" => nil, "quiet" => nil },
+                  { "reason" => "deadline", "seconds" => nil, "quiet" => nil },
+                  { "reason" => "unlifted", "seconds" => nil, "quiet" => nil },
+                  { "reason" => "dry", "seconds" => 41, "quiet" => nil },
+                  { "reason" => "floor", "seconds" => 30, "quiet" => nil },
+                  { "reason" => "cap", "seconds" => 60, "quiet" => nil },
+                  { "reason" => "deadline", "seconds" => 13, "quiet" => 11 },
+                  { "reason" => "unlifted", "seconds" => 22, "quiet" => 5 },
+                  { "reason" => "trials", "seconds" => 41, "quiet" => 20 },
+                  { "reason" => "trials", "seconds" => 41, "quiet" => nil },
+                  { "reason" => "trials", "seconds" => nil, "quiet" => 20 }]
+    impossible.each { expect(described_class.stop?(it)).to be(false), it.inspect }
+  end
+
   # Task 20261012-4: why the search couldn't test a rewrite is a fixed word.
   it "accepts a report's rewrites only if each one's not_tested is nil or a reason from the list" do
     expect(described_class::NOT_TESTED).to eq(%w[no_tables not_comparable setup_failed no_world unconfirmed

@@ -46,6 +46,9 @@ module Quaack
     # world in which both queries ran, or a deadline that ran out while a
     # kill was shrunk or lifted, which leaves enumerate untested too).
     # trials counts the worlds compared.
+    # stop is a pass's StopRule#stopped (task 20261016-4): why the search
+    # stopped, by its rule, the deadline, or LIFTS kills that didn't lift,
+    # and when; nil for a disproof or an untested outcome.
     # sizes are a disproof's rows per table, as [schema, table, count] for
     # each footprint table with rows, sorted; the rows themselves never
     # leave here.
@@ -58,7 +61,9 @@ module Quaack
     # query that names a table without its schema, whose footprint can't
     # be read: a search on it would test nothing.
     module Fuzz
-      Outcome = Data.define(:verdict, :rule, :trials, :sizes, :reason)
+      Outcome = Data.define(:verdict, :rule, :trials, :sizes, :reason, :stop) do
+        def initialize(stop: nil, **) = super
+      end
 
       class Error < StandardError
         def initialize(message = "a fuzz query names a table without its schema") = super
@@ -229,6 +234,7 @@ module Quaack
         def fuzzed(stop, rng)
           search(stop, rng)
         rescue Deadline::Expired
+          @stopped = stop.stopped("deadline")
           ended(:out_of_time)
         end
 
@@ -252,6 +258,7 @@ module Quaack
             outcome = lifted(rows)
             return outcome if outcome
           end
+          @stopped = stop.stopped(("unlifted" if @lifts >= LIFTS))
           ended
         end
 
@@ -274,7 +281,7 @@ module Quaack
         def ended(why = :no_world) = @compared.zero? ? Fuzz.untested(why) : outcome(:passed)
 
         def outcome(verdict, rule = nil, sizes = [])
-          Outcome.new(verdict:, rule:, trials: @compared, sizes:, reason: nil)
+          Outcome.new(verdict:, rule:, trials: @compared, sizes:, reason: nil, stop: @stopped)
         end
 
         # The kill shrunk and lifted, as a disproof, or nil, with the

@@ -49,6 +49,24 @@ module Quaack
       # rows wouldn't be true of every database that size.
       MAX_BOUND = 4
 
+      # Task 20261016-4: why the fuzz search stopped, in the report's
+      # fuzz_stop: its stop rule's minimum ran out with nothing new (floor),
+      # or it had run twice as long as it took to find its last new plan
+      # behaviour (dry), or it reached its cap, or the rewrite's deadline,
+      # or LIFTS kills that didn't lift, or a spec's trial count
+      # (QUAACKS_FUZZ_TRIALS) stopped it.
+      STOP_REASONS = %w[dry floor cap deadline unlifted trials].map(&:freeze).freeze
+
+      # The reasons that say how long the search had found no new plan
+      # behaviour, its quiet; a deadline or kills that didn't lift don't,
+      # and trials, a spec's trial count, gives no times at all.
+      QUIET_REASONS = %w[dry floor cap].map(&:freeze).freeze
+
+      # No search runs this long: the rewrite's whole budget is 300 seconds.
+      MAX_STOP_SECONDS = 3600
+
+      STOP_KEYS = %w[reason seconds quiet].map(&:freeze).freeze
+
       # A Postgres identifier is at most 63 bytes.
       MAX_NAME_BYTES = 63
 
@@ -66,8 +84,38 @@ module Quaack
       def counts?(fields) = trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"])
 
       # Whether each of a report's rewrites carries sizes, trials, worlds and
-      # bound that pass, and a not_tested that's nil or on NOT_TESTED.
-      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && counts?(it) && not_tested?(it["not_tested"]) }
+      # bound that pass, a not_tested that's nil or on NOT_TESTED, and a
+      # fuzz_stop that stop? passes.
+      def rewrites?(rewrites)
+        rewrites.all? do |rewrite|
+          sizes?(rewrite["sizes"]) && counts?(rewrite) && not_tested?(rewrite["not_tested"]) &&
+            stop?(rewrite["fuzz_stop"])
+        end
+      end
+
+      # Whether stop is nil or why fuzz stopped (task 20261016-4): exactly a
+      # reason on STOP_REASONS with the times that reason has. trials, a
+      # spec's trial count, has seconds and quiet both nil. Every other
+      # reason has seconds, a whole number up to MAX_STOP_SECONDS, and
+      # quiet, how long it had found no new plan behaviour, whole seconds up
+      # to seconds for QUIET_REASONS and nil for the rest.
+      def stop?(stop)
+        return true if stop.nil?
+        return false unless stop.is_a?(Hash) && stop.size == STOP_KEYS.size && STOP_KEYS.all? { stop.key?(it) }
+
+        reason, seconds, quiet = stop.values_at(*STOP_KEYS)
+        STOP_REASONS.include?(reason) && times?(reason, seconds, quiet)
+      end
+
+      def times?(reason, seconds, quiet)
+        return seconds.nil? && quiet.nil? if reason == "trials"
+        return false unless seconds?(seconds)
+        return quiet.nil? unless QUIET_REASONS.include?(reason)
+
+        seconds?(quiet) && quiet <= seconds
+      end
+
+      def seconds?(seconds) = count?(seconds) && seconds <= MAX_STOP_SECONDS
 
       def not_tested?(reason) = reason.nil? || NOT_TESTED.include?(reason)
 
@@ -86,7 +134,7 @@ module Quaack
 
       def count?(count) = count.is_a?(Integer) && count >= 0 && count < MAX_COUNT
 
-      private_class_method :size?, :name?, :count?
+      private_class_method :size?, :name?, :count?, :times?, :seconds?
     end
   end
 end

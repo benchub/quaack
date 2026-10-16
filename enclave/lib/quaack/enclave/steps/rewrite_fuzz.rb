@@ -45,7 +45,9 @@ module Quaack
       # record marked with each spec setting set (SETTINGS).
       #
       # result's entry carries passed, rule, the stage that decided (fuzz or
-      # enumerate), fuzz's trials, enumerate's worlds and bound, and, for a
+      # enumerate), fuzz's trials and fuzz_stop, a pass's
+      # Fuzz::StopRule#stopped (task 20261016-4), for the report, not the
+      # rewrite_test message, enumerate's worlds and bound, and, for a
       # disproof, sizes, the shrunk counterexample's rows per table as
       # [schema, table, count]. A pass also carries the original's atoms
       # the worlds never showed both true and false (Fuzz::Coverage):
@@ -57,8 +59,9 @@ module Quaack
       #
       # Trust boundary. The worlds, their values, and Postgres's errors and
       # plans stay in Fuzz. What this keeps is the comparison's rule,
-      # QUAACK's own reason and stage words, counts, table names, which are
-      # schema, and redacted atom shapes.
+      # QUAACK's own reason and stage words, counts, why fuzz stopped (a
+      # fixed word and whole seconds), table names, which are schema, and
+      # redacted atom shapes.
       module RewriteFuzz
         STAGE = "fuzz"
         ENUMERATE = "enumerate"
@@ -128,9 +131,11 @@ module Quaack
 
         NONE = { "untested" => [], "untested_atoms" => [], "untested_unchanged" => [] }.freeze
 
-        # fuzz's trials, and enumerate's worlds and bound (0 and nil when it didn't run).
+        # fuzz's trials and why it stopped, and enumerate's worlds and bound
+        # (0 and nil when it didn't run).
         def counts(results)
-          { "trials" => results.fuzz.trials, "worlds" => results.enumerate.worlds, "bound" => results.enumerate.bound }
+          { "trials" => results.fuzz.trials, "fuzz_stop" => results.fuzz.stop, "worlds" => results.enumerate.worlds,
+            "bound" => results.enumerate.bound }
         end
 
         # A rewrite the search couldn't test, gone on with why as its rule.

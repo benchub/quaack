@@ -11860,3 +11860,34 @@ The verdict's warning that the production role couldn't see an expression index'
 - **Design:** report.
 - **Landed:** 2026-10-16 (task/20261016-1). The verdict's hidden-statistics caveat now links to `#hidden-statistics`, the "Statistics QUAACK couldn't see" note inside the indexes section (it already had that id), not to `#indexes`. The caveat-links spec now accepts a `<div>` target as well as a `<section>`, and a new example checks the link and that the note sits in the indexes section. DESIGN.md updated. Driver only.
 - **Status:** done
+
+### 20261016-2. Report: drop the "Read it with care … never made some conditions … both true and false" caveat.
+
+Every tested rewrite carries it, so it says nothing: fuzz can only disprove a rewrite, never prove it, and the report accepts rewrites QED would refuse. Decided by the user (2026-10-16): drop the caveat from the queries section (and the verdict, if it appears there). Keep the other "Read it with care" sentences (such as relying on what the data holds today). The untested atoms stay internal: llm-counterexamples still aims at them.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report, rewrite-test (coverage).
+- **Landed:** 2026-10-16 (task/20261016-2-3-4). The rewrite's warning (`Report::Cautions#warning`) no longer says "every test QUAACK ran passed, but the test data never made some conditions ... both true and false" (or its "The test data also never made ..." form after another caution). The other cautions (the data caution, out of time, not tested, the pairing) are unchanged. The verdict never carried it. The untested atoms still go to the store, the report payload and llm-counterexamples. DESIGN.md updated. Driver only.
+- **Status:** done
+
+### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived.
+
+The list of conditions QUAACK had trouble testing, at the end of each rewrite, isn't actionable. Decided by the user (2026-10-16): don't show it. Say instead, for example: "Modest Coin survived 1,790 mechanically generated data sets trying to show it gives different results from the original query. It also survived 3 rounds of test data meant to break it from copilot_cli using opus-5.5." Use the real counts (fuzz trials, plus enumerate's worlds where it ran), the provider and model of the counterexample rounds, and say nothing about a stage that didn't run. 20261012-50 (coverage checks more worlds) stays open; it makes the internal list better.
+
+- **Depends on:** None. Do with 20261016-2 and 20261016-4.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-2-3-4). The report no longer lists the conditions QUAACK had trouble testing (the template's untested block and the `Rewrites` atoms helpers are gone; untested atoms stay internal for llm-counterexamples). Each rewrite's fuzz line (new `Report::Survival`) now says "<name> survived N mechanically generated data sets trying to show it gives different results from the original query", N being fuzz's trials plus enumerate's worlds, and when enumerate ran it splits them (": T random ones, then W enumerated in order of size", with the bound it finished while nothing later disproved the rewrite; 20261012-31 still owns that wording). Its counterexample line says "It also survived N rounds of test data meant to break it from <provider> using <model>" (listing each entry in order when the rounds started fresh, and "(its model wasn't recorded)" without one); a round that disproved or failed on it keeps the "who wrote" sentence. Stages that didn't run say nothing. DESIGN.md's report section and README.md match.
+- **Status:** done
+
+### 20261016-4. Report: say why rewrites got different numbers of generated data sets.
+
+One rewrite got 1,790 data sets, another 752, another 2,207. Decided by the user (2026-10-16): explain it per rewrite, from fuzz's stop rule: it runs at least 30 s, then stops once it has run twice as long as it took to find its last new coverage signature, never past 60 s or the rewrite's deadline, and at once on a counterexample. Say which applied and the times, such as "stopped after 41 s: no new plan behaviour for the last 20 s", so a reader sees the count depends on query speed and when the search ran dry. The burndown may need the stop reason and times from the enclave (the reason and seconds are not literals).
+
+- **Depends on:** None. Do with 20261016-3.
+- **Came from:** The user, 2026-10-16.
+- **Design:** rewrite-test (fuzz's stop rule), report.
+- **Landed:** 2026-10-16 (task/20261016-2-3-4). `Fuzz::StopRule#stopped` says why the search stopped and when: `floor`, `dry`, `cap` from the rule, or `deadline` or `unlifted` (LIFTS kills that didn't lift) as `Fuzz::Search` names them, with whole `seconds` and `quiet` (time since the last new coverage signature); counting trials (the spec-only `QUAACKS_FUZZ_TRIALS`), the reason is `trials` and both times are nil, so a spec's outcome doesn't depend on its speed. A pass's `Fuzz::Outcome#stop` goes into `rewrite_tested_<n>` as `fuzz_stop` (not the `rewrite_test` message), and the report payload sends it only if the new `Protocol::FuzzResult.stop?` passes it (a fixed reason, exactly three keys, whole seconds under 3600, quiet nil or no more than seconds); egress (`FuzzSizes.report?`) and the driver (`FuzzResult.rewrites?`) refuse a report whose `fuzz_stop` doesn't pass. The rewrite's survived sentence is followed by "Its random search stopped after 41 s: no new plan behaviour for the last 20 s." and its counterparts for the other reasons; the trials mode says "after a number of trials set for testing QUAACK, not by time". On "Unreleased enclave changes". DESIGN.md (fuzz's What it sends, the report section) and README.md match.
+- **Fix round:** 2026-10-16 (review finding, blocking). `FuzzResult.stop?` checked the times apart from the reason, so it passed impossible records such as `dry` with no times ("stopped after  s") or `trials` with times. It now checks them per reason: both nil only for `trials`; `seconds` for every other reason; `quiet` for `floor`, `dry` and `cap` (new `QUIET_REASONS`), nil for `deadline` and `unlifted`. `StopRule#stopped` matches: counting trials it always says `trials`, and a reason the search names carries no quiet. The report's no-seconds `deadline`/`unlifted` wording is gone. Protocol, egress, driver transport and report specs plant the impossible combinations.
+- **Status:** done

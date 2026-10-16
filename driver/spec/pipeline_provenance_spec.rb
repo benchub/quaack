@@ -201,8 +201,8 @@ RSpec.describe "The pipeline's provenance record" do
       out = File.join(@home, "report.html")
       run(out:)
 
-      expect(File.read(out)).to include("#{names[1]} wrote the test data meant to break it in rounds 1, 2, and 3. " \
-                                        "The pairing was met: ")
+      expect(File.read(out)).to include("survived 3 rounds of test data meant to break it from #{names[1]} using " \
+                                        "#{models[1]}. The pairing was met: ")
     end
   end
 
@@ -234,8 +234,9 @@ RSpec.describe "The pipeline's provenance record" do
     html = File.read(out)
 
     expect(html).to include("suggested by the LLM (#{names[1]}, <code>#{models[1]}</code>).")
-    expect(html).to include("#{names[0]} wrote the test data meant to break it in round 1, then #{names[1]} in " \
-                            "rounds 2 and 3, starting fresh after #{names[0]} was rate limited.")
+    expect(html).to include("survived 3 rounds of test data meant to break it: 1 from #{names[0]} using " \
+                            "#{models[0]}, then 2 from #{names[1]} using #{models[1]}, starting fresh after " \
+                            "#{names[0]} was rate limited.")
     expect(html[%r{<table id="llm-providers">.*?</table>}m])
       .to include("<tr><th scope=\"row\">#{names[0]}</th><td>anthropic</td><td><code>#{models[0]}</code></td>" \
                   "<td class=\"num\">4</td><td>marked down, since it was rate limited</td></tr>")

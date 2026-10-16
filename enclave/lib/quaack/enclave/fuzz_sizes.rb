@@ -43,14 +43,16 @@ module Quaack
       end
 
       # Whether a report's rewrites each carry sizes check passes against
-      # the original's and that rewrite's tables, or none, and trials,
-      # worlds and bound that Protocol::FuzzResult.counts? passes. A
+      # the original's and that rewrite's tables, or none, trials, worlds
+      # and bound that Protocol::FuzzResult.counts? passes, and a fuzz_stop
+      # that Protocol::FuzzResult.stop? passes (task 20261016-4). A
       # rewrite's keys may be Strings or Symbols.
       def report?(original_sql, rewrites)
         rewrites.all? do |rewrite|
           sizes = field(rewrite, "sizes")
           (sizes.nil? || check(sizes, tables(original_sql, field(rewrite, "sql")))) &&
-            Protocol::FuzzResult.counts?(%w[trials worlds bound].to_h { [it, field(rewrite, it)] })
+            Protocol::FuzzResult.counts?(%w[trials worlds bound].to_h { [it, field(rewrite, it)] }) &&
+            Protocol::FuzzResult.stop?(field(rewrite, "fuzz_stop"))
         end
       end
 

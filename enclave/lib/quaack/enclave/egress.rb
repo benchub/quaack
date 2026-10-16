@@ -201,8 +201,9 @@ module Quaack
         raise Error, "a value in this report message has hidden statistics that aren't index names and a count"
       end
 
-      # Each rewrite's fuzz sizes name only tables the queries name, and
-      # its trials are a count (see FuzzSizes.report?).
+      # Each rewrite's fuzz sizes name only tables the queries name, its
+      # trials are a count, and its fuzz_stop a reason and whole seconds
+      # (see FuzzSizes.report?).
       def check_fuzz(fields)
         return if FuzzSizes.report?(fields["original_sql"], fields["rewrites"])
 

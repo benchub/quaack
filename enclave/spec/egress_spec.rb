@@ -592,10 +592,11 @@ RSpec.describe Quaack::Enclave::Egress do
       it "sends tables either query names, with their row counts, and trials as a count" do
         sizes = [["public", "orders", 5], ["sales", "customers", 1], ["sales", "refunds", 1]]
         rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
-        counts = { "trials" => 41_200, "worlds" => 905, "bound" => 3 }
+        counts = { "trials" => 41_200, "worlds" => 905, "bound" => 3,
+                   "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
         sent = parsed(report_with({ "sizes" => sizes, **counts }, sql: rewrite_sql))
         expect(sent["rewrites"].first).to include("sizes" => sizes, **counts)
-        none = { "sizes" => nil, "trials" => nil, "worlds" => nil, "bound" => nil }
+        none = { "sizes" => nil, "trials" => nil, "worlds" => nil, "bound" => nil, "fuzz_stop" => nil }
         expect(parsed(report_with(none))["rewrites"].first).to include(none)
       end
 
@@ -615,7 +616,22 @@ RSpec.describe Quaack::Enclave::Egress do
         ["worlds under a Symbol key", { worlds: EGRESS_SENTINEL }],
         ["a String in place of the bound", { "bound" => EGRESS_SENTINEL }],
         ["a bound past MAX_BOUND", { "bound" => Quaack::Protocol::FuzzResult::MAX_BOUND + 1 }],
-        ["a bound under a Symbol key", { bound: 37 }]
+        ["a bound under a Symbol key", { bound: 37 }],
+        ["a stop reason off the list (20261016-4)",
+         { "fuzz_stop" => { "reason" => EGRESS_SENTINEL, "seconds" => 41, "quiet" => 20 } }],
+        ["a String in place of the stop's seconds",
+         { "fuzz_stop" => { "reason" => "dry", "seconds" => EGRESS_SENTINEL, "quiet" => 20 } }],
+        ["a planted key in the stop",
+         { "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20, "sql" => EGRESS_SENTINEL } }],
+        ["a String in place of the stop", { "fuzz_stop" => EGRESS_SENTINEL }],
+        ["a dry stop with no times", { "fuzz_stop" => { "reason" => "dry", "seconds" => nil, "quiet" => nil } }],
+        ["a cap stop without how long nothing new came",
+         { "fuzz_stop" => { "reason" => "cap", "seconds" => 60, "quiet" => nil } }],
+        ["a deadline stop with how long nothing new came",
+         { "fuzz_stop" => { "reason" => "deadline", "seconds" => 13, "quiet" => 11 } }],
+        ["a spec's trials stop with times",
+         { "fuzz_stop" => { "reason" => "trials", "seconds" => 41, "quiet" => 20 } }],
+        ["a stop under a Symbol key", { fuzz_stop: { "reason" => EGRESS_SENTINEL, "seconds" => 1, "quiet" => 1 } }]
       ].each do |what, planted|
         it "refuses one with #{what}, without quoting it" do
           refusal = "a value in this report message has fuzz sizes or trials that aren't the queries' tables " \

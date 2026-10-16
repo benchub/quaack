@@ -196,12 +196,14 @@ module Quaack
         end
 
         # rewrite-test's fuzz trials and enumerate's worlds, if they're
-        # counts, enumerate's bound if it's one, and a disproof's sizes, if
-        # FuzzSizes.check passes them against the two queries.
+        # counts, why fuzz stopped, if Protocol::FuzzResult.stop? passes it
+        # (task 20261016-4), enumerate's bound if it's one, and a disproof's
+        # sizes, if FuzzSizes.check passes them against the two queries.
         def fuzz(store, name, original, sql)
           tested = NegativeResult.optional(store, name.sub("rewrite_", "rewrite_tested_")) || {}
-          trials, worlds, bound = tested.values_at("trials", "worlds", "bound")
+          trials, worlds, bound, stop = tested.values_at("trials", "worlds", "bound", "fuzz_stop")
           { "trials" => (trials if Protocol::FuzzResult.trials?(trials)),
+            "fuzz_stop" => (stop if Protocol::FuzzResult.stop?(stop)),
             "worlds" => (worlds if Protocol::FuzzResult.trials?(worlds)),
             "bound" => (bound if Protocol::FuzzResult.bound?(bound)),
             "sizes" => FuzzSizes.check(tested["sizes"], FuzzSizes.tables(original, sql)) }
