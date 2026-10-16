@@ -11963,3 +11963,17 @@ The LLM summary should be advice for a SQL-curious developer who may not know SQ
 - **Design:** report, LLM prompts.
 - **Landed:** 2026-10-16 (task/20261016-10). The winner-summary prompt now writes for a developer who writes SQL but may not know it well, as advice and heuristics, not a retelling of the plans: it says the plans are printed below, to use everyday words for what the database had to do, to name a plan step's type at most once or twice, and to answer the questions the payload allows (was the original more general than the schema's constraints required, did the data make a feature of the query a poor fit as the row counts show, and what to look for next time). A rewrite's sentences go: what made the original a poor fit, what the winner does in plain words, why it paid off in a phrase with the blocks, then the heuristic and when it wouldn't help. The guard also refuses an answer that names plan node types more than twice (counting only multi-word or run-together names, so Limit, Unique, or Sort as words don't count). The input, and so the trust boundary, is unchanged. No recorded replay holds a winner-summary prompt, so nothing needed re-recording. DESIGN.md and README.md describe the new prompt and check.
 - **Status:** done
+
+### 20261016-11. Report: the winner's plans highlight misestimates and time, not DIFFERS.
+
+Drop the DIFFERS labels on the winner's plan rows. Instead:
+- Shade each row by how far its estimated rows are from its actual rows, redder the further off: buckets at 2x, 5x, 10x, 20x, 50x, 100x, 500x, and over 1000x, either way.
+- Show where the time went in each row.
+
+Colours must follow light and dark mode.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-11). Plan nodes now carry `actual_total_time` (ms per loop, inclusive) and `actual_loops`, each a finite number of zero or more or null, in the protocol's PlanNodes check, the enclave's report-payload nodes, and so the egress function's and the driver's validation, both of which refuse a non-number such as a planted sentinel. The report drops the "differs" marks, their CSS, and their note. Each plan row is shaded by how far its estimated rows are from its actual rows, either way (larger over smaller, a count under 1 counted as 1; 8 buckets from 2x to over 1000x; none for an estimate-only plan or a step that never ran), with light and dark colours and a legend. A time column shows each step's own time over all its loops and its share of the plan's: total × loops less its direct children's, floored at zero, with a note on parallel workers and subplans/CTEs; the column is left out of a plan with no times. QUAACK's own measured plans run with TIMING OFF, so only the original's plan has times (follow-up 20261016-14). No recorded replay or fixture stores report plan nodes. DESIGN.md's report describes the fields, the shading, and the time.
+- **Status:** done

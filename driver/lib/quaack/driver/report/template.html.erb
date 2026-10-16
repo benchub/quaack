@@ -6,7 +6,9 @@
     --text: #1c2430; --bg: #fff; --panel: #fff; --rule: #d5dbe3; --accent: #2a64a8; --link-visited: #6b3fa0; --link-hover: #163f73;
     --summary-bg: #eef4fb; --warn: #8a5a00; --bug-bg: #fdecec; --bug-edge: #c0392b;
     --head-bg: #f3f5f8; --code-bg: #f3f5f8; --muted: #5c6674; --note: #515b69;
-    --baseline-bg: #f7f8fa; --differs-bg: #fff4d6;
+    --baseline-bg: #f7f8fa;
+    --misestimate-1: #fdf0f0; --misestimate-2: #fadede; --misestimate-3: #f7cbcb; --misestimate-4: #f4b9b9;
+    --misestimate-5: #f2a7a7; --misestimate-6: #ef9595; --misestimate-7: #eb7f7f; --misestimate-8: #e76d6d;
     --query-edge: #7b4bb3; --query-accent: #5b3a8a;
     --rose-edge: #b02a5b; --rose-accent: #8e1f48;
     --sankey-text: #1c2430; --sankey-count: #515b69;
@@ -21,7 +23,9 @@
       --text: #e6eaf0; --bg: #14181f; --panel: #1e242d; --rule: #3a4452; --accent: #6aa8e8; --link-visited: #c4a3ee; --link-hover: #a9cdf5;
       --summary-bg: #1a2738; --warn: #e5b04a; --bug-bg: #3a1c1c; --bug-edge: #e0675a;
       --head-bg: #252c37; --code-bg: #252c37; --muted: #9aa5b4; --note: #a9b3c1;
-      --baseline-bg: #1c222b; --differs-bg: #3d3216;
+      --baseline-bg: #1c222b;
+      --misestimate-1: #2a1a1e; --misestimate-2: #3a1b20; --misestimate-3: #4a1b22; --misestimate-4: #591c24;
+      --misestimate-5: #691d26; --misestimate-6: #791d28; --misestimate-7: #8c1e2a; --misestimate-8: #9e1f2c;
       --query-edge: #a37ad6; --query-accent: #c4a3ee;
       --rose-edge: #e0699a; --rose-accent: #f2a3c4;
       --sankey-text: #e6eaf0; --sankey-count: #a9b3c1;
@@ -65,8 +69,15 @@
   tr.baseline td { background: var(--baseline-bg); font-style: italic; }
   table.plan td.step { white-space: nowrap; }
   table.plan .arrow { color: var(--muted); }
-  table.plan tr.differs td { background: var(--differs-bg); }
-  table.plan .mark { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); }
+  table.plan tr.misestimate-1 td, .legend .misestimate-1 { background: var(--misestimate-1); }
+  table.plan tr.misestimate-2 td, .legend .misestimate-2 { background: var(--misestimate-2); }
+  table.plan tr.misestimate-3 td, .legend .misestimate-3 { background: var(--misestimate-3); }
+  table.plan tr.misestimate-4 td, .legend .misestimate-4 { background: var(--misestimate-4); }
+  table.plan tr.misestimate-5 td, .legend .misestimate-5 { background: var(--misestimate-5); }
+  table.plan tr.misestimate-6 td, .legend .misestimate-6 { background: var(--misestimate-6); }
+  table.plan tr.misestimate-7 td, .legend .misestimate-7 { background: var(--misestimate-7); }
+  table.plan tr.misestimate-8 td, .legend .misestimate-8 { background: var(--misestimate-8); }
+  .legend span { color: var(--text); padding: 0.05em 0.4em; border-radius: 3px; white-space: nowrap; }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
   code.sql { background: var(--code-bg); border-radius: 3px; padding: 0.05em 0.3em; white-space: pre-wrap;
              overflow-wrap: break-word; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
@@ -227,20 +238,23 @@
 <p><%= h describe(winner["label"]) %> <%= h compared %> <%= h CACHE %></p>
 <% measured_plan = (measured(winner["label"]) || {})["plan"] %>
 <% winner_plan = measured_plan || ((r = rewrite_of(winner["label"])) && r["plan"]) %>
-<% if winner_plan && plans_differ?(original_plan, winner_plan) %>
-<p class="note"><%= h Plans::MARKED %></p>
+<% if shaded?(original_plan, winner_plan) %>
+<%= misestimate_legend %>
 <% end %>
 <p>How Postgres runs the original query now:</p>
-<%= plan_table(original_plan, winner_plan) %>
+<%= plan_table(original_plan) %>
 <p class="note"><%= h Plans::BLOCKS_NOTE %></p>
+<% if timed?(original_plan) %>
+<p class="note"><%= h Plans::TIME_NOTE %></p>
+<% end %>
 <% if measured_plan %>
 <p>How it runs <%= h Words.lower(describe(winner["label"])) %>, as QUAACK measured it on the slow values:</p>
-<%= plan_table(measured_plan, original_plan) %>
+<%= plan_table(measured_plan) %>
 <% else %>
 <p><%= h NO_MEASURED_PLAN %><%= " #{h ESTIMATED_PLAN}" if winner_plan %></p>
 <% if winner_plan %>
 <p>How it runs <%= h Words.lower(called(r)) %> with no new indices:</p>
-<%= plan_table(winner_plan, original_plan) %>
+<%= plan_table(winner_plan) %>
 <% end %>
 <% unless (measured(winner["label"]) || {}).fetch("indexes", []).empty? %>
 <p>The plan with the new indices: <%= h Words::MISSING %>.</p>

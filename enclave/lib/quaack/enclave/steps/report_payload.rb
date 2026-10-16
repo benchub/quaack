@@ -37,7 +37,9 @@ module Quaack
       #                    "depth" (an Integer, 0 for the top node),
       #                    "shared_hit_blocks", "shared_read_blocks" (the
       #                    node's BUFFERS counts, its children's included,
-      #                    or nil) }
+      #                    or nil), "actual_total_time" (ms per loop, its
+      #                    children's included), "actual_loops" (each nil
+      #                    without ANALYZE, the time also with TIMING OFF) }
       #   original_measurements  { set => { "total_blocks", "hit", "read",
       #                    "stable", "timed_out" } }, the bare original's
       #                    baseline; hit and read are the run with the most
@@ -286,15 +288,29 @@ module Quaack
 
         # A plan's nodes in depth-first order, each as its type, relation,
         # index name, row counts, selectivity, its depth (0 for the top
-        # node), which the enclave counts, so it's always an Integer, and its
-        # shared hit and read block counts (blocks).
+        # node), which the enclave counts, so it's always an Integer, its
+        # shared hit and read block counts (blocks), and its time and loops
+        # (timing).
         def nodes(explain, stats)
           flatten(explain.first["Plan"]).map do |plan, depth|
             table = table(plan, stats)
             { "node" => plan["Node Type"], "relation" => table && "#{table.schema}.#{table.name}",
               "index" => plan["Index Name"], "est_rows" => plan["Plan Rows"], "actual_rows" => plan["Actual Rows"],
-              "selectivity" => selectivity(plan, table, stats), "depth" => depth, **blocks(plan) }
+              "selectivity" => selectivity(plan, table, stats), "depth" => depth, **blocks(plan), **timing(plan) }
           end
+        end
+
+        # The node's Actual Total Time, in milliseconds per loop, its
+        # children's included, and its Actual Loops, as EXPLAIN ANALYZE
+        # gives them. Each is nil when it's missing, as both are from a
+        # plan without ANALYZE and the time is from one with TIMING OFF, or
+        # when it isn't a finite number of zero or more.
+        def timing(plan)
+          { "actual_total_time" => measure(plan["Actual Total Time"]), "actual_loops" => measure(plan["Actual Loops"]) }
+        end
+
+        def measure(value)
+          value if (value.is_a?(Integer) || value.is_a?(Float)) && value.finite? && !value.negative?
         end
 
         # The node's Shared Hit Blocks and Shared Read Blocks, as EXPLAIN

@@ -14,7 +14,7 @@ RSpec.describe Quaack::Driver::Report do
     style = html[%r{<style>(.*?)</style>}m, 1]
     dark = style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1]
     light = style[/^  :root \{(.*?)^  \}/m, 1]
-    { light: light, dark: dark }.transform_values { |theme| theme.scan(/(--[a-z-]+): (#\h{3,6})/).to_h }
+    { light: light, dark: dark }.transform_values { |theme| theme.scan(/(--[a-z0-9-]+): (#\h{3,6})/).to_h }
   end
 
   # A #hex color (three or six digits) as its red, green and blue, 0 to 255.
@@ -93,8 +93,8 @@ RSpec.describe Quaack::Driver::Report do
           "rules" => ["key_in_self_join"], "fate" => "ranked", "rule" => nil, "round" => nil,
           "after" => nil,
           "plan" => [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
-                       "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0, "shared_hit_blocks" => nil,
-                       "shared_read_blocks" => nil }],
+                       "actual_rows" => nil, "selectivity" => 0.005, "depth" => 0, "shared_hit_blocks" => nil,
+                       "shared_read_blocks" => nil, "actual_total_time" => nil, "actual_loops" => nil }],
           "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
@@ -104,7 +104,8 @@ RSpec.describe Quaack::Driver::Report do
                                      "covered_by" => nil, "sources" => %w[generator_two] } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
                             "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0,
-                            "shared_hit_blocks" => 1_200, "shared_read_blocks" => 34 }],
+                            "shared_hit_blocks" => 1_200, "shared_read_blocks" => 34,
+                            "actual_total_time" => 12.5, "actual_loops" => 1 }],
       "timed_out_count" => 2 }
   end
 
@@ -289,7 +290,7 @@ RSpec.describe Quaack::Driver::Report do
     describe "links" do
       let(:backgrounds) do
         %w[--bg --panel --head-bg --code-bg --summary-bg --good-bg --minor-bg --bug-bg
-           --baseline-bg --differs-bg]
+           --baseline-bg]
       end
 
       it "are the accent color, with their own visited and hover colors" do
@@ -1806,100 +1807,196 @@ RSpec.describe Quaack::Driver::Report do
 
     # A plan node as the payload sends it.
     def pnode(type, depth, **shape)
-      shape = { relation: nil, index: nil, est: 10, actual: 10, selectivity: nil, hit: 4, read: 3 }.merge(shape)
+      shape = { relation: nil, index: nil, est: 10, actual: 10, selectivity: nil, hit: 4, read: 3, time: nil,
+                loops: 1 }.merge(shape)
       { "node" => type, "relation" => shape[:relation], "index" => shape[:index], "est_rows" => shape[:est],
         "actual_rows" => shape[:actual], "selectivity" => shape[:selectivity], "depth" => depth,
-        "shared_hit_blocks" => shape[:hit], "shared_read_blocks" => shape[:read] }
+        "shared_hit_blocks" => shape[:hit], "shared_read_blocks" => shape[:read],
+        "actual_total_time" => shape[:time], "actual_loops" => shape[:loops] }
     end
 
     # Each plan table in the section, by its rows.
     def plan_rows(html) = html.scan(%r{<table class="plan">.*?</table>}m).map { it.scan(%r{<tr.*?</tr>}m).drop(1) }
 
+    # Each row's misestimate class in the first plan table, or nil for a row with none.
+    def shades(html) = plan_rows(html).first.map { it[/\A<tr class="(misestimate-\d)"/, 1] }
+
+    # Each row's time cell in the first plan table.
+    def times(html) = plan_rows(html).first.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>\z}, 1] }
+
     let(:header) do
       '<tr><th scope="col">Step</th><th scope="col">Table</th><th scope="col">Index</th>' \
         '<th scope="col" class="num">Estimated rows</th><th scope="col" class="num">Actual rows</th>' \
         '<th scope="col" class="num">Share of the table</th>' \
-        '<th scope="col" class="num">Blocks read, with the steps under it</th></tr>'
+        '<th scope="col" class="num">Blocks read, with the steps under it</th>'
     end
+    let(:time_header) { '<th scope="col" class="num">Time in the step itself</th>' }
 
     it "explains the winner from blocks, with each plan as a table of its steps" do
       expect(explanation).to include("Rewrite Vivid Cove with no new indices read 300 blocks on the slow values, " \
                                      "against 1,000 for the original query (70% fewer).")
       expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indices:</p>")
-      expect(explanation.scan(header).size).to eq(2)
+      expect(explanation.scan("#{header}#{time_header}</tr>").size).to eq(1)
+      expect(explanation.scan("#{header}</tr>").size).to eq(1)
       expect(plan_rows(explanation)).to eq(
-        [[[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Seq Scan ),
-           %(<strong class="mark">differs</strong></td><td>#{sq("public.t")}</td><td></td><td class="num">50</td>),
-           %(<td class="num">50</td><td class="num">5.0%</td><td class="num">1,234</td></tr>)].join],
-         [[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Index Scan ),
-           %(<strong class="mark">differs</strong></td><td>#{sq("public.t")}</td><td>#{sq("t_a_idx")}</td>),
-           %(<td class="num">5</td><td class="num">5</td><td class="num">0.5%</td>),
-           %(<td class="missing">not recorded</td></tr>)].join]]
+        [[[%(<tr><td class="step" style="padding-left: 0.65rem">Seq Scan</td><td>#{sq("public.t")}</td><td></td>),
+           %(<td class="num">50</td><td class="num">50</td><td class="num">5.0%</td><td class="num">1,234</td>),
+           %(<td class="num">12.5 ms (100%)</td></tr>)].join],
+         [[%(<tr><td class="step" style="padding-left: 0.65rem">Index Scan</td><td>#{sq("public.t")}</td>),
+           %(<td>#{sq("t_a_idx")}</td><td class="num">5</td><td class="missing">not recorded</td>),
+           %(<td class="num">0.5%</td><td class="missing">not recorded</td></tr>)].join]]
       )
       expect(explanation).not_to include("<li>")
     end
 
-    context "with plans that share some of their steps" do
-      before do
-        payload["original_plan"] = [pnode("Limit", 0), pnode("Nested Loop", 1),
-                                    pnode("Seq Scan", 2, relation: "public.t", est: 9_000, actual: 12_345,
-                                                         selectivity: 0.5),
-                                    pnode("Index Scan", 2, relation: "public.u", index: "u_pkey", est: 1, actual: 1)]
-        payload["rewrites"].first["plan"] = [pnode("Limit", 0), pnode("Nested Loop", 1),
-                                             pnode("Index Scan", 2, relation: "public.t", index: "t_a_idx"),
-                                             pnode("Index Scan", 2, relation: "public.u", index: "u_pkey")]
-      end
+    it "marks no step as differing from the other plan, in words, by class, or in the stylesheet" do
+      payload["original_plan"] = [pnode("Limit", 0), pnode("Sort", 1), pnode("Seq Scan", 2, relation: "public.t")]
+      expect(explanation).not_to match(/differs|class="mark"/i)
+      expect(html[%r{<style>(.*?)</style>}m, 1]).not_to match(/differs|\.mark\b/)
+    end
 
-      it "indents each step by its depth, under an arrow, and marks only the steps the plans don't share" do
-        original, rewrite = plan_rows(explanation)
-        expect(original).to eq(
-          [[%(<tr><td class="step" style="padding-left: 0.65rem">Limit</td><td></td><td></td>),
-            %(<td class="num">10</td><td class="num">10</td><td class="num"></td><td class="num">7</td></tr>)].join,
-           [%(<tr><td class="step" style="padding-left: 2.15rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
-            %(Nested Loop</td><td></td><td></td><td class="num">10</td><td class="num">10</td>),
-            %(<td class="num"></td><td class="num">7</td></tr>)].join,
-           [%(<tr class="differs"><td class="step" style="padding-left: 3.65rem"><span class="arrow" ),
-            %(aria-hidden="true">-&gt; </span>Seq Scan <strong class="mark">differs</strong></td>),
-            %(<td>#{sq("public.t")}</td><td></td><td class="num">9,000</td><td class="num">12,345</td>),
-            %(<td class="num">50.0%</td><td class="num">7</td></tr>)].join,
-           [%(<tr><td class="step" style="padding-left: 3.65rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
-            %(Index Scan</td><td>#{sq("public.u")}</td><td>#{sq("u_pkey")}</td><td class="num">1</td>),
-            %(<td class="num">1</td><td class="num"></td><td class="num">7</td></tr>)].join]
-        )
-        expect(rewrite.map { it.include?("differs") }).to eq([false, false, true, false])
-        expect(rewrite[2]).to include("<td>#{sq("t_a_idx")}</td>")
-      end
+    it "indents each step by its depth, under an arrow" do
+      payload["original_plan"] = [pnode("Limit", 0), pnode("Nested Loop", 1),
+                                  pnode("Seq Scan", 2, relation: "public.t", est: 9_000, actual: 12_345,
+                                                       selectivity: 0.5)]
+      expect(plan_rows(explanation).first).to eq(
+        [[%(<tr><td class="step" style="padding-left: 0.65rem">Limit</td><td></td><td></td>),
+          %(<td class="num">10</td><td class="num">10</td><td class="num"></td><td class="num">7</td></tr>)].join,
+         [%(<tr><td class="step" style="padding-left: 2.15rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
+          %(Nested Loop</td><td></td><td></td><td class="num">10</td><td class="num">10</td>),
+          %(<td class="num"></td><td class="num">7</td></tr>)].join,
+         [%(<tr><td class="step" style="padding-left: 3.65rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
+          %(Seq Scan</td><td>#{sq("public.t")}</td><td></td><td class="num">9,000</td><td class="num">12,345</td>),
+          %(<td class="num">50.0%</td><td class="num">7</td></tr>)].join]
+      )
+    end
 
-      it "says what a marked step is" do
-        expect(explanation).to include(
-          "<p class=\"note\">A step marked “differs”, and shaded, is one the other plan doesn&#39;t have in " \
-          "the same place.</p>"
+    describe "shading each step by how far its estimated rows are from its actual rows" do
+      def shaded(*pairs, **) = pairs.map { |est, actual| pnode("Seq Scan", 0, est:, actual:, **) }
+
+      it "shades from 2x, 5x, 10x, 20x, 50x, 100x, and 500x off, and over 1000x, either way" do
+        payload["original_plan"] = shaded([10, 19.99], [10, 20], [20, 10], [50, 10.1], [50, 10], [10, 50],
+                                          [100, 10.01], [10, 100], [100, 10], [1, 19.9], [1, 20], [20, 1],
+                                          [49.9, 1], [50, 1], [1, 50], [1, 99.9], [1, 100], [100, 1],
+                                          [499, 1], [500, 1], [1, 500], [1, 1000], [1000, 1], [1, 1000.5],
+                                          [1001, 1], [1, 2_000_000])
+        expect(shades(explanation)).to eq(
+          [nil, *%w[1 1 1 2 2 2 3 3 3 4 4 4 5 5 5 6 6 6 7 7 7 7 8 8 8].map { "misestimate-#{it}" }]
         )
       end
 
-      it "doesn't mark a step that uses another index as shared" do
-        payload["rewrites"].first["plan"][3]["index"] = "u_other_idx"
-        expect(plan_rows(explanation).first.map { it.include?("differs") }).to eq([false, false, true, true])
+      it "counts a row count under 1 as 1, so an estimate of 1 against no actual rows isn't shaded" do
+        payload["original_plan"] = shaded([1, 0], [0, 0], [1, 0.4], [0, 0.5], [2, 0], [0, 5], [5, 0.2])
+        expect(shades(explanation)).to eq([nil, nil, nil, nil, "misestimate-1", "misestimate-2", "misestimate-2"])
       end
 
-      it "doesn't mark a step on another table as shared" do
-        payload["rewrites"].first["plan"][3]["relation"] = "public.v"
-        expect(plan_rows(explanation).first.map { it.include?("differs") }).to eq([false, false, true, true])
+      it "doesn't shade a step that never ran, or one without both row counts" do
+        payload["original_plan"] = [*shaded([100, 0], loops: 0), *shaded([100, nil], [nil, 1]),
+                                    *shaded([100, 1], loops: nil)]
+        expect(shades(explanation)).to eq([nil, nil, nil, "misestimate-6"])
       end
 
-      it "marks only a step one plan adds, not the steps under it that both plans have" do
-        payload["original_plan"].insert(1, pnode("Sort", 1))
-        payload["original_plan"][2..].each { it["depth"] += 1 }
-        original, rewrite = plan_rows(explanation)
-        expect(original.map { it.include?("differs") }).to eq([false, true, false, true, false])
-        expect(rewrite.map { it.include?("differs") }).to eq([false, false, true, false])
+      it "says how far off a shaded step is in its title" do
+        payload["original_plan"] = shaded([10, 20], [1, 1001], [1, 1])
+        expect(plan_rows(explanation).first.map { it[/\A<tr[^>]*>/] }).to eq(
+          ['<tr class="misestimate-1" title="Estimated rows off by 2x or more">',
+           '<tr class="misestimate-8" title="Estimated rows off by over 1000x">', "<tr>"]
+        )
+      end
+
+      it "doesn't shade a plan Postgres only estimated" do
+        expect(plan_rows(explanation).last.first).to start_with("<tr><td")
+      end
+
+      it "shades the winner's measured plan too" do
+        payload["labels"].each { it["plan"] = nil }
+        payload["labels"].find { it["label"] == "rewrite_1:none" }["plan"] = shaded([1, 300])
+        expect(plan_rows(explanation).last.first).to start_with('<tr class="misestimate-6"')
+      end
+
+      it "says what the shading means, once, with a swatch for each step of it" do
+        legend = '<p class="note legend">Each step is shaded by how far its estimated rows were from its actual ' \
+                 "rows, per loop, either way: " \
+                 '<span class="misestimate-1">2x</span> <span class="misestimate-2">5x</span> ' \
+                 '<span class="misestimate-3">10x</span> <span class="misestimate-4">20x</span> ' \
+                 '<span class="misestimate-5">50x</span> <span class="misestimate-6">100x</span> ' \
+                 '<span class="misestimate-7">500x</span> <span class="misestimate-8">over 1000x</span>. ' \
+                 "A count under 1 counts as 1, so an estimate of 1 row against none isn&#39;t shaded, and " \
+                 "neither is a step that never ran.</p>"
+        expect(explanation).to include("#{legend}<p>How Postgres runs the original query now:</p>")
+        expect(explanation.scan("note legend").size).to eq(1)
+      end
+
+      it "says nothing of shading when no plan it shows has actual rows" do
+        payload["original_plan"] = shaded([10, nil])
+        expect(explanation).not_to include("legend", "misestimate")
+      end
+
+      it "gets redder, step by step, in both themes, with the text readable on each" do
+        theme_variables.each do |name, v|
+          shades = (1..8).map { v["--misestimate-#{it}"] }
+          expect(shades).to all(match(/\A#\h{6}\z/)), "#{name}: #{shades}"
+          against_page = shades.map { contrast(it, v["--bg"]) }
+          expect(against_page.each_cons(2)).to all(satisfy { |a, b| b > a }), "#{name}: #{against_page}"
+          shades.each do |shade|
+            expect(rgb(shade).then { |r, g, b| r > g && r > b }).to be(true), shade
+            expect(contrast(v["--text"], shade)).to be >= 4.5, "#{name} --text on #{shade}"
+          end
+        end
+        expect(theme_variables[:light]["--misestimate-8"]).not_to eq(theme_variables[:dark]["--misestimate-8"])
+        style = html[%r{<style>(.*?)</style>}m, 1]
+        (1..8).each do |n|
+          expect(style).to include("table.plan tr.misestimate-#{n} td, .legend .misestimate-#{n} " \
+                                   "{ background: var(--misestimate-#{n}); }")
+        end
       end
     end
 
-    it "marks nothing, and says nothing of marks, when the plans have the same steps" do
-      payload["rewrites"].first["plan"] = payload["original_plan"].map(&:dup)
-      expect(explanation).not_to include("differs")
-      expect(explanation).not_to include("A step marked")
+    describe "the time in each step" do
+      it "is its own time over all its loops, without the steps under it, and its share of the plan's" do
+        payload["original_plan"] = [pnode("Limit", 0, time: 12.0), pnode("Nested Loop", 1, time: 9.5),
+                                    pnode("Seq Scan", 2, time: 2.0), pnode("Index Scan", 2, time: 0.05, loops: 100),
+                                    pnode("Result", 1, time: 0.25, loops: 2), pnode("Function Scan", 2, time: 0.1)]
+        expect(times(explanation)).to eq(["2.0 ms (17%)", "2.5 ms (21%)", "2.0 ms (17%)", "5.0 ms (42%)",
+                                          "0.4 ms (3%)", "0.1 ms (1%)"])
+      end
+
+      it "takes no time below zero, as when parallel workers' times add up to more than the Gather's" do
+        payload["original_plan"] = [pnode("Gather", 0, time: 5.0), pnode("Parallel Seq Scan", 1, time: 4.0, loops: 3)]
+        expect(times(explanation)).to eq(["0.0 ms (0%)", "12.0 ms (100%)"])
+      end
+
+      it "says a time too small to round, and leaves out the share when the plan took no time" do
+        payload["original_plan"] = [pnode("Result", 0, time: 0.04)]
+        expect(times(explanation)).to eq(["under 0.1 ms (100%)"])
+        payload["original_plan"] = [pnode("Result", 0, time: 0.0)]
+        expect(times(section(render(payload), "explanation"))).to eq(["0.0 ms"])
+      end
+
+      it "isn't recorded for a step without its time or loops, or whose steps under it lack one" do
+        payload["original_plan"] = [pnode("Limit", 0, time: 3.0), pnode("Sort", 1, time: nil),
+                                    pnode("Seq Scan", 2, time: 1.0), pnode("Hash", 1, time: 1.0, loops: nil)]
+        expect(times(explanation)).to eq(["not recorded", "not recorded", "1.0 ms (100%)", "not recorded"])
+      end
+
+      it "is left out, with its column, for a plan with no times, as QUAACK's own measured plans have none" do
+        expect(explanation.scan(time_header).size).to eq(1)
+        payload["original_plan"].first["actual_total_time"] = nil
+        untimed = section(render(payload), "explanation")
+        expect(untimed).not_to include(time_header)
+        expect(untimed).not_to include("Time in a step")
+      end
+
+      it "says, under the original query's plan, how parallel workers and subqueries count" do
+        note = "<p class=\"note\">Time in a step is over all its loops, without the steps under it. With parallel " \
+               "workers, a step adds up each worker&#39;s time, so the steps can add up to more than the query " \
+               "took, and the Gather above them can show none. A subquery, InitPlan, or CTE&#39;s time comes off " \
+               "the step it&#39;s listed under, but Postgres counts it in the step that used its result, so one " \
+               "can show too little time and the other too much.</p>"
+        expect(explanation.scan(note).size).to eq(1)
+        expect(explanation)
+          .to match(%r{</table><p class="note">Blocks read[^\n]*</p>\n#{Regexp.escape(note)}\n<p>QUAACK})
+      end
     end
 
     it "says, under the original query's plan, that blocks count every loop and an InitPlan's can show twice" do
@@ -1907,7 +2004,7 @@ RSpec.describe Quaack::Driver::Report do
              "a step that ran many times can show one row next to thousands of blocks. And a subquery Postgres " \
              "runs once up front (an InitPlan) has its blocks counted in the step that used its result, which " \
              "needn&#39;t be the step it&#39;s listed under, so those blocks can show up twice.</p>"
-      expect(explanation).to include("</table>#{note}\n<p>QUAACK has no measured plan")
+      expect(explanation).to include("</table>#{note}\n<p class=\"note\">Time in a step")
       expect(explanation.scan(note).size).to eq(1)
     end
 
@@ -1939,7 +2036,6 @@ RSpec.describe Quaack::Driver::Report do
       expect(explanation).to include("The plan with the new indices: not recorded.")
       expect(explanation).not_to include("t_a_idx")
       expect(plan_rows(explanation).size).to eq(1)
-      expect(explanation).not_to include("differs")
     end
 
     it "says why the winner's blocks aren't recorded when the run kept no measured plan for it" do
@@ -3843,7 +3939,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(section(out, "queries")).to include("transform rule x.").and(satisfy { !it.include?('class="sql">x') })
       expect(section(out, "ranking")).to include("a new index on #{sq("public.t (a) WHERE b")}")
       expect(section(out, "explanation"))
-        .to include(%(Seq Scan <strong class="mark">differs</strong></td><td>#{sq("")}</td>))
+        .to include(%(Seq Scan</td><td>#{sq("")}</td>))
       expect(out.scan("<code").size).to eq(out.scan("</code>").size)
     end
   end
