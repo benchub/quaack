@@ -11,20 +11,22 @@ RSpec.describe Quaack::Protocol::PlanNodes do
   let(:node) do
     { "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_pkey", "est_rows" => 5,
       "actual_rows" => 4.5, "selectivity" => 0.005, "depth" => 1, "shared_hit_blocks" => 3,
-      "shared_read_blocks" => 0 }
+      "shared_read_blocks" => 0, "actual_total_time" => 0.042, "actual_loops" => 3 }
   end
 
   def valid?(plan) = described_class.valid?(plan)
 
-  it "lists a node's fields: its type, relation, index name, row counts, selectivity, depth, and block counts" do
+  it "lists a node's fields: its type, relation, index name, row counts, selectivity, depth, block counts, " \
+     "time, and loops" do
     expect(described_class::FIELDS).to eq(%w[node relation index est_rows actual_rows selectivity depth
-                                             shared_hit_blocks shared_read_blocks])
+                                             shared_hit_blocks shared_read_blocks actual_total_time actual_loops])
     expect(described_class::FIELDS).to be_frozen.and(all(be_frozen))
   end
 
   it "takes a plan of nodes with exactly those fields, in any order, and an empty plan" do
     top = { "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => nil, "actual_rows" => nil,
-            "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => nil, "shared_read_blocks" => nil }
+            "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => nil, "shared_read_blocks" => nil,
+            "actual_total_time" => nil, "actual_loops" => nil }
     expect(valid?([top, node, node.to_a.reverse.to_h])).to be(true)
     expect(valid?([])).to be(true)
   end
@@ -88,6 +90,22 @@ RSpec.describe Quaack::Protocol::PlanNodes do
   it "refuses a block count that isn't an Integer of zero or more or nil, such as a planted sentinel" do
     [sentinel, "5", 5.0, 1.5, -1, true, [5], { sentinel => 5 }, :"5"].each do |bad|
       %w[shared_hit_blocks shared_read_blocks].each do |field|
+        expect(valid?([node.merge(field => bad)])).to be(false), "#{field}: #{bad.inspect}"
+      end
+    end
+  end
+
+  it "takes a step's time and loops as a finite number of zero or more, or nil" do
+    [0, 0.0, 3, 12.345, 2**40, nil].each do |number|
+      %w[actual_total_time actual_loops].each do |field|
+        expect(valid?([node.merge(field => number)])).to be(true), "#{field}: #{number.inspect}"
+      end
+    end
+  end
+
+  it "refuses a step's time or loops that isn't a finite number of zero or more or nil, such as a planted sentinel" do
+    [sentinel, "5", -1, -0.5, Float::NAN, Float::INFINITY, true, [5], { sentinel => 5 }, :"5"].each do |bad|
+      %w[actual_total_time actual_loops].each do |field|
         expect(valid?([node.merge(field => bad)])).to be(false), "#{field}: #{bad.inspect}"
       end
     end

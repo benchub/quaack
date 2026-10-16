@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-56
 - 20261008-67
 - 20261016-4
+- 20261016-11
 
 ## How this file works.
 
@@ -685,19 +686,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-11. Report: the winner's plans highlight misestimates and time, not DIFFERS.
-
-Drop the DIFFERS labels on the winner's plan rows. Instead:
-- Shade each row by how far its estimated rows are from its actual rows, redder the further off: buckets at 2x, 5x, 10x, 20x, 50x, 100x, 500x, and over 1000x, either way.
-- Show where the time went in each row.
-
-Colours must follow light and dark mode.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261016-12. Report: the rewrite Sankey draws empty boxes when the user proposed no rewrites.
 
 With no rewrites from the user, the Sankey shows empty boxes. The user wants the layer "Combined with your own rewrites: not recorded" to be as wide as the layer above it ("After checking the LLM's rewrites: N"), with an empty merging flow coming in from an empty box labelled "From you: 0".
@@ -716,4 +704,13 @@ From the review of 20261016-10. Two gaps in `driver/lib/quaack/driver/winner_sum
 - **Depends on:** None.
 - **Came from:** Review of 20261016-10, 2026-10-16.
 - **Design:** LLM prompts.
+- **Status:** todo
+
+### 20261016-14. Report: the winner's measured plan has no per-step times.
+
+From the build of 20261016-11. Measurement runs `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`, so the winner's measured plan carries loops but no times, and its table in "Why the winner reads fewer blocks" has no time column; only the original's plan, the operator's `EXPLAIN ANALYZE`, shows where the time went. Decide whether the winner's plan should show times too, for example from one extra timed `EXPLAIN ANALYZE` of the winner on the slow values, kept apart from the measured runs so timing overhead can't touch their block counts.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261016-11, 2026-10-16.
+- **Design:** report, measurement.
 - **Status:** todo

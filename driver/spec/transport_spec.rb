@@ -835,8 +835,9 @@ RSpec.describe Quaack::Driver::Transport do
     # Egress sends a report only if its plans pass Protocol::PlanNodes.valid?,
     # so the driver checks the same.
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
-      node = %({"node":"Seq Scan","relation":"public.t","index":null,"est_rows":5,"actual_rows":5.5,) +
-             %("selectivity":0.05,"depth":0,"shared_hit_blocks":12,"shared_read_blocks":null)
+      node = [%({"node":"Seq Scan","relation":"public.t","index":null,"est_rows":5,"actual_rows":5.5,),
+              %("selectivity":0.05,"depth":0,"shared_hit_blocks":12,"shared_read_blocks":null,),
+              %("actual_total_time":1.25,"actual_loops":3)].join
       sources = %(,"labels":[],"index_sources":#{JSON.generate(index_sources)})
       good = %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":null},{"plan":[#{node}}]}]#{sources}})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
@@ -844,13 +845,17 @@ RSpec.describe Quaack::Driver::Transport do
       expect(result.messages.map { it.values_at("type", "original_plan") })
         .to eq([["report", [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 5,
                               "actual_rows" => 5.5, "selectivity" => 0.05, "depth" => 0,
-                              "shared_hit_blocks" => 12, "shared_read_blocks" => nil }]]])
+                              "shared_hit_blocks" => 12, "shared_read_blocks" => nil,
+                              "actual_total_time" => 1.25, "actual_loops" => 3 }]]])
       [%({"type":"report","original_plan":[#{node},"filter":"#{sentinel}"}],"rewrites":[]}),
        %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":[#{node},"#{sentinel}":1}]}]}),
        %({"type":"report","original_plan":[#{node.sub('"depth":0', '"depth":"0"')}}],"rewrites":[]}),
        %({"type":"report","original_plan":[#{node.sub("12", %("#{sentinel}"))}}],"rewrites":[]}),
        %({"type":"report","original_plan":[#{node.sub("null", %({"#{sentinel}":1}))}}],"rewrites":[]}),
        %({"type":"report","original_plan":[#{node.sub("12", "12.0")}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[#{node.sub("1.25", %("#{sentinel}"))}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[],"rewrites":[{"plan":[#{node.sub(":3", %(:"#{sentinel}"))}}]}]}),
+       %({"type":"report","original_plan":[#{node.sub("1.25", "-1.25")}}],"rewrites":[]}),
        %({"type":"report","original_plan":[],"rewrites":[{"plan":[#{node.sub("null", %(["#{sentinel}"]))}}]}]}),
        %({"type":"report","original_plan":[],"rewrites":["#{sentinel}"]}),
        %({"type":"report","original_plan":[],"rewrites":{}}),
@@ -867,7 +872,7 @@ RSpec.describe Quaack::Driver::Transport do
     it "reads a report whose labels' plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
       node = { "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
                "actual_rows" => 5, "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => 7,
-               "shared_read_blocks" => 2 }
+               "shared_read_blocks" => 2, "actual_total_time" => nil, "actual_loops" => 1 }
       report = lambda do |labels|
         JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => labels,
                         "index_sources" => index_sources }.compact)
