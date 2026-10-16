@@ -641,6 +641,17 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
       expect(rendered(nil)).to include("Combined with your own rewrites: not recorded")
     end
 
+    # Task 20261016-15: an older driver may have started the run with rewrites of your own,
+    # and wrote a record without the count.
+    it "leaves it not recorded on a resume before llm-rewrites of a run whose record lacks the count" do
+      path = Quaack::Driver::Provenance.path(home, run_id)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.generate("providers" => [{ "name" => "groq", "provider" => "anthropic", "model" => "m" }]))
+      died(fresh, nil)
+      expect(Quaack::Driver::Provenance.open(home, run_id).own_rewrites).to be_nil
+      expect(rendered(nil)).to include("Combined with your own rewrites: not recorded")
+    end
+
     it "goes by the last invocation that started before llm-rewrites ran, since none before it got that far" do
       died(fresh, ["SELECT 2"])
       died(fresh, nil)

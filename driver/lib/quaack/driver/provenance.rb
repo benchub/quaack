@@ -47,9 +47,10 @@ module Quaack
     # - operator_inference: the entry that inferred the operator rewrites'
     #   transformations and assumptions.
     # - own_rewrites: how many rewrites of your own (`--rewrites`) the run
-    #   was given, as own_rewrites! records it: by the last invocation that
-    #   started before llm-rewrites ran, and by none after, unless one gave
-    #   some. Without it, the report doesn't know (Report::OwnRewrites).
+    #   was given, as own_rewrites! records it: first by the invocation that
+    #   started the record, then by the last invocation that started before
+    #   llm-rewrites ran, and by none after, unless one gave some. Without
+    #   it, the report doesn't know (Report::OwnRewrites).
     # - winner_summary: how the report's winner-summary ask went: its
     #   outcome (used, empty, rejected, or failed), the entry that answered
     #   if one did, and, for a failed ask, the rule. Never the summary's text.
@@ -121,7 +122,7 @@ module Quaack
       # The run's record, as far as it's there and well formed.
       def self.open(home, run_id)
         path = path(home, run_id)
-        new(path, read(path))
+        new(path, read(path), started: !File.exist?(path))
       end
 
       def self.read(path)
@@ -132,10 +133,12 @@ module Quaack
       end
 
       # path nil keeps the record in memory only, for a report built from
-      # a record already read.
-      def initialize(path = nil, record = {})
+      # a record already read. started says this process starts the run's
+      # record: there was none on disk.
+      def initialize(path = nil, record = {}, started: false)
         @path = path
         @record = record
+        @started = started
         earlier
       end
 
@@ -229,12 +232,15 @@ module Quaack
       # runs only after it, never has, so the count replaces what an earlier
       # invocation recorded. After, a count of 0 leaves the record as it is,
       # since an earlier invocation's rewrites may never have been
-      # processed, and a record that wasn't there stays unknown. Saves the
-      # record if that changes it.
+      # processed, and a record that wasn't there stays unknown. So does a
+      # record that's there without a count, before llm-rewrites too, since
+      # the invocation that started the run, such as an older driver's, may
+      # have been given rewrites: only the invocation that starts the record
+      # writes the first count. Saves the record if that changes it.
       def own_rewrites!(rewrites, entries)
         count = rewrites.to_a.size
         recorded = @record["own_rewrites"]
-        fresh = !entries["rewrites_generated"]
+        fresh = !entries["rewrites_generated"] && (recorded || @started)
         given = fresh ? count : ([recorded, count].compact.max if recorded || count.positive?)
         return self if given == recorded
 
