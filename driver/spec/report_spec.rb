@@ -8,13 +8,6 @@ RSpec.describe Quaack::Driver::Report do
     { "total_blocks" => blocks, "hit" => hit, "read" => blocks - hit, "stable" => stable, "timed_out" => false }
   end
 
-  # What ERB's escaping makes of text with an apostrophe in it.
-  let(:unproven) do
-    "Read it with care: every test QUAACK ran passed, but the test data never made some " \
-      "conditions in a part the rewrite changed both true and false, so the tests cannot show whether those " \
-      "parts behave the same in the rewrite."
-  end
-
   # The report's two color themes as {name => {"--var" => "#hex"}}, from its stylesheet, and WCAG's contrast ratio
   # between two #hex colors.
   def theme_variables
@@ -678,9 +671,7 @@ RSpec.describe Quaack::Driver::Report do
         ["<h3>The original query</h3>",
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: transform " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat the original " \
-         "query and is ranked below.</span> <span class=\"warn\">Read it with care: every test QUAACK ran " \
-         "passed, but the test data never made some conditions in a part the rewrite changed both true and " \
-         "false, so the tests cannot show whether those parts behave the same in the rewrite.</span>",
+         "query and is ranked below.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM (its " \
          "model wasn&#39;t recorded).</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
@@ -705,35 +696,16 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "flags it in the summary line, so a closed section still shows it" do
-        expect(warning(atoms: ["a < $1"])).to eq(unproven)
         expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
+      end
+
+      # Task 20261016-2: every tested rewrite had some condition the test data never made both true and false,
+      # so the caution said nothing. The untested conditions stay internal, for the LLM's test data to aim at.
+      it "never cautions about conditions the test data didn't make both true and false" do
+        expect(warning(atoms: ["a < $1"])).to be_nil
+        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["a < $1"], unchanged: [])).to be_nil
         expect(warning(atoms: ["a < $1"], empirical: assumed))
-          .to eq("Read it with care: it relies on what your data holds today. The test data also never " \
-                 "made some conditions in a part the rewrite changed both true and false, so the tests cannot " \
-                 "show whether those parts behave the same in the rewrite.")
-      end
-
-      it "flags untested conditions only while a later test left some of them unchecked" do
-        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["a < $1"]))
-          .to eq(unproven)
-        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["t.b IS NULL", "a < $1"])).to be_nil
-        expect(warning(atoms: ["a < $1"], empirical: assumed, covered: ["a < $1"]))
           .to eq("Read it with care: it relies on what your data holds today.")
-      end
-
-      # Task 20261009-40: an untested condition in a part the rewrite left alone says nothing about it.
-      it "flags untested conditions only while some sit in a part the rewrite changed" do
-        expect(warning(atoms: ["a < $1", "t.b IS NULL"], unchanged: ["t.b IS NULL"])).to eq(unproven)
-        expect(warning(atoms: ["a < $1", "t.b IS NULL"], unchanged: ["t.b IS NULL", "a < $1"])).to be_nil
-        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["a < $1"], unchanged: ["t.b IS NULL"])).to be_nil
-        expect(warning(atoms: ["a < $1"], empirical: assumed, unchanged: ["a < $1"]))
-          .to eq("Read it with care: it relies on what your data holds today.")
-      end
-
-      it "counts every untested condition when the unchanged list is missing, empty, or names other shapes" do
-        [nil, [], ["other = $9"], "a < $1", [3]].each do |unchanged|
-          expect(warning(atoms: ["a < $1"], unchanged:)).to eq(unproven), unchanged.inspect
-        end
       end
 
       it "flags nothing when the section holds neither warning" do
@@ -929,7 +901,7 @@ RSpec.describe Quaack::Driver::Report do
 
     describe "the warning, shown once while a section is open" do
       it "sits in the summary and again in the body, and the CSS hides the summary's copy when open" do
-        payload["rewrites"].first["untested_atoms"] = ["a < $1"]
+        payload["rewrites"].first["out_of_time"] = true
         out = render(payload)
         body = section(out, "queries")[%r{</summary>\s*<p class="warn body-warn">(.*?)</p>}m, 1]
         expect(body).to eq(section(out, "queries")[%r{<span class="warn">(.*?)</span>}m, 1])
@@ -940,14 +912,15 @@ RSpec.describe Quaack::Driver::Report do
         entry = payload["rewrites"].first
         entry["empirical"] = [{ "table" => "a", "column" => "x", "references_table" => "b", "id_column" => "id",
                                 "type_column" => "kind" }]
-        entry["untested_atoms"] = ["a < $1"]
+        entry["out_of_time"] = true
         queries = section(render(payload), "queries")
         summary = queries[%r{<span class="warn">(.*?)</span>}m, 1]
-        body = queries[%r{</summary>.*?(?=<div class="untested">)}m]
+        body = queries[%r{<h3>Rewrite Vivid Cove</h3>.*?</summary>(.*?)<pre class="sql">}m, 1]
         expect(summary).to include("relies on what your data holds today")
-        expect(body.scan("what your data holds today").size).to eq(1)
+        expect(body.scan("your data holds today").size).to eq(1)
         expect(body).to include("something your data holds today but your schema")
-        expect(body[%r{<p class="warn body-warn">(.*?)</p>}m, 1]).to start_with("Read it with care: every test")
+        expect(body[%r{<p class="warn body-warn">(.*?)</p>}m, 1])
+          .to start_with("Read it with care: its test on made-up data")
       end
     end
 

@@ -11860,3 +11860,13 @@ The verdict's warning that the production role couldn't see an expression index'
 - **Design:** report.
 - **Landed:** 2026-10-16 (task/20261016-1). The verdict's hidden-statistics caveat now links to `#hidden-statistics`, the "Statistics QUAACK couldn't see" note inside the indexes section (it already had that id), not to `#indexes`. The caveat-links spec now accepts a `<div>` target as well as a `<section>`, and a new example checks the link and that the note sits in the indexes section. DESIGN.md updated. Driver only.
 - **Status:** done
+
+### 20261016-2. Report: drop the "Read it with care … never made some conditions … both true and false" caveat.
+
+Every tested rewrite carries it, so it says nothing: fuzz can only disprove a rewrite, never prove it, and the report accepts rewrites QED would refuse. Decided by the user (2026-10-16): drop the caveat from the queries section (and the verdict, if it appears there). Keep the other "Read it with care" sentences (such as relying on what the data holds today). The untested atoms stay internal: llm-counterexamples still aims at them.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report, rewrite-test (coverage).
+- **Landed:** 2026-10-16 (task/20261016-2-3-4). The rewrite's warning (`Report::Cautions#warning`) no longer says "every test QUAACK ran passed, but the test data never made some conditions ... both true and false" (or its "The test data also never made ..." form after another caution). The other cautions (the data caution, out of time, not tested, the pairing) are unchanged. The verdict never carried it. The untested atoms still go to the store, the report payload and llm-counterexamples. DESIGN.md updated. Driver only.
+- **Status:** done

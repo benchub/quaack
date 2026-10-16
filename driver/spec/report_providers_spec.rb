@@ -105,7 +105,7 @@ RSpec.describe Quaack::Driver::Report do
        fated(3, "not_better", source: "llm", covered: []), fated(4, "not_better", source: "rule", covered: []),
        fated(5, "not_better", source: "operator", covered: []), fated(6, "not_better", source: "llm", covered: []),
        fated(7, "not_better", source: "llm", covered: []),
-       fated(8, "not_better", source: "llm", untested_atoms: ["a < $1"], covered: [])]
+       fated(8, "not_better", source: "llm", out_of_time: true, covered: [])]
     end
     let(:record) do
       unit = ->(entry, pairing, **more) { { "entry" => entry, "rounds" => 1, "pairing" => pairing, **more } }
@@ -139,11 +139,10 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "capitalizes the pairing's warning when it follows another warning in the summary" do
-      expect(warn(8)).to eq("Read it with care: every test QUAACK ran passed, but the test data " \
-                            "never made some conditions in a part the rewrite changed both true and false, so " \
-                            "the tests cannot show whether those parts behave the same in the rewrite. A model " \
-                            "checked its own work, since the one that wrote it also wrote test data meant to " \
-                            "break it.")
+      expect(warn(8)).to eq("Read it with care: its test on made-up data didn&#39;t finish within 5 minutes, so " \
+                            "QUAACK checked it only on test data the LLM wrote to break it and on the real data. " \
+                            "A model checked its own work, since the one that wrote it also wrote test data " \
+                            "meant to break it.")
     end
 
     it "says the pairing couldn't be checked for an LLM rewrite whose author wasn't recorded, with a warning" do

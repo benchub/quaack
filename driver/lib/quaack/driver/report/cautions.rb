@@ -24,19 +24,19 @@ module Quaack
 
         # A hint for a rewrite's summary line, so a collapsed section still
         # shows that it holds a warning: what the rewrite rests on in the
-        # data, conditions no test exercised, even later, or a
-        # test on made-up data that didn't finish in time (UNTIMED), or a
-        # counterexample pairing that wasn't met or couldn't be checked
-        # (pairing_warning). nil if none.
+        # data, a test on made-up data that didn't finish in time (UNTIMED)
+        # or didn't run (not_tested_caution), or a counterexample pairing
+        # that wasn't met or couldn't be checked (pairing_warning). nil if
+        # none. Conditions the test data never made both true and false
+        # aren't one (task 20261016-2): every tested rewrite had some, so
+        # the caution said nothing.
         #
         # The open section's body passes body: true. Its empirical paragraph
         # already says the data caution, so the body's warning leaves it out
         # and each caution reads once.
         def warning(entry, body: false)
           said = body ? [] : data_caution(entry)
-          # UNTIMED or NOT_TESTED comes before the unproven caution, whose first form says every test passed.
           caution(said, untested_caution(entry))
-          said << (said.empty? ? UNPROVEN_FIRST : UNPROVEN_AFTER) if unchecked_atoms(entry).any?
           caution(said, pairing_warning(entry))
           "Read it with care: #{said.join(" ")}" unless said.empty?
         end
@@ -47,12 +47,6 @@ module Quaack
         end
 
         def data_caution(entry) = empirical(entry) ? ["it relies on what your data holds today."] : []
-
-        UNPROVEN_FIRST = "every test QUAACK ran passed, but the test data never made some conditions in a part " \
-                         "the rewrite changed both true and false, so the tests cannot show whether those " \
-                         "parts behave the same in the rewrite."
-        UNPROVEN_AFTER = "The test data also never made some conditions in a part the rewrite changed both true " \
-                         "and false, so the tests cannot show whether those parts behave the same in the rewrite."
 
         # A rewrite whose rewrite-test ran out of time and went on (task
         # 20261011-15): the payload's out_of_time is true.
