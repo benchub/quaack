@@ -11901,3 +11901,13 @@ Decided by the user (2026-10-16): everywhere, in the report, DESIGN.md, README a
 - **Design:** report, LLM prompts.
 - **Landed:** 2026-10-16 (task/20261016-5). The report, the progress lines and step summaries, the fixed notes, and the LLM prompts (GeneratorThree's system prompt, which RefinementRound reuses, and WinnerSummary's) say "indices"; so do DESIGN.md, README.md, the e2e docs, docs/transforms and the corpus README. Left alone: code identifiers, the reply schema's `indexes` key, payload keys, HTML ids (`#indexes`, `declined-indexes`, ...), file names such as `indexes.sql`, Postgres names, code comments, and "indexes" used as a verb. The 56 corpus `prompt.md`/`chat.md` files holding GeneratorThree's system prompt were updated to match, so the replay's drift check passes, and the corpus README lists them under replies that answer an older prompt. No enclave or protocol change.
 - **Status:** done
+
+### 20261016-6. Report: the Ranking section's opening text.
+
+Replace it with the user's wording (2026-10-16), filling in the real counts and thresholds from the code: "QUAACK ranks 3 classes of candidates: the original query with different indices available, a rewrite of the original query, and a rewrite of the original query with different indices available. The three best candidates are kept for each class. To be considered for ranking, a candidate must read at least 5% fewer blocks than the original query using the values provided, and no more than 5% *more* blocks on any other set of values." Check each number against the code; if one is wrong, ask before changing either.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-6). The Ranking section opens with the user's wording. The user chose "more than 5% fewer" over "at least", since minimax's rule is strict (`Minimax::PERCENT`, strict `<`); the numbers stay literal in the template. The nothing-won text says the same rule in the same words. DESIGN.md doesn't quote the intro, so it's unchanged. No enclave or protocol change.
+- **Status:** done

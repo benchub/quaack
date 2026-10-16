@@ -687,15 +687,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 
 ### 20261016-5. Say "indices", not "indexes". Done, see BACKLOG-COMPLETE.md.
 
-### 20261016-6. Report: the Ranking section's opening text.
-
-Replace it with the user's wording (2026-10-16), filling in the real counts and thresholds from the code: "QUAACK ranks 3 classes of candidates: the original query with different indices available, a rewrite of the original query, and a rewrite of the original query with different indices available. The three best candidates are kept for each class. To be considered for ranking, a candidate must read at least 5% fewer blocks than the original query using the values provided, and no more than 5% *more* blocks on any other set of values." Check each number against the code; if one is wrong, ask before changing either.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261016-7. Report: "Measured, and not ranked" comes last in the Ranking section.
 
 - **Depends on:** None.
