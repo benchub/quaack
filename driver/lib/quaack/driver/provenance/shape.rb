@@ -24,8 +24,15 @@ module Quaack
         def record(raw)
           kept = { "providers" => list(raw["providers"]) { provider(it) }, **rewrites(raw), **parts(raw) }
                  .reject { |_, v| v.nil? || v.empty? }
-          kept = kept.merge("operator_inference" => raw["operator_inference"]) if name?(raw["operator_inference"])
+          kept = kept.merge(single(raw))
           (summary = SummaryShape.check(raw["winner_summary"])) ? kept.merge("winner_summary" => summary) : kept
+        end
+
+        # The operator inference's entry and how many rewrites of your own
+        # the run was given, each kept only when well formed.
+        def single(raw)
+          { "operator_inference" => (raw["operator_inference"] if name?(raw["operator_inference"])),
+            "own_rewrites" => (raw["own_rewrites"] if count?(raw["own_rewrites"])) }.compact
         end
 
         # The counterexample rounds, index rounds, and failed branches.

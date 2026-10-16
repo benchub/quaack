@@ -46,6 +46,10 @@ module Quaack
     #   its entry, and the rule it failed with, never the reason.
     # - operator_inference: the entry that inferred the operator rewrites'
     #   transformations and assumptions.
+    # - own_rewrites: how many rewrites of your own (`--rewrites`) the run
+    #   was given, as own_rewrites! records it: by the last invocation that
+    #   started before llm-rewrites ran, and by none after, unless one gave
+    #   some. Without it, the report doesn't know (Report::OwnRewrites).
     # - winner_summary: how the report's winner-summary ask went: its
     #   outcome (used, empty, rejected, or failed), the entry that answered
     #   if one did, and, for a failed ask, the rule. Never the summary's text.
@@ -218,6 +222,28 @@ module Quaack
         recorded ? @record["winner_summary"] = recorded : @record.delete("winner_summary")
         self
       end
+
+      # An invocation given rewrites of your own (nil for no `--rewrites`)
+      # records how many, before any step runs, with entries, the store's
+      # status. Until entries say llm-rewrites ran, operator-rewrites, which
+      # runs only after it, never has, so the count replaces what an earlier
+      # invocation recorded. After, a count of 0 leaves the record as it is,
+      # since an earlier invocation's rewrites may never have been
+      # processed, and a record that wasn't there stays unknown. Saves the
+      # record if that changes it.
+      def own_rewrites!(rewrites, entries)
+        count = rewrites.to_a.size
+        recorded = @record["own_rewrites"]
+        fresh = !entries["rewrites_generated"]
+        given = fresh ? count : ([recorded, count].compact.max if recorded || count.positive?)
+        return self if given == recorded
+
+        @record["own_rewrites"] = given
+        save
+      end
+
+      # How many rewrites of your own the run was given, or nil if no record says.
+      def own_rewrites = @record["own_rewrites"]
 
       def operator_inference!(entry)
         @record["operator_inference"] = entry if named?(entry)

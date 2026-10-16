@@ -528,7 +528,8 @@ module Quaack
             payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
             summary = summary(payload, run_id, client, record)
             Report.write(payload, run_id:, path: out, llm_calls: Provenance.llm_calls(provenance, client),
-                                  llm: Provenance.for_report(provenance, client), summary:)
+                                  llm: Provenance.for_report(provenance, client), summary:,
+                                  own_rewrites: provenance&.own_rewrites)
           end
         end
 
@@ -643,6 +644,7 @@ module Quaack
 
       def run
         entries = self.class.status(@transport, @run_id)
+        @provenance&.own_rewrites!(@rewrites, entries)
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
         set_up(setup, entries)

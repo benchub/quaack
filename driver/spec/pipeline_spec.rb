@@ -582,4 +582,75 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
 
     expect { pipeline(t).run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("no_report") }
   end
+
+  # Task 20261016-12: operator-rewrites runs only on your own rewrites, so with none the
+  # enclave records nothing for it. The report counts the stage as adding none only when
+  # the run's provenance record says no invocation of the run gave rewrites before
+  # rewrite-rules and llm-rewrites ran, never from this invocation's arguments alone.
+  describe "your own rewrites in the report's burndown" do
+    let(:run_id) { "20261016T120000Z-0123abcd" }
+    let(:home) { File.join(dir, "home") }
+    let(:burndown) do
+      { "stages" => { "llm-rewrites" => { "rewrites" => { "in" => 0, "added" => { "llm" => 3 }, "dropped" => {},
+                                                          "set_aside" => 0, "out" => 3, "extra" => {} } } },
+        "totals" => {} }
+    end
+    let(:fresh) { done.except("rewrite_rules_applied", "rewrites_generated") }
+
+    # An invocation that dies at its first call after status, with the store at entries.
+    def died(entries, rewrites)
+      dying = Class.new do
+        define_method(:call) do |subcommand, **|
+          raise "died at #{subcommand}" unless subcommand == "status"
+
+          Data.define(:messages).new(messages: [{ "type" => "status", "entries" => entries }])
+        end
+      end.new
+      expect { described_class.new(transport: dying, client: nil, run_id:, rewrites:, home:).run }
+        .to raise_error(RuntimeError, /\Adied at /)
+    end
+
+    # An invocation that finds every step stored and writes the report.
+    def rendered(rewrites, entries: done.merge("selection" => true))
+      t = transport(entries, "report-payload" => [report.merge("burndown" => burndown)])
+      described_class.new(transport: t, client: nil, run_id:, out:, rewrites:, home:).run
+      File.read(out)
+    end
+
+    it "counts operator-rewrites as adding none when no invocation gave rewrites, or gave an empty file" do
+      [nil, []].each do |rewrites|
+        FileUtils.rm_rf(home)
+        died(fresh, rewrites)
+        expect(rendered(rewrites)).to include("Combined with your own rewrites: 3")
+      end
+    end
+
+    it "leaves operator-rewrites not recorded when you gave rewrites but the enclave recorded none" do
+      died(fresh, ["SELECT 2"])
+      entries = done.merge("selection" => true, "operator_rewrites_checked" => true)
+      expect(rendered(["SELECT 2"], entries:)).to include("Combined with your own rewrites: not recorded")
+    end
+
+    it "leaves it not recorded on a resume without rewrites after an earlier invocation gave some" do
+      died(fresh, ["SELECT 2"])
+      died(done.except("rewrite_rules_applied"), nil)
+      expect(rendered(nil)).to include("Combined with your own rewrites: not recorded")
+    end
+
+    it "leaves it not recorded when the run's record doesn't say, as for a run an older driver started" do
+      expect(rendered(nil)).to include("Combined with your own rewrites: not recorded")
+    end
+
+    it "goes by the last invocation that started before llm-rewrites ran, since none before it got that far" do
+      died(fresh, ["SELECT 2"])
+      died(fresh, nil)
+      expect(rendered(nil)).to include("Combined with your own rewrites: 3")
+    end
+
+    it "leaves it not recorded once a resume after llm-rewrites gives rewrites the run had none of" do
+      died(fresh, nil)
+      died(done, ["SELECT 2"])
+      expect(rendered(nil)).to include("Combined with your own rewrites: not recorded")
+    end
+  end
 end

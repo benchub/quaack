@@ -25,6 +25,8 @@ module Quaack
         Layout = SankeyLayout
         NODE_WIDTH = 8.0
         GREY = 'style="fill: var(--uncounted-fill); stroke: var(--uncounted-stroke)" stroke-dasharray="4 3"'
+        # A source that added nothing: an empty box, and an empty line into its layer.
+        EMPTY = 'style="fill: none; stroke: var(--sk-source)"'
         KIND_COLOR = { source: "var(--sk-source)", drop: "var(--sk-drop)", held: "var(--sk-held)" }.freeze
         Ribbon = Struct.new(:kind, :path, :from, :to, :amount, :tip, :style)
 
@@ -62,13 +64,16 @@ module Quaack
           end
         end
 
+        # Each source's ribbon into its layer. A zero's is an empty line from the middle of its box.
         def source_ribbons
           layers.flat_map do |layer|
-            layer.above.select { it.flow.amount.positive? }.map do |source|
-              path = SankeyPaths.carry(source.bar_y + SankeyLanes::FLAT, layer.y, source.bar_edge, source.edge)
+            layer.above.map do |source|
               flow = source.flow
-              ribbon_tag(Ribbon.new("source", path, source.id, layer.id, flow.amount, flow.tip,
-                                    paint(color_of(layer))))
+              zero = flow.amount.zero?
+              from = zero ? [source.bar_x + (source.thickness / 2)] * 2 : source.bar_edge
+              path = SankeyPaths.carry(source.bar_y + SankeyLanes::FLAT, layer.y, from, source.edge)
+              ribbon_tag(Ribbon.new(zero ? "source zero" : "source", path, source.id, layer.id, flow.amount, flow.tip,
+                                    zero ? EMPTY : paint(color_of(layer))))
             end
           end
         end
@@ -120,13 +125,15 @@ module Quaack
             x: layer.x, y: layer.y, width: layer.width.round(2), height: SankeyParts::BAR_HEIGHT }
         end
 
-        # A source's flat bar, as wide as its count, or a thin tick for none.
+        # A source's flat bar, as wide as its count, or an empty box for none.
         def source_bar(layer, source)
           flow = source.flow
-          attributes = { class: flow.amount.zero? ? "node source zero" : "node source", "data-id": source.id,
+          zero = flow.amount.zero?
+          attributes = { class: zero ? "node source zero" : "node source", "data-id": source.id,
                          "data-stage": text(layer.name), "data-count": flow.amount, x: source.bar_x.round(2),
                          y: source.bar_y, width: source.thickness.round(2), height: SankeyLanes::FLAT }
-          %(<rect #{attrs(attributes)} style="fill: #{KIND_COLOR[:source]}">#{title(flow.tip)}</rect>)
+          %(<rect #{attrs(attributes)} #{zero ? EMPTY : %(style="fill: #{KIND_COLOR[:source]}")}>) +
+            %(#{title(flow.tip)}</rect>)
         end
 
         # A drop's node, in the column to the right of the step it belongs to.
