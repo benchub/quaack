@@ -207,20 +207,6 @@ Split from 20260924-25, with that task's review findings:
 
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-57. Running the rules: leftovers from 20261002-2.
-
-1. **`failed_checks` vs plan-pruning drops.** A rule-made rewrite that fails the checks is counted in rewrite-rules' `failed_checks` and also in plan-pruning's drops. Settle this with 20261001-19's counting.
-2. **A second `status` call.** `CounterexampleStage` asks `status` again right after `RewriteStage` did. Fixing it means passing the entries between the stages.
-3. **Which assumptions win on a deduped rewrite.** Dedupe now covers any later call of the same source, not just a rerun. A later rewrite with the same SQL but different stated assumptions keeps the earlier entry's assumptions. Say in DESIGN.md which wins, or merge them.
-4. **Duplicate constant.** `RuleBugs::MISMATCHES` duplicates `RewriteFate::MISMATCHES`. Share one.
-
-- **Depends on:** 20261002-2.
-- **Came from:** The build and review of 20261002-2, 2026-10-08.
-- **Design:** rewrite-rules, report.
-- **Landed so far:** items 2, 3 and 4, 2026-10-11 (task/20261008-57; Opus review clean). Item 2: `RewriteStage.run` returns the status entries it read after rewrite-rules, llm-rewrites and operator-rewrites, and the later stages use them (no second `status` call; the guard stays). Item 3: stored rewrites dedupe on the SQL and the stated assumptions together, so the same SQL with different assumptions gets its own entry (DESIGN.md, rewrite-rules). Item 4 was already done. Open: item 1 (needs a counting decision: count a rule rewrite that fails the checks in `failed_checks`, in plan-pruning's drops, or both labelled as overlapping).
-- **Decided by the user (2026-10-15):** item 1: count a rule-made rewrite that fails the checks only in rewrite-rules' `failed_checks`, not in plan-pruning's drops.
-- **Status:** todo
-
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
