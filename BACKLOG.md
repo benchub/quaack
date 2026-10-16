@@ -684,3 +684,12 @@ From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that f
 - **Came from:** The build of 20261008-67, 2026-10-15.
 - **Design:** fixture-compare.
 - **Status:** todo
+
+### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse.
+
+From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`result_comparison/pick_checks.rb`) lists every argument row of an `any_value`, NULLs included, but `any_value` ignores NULL inputs, so `any_value(v)` over `{NULL, 'x'}` has no real choice yet the check fires and the comparison refuses with `unsupported_order`. Leave NULL arguments out of `any_value`'s check, test first with one value plus NULLs, and mutation-test it. Also note in DESIGN.md that a query with picks runs about 5x slower in fuzz (about 156 against 750 trials/s), since it skips the cheap match.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
+- **Design:** fixture-compare, result comparison.
+- **Status:** todo
