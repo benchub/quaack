@@ -9,6 +9,7 @@ require_relative "result_comparison/load_orders"
 require_relative "result_comparison/cut_ties"
 require_relative "result_comparison/regrouped"
 require_relative "result_comparison/inner_cuts"
+require_relative "result_comparison/picks"
 require_relative "result_comparison/limit_sum"
 
 module Quaack
@@ -142,15 +143,15 @@ module Quaack
     # unsupported_order unless its cut is deterministic (InnerCuts), with
     # nothing else run.
     #
-    # - Nondeterminism below the top level. A DISTINCT, GROUP BY, or
-    #   UNION inside a subquery or CTE, in either query, can keep any of
-    #   several rows, or any representative of values btree calls equal,
-    #   such as {"a": 1.0} for {"a": 1.00} in jsonb. So can a top-level DISTINCT or
-    #   GROUP BY over such a column in a query with no ORDER BY. The fixture
-    #   shows only the one Postgres picked.
+    # - Arbitrary picks Picks doesn't force: a window function over tied
+    #   rows, such as row_number() or first_value, JSON_ARRAYAGG, and an
+    #   ARRAY(SELECT ...) with no ORDER BY.
+    #   Picks forces the rest (a DISTINCT ON, an aggregate that follows
+    #   its input order, a DISTINCT or set operation that keeps one of
+    #   several equal values), see Picks.verdict.
     # - A nondeterministic collation outside the ordered mode, where no
-    #   tiebreaker runs but a DISTINCT or GROUP BY can still pick either
-    #   of 'a' and 'A'.
+    #   tiebreaker runs but a GROUP BY key can still come out as either of
+    #   'a' and 'A'. (Picks forces a DISTINCT's.)
     # The reverse load in compare_in_load_orders catches both when the
     # pick follows the order rows reach it in, as a small sort or a first
     # row kept does. It can't when the pick follows something else that
@@ -159,7 +160,6 @@ module Quaack
     #
     # Known ways to discard a good candidate, all toward mismatch:
     #
-    # - DISTINCT ON with no ORDER BY picks rows Postgres is free to vary.
     # - Every unsupported_order refusal above.
     # - A candidate whose two runs fit the original's tie groups but don't
     #   come back as reversed groups of their own, such as one that sorts
@@ -219,6 +219,9 @@ module Quaack
 
         # Drops every Shape parse kept.
         def self.forget = @kept.clear
+
+        # The SQL, and :original or :candidate.
+        attr_reader :sql, :query
 
         def initialize(sql, query)
           @sql = sql
@@ -377,21 +380,29 @@ module Quaack
         shapes = [Shape.parse(original, :original), Shape.parse(candidate, :candidate)]
         mode = shapes.first.mode
         return ResultComparator::Verdict.for(mode, :unsupported_order) if InnerCuts.refused?(transaction, shapes)
-        return run(transaction, original, candidate, mode) if mode == :multiset
-        return subset(transaction, shapes.first, original, candidate) if mode == :subset
-        return ResultComparator::Verdict.for(mode, :unsupported_order) if mode == :with_ties
-        return ResultComparator::Verdict.for(mode, :candidate_unordered) unless shapes.last.ordered?
 
-        ordered(transaction, *shapes)
+        Picks.verdict(*shapes) { compared(transaction, shapes.first, it) }
+      rescue Picks::Unforceable
+        ResultComparator::Verdict.for(mode, :unsupported_order)
+      end
+
+      def compared(transaction, original, candidate)
+        mode = original.mode
+        return run(transaction, original.sql, candidate.sql, mode) if mode == :multiset
+        return subset(transaction, original, candidate.sql) if mode == :subset
+        return ResultComparator::Verdict.for(mode, :unsupported_order) if mode == :with_ties
+        return ResultComparator::Verdict.for(mode, :candidate_unordered) unless candidate.ordered?
+
+        ordered(transaction, original, candidate)
       end
 
       def run(transaction, original, candidate, mode)
         ResultComparator.compare(transaction.query(original), transaction.query(candidate), mode:)
       end
 
-      def subset(transaction, original_shape, original, candidate)
-        expected_count = transaction.query(original).rows.size
-        full = transaction.query(original_shape.without_limit)
+      def subset(transaction, original, candidate)
+        expected_count = transaction.query(original.sql).rows.size
+        full = transaction.query(original.without_limit)
         ResultComparator.compare(full, transaction.query(candidate), mode: :subset, expected_count:)
       end
 
