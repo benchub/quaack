@@ -338,17 +338,20 @@ RSpec.describe "quaacks qualify, against a real server" do
 
     # Task 20261010-17, item 1: run-server compares where each table the
     # plan may scan, its TOAST table, and its indexes sit on the run server
-    # with this.
+    # with this. "of" is the query's tables that take each in, which the
+    # report names in its place.
     it "stores the tablespace of each scanned table, its TOAST table, and its indexes, by table" do
       expect(qualify.stdout).to eq(done)
       table, index, child = spaces.values_at("table", "index", "child")
       expect(stored.read("relation_placement")).to eq(
-        [{ "schema" => "public", "name" => "items", "tablespaces" => { "table" => "pg_default" } },
+        [{ "schema" => "public", "name" => "items", "tablespaces" => { "table" => "pg_default" },
+           "of" => [%w[public items]] },
          { "schema" => "sales", "name" => "orders",
            "tablespaces" => { "table" => table, "toast" => table, "toast_index" => table,
-                              "index orders_note_idx" => index } },
+                              "index orders_note_idx" => index }, "of" => [%w[sales orders]] },
          { "schema" => "sales", "name" => "orders_child",
-           "tablespaces" => { "table" => child, "toast" => child, "toast_index" => child } }]
+           "tablespaces" => { "table" => child, "toast" => child, "toast_index" => child },
+           "of" => [%w[sales orders]] }]
       )
     end
 

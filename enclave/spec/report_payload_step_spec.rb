@@ -178,9 +178,19 @@ RSpec.describe "quaacks report-payload" do
     end
 
     it "sends the recorded table names" do
-      outcome = payload_of { it.write("tablespace_moves", [%(public."Orders")]) }
-      expect(JSON.parse(outcome.stdout.lines.first)["tablespace_moves"]).to eq([%(public."Orders")])
+      outcome = payload_of { it.write("tablespace_moves", ["public.orders"]) }
+      expect(JSON.parse(outcome.stdout.lines.first)["tablespace_moves"]).to eq(["public.orders"])
       expect_no_leaks(sentinels, outcome)
+    end
+
+    # Review of 20261010-17: a well-formed name of a table the query doesn't
+    # name stops at egress, so no report goes out with it.
+    it "sends no report when a recorded name isn't one of the query's tables" do
+      planted = "private.sentinel_8f3a2c_payroll"
+      outcome = payload_of { it.write("tablespace_moves", ["public.orders", planted]) }
+      expect(outcome.stdout).not_to include("sentinel_8f3a2c", %("type":"report"))
+      expect(outcome.stderr).not_to include("sentinel_8f3a2c")
+      expect(outcome.status.exitstatus).not_to eq(0)
     end
   end
 

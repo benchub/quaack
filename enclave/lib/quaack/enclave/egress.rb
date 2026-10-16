@@ -167,8 +167,8 @@ module Quaack
       # Each rewrite's untested_unchanged must repeat only shapes of its own
       # untested_atoms, and its not_tested be nil or a fixed word. Each rewrite's fuzz sizes and trials must pass
       # check_fuzz.
-      # tablespace_moves, when sent, must be table names only (see
-      # Protocol::TablespaceMoves.valid?).
+      # tablespace_moves, when sent, must name only tables original_sql
+      # names (see Protocol::TablespaceMoves.within?).
       # The report's other fields still go out unchecked.
       def check_report(fields)
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
@@ -185,9 +185,14 @@ module Quaack
       end
 
       def check_tablespace_moves(fields)
-        return if !fields.key?("tablespace_moves") || Protocol::TablespaceMoves.valid?(fields["tablespace_moves"])
+        return unless fields.key?("tablespace_moves")
 
-        raise Error, "a value in this report message has tablespace moves that aren't table names"
+        moves = fields["tablespace_moves"]
+        raise Error, "a value in this report message has tablespace moves that aren't table names" unless
+          Protocol::TablespaceMoves.valid?(moves)
+        return if Protocol::TablespaceMoves.within?(moves, FuzzSizes.tables(fields["original_sql"]))
+
+        raise Error, "a value in this report message has tablespace moves that aren't the query's tables"
       end
 
       def check_hidden_statistics(fields)

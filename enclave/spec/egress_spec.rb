@@ -507,8 +507,11 @@ RSpec.describe Quaack::Enclave::Egress do
     # tablespace's name (Protocol::TablespaceMoves.valid?). An older
     # payload, or a run whose qualify recorded no placement, has none.
     describe "tablespace_moves" do
-      def report_with(tablespace_moves)
-        { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, tablespace_moves: }.compact
+      let(:original_sql) { %(SELECT 1 FROM public.orders o JOIN sales."Order Lines" l ON l.order_id = o.id) }
+
+      def report_with(tablespace_moves, sql = original_sql)
+        { type: :report, original_sql: sql, original_plan: [plan_node], rewrites:, labels:, index_sources:,
+          tablespace_moves: }.compact
       end
 
       it "sends table names as they are, and a report without it" do
@@ -531,6 +534,20 @@ RSpec.describe Quaack::Enclave::Egress do
                    expect(e.message).not_to include(EGRESS_SENTINEL)
                    expect(e.cause).to be_nil
                  }
+        end
+      end
+
+      # Review of 20261010-17: a well-formed name of a relation the query doesn't
+      # name would put that relation's name out, so only the query's own tables pass.
+      it "refuses a well-formed name of a table the query doesn't name, without quoting it" do
+        planted = "private.sentinel_8f3a2c_payroll"
+        [[["public.orders", planted]], [["public.orders"], "SELECT 1"], [["public.orders"], nil]].each do |args|
+          expect { egress.serialize(report_with(*args)) }
+            .to raise_error(described_class::Error,
+                            "a value in this report message has tablespace moves that aren't the query's tables") { |e|
+              expect(e.message).not_to include("sentinel_8f3a2c", "orders")
+              expect(e.cause).to be_nil
+            }
         end
       end
     end

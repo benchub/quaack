@@ -130,7 +130,8 @@ RSpec.describe "quaacks run-server, against a real server" do
         TestPostgres.server.admin.exec("CREATE TABLESPACE #{space} LOCATION '#{dir}'")
         record_inventory
         store.write("server", production.host)
-        move(%(CREATE TABLE public.ts_probe (id int, note text); CREATE TABLE public."Odd" (id int)))
+        move(%(CREATE TABLE public.ts_probe (id int, note text); CREATE TABLE public."Odd" (id int);
+               CREATE TABLE public.ts_kid () INHERITS (public.ts_probe)))
         store.write("query", %(SELECT p.id FROM ts_probe p JOIN "Odd" USING (id)))
         store.write("plan", [{ "Plan" => { "Node Type" => "Result" }, "Settings" => { "search_path" => "public" } }])
         pgpass
@@ -162,6 +163,17 @@ RSpec.describe "quaacks run-server, against a real server" do
         expect(outcome.stdout).to eq(done)
         expect(stored.read("tablespace_moves")).to eq([%(public."Odd")])
         expect(outcome.stdout).not_to include(space)
+      end
+
+      # Review of 20261010-17: egress lets out only the tables the query names, so
+      # a moved inheritance descendant is recorded as the query's table it's under.
+      it "records a moved descendant as the query's table that takes it in, once" do
+        move("ALTER TABLE public.ts_kid SET TABLESPACE #{space}")
+        expect(run_server.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq(["public.ts_probe"])
+        move("ALTER TABLE public.ts_probe SET TABLESPACE #{space}")
+        expect(run_server.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq(["public.ts_probe"])
       end
 
       it "counts a moved index as its table's" do

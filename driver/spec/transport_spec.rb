@@ -955,24 +955,27 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
-    # Task 20261010-17. Egress sends tablespace_moves only if
-    # Protocol::TablespaceMoves.valid? passes, so the driver checks the same.
-    it "reads a report whose tablespace_moves Protocol::TablespaceMoves.valid? passes, and refuses one it doesn't" do
+    # Task 20261010-17. Egress sends tablespace_moves only if it names only
+    # tables original_sql names (Protocol::TablespaceMoves.within?), so the
+    # driver checks the same.
+    it "reads a report whose tablespace_moves names only its query's tables, and refuses any other" do
       report = lambda do |moves|
         JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
-                        "index_sources" => index_sources, **moves })
+                        "index_sources" => index_sources,
+                        "original_sql" => %(SELECT 1 FROM public.orders JOIN sales."Order Lines" USING (id)), **moves })
       end
       moves = ["public.orders", %(sales."Order Lines")]
       result = raw("print #{"#{report.call("tablespace_moves" => moves)}\n{\"type\":\"done\"}\n".inspect}")
                .call("probe")
 
       expect(result.messages.map { it["tablespace_moves"] }).to eq([moves])
+      # Review of 20261010-17: a well-formed name of a table the query doesn't name.
       [[sentinel], ["public.orders", "pg_default #{sentinel}"], [{ "public.orders" => sentinel }], sentinel,
-       nil].each do |planted|
+       nil, ["public.orders", "private.#{sentinel.tr("-", "_")}"]].each do |planted|
         error = refusal(report.call("tablespace_moves" => planted))
 
         expect(error.rule).to eq("unexpected_output"), "for #{planted}"
-        expect(error.full_message(highlight: false)).not_to include(sentinel)
+        expect(error.full_message(highlight: false)).not_to include(sentinel, sentinel.tr("-", "_"))
       end
     end
 

@@ -35,8 +35,9 @@ module Quaack
       #   qualifies a candidate through it.
       # - relation_placement: where each table the plan may scan (the
       #   relations and their inheritance descendants), its TOAST table,
-      #   and its indexes sit, from Placement. run-server compares it with
-      #   the racetrack's.
+      #   and its indexes sit, from Placement, each with "of", the query's
+      #   tables that take it in. run-server compares it with the
+      #   racetrack's, and names a moved table by its "of".
       # - relation_tablespaces: every tablespace relation_placement names,
       #   sorted, which run-server checks the run server has.
       #
@@ -64,7 +65,7 @@ module Quaack
           Enclave::Inventory::Production.read_only(connection) do
             result = Relations.check(query, settings, connection)
             PlanTables.check!(plan, result.scanned)
-            [result, written_path(settings, connection), placement(result.scanned, connection)]
+            [result, written_path(settings, connection), placement(result.scanned, connection, result.families)]
           end
         ensure
           connection&.close
@@ -74,14 +75,21 @@ module Quaack
         # table, its TOAST table, and its indexes. A scanned table missing
         # from pg_class refuses (fails closed) instead of dropping out of
         # the comparison.
-        def placement(scanned, connection)
+        def placement(scanned, connection, families = {})
           tables = scanned.map { [it.schema, it.name] }.uniq
           found = Placement.read(connection, tables)
           if found.size < tables.size
             raise Relations::Error.new("unknown_relation", "a scanned table isn't in pg_class"), cause: nil
           end
 
-          found
+          found.map { |entry| entry.merge("of" => owners(entry.values_at("schema", "name"), families)) }
+        end
+
+        # The query's tables, as [schema, name], whose families take in table.
+        def owners(table, families)
+          families.filter_map do |own, members|
+            [own.schema, own.name] if members.any? { [it.schema, it.name] == table }
+          end
         end
 
         # The schemas of path $1, in order, but those that exist and the

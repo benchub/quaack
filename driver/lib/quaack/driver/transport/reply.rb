@@ -7,13 +7,13 @@ require "quaack/protocol/plan_nodes"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
-require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/fuzz_result"
 require_relative "../enclave_error"
 require_relative "error_fields"
 require_relative "lexical"
+require_relative "tablespace_moves_check"
 
 module Quaack
   module Driver
@@ -210,7 +210,7 @@ module Quaack
         def report_counts?(line)
           Protocol::IndexSources.valid?(line["index_sources"]) && Protocol::FuzzResult.rewrites?(line["rewrites"]) &&
             Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line) && indexes?(line) &&
-            Protocol::TablespaceMoves.valid?(line.fetch("tablespace_moves", []))
+            TablespaceMovesCheck.ok?(line)
         end
 
         # A report's indexes, if it has them, must pass

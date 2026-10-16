@@ -34,4 +34,25 @@ RSpec.describe Quaack::Protocol::TablespaceMoves do
     expect(valid?(["public.orders"] * 65)).to be(false)
     expect(valid?(["public.orders"] * 64)).to be(true)
   end
+
+  # Review of 20261010-17: a well-formed name isn't enough. Each must be a table
+  # the report's own query names, given as [schema, name] pairs.
+  describe ".within?" do
+    let(:tables) { [%w[public orders], ["sales", %(Order "Lines")], %w[public user]] }
+
+    it "passes names of the given tables, as quote_ident writes them" do
+      expect(described_class.within?(["public.orders", %(sales."Order ""Lines"""), %(public."user")], tables))
+        .to be(true)
+      expect(described_class.within?([], [])).to be(true)
+    end
+
+    it "refuses a well-formed name of another table, and a field valid? refuses" do
+      expect(described_class.within?(["private.sentinel_8f3a2c_payroll"], tables)).to be(false)
+      expect(described_class.within?(["public.orders", "public.customers"], tables)).to be(false)
+      expect(described_class.within?([%(public."Orders")], tables)).to be(false)
+      expect(described_class.within?(["orders"], [%w[public orders]])).to be(false)
+      expect(described_class.within?(nil, tables)).to be(false)
+      expect(described_class.within?(["public.orders"] * 65, tables)).to be(false)
+    end
+  end
 end

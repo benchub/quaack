@@ -76,18 +76,23 @@ module Quaack
       # The tables of production, a placement qualify read there, that sit
       # elsewhere on connection's server: where a member both servers have,
       # the table itself, its TOAST table, or an index of the same name, is
-      # in another tablespace. Each is its schema.name, as quote_ident writes
-      # them, which is schema, never a tablespace's name. A table or index
+      # in another tablespace. Each is named by its "of", the query's tables
+      # that take it in (itself, without one), since egress lets out only
+      # the tables the query names. Each is schema.name, as quote_ident
+      # writes them, which is schema, never a tablespace's name. A table or index
       # missing here isn't a tablespace's doing, so it isn't counted.
       def moves(connection, production)
         here = read(connection, production.map { [it["schema"], it["name"]] })
-        production.filter_map do |table|
-          key = table.values_at("schema", "name")
-          found = here.find { it.values_at("schema", "name") == key } or next
-          next unless moved?(table["tablespaces"], found["tablespaces"])
+        owners = production.flat_map { |table| moved_owners(table, here) }.uniq
+        owners.map { connection.exec_params(QUOTED_SQL, it).getvalue(0, 0) }
+      end
 
-          connection.exec_params(QUOTED_SQL, key).getvalue(0, 0)
-        end
+      # The query's tables that take in table, as [schema, name], if table
+      # sits elsewhere in here, the placement of another server; else none.
+      def moved_owners(table, here)
+        key = table.values_at("schema", "name")
+        found = here.find { it.values_at("schema", "name") == key } or return []
+        moved?(table["tablespaces"], found["tablespaces"]) ? table.fetch("of") { [key] } : []
       end
 
       def moved?(ours, theirs) = (ours.keys & theirs.keys).any? { ours[it] != theirs[it] }
