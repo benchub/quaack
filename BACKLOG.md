@@ -706,3 +706,14 @@ With no rewrites from the user, the Sankey shows empty boxes. The user wants the
 - **Came from:** The user, 2026-10-16.
 - **Design:** report (Sankey diagrams).
 - **Status:** todo
+
+### 20261016-13. Winner summary guard: case handling of plan-step names.
+
+From the review of 20261016-10. Two gaps in `driver/lib/quaack/driver/winner_summary/plan_steps.rb`:
+- Run-together step types such as `HashAggregate` and `WindowAgg` are matched case-sensitively, so a reply that writes `hashaggregate` three times gets past both the cap of two step names and the check that a named step is in one of the plans. Match unambiguous run-together names case-insensitively, and keep one-word names such as `Sort`, `Limit` and `Unique` case-sensitive.
+- The existing check rejects a capitalised one-word type at the start of a sentence, such as "Limit" or "Group", when neither plan has that step. Advice-style replies may start sentences that way more often, so a good answer could be refused.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261016-10, 2026-10-16.
+- **Design:** LLM prompts.
+- **Status:** todo
