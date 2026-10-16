@@ -521,4 +521,39 @@ RSpec.describe Quaack::Enclave::Fuzz do
       expect(fuzz(original, slow, statement_timeout_ms: 200).verdict).to eq(:passed)
     end
   end
+
+  # Task 20261008-67's fix round: a world where the two results come out
+  # equal still runs the arbitrary picks' check, since a pick may have gone
+  # the original's way there by luck.
+  context "with a rewrite whose arbitrary pick matches the original's by luck" do
+    let(:orders) { Quaack::Enclave::TableName.new(schema: "s", name: "orders") }
+    let(:catalog) { Quaack::Enclave::Fuzz::Catalog.new(conn, [orders]) }
+    let(:original) { "SELECT customer_id, min(status) FROM s.orders GROUP BY customer_id" }
+    let(:candidate) { "SELECT customer_id, any_value(status) FROM s.orders GROUP BY customer_id" }
+    # Loaded in this order, any_value keeps 'lost', which is also the min.
+    let(:world) do
+      [%w[1 lost], %w[2 new]].map do |id, status|
+        Quaack::Enclave::Fuzz::Generator::Row.new(orders, { "id" => id, "customer_id" => "1", "status" => status })
+      end
+    end
+
+    def trial(first, second)
+      session = Quaack::Enclave::Fuzz::Session.new(conn, catalog, [first, second], honour: [],
+                                                                                   statement_timeout_ms: 5000)
+      session.open
+      session.trial(world)
+    ensure
+      session&.close
+    end
+
+    it "is a kill, though the results it ran are the same" do
+      conn.exec("BEGIN")
+      conn.exec("INSERT INTO s.customers VALUES (1, 'x'); INSERT INTO s.orders VALUES (1, 1, 'lost'), (2, 1, 'new')")
+      expect(conn.exec(candidate).values).to eq(conn.exec(original).values)
+      conn.exec("ROLLBACK")
+
+      expect(trial(original, candidate)).to have_attributes(compared: true, rule: :multiset)
+      expect(trial(original, original)).to have_attributes(compared: true, rule: nil)
+    end
+  end
 end

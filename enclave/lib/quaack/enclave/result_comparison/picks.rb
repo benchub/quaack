@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "../arena_runner"
+require_relative "pick_checks"
+
 module Quaack
   module Enclave
     module ResultComparison
@@ -32,9 +35,10 @@ module Quaack
       #   distinct that way.
       #
       # Each forced pick is one Postgres could make, so a forced query
-      # gives one of the query's answers. Two rows whose texts are the same
-      # in every column look the same to the comparator, so when the
-      # first and the last are the same, so is every row in between.
+      # gives one of the query's answers. But forcing every pick first,
+      # then every pick last, doesn't stand for the rest, so checked adds
+      # PickChecks to each pick, which fail the query when it has a real
+      # choice.
       #
       # DISTINCT and set operations are forced only below the top level,
       # and at the top level of a query with no ORDER BY, LIMIT, or OFFSET,
@@ -44,8 +48,8 @@ module Quaack
       # DISTINCT keeps its values sorted and isn't forced, nor is one in a
       # window (OVER), whose picks are a known gap.
       #
-      # verdict runs the forced queries: the original's, which must match
-      # the original, and, once the candidate matches, the candidate's.
+      # verdict runs the original's checked query and, once the candidate
+      # matches, the candidate's forced and checked queries.
       #
       # It works on the parse tree's hash (PgQuery's to_h) and returns a
       # new one, with nothing shared with the tree it was given.
@@ -69,19 +73,41 @@ module Quaack
 
         # The verdict of original against candidate, with their picks
         # checked. compare yields the verdict of the original against a
-        # Shape. When either forced run of the original doesn't match it,
-        # its answer turns on how Postgres picks, and that's
-        # unsupported_order. A matching candidate's forced runs are answers
-        # it could give, so each must match too.
-        def verdict(original, candidate, &compare)
-          if picks?(original) && forced_runs(original, &compare).any? { !it.match? }
-            return ResultComparator::Verdict.for(original.mode, :unsupported_order)
-          end
-
+        # Shape, and run runs one SQL query. Forcing every pick first, then
+        # every pick last, can't stand for every answer, since picks can go
+        # different ways: two sites, two groups of one site, or a pick
+        # between the first and the last. So each pick must have no real
+        # choice on the data: its values, or for an aggregate the values in
+        # each run of rows its own ORDER BY ties, all print the same
+        # (checked). The original's must, or its answer can turn on how
+        # Postgres picks, and that's unsupported_order. A matching
+        # candidate's forced runs are answers it could give, so each must
+        # match too, and then its picks must have no choice either, or it's
+        # unsupported_order. Postgres failing a forced or checked run, as
+        # when a forced arm resolves a literal on its own, is
+        # unsupported_order too, and nothing runs after it, since the
+        # failure ends the transaction.
+        #
+        # The two queries run as written first, so a query that fails on the
+        # data fails as it would with no picks.
+        def verdict(original, candidate, run, &compare)
           verdict = compare.call(candidate)
-          return verdict unless verdict.match? && picks?(candidate)
+          guarded(original) do
+            run.call(checked(original)) if picks?(original)
+            next verdict unless verdict.match? && picks?(candidate)
 
-          forced_runs(candidate, &compare).find { !it.match? } || verdict
+            forced_runs(candidate, &compare).find { !it.match? } || (run.call(checked(candidate)) && verdict)
+          end
+        end
+
+        # The block's value, or unsupported_order when a run in it fails. A
+        # cancel QUAACK didn't send goes up.
+        def guarded(original)
+          yield
+        rescue ArenaRunner::Error => e
+          raise if ArenaRunner::Cancel.foreign?(e)
+
+          ResultComparator::Verdict.for(original.mode, :unsupported_order)
         end
 
         # Lazily, compare's verdict for shape forced each way.
@@ -90,39 +116,64 @@ module Quaack
         end
 
         # Whether shape's query has a pick to force.
-        def picks?(shape) = force(shape.tree, descending: false, top: shape.mode == :multiset).last.positive?
+        def picks?(shape)
+          shape.kept(%i[picks any]) do
+            force(shape.tree, descending: false, top: shape.mode == :multiset).last.positive?
+          end
+        end
+
+        # Whether the original or the candidate SQL has a pick, or one
+        # compare can't parse or force, so that equal results aren't yet a
+        # match.
+        def any?(original, candidate)
+          picks?(Shape.parse(original, :original)) || picks?(Shape.parse(candidate, :candidate))
+        rescue Unforceable, Error
+          true
+        end
 
         # The Shape of shape's query with its picks forced (force). Raises
         # Error deparse_mismatch when it doesn't round-trip.
-        def forced(shape, descending)
-          tree = force(shape.tree, descending:, top: shape.mode == :multiset).first
-          Shape.parse(Deparse.faithfully(PgQuery::ParseResult.new(tree)), shape.query)
+        def forced(shape, descending) = Shape.parse(forced_sql(shape, descending:), shape.query)
+
+        # The SQL of shape's query with its picks forced first and checked
+        # (force), which fails on the data when a pick has a choice.
+        def checked(shape) = forced_sql(shape, descending: false, check: true)
+
+        def forced_sql(shape, descending:, check: false)
+          shape.kept([:picks, descending, check]) do
+            tree = force(shape.tree, descending:, top: shape.mode == :multiset, check:).first
+            Deparse.faithfully(PgQuery::ParseResult.new(tree))
+          end
         rescue Deparse::Error
           raise Error.new(:deparse_mismatch, query: shape.query), cause: nil
         end
 
         # tree with each pick forced to keep the first (or, descending, the
         # last) by text, and how many picks it forced. top is whether the
-        # top level's DISTINCT or set operation can be forced too. Raises
-        # Unforceable.
-        def force(tree, descending:, top:)
-          tree = Marshal.load(Marshal.dump(tree))
+        # top level's DISTINCT or set operation can be forced too. check
+        # adds to each pick a check that divides by zero when it has a
+        # choice (CHECKS). Raises Unforceable.
+        def force(tree, descending:, top:, check: false)
+          tree = copy(tree)
           root = tree[:stmts].first[:stmt][:select_stmt]
-          forced = aggregates(root).each { force_aggregate!(it, descending) }.size
-          [tree, forced + force_selects(root, descending, top)]
+          # Innermost first, so an aggregate's copies of its arguments carry
+          # the aggregates inside them already forced.
+          forced = aggregates(root).reverse.each { force_aggregate!(it, descending, check) }.size
+          [tree, forced + force_selects(root, descending, top, check)]
         end
 
-        def force_selects(root, descending, top)
+        def force_selects(root, descending, top, check)
           ([root] + InnerCuts.selects(root)).reverse.sum do |select|
-            force_distinct_on!(select, descending) +
-              (top || !select.equal?(root) ? force_dedup!(select, descending) : 0)
+            force_distinct_on!(select, descending, check) +
+              (top || !select.equal?(root) ? force_dedup!(select, descending, check) : 0)
           end
         end
 
+        # Each aggregate's node, outermost first.
         def aggregates(node)
           case node
           when Hash
-            own = node[:func_call] && aggregate?(node[:func_call]) ? [node[:func_call]] : []
+            own = node[:func_call] && aggregate?(node[:func_call]) ? [node] : []
             own + node.values.flat_map { aggregates(it) }
           when Array then node.flat_map { aggregates(it) }
           else []
@@ -137,17 +188,33 @@ module Quaack
           (names.size == 1 || (names.size == 2 && names.first == "pg_catalog")) && AGGREGATES.include?(names.last)
         end
 
-        def force_aggregate!(call, descending)
-          call[:agg_order] = Array(call[:agg_order]) + call[:args].map { sort(text(copy(it)), descending) }
+        def force_aggregate!(node, descending, check)
+          call = node[:func_call]
+          forced = { func_call: copy(call).merge(agg_order: Array(copy(call[:agg_order])) +
+                                                            call[:args].map { sort(text(copy(it)), descending) }) }
+          node.replace(check ? PickChecks.aggregate(call, forced) : forced)
         end
 
         # Sorts a DISTINCT ON's ties by the text of each output column, and
-        # returns how many it forced.
-        def force_distinct_on!(select, descending)
-          return 0 unless Array(select[:distinct_clause]).any? { !it.empty? }
+        # returns how many it forced. With no ORDER BY, it sorts by the
+        # DISTINCT ON keys first, as Postgres requires.
+        def force_distinct_on!(select, descending, check)
+          keys = Array(select[:distinct_clause])
+          return 0 unless keys.any? { !it.empty? }
 
-          select[:sort_clause] = Array(select[:sort_clause]) + output_keys(select).map { sort(it, descending) }
+          sorts = distinct_on_sorts(select, keys)
+          select[:sort_clause] = sorts + output_keys(select).map { sort(it, descending) } +
+                                 distinct_on_checks(select, keys, sorts, check)
           1
+        end
+
+        def distinct_on_sorts(select, keys)
+          sorts = Array(select[:sort_clause])
+          sorts.empty? ? keys.map { sort(copy(it), false) } : sorts
+        end
+
+        def distinct_on_checks(select, keys, sorts, check)
+          check ? [sort(PickChecks.distinct_on(select, keys, sorts), false)] : []
         end
 
         def output_keys(select)
@@ -181,35 +248,39 @@ module Quaack
 
         # Forces a DISTINCT or a set operation without ALL, and returns how
         # many it forced.
-        def force_dedup!(select, descending)
+        def force_dedup!(select, descending, check)
           if Array(select[:distinct_clause]) == [{}]
-            select.replace(distinct_whole_rows(select.except(:distinct_clause), descending))
+            select.replace(distinct_whole_rows(select.except(:distinct_clause), descending, check))
             return 1
           end
           return 0 if select[:all]
 
-          force_set_operation!(select, descending)
+          force_set_operation!(select, descending, check)
         end
 
-        def force_set_operation!(select, descending)
+        def force_set_operation!(select, descending, check)
           case select[:op]
-          when :SETOP_UNION then select.replace(distinct_whole_rows(select.merge(all: true), descending))
+          when :SETOP_UNION then select.replace(distinct_whole_rows(select.merge(all: true), descending, check))
           # EXCEPT and INTERSECT keep the left arm's row of each group.
-          when :SETOP_EXCEPT, :SETOP_INTERSECT then select[:larg] = distinct_whole_rows(select[:larg], descending)
+          when :SETOP_EXCEPT, :SETOP_INTERSECT
+            select[:larg] = distinct_whole_rows(select[:larg], descending, check)
           else return 0
           end
           1
         end
 
         # SELECT DISTINCT ON (PICK) PICK.* FROM (inner) PICK ORDER BY PICK,
-        # PICK::text, the last DESC when descending.
-        def distinct_whole_rows(inner, descending)
+        # PICK::text, the last DESC when descending, and when checked, a
+        # check that divides by zero when equal rows don't all print the
+        # same.
+        def distinct_whole_rows(inner, descending, check)
           row = { column_ref: { fields: [name(PICK)] } }
+          checks = check ? [sort(PickChecks.dedup(row), false)] : []
           {
             target_list: [{ res_target: { val: star(PICK) } }],
             from_clause: [{ range_subselect: { subquery: { select_stmt: inner }, alias: { aliasname: PICK } } }],
             distinct_clause: [copy(row)],
-            sort_clause: [sort(copy(row), false), sort(text(row), descending)],
+            sort_clause: [sort(copy(row), false), sort(text(row), descending)] + checks,
             limit_option: :LIMIT_OPTION_DEFAULT, op: :SETOP_NONE
           }
         end

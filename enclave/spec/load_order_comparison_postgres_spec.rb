@@ -278,14 +278,17 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
 
     # Intervals compare by value, as the original's own DISTINCT or = does,
-    # so the other representative is the same value.
-    it "matches a DISTINCT that keeps another representative of equal intervals" do
+    # so the other representative is the same value. But the DISTINCT's
+    # pick has a choice by text (Picks), and no check of it knows each
+    # type's equality, so it fails closed.
+    it "refuses a DISTINCT that keeps another representative of equal intervals" do
       original = "SELECT iv FROM items WHERE id = 1"
       candidate = "SELECT DISTINCT iv FROM items WHERE grp = 1 AND label = 'x'"
       expect(runner.with_fixture(described_class.reverse_load(items)) { |tx| tx.query(candidate).rows })
         .to eq([["24:00:00"]])
 
-      expect(fields(both(original, candidate))).to eq(match: true, mode: :multiset, rule: nil, load_order: nil)
+      expect(fields(both(original, candidate))).to eq(match: false, mode: :multiset, rule: :unsupported_order,
+                                                      load_order: :forward)
     end
 
     # Forced too: the forced DISTINCT keeps the first and the last by text.
@@ -491,7 +494,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
 
     it "keeps a query that fails only in the reverse run a query_failed" do
-      sql = "SELECT 1 / ((SELECT array_agg(id) FROM items)[1] - 5) AS q"
+      sql = "SELECT 1 / ((ARRAY(SELECT id FROM items))[1] - 5) AS q"
 
       expect { both(sql, sql) }.to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
         expect([e.rule, e.step, e.sqlstate]).to eq([:query_failed, :query, "22012"])

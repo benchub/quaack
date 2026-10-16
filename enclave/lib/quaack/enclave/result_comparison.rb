@@ -146,12 +146,12 @@ module Quaack
     # - Arbitrary picks Picks doesn't force: a window function over tied
     #   rows, such as row_number() or first_value, JSON_ARRAYAGG, and an
     #   ARRAY(SELECT ...) with no ORDER BY.
-    #   Picks forces the rest (a DISTINCT ON, an aggregate that follows
+    #   Picks checks the rest (a DISTINCT ON, an aggregate that follows
     #   its input order, a DISTINCT or set operation that keeps one of
     #   several equal values), see Picks.verdict.
     # - A nondeterministic collation outside the ordered mode, where no
     #   tiebreaker runs but a GROUP BY key can still come out as either of
-    #   'a' and 'A'. (Picks forces a DISTINCT's.)
+    #   'a' and 'A'. (Picks checks a DISTINCT's.)
     # The reverse load in compare_in_load_orders catches both when the
     # pick follows the order rows reach it in, as a small sort or a first
     # row kept does. It can't when the pick follows something else that
@@ -307,11 +307,12 @@ module Quaack
 
         def probe = kept(:probe) { "SELECT * FROM (#{build { nil }}) quaack_probe LIMIT 0" }
 
-        private
-
+        # The block's answer, kept under key, which Picks uses too.
         def kept(key)
           @answers.fetch(key) { @answers[key] = yield }
         end
+
+        private
 
         def parse
           PgQuery.parse(@sql)
@@ -381,7 +382,7 @@ module Quaack
         mode = shapes.first.mode
         return ResultComparator::Verdict.for(mode, :unsupported_order) if InnerCuts.refused?(transaction, shapes)
 
-        Picks.verdict(*shapes) { compared(transaction, shapes.first, it) }
+        Picks.verdict(*shapes, ->(sql) { transaction.query(sql) }) { compared(transaction, shapes.first, it) }
       rescue Picks::Unforceable
         ResultComparator::Verdict.for(mode, :unsupported_order)
       end

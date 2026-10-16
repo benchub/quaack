@@ -97,6 +97,13 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
       expect(compare(subquery(keyed), candidate).match?).to be(true)
     end
+
+    it "matches when only rows after the kept one tie, named by position and alias" do
+      sql = "SELECT grp, l FROM (SELECT DISTINCT ON (1) grp, label = 'a' AS first, label AS l " \
+            "FROM items ORDER BY 1, first DESC) s"
+
+      expect(compare(subquery(keyed), sql).match?).to be(true)
+    end
   end
 
   describe "DISTINCT ON over *" do
@@ -170,6 +177,81 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                "FROM items) s"
       expect(compare(distinct, distinct).match?).to be(true)
       expect(compare(window, window).match?).to be(true)
+    end
+  end
+
+  # Forcing every pick first, then every pick last, misses an answer from
+  # picks that go different ways: two sites, two groups of one site, or a
+  # pick between the first and the last. Each pick must have no real
+  # choice on the data, or the comparison refuses.
+  describe "picks that can go different ways" do
+    let(:both) do
+      "SELECT (SELECT any_value(label) FROM items WHERE grp = %d) = (SELECT any_value(label) FROM items WHERE grp = %d)"
+    end
+
+    it "refuses a candidate whose two picks can differ, though forcing both the same way matches" do
+      candidate = format(both, 1, 1)
+      expect(raw(candidate)).to eq([[["t"]]])
+
+      expect(fields(compare("SELECT true", candidate))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare(candidate, "SELECT true"))).to eq(match: false, rule: :unsupported_order)
+    end
+
+    it "refuses a candidate whose one pick can go different ways in two groups" do
+      rows = [[1, 1, "a"], [2, 1, "b"], [3, 2, "a"], [4, 2, "b"]].map do |id, grp, label|
+        Quaack::Enclave::ArenaRunner::FixtureRow.new(table: items, columns: %w[id grp label],
+                                                     values: [id.to_s, grp.to_s, label])
+      end
+      candidate = "SELECT count(DISTINCT v) FROM (SELECT grp, any_value(label) AS v FROM items GROUP BY grp) s"
+      expect(raw(candidate, rows:)).to eq([[["1"]]])
+
+      expect(fields(compare("SELECT 1::bigint", candidate, rows:))).to eq(match: false, rule: :unsupported_order)
+    end
+
+    it "refuses a candidate whose pick between the first and the last gives another answer" do
+      candidate = "SELECT any_value(label) = 'b' FROM items WHERE grp = 1"
+      expect(raw(candidate)).to eq([[["f"]]])
+
+      expect(fields(compare("SELECT false", candidate))).to eq(match: false, rule: :unsupported_order)
+    end
+
+    it "refuses a pick between values a nondeterministic collation calls equal" do
+      conn.exec(<<~SQL)
+        CREATE COLLATION ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+        ALTER TABLE items ALTER COLUMN label TYPE text COLLATE ci
+      SQL
+      rows = fixture.values_at(0, 3).map { it.with(values: [it.values[0], "1", it.values[0] == "1" ? "a" : "A"]) }
+      sql = "SELECT any_value(label) FROM items"
+      expect(raw(sql, rows:)).to eq([[["a"]]])
+
+      expect(fields(compare(sql, sql, rows:))).to eq(match: false, rule: :unsupported_order)
+    end
+
+    it "matches when each pick has no choice on the data" do
+      expect(compare("SELECT true", format(both, 2, 2)).match?).to be(true)
+      expect(compare(format(both, 2, 2), "SELECT true").match?).to be(true)
+    end
+  end
+
+  describe "a forced query Postgres can't run" do
+    before do
+      conn.exec("CREATE TYPE mood AS ENUM ('a', 'b'); CREATE TABLE moods (m mood); INSERT INTO moods VALUES ('b')")
+    end
+
+    it "refuses, where the forced EXCEPT's left arm resolves its literal on its own" do
+      ["SELECT 'a' EXCEPT SELECT m FROM moods",
+       "SELECT m::text FROM (SELECT 'a' EXCEPT SELECT m FROM moods) s (m)"].each do |sql|
+        expect(raw(sql)).to eq([[["a"]]])
+
+        expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order)
+      end
+    end
+
+    it "forces a DISTINCT ON with no ORDER BY, which needs its keys first" do
+      sql = subquery("SELECT DISTINCT ON (grp) grp, label FROM items")
+
+      expect(compare(sql, sql, rows: fixture.values_at(0, 3)).match?).to be(true)
+      expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order)
     end
   end
 
