@@ -624,6 +624,13 @@ RSpec.describe Quaack::Enclave::Egress do
         ["a planted key in the stop",
          { "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20, "sql" => EGRESS_SENTINEL } }],
         ["a String in place of the stop", { "fuzz_stop" => EGRESS_SENTINEL }],
+        ["a dry stop with no times", { "fuzz_stop" => { "reason" => "dry", "seconds" => nil, "quiet" => nil } }],
+        ["a cap stop without how long nothing new came",
+         { "fuzz_stop" => { "reason" => "cap", "seconds" => 60, "quiet" => nil } }],
+        ["a deadline stop with how long nothing new came",
+         { "fuzz_stop" => { "reason" => "deadline", "seconds" => 13, "quiet" => 11 } }],
+        ["a spec's trials stop with times",
+         { "fuzz_stop" => { "reason" => "trials", "seconds" => 41, "quiet" => 20 } }],
         ["a stop under a Symbol key", { fuzz_stop: { "reason" => EGRESS_SENTINEL, "seconds" => 1, "quiet" => 1 } }]
       ].each do |what, planted|
         it "refuses one with #{what}, without quoting it" do

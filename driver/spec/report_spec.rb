@@ -891,12 +891,12 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says the rewrite's time budget ran out" do
-        expect(stopped(stop("deadline", 13, 11)))
+        expect(stopped(stop("deadline", 13, nil)))
           .to eq("#{survived} Its random search stopped after 13 s, when the rewrite's 5-minute time budget ran out.")
       end
 
       it "says the differences it found didn't hold up with every constraint enforced" do
-        expect(stopped(stop("unlifted", 22, 5)))
+        expect(stopped(stop("unlifted", 22, nil)))
           .to eq("#{survived} Its random search stopped after 22 s, once several differences it found didn't " \
                  "hold up with every constraint enforced.")
       end
@@ -905,11 +905,12 @@ RSpec.describe Quaack::Driver::Report do
         expect(stopped(stop("trials", nil, nil)))
           .to eq("#{survived} Its random search stopped after a number of trials set for testing QUAACK, not " \
                  "by time.")
-        expect(stopped(stop("deadline", nil, nil)))
-          .to eq("#{survived} Its random search stopped when the rewrite's 5-minute time budget ran out.")
-        expect(stopped(stop("unlifted", nil, nil)))
-          .to eq("#{survived} Its random search stopped once several differences it found didn't hold up with " \
-                 "every constraint enforced.")
+      end
+
+      # Task 20261016-4's fix round: a stop no search could make says nothing.
+      it "says nothing of a stop whose times its reason can't have" do
+        [stop("dry", nil, nil), stop("floor", 30, nil), stop("deadline", nil, nil), stop("unlifted", 22, 5),
+         stop("trials", 41, 20)].each { expect(stopped(it)).to eq(survived), it.inspect }
       end
 
       it "says nothing of a stop that isn't sent, or when it says nothing of the data sets" do

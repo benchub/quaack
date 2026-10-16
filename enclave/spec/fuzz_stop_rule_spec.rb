@@ -121,21 +121,22 @@ RSpec.describe Quaack::Enclave::Fuzz::StopRule do
       expect(rule.stopped).to eq("reason" => "cap", "seconds" => 60, "quiet" => 8)
     end
 
-    it "gives the reason the search names instead, a deadline or kills that didn't lift" do
+    it "gives the reason the search names instead, a deadline or kills that didn't lift, with no quiet time" do
       rule = seconds_rule(cap: 60)
       now[0] = 2.0
       rule.observe(:a)
       now[0] = 12.6
-      expect(rule.stopped("deadline")).to eq("reason" => "deadline", "seconds" => 13, "quiet" => 11)
-      expect(rule.stopped("unlifted")).to eq("reason" => "unlifted", "seconds" => 13, "quiet" => 11)
+      expect(rule.stopped("deadline")).to eq("reason" => "deadline", "seconds" => 13, "quiet" => nil)
+      expect(rule.stopped("unlifted")).to eq("reason" => "unlifted", "seconds" => 13, "quiet" => nil)
     end
 
-    it "counting trials, says trials, and gives no times, so a spec's outcome doesn't depend on its speed" do
+    it "counting trials, says trials whatever stopped it, with no times, so a spec's outcome doesn't depend on speed" do
       rule = described_class.trials(10)
       10.times { rule.observe(:seen) }
       expect(rule.stop?).to be(true)
       expect(rule.stopped).to eq("reason" => "trials", "seconds" => nil, "quiet" => nil)
-      expect(rule.stopped("unlifted")).to eq("reason" => "unlifted", "seconds" => nil, "quiet" => nil)
+      expect(rule.stopped("unlifted")).to eq("reason" => "trials", "seconds" => nil, "quiet" => nil)
+      expect(rule.stopped("deadline")).to eq("reason" => "trials", "seconds" => nil, "quiet" => nil)
     end
   end
 

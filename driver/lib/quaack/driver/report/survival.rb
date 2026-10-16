@@ -53,8 +53,8 @@ module Quaack
           "cap" => lambda { |seconds, quiet|
             "at its #{seconds} s limit, having last found new plan behaviour #{quiet} s before"
           },
-          "deadline" => ->(seconds, _) { seconds ? "after #{seconds} s, #{BUDGET}" : BUDGET },
-          "unlifted" => ->(seconds, _) { seconds ? "after #{seconds} s, #{UNLIFTED}" : UNLIFTED },
+          "deadline" => ->(seconds, _) { "after #{seconds} s, #{BUDGET}" },
+          "unlifted" => ->(seconds, _) { "after #{seconds} s, #{UNLIFTED}" },
           "trials" => ->(*) { "after a number of trials set for testing QUAACK, not by time" }
         }.freeze
 

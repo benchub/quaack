@@ -29,8 +29,9 @@ module Quaack
       # stopped says why the search stopped and when, for the report (task
       # 20261016-4, Protocol::FuzzResult.stop?): the rule's own reason, or
       # the one the search names (a deadline, kills that didn't lift), in
-      # whole seconds. Counting trials, its reason is trials, and it gives
-      # no times, so a spec's outcome is the same on any machine.
+      # whole seconds, with how long nothing new came only for its own
+      # reasons. Counting trials, its reason is trials whatever stopped it,
+      # and it gives no times, so a spec's outcome is the same on any machine.
       class StopRule
         ENV_TRIALS = "QUAACKS_FUZZ_TRIALS"
         FLOOR_SECONDS = 30
@@ -82,11 +83,13 @@ module Quaack
         # Why the search stopped, why if it names its own reason, and when,
         # as Protocol::FuzzResult's fuzz_stop.
         def stopped(why = nil)
-          return { "reason" => why || "trials", "seconds" => nil, "quiet" => nil } if unit == :trials
+          return { "reason" => "trials", "seconds" => nil, "quiet" => nil } if unit == :trials
 
           spent = elapsed
           seconds = whole(spent)
-          { "reason" => why || ruled(spent), "seconds" => seconds, "quiet" => [whole(spent - @last_new), seconds].min }
+          return { "reason" => why, "seconds" => seconds, "quiet" => nil } if why
+
+          { "reason" => ruled(spent), "seconds" => seconds, "quiet" => [whole(spent - @last_new), seconds].min }
         end
 
         private

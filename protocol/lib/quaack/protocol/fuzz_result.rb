@@ -57,6 +57,11 @@ module Quaack
       # (QUAACKS_FUZZ_TRIALS) stopped it.
       STOP_REASONS = %w[dry floor cap deadline unlifted trials].map(&:freeze).freeze
 
+      # The reasons that say how long the search had found no new plan
+      # behaviour, its quiet; a deadline or kills that didn't lift don't,
+      # and trials, a spec's trial count, gives no times at all.
+      QUIET_REASONS = %w[dry floor cap].map(&:freeze).freeze
+
       # No search runs this long: the rewrite's whole budget is 300 seconds.
       MAX_STOP_SECONDS = 3600
 
@@ -89,22 +94,25 @@ module Quaack
       end
 
       # Whether stop is nil or why fuzz stopped (task 20261016-4): exactly a
-      # reason on STOP_REASONS, seconds, nil (a spec's trial count) or a
-      # whole number up to MAX_STOP_SECONDS, and quiet, nil or whole
-      # seconds up to seconds, how long it had found no new plan behaviour.
+      # reason on STOP_REASONS with the times that reason has. trials, a
+      # spec's trial count, has seconds and quiet both nil. Every other
+      # reason has seconds, a whole number up to MAX_STOP_SECONDS, and
+      # quiet, how long it had found no new plan behaviour, whole seconds up
+      # to seconds for QUIET_REASONS and nil for the rest.
       def stop?(stop)
         return true if stop.nil?
         return false unless stop.is_a?(Hash) && stop.size == STOP_KEYS.size && STOP_KEYS.all? { stop.key?(it) }
 
         reason, seconds, quiet = stop.values_at(*STOP_KEYS)
-        STOP_REASONS.include?(reason) && times?(seconds, quiet)
+        STOP_REASONS.include?(reason) && times?(reason, seconds, quiet)
       end
 
-      # Whether seconds and quiet are both nil, or whole seconds, quiet nil or no more than seconds.
-      def times?(seconds, quiet)
-        return quiet.nil? if seconds.nil?
+      def times?(reason, seconds, quiet)
+        return seconds.nil? && quiet.nil? if reason == "trials"
+        return false unless seconds?(seconds)
+        return quiet.nil? unless QUIET_REASONS.include?(reason)
 
-        seconds?(seconds) && (quiet.nil? || (seconds?(quiet) && quiet <= seconds))
+        seconds?(quiet) && quiet <= seconds
       end
 
       def seconds?(seconds) = count?(seconds) && seconds <= MAX_STOP_SECONDS

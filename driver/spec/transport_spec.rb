@@ -930,7 +930,12 @@ RSpec.describe Quaack::Driver::Transport do
        { "worlds" => sentinel }, { "worlds" => -1 }, { "bound" => sentinel }, { "bound" => 5 },
        { "fuzz_stop" => { "reason" => sentinel, "seconds" => 41, "quiet" => 20 } },
        { "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20, "why" => sentinel } },
-       { "fuzz_stop" => sentinel }].each do |planted|
+       { "fuzz_stop" => sentinel },
+       # Task 20261016-4's fix round: times the reason can't have.
+       { "fuzz_stop" => { "reason" => "dry", "seconds" => nil, "quiet" => nil } },
+       { "fuzz_stop" => { "reason" => "cap", "seconds" => 60, "quiet" => nil } },
+       { "fuzz_stop" => { "reason" => "deadline", "seconds" => 13, "quiet" => 11 } },
+       { "fuzz_stop" => { "reason" => "trials", "seconds" => 41, "quiet" => 20 } }].each do |planted|
         error = refusal(report.call(planted))
 
         expect(error.rule).to eq("unexpected_output"), "for #{planted}"
