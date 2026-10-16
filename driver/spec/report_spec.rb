@@ -1279,6 +1279,16 @@ RSpec.describe Quaack::Driver::Report do
     let(:ranking) { section(html, "ranking") }
     let(:opening) { '<details class="fold rose" id="not-ranked-section">' }
 
+    it "opens by naming the three classes of candidate, how many it keeps, and the rule for being ranked" do
+      expect(ranking).to include(
+        "<p>QUAACK ranks 3 classes of candidates: the original query with different indices available, a rewrite " \
+        "of the original query, and a rewrite of the original query with different indices available. The three " \
+        "best candidates are kept for each class. To be considered for ranking, a candidate must read more than 5% " \
+        "fewer blocks than the original query using the values provided, and no more than 5% <em>more</em> blocks " \
+        "on any other set of values.</p>"
+      )
+    end
+
     it "ranks the candidates within each kind, each described in words" do
       expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
         .to eq([["1", "Rewrite Vivid Cove with no new indices"],
@@ -1653,7 +1663,11 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says there's no ranking when nothing beat the original, and still says how each candidate measured" do
       ranking = section(render(negative_payload), "ranking")
-      expect(ranking).to include("Nothing beat the original query, so there is no ranking.")
+      expect(ranking).to include(
+        "<p>Nothing beat the original query, so there is no ranking. To be considered for ranking, a candidate must " \
+        "read more than 5% fewer blocks than the original query using the values provided, and no more than 5% " \
+        "<em>more</em> blocks on any other set of values.</p>"
+      )
       expect(ranking.sub(%r{#{opening}.*?</details>}m, "")).not_to include("<tr")
       expect(ranking).to include("<tr><td>The original query with a new index on #{sq("public.t (created_at)")}</td>" \
                                  "<td>Indices: from the query&#39;s text, from the LLM</td><td>Read 990 blocks on " \

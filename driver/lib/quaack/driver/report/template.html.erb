@@ -154,7 +154,7 @@
 <% if tablespace_moves_note %><div id="tablespace-moves" class="note"><h3>Tables that sit elsewhere on the run server</h3><p><%= h tablespace_moves_note %></p></div>
 <% end %>
 <% if winner %>
-<p>A candidate is the original query, or a rewrite of it, run with a set of new indices or none. QUAACK ranks the three best of each kind of change: the original query with new indices, a rewrite with new indices, and a rewrite with none. To be ranked, it must read more than 5% fewer blocks than the original query on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins within each kind.</p>
+<p>QUAACK ranks 3 classes of candidates: the original query with different indices available, a rewrite of the original query, and a rewrite of the original query with different indices available. The three best candidates are kept for each class. To be considered for ranking, a candidate must read more than 5% fewer blocks than the original query using the values provided, and no more than 5% <em>more</em> blocks on any other set of values.</p>
 <table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indices</th></tr></thead>
 <tbody>
 <tr class="baseline"><td class="num"></td><td>The original query (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
@@ -166,7 +166,7 @@
 <% end %>
 </tbody></table>
 <% else %>
-<p>Nothing beat the original query, so there is no ranking. To be ranked, a candidate must read more than 5% fewer blocks than the original query on the slow values (the values from your slow plan), and no more than 5% more on any other set of values.</p>
+<p>Nothing beat the original query, so there is no ranking. To be considered for ranking, a candidate must read more than 5% fewer blocks than the original query using the values provided, and no more than 5% <em>more</em> blocks on any other set of values.</p>
 <% end %>
 <% unless unranked.empty? %>
 <h3>Measured, and not ranked</h3>
