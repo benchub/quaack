@@ -496,7 +496,7 @@ RSpec.describe Quaack::Driver::Report do
         "&#9888; Your role on the production server couldn&#39;t see the statistics of 2 extended statistics " \
         "objects and of these expression indexes: <code class=\"sql\">orders_lower_idx</code>, " \
         "<code class=\"sql\">orders_expr_idx</code>, so QUAACK&#39;s estimates for those may be off. A role that " \
-        "owns the tables can see them. <a href=\"#indexes\">Details</a>"
+        "owns the tables can see them. <a href=\"#hidden-statistics\">Details</a>"
       )
       payload["hidden_statistics"] = { "indexes" => [], "extended_statistics" => 1 }
       expect(verdict(render(payload))).to include("couldn&#39;t see the statistics of 1 extended statistics object, so")
@@ -534,7 +534,7 @@ RSpec.describe Quaack::Driver::Report do
       # target has no entry, so the example below fails on it until someone says what it must name.
       let(:subjects) do
         { "timeouts" => ["Rewrite Vivid Cove with a new index", "Any candidate that finished there counts as better"],
-          "indexes" => ["orders_lower_idx"], "ranking" => [sq("public.orders")] }
+          "hidden-statistics" => ["orders_lower_idx"], "ranking" => [sq("public.orders")] }
       end
 
       it "lands every caveat the verdict gives on a section that exists and names its subject" do
@@ -544,10 +544,19 @@ RSpec.describe Quaack::Driver::Report do
         expect(items.size).to eq(list.size)
         list.zip(items).each do |(_, target), item|
           expect(item).to include(%(href="##{target}"))
-          body = out[%r{<section id="#{Regexp.escape(target)}"[^>]*>.*?</section>}m]
+          body = out[%r{<section id="#{Regexp.escape(target)}"[^>]*>.*?</section>}m] ||
+                 out[%r{<div id="#{Regexp.escape(target)}"[^>]*>.*?</div>}m]
           expect(body).not_to be_nil
           expect(body).to include(*subjects.fetch(target))
         end
+      end
+
+      # Task 20261016-1: the hidden-statistics caveat lands on the subsection that explains it,
+      # inside the indexes section, not on the top of the indexes section.
+      it "links the hidden-statistics caveat to its subsection inside the indexes section" do
+        item = verdict(out).scan(%r{<li class="warn">(.*?)</li>}m).flatten.find { it.include?("orders_lower_idx") }
+        expect(item).to include('href="#hidden-statistics"')
+        expect(section(out, "indexes")).to include('<div id="hidden-statistics"')
       end
 
       it "says how many extended statistics objects and which indexes are hidden, for either alone or both" do
