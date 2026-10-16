@@ -11763,3 +11763,18 @@ Trimmed 2026-10-14 after 20261012-4: removed items 1–3 (confirm rewrite-test's
   - Items 3 and 4: 2026-10-10 (task/20261008-56; spec-only).
   - Item 1: 2026-10-15 (task/20261008-56). `key_in_self_join`, given two or more INs it can rewrite, gives first one rewrite of all of them, then one per IN. A query with three or more INs gets its fully rewritten form at depth one, with no change to the generator's depth or cap (DESIGN.md, rewrite-rules).
   - Item 2: 2026-10-15 (task/20261008-56). The rule takes an IN, or `= ANY`/`= SOME` with a bare `=`, that's a conjunct of the WHERE of any plain SELECT in the statement (subquery, derived table, CTE, UNION arm) or of any join's ON. In an ON the table must be on one of that join's sides and not nullable among them, so a LEFT JOIN's right table counts in its own ON. A bare column is read as the one table that has it by the catalog, and written qualified when moved. It still refuses an IN under OR or NOT, in a select list or HAVING, one that tests an enclosing query's table, a nested outer join's nullable side, an ambiguous bare column or one that reads the outer query, and an `=` with a schema or another operator. On the unreleased list.
+
+### 20261008-60. Foreign cancels on BEGIN and ROLLBACK: DESIGN.md and a Postgres test.
+
+The review of 20261008-55 found two gaps:
+
+1. **DESIGN.md is out of date.** Its rewrite-test section, around line 1225, still says the runner records the closing ROLLBACK being canceled. That case now ends the step.
+2. **No real Postgres test for the new steps.** Only the unit spec covers `:begin`, `:rollback`, and `:transaction`. Add a Postgres-backed test, if there's a reliable way to cancel a BEGIN or ROLLBACK from a second session.
+
+- **Depends on:** 20261008-55.
+- **Came from:** The review of 20261008-55, 2026-10-08.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:**
+  1. 2026-10-08 (task/20261008-50, commit e5cf49f8).
+  2. 2026-10-15 (task/20261008-60; spec-only). `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` cancels the runner's own BEGIN and ROLLBACK from a second session on real Postgres, and checks each ends as a `statement_canceled` on `:begin` or `:rollback` that `Cancel.foreign?` calls foreign. Postgres drops a cancel that arrives while a backend waits for a command, and BEGIN and ROLLBACK run too briefly to hit, so `spec/support/stalled_logger.rb` holds the backend partway through the statement: on a server of the spec's own with `logging_collector=on` and the connection's `log_statement = 'all'`, it stops the logger process and fills its pipe, so the backend blocks writing the statement's log line, after pg_stat_activity shows it and before it runs. Once the backend is blocked in `pipe_write`, a second session sends `pg_cancel_backend` and the logger resumes; the backend finds the cancel before the statement runs. Passed 45 process runs (25 sequential, 20 as 4 at a time), plus 20 more after a refactor. Narrowing `FOREIGN_STEPS`, making `Cancel.rule` return `statement_timeout`, or labelling the ROLLBACK's step otherwise each sends the spec red; leaving the pipe unfilled makes the helper time out. `:transaction` has no case, since its calls only read and set libpq's local state, with nothing for a cancel to land on. Found on the way: a canceled ROLLBACK leaves its transaction open, aborted (`PQTRANS_INERROR`), since the cancel lands before the ROLLBACK runs. That's harmless, since a foreign cancel ends the step and its connection; the spec pins it.

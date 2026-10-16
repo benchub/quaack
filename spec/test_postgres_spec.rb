@@ -397,6 +397,21 @@ RSpec.describe TestPostgres do
     expect(out.lines.map(&:strip)).to eq(["127.0.0.1:#{server.port}"])
   end
 
+  it "removes an extra server's container when it never gets ready" do
+    TestPostgres.server
+    started = []
+    allow(TestPostgres).to receive(:start_container).and_wrap_original do |original, *args|
+      original.call(*args).tap { started << it }
+    end
+    allow_any_instance_of(TestPostgres::Server).to receive(:wait_until_ready).and_raise("not ready")
+
+    expect { TestPostgres.extra_server(%w[autovacuum=on]) }.to raise_error("not ready")
+    expect(started.size).to eq(1)
+    expect(TestPostgres.docker("ps", "-a", "-q", "--no-trunc", "--filter", "id=#{started.first}")).to eq("")
+  ensure
+    started&.each { TestPostgres.docker("rm", "-f", "-v", it) }
+  end
+
   describe "PgBouncer" do
     def through_pgbouncer(db) = PG.connect(**db.connection_params, port: TestPostgres.server.pgbouncer_port)
 
