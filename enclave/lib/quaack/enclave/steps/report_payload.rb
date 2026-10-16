@@ -112,6 +112,12 @@ module Quaack
       #                    extended statistics objects' data it couldn't
       #                    (a count, never names), which egress checks
       #                    (Protocol::HiddenStatistics)
+      #   tablespace_moves [schema.name]: the query's tables that sit in
+      #                    another tablespace on the run server than in
+      #                    production (run-server's Placement.moves), only
+      #                    when run-server recorded them. Table names are
+      #                    schema; no tablespace's name goes out, and egress
+      #                    checks the shape (Protocol::TablespaceMoves)
       #
       # A rewrite the enclave refused on arrival isn't stored, so nothing is
       # sent for it. The burndown counts those.
@@ -152,7 +158,13 @@ module Quaack
         def findings(store, selection)
           { excluded: MeasuredLabels.excluded(selection["excluded"]),
             negative: NegativeResult.call(store), rule_bugs: RuleBugs.call(store),
-            burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store) }
+            burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store),
+            **tablespace_moves(store) }
+        end
+
+        # run-server's tablespace_moves, when it recorded them.
+        def tablespace_moves(store)
+          store.entry?("tablespace_moves") ? { tablespace_moves: store.read("tablespace_moves") } : {}
         end
 
         def original(store, stats)

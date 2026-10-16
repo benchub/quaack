@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "json"
 require_relative "../inventory/production"
+require_relative "../placement"
 require_relative "../plan_tables"
 require_relative "../relations"
 
@@ -21,7 +21,7 @@ module Quaack
       # Production.read_only transaction, so a failed read is
       # production_read_failed, with its SQLSTATE.
       #
-      # It writes three entries, for later steps to read:
+      # It writes five entries, for later steps to read:
       #
       # - qualified_query: the query's text with every relation naming its
       #   schema, a String. It holds the query's literals.
@@ -33,6 +33,12 @@ module Quaack
       #   only where the path does, so a session that sets it searches what
       #   qualify did. RunServer.connect sets it, and rewrite-check
       #   qualifies a candidate through it.
+      # - relation_placement: where each table the plan may scan (the
+      #   relations and their inheritance descendants), its TOAST table,
+      #   and its indexes sit, from Placement. run-server compares it with
+      #   the racetrack's.
+      # - relation_tablespaces: every tablespace relation_placement names,
+      #   sorted, which run-server checks the run server has.
       #
       # Anything that fails writes nothing. Its only line is DONE: the
       # query and its literals stay in the store, and the driver sees the
@@ -43,9 +49,10 @@ module Quaack
         def call(store:, **)
           query = store.read("query")
           plan = store.read("plan")
-          result, path, tablespaces = check(Enclave::Inventory::Production.params(store), query, plan)
+          result, path, placement = check(Enclave::Inventory::Production.params(store), query, plan)
           store.write("relations", result.relations.map { { "schema" => it.schema, "name" => it.name } })
-          store.write("relation_tablespaces", tablespaces)
+          store.write("relation_tablespaces", Placement.tablespaces(placement))
+          store.write("relation_placement", placement)
           store.write("search_path", path)
           store.write("qualified_query", result.sql)
           []
@@ -57,52 +64,24 @@ module Quaack
           Enclave::Inventory::Production.read_only(connection) do
             result = Relations.check(query, settings, connection)
             PlanTables.check!(plan, result.scanned)
-            [result, written_path(settings, connection), tablespaces(result.scanned, connection)]
+            [result, written_path(settings, connection), placement(result.scanned, connection)]
           end
         ensure
           connection&.close
         end
 
-        # The tablespaces of tables $1 (schemas) and $2 (names) and of their
-        # indexes, by name, sorted. A relation with none of its own is in the
-        # database's default tablespace, which stands under its own name.
-        # The first column counts the tables found, so a scanned relation
-        # missing from pg_class refuses (fails closed) instead of dropping
-        # out of the needed set.
-        TABLESPACES_SQL = <<~SQL
-          WITH tables AS (
-            SELECT c.oid
-            FROM ROWS FROM (pg_catalog.unnest($1::pg_catalog.text[]),
-                            pg_catalog.unnest($2::pg_catalog.text[])) AS q(nspname, relname)
-            JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) q.nspname
-            JOIN pg_catalog.pg_class c ON c.relnamespace OPERATOR(pg_catalog.=) n.oid
-                                      AND c.relname OPERATOR(pg_catalog.=) q.relname
-          ), used AS (
-            SELECT oid FROM tables
-            UNION
-            SELECT indexrelid FROM pg_catalog.pg_index WHERE indrelid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT oid FROM tables))
-          )
-          SELECT (SELECT pg_catalog.count(DISTINCT oid) FROM tables), pg_catalog.array_to_json(ARRAY(
-            SELECT DISTINCT s.spcname
-            FROM used
-            JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) used.oid
-            JOIN pg_catalog.pg_tablespace s ON s.oid OPERATOR(pg_catalog.=) CASE
-              WHEN c.reltablespace OPERATOR(pg_catalog.=) 0::pg_catalog.oid
-              THEN (SELECT dattablespace FROM pg_catalog.pg_database
-                    WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database())
-              ELSE c.reltablespace END
-            ORDER BY s.spcname))
-        SQL
-
-        def tablespaces(scanned, connection)
-          found, names = connection.exec_params(TABLESPACES_SQL,
-                                                [RelationQualifier.text_array(scanned.map(&:schema)),
-                                                 RelationQualifier.text_array(scanned.map(&:name))]).values.first
-          if Integer(found) < scanned.map { [it.schema, it.name] }.uniq.size
+        # Where the tables the plan may scan sit (see Placement): each
+        # table, its TOAST table, and its indexes. A scanned table missing
+        # from pg_class refuses (fails closed) instead of dropping out of
+        # the comparison.
+        def placement(scanned, connection)
+          tables = scanned.map { [it.schema, it.name] }.uniq
+          found = Placement.read(connection, tables)
+          if found.size < tables.size
             raise Relations::Error.new("unknown_relation", "a scanned table isn't in pg_class"), cause: nil
           end
 
-          JSON.parse(names)
+          found
         end
 
         # The schemas of path $1, in order, but those that exist and the

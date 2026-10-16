@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-47
 - 20261012-49
 - 20261004-27
+- 20261010-17
 - 20261008-56
 
 ## How this file works.
@@ -296,24 +297,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Depends on:** 20261004-92, 20261004-94.
 - **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
 - **Design:** result comparison, literals.
-- **Status:** todo
-
-### 20261010-17. Tablespace check: minors from 20261008-38.
-
-The reviews of 20261008-38 found these minor issues:
-
-1. **Names only.** The comparison matches tablespaces by name and options. It never checks that the query's tables on the run server sit in the same tablespace as in production.
-2. **Fail closed on a shortfall.** In qualify's tablespace query, a scanned relation missing from `pg_class` drops out of the needed set. `Relations.check` has already resolved every relation in the same transaction, so it can't happen today. Count the rows and refuse on a shortfall.
-3. **TOAST tables** aren't looked at separately.
-4. **Stale spec order.** `enclave/spec/cli_dispatcher_spec.rb:221` lists the old step order (harmless, it uses `match_array`).
-5. **Flaky timing.** Two `reply_json_spec` examples with a 0.15 s bound failed once under heavy load.
-
-- **Depends on:** 20261008-38.
-- **Came from:** The reviews of 20261008-38, 2026-10-10.
-- **Design:** What goes into the enclave.
-- **Landed so far:** items 2, 4 and 5, 2026-10-10 (task/20261010-17). Item 2: `Qualify.tablespaces` counts the tables its query finds and refuses with `unknown_relation` on a shortfall. Item 4: the dispatcher spec's step order. Item 5: the `reply_json_spec` bound is 1 s.
-- **Open, needs the user:** item 1 (compare the run server's tablespaces with production's: how run-server learns the placement, and when to refuse) and item 3 (what to do about TOAST tables; one option is adding `reltoastrelid` to the `used` set).
-- **Decided by the user (2026-10-11):** item 1 is a warning in the report, not a refusal. Item 3: TOAST tables' tablespaces count (a table's TOAST table is part of its storage).
 - **Status:** todo
 
 ### 20261010-18. LLM adapter for the Claude Code CLI.

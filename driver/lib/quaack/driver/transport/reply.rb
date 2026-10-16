@@ -7,6 +7,7 @@ require "quaack/protocol/plan_nodes"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
+require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/fuzz_result"
@@ -205,11 +206,11 @@ module Quaack
           end
         end
 
-        # A report's index_sources, top, and labels' suggested_drops, as egress checks.
+        # A report's index_sources, top, labels' suggested_drops, and tablespace_moves, as egress checks.
         def report_counts?(line)
-          Protocol::IndexSources.valid?(line["index_sources"]) && indexes?(line) &&
-            Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line) &&
-            Protocol::FuzzResult.rewrites?(line["rewrites"])
+          Protocol::IndexSources.valid?(line["index_sources"]) && Protocol::FuzzResult.rewrites?(line["rewrites"]) &&
+            Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line) && indexes?(line) &&
+            Protocol::TablespaceMoves.valid?(line.fetch("tablespace_moves", []))
         end
 
         # A report's indexes, if it has them, must pass

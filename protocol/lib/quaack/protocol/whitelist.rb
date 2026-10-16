@@ -201,6 +201,11 @@ module Quaack
       # see, and a count, never the names, of the extended statistics
       # objects whose data it couldn't see; it must pass
       # Protocol::HiddenStatistics.valid?.
+      # tablespace_moves, when the payload has it, is the query's tables
+      # that sit in another tablespace on the run server than in
+      # production (DESIGN.md's run-server), as schema.name names, which
+      # are schema, never a tablespace's name, which is production
+      # configuration; it must pass Protocol::TablespaceMoves.valid?.
       # The plans, original_plan and each rewrite's plan, are checked on
       # the way out: the egress function sends a report only if each passes
       # Protocol::PlanNodes.valid?, so every node has exactly the fields
@@ -214,7 +219,8 @@ module Quaack
       # one only if it's on their own lists, never what a store entry holds
       # as it is.
       report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
-                 indexes timed_out_count negative rule_bugs burndown index_sources hidden_statistics].freeze,
+                 indexes timed_out_count negative rule_bugs burndown index_sources hidden_statistics
+                 tablespace_moves].freeze,
       # One line of index-build's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's

@@ -955,6 +955,27 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261010-17. Egress sends tablespace_moves only if
+    # Protocol::TablespaceMoves.valid? passes, so the driver checks the same.
+    it "reads a report whose tablespace_moves Protocol::TablespaceMoves.valid? passes, and refuses one it doesn't" do
+      report = lambda do |moves|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
+                        "index_sources" => index_sources, **moves })
+      end
+      moves = ["public.orders", %(sales."Order Lines")]
+      result = raw("print #{"#{report.call("tablespace_moves" => moves)}\n{\"type\":\"done\"}\n".inspect}")
+               .call("probe")
+
+      expect(result.messages.map { it["tablespace_moves"] }).to eq([moves])
+      [[sentinel], ["public.orders", "pg_default #{sentinel}"], [{ "public.orders" => sentinel }], sentinel,
+       nil].each do |planted|
+        error = refusal(report.call("tablespace_moves" => planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Task 20261004-80. Egress sends a report only if its index_sources
     # pass Protocol::IndexSources.valid?, so the driver checks the same.
     it "reads a report whose index_sources Protocol::IndexSources.valid? passes, and refuses one it doesn't" do

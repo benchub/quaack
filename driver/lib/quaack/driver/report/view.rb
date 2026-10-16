@@ -21,6 +21,7 @@ require_relative "providers"
 require_relative "usage"
 require_relative "failed_branches"
 require_relative "cautions"
+require_relative "tablespace_moves"
 require_relative "llm_summary"
 
 module Quaack
@@ -48,6 +49,7 @@ module Quaack
         include Usage
         include FailedBranches
         include Cautions
+        include TablespaceMoves
         include LLMSummary
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze

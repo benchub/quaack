@@ -129,7 +129,8 @@ module Quaack
                       "#{list(infinite_sets.map { Words.set(it) })} values, so any candidate that finished there " \
                       "counts as better.", "timeouts"]
           [*([runs] if timed_out_count.positive?), *([original] unless infinite_sets.empty?),
-           *([[hidden_statistics, "indexes"]] if hidden_statistics)]
+           *([[hidden_statistics, "indexes"]] if hidden_statistics),
+           *([[tablespace_moves, "ranking"]] if tablespace_moves)]
         end
       end
     end

@@ -11778,3 +11778,21 @@ The review of 20261008-55 found two gaps:
 - **Landed:**
   1. 2026-10-08 (task/20261008-50, commit e5cf49f8).
   2. 2026-10-15 (task/20261008-60; spec-only). `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` cancels the runner's own BEGIN and ROLLBACK from a second session on real Postgres, and checks each ends as a `statement_canceled` on `:begin` or `:rollback` that `Cancel.foreign?` calls foreign. Postgres drops a cancel that arrives while a backend waits for a command, and BEGIN and ROLLBACK run too briefly to hit, so `spec/support/stalled_logger.rb` holds the backend partway through the statement: on a server of the spec's own with `logging_collector=on` and the connection's `log_statement = 'all'`, it stops the logger process and fills its pipe, so the backend blocks writing the statement's log line, after pg_stat_activity shows it and before it runs. Once the backend is blocked in `pipe_write`, a second session sends `pg_cancel_backend` and the logger resumes; the backend finds the cancel before the statement runs. Passed 45 process runs (25 sequential, 20 as 4 at a time), plus 20 more after a refactor. Narrowing `FOREIGN_STEPS`, making `Cancel.rule` return `statement_timeout`, or labelling the ROLLBACK's step otherwise each sends the spec red; leaving the pipe unfilled makes the helper time out. `:transaction` has no case, since its calls only read and set libpq's local state, with nothing for a cancel to land on. Found on the way: a canceled ROLLBACK leaves its transaction open, aborted (`PQTRANS_INERROR`), since the cancel lands before the ROLLBACK runs. That's harmless, since a foreign cancel ends the step and its connection; the spec pins it.
+
+### 20261010-17. Tablespace check: minors from 20261008-38.
+
+The reviews of 20261008-38 found these minor issues:
+
+1. **Names only.** The comparison matches tablespaces by name and options. It never checks that the query's tables on the run server sit in the same tablespace as in production.
+2. **Fail closed on a shortfall.** In qualify's tablespace query, a scanned relation missing from `pg_class` drops out of the needed set. `Relations.check` has already resolved every relation in the same transaction, so it can't happen today. Count the rows and refuse on a shortfall.
+3. **TOAST tables** aren't looked at separately.
+4. **Stale spec order.** `enclave/spec/cli_dispatcher_spec.rb:221` lists the old step order (harmless, it uses `match_array`).
+5. **Flaky timing.** Two `reply_json_spec` examples with a 0.15 s bound failed once under heavy load.
+
+- **Depends on:** 20261008-38.
+- **Came from:** The reviews of 20261008-38, 2026-10-10.
+- **Design:** What goes into the enclave.
+- **Landed so far:** items 2, 4 and 5, 2026-10-10 (task/20261010-17). Item 2: `Qualify.tablespaces` counts the tables its query finds and refuses with `unknown_relation` on a shortfall. Item 4: the dispatcher spec's step order. Item 5: the `reply_json_spec` bound is 1 s.
+- **Decided by the user (2026-10-11):** item 1 is a warning in the report, not a refusal. Item 3: TOAST tables' tablespaces count (a table's TOAST table is part of its storage).
+- **Landed:** items 1 and 3, 2026-10-11 (task/20261010-17). qualify stores `relation_placement` (new `Placement` module, which replaces `Qualify.tablespaces` with `Qualify.placement`, keeping item 2's shortfall refusal): each scanned table's tablespace, its TOAST table's and TOAST index's, and each index's by name. `relation_tablespaces` now includes the TOAST pieces' tablespaces. run-server compares placement on the racetrack and stores `tablespace_moves` (quoted table names only). The report payload carries the field, egress and the driver's reply check hold it to `Protocol::TablespaceMoves` (table names, at most 64), and the report shows a verdict caveat with a note in the ranking section. No tablespace name leaves the enclave. Postgres 18 won't move a TOAST table or its index apart from their table, so item 3's entries only catch a hand-edited catalog; the spec plants one with `allow_system_table_mods`.
+- **Status:** done

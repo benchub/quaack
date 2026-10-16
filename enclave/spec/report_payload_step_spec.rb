@@ -169,6 +169,21 @@ RSpec.describe "quaacks report-payload" do
       .to eq("SELECT id FROM public.orders WHERE created_at > (now() - $1::interval) AND note = $2")
   end
 
+  # Task 20261010-17: the query's tables run-server found in another
+  # tablespace on the run server, for the report's warning. A run with no
+  # tablespace_moves entry sends none.
+  describe "the tables that sit elsewhere on the run server" do
+    it "sends none when the run recorded none" do
+      expect(report).not_to have_key("tablespace_moves")
+    end
+
+    it "sends the recorded table names" do
+      outcome = payload_of { it.write("tablespace_moves", [%(public."Orders")]) }
+      expect(JSON.parse(outcome.stdout.lines.first)["tablespace_moves"]).to eq([%(public."Orders")])
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
+
   # Task 20261008-34: the statistics the role couldn't see, which the run
   # went on without. Expression index names go out, as the report's
   # existing index names do, and only a count of extended statistics.
