@@ -155,6 +155,7 @@ RSpec.describe "The pipeline's provenance record" do
       } },
       "rewrites" => { "rewrite_1" => names[1] },
       "rewrites_proposed" => { names[1] => 2 },
+      "own_rewrites" => 0,
       "llm_calls" => { "steps" => { "llm-counterexamples" => 4, "llm-index-ideas" => 2, "llm-rewrites" => 1 },
                        "providers" => { names[0] => { "llm-counterexamples" => 2, "llm-index-ideas" => 2 },
                                         names[1] => { "llm-counterexamples" => 2, "llm-rewrites" => 1 } } },

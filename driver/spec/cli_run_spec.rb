@@ -417,7 +417,7 @@ RSpec.describe "quaack run" do
       .to eq("anthropic" => { "used" => 1, "reported" => 1, "input" => 1, "output" => 1 })
     expect(record).to eq("providers" => [{ "name" => "anthropic", "provider" => "anthropic",
                                            "model" => Quaack::Driver::LLM::DEFAULT_MODEL }],
-                         "operator_inference" => "anthropic",
+                         "operator_inference" => "anthropic", "own_rewrites" => 1,
                          "llm_calls" => { "steps" => { "operator-rewrites" => 1 },
                                           "providers" => { "anthropic" => { "operator-rewrites" => 1 } } })
   end

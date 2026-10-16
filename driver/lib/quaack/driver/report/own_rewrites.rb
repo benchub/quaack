@@ -4,8 +4,9 @@ module Quaack
   module Driver
     module Report
       # operator-rewrites runs only on rewrites of your own, so the enclave
-      # has no record of it for a run given none (task 20261016-12). The
-      # driver knows it gave none, so fill gives the payload the record the
+      # has no record of it for a run given none (task 20261016-12). When
+      # the run's provenance record says it was given none
+      # (Provenance#own_rewrites), fill gives the payload the record the
       # enclave would have made: taking in what the nearest earlier arrival
       # stage, llm-rewrites or rewrite-rules, sent on, adding nothing, and
       # sending it all on. The report then shows "From you: 0" instead of

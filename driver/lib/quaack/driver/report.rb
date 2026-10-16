@@ -58,7 +58,8 @@ module Quaack
       # The run ID loses its SQL marks (Format.unmarked) before anything
       # uses it, so named and View draw each rewrite's name from the same
       # string. own_rewrites is how many rewrites of your own the run was
-      # given (`--rewrites`), or nil when the caller doesn't say (OwnRewrites).
+      # given (`--rewrites`), as its provenance record says, or nil when
+      # nothing says (OwnRewrites).
       def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil, own_rewrites: nil) # rubocop:disable Metrics/ParameterLists
         run_id = Format.unmarked(run_id)
         View.new(named(OwnRewrites.fill(payload, own_rewrites), run_id), run_id, llm_calls, llm, summary).render

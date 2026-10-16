@@ -521,8 +521,7 @@ module Quaack
       module ReportStage
         module_function
 
-        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, provenance: nil, record: NONE, # rubocop:disable Metrics/ParameterLists
-                rewrites: nil, **)
+        def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, provenance: nil, record: NONE, **) # rubocop:disable Metrics/ParameterLists
           return unless out
 
           Pipeline.step(progress, "report") do
@@ -530,7 +529,7 @@ module Quaack
             summary = summary(payload, run_id, client, record)
             Report.write(payload, run_id:, path: out, llm_calls: Provenance.llm_calls(provenance, client),
                                   llm: Provenance.for_report(provenance, client), summary:,
-                                  own_rewrites: rewrites.to_a.size)
+                                  own_rewrites: provenance&.own_rewrites)
           end
         end
 
@@ -645,6 +644,7 @@ module Quaack
 
       def run
         entries = self.class.status(@transport, @run_id)
+        @provenance&.own_rewrites!(@rewrites, entries)
         setup = @setup && !Setup.done?(entries)
         @progress = progress(setup)
         set_up(setup, entries)

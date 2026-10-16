@@ -189,6 +189,15 @@ RSpec.describe Quaack::Driver::Provenance do
                                               "model" => "llama")
   end
 
+  # Task 20261016-12: the report trusts own_rewrites to say no rewrites of your own were given.
+  it "keeps own_rewrites read back only when it's a count of zero or more" do
+    FileUtils.mkdir_p(File.dirname(path))
+    [[0, 0], [2, 2], ["SELECT secret", nil], [-1, nil], [1.0, nil], [nil, nil]].each do |raw, kept|
+      File.write(path, JSON.generate("own_rewrites" => raw))
+      expect(described_class.open(@home, run_id).own_rewrites).to eq(kept)
+    end
+  end
+
   it "reads as empty when there's no record, and says nothing of what it lacks" do
     expect(provenance.record).to eq({})
     expect(provenance.author("rewrite_1")).to be_nil
