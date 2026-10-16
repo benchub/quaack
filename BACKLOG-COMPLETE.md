@@ -11911,3 +11911,21 @@ Replace it with the user's wording (2026-10-16), filling in the real counts and 
 - **Design:** report.
 - **Landed:** 2026-10-16 (task/20261016-6). The Ranking section opens with the user's wording. The user chose "more than 5% fewer" over "at least", since minimax's rule is strict (`Minimax::PERCENT`, strict `<`); the numbers stay literal in the template. The nothing-won text says the same rule in the same words. DESIGN.md doesn't quote the intro, so it's unchanged. No enclave or protocol change.
 - **Status:** done
+
+### 20261016-7. Report: "Measured, and not ranked" comes last in the Ranking section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-7, with 20261016-8). "Measured, and not ranked" moved from above the kinds' blocks to the end of the Ranking section. A report spec checks the headings' order and that the fold closes the section.
+- **Status:** done
+
+### 20261016-8. Report: Ranking subsections keep their stripe and drop the shaded background.
+
+"Measured, and not ranked" has a coloured stripe on a background that follows light and dark mode. The other three subsections also have a shaded background. Drop it; keep each stripe.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-7, with 20261016-7 on the same branch). Each kind's block keeps its 5px stripe and lost its background, so it shows the page's, which follows light and dark mode. The `--sb-*` tints and `--stripe-bg` are gone from both themes. A report spec checks that no kind or stripe rule sets a background and that neither theme defines a tint; the spec that checked the tints' contrast went with them.
+- **Status:** done

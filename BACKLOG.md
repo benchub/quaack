@@ -687,22 +687,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 
 ### 20261016-5. Say "indices", not "indexes". Done, see BACKLOG-COMPLETE.md.
 
-### 20261016-7. Report: "Measured, and not ranked" comes last in the Ranking section.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
-
-### 20261016-8. Report: Ranking subsections keep their stripe and drop the shaded background.
-
-"Measured, and not ranked" has a coloured stripe on a background that follows light and dark mode. The other three subsections also have a shaded background. Drop it; keep each stripe.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261016-9. Report: Ranking entries repeat their subsection's title.
 
 Each entry restates what its subsection's title says, names the rewrite twice, and gives the index definition twice. The user's layout (2026-10-16):
