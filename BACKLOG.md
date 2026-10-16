@@ -633,7 +633,6 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 - A cancel QUAACK didn't send, during a coverage check (`Fuzz::Differ`), isn't told apart from QUAACK's own: check it ends the step with `statement_canceled`, as one in fuzz's trials does, with a Postgres test.
 - The `fk_cycle` wrong-rewrite corpus went with ScenarioTests' specs. Re-create a few of its wrong rewrites (FK cycles, a nullable cycle edge) as fuzz regression specs, so fuzz is shown to catch them.
 - Fuzz alone, even at 962 trials, misses the polymorphic `$2 + 1` twin and the unhonoured copies; enumerate catches them, so `polymorphic_key_copy_step_postgres_spec.rb` now runs with enumerate on. Note this in DESIGN.md's fuzz section if it isn't there.
-- `counterexample_steps_postgres_spec.rb:207` failed once in about 30 runs (clean in 25 after); find the cause if it recurs.
 
 - **Depends on:** None.
 - **Came from:** The build of 20261012-4, 2026-10-14 (minor).
@@ -647,15 +646,6 @@ From the second review of 20261008-60 (minor). `ExtraServer.start` (`spec/suppor
 - **Depends on:** None.
 - **Came from:** The second review of 20261008-60, 2026-10-15 (minor).
 - **Design:** Development (test Postgres).
-- **Status:** todo
-
-### 20261015-2. counterexample_steps_postgres_spec.rb:372 flakes (untested atoms list).
-
-From the fix round of 20261008-60. `enclave/spec/counterexample_steps_postgres_spec.rb:372` failed once in a full `rake` and once in 9 runs on its own, on a branch that didn't touch it. It checks the untested atoms list, which depends on which worlds fuzz draws. 20261012-52 also notes a rare failure at line 207 of the same file. Find the cause, and pin the spec to something deterministic.
-
-- **Depends on:** None.
-- **Came from:** The fix round of 20261008-60, 2026-10-15.
-- **Design:** rewrite-test (coverage).
 - **Status:** todo
 
 ### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report.
