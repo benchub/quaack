@@ -80,6 +80,65 @@ RSpec.describe Quaack::Enclave::Fuzz::StopRule do
     end
   end
 
+  # Task 20261016-4: why the search stopped and when, in whole seconds,
+  # for the report (Protocol::FuzzResult.stop?).
+  describe "#stopped" do
+    it "says dry, with the seconds and how long nothing new came, once twice the last new signature's time ran out" do
+      rule = seconds_rule(cap: 60)
+      now[0] = 20.6
+      rule.observe(:a)
+      now[0] = 41.3
+      rule.observe(:a)
+      expect(rule.stop?).to be(true)
+      expect(rule.stopped).to eq("reason" => "dry", "seconds" => 41, "quiet" => 21)
+    end
+
+    it "says floor when the minimum ran out with nothing new for over half of it" do
+      rule = seconds_rule(cap: 60)
+      now[0] = 4.0
+      rule.observe(:a)
+      now[0] = 30.2
+      rule.observe(:a)
+      expect(rule.stop?).to be(true)
+      expect(rule.stopped).to eq("reason" => "floor", "seconds" => 30, "quiet" => 26)
+    end
+
+    it "says floor, not dry, when the last new signature came at exactly half the floor" do
+      rule = seconds_rule(cap: 60)
+      now[0] = 15.0
+      rule.observe(:a)
+      now[0] = 30.0
+      expect(rule.stop?).to be(true)
+      expect(rule.stopped).to eq("reason" => "floor", "seconds" => 30, "quiet" => 15)
+    end
+
+    it "says cap, with how long before it the last new signature came" do
+      rule = seconds_rule(cap: 60)
+      now[0] = 52.4
+      rule.observe(:late)
+      now[0] = 60.0
+      expect(rule.stop?).to be(true)
+      expect(rule.stopped).to eq("reason" => "cap", "seconds" => 60, "quiet" => 8)
+    end
+
+    it "gives the reason the search names instead, a deadline or kills that didn't lift" do
+      rule = seconds_rule(cap: 60)
+      now[0] = 2.0
+      rule.observe(:a)
+      now[0] = 12.6
+      expect(rule.stopped("deadline")).to eq("reason" => "deadline", "seconds" => 13, "quiet" => 11)
+      expect(rule.stopped("unlifted")).to eq("reason" => "unlifted", "seconds" => 13, "quiet" => 11)
+    end
+
+    it "counting trials, says trials, and gives no times, so a spec's outcome doesn't depend on its speed" do
+      rule = described_class.trials(10)
+      10.times { rule.observe(:seen) }
+      expect(rule.stop?).to be(true)
+      expect(rule.stopped).to eq("reason" => "trials", "seconds" => nil, "quiet" => nil)
+      expect(rule.stopped("unlifted")).to eq("reason" => "unlifted", "seconds" => nil, "quiet" => nil)
+    end
+  end
+
   describe ".from_env" do
     it "is the user's rule by default: a 30-second floor and a 60-second cap, on the monotonic clock" do
       rule = described_class.from_env({})

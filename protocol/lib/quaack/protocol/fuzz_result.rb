@@ -49,6 +49,19 @@ module Quaack
       # rows wouldn't be true of every database that size.
       MAX_BOUND = 4
 
+      # Task 20261016-4: why the fuzz search stopped, in the report's
+      # fuzz_stop: its stop rule's minimum ran out with nothing new (floor),
+      # or it had run twice as long as it took to find its last new plan
+      # behaviour (dry), or it reached its cap, or the rewrite's deadline,
+      # or LIFTS kills that didn't lift, or a spec's trial count
+      # (QUAACKS_FUZZ_TRIALS) stopped it.
+      STOP_REASONS = %w[dry floor cap deadline unlifted trials].map(&:freeze).freeze
+
+      # No search runs this long: the rewrite's whole budget is 300 seconds.
+      MAX_STOP_SECONDS = 3600
+
+      STOP_KEYS = %w[reason seconds quiet].map(&:freeze).freeze
+
       # A Postgres identifier is at most 63 bytes.
       MAX_NAME_BYTES = 63
 
@@ -66,8 +79,35 @@ module Quaack
       def counts?(fields) = trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"])
 
       # Whether each of a report's rewrites carries sizes, trials, worlds and
-      # bound that pass, and a not_tested that's nil or on NOT_TESTED.
-      def rewrites?(rewrites) = rewrites.all? { sizes?(it["sizes"]) && counts?(it) && not_tested?(it["not_tested"]) }
+      # bound that pass, a not_tested that's nil or on NOT_TESTED, and a
+      # fuzz_stop that stop? passes.
+      def rewrites?(rewrites)
+        rewrites.all? do |rewrite|
+          sizes?(rewrite["sizes"]) && counts?(rewrite) && not_tested?(rewrite["not_tested"]) &&
+            stop?(rewrite["fuzz_stop"])
+        end
+      end
+
+      # Whether stop is nil or why fuzz stopped (task 20261016-4): exactly a
+      # reason on STOP_REASONS, seconds, nil (a spec's trial count) or a
+      # whole number up to MAX_STOP_SECONDS, and quiet, nil or whole
+      # seconds up to seconds, how long it had found no new plan behaviour.
+      def stop?(stop)
+        return true if stop.nil?
+        return false unless stop.is_a?(Hash) && stop.size == STOP_KEYS.size && STOP_KEYS.all? { stop.key?(it) }
+
+        reason, seconds, quiet = stop.values_at(*STOP_KEYS)
+        STOP_REASONS.include?(reason) && times?(seconds, quiet)
+      end
+
+      # Whether seconds and quiet are both nil, or whole seconds, quiet nil or no more than seconds.
+      def times?(seconds, quiet)
+        return quiet.nil? if seconds.nil?
+
+        seconds?(seconds) && (quiet.nil? || (seconds?(quiet) && quiet <= seconds))
+      end
+
+      def seconds?(seconds) = count?(seconds) && seconds <= MAX_STOP_SECONDS
 
       def not_tested?(reason) = reason.nil? || NOT_TESTED.include?(reason)
 
@@ -86,7 +126,7 @@ module Quaack
 
       def count?(count) = count.is_a?(Integer) && count >= 0 && count < MAX_COUNT
 
-      private_class_method :size?, :name?, :count?
+      private_class_method :size?, :name?, :count?, :times?, :seconds?
     end
   end
 end

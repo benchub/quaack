@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-17
 - 20261008-56
 - 20261008-67
+- 20261016-4
 
 ## How this file works.
 
@@ -682,17 +683,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Depends on:** None.
 - **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
 - **Design:** fixture-compare, result comparison.
-- **Status:** todo
-
-### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived. Done, see BACKLOG-COMPLETE.md.
-
-### 20261016-4. Report: say why rewrites got different numbers of generated data sets.
-
-One rewrite got 1,790 data sets, another 752, another 2,207. Decided by the user (2026-10-16): explain it per rewrite, from fuzz's stop rule: it runs at least 30 s, then stops once it has run twice as long as it took to find its last new coverage signature, never past 60 s or the rewrite's deadline, and at once on a counterexample. Say which applied and the times, such as "stopped after 41 s: no new plan behaviour for the last 20 s", so a reader sees the count depends on query speed and when the search ran dry. The burndown may need the stop reason and times from the enclave (the reason and seconds are not literals).
-
-- **Depends on:** None. Do with 20261016-3.
-- **Came from:** The user, 2026-10-16.
-- **Design:** rewrite-test (fuzz's stop rule), report.
 - **Status:** todo
 
 ### 20261016-5. Say "indices", not "indexes".

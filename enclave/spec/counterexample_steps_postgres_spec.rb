@@ -253,7 +253,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         counts = { "rule" => rule, "stage" => "fuzz", "trials" => 0, "worlds" => 0, "bound" => nil }
         expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
                                         **counts }, { "type" => "done" }])
-        expect(tested).to eq("passed" => true, **counts, "untested" => [], "untested_atoms" => [],
+        expect(tested).to eq("passed" => true, **counts, "fuzz_stop" => nil, "untested" => [], "untested_atoms" => [],
                              "untested_unchanged" => [])
         recorded(outcome)
       end
@@ -656,6 +656,9 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         expect(message["trials"]).to be_a(Integer).and be >= 40
         expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message["trials"])
         expect(tested).not_to have_key("sizes")
+        # Task 20261016-4: why fuzz stopped goes to the store for the report, not in the message.
+        expect(tested).to include("fuzz_stop" => { "reason" => "trials", "seconds" => nil, "quiet" => nil })
+        expect(message).not_to have_key("fuzz_stop")
         expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1,
                                                                       extra: marked("trials" => message["trials"])))
         expect(burndown["stages"]["enumerate"]["rewrite_1"])

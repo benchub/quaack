@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/fuzz_result"
+
 module Quaack
   module Enclave
     module Fuzz
@@ -23,6 +25,12 @@ module Quaack
       # QUAACKS_FUZZ_TRIALS=0 turns the search off. When it's set, the
       # rewrite's fuzz record in the burndown says so
       # (Steps::RewriteFuzz::SETTINGS).
+      #
+      # stopped says why the search stopped and when, for the report (task
+      # 20261016-4, Protocol::FuzzResult.stop?): the rule's own reason, or
+      # the one the search names (a deadline, kills that didn't lift), in
+      # whole seconds. Counting trials, its reason is trials, and it gives
+      # no times, so a spec's outcome is the same on any machine.
       class StopRule
         ENV_TRIALS = "QUAACKS_FUZZ_TRIALS"
         FLOOR_SECONDS = 30
@@ -71,7 +79,25 @@ module Quaack
           spent >= floor && spent >= 2 * @last_new
         end
 
+        # Why the search stopped, why if it names its own reason, and when,
+        # as Protocol::FuzzResult's fuzz_stop.
+        def stopped(why = nil)
+          return { "reason" => why || "trials", "seconds" => nil, "quiet" => nil } if unit == :trials
+
+          spent = elapsed
+          seconds = whole(spent)
+          { "reason" => why || ruled(spent), "seconds" => seconds, "quiet" => [whole(spent - @last_new), seconds].min }
+        end
+
         private
+
+        def ruled(spent)
+          return "cap" if cap && spent >= cap
+
+          2 * @last_new > floor ? "dry" : "floor"
+        end
+
+        def whole(seconds) = seconds.round.clamp(0, Protocol::FuzzResult::MAX_STOP_SECONDS)
 
         def now = @clock ? @clock.call : @trials.to_i
       end

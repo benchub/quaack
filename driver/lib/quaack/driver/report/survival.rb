@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/protocol/fuzz_result"
+require "quaack/protocol/rewrite_budget"
 require_relative "format"
 require_relative "words"
 
@@ -26,8 +27,36 @@ module Quaack
           worlds = entry["worlds"]
           worlds = 0 unless whole?(worlds)
           "#{survivor(entry)} survived #{Words.count(trials + worlds, "mechanically generated data set")} " \
-            "trying to show it gives different results from the original query#{enumerated(entry, trials, worlds)}."
+            "trying to show it gives different results from the original query#{enumerated(entry, trials, worlds)}." \
+            "#{stopped(entry["fuzz_stop"])}"
         end
+
+        # Why fuzz stopped, from its stop rule (task 20261016-4), so a
+        # reader sees why rewrites got different counts, or "" when the
+        # payload doesn't say.
+        def stopped(stop)
+          return "" unless stop && Protocol::FuzzResult.stop?(stop)
+
+          reason, seconds, quiet = stop.values_at("reason", "seconds", "quiet")
+          " Its random search stopped #{STOPPED.fetch(reason).call(seconds, quiet)}."
+        end
+
+        BUDGET = "when the rewrite's #{Protocol::RewriteBudget.minutes}-minute time budget ran out".freeze
+        UNLIFTED = "once several differences it found didn't hold up with every constraint enforced"
+
+        # What each of Protocol::FuzzResult::STOP_REASONS says, from its seconds and quiet.
+        STOPPED = {
+          "dry" => ->(seconds, quiet) { "after #{seconds} s: no new plan behaviour for the last #{quiet} s" },
+          "floor" => lambda { |seconds, quiet|
+            "after its minimum of #{seconds} s: no new plan behaviour for the last #{quiet} s"
+          },
+          "cap" => lambda { |seconds, quiet|
+            "at its #{seconds} s limit, having last found new plan behaviour #{quiet} s before"
+          },
+          "deadline" => ->(seconds, _) { seconds ? "after #{seconds} s, #{BUDGET}" : BUDGET },
+          "unlifted" => ->(seconds, _) { seconds ? "after #{seconds} s, #{UNLIFTED}" : UNLIFTED },
+          "trials" => ->(*) { "after a number of trials set for testing QUAACK, not by time" }
+        }.freeze
 
         def whole?(number) = number.is_a?(Integer) && number >= 0
 

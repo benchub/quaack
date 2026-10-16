@@ -533,7 +533,8 @@ RSpec.describe "quaacks report-payload" do
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
                                  "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
                                  "evidence" => nil, "out_of_time" => nil, "not_tested" => nil,
-                                 "trials" => nil, "worlds" => nil, "bound" => nil, "sizes" => nil)
+                                 "trials" => nil, "fuzz_stop" => nil, "worlds" => nil, "bound" => nil,
+                                 "sizes" => nil)
       end
     end
   end
@@ -746,9 +747,11 @@ RSpec.describe "quaacks report-payload" do
           enumerated = { "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2 }
           stored(store, 9, tested: tested(false, nil, "value").merge(enumerated, "sizes" => [["public", "orders", 2]]),
                            survived: false)
-          stored(store, 10, tested: tested(true).merge(enumerated))
+          stored(store, 10, tested: tested(true).merge(enumerated, "fuzz_stop" => stop))
           stored(store, 11, tested: tested(true).merge("stage" => "enumerate", "trials" => 40,
-                                                       "worlds" => sentinel, "bound" => 37))
+                                                       "worlds" => sentinel, "bound" => 37,
+                                                       "fuzz_stop" => stop.merge("reason" => sentinel)))
+          stored(store, 12, tested: tested(true).merge("trials" => 40, "fuzz_stop" => stop.merge("seconds" => 4.2)))
         end
       end
 
@@ -756,6 +759,17 @@ RSpec.describe "quaacks report-payload" do
       it "says enumerate disproved one, with the rule, the rows per table, trials, worlds and bound" do
         expect(rewrite(9)).to include("fate" => "enumerate_disproved", "rule" => "value", "trials" => 40,
                                       "worlds" => 905, "bound" => 2, "sizes" => [["public", "orders", 2]])
+      end
+
+      let(:stop) { { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
+
+      # Task 20261016-4.
+      it "sends why fuzz stopped, and nothing for a stop that isn't a reason with whole seconds" do
+        expect(rewrite(10)).to include("fuzz_stop" => stop)
+        expect(rewrite(11)).to include("fuzz_stop" => nil)
+        expect(rewrite(12)).to include("fuzz_stop" => nil)
+        expect(rewrite(6)).to include("fuzz_stop" => nil)
+        expect_no_leaks(sentinels, outcome)
       end
 
       it "sends an enumerate pass's worlds and bound, and none that aren't a count and a bound" do

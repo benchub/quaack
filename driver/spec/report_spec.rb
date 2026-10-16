@@ -857,6 +857,70 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
+    # Task 20261016-4: why fuzz stopped, from its stop rule, so a reader sees
+    # why rewrites got different counts.
+    describe "why the random search stopped" do
+      def stopped(stop, trials: 1790, fate: "ranked")
+        payload["rewrites"].first.merge!("trials" => trials, "fate" => fate, "fuzz_stop" => stop)
+        CGI.unescapeHTML(section(render(payload), "queries")[%r{<p class="fuzz">(.*?)</p>}, 1].to_s)
+      end
+
+      def stop(reason, seconds, quiet) = { "reason" => reason, "seconds" => seconds, "quiet" => quiet }
+
+      let(:survived) do
+        "Vivid Cove survived 1,790 mechanically generated data sets trying to show it gives different results " \
+          "from the original query."
+      end
+
+      it "says it ran dry, after how long, and how long it had found no new plan behaviour" do
+        expect(stopped(stop("dry", 41, 20)))
+          .to eq("#{survived} Its random search stopped after 41 s: no new plan behaviour for the last 20 s.")
+        expect(stopped(stop("dry", 1, 1))).to end_with("stopped after 1 s: no new plan behaviour for the last 1 s.")
+      end
+
+      it "says it stopped at its minimum, with how long it had found nothing new" do
+        expect(stopped(stop("floor", 30, 26)))
+          .to eq("#{survived} Its random search stopped after its minimum of 30 s: no new plan behaviour for the " \
+                 "last 26 s.")
+      end
+
+      it "says it stopped at its limit, and when it last found new plan behaviour" do
+        expect(stopped(stop("cap", 60, 8)))
+          .to eq("#{survived} Its random search stopped at its 60 s limit, having last found new plan behaviour " \
+                 "8 s before.")
+      end
+
+      it "says the rewrite's time budget ran out" do
+        expect(stopped(stop("deadline", 13, 11)))
+          .to eq("#{survived} Its random search stopped after 13 s, when the rewrite's 5-minute time budget ran out.")
+      end
+
+      it "says the differences it found didn't hold up with every constraint enforced" do
+        expect(stopped(stop("unlifted", 22, 5)))
+          .to eq("#{survived} Its random search stopped after 22 s, once several differences it found didn't " \
+                 "hold up with every constraint enforced.")
+      end
+
+      it "says a count of trials set for testing QUAACK stopped it, not time, when no times were sent" do
+        expect(stopped(stop("trials", nil, nil)))
+          .to eq("#{survived} Its random search stopped after a number of trials set for testing QUAACK, not " \
+                 "by time.")
+        expect(stopped(stop("deadline", nil, nil)))
+          .to eq("#{survived} Its random search stopped when the rewrite's 5-minute time budget ran out.")
+        expect(stopped(stop("unlifted", nil, nil)))
+          .to eq("#{survived} Its random search stopped once several differences it found didn't hold up with " \
+                 "every constraint enforced.")
+      end
+
+      it "says nothing of a stop that isn't sent, or when it says nothing of the data sets" do
+        expect(stopped(nil)).to eq(survived)
+        expect(stopped(stop("secret", 41, 20))).to eq(survived)
+        expect(stopped(stop("dry", 41, 42))).to eq(survived)
+        expect(stopped(stop("dry", 41, 20), trials: 0)).to eq("")
+        expect(stopped(stop("dry", 41, 20), fate: "fuzz_disproved")).to eq("")
+      end
+    end
+
     # Task 20261016-3: the list wasn't actionable, so the report says what the
     # rewrite survived instead. The untested conditions stay internal, for the
     # LLM's test data to aim at.
