@@ -685,31 +685,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-5. Say "indices", not "indexes". Done, see BACKLOG-COMPLETE.md.
-
-### 20261016-9. Report: Ranking entries repeat their subsection's title.
-
-Each entry restates what its subsection's title says, names the rewrite twice, and gives the index definition twice. The user's layout (2026-10-16):
-
-In "A rewrite of the original query, with new indices":
-
-    1. Rewrite <Name> (linked to its SQL), with new indices:
-       * CREATE INDEX ON s.t USING btree (a, b) WHERE ...
-       <table>
-
-In "The original query, with new indices":
-
-    1. With new indices:
-       * CREATE INDEX ...
-       <table>
-
-"A rewrite of the original query" entries likewise just name the rewrite, linked. Each index definition appears once.
-
-- **Depends on:** None. Do after 20261016-5, -6 and -7, which touch the same section.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261016-10. Report: "Why the winner reads fewer blocks" reads like a query plan.
 
 The LLM summary should be advice for a SQL-curious developer who may not know SQL well, giving heuristics for when to write a query more like the winner than the original. For example: was the original too general for the constraints it was given? Did the data in the database make some feature of the query a poor fit, where another shape fits better? What should the developer look for next time? The plans tell the LLM why the winner won. Its job is to turn that into advice, not to retell the plans. Change the prompt and any output checks, and re-record the replays the prompt drift touches. The trust boundary is unchanged: the prompt gets only what it gets today.

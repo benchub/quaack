@@ -11929,3 +11929,27 @@ Replace it with the user's wording (2026-10-16), filling in the real counts and 
 - **Design:** report.
 - **Landed:** 2026-10-16 (task/20261016-7, with 20261016-7 on the same branch). Each kind's block keeps its 5px stripe and lost its background, so it shows the page's, which follows light and dark mode. The `--sb-*` tints and `--stripe-bg` are gone from both themes. A report spec checks that no kind or stripe rule sets a background and that neither theme defines a tint; the spec that checked the tints' contrast went with them.
 - **Status:** done
+
+### 20261016-9. Report: Ranking entries repeat their subsection's title.
+
+Each entry restates what its subsection's title says, names the rewrite twice, and gives the index definition twice. The user's layout (2026-10-16):
+
+In "A rewrite of the original query, with new indices":
+
+    1. Rewrite <Name> (linked to its SQL), with new indices:
+       * CREATE INDEX ON s.t USING btree (a, b) WHERE ...
+       <table>
+
+In "The original query, with new indices":
+
+    1. With new indices:
+       * CREATE INDEX ...
+       <table>
+
+"A rewrite of the original query" entries likewise just name the rewrite, linked. Each index definition appears once.
+
+- **Depends on:** None. Do after 20261016-5, -6 and -7, which touch the same section.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-9). Each ranked entry's heading now says only what its subsection's title doesn't: "Rewrite <Name>, with new indices:" (the name linked to its SQL), "With new indices:", or "Rewrite <Name>", with the new indices' DDL as a list under it. The "Its SQL is under" line and the "Its new indices:" block are gone, so each index and the rewrite's name appear once. A ranked label with no entry in the payload's labels says its new indices are "not recorded". Report specs check each kind's layout, the index and name counts, and the fallbacks; DESIGN.md's report says the layout.
+- **Status:** done
