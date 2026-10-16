@@ -15,7 +15,7 @@ module Quaack
       # read against the original and why that wasn't enough.
       module Candidates
         ORIGINAL = "the original query"
-        LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indexes take less " \
+        LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indices take less " \
                                     "disk space.",
                  "below_top_three" => "beat #{ORIGINAL}, but three others of its kind did better." }.freeze
 
@@ -36,19 +36,19 @@ module Quaack
         # whether it ran with new indexes.
         def describe_plainly(label)
           none = (entry = measured(label)) ? entry["indexes"].empty? : label.to_s.end_with?(":none")
-          "#{describe(label)[/\A.*?(?= with )/]} with #{"no " if none}new indexes"
+          "#{describe(label)[/\A.*?(?= with )/]} with #{"no " if none}new indices"
         end
 
         # The new indexes a label ran with. Without the label's entry, only
         # whether it had any, which its name says.
         def with(entry, key)
-          return key == "none" ? "with no new indexes" : "with new indexes" unless entry
+          return key == "none" ? "with no new indices" : "with new indices" unless entry
 
           on = entry["indexes"].map { target(it) }
-          return "with no new indexes" if on.empty?
+          return "with no new indices" if on.empty?
           return "with a new index #{on.first}" if on.size == 1
 
-          "with new indexes #{list([on.first, *on.drop(1).map { it.delete_prefix("on ") }])}"
+          "with new indices #{list([on.first, *on.drop(1).map { it.delete_prefix("on ") }])}"
         end
 
         # A built index by what it's on, such as "on public.t (a, b)", from

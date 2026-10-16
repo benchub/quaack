@@ -228,7 +228,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).to include(%(<pre class="sql"><code>SELECT id))
     end
 
-    it "puts the verdict first, then the queries, the ranking, the indexes, who proposed what, and the burndown" do
+    it "puts the verdict first, then the queries, the ranking, the indices, who proposed what, and the burndown" do
       ids = html.scan(/<section id="([a-z-]+)"[^>]*>/).flatten
       expect(ids).to eq(%w[summary queries ranking timeouts explanation indexes accountability burndown])
     end
@@ -262,11 +262,11 @@ RSpec.describe Quaack::Driver::Report do
     it "heads the verdict by how much the best row beats the original, and ranks one row per kind by improvement" do
       expect(verdict(html)).to include("<h2>The verdict: substantial improvements possible</h2>")
       expect(verdict_rows(html)).to eq(
-        ["Best rewrite, with the same indexes Rewrite Vivid Cove with no new indexes | 300 | 0 | 70%",
-         "The original query, with new indexes The original query with new indexes | 400 | +8 kB | 60%",
-         "The original query, with the same indexes | 1,000 | 0 | 0%",
-         "Best rewrite, with new indexes | " \
-         "&#9888; No rewrite with new indexes beat the original"]
+        ["Best rewrite, with the same indices Rewrite Vivid Cove with no new indices | 300 | 0 | 70%",
+         "The original query, with new indices The original query with new indices | 400 | +8 kB | 60%",
+         "The original query, with the same indices | 1,000 | 0 | 0%",
+         "Best rewrite, with new indices | " \
+         "&#9888; No rewrite with new indices beat the original"]
       )
     end
 
@@ -275,8 +275,8 @@ RSpec.describe Quaack::Driver::Report do
       payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING btree (#{sentinel})"
       out = render(payload)
       expect(verdict(out)).not_to include(sentinel)
-      expect(verdict(out)).to include("The original query with new indexes")
-      expect(out[%r{<article class="candidate">.*?Its new indexes.*?</article>}m]).to include(sentinel)
+      expect(verdict(out)).to include("The original query with new indices")
+      expect(out[%r{<article class="candidate">.*?Its new indices.*?</article>}m]).to include(sentinel)
     end
 
     it "calls 30% fewer blocks substantial and anything less minor" do
@@ -361,10 +361,10 @@ RSpec.describe Quaack::Driver::Report do
     it "says QUAACK found nothing that could help when nothing beat the original, and what it tried" do
       out = verdict(render(negative_payload))
       expect(out).to include("The verdict: QUAACK found nothing that could help")
-      expect(out).to include("It built and measured 2 indexes and kept 1 rewrite.")
+      expect(out).to include("It built and measured 2 indices and kept 1 rewrite.")
       expect(verdict_rows(render(negative_payload)).map { it.split(" | ").first }).to eq(
-        ["The original query, with the same indexes", "Best rewrite, with new indexes",
-         "Best rewrite, with the same indexes", "The original query, with new indexes"]
+        ["The original query, with the same indices", "Best rewrite, with new indices",
+         "Best rewrite, with the same indices", "The original query, with new indices"]
       )
     end
 
@@ -382,27 +382,27 @@ RSpec.describe Quaack::Driver::Report do
       out = verdict(render(payload))
       expect(out).to include("The verdict: QUAACK found nothing that could help")
       expect(out).to include("&#9888; No new index found that the original query could use")
-      expect(out).to include(%(title="QUAACK built 2 indexes in all, and none was measured with the original ) +
+      expect(out).to include(%(title="QUAACK built 2 indices in all, and none was measured with the original ) +
                              %(query."))
-      expect(out).to include("&#9888; No rewrite was measured with no new indexes")
-      expect(out).to include("QUAACK kept 1 rewrite, and none was measured with no new indexes.")
+      expect(out).to include("&#9888; No rewrite was measured with no new indices")
+      expect(out).to include("QUAACK kept 1 rewrite, and none was measured with no new indices.")
     end
 
-    it "doesn't say no rewrite survived when rewrites were kept but none was measured with new indexes" do
+    it "doesn't say no rewrite survived when rewrites were kept but none was measured with new indices" do
       payload["labels"].reject! { it["label"] == "rewrite_1:top:1" }
       out = verdict(render(payload))
-      expect(out).to include("&#9888; No rewrite was measured with new indexes")
+      expect(out).to include("&#9888; No rewrite was measured with new indices")
       expect(out).not_to include("No rewrite survived testing")
       payload["rewrites"] = []
       payload["labels"].reject! { it["search"] == "rewrite_1" }
       expect(verdict(render(payload))).to include("&#9888; No rewrite survived testing")
     end
 
-    it "says a new-indexes row's added size isn't recorded when its label has no indexes or no entry" do
+    it "says a new-indexes row's added size isn't recorded when its label has no indices or no entry" do
       payload["labels"][0]["indexes"] = []
       expect(verdict_rows(render(payload))[1]).to include("| not recorded |")
       payload["labels"].shift
-      row = verdict_rows(render(payload)).grep(/\Athe original query, with new indexes/i).first
+      row = verdict_rows(render(payload)).grep(/\Athe original query, with new indices/i).first
       expect(row).to include("| not recorded |")
     end
 
@@ -426,10 +426,10 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       def candidate_section(html)
-        html[%r{<article class="candidate">(?:(?!</article>).)*?Its new indexes.*?</article>}m]
+        html[%r{<article class="candidate">(?:(?!</article>).)*?Its new indices.*?</article>}m]
       end
 
-      it "subtracts the dropped indexes' sizes from the row's index change, and goes negative if they outweigh it" do
+      it "subtracts the dropped indices' sizes from the row's index change, and goes negative if they outweigh it" do
         expect(verdict_rows(render(payload))[1]).to include("| +12 kB |")
         drops[0]["size_bytes"] = 40_960
         expect(verdict_rows(render(payload))[1]).to include("| -18 kB |")
@@ -470,7 +470,7 @@ RSpec.describe Quaack::Driver::Report do
       out = render(payload)
       expect(verdict(out)).to include("The verdict: substantial improvements possible")
       expect(verdict_rows(out).first).to end_with("| 300 | 0 | the original query timed out")
-      expect(verdict_rows(out)[2]).to eq("The original query, with the same indexes | timed out | 0 | 0%")
+      expect(verdict_rows(out)[2]).to eq("The original query, with the same indices | timed out | 0 | 0%")
       expect(verdict(out)).to include("&#9888; The original query timed out on the slow values")
     end
 
@@ -487,7 +487,7 @@ RSpec.describe Quaack::Driver::Report do
       payload["hidden_statistics"] = { "indexes" => %w[orders_lower_idx orders_expr_idx], "extended_statistics" => 2 }
       expect(verdict(render(payload))).to include(
         "&#9888; Your role on the production server couldn&#39;t see the statistics of 2 extended statistics " \
-        "objects and of these expression indexes: <code class=\"sql\">orders_lower_idx</code>, " \
+        "objects and of these expression indices: <code class=\"sql\">orders_lower_idx</code>, " \
         "<code class=\"sql\">orders_expr_idx</code>, so QUAACK&#39;s estimates for those may be off. A role that " \
         "owns the tables can see them. <a href=\"#hidden-statistics\">Details</a>"
       )
@@ -546,13 +546,13 @@ RSpec.describe Quaack::Driver::Report do
 
       # Task 20261016-1: the hidden-statistics caveat lands on the subsection that explains it,
       # inside the indexes section, not on the top of the indexes section.
-      it "links the hidden-statistics caveat to its subsection inside the indexes section" do
+      it "links the hidden-statistics caveat to its subsection inside the indices section" do
         item = verdict(out).scan(%r{<li class="warn">(.*?)</li>}m).flatten.find { it.include?("orders_lower_idx") }
         expect(item).to include('href="#hidden-statistics"')
         expect(section(out, "indexes")).to include('<div id="hidden-statistics"')
       end
 
-      it "says how many extended statistics objects and which indexes are hidden, for either alone or both" do
+      it "says how many extended statistics objects and which indices are hidden, for either alone or both" do
         hidden = lambda do |value|
           caveat_payload["hidden_statistics"] = value
           section(render(caveat_payload), "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
@@ -584,7 +584,7 @@ RSpec.describe Quaack::Driver::Report do
           .not_to include('id="timeouts"')
       end
 
-      it "explains the hidden statistics in the indexes section, from the payload's names and count only" do
+      it "explains the hidden statistics in the indices section, from the payload's names and count only" do
         note = section(out, "indexes")[%r{<div id="hidden-statistics".*?</div>}m]
         expect(note).to include("2 extended statistics objects", sq("orders_lower_idx"), "LLM&#39;s index ideas",
                                 "can&#39;t read its columns", "let QUAACK read these statistics", "owns the tables")
@@ -610,7 +610,7 @@ RSpec.describe Quaack::Driver::Report do
         )
         note = section(html, "ranking")[%r{<div id="tablespace-moves".*?</div>}m]
         expect(note).to include("Tables that sit elsewhere on the run server", sq("public.orders"),
-                                sq("public.&quot;Odd&quot;"), "TOAST table", "indexes", "plans",
+                                sq("public.&quot;Odd&quot;"), "TOAST table", "indices", "plans",
                                 "pg_class.reltablespace")
         caveat_payload["tablespace_moves"] = ["public.<b>x</b>"]
         html = render(caveat_payload)
@@ -1230,7 +1230,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("not_better")).to eq(esc("It passed every test, then QUAACK measured it on the real data, " \
                                              "where it either improved by less than 5% on the slow values or read " \
                                              "over 5% more blocks on some others, so QUAACK didn't rank it."))
-        expect(fate("footprint_tie")).to include("tied with a candidate whose new indexes take less disk space")
+        expect(fate("footprint_tie")).to include("tied with a candidate whose new indices take less disk space")
         expect(fate("below_top_three")).to include("three others of its kind did better")
         expect(fate("measurement_timed_out")).to include("every measurement run of it timed out")
       end
@@ -1281,7 +1281,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "ranks the candidates within each kind, each described in words" do
       expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
-        .to eq([["1", "Rewrite Vivid Cove with no new indexes"],
+        .to eq([["1", "Rewrite Vivid Cove with no new indices"],
                 ["1", "The original query with a new index on #{sq("public.t (created_at)")}"]])
     end
 
@@ -1297,9 +1297,9 @@ RSpec.describe Quaack::Driver::Report do
           "footprint" => 0 }
       ]
       expect(ranking.scan(/<tr class="(?:kind|rank)">(?:<th[^>]*>|<td class="num">)([^<]*)/))
-        .to eq([["A rewrite of the original query, with new indexes"], ["1"], ["2"],
-                ["A rewrite of the original query, with no new indexes"], ["1"],
-                ["The original query, with new indexes"], ["1"]])
+        .to eq([["A rewrite of the original query, with new indices"], ["1"], ["2"],
+                ["A rewrite of the original query, with no new indices"], ["1"],
+                ["The original query, with new indices"], ["1"]])
       expect(ranking.scan(/<article class="candidate"><h3>(\d)\./).flatten).to eq(%w[1 2 1 1])
     end
 
@@ -1414,10 +1414,10 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
-    it "describes a candidate with several indexes, and one whose index definition is missing" do
+    it "describes a candidate with several indices, and one whose index definition is missing" do
       payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
       expect(ranking)
-        .to include("<td>The original query with new indexes on #{sq("public.t (created_at)")} and " \
+        .to include("<td>The original query with new indices on #{sq("public.t (created_at)")} and " \
                     "#{sq("public.t (a, b)")}</td>")
       payload["indexes"]["quaack_a"]["ddl"] = nil
       payload["labels"][0]["indexes"] = %w[quaack_a]
@@ -1465,7 +1465,7 @@ RSpec.describe Quaack::Driver::Report do
       def rows(html = unranked) = html.to_s.scan(%r{<tr>(.*?)</tr>}m).flatten.drop(1)
 
       # The source of rewrite 1 with quaack_b, which the query's plan inspired.
-      def rule = "Made by transform rule key_in_self_join; indexes: from the query&#39;s plan"
+      def rule = "Made by transform rule key_in_self_join; indices: from the query&#39;s plan"
 
       # A row of the table: what it was, who proposed it, and why it wasn't ranked.
       def row(what, why, who: rule)
@@ -1482,7 +1482,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(rows).to eq(
           ["<td>Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}</td>" \
            "<td>Made by transform rule " \
-           "key_in_self_join; indexes: from the query&#39;s plan</td><td>Read 7,777 blocks on the slow values, " \
+           "key_in_self_join; indices: from the query&#39;s plan</td><td>Read 7,777 blocks on the slow values, " \
            "against 1,000 for the original query, which isn&#39;t more than 5% fewer.</td>"]
         )
       end
@@ -1490,19 +1490,19 @@ RSpec.describe Quaack::Driver::Report do
       def whos = rows.map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
 
       # Task 20261004-89 item 2.
-      it "names the rewrite's source, then, after 'indexes:', the sources of the new indexes it ran with" do
+      it "names the rewrite's source, then, after 'indices:', the sources of the new indices it ran with" do
         payload["rewrites"].first["source"] = "llm"
         payload["excluded"]["original:top:1"] = "footprint_tie"
         payload["top"].pop
         payload["excluded"]["rewrite_1:none"] = "below_top_three"
-        expect(whos).to eq(["Suggested by the LLM; indexes: from the query&#39;s plan",
-                            "Indexes: from the query&#39;s text, from the LLM", "Suggested by the LLM"])
+        expect(whos).to eq(["Suggested by the LLM; indices: from the query&#39;s plan",
+                            "Indices: from the query&#39;s text, from the LLM", "Suggested by the LLM"])
         expect(section(render(payload), "ranking")).to include(
           "Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after " \
-          "\"indexes:\", to where the new indexes it ran with came from: \"from the query's text\", " \
+          "\"indices:\", to where the new indices it ran with came from: \"from the query's text\", " \
           "\"from the query's plan\", or \"from the LLM\". An index that more than " \
           "one of them proposed lists each. It says not recorded where this run didn't record who proposed " \
-          "the indexes (\"and others not recorded\" when it recorded some of them), and for a rewrite " \
+          "the indices (\"and others not recorded\" when it recorded some of them), and for a rewrite " \
           "whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>"
         )
       end
@@ -1512,28 +1512,28 @@ RSpec.describe Quaack::Driver::Report do
         payload["labels"][2]["indexes"] = %w[quaack_b quaack_a]
         out = render(payload)
         expect(out).not_to match(/generator[ _-]?(one|two)/i)
-        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: from the query&#39;s text, " \
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indices: from the query&#39;s text, " \
                             "from the query&#39;s plan, from the LLM"])
         expect(section(out, "accountability")).to include(">From the query&#39;s text<", ">From the query&#39;s plan<")
       end
 
-      it "lists a source once, in the protocol's order, when several of a label's indexes share it" do
+      it "lists a source once, in the protocol's order, when several of a label's indices share it" do
         payload["labels"][2]["indexes"] = %w[quaack_b quaack_a]
-        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: from the query&#39;s text, " \
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indices: from the query&#39;s text, " \
                             "from the query&#39;s plan, from the LLM"])
       end
 
-      it "says not recorded for the indexes of a run that recorded no sources, and never says none" do
+      it "says not recorded for the indices of a run that recorded no sources, and never says none" do
         payload["excluded"]["original:top:1"] = "footprint_tie"
         payload["top"].pop
         payload["indexes"].each_value { it.delete("sources") }
-        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: not recorded", "not recorded"])
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indices: not recorded", "not recorded"])
         payload["indexes"].each_value { it["sources"] = [] }
-        expect(whos).to eq(["Made by transform rule key_in_self_join; indexes: not recorded", "not recorded"])
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indices: not recorded", "not recorded"])
       end
 
       # Task 20261010-10. `html` is memoized, so each case renders afresh.
-      it "says others are not recorded when only some of a label's indexes have recorded sources" do
+      it "says others are not recorded when only some of a label's indices have recorded sources" do
         payload["excluded"]["original:top:1"] = "footprint_tie"
         payload["top"].pop
         payload["labels"][2]["indexes"] = %w[quaack_a quaack_b]
@@ -1543,13 +1543,13 @@ RSpec.describe Quaack::Driver::Report do
           rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
             .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
         end
-        rule = "Made by transform rule key_in_self_join; indexes: from the query&#39;s plan"
+        rule = "Made by transform rule key_in_self_join; indices: from the query&#39;s plan"
         expect(fresh.call(nil)).to eq(["#{rule} and others not recorded", "not recorded"])
         expect(fresh.call([])).to eq(["#{rule} and others not recorded", "not recorded"])
-        expect(fresh.call(%w[llm])).to eq(["#{rule}, from the LLM", "Indexes: from the LLM"])
+        expect(fresh.call(%w[llm])).to eq(["#{rule}, from the LLM", "Indices: from the LLM"])
       end
 
-      it "shows only the rewrite's source for a label with no new indexes" do
+      it "shows only the rewrite's source for a label with no new indices" do
         payload["labels"][2]["indexes"] = []
         expect(whos).to eq(["Made by transform rule key_in_self_join"])
       end
@@ -1599,7 +1599,7 @@ RSpec.describe Quaack::Driver::Report do
       it "says a candidate lost a tie on index size, fell outside the top three, or was dropped on real data" do
         payload["excluded"] = { "rewrite_1:top:1" => "footprint_tie" }
         expect(unranked).to include("(a, b)</code></td><td>#{rule}</td><td>Beat the original query, but tied with a " \
-                                    "candidate whose new indexes take less disk space.</td></tr>")
+                                    "candidate whose new indices take less disk space.</td></tr>")
         payload["excluded"] = { "rewrite_1:top:1" => "below_top_three" }
         expect(section(render(payload), "ranking")).to include("<td>Beat the original query, but three others of its " \
                                                                "kind did better.</td></tr>")
@@ -1623,7 +1623,7 @@ RSpec.describe Quaack::Driver::Report do
                                "timed_out" => true, "measurements" => nil, "verdicts" => nil }
         expect(unranked).to include(row("Rewrite Vivid Cove with a new index on #{sq("public.t (created_at)")}",
                                         "Timed out while QUAACK measured it.",
-                                        who: "#{rule[/\A.*?(?=;)/]}; indexes: from the query&#39;s text, from the LLM"))
+                                        who: "#{rule[/\A.*?(?=;)/]}; indices: from the query&#39;s text, from the LLM"))
       end
 
       it "lists a label once, by why it was left out, when one of its sets also timed out" do
@@ -1641,7 +1641,7 @@ RSpec.describe Quaack::Driver::Report do
       it "gives no numbers it doesn't have" do
         payload["labels"].delete_at(2)
         expect(unranked)
-          .to include(row("Rewrite Vivid Cove with new indexes", "Was no better than the original query.",
+          .to include(row("Rewrite Vivid Cove with new indices", "Was no better than the original query.",
                           who: "Made by transform rule key_in_self_join"))
       end
 
@@ -1656,7 +1656,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(ranking).to include("Nothing beat the original query, so there is no ranking.")
       expect(ranking.sub(%r{#{opening}.*?</details>}m, "")).not_to include("<tr")
       expect(ranking).to include("<tr><td>The original query with a new index on #{sq("public.t (created_at)")}</td>" \
-                                 "<td>Indexes: from the query&#39;s text, from the LLM</td><td>Read 990 blocks on " \
+                                 "<td>Indices: from the query&#39;s text, from the LLM</td><td>Read 990 blocks on " \
                                  "the slow values, against 1,000 for the original query, which isn&#39;t more than " \
                                  "5% fewer.</td></tr>")
     end
@@ -1666,7 +1666,7 @@ RSpec.describe Quaack::Driver::Report do
 
       it "has its own block, in rank order, and no unranked candidate has one" do
         expect(ranking.scan(%r{<article class="candidate"><h3>(.*?)</h3>}))
-          .to eq([["1. Rewrite Vivid Cove with no new indexes"],
+          .to eq([["1. Rewrite Vivid Cove with no new indices"],
                   ["1. The original query with a new index on #{sq("public.t (created_at)")}"]])
         expect(ranking.scan("<article").size).to eq(2)
       end
@@ -1733,7 +1733,7 @@ RSpec.describe Quaack::Driver::Report do
                                         '<td class="num">not recorded</td>')
       end
 
-      it "lists the indexes it ran with, as DDL, and points a rewrite at its SQL" do
+      it "lists the indices it ran with, as DDL, and points a rewrite at its SQL" do
         expect(candidate(2)).to include("<li>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</li>")
         expect(candidate(1)).not_to include("CREATE INDEX")
         expect(candidate(1)).to include('Its SQL is under <a href="#rewrite-1">rewrite Vivid Cove</a>, above.')
@@ -1764,9 +1764,9 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "explains the winner from blocks, with each plan as a table of its steps" do
-      expect(explanation).to include("Rewrite Vivid Cove with no new indexes read 300 blocks on the slow values, " \
+      expect(explanation).to include("Rewrite Vivid Cove with no new indices read 300 blocks on the slow values, " \
                                      "against 1,000 for the original query (70% fewer).")
-      expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indexes:</p>")
+      expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indices:</p>")
       expect(explanation.scan(header).size).to eq(2)
       expect(plan_rows(explanation)).to eq(
         [[[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Seq Scan ),
@@ -1875,9 +1875,9 @@ RSpec.describe Quaack::Driver::Report do
         .to eq(["0.0%", "under 0.1%", "0.1%", "0.4%"])
     end
 
-    it "says the winner's plan wasn't recorded when the winner is the original query with new indexes" do
+    it "says the winner's plan wasn't recorded when the winner is the original query with new indices" do
       payload["top"].reverse!
-      expect(explanation).to include("The plan with the new indexes: not recorded.")
+      expect(explanation).to include("The plan with the new indices: not recorded.")
       expect(explanation).not_to include("t_a_idx")
       expect(plan_rows(explanation).size).to eq(1)
       expect(explanation).not_to include("differs")
@@ -1891,7 +1891,7 @@ RSpec.describe Quaack::Driver::Report do
       )
     end
 
-    it "says why there is no plan with the new indexes when the run kept no measured plan for the winner" do
+    it "says why there is no plan with the new indices when the run kept no measured plan for the winner" do
       payload["top"].reverse!
       expect(explanation).to include("<p>#{ERB::Util.html_escape(described_class::View::NO_MEASURED_PLAN)}</p>")
       expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::ESTIMATED_PLAN))
@@ -1908,9 +1908,9 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "shows it, with its blocks, in place of the plan Postgres expected" do
-        expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indexes, as QUAACK measured " \
+        expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indices, as QUAACK measured " \
                                        "it on the slow values:</p>")
-        expect(explanation).not_to include("How it runs rewrite Vivid Cove with no new indexes:</p>")
+        expect(explanation).not_to include("How it runs rewrite Vivid Cove with no new indices:</p>")
         expect(plan_rows(explanation).size).to eq(2)
         expect(plan_rows(explanation).last.map { it[%r{<td class="num">([^<]*)</td></tr>}, 1] }).to eq(%w[300 290])
         expect(plan_rows(explanation).last.last).to include("<td>#{sq("t_a_idx")}</td>")
@@ -1918,10 +1918,10 @@ RSpec.describe Quaack::Driver::Report do
         expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::ESTIMATED_PLAN))
       end
 
-      it "shows the plan with the new indexes when the winner is the original query with them" do
+      it "shows the plan with the new indices when the winner is the original query with them" do
         payload["top"].reverse!
         expect(explanation).to include("<p>How it runs the original query with ")
-        expect(explanation).not_to include("The plan with the new indexes: not recorded.")
+        expect(explanation).not_to include("The plan with the new indices: not recorded.")
         expect(plan_rows(explanation).size).to eq(2)
         expect(plan_rows(explanation).last.first).to include("<td>#{sq("quaack_a")}</td>")
         expect(plan_rows(explanation).last.first).to include(%(<td class="num">400</td></tr>))
@@ -1936,9 +1936,9 @@ RSpec.describe Quaack::Driver::Report do
   describe "the index table" do
     let(:indexes) { section(html, "indexes") }
 
-    it "lists the ranked candidates' indexes as proposed, and the rest as built and measured" do
-      other = "<h3>Other indexes QUAACK built and measured</h3>"
-      expect(indexes).to match(%r{<h2>Proposed indexes</h2>.*btree \(created_at\).*#{other}.*btree \(a, b\)}m)
+    it "lists the ranked candidates' indices as proposed, and the rest as built and measured" do
+      other = "<h3>Other indices QUAACK built and measured</h3>"
+      expect(indexes).to match(%r{<h2>Proposed indices</h2>.*btree \(created_at\).*#{other}.*btree \(a, b\)}m)
       expect(indexes.scan("<table").size).to eq(2)
     end
 
@@ -1970,7 +1970,7 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
-    it "lists only the indexes the payload carries, whatever a label names" do
+    it "lists only the indices the payload carries, whatever a label names" do
       payload["labels"][0]["indexes"] = %w[quaack_a quaack_gone]
       expect(indexes.scan("<tr><td>").size).to eq(2)
       expect(indexes).not_to include("quaack_gone")
@@ -1988,11 +1988,11 @@ RSpec.describe Quaack::Driver::Report do
                                      '<td class="num">16 kB</td>'))
     end
 
-    it "calls a negative result's table what it is, not proposed indexes" do
+    it "calls a negative result's table what it is, not proposed indices" do
       indexes = section(render(negative_payload), "indexes")
-      expect(indexes).to include("<h2>Indexes QUAACK built and measured</h2>")
+      expect(indexes).to include("<h2>Indices QUAACK built and measured</h2>")
       expect(indexes).to include("btree (created_at)").and include("btree (a, b)")
-      expect(render(negative_payload)).not_to match(/Proposed indexes|Other indexes/)
+      expect(render(negative_payload)).not_to match(/Proposed indices|Other indices/)
     end
   end
 
@@ -2074,8 +2074,8 @@ RSpec.describe Quaack::Driver::Report do
     it "makes the rewrites, declined, and existing lists rose folds, the last two starting collapsed" do
       folds = why.scan(%r{<details class="fold rose" id="([a-z-]+)"( open)?>\s*<summary><h3>(.*?)</h3></summary>})
       expect(folds).to eq([["ideas-rewrites", " open", "The rewrites"],
-                           ["ideas-declined", nil, "Indexes the planner wouldn't use"],
-                           ["ideas-existing", nil, "Indexes QUAACK thought of that you already have"]])
+                           ["ideas-declined", nil, "Indices the planner wouldn't use"],
+                           ["ideas-existing", nil, "Indices QUAACK thought of that you already have"]])
       expect(why.scan("<details").size).to eq(3)
       expect(why.scan("</details>").size).to eq(3)
       expect(why[%r{<details[^>]*id="ideas-rewrites".*?</details>}m]).to include('<ul id="negative-rewrites">')
@@ -2116,7 +2116,7 @@ RSpec.describe Quaack::Driver::Report do
         .to include("QUAACK kept no rewrite to test.")
     end
 
-    it "says which indexes the planner wouldn't use, and why, once each" do
+    it "says which indices the planner wouldn't use, and why, once each" do
       table = why[%r{<table id="declined-indexes">.*?</table>}m]
       expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?")}</td>" \
                                "<td>The planner never chose it.</td></tr>")
@@ -2138,7 +2138,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(why).to include("<td>not recorded</td></tr>")
     end
 
-    it "says which suggested indexes already existed, with the existing index, its definition, and its size" do
+    it "says which suggested indices already existed, with the existing index, its definition, and its size" do
       table = why[%r{<table id="existing-indexes">.*?</table>}m]
       expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (c)")}</td>" \
                                "<td>#{sq("t_c_d_idx")}<br>" \
@@ -2167,14 +2167,14 @@ RSpec.describe Quaack::Driver::Report do
     it "says none when no index was declined or already existed" do
       negative.merge!("declined" => [], "existing" => [])
       expect(why).to include("The planner would have used every index QUAACK thought of.")
-      expect(why).to include("None of the indexes QUAACK thought of already existed.")
+      expect(why).to include("None of the indices QUAACK thought of already existed.")
       expect(why).not_to include("<table")
     end
   end
 
   # Task 20261003-5: a winning report's payload carries the declined and
   # existing lists too.
-  describe "when a candidate won and the payload lists declined and existing indexes" do
+  describe "when a candidate won and the payload lists declined and existing indices" do
     let(:winning) { render(payload.merge("negative" => negative)) }
     let(:ideas) { section(winning, "index-ideas") }
 
@@ -2186,7 +2186,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(winning).not_to include("negative-rewrites")
     end
 
-    it "says which indexes the planner wouldn't use and which already existed, as a negative result does" do
+    it "says which indices the planner wouldn't use and which already existed, as a negative result does" do
       negative_html = render(negative_payload)
       %w[declined-indexes existing-indexes].each do |id|
         table = ideas[%r{<table id="#{id}">.*?</table>}m]
@@ -2198,8 +2198,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "makes the declined and existing lists rose folds that start collapsed, and that a link opens" do
       folds = ideas.scan(%r{<details class="fold rose" id="([a-z-]+)"( open)?>\s*<summary><h3>(.*?)</h3></summary>})
-      expect(folds).to eq([["ideas-declined", nil, "Indexes the planner wouldn't use"],
-                           ["ideas-existing", nil, "Indexes QUAACK thought of that you already have"]])
+      expect(folds).to eq([["ideas-declined", nil, "Indices the planner wouldn't use"],
+                           ["ideas-existing", nil, "Indices QUAACK thought of that you already have"]])
       expect(ideas.scan("<details").size).to eq(2)
       expect(ideas.scan("</details>").size).to eq(2)
       expect(ideas[%r{<details[^>]*id="ideas-declined".*?</details>}m]).to include('<table id="declined-indexes">')
@@ -2442,7 +2442,7 @@ RSpec.describe Quaack::Driver::Report do
       # Task 20261004-77: a negative result's lists hold each index once,
       # but the proposals count every search's ideas, so the totals don't
       # come from them.
-      it "doesn't count a negative result's declined and existing indexes, which hold each index once" do
+      it "doesn't count a negative result's declined and existing indices, which hold each index once" do
         expect(rows(render(negative_payload), "indexes")["All sources together"])
           .to eq(["not recorded", "not recorded", "not recorded", "2", "2", "0"])
       end
@@ -2605,16 +2605,16 @@ RSpec.describe Quaack::Driver::Report do
     it "shows the original's index ideas stage by stage, in words, drops by reason" do
       expect(index_table).to include(row("Ideas from the query's text", 0, "from the query&#39;s text: 3", "none", 0,
                                          3, "none"))
-      expect(index_table).to include(row("Removing duplicates and indexes you already have", 4, "none",
+      expect(index_table).to include(row("Removing duplicates and indices you already have", 4, "none",
                                          "the same as another idea: 1", 0, 3, "none"))
     end
 
     it "lists every stage, and says not recorded for one the run didn't count" do
       expect(index_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
         .to eq(["Ideas from the query&#39;s text", "Ideas from the query&#39;s plan",
-                "Removing duplicates and indexes you already have",
+                "Removing duplicates and indices you already have",
                 "Asking the planner whether it would use each one", "Ideas from the LLM",
-                "The LLM&#39;s second round of ideas", "Trying indexes together"])
+                "The LLM&#39;s second round of ideas", "Trying indices together"])
       expect(index_table).to include(tr("Ideas from the LLM") << '<td colspan="5" class="missing">' \
                                                                  "not recorded</td></tr>")
       expect(index_table.scan("not recorded").size).to eq(5)
@@ -2641,9 +2641,9 @@ RSpec.describe Quaack::Driver::Report do
                 "Checking what each rewrite assumes",
                 "Checking each rewrite can run differently from the original query",
                 "Testing on made-up edge-case data", "Testing on data the LLM wrote to break them",
-                "Choosing indexes for each rewrite", "Measuring on the real data and choosing"])
+                "Choosing indices for each rewrite", "Measuring on the real data and choosing"])
       expect(rewrite_index_table.scan(%r{<tr[^>]*><th scope="row">(.*?)</th>}).flatten)
-        .to eq(["Index ideas for the rewrites: removing duplicates and indexes you already have"])
+        .to eq(["Index ideas for the rewrites: removing duplicates and indices you already have"])
       expect(rewrite_table).to include(row("Testing on made-up edge-case data", 2, "none",
                                            "wrong on made-up test data: 1", 0, 1,
                                            "conditions the test data never exercised: 2"))
@@ -2830,7 +2830,7 @@ RSpec.describe Quaack::Driver::Report do
                                    "used SQL QUAACK doesn&#39;t support: 1", 0, 1, "none"))
       expect(table).to include(row("The LLM's second round of ideas", 0, "none", "none", 0, 0,
                                    "skipped, since none of the LLM&#39;s ideas fell short: 1"))
-      expect(table).to include(row("Trying indexes together", 4, "combinations tried: 4",
+      expect(table).to include(row("Trying indices together", 4, "combinations tried: 4",
                                    "outside the top three: 1; a combination that left an index unused: 2; " \
                                    "a combination that wasn&#39;t the best: 1", 0, 4, "none"))
       stages["llm-index-refine"]["original"] = rec(0, 0, extra: { "no_ideas_tested" => 1, "fell_short" => 2 })
@@ -2857,7 +2857,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "totals the rewrites' own index searches per stage" do
       expect(rewrite_index_table).to include(
-        row("Index ideas for the rewrites: removing duplicates and indexes you already have", 5, "none",
+        row("Index ideas for the rewrites: removing duplicates and indices you already have", 5, "none",
             "already covered by an index you have: 2", 1, 2, "none")
       )
     end
@@ -2893,7 +2893,7 @@ RSpec.describe Quaack::Driver::Report do
     it "shows the work totals in words, and says not recorded for one the run didn't count" do
       totals = burndown_section[%r{<ul id="burndown-totals">.*?</ul>}m]
       expect(totals.scan(%r{<li>(.*?)</li>}).flatten)
-        .to eq(["Plans tried with an index that wasn&#39;t built: 1,234", "Indexes really built: not recorded",
+        .to eq(["Plans tried with an index that wasn&#39;t built: 1,234", "Indices really built: not recorded",
                 "Measurement runs: not recorded", "Loads of made-up test data: 3"])
     end
 
@@ -2997,14 +2997,14 @@ RSpec.describe Quaack::Driver::Report do
 
     it "pins each stage's exact sentence" do
       expect(Quaack::Driver::Report::StageSentences::TABLE).to eq(
-        "index-from-query" => "QUAACK reads the original query and suggests indexes for the tables, columns, " \
+        "index-from-query" => "QUAACK reads the original query and suggests indices for the tables, columns, " \
                               "and conditions it uses.",
-        "index-from-plan" => "QUAACK suggests indexes from the plan the database made for the original query.",
+        "index-from-plan" => "QUAACK suggests indices from the plan the database made for the original query.",
         "index-dedupe" => "QUAACK drops ideas that repeat another idea or that an index you already have covers.",
         "index-test" => "QUAACK asks the planner whether it would use each idea, and drops the ones it wouldn't.",
-        "llm-index-ideas" => "The LLM suggests indexes that QUAACK's own search missed.",
+        "llm-index-ideas" => "The LLM suggests indices that QUAACK's own search missed.",
         "llm-index-refine" => "If any index idea fell short, the LLM gets one chance to revise it.",
-        "index-rank" => "QUAACK tries the indexes together, adding one at a time while the cost keeps " \
+        "index-rank" => "QUAACK tries the indices together, adding one at a time while the cost keeps " \
                         "dropping, up to three. It doesn't try every combination: it pairs the best single " \
                         "index with each of the others, then tries triples the same way, so n ideas take about " \
                         "n - 1 pairs and up to n - 2 triples.",
@@ -3014,9 +3014,9 @@ RSpec.describe Quaack::Driver::Report do
         "operator-rewrites" => "QUAACK asks the LLM what each rewrite you wrote assumes, checks those assumptions " \
                                "against the database, and warns about any it can't confirm.",
         "assumption-check" => "QUAACK checks each assumption a rewrite makes against the database's " \
-                              "constraints and indexes.",
+                              "constraints and indices.",
         "plan-pruning" => "QUAACK plans each rewrite, and drops any that can't plan, return a different number or " \
-                          "type of columns, or get the same plan as the original query, with or without indexes.",
+                          "type of columns, or get the same plan as the original query, with or without indices.",
         "rewrite-test" => "QUAACK runs each rewrite on made-up data built to show where it differs from " \
                           "the original query.",
         "fuzz" => "QUAACK runs each rewrite and the original query on random small databases built around the " \
@@ -3026,8 +3026,8 @@ RSpec.describe Quaack::Driver::Report do
                        "any rewrite whose results differ.",
         "counterexamples" => "The LLM writes data to try to break each rewrite that's left, for up to three rounds.",
         "rewrite-index-ideas" => "Each rewrite that's left gets its own index search, since it can need " \
-                                 "different indexes than the original query.",
-        "measurement" => "QUAACK builds the indexes, measures how many blocks each candidate reads on the real " \
+                                 "different indices than the original query.",
+        "measurement" => "QUAACK builds the indices, measures how many blocks each candidate reads on the real " \
                          "data, and chooses the best."
       )
     end
@@ -3254,13 +3254,13 @@ RSpec.describe Quaack::Driver::Report do
 
     it "draws one layer per state, in order: a stage that adds and drops is a merge layer and the layer after it" do
       expect(layers("index", 1)).to eq(
-        ["Mechanical index ideas: 9", "After removing duplicates and indexes you already have: 8",
+        ["Mechanical index ideas: 9", "After removing duplicates and indices you already have: 8",
          "After testing for planner utility: 6", "Combined with new ideas from the LLM: 11",
          "After testing the LLM&#39;s ideas: 8", "Combined with the LLM&#39;s second round of ideas: 10",
          "After the LLM&#39;s second round of ideas: 9", "Set aside for testing during ranking: 1"]
       )
       expect(layers("index", 2)).to eq(["Carried in from the diagram above: 9", "Index sets to try: 15",
-                                        "After trying indexes together: 4"])
+                                        "After trying indices together: 4"])
       expect(layers("rewrite", 1)).to eq(
         ["Rewrites from the transform rules: 4", "After removing duplicate rule rewrites: 2",
          "Combined with rewrites from the LLM: 7", "After checking the LLM&#39;s rewrites: 6",
@@ -3270,7 +3270,7 @@ RSpec.describe Quaack::Driver::Report do
          "After testing on data the LLM wrote to break them: 3"]
       )
       expect(layers("rewrite", 2)).to eq(["Carried in from the diagram above: 3",
-                                          "Candidates after choosing indexes for each rewrite: 3",
+                                          "Candidates after choosing indices for each rewrite: 3",
                                           "Candidates after measuring on the real data: 2"])
       %w[index rewrite rewrite-index].each do |id|
         [1, 2].each do |n|
@@ -3309,7 +3309,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(steps("rewrite-index", 2)).to eq([names["index-rank"]])
       svg = sankey("index", 1)
       step = texts(svg).find { it[:text] == names["index-test"] }
-      above = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      above = layer_named(svg, "After removing duplicates and indices you already have: 8")
       below = layer_named(svg, "After testing for planner utility: 6")
       expect(step[:y]).to be > above["y"].to_f + 22
       expect(step[:y]).to be < below["y"].to_f
@@ -3323,7 +3323,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "lays a layer's bottom edge out as what was set aside, then what carried on, then the drops, side by side" do
       svg = sankey("index", 1)
-      from = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      from = layer_named(svg, "After removing duplicates and indices you already have: 8")
       carry = numbers(ribbons(svg, "carry").find { it["data-from"] == from["data-id"] }["d"])
       held = numbers(ribbons(svg, "held").first["d"])
       drop = numbers(ribbons(svg, "drop").find { it["data-from"] == from["data-id"] }["d"])
@@ -3358,7 +3358,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(held["x"].to_f + held["width"].to_f).to be < layout_module::LEFT
       expect(held["y"].to_f).to be > stage_nodes(svg).reject { it == held }.map { it["y"].to_f }.max
       ribbon = ribbons(svg, "held").first
-      from = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      from = layer_named(svg, "After removing duplicates and indices you already have: 8")
       expect([ribbon["data-from"], ribbon["data-to"],
               ribbon["data-count"]]).to eq([from["data-id"], held["data-id"], "1"])
       expect(svg).not_to include("Held back")
@@ -3438,7 +3438,7 @@ RSpec.describe Quaack::Driver::Report do
     it "tapers a carry whose two ends don't join up, so a mismatch shows in the picture as well as the table" do
       stages["index-test"] = { "original" => rec(7, 5, dropped: { "never_used" => 2 }) }
       svg = sankey("index", 1)
-      from = layer_named(svg, "After removing duplicates and indexes you already have: 8")
+      from = layer_named(svg, "After removing duplicates and indices you already have: 8")
       carry = ribbons(svg, "carry").find { it["data-from"] == from["data-id"] }
       scale = sankey_module::SPINE_MAX / 11.0
       nums = numbers(carry["d"])

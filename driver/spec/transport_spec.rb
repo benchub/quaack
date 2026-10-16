@@ -1016,7 +1016,7 @@ RSpec.describe Quaack::Driver::Transport do
     # Task 20261004-89 item 2. Egress sends a report's indexes only if each
     # entry's sources pass Protocol::IndexSources.entries_valid?, so the
     # driver checks the same.
-    it "reads a report whose indexes carry listed sources, and refuses one that doesn't" do
+    it "reads a report whose indices carry listed sources, and refuses one that doesn't" do
       report = lambda do |indexes|
         JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
                         "index_sources" => index_sources, "indexes" => indexes })

@@ -10,7 +10,7 @@ module Quaack
       module LLMSummary
         # What the label says besides who wrote it.
         SUMMARY_LABEL = "not measured. It compares the winner with the original query as it runs now, on the " \
-                        "indexes your database already has. The measurements and plans below are the facts."
+                        "indices your database already has. The measurements and plans below are the facts."
 
         # The summary as the template prints it: its text, and who wrote it as
         # HTML. nil when there's none, and the section reads as it does

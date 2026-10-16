@@ -47,14 +47,14 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       answers << [accepted(1)]
     end
 
-    it "sends the payload as JSON and asks for up to five indexes as structured output" do
+    it "sends the payload as JSON and asks for up to five indices as structured output" do
       run
       ask = fake.asks.first
 
       expect(ask.step).to eq("llm-index-ideas")
       expect(JSON.parse(user_texts(ask).first[/```json\n(.*)\n```/m, 1])).to eq(payload)
       expect(ask.body[:output_config]).to eq(format: { type: :json_schema, schema: described_class::SCHEMA })
-      expect(ask.body[:system]).to include("up to five")
+      expect(ask.body[:system]).to include("Propose up to five indices,")
     end
 
     it "says plainly that an unqualified table name gets the candidate refused and counts against it" do
@@ -65,12 +65,13 @@ RSpec.describe Quaack::Driver::GeneratorThree do
         .and include("an unqualified table name gets the candidate refused, and it counts against you")
     end
 
-    it "says existing and mechanical indexes are already covered, and asks for the kinds they miss" do
+    it "says existing and mechanical indices are already covered, and asks for the kinds they miss" do
       run
       system = fake.asks.first.body[:system]
 
       expect(system).to include("mechanical_results").and include("already covered")
-      %w[Partial Expression BRIN text_pattern_ops trigram low-cardinality].each { expect(system).to include(it) }
+      ["Partial indices", "Expression indices", "BRIN indices", "propose only indices on neither list",
+       "text_pattern_ops", "trigram", "low-cardinality"].each { expect(system).to include(it) }
     end
 
     it "tests what the LLM wrote, and stops when nothing is dropped" do

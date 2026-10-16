@@ -39,7 +39,7 @@ A `GROUP BY` can name the whole primary key of a copy, and leave the other colum
 
 Postgres must still be able to prepare the rewrite. Thus the rule refuses a query that names a system column of a copy, such as `ctid`. It also refuses a query whose `GROUP BY` relies on a key that the rule cannot use.
 
-A single read is not always faster, because the CTE hides the indexes of the table from the filters and join conditions of the copies. plan-pruning and the steps after it decide if it is faster. The index search of plan-pruning covers the scan of the base table by the CTE, as index-from-query covers any CTE body.
+A single read is not always faster, because the CTE hides the indices of the table from the filters and join conditions of the copies. plan-pruning and the steps after it decide if it is faster. The index search of plan-pruning covers the scan of the base table by the CTE, as index-from-query covers any CTE body.
 
 ## What it rests on.
 

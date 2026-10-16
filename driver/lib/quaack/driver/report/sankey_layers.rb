@@ -23,11 +23,11 @@ module Quaack
         AFTER = {
           "index-from-query" => "After checking the ideas from the query's text",
           "index-from-plan" => "After checking the ideas from the query's plan",
-          "index-dedupe" => "After removing duplicates and indexes you already have",
+          "index-dedupe" => "After removing duplicates and indices you already have",
           "index-test" => "After testing for planner utility",
           "llm-index-ideas" => "After testing the LLM's ideas",
           "llm-index-refine" => "After the LLM's second round of ideas",
-          "index-rank" => "After trying indexes together",
+          "index-rank" => "After trying indices together",
           "rewrite-rules" => "After removing duplicate rule rewrites",
           "llm-rewrites" => "After checking the LLM's rewrites",
           "operator-rewrites" => "After checking your own rewrites",
@@ -37,7 +37,7 @@ module Quaack
           "enumerate" => "After testing on every small database up to a few rows",
           "rewrite-test" => "After testing on made-up edge-case data",
           "counterexamples" => "After testing on data the LLM wrote to break them",
-          "rewrite-index-ideas" => "Candidates after choosing indexes for each rewrite",
+          "rewrite-index-ideas" => "Candidates after choosing indices for each rewrite",
           "measurement" => "Candidates after measuring on the real data"
         }.freeze
         # What a merge layer of a run of stages is called.

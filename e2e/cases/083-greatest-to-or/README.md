@@ -10,11 +10,11 @@
 
 ## Slow query (`slow.sql`).
 
-Documents touched recently. `GREATEST(...)` hides both columns from their indexes.
+Documents touched recently. `GREATEST(...)` hides both columns from their indices.
 
 ## Expected result.
 
-`updated_at >= x OR created_at >= x`, which Postgres runs as a BitmapOr of the two indexes. It's equivalent even with NULLs: `GREATEST` ignores a NULL `updated_at`, and `NULL OR created_at >= x` is true exactly when `created_at >= x`.
+`updated_at >= x OR created_at >= x`, which Postgres runs as a BitmapOr of the two indices. It's equivalent even with NULLs: `GREATEST` ignores a NULL `updated_at`, and `NULL OR created_at >= x` is true exactly when `created_at >= x`.
 
 ## Proof.
 

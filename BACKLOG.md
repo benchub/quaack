@@ -685,14 +685,7 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-5. Say "indices", not "indexes".
-
-Decided by the user (2026-10-16): everywhere, in the report, DESIGN.md, README and the LLM prompts. Leave code identifiers, SQL keywords, Postgres catalog names (`pg_indexes`, `CREATE INDEX`) and quoted Postgres messages alone. Prompt changes cause prompt drift in the replays; re-record them as the replay specs require.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report, LLM prompts.
-- **Status:** todo
+### 20261016-5. Say "indices", not "indexes". Done, see BACKLOG-COMPLETE.md.
 
 ### 20261016-6. Report: the Ranking section's opening text.
 

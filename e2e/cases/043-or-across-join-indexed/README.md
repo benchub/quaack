@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** OR across a join; UNION rewrite; existing indexes are enough.
+**Exercises:** OR across a join; UNION rewrite; existing indices are enough.
 
 ## Setup.
 

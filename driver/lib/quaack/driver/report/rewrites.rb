@@ -50,7 +50,7 @@ module Quaack
           "below_top_three" => "It passed every test and beat the original query, but three others of its kind " \
                                "did better.",
           "footprint_tie" => "It passed every test and beat the original query, but tied with a candidate " \
-                             "whose new indexes take less disk space.",
+                             "whose new indices take less disk space.",
           "not_better" => nil, # worded by NotBetterFate
           "measurement_timed_out" => "It passed every test, but every measurement run of it timed out."
         }.freeze

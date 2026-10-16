@@ -74,11 +74,11 @@ module Quaack
         # DESIGN.md's burndown's stages: the original query's index search.
         INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",
                          "index-from-plan" => "Ideas from the query's plan",
-                         "index-dedupe" => "Removing duplicates and indexes you already have",
+                         "index-dedupe" => "Removing duplicates and indices you already have",
                          "index-test" => "Asking the planner whether it would use each one",
                          "llm-index-ideas" => "Ideas from the LLM",
                          "llm-index-refine" => "The LLM's second round of ideas",
-                         "index-rank" => "Trying indexes together" }.freeze
+                         "index-rank" => "Trying indices together" }.freeze
 
         # The rewrite stages that come before the rewrites' index searches,
         # and the ones that come after.
@@ -91,7 +91,7 @@ module Quaack
                            "enumerate" => "Testing on every small database up to a few rows",
                            "rewrite-test" => "Testing on made-up edge-case data",
                            "counterexamples" => "Testing on data the LLM wrote to break them" }.freeze
-        LATE_STAGES = { "rewrite-index-ideas" => "Choosing indexes for each rewrite",
+        LATE_STAGES = { "rewrite-index-ideas" => "Choosing indices for each rewrite",
                         "measurement" => "Measuring on the real data and choosing" }.freeze
 
         # A stage record's added, dropped, and extra names.
@@ -99,7 +99,7 @@ module Quaack
                    "llm" => "from the LLM", "operator" => "from you",
                    "duplicate" => "the same as another idea",
                    "covered_by_existing" => "already covered by an index you have",
-                   "partial_not_low_cardinality" => "partial indexes on a column with too many values",
+                   "partial_not_low_cardinality" => "partial indices on a column with too many values",
                    "never_used" => "never used by the planner", "hypopg_refused" => "HypoPG couldn't create",
                    "unrenderable" => "QUAACK couldn't write its definition",
                    "over_cap" => "over the limit of ten", "failed_checks" => "failed QUAACK's checks",
@@ -168,7 +168,7 @@ module Quaack
 
         # DESIGN.md's burndown's work totals from the enclave, always listed.
         TOTALS = { "hypothetical_explains" => "Plans tried with an index that wasn't built",
-                   "indexes_built" => "Indexes really built", "measurement_runs" => "Measurement runs",
+                   "indexes_built" => "Indices really built", "measurement_runs" => "Measurement runs",
                    "fixture_loads" => "Loads of made-up test data" }.freeze
 
         module_function

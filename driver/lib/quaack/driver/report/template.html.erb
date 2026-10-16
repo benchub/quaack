@@ -154,8 +154,8 @@
 <% if tablespace_moves_note %><div id="tablespace-moves" class="note"><h3>Tables that sit elsewhere on the run server</h3><p><%= h tablespace_moves_note %></p></div>
 <% end %>
 <% if winner %>
-<p>A candidate is the original query, or a rewrite of it, run with a set of new indexes or none. QUAACK ranks the three best of each kind of change: the original query with new indexes, a rewrite with new indexes, and a rewrite with none. To be ranked, it must read more than 5% fewer blocks than the original query on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins within each kind.</p>
-<table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indexes</th></tr></thead>
+<p>A candidate is the original query, or a rewrite of it, run with a set of new indices or none. QUAACK ranks the three best of each kind of change: the original query with new indices, a rewrite with new indices, and a rewrite with none. To be ranked, it must read more than 5% fewer blocks than the original query on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins within each kind.</p>
+<table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indices</th></tr></thead>
 <tbody>
 <tr class="baseline"><td class="num"></td><td>The original query (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
 <% ranked_by_kind.each do |kind, entries| %>
@@ -178,7 +178,7 @@
 <tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
 <% end %>
 </tbody></table>
-<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indexes:", to where the new indexes it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indexes ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
+<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indices:", to where the new indices it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indices ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
 </details>
 <% end %>
 <% ranked_by_kind.each do |kind, entries| %>
@@ -190,11 +190,11 @@
 <p>Its SQL is under <a href="#<%= h anchor(r["rewrite"]) %>"><%= h Words.lower(called(r)) %></a>, above.</p>
 <% end %>
 <% unless (measured(t["label"]) || {}).fetch("indexes", []).empty? %>
-<p>Its new indexes:</p>
+<p>Its new indices:</p>
 <ul><% measured(t["label"])["indexes"].each do |name| %><li><%= sql_code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
 <% end %>
 <% unless suggested_drops(t["label"]).empty? %>
-<p class="note">With these new indexes, you may be able to drop <%= suggested_drops(t["label"]).size == 1 ? "this existing index" : "these existing indexes" %>. Each starts with the same columns as a new index, so the new index can do its work. QUAACK doesn't drop anything. Other queries may use <%= suggested_drops(t["label"]).size == 1 ? "it" : "them" %>, so check before you drop one. Scan counts come from the production server, so a replica's use isn't in them. The size counted against this candidate's index change is the new indexes' size less the size here.</p>
+<p class="note">With these new indices, you may be able to drop <%= suggested_drops(t["label"]).size == 1 ? "this existing index" : "these existing indices" %>. Each starts with the same columns as a new index, so the new index can do its work. QUAACK doesn't drop anything. Other queries may use <%= suggested_drops(t["label"]).size == 1 ? "it" : "them" %>, so check before you drop one. Scan counts come from the production server, so a replica's use isn't in them. The size counted against this candidate's index change is the new indices' size less the size here.</p>
 <ul class="drops"><% suggested_drops(t["label"]).each do |drop| %><li><%= h suggested_drop(drop) %></li><% end %></ul>
 <% end %>
 <table><thead><tr><th scope="col">Values</th><th scope="col" class="num">Blocks read</th><th scope="col" class="num">The original query</th><th scope="col" class="num">Already in memory</th><th scope="col" class="num">Read from disk</th><th scope="col">Against the original query</th><th scope="col">Note</th></tr></thead>
@@ -245,11 +245,11 @@
 <% else %>
 <p><%= h NO_MEASURED_PLAN %><%= " #{h ESTIMATED_PLAN}" if winner_plan %></p>
 <% if winner_plan %>
-<p>How it runs <%= h Words.lower(called(r)) %> with no new indexes:</p>
+<p>How it runs <%= h Words.lower(called(r)) %> with no new indices:</p>
 <%= plan_table(winner_plan, original_plan) %>
 <% end %>
 <% unless (measured(winner["label"]) || {}).fetch("indexes", []).empty? %>
-<p>The plan with the new indexes: <%= h Words::MISSING %>.</p>
+<p>The plan with the new indices: <%= h Words::MISSING %>.</p>
 <% end %>
 <% end %>
 </section>
@@ -269,7 +269,7 @@
 <% end %>
 <% if negative %>
 <details class="fold rose" id="ideas-declined">
-<summary><h3>Indexes the planner wouldn't use</h3></summary>
+<summary><h3>Indices the planner wouldn't use</h3></summary>
 <% if negative["declined"].empty? %>
 <p>The planner would have used every index QUAACK thought of.</p>
 <% else %>
@@ -283,9 +283,9 @@
 <% end %>
 </details>
 <details class="fold rose" id="ideas-existing">
-<summary><h3>Indexes QUAACK thought of that you already have</h3></summary>
+<summary><h3>Indices QUAACK thought of that you already have</h3></summary>
 <% if negative["existing"].empty? %>
-<p>None of the indexes QUAACK thought of already existed.</p>
+<p>None of the indices QUAACK thought of already existed.</p>
 <% else %>
 <p>If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.</p>
 <table id="existing-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Your index that covers it</th><th scope="col" class="num">Its size</th></tr></thead>
@@ -298,15 +298,15 @@
 </details>
 </section>
 <% end %>
-<section id="indexes"><h2><%= winner ? "Proposed indexes" : "Indexes QUAACK built and measured" %></h2>
+<section id="indexes"><h2><%= winner ? "Proposed indices" : "Indices QUAACK built and measured" %></h2>
 <% [[proposed, winner ? "None of the ranked candidates needs a new index." : nil], [unproposed, nil]].each_with_index do |(names, none), i| %>
 <% if i == 1 && winner && !names.empty? %>
-<h3>Other indexes QUAACK built and measured</h3>
+<h3>Other indices QUAACK built and measured</h3>
 <p>QUAACK built these too, and no ranked candidate uses them.</p>
 <% end %>
 <% if names.empty? %>
 <% if none %><p><%= h none %></p><% end %>
-<% if i == 1 && indexes.empty? %><p>QUAACK built no indexes.</p><% end %>
+<% if i == 1 && indexes.empty? %><p>QUAACK built no indices.</p><% end %>
 <% else %>
 <table><thead><tr><th scope="col">Index</th><th scope="col" class="num">Built size</th><th scope="col">Your index that already covers it</th></tr></thead>
 <tbody>
@@ -318,7 +318,7 @@
 <% end %>
 <% if hidden_statistics_note %><div id="hidden-statistics" class="note"><h3>Statistics QUAACK couldn't see</h3><p><%= h hidden_statistics_note %></p></div>
 <% end %>
-<p class="note">Each size is real: QUAACK built the index on a copy of your data. Sizes of your own indexes come from Postgres's statistics.</p>
+<p class="note">Each size is real: QUAACK built the index on a copy of your data. Sizes of your own indices come from Postgres's statistics.</p>
 </section>
 <section id="accountability"><h2>Who proposed what</h2>
 <h3>Rewrites</h3>
@@ -329,7 +329,7 @@
 <% end %>
 </tbody></table>
 <p class="note">A rewrite not kept is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, ten from the transform rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, from a transform rule, repeated another. What became of each rewrite it kept is under the queries, above.</p>
-<h3>Indexes</h3>
+<h3>Indices</h3>
 <table id="accountability-indexes"><thead><tr><th scope="col">Source</th><% Accountability::INDEX_COLUMNS.each do |c| %><th scope="col" class="num"><%= h c %></th><% end %></tr></thead>
 <tbody>
 <% index_account.each do |name, *counts| %>
@@ -389,7 +389,7 @@
 <tr<%= stage_tip(stage, of_rewrite: id == "rewrite-index") %>><th scope="row"><%= h name %></th><%= stage_cells(record, stage) %></tr>
 <% end %>
 </tbody></table>
-<p class="note" id="burndown-<%= id %>-held-back">Set aside for testing during ranking means QUAACK kept the idea instead of dropping it, so it can test it by building it while it ranks the indexes. index-dedupe, and the LLM&#39;s rounds of index ideas, set aside GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test sets aside B-tree ideas on columns with few distinct values that the planner left unused.</p>
+<p class="note" id="burndown-<%= id %>-held-back">Set aside for testing during ranking means QUAACK kept the idea instead of dropping it, so it can test it by building it while it ranks the indices. index-dedupe, and the LLM&#39;s rounds of index ideas, set aside GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test sets aside B-tree ideas on columns with few distinct values that the planner left unused.</p>
 <% end %>
 <h3>LLM calls</h3>
 <% if call_rows.empty? %>
