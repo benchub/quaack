@@ -694,3 +694,12 @@ From the build of 20261016-11. Measurement runs `EXPLAIN (ANALYZE, BUFFERS, TIMI
 - **Came from:** Build of 20261016-11, 2026-10-16.
 - **Design:** report, measurement.
 - **Status:** todo
+
+### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence.
+
+From the review of 20261016-13. The guard still counts a capitalised one-word step type mid-sentence as a plan step, so "The rewrite can Hash the smaller input" or "Group by tenant" is refused when neither plan has that step. That's rare in replies (SQL's `GROUP BY` in capitals doesn't match), but a good answer could be refused. Consider counting a one-word type only when the words around it mark it as a step, such as "a Hash step" or "the Group node".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261016-13, 2026-10-16.
+- **Design:** LLM prompts.
+- **Status:** todo
