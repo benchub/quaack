@@ -45,6 +45,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "relation_qualifier.rb" => [1, "a message for an Error whose rule is fixed"],
     "relations.rb" => [2, "its rule locals, and KINDS and OTHER, read below"],
     "result_comparison/load_orders.rb" => [1, "LOAD_FAILED, read below"],
+    "result_comparison/picks.rb" => [1, "a foreign cancel's ArenaRunner::Error, raised again as it came"],
     "run_server_check.rb" => [1, "fail!'s callers"],
     "scenarios/values.rb" => [1, "its rule local"],
     "single_candidate_test.rb" => [1, "guarded's and hypopg's callers"],

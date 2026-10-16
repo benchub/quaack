@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261004-27
 - 20261010-17
 - 20261008-56
+- 20261008-67
 
 ## How this file works.
 
@@ -207,20 +208,7 @@ Split from 20260924-25, with that task's review findings:
 
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261008-57. Running the rules: leftovers from 20261002-2. Done, see BACKLOG-COMPLETE.md.
-
-### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
-
-1. **A dead guard (second review of 20261008-61).** The `|| select[:larg]` guard in `InnerCuts.sole_table` never fires, since a set-operation node has no `from_clause`. Remove it.
-2. **Inner DISTINCT, GROUP BY, and UNION picks (builder of 20261008-61).** A bad candidate can still match through these. DESIGN.md lists this as a known gap. Decide whether they get the same treatment as inner cuts.
-
-- **Depends on:** 20261008-61.
-- **Came from:** The build and second review of 20261008-61, 2026-10-08.
-- **Design:** fixture-compare.
-- **Decided by the user (2026-10-15):** item 2: check inner arbitrary picks (`DISTINCT ON` without a full order, `GROUP BY` with `any_value` and the like, `DISTINCT` or `UNION` dropping rows that differ in a left-out column) the way inner cuts are checked: detect when the pick mattered on the test data.
-- **Status:** todo
 
 ### 20261008-72. `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
 
@@ -677,4 +665,22 @@ From the first review of 20261010-17 (minor). `Placement.moves` uses Postgres's 
 - **Depends on:** None.
 - **Came from:** The first review of 20261010-17, 2026-10-15 (minor).
 - **Design:** What goes into the enclave, report.
+- **Status:** todo
+
+### 20261015-4. Result-comparison on the racetrack doesn't check inner cuts or picks.
+
+From the build of 20261008-67. `ProductionComparison` (result-comparison on production data) runs neither `InnerCuts` (a LIMIT or OFFSET below the top level) nor `Picks` (a DISTINCT ON without a full order, an aggregate that follows its input order, a DISTINCT or set operation that keeps one of several equal values), which fixture-compare now has. A candidate whose inner pick goes another way can match there by luck, and a good one can fail against an original whose own pick decides its answer. Decide whether production gets the same checks (each forced run re-reads production rows, so it costs a full query run per direction), and test first.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261008-67, 2026-10-15.
+- **Design:** result comparison, fixture-compare.
+- **Status:** todo
+
+### 20261015-5. Fixture-compare: window functions over tied rows pick arbitrarily.
+
+From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that follows its input order, and a deduplicating DISTINCT or set operation, but not a window function whose frame or `ORDER BY` ties, such as `row_number() OVER (PARTITION BY grp ORDER BY created_at)` over equal timestamps, `first_value`, `lag`, or `array_agg(...) OVER (...)`, nor a SQL/JSON `JSON_ARRAYAGG`, an `ARRAY(SELECT ...)` with no `ORDER BY`, or a `GROUP BY` key under a nondeterministic collation (either of `'a'` and `'A'`). A candidate that drops a window's tiebreaking key can match the fixture by luck. Force them the same way (append each argument's or output's `::text` to the window's `ORDER BY`), or refuse; test first with a realistic dedupe-by-`row_number()` query.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261008-67, 2026-10-15.
+- **Design:** fixture-compare.
 - **Status:** todo

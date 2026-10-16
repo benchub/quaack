@@ -30,8 +30,9 @@ module Quaack
       # either, but a failure on the data (DataError) makes it a kill, by
       # query_failed, as in the counterexample rounds; a timeout or a cancel
       # doesn't.
-      # Otherwise the results are compared cheaply, and on any difference
-      # with the official ResultComparison, whose mismatching rule
+      # Otherwise the results are compared cheaply, and on any difference,
+      # or always when either query has an arbitrary pick, with the official
+      # ResultComparison, whose mismatching rule
       # (ResultComparator::MISMATCHES) makes the trial a kill.
       #
       # Every RESTART trials the transaction starts again, so the rows
@@ -55,6 +56,7 @@ module Quaack
           @loader = Loader.new(conn, catalog, honour)
           @timeout = statement_timeout_ms
           @mode = ResultComparison::Shape.parse(queries.first, :original).mode
+          @picks = ResultComparison::Picks.any?(*queries)
           @open = false
         end
 
@@ -120,8 +122,11 @@ module Quaack
           :query_failed if DataError.sqlstate?(runs[failed].first&.error_field(PG::PG_DIAG_SQLSTATE))
         end
 
+        # Equal results are no match for certain when either query has an
+        # arbitrary pick (ResultComparison::Picks), which may have gone the
+        # same way here by luck, so those always go to the official one.
         def compare(original, candidate)
-          return nil if cheap_match?(original, candidate)
+          return nil if !@picks && cheap_match?(original, candidate)
 
           @conn.exec("SAVEPOINT quaack_compare")
           verdict = official

@@ -50,7 +50,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
   def fields(verdict) = verdict.to_h.slice(:match, :mode, :rule, :load_order)
 
   describe "the reverse load" do
-    let(:scan_order) { "SELECT string_agg(id::text, ',') FROM items" }
+    let(:scan_order) { "SELECT array_to_string(ARRAY(SELECT id FROM items), ',')" }
 
     it "loads the rows in reverse, so a seq scan returns them in reverse" do
       scans = [items, described_class.reverse_load(items)].map do |rows|
@@ -79,7 +79,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
 
   describe "the rotated load" do
     it "loads each table's rows rotated by one, so a seq scan returns the first row last" do
-      scan = "SELECT string_agg(id::text, ',') FROM items"
+      scan = "SELECT array_to_string(ARRAY(SELECT id FROM items), ',')"
       expect(runner.with_fixture(described_class.reordered_load(items, :rotated, runner)) { |tx| tx.query(scan).rows })
         .to eq([["2,3,4,5,1"]])
 
@@ -211,7 +211,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
   # (distinct_loads is lazy). The forward order reads none.
   describe "the later load orders after an earlier run ends the comparison" do
     let(:key_reads) { [] }
-    let(:scan_order) { "SELECT string_agg(id::text, ',') FROM items" }
+    let(:scan_order) { "SELECT array_to_string(ARRAY(SELECT id FROM items), ',')" }
 
     before do
       allow(runner).to receive(:self_references).and_wrap_original do |original, tables|
@@ -266,26 +266,32 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
       expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
     end
 
+    # The forward load already catches it, since the DISTINCT also runs
+    # with its pick forced each way (Picks).
     it "catches a DISTINCT that keeps another representative of equal jsonb values" do
       original = "SELECT jb FROM items WHERE id = 1"
       candidate = "SELECT DISTINCT jb FROM items WHERE grp = 1 AND label = 'x'"
-      expect(forward_only(original, candidate).match?).to be(true)
+      expect(runner.with_fixture(items) { |tx| [original, candidate].map { tx.query(it).rows } }.uniq.size).to eq(1)
 
       expect(fields(both(original, candidate))).to eq(match: false, mode: :multiset, rule: :multiset,
-                                                      load_order: :reverse)
+                                                      load_order: :forward)
     end
 
     # Intervals compare by value, as the original's own DISTINCT or = does,
-    # so the other representative is the same value.
-    it "matches a DISTINCT that keeps another representative of equal intervals" do
+    # so the other representative is the same value. But the DISTINCT's
+    # pick has a choice by text (Picks), and no check of it knows each
+    # type's equality, so it fails closed.
+    it "refuses a DISTINCT that keeps another representative of equal intervals" do
       original = "SELECT iv FROM items WHERE id = 1"
       candidate = "SELECT DISTINCT iv FROM items WHERE grp = 1 AND label = 'x'"
       expect(runner.with_fixture(described_class.reverse_load(items)) { |tx| tx.query(candidate).rows })
         .to eq([["24:00:00"]])
 
-      expect(fields(both(original, candidate))).to eq(match: true, mode: :multiset, rule: nil, load_order: nil)
+      expect(fields(both(original, candidate))).to eq(match: false, mode: :multiset, rule: :unsupported_order,
+                                                      load_order: :forward)
     end
 
+    # Forced too: the forced DISTINCT keeps the first and the last by text.
     it "catches a DISTINCT that keeps another representative under a nondeterministic collation" do
       conn.exec(<<~SQL)
         CREATE COLLATION ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
@@ -294,10 +300,10 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
       rows = rows_of("words", %w[id w], [1, "a"], [2, "A"])
       original = "SELECT w FROM words WHERE id = 1"
       candidate = "SELECT DISTINCT w FROM words"
-      expect(forward_only(original, candidate, rows:).match?).to be(true)
+      expect(runner.with_fixture(rows) { |tx| [original, candidate].map { tx.query(it).rows } }.uniq.size).to eq(1)
 
       expect(fields(both(original, candidate, rows:))).to eq(match: false, mode: :multiset, rule: :multiset,
-                                                             load_order: :reverse)
+                                                             load_order: :forward)
     end
   end
 
@@ -353,7 +359,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
 
     it "reverses each table's rows but keeps parents before children" do
       rows = rows_of("parent", %w[id], [1], [2]) + rows_of("child", %w[id parent_id], [10, 1], [11, 2], [12, 2])
-      scan = "SELECT string_agg(id::text, ',') FROM child"
+      scan = "SELECT array_to_string(ARRAY(SELECT id FROM child), ',')"
 
       expect(fields(both(join, semi, rows:))).to include(match: true, load_order: nil)
       expect(fields(both(scan, "SELECT '10,11,12'", rows:))).to include(match: false, load_order: :reverse)
@@ -371,7 +377,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
 
       # A tree: 1 at the root, 2 and 3 under it, 4 under 2, 5 under 3.
       let(:tree) { rows_of("node", %w[id up], [1, nil], [2, 1], [3, 1], [4, 2], [5, 3]) }
-      let(:scan) { "SELECT string_agg(id::text, ',') FROM node" }
+      let(:scan) { "SELECT array_to_string(ARRAY(SELECT id FROM node), ',')" }
 
       it "reorders the rows level by level, so every parent still loads first" do
         scans = %i[reverse rotated].map do |load_order|
@@ -425,7 +431,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
           rows_of("part", %w[a b up_a up_b], [1, 1, nil, nil], [1, 2, 1, 1], [2, 1, 1, 1], [3, 1, 2, 1],
                   [4, 1, 1, nil])
         end
-        let(:scan) { "SELECT string_agg(a || '.' || b, ',') FROM part" }
+        let(:scan) { "SELECT array_to_string(ARRAY(SELECT a || '.' || b FROM part), ',')" }
 
         it "reads the key's columns in order" do
           expect(runner.self_references([table("part")])).to eq(table("part") => [[%w[up_a up_b], %w[a b]]])
@@ -488,7 +494,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
 
     it "keeps a query that fails only in the reverse run a query_failed" do
-      sql = "SELECT 1 / ((SELECT array_agg(id) FROM items)[1] - 5) AS q"
+      sql = "SELECT 1 / ((ARRAY(SELECT id FROM items))[1] - 5) AS q"
 
       expect { both(sql, sql) }.to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
         expect([e.rule, e.step, e.sqlstate]).to eq([:query_failed, :query, "22012"])
@@ -517,7 +523,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
         end
       end
       rows = in_schema.call("a", %w[id], [1], [2]) + in_schema.call("b", %w[id a_id], [10, 1], [11, 2])
-      scan = "SELECT string_agg(id::text, ',') FROM b.t"
+      scan = "SELECT array_to_string(ARRAY(SELECT id FROM b.t), ',')"
 
       expect(fields(both(scan, "SELECT '10,11'", rows:))).to include(match: false, load_order: :reverse)
     end

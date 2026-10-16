@@ -93,7 +93,7 @@ module Quaack
         def sole_table(select)
           from = select[:from_clause]
           return unless from&.size == 1 && from.first[:range_var]
-          return if select[:group_clause] || select[:distinct_clause] || select[:larg]
+          return if select[:group_clause] || select[:distinct_clause]
 
           from.first[:range_var]
         end
