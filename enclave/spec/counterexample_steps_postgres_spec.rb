@@ -209,19 +209,27 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       def checks = Quaack::Enclave::Steps::ReportPayload.checks(stored, "1")
 
       it "sends the shapes of what it left untested and what a round covered, and never a literal" do
-        # No row can fail o.status = 'held' until the check goes.
-        ready(candidate, status_check: "status = 'held'")
-        # The literals are random, so the worlds are too: 40 trials can
-        # miss a world where the other two conditions matter.
+        # No row can fail any of the three conditions until the status
+        # check goes. Fuzz's seed is from the queries' text, which holds the
+        # random sentinels, so a condition a world could make both true and
+        # false would be tested on some runs and not others (task
+        # 20261015-2).
+        ready(candidate, status_check: "status = 'held'", arena_sql: <<~SQL)
+          ALTER TABLE public.orders ALTER COLUMN note SET NOT NULL, ALTER COLUMN total SET NOT NULL,
+            ADD CHECK (note = '#{sentinels.text}' AND total >= #{sentinels.number});
+        SQL
+        # The checks leave few legal worlds, so this many trials make sure
+        # some are compared.
         outcome = searched("rewrite_1", FUZZ_TO_KILL)
         expect(lines(outcome).first).to include("passed" => true, "rule" => nil)
-        expect(tested).to include("untested" => ["o.status = $2"], "untested_atoms" => [1],
-                                  "untested_unchanged" => ["o.status = $2"])
+        untested = ["o.note = $1", "o.status = $2", "o.total >= $3"]
+        expect(tested).to include("untested" => untested, "untested_atoms" => [0, 1, 2],
+                                  "untested_unchanged" => untested)
         arena_exec("ALTER TABLE public.orders DROP CONSTRAINT orders_status_check")
         covering = round(1, "INSERT INTO public.orders (id, note, status, total) VALUES (1, $1, 'open', $3)")
 
         expect(lines(covering).first).to include("covered" => ["o.status = $2"])
-        expect(checks).to include("untested_atoms" => ["o.status = $2"], "covered" => ["o.status = $2"])
+        expect(checks).to include("untested_atoms" => untested, "covered" => ["o.status = $2"])
         # The query held both sentinels, so the run was exposed to them.
         expect(store.read("qualified_query")).to include(sentinels.text, sentinels.number.to_s)
         expect_no_leaks(sentinels, outcome, objects: { checks:, tested:, round: stored.read("rewrite_round_1") })
@@ -357,28 +365,36 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     # position, as a subset of the shapes already stored under untested.
     describe "untested_unchanged" do
       let(:held) { "status = 'held'" }
+      # No row can fail o.note = '<sentinel>' either. Fuzz's seed is from
+      # the queries' text, which holds the random sentinel, so without this
+      # about 1 search in 150 draws no row with the sentinel and leaves the
+      # atom untested too (task 20261015-2); with it, no world can make the
+      # atom false, whatever fuzz draws.
+      let(:noted) { "ALTER TABLE public.orders ALTER COLUMN note SET NOT NULL, ADD CHECK (note = '#{sentinels.text}')" }
+      let(:both) { ["o.note = $1", "o.status = $2"] }
 
       it "lists an untested atom of a rewrite that left it alone, and sends it on no message" do
         # No row can fail o.status = 'held', so no world makes it false.
-        ready(same, status_check: held)
+        ready(same, status_check: held, arena_sql: noted)
 
         outcome = searched
 
-        expect(tested).to include("untested" => ["o.status = $2"], "untested_unchanged" => ["o.status = $2"])
+        expect(tested).to include("untested" => both, "untested_unchanged" => both)
         expect(lines(outcome).first.keys).to eq(keys)
         expect_no_leaks(sentinels, outcome)
       end
 
       it "leaves out an untested atom the rewrite dropped, and one it moved under a subquery" do
-        ready(looser, status_check: held)
+        ready(looser, status_check: held, arena_sql: noted)
         searched
-        expect(tested).to include("passed" => true, "untested" => ["o.status = $2"], "untested_unchanged" => [])
+        expect(tested).to include("passed" => true, "untested" => both, "untested_unchanged" => ["o.note = $1"])
 
         subquery = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND " \
                    "EXISTS (SELECT 1 FROM public.orders p WHERE p.id = o.id AND o.status = $2)"
         store.write("rewrite_1", store.read("rewrite_1").merge("sql" => subquery, "anchored_sql" => subquery))
         searched
-        expect(tested).to include("passed" => true, "untested" => ["o.status = $2"], "untested_unchanged" => [])
+        # The EXISTS is a new top-level atom, so it changes o.note = $1 too.
+        expect(tested).to include("passed" => true, "untested" => both, "untested_unchanged" => [])
       end
 
       # Two placeholders that bind the same literal make the bound queries
