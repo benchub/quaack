@@ -686,15 +686,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-12. Report: the rewrite Sankey draws empty boxes when the user proposed no rewrites.
-
-With no rewrites from the user, the Sankey shows empty boxes. The user wants the layer "Combined with your own rewrites: not recorded" to be as wide as the layer above it ("After checking the LLM's rewrites: N"), with an empty merging flow coming in from an empty box labelled "From you: 0".
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report (Sankey diagrams).
-- **Status:** todo
-
 ### 20261016-13. Winner summary guard: case handling of plan-step names.
 
 From the review of 20261016-10. Two gaps in `driver/lib/quaack/driver/winner_summary/plan_steps.rb`:

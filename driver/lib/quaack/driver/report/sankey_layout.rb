@@ -30,6 +30,7 @@ module Quaack
 
         SPINE_MAX = 240.0
         MIN_THICKNESS = 2.0
+        ZERO_BOX = 10.0
         UNKNOWN_WIDTH = SPINE_MAX * 0.3
         NODE_X = LEFT + SPINE_MAX + 40
         HELD_X = 16.0

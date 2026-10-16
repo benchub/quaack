@@ -4,9 +4,10 @@ module Quaack
   module Driver
     module Report
       # Where a merge layer's sources go (see SankeyLayout). Each is a flat bar as
-      # wide as its count, or a thin tick for a count of zero, with its label above
-      # it, and its ribbon runs down and meets the layer's top edge from its left, in
-      # the same order as the bars, so none cross.
+      # wide as its count, or an empty box ZERO_BOX wide for a count of zero, with its
+      # label above it, and its ribbon runs down and meets the layer's top edge from
+      # its left, in the same order as the bars, so none cross. A zero's ribbon is an
+      # empty line that meets the edge at a point.
       #
       # The diagram's first layer spreads its bars across the whole picture, side by
       # side with even gaps, every label on one line, each cut to the room before the
@@ -33,7 +34,7 @@ module Quaack
         # The height of the first layer's spread sources: one line of labels, the bars, and the merge.
         def spread_block = LABEL_LINE + LABEL_GAP + FLAT + MERGE
 
-        def bar(amount) = [thick(amount), SankeyLayout::MIN_THICKNESS].max
+        def bar(amount) = amount.zero? ? SankeyLayout::ZERO_BOX : [thick(amount), SankeyLayout::MIN_THICKNESS].max
 
         # Where the layer's sources go, if it has any.
         def place_sources(layer)

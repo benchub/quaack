@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "report/view"
+require_relative "report/own_rewrites"
 
 module Quaack
   module Driver
@@ -56,10 +57,11 @@ module Quaack
 
       # The run ID loses its SQL marks (Format.unmarked) before anything
       # uses it, so named and View draw each rewrite's name from the same
-      # string.
-      def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil)
+      # string. own_rewrites is how many rewrites of your own the run was
+      # given (`--rewrites`), or nil when the caller doesn't say (OwnRewrites).
+      def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil, own_rewrites: nil) # rubocop:disable Metrics/ParameterLists
         run_id = Format.unmarked(run_id)
-        View.new(named(payload, run_id), run_id, llm_calls, llm, summary).render
+        View.new(named(OwnRewrites.fill(payload, own_rewrites), run_id), run_id, llm_calls, llm, summary).render
       end
 
       def write(payload, path:, **)

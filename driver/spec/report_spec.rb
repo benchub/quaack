@@ -3525,9 +3525,13 @@ RSpec.describe Quaack::Driver::Report do
       svg = sankey("index", 1)
       zero = nodes(svg, "source").find { it["data-stage"] == named("llm-index-refine") }
       expect(zero["data-count"]).to eq("0")
-      expect(zero["width"].to_f).to be_within(0.01).of(sankey_module::MIN_THICKNESS)
+      expect(zero["width"].to_f).to be_within(0.01).of(layout_module::ZERO_BOX)
+      expect(zero["style"]).to eq("fill: none; stroke: var(--sk-source)")
       expect(texts(svg).map { it[:text] }).to include("From the LLM: 0")
-      expect(ribbons(svg).map { it["data-count"].to_i }).to all(be_positive)
+      empty, full = ribbons(svg).partition { it["class"].split.include?("zero") }
+      expect(empty.map { [it["data-from"], it["data-count"], it["style"]] })
+        .to eq([[zero["data-id"], "0", "fill: none; stroke: var(--sk-source)"]])
+      expect(full.map { it["data-count"].to_i }).to all(be_positive)
       expect(layers("index", 1)).to include("Combined with the LLM&#39;s second round of ideas: 8")
       rewrite = sankey("rewrite", 1)
       expect(texts(rewrite).map { it[:text] }).to include("From you: 0")
@@ -3540,6 +3544,74 @@ RSpec.describe Quaack::Driver::Report do
       words = texts(sankey("rewrite", 1)).map { it[:text] }
       expect(words).to include("From the transform rules: 0", "From the LLM: 0", "From you: 0")
       expect(words).to include("Rewrites from the transform rules: 0")
+    end
+
+    # Task 20261016-12: with no rewrites of your own, operator-rewrites never runs, so the
+    # enclave records nothing for it. The driver knows you gave none (own_rewrites: 0), so
+    # it shows the stage as adding nothing to what the LLM's rewrites left.
+    describe "a run where you gave no rewrites of your own" do
+      let(:none) do
+        stages.delete("operator-rewrites")
+        render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }), own_rewrites: 0)
+      end
+
+      it "merges an empty 'From you: 0' box into a layer as wide as the one above, with no grey box" do
+        svg = sankey("rewrite", 1, none)
+        names = layers("rewrite", 1, none)
+        above = names.index("After checking the LLM&#39;s rewrites: 6")
+        expect(names[above + 1]).to eq("Combined with your own rewrites: 6")
+        widths = names[above, 2].map { layer_named(svg, it)["width"] }
+        expect(widths.uniq.size).to eq(1), "expected the two layers as wide, got #{widths}"
+        expect(svg).not_to include("not recorded")
+        expect(nodes(svg).select { it["class"].include?("unknown") }).to eq([])
+        expect(ribbons(svg).select { it["class"].include?("unknown") }).to eq([])
+      end
+
+      it "draws 'From you' as an empty box whose empty ribbon merges into that layer" do
+        svg = sankey("rewrite", 1, none)
+        mine = nodes(svg, "source").find { it["data-stage"] == named("operator-rewrites") }
+        expect(mine).not_to be_nil, "expected a source for your own rewrites"
+        expect([mine["data-count"], mine["class"]]).to eq(["0", "node source zero"])
+        expect(texts(svg).map { it[:text] }).to include("From you: 0")
+        into = layer_named(svg, "Combined with your own rewrites: 6")
+        flow = ribbons(svg, "source").find { it["data-from"] == mine["data-id"] }
+        expect(flow).not_to be_nil, "expected an empty ribbon from #{mine["data-id"]}"
+        expect([flow["class"], flow["data-to"], flow["data-count"]]).to eq(["ribbon source zero", into["data-id"], "0"])
+        middle = mine["x"].to_f + (mine["width"].to_f / 2)
+        expect([numbers(flow["d"])[0], numbers(flow["d"])[-2]]).to eq([middle, middle])
+      end
+
+      it "counts the stage in the table as adding none and sending on what the LLM's rewrites left" do
+        row = section(none, "burndown")[%r{<th scope="row">Your own rewrites</th>.*?</tr>}m]
+        expect(row).to eq('<th scope="row">Your own rewrites</th><td>none</td><td>none</td>' \
+                          '<td class="num">0</td><td class="num">6</td><td>none</td></tr>')
+      end
+
+      it "still says not recorded when the driver doesn't say, or says you gave some" do
+        stages.delete("operator-rewrites")
+        [nil, 2].each do |own|
+          html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }), own_rewrites: own)
+          expect(layers("rewrite", 1, html)).to include("Combined with your own rewrites: not recorded")
+        end
+      end
+
+      it "carries what the transform rules sent on if the LLM's rewrites weren't recorded, else not recorded" do
+        stages.delete("operator-rewrites")
+        stages.delete("llm-rewrites")
+        html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }), own_rewrites: 0)
+        expect(layers("rewrite", 1, html)).to include("Combined with your own rewrites: 2")
+        stages.delete("rewrite-rules")
+        html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }), own_rewrites: 0)
+        expect(layers("rewrite", 1, html)).to include("Combined with your own rewrites: not recorded")
+        expect(section(html, "burndown"))
+          .to include('<th scope="row">Your own rewrites</th><td colspan="5" class="missing">not recorded</td>')
+      end
+
+      it "leaves a run with your own rewrites recorded as it was" do
+        html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }), own_rewrites: 0)
+        expect(section(html, "burndown")).to eq(section(out, "burndown"))
+        expect(layers("rewrite", 1, html)).to include("Combined with your own rewrites: 7")
+      end
     end
 
     it "keeps a layer's flows whole: what came into it is its count, and what leaves is the same" do
@@ -3613,23 +3685,26 @@ RSpec.describe Quaack::Driver::Report do
       expect(ys.sort.map(&:last)).to eq(ys.values.sort.reverse)
     end
 
-    it "keeps a count of one visible against a large one, and draws a zero count as no ribbon" do
+    it "keeps a count of one visible against a large one, and draws a zero count as an empty line" do
       stages["rewrite-rules"] = { "rewrites" => rec(0, 12_000, added: { "key_in_self_join" => 12_001 },
                                                                dropped: { "duplicate" => 1 }) }
       stages["llm-rewrites"] = { "rewrites" => rec(12_000, 12_000, added: { "llm" => 0 }) }
       svg = sankey("rewrite", 1)
       one = nodes(svg, "drop").find { it["data-count"] == "1" }
       expect(one["height"].to_f).to be >= sankey_module::MIN_THICKNESS
-      expect(ribbons(svg).map { it["data-count"].to_i }).to all(be_positive)
+      empty, full = ribbons(svg).partition { it["class"].split.include?("zero") }
+      expect(full.map { it["data-count"].to_i }).to all(be_positive)
+      expect(empty.map { [it["data-count"], it["style"]] }).to eq([["0", "fill: none; stroke: var(--sk-source)"]])
       expect(svg).not_to match(/NaN|Infinity/)
     end
 
-    it "draws a diagram whose every count is zero without ribbons, with each layer still visible" do
+    # Task 20261016-12: a source that added nothing still has its empty line into its layer.
+    it "draws a diagram whose every count is zero with only empty lines, with each layer still visible" do
       stages.each_value { |by| by.each_key { |search| by[search] = rec(0, 0) } }
       %w[index rewrite].each do |id|
         [1, 2].each do |n|
           svg = sankey(id, n)
-          expect(ribbons(svg)).to eq([])
+          expect(ribbons(svg).reject { it["class"] == "ribbon source zero" && it["data-count"] == "0" }).to eq([])
           expect(stage_nodes(svg).map { it["width"].to_f }).to all(be >= sankey_module::MIN_THICKNESS)
           expect(svg).not_to match(/NaN|Infinity/)
         end

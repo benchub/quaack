@@ -11977,3 +11977,13 @@ Colours must follow light and dark mode.
 - **Design:** report.
 - **Landed:** 2026-10-16 (task/20261016-11). Plan nodes now carry `actual_total_time` (ms per loop, inclusive) and `actual_loops`, each a finite number of zero or more or null, in the protocol's PlanNodes check, the enclave's report-payload nodes, and so the egress function's and the driver's validation, both of which refuse a non-number such as a planted sentinel. The report drops the "differs" marks, their CSS, and their note. Each plan row is shaded by how far its estimated rows are from its actual rows, either way (larger over smaller, a count under 1 counted as 1; 8 buckets from 2x to over 1000x; none for an estimate-only plan or a step that never ran), with light and dark colours and a legend. A time column shows each step's own time over all its loops and its share of the plan's: total × loops less its direct children's, floored at zero, with a note on parallel workers and subplans/CTEs; the column is left out of a plan with no times. QUAACK's own measured plans run with TIMING OFF, so only the original's plan has times (follow-up 20261016-14). No recorded replay or fixture stores report plan nodes. DESIGN.md's report describes the fields, the shading, and the time.
 - **Status:** done
+
+### 20261016-12. Report: the rewrite Sankey draws empty boxes when the user proposed no rewrites.
+
+With no rewrites from the user, the Sankey shows empty boxes. The user wants the layer "Combined with your own rewrites: not recorded" to be as wide as the layer above it ("After checking the LLM's rewrites: N"), with an empty merging flow coming in from an empty box labelled "From you: 0".
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report (Sankey diagrams).
+- **Landed:** 2026-10-16 (task/20261016-12; driver only). A run given no rewrites of its own (no `--rewrites`, or an empty file) never runs operator-rewrites, so the enclave records nothing for it; the driver now tells the report how many it gave (`Report.render(..., own_rewrites:)`), and with 0 and no record `Report::OwnRewrites` fills in the record the enclave would have made (in and out what llm-rewrites, else rewrite-rules, sent on; nothing added). The Sankey then draws `From you: 0` merging into `Combined with your own rewrites: N`, as wide as the layer above, with no grey "not recorded" layer, and the table counts the stage as adding none. Every zero source is now an empty box with an empty line merging into its layer (was a thin filled tick with no ribbon). Without the count, or with rewrites given but no record, it still says "not recorded". No earlier open duplicate: 20261011-17 noted the "not recorded" layer as open but filed no task.
+- **Status:** done

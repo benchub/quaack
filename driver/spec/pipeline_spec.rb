@@ -582,4 +582,31 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
 
     expect { pipeline(t).run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("no_report") }
   end
+
+  # Task 20261016-12: operator-rewrites runs only on your own rewrites, so with none the
+  # enclave records nothing for it, and the report is told you gave none.
+  describe "your own rewrites in the report's burndown" do
+    let(:burndown) do
+      { "stages" => { "llm-rewrites" => { "rewrites" => { "in" => 0, "added" => { "llm" => 3 }, "dropped" => {},
+                                                          "set_aside" => 0, "out" => 3, "extra" => {} } } },
+        "totals" => {} }
+    end
+
+    def rendered(rewrites)
+      entries = done.merge("selection" => true, "operator_rewrites_checked" => true)
+      t = transport(entries, "report-payload" => [report.merge("burndown" => burndown)])
+      described_class.new(transport: t, client: nil, run_id: "RUN", out:, rewrites:).run
+      File.read(out)
+    end
+
+    it "counts operator-rewrites as adding none when the run had no rewrites file, or an empty one" do
+      [nil, []].each do |rewrites|
+        expect(rendered(rewrites)).to include("Combined with your own rewrites: 3")
+      end
+    end
+
+    it "leaves operator-rewrites not recorded when you gave rewrites but the enclave recorded none" do
+      expect(rendered(["SELECT 2"])).to include("Combined with your own rewrites: not recorded")
+    end
+  end
 end
