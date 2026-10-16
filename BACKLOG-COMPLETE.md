@@ -11927,5 +11927,5 @@ Replace it with the user's wording (2026-10-16), filling in the real counts and 
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-16.
 - **Design:** report.
-- **Landed:** 2026-10-16 (task/20261016-7, with 20261016-7). Each kind's block keeps its 5px stripe and lost its background, so it shows the page's, which follows light and dark mode. The `--sb-*` tints and `--stripe-bg` are gone from both themes. A report spec checks that no kind or stripe rule sets a background and that neither theme defines a tint; the spec that checked the tints' contrast went with them.
+- **Landed:** 2026-10-16 (task/20261016-7, with 20261016-7 on the same branch). Each kind's block keeps its 5px stripe and lost its background, so it shows the page's, which follows light and dark mode. The `--sb-*` tints and `--stripe-bg` are gone from both themes. A report spec checks that no kind or stripe rule sets a background and that neither theme defines a tint; the spec that checked the tints' contrast went with them.
 - **Status:** done
