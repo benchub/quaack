@@ -330,11 +330,22 @@ module TestPostgres
   # for the rare spec that needs a server-wide setting the shared server
   # can't change, such as autovacuum: a -c setting outranks ALTER SYSTEM.
   # It has no templates, so use its admin connection. The spec removes it
-  # with remove_server, in an ensure. One a crash leaves behind carries
-  # LABEL, so the next run removes it.
+  # with remove_server, in an ensure. If it never gets ready, there's no
+  # server for the spec to remove, so it removes its own container before
+  # raising. One a crash leaves behind carries LABEL, so the next run
+  # removes it.
   def extra_server(settings)
     server
-    Server.new(start_container(settings)).tap(&:wait_until_ready)
+    ExtraServer.start(start_container(settings))
+  end
+
+  module ExtraServer
+    def self.start(id)
+      Server.new(id).tap(&:wait_until_ready)
+    rescue StandardError, Interrupt
+      TestPostgres.remove_container(id)
+      raise
+    end
   end
 
   def remove_server(extra)
