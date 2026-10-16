@@ -683,3 +683,127 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
+
+### 20261016-1. Report: the hidden-statistics warning links to the wrong place.
+
+The verdict's warning that the production role couldn't see an expression index's statistics has a Details link to the proposed-indices section. It should link to that section's "Statistics QUAACK couldn't see" subsection.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16, from their report of 2026-10-15.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-2. Report: drop the "Read it with care … never made some conditions … both true and false" caveat.
+
+Every tested rewrite carries it, so it says nothing: fuzz can only disprove a rewrite, never prove it, and the report accepts rewrites QED would refuse. Decided by the user (2026-10-16): drop the caveat from the queries section (and the verdict, if it appears there). Keep the other "Read it with care" sentences (such as relying on what the data holds today). The untested atoms stay internal: llm-counterexamples still aims at them.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report, rewrite-test (coverage).
+- **Status:** todo
+
+### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived.
+
+The list of conditions QUAACK had trouble testing, at the end of each rewrite, isn't actionable. Decided by the user (2026-10-16): don't show it. Say instead, for example: "Modest Coin survived 1,790 mechanically generated data sets trying to show it gives different results from the original query. It also survived 3 rounds of test data meant to break it from copilot_cli using opus-5.5." Use the real counts (fuzz trials, plus enumerate's worlds where it ran), the provider and model of the counterexample rounds, and say nothing about a stage that didn't run. 20261012-50 (coverage checks more worlds) stays open; it makes the internal list better.
+
+- **Depends on:** None. Do with 20261016-2 and 20261016-4.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-4. Report: say why rewrites got different numbers of generated data sets.
+
+One rewrite got 1,790 data sets, another 752, another 2,207. Decided by the user (2026-10-16): explain it per rewrite, from fuzz's stop rule: it runs at least 30 s, then stops once it has run twice as long as it took to find its last new coverage signature, never past 60 s or the rewrite's deadline, and at once on a counterexample. Say which applied and the times, such as "stopped after 41 s: no new plan behaviour for the last 20 s", so a reader sees the count depends on query speed and when the search ran dry. The burndown may need the stop reason and times from the enclave (the reason and seconds are not literals).
+
+- **Depends on:** None. Do with 20261016-3.
+- **Came from:** The user, 2026-10-16.
+- **Design:** rewrite-test (fuzz's stop rule), report.
+- **Status:** todo
+
+### 20261016-5. Say "indices", not "indexes".
+
+Decided by the user (2026-10-16): everywhere, in the report, DESIGN.md, README and the LLM prompts. Leave code identifiers, SQL keywords, Postgres catalog names (`pg_indexes`, `CREATE INDEX`) and quoted Postgres messages alone. Prompt changes cause prompt drift in the replays; re-record them as the replay specs require.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report, LLM prompts.
+- **Status:** todo
+
+### 20261016-6. Report: the Ranking section's opening text.
+
+Replace it with the user's wording (2026-10-16), filling in the real counts and thresholds from the code: "QUAACK ranks 3 classes of candidates: the original query with different indices available, a rewrite of the original query, and a rewrite of the original query with different indices available. The three best candidates are kept for each class. To be considered for ranking, a candidate must read at least 5% fewer blocks than the original query using the values provided, and no more than 5% *more* blocks on any other set of values." Check each number against the code; if one is wrong, ask before changing either.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-7. Report: "Measured, and not ranked" comes last in the Ranking section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-8. Report: Ranking subsections keep their stripe and drop the shaded background.
+
+"Measured, and not ranked" has a coloured stripe on a background that follows light and dark mode. The other three subsections also have a shaded background. Drop it; keep each stripe.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-9. Report: Ranking entries repeat their subsection's title.
+
+Each entry restates what its subsection's title says, names the rewrite twice, and gives the index definition twice. The user's layout (2026-10-16):
+
+In "A rewrite of the original query, with new indices":
+
+    1. Rewrite <Name> (linked to its SQL), with new indices:
+       * CREATE INDEX ON s.t USING btree (a, b) WHERE ...
+       <table>
+
+In "The original query, with new indices":
+
+    1. With new indices:
+       * CREATE INDEX ...
+       <table>
+
+"A rewrite of the original query" entries likewise just name the rewrite, linked. Each index definition appears once.
+
+- **Depends on:** None. Do after 20261016-5, -6 and -7, which touch the same section.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-10. Report: "Why the winner reads fewer blocks" reads like a query plan.
+
+The LLM summary should be advice for a SQL-curious developer who may not know SQL well, giving heuristics for when to write a query more like the winner than the original. For example: was the original too general for the constraints it was given? Did the data in the database make some feature of the query a poor fit, where another shape fits better? What should the developer look for next time? The plans tell the LLM why the winner won. Its job is to turn that into advice, not to retell the plans. Change the prompt and any output checks, and re-record the replays the prompt drift touches. The trust boundary is unchanged: the prompt gets only what it gets today.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report, LLM prompts.
+- **Status:** todo
+
+### 20261016-11. Report: the winner's plans highlight misestimates and time, not DIFFERS.
+
+Drop the DIFFERS labels on the winner's plan rows. Instead:
+- Shade each row by how far its estimated rows are from its actual rows, redder the further off: buckets at 2x, 5x, 10x, 20x, 50x, 100x, 500x, and over 1000x, either way.
+- Show where the time went in each row.
+
+Colours must follow light and dark mode.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Status:** todo
+
+### 20261016-12. Report: the rewrite Sankey draws empty boxes when the user proposed no rewrites.
+
+With no rewrites from the user, the Sankey shows empty boxes. The user wants the layer "Combined with your own rewrites: not recorded" to be as wide as the layer above it ("After checking the LLM's rewrites: N"), with an empty merging flow coming in from an empty box labelled "From you: 0".
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report (Sankey diagrams).
+- **Status:** todo
