@@ -14,7 +14,6 @@
     --good-bg: #e8f5e9; --good-edge: #2e7d32; --minor-bg: #fbf5e1; --minor-edge: #9a7615;
     --st-default: #2f6fb3; --st-blue: #1f5fa8; --st-teal: #0f766e; --st-violet: #7b3fb0; --st-brown: #a1561c;
     --st-rose: #b02a5b; --st-green: #4d7c0f; --st-gold: #8a6d00; --st-indigo: #3b5bdb; --st-slate: #334e68;
-    --sb-teal: #d6efec; --sb-violet: #ece1f6; --sb-brown: #f6e3d3;
     --sk-source: #5b6b7f; --sk-drop: #b3402f; --sk-held: #8a6d00;
   }
   @media (prefers-color-scheme: dark) {
@@ -30,7 +29,6 @@
       --good-bg: #17291c; --good-edge: #5cb372; --minor-bg: #2b2614; --minor-edge: #d1ad4a;
       --st-default: #5b9bea; --st-blue: #5b9bea; --st-teal: #2fb5a8; --st-violet: #b07ae0; --st-brown: #d98a4a;
       --st-rose: #e0699a; --st-green: #8cc63f; --st-gold: #d4b030; --st-indigo: #7c93f5; --st-slate: #7fa0c4;
-      --sb-teal: #173a38; --sb-violet: #2e2340; --sb-brown: #3b2a1b;
       --sk-source: #9fb0c4; --sk-drop: #e0816f; --sk-held: #d4b030;
     }
   }
@@ -59,10 +57,10 @@
   thead th { background: var(--head-bg); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.missing { color: var(--muted); font-style: italic; }
-  .stripe-rewrite_new_indexes { --stripe: var(--st-teal); --stripe-bg: var(--sb-teal); }
-  .stripe-rewrite_same_indexes { --stripe: var(--st-violet); --stripe-bg: var(--sb-violet); }
-  .stripe-original_new_indexes { --stripe: var(--st-brown); --stripe-bg: var(--sb-brown); }
-  div.kind-group { background: var(--stripe-bg); border-left: 5px solid var(--stripe); padding: 0.1rem 1.25rem 0.75rem; margin: 1.25rem 0; }
+  .stripe-rewrite_new_indexes { --stripe: var(--st-teal); }
+  .stripe-rewrite_same_indexes { --stripe: var(--st-violet); }
+  .stripe-original_new_indexes { --stripe: var(--st-brown); }
+  div.kind-group { border-left: 5px solid var(--stripe); padding: 0.1rem 1.25rem 0.75rem; margin: 1.25rem 0; }
   div.kind-group > h3.kind { margin-top: 0.75rem; }
   tr.baseline td { background: var(--baseline-bg); font-style: italic; }
   table.plan td.step { white-space: nowrap; }
@@ -168,19 +166,6 @@
 <% else %>
 <p>Nothing beat the original query, so there is no ranking. To be considered for ranking, a candidate must read more than 5% fewer blocks than the original query using the values provided, and no more than 5% <em>more</em> blocks on any other set of values.</p>
 <% end %>
-<% unless unranked.empty? %>
-<h3>Measured, and not ranked</h3>
-<details class="fold rose" id="not-ranked-section">
-<summary>Show the <%= h Words.count(unranked.size, "thing") %> QUAACK tried that didn't pan out</summary>
-<table id="not-ranked"><thead><tr><th scope="col">What it was</th><th scope="col">Who proposed it</th><th scope="col">Why it didn't make the cut</th></tr></thead>
-<tbody>
-<% unranked.each do |what, who, why| %>
-<tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
-<% end %>
-</tbody></table>
-<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indices:", to where the new indices it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indices ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
-</details>
-<% end %>
 <% ranked_by_kind.each do |kind, entries| %>
 <div class="kind-group stripe-<%= kind %>">
 <h3 class="kind"><%= h KIND_NAMES.fetch(kind) %></h3>
@@ -206,6 +191,19 @@
 </article>
 <% end %>
 </div>
+<% end %>
+<% unless unranked.empty? %>
+<h3>Measured, and not ranked</h3>
+<details class="fold rose" id="not-ranked-section">
+<summary>Show the <%= h Words.count(unranked.size, "thing") %> QUAACK tried that didn't pan out</summary>
+<table id="not-ranked"><thead><tr><th scope="col">What it was</th><th scope="col">Who proposed it</th><th scope="col">Why it didn't make the cut</th></tr></thead>
+<tbody>
+<% unranked.each do |what, who, why| %>
+<tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
+<% end %>
+</tbody></table>
+<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indices:", to where the new indices it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indices ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
+</details>
 <% end %>
 </section>
 <% if timed_out_count.positive? || !infinite_sets.empty? %>
