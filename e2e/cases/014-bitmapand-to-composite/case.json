@@ -1,9 +1,9 @@
 {
-  "title": "Two single-column indexes combined with BitmapAnd",
+  "title": "Two single-column indices combined with BitmapAnd",
   "category": "index",
   "compare": "multiset",
   "features": [
-    "BitmapAnd of single-column indexes (index-from-plan)",
+    "BitmapAnd of single-column indices (index-from-plan)",
     "two equality columns ranked by selectivity (index-from-query)"
   ],
   "literal_sets": [
