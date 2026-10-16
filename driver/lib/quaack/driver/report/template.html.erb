@@ -170,13 +170,9 @@
 <div class="kind-group stripe-<%= kind %>">
 <h3 class="kind"><%= h KIND_NAMES.fetch(kind) %></h3>
 <% entries.each_with_index do |t, i| %>
-<article class="candidate"><h3><%= i + 1 %>. <%= h describe(t["label"]) %></h3>
-<% if (r = rewrite_of(t["label"])) %>
-<p>Its SQL is under <a href="#<%= h anchor(r["rewrite"]) %>"><%= h Words.lower(called(r)) %></a>, above.</p>
-<% end %>
-<% unless (measured(t["label"]) || {}).fetch("indexes", []).empty? %>
-<p>Its new indices:</p>
-<ul><% measured(t["label"])["indexes"].each do |name| %><li><%= sql_code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
+<article class="candidate"><h3><%= i + 1 %>. <%= entry_heading(t["label"]) %></h3>
+<% unless (new_indexes(t["label"]) || []).empty? %>
+<ul><% new_indexes(t["label"]).each do |name| %><li><%= sql_code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
 <% end %>
 <% unless suggested_drops(t["label"]).empty? %>
 <p class="note">With these new indices, you may be able to drop <%= suggested_drops(t["label"]).size == 1 ? "this existing index" : "these existing indices" %>. Each starts with the same columns as a new index, so the new index can do its work. QUAACK doesn't drop anything. Other queries may use <%= suggested_drops(t["label"]).size == 1 ? "it" : "them" %>, so check before you drop one. Scan counts come from the production server, so a replica's use isn't in them. The size counted against this candidate's index change is the new indices' size less the size here.</p>

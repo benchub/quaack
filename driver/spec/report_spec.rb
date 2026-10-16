@@ -276,7 +276,7 @@ RSpec.describe Quaack::Driver::Report do
       out = render(payload)
       expect(verdict(out)).not_to include(sentinel)
       expect(verdict(out)).to include("The original query with new indices")
-      expect(out[%r{<article class="candidate">.*?Its new indices.*?</article>}m]).to include(sentinel)
+      expect(out[%r{<article class="candidate">.*?ith new indices:</h3>.*?</article>}m]).to include(sentinel)
     end
 
     it "calls 30% fewer blocks substantial and anything less minor" do
@@ -426,7 +426,7 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       def candidate_section(html)
-        html[%r{<article class="candidate">(?:(?!</article>).)*?Its new indices.*?</article>}m]
+        html[%r{<article class="candidate">(?:(?!</article>).)*?ith new indices:</h3>.*?</article>}m]
       end
 
       it "subtracts the dropped indices' sizes from the row's index change, and goes negative if they outweigh it" do
@@ -1675,9 +1675,59 @@ RSpec.describe Quaack::Driver::Report do
 
       it "has its own block, in rank order, and no unranked candidate has one" do
         expect(ranking.scan(%r{<article class="candidate"><h3>(.*?)</h3>}))
-          .to eq([["1. Rewrite Vivid Cove with no new indices"],
-                  ["1. The original query with a new index on #{sq("public.t (created_at)")}"]])
+          .to eq([['1. <a href="#rewrite-1">Rewrite Vivid Cove</a>'], ["1. With new indices:"]])
         expect(ranking.scan("<article").size).to eq(2)
+      end
+
+      it "names a rewrite with no new indices, linked to its SQL, and goes straight to its table" do
+        expect(candidate(1)).to start_with(
+          %(<article class="candidate"><h3>1. <a href="#rewrite-1">Rewrite Vivid Cove</a></h3>\n<table>)
+        )
+      end
+
+      it "lists the original's new indices under its heading, then its table" do
+        expect(candidate(2)).to start_with(
+          %(<article class="candidate"><h3>1. With new indices:</h3>\n) \
+          "<ul><li>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</li></ul>\n<table>"
+        )
+      end
+
+      it "names a rewrite the payload doesn't hold, without a link" do
+        payload["rewrites"] = []
+        expect(candidate(1)).to start_with(%(<article class="candidate"><h3>1. Rewrite Vivid Cove</h3>\n<table>))
+      end
+
+      it "says which new indices weren't recorded when the payload has no entry for the label" do
+        payload["labels"].shift
+        expect(candidate(2))
+          .to start_with(%(<article class="candidate"><h3>1. With new indices: not recorded</h3>\n<table>))
+      end
+
+      describe "a rewrite with new indices" do
+        before do
+          payload["top"].unshift({ "label" => "rewrite_1:top:1", "slow_blocks" => 250, "total_blocks_sum" => 350,
+                                   "footprint" => 24_576 })
+          payload["excluded"] = {}
+          payload["labels"][2].merge!("indexes" => %w[quaack_a quaack_b],
+                                      "measurements" => { "slow" => m(250, 1), "typical" => m(100, 100) },
+                                      "verdicts" => { "slow" => "better", "typical" => "no_worse" })
+        end
+
+        it "names the rewrite, linked to its SQL, then lists its new indices, then its table" do
+          expect(candidate(1)).to start_with(
+            %(<article class="candidate"><h3>1. <a href="#rewrite-1">Rewrite Vivid Cove</a>, with new indices:</h3>\n) \
+            "<ul><li>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</li>" \
+            "<li>#{sq("CREATE INDEX ON public.t USING btree (a, b)")}</li></ul>\n<table>"
+          )
+        end
+
+        it "gives each index's definition once, and doesn't repeat the rewrite's name" do
+          expect(candidate(1).scan("public.t USING btree (created_at)").size).to eq(1)
+          expect(candidate(1).scan("public.t USING btree (a, b)").size).to eq(1)
+          expect(candidate(1)).not_to include("public.t (created_at)", "public.t (a, b)")
+          expect(candidate(1).scan("Vivid Cove").size).to eq(1)
+          expect(candidate(1)).not_to include("Its SQL is under", "Its new indices")
+        end
       end
 
       it "shows blocks per set of values, against the original's, with memory and disk, verdict, and stability" do
@@ -1742,11 +1792,11 @@ RSpec.describe Quaack::Driver::Report do
                                         '<td class="num">not recorded</td>')
       end
 
-      it "lists the indices it ran with, as DDL, and points a rewrite at its SQL" do
-        expect(candidate(2)).to include("<li>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</li>")
-        expect(candidate(1)).not_to include("CREATE INDEX")
-        expect(candidate(1)).to include('Its SQL is under <a href="#rewrite-1">rewrite Vivid Cove</a>, above.')
-        expect(candidate(2)).not_to include("<a ")
+      it "gives each of the original's new indices once, and no rewrite a link or index it didn't run with" do
+        expect(candidate(2).scan("public.t USING btree (created_at)").size).to eq(1)
+        expect(candidate(2)).not_to include("public.t (created_at)", "Its new indices", "<a ")
+        expect(candidate(1)).not_to include("CREATE INDEX", "Its SQL is under")
+        expect(candidate(1).scan("Vivid Cove").size).to eq(1)
       end
     end
   end
@@ -3727,7 +3777,7 @@ RSpec.describe Quaack::Driver::Report do
                      %(<span class="note">),
                      "<code>SELECT ", "transform rules ", '<li><code class="sql">',
                      '<td class="num">1</td><td>',
-                     '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
+                     '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), '<h3>1. <a href="#', "<tr><td>",
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
                      "<ul><li>", '<td class="step" style="padding-left: 0.65rem">', %(<td><code class="sql">), "<td>",

@@ -5,6 +5,7 @@ require_relative "words"
 require_relative "format"
 require_relative "index_ddl"
 require_relative "candidates"
+require_relative "ranked_entries"
 require_relative "index_proposers"
 require_relative "suggested_drops"
 require_relative "kinds"
@@ -34,6 +35,7 @@ module Quaack
       # modules it includes.
       class View
         include Candidates
+        include RankedEntries
         include IndexProposers
         include SuggestedDrops
         include NotBetterFate
@@ -143,9 +145,6 @@ module Quaack
 
           "#{read} against #{Format.number(theirs)} for #{ORIGINAL} (#{Format.apart(ours, theirs)}% fewer)."
         end
-
-        # The stored rewrite a label ran, or nil for the original query.
-        def rewrite_of(label) = rewrites.find { it["rewrite"] == label.to_s.split(":").first }
 
         def anchor(rewrite) = rewrite.to_s.tr("_", "-")
 
