@@ -181,23 +181,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261003-39. rewrite-test: more variety in self-references and repeated parents. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-94. Result comparison: loose ends of the edge check.
-
-From the reviews of 20260924-7.
-1. **Regression:** `LIMIT 9223372036854775807 OFFSET n` (or the same value bound as `$1`) now fails with `bigint out of range` in the edge query. ProductionComparison raises, which crashes the result-comparison step, and fixture-compare raises `ArenaRunner::Error`. Main passed both. Clamp the sum, or skip the edge check on overflow.
-2. With `OFFSET NULL`, the edge query becomes `LIMIT n + NULL`, which has no limit. Treat a NULL offset as 0.
-3. Full runs are bounded only by the timeout, not by memory. Four runs over a big table can hold tens of millions of hashes. Add a row cap that refuses with `unsupported_order`.
-4. `through_offset!` has no nil guard. pg_query's deparser segfaults on a TypeCast with a nil arg. No realistic query reaches it today. Raise a clear error instead.
-5. The `all_columns?` guard in production comparison is dead code. Remove it, or test it.
-6. A stricter candidate, such as `ORDER BY grp DESC NULLS LAST, id LIMIT 3`, fails `value` when no tie is cut, though it would pass when one is. Make the two paths agree.
-
-- **Depends on:** 20260924-7.
-- **Came from:** The first and second reviews of 20260924-7.
-- **Design:** fixture-compare, result comparison.
-- **Landed so far:** items 1 to 5, 2026-10-10 (task/20261004-92; Opus review clean). 1: the edge query's LIMIT is `CASE WHEN l IS NULL THEN NULL ELSE LEAST(l, 9223372036854775807 - o) + o END` with bigint casts (verified on Postgres 18 against LIMIT/OFFSET edge cases; negative values error in the original first, so they can't match); 2: `COALESCE(o, 0)` (a NULL offset is 0); 3: a full run over `HashedRuns::FULL_RUN_ROW_CAP` (2,000,000) rows refuses as `unsupported_order` (only inside CutTies' full runs, so it costs candidates on big result sets with a cut tie, never a false match); 4: `through_offset!` raises on a missing LIMIT or OFFSET; 5: `all_columns?` removed from production comparison (dead there) and its guard moved into fixture-compare's `cut_tie`, with the first test that exercises it. On the unreleased list. Item 6 needs a decision from the user (below). Minor findings: 20261010-7.
-- **Item 6, waiting on the user:** reproduced on real Postgres: original `ORDER BY grp DESC LIMIT n` against candidate `ORDER BY grp DESC NULLS LAST, id LIMIT n` passes when the LIMIT cuts a tie (n=3) and fails with `value` when it doesn't (n=4). Two ways to make the paths agree: (a) accept more: when the candidate's tiebreaker runs don't match row for row, fall back to the CutTies layout check, which already accepts these candidates when a tie is cut (correct, since the candidate's rows are a valid result of the original, but it is the risky direction: it makes the comparison accept more); (b) refuse more: refuse with `unsupported_order` when the candidate's order is stricter than the original's and the original's LIMIT doesn't cut a tie, instead of reporting `value` (honest; costs a candidate). Both the builder and the Opus reviewer lean toward accepting-or-refusing only after the user decides; the reviewer recommends (b), failing closed.
-- **Decided by the user (2026-10-15):** item 6 is (b): refuse with `unsupported_order` when the candidate's order is stricter than the original's and the original's LIMIT doesn't cut a tie.
-- **Status:** todo
+### 20261004-94. Result comparison: loose ends of the edge check. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-21. Qualify functions and operators that several schemas define (full version of 20260926-56's qualification). Done, see BACKLOG-COMPLETE.md.
 
