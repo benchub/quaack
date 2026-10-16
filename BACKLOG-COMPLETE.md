@@ -11870,3 +11870,13 @@ Every tested rewrite carries it, so it says nothing: fuzz can only disprove a re
 - **Design:** report, rewrite-test (coverage).
 - **Landed:** 2026-10-16 (task/20261016-2-3-4). The rewrite's warning (`Report::Cautions#warning`) no longer says "every test QUAACK ran passed, but the test data never made some conditions ... both true and false" (or its "The test data also never made ..." form after another caution). The other cautions (the data caution, out of time, not tested, the pairing) are unchanged. The verdict never carried it. The untested atoms still go to the store, the report payload and llm-counterexamples. DESIGN.md updated. Driver only.
 - **Status:** done
+
+### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived.
+
+The list of conditions QUAACK had trouble testing, at the end of each rewrite, isn't actionable. Decided by the user (2026-10-16): don't show it. Say instead, for example: "Modest Coin survived 1,790 mechanically generated data sets trying to show it gives different results from the original query. It also survived 3 rounds of test data meant to break it from copilot_cli using opus-5.5." Use the real counts (fuzz trials, plus enumerate's worlds where it ran), the provider and model of the counterexample rounds, and say nothing about a stage that didn't run. 20261012-50 (coverage checks more worlds) stays open; it makes the internal list better.
+
+- **Depends on:** None. Do with 20261016-2 and 20261016-4.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-2-3-4). The report no longer lists the conditions QUAACK had trouble testing (the template's untested block and the `Rewrites` atoms helpers are gone; untested atoms stay internal for llm-counterexamples). Each rewrite's fuzz line (new `Report::Survival`) now says "<name> survived N mechanically generated data sets trying to show it gives different results from the original query", N being fuzz's trials plus enumerate's worlds, and when enumerate ran it splits them (": T random ones, then W enumerated in order of size", with the bound it finished while nothing later disproved the rewrite; 20261012-31 still owns that wording). Its counterexample line says "It also survived N rounds of test data meant to break it from <provider> using <model>" (listing each entry in order when the rounds started fresh, and "(its model wasn't recorded)" without one); a round that disproved or failed on it keeps the "who wrote" sentence. Stages that didn't run say nothing. DESIGN.md's report section and README.md match.
+- **Status:** done

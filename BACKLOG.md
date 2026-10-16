@@ -684,14 +684,7 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived.
-
-The list of conditions QUAACK had trouble testing, at the end of each rewrite, isn't actionable. Decided by the user (2026-10-16): don't show it. Say instead, for example: "Modest Coin survived 1,790 mechanically generated data sets trying to show it gives different results from the original query. It also survived 3 rounds of test data meant to break it from copilot_cli using opus-5.5." Use the real counts (fuzz trials, plus enumerate's worlds where it ran), the provider and model of the counterexample rounds, and say nothing about a stage that didn't run. 20261012-50 (coverage checks more worlds) stays open; it makes the internal list better.
-
-- **Depends on:** None. Do with 20261016-2 and 20261016-4.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report.
-- **Status:** todo
+### 20261016-3. Report: replace the untested-conditions list with what the rewrite survived. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261016-4. Report: say why rewrites got different numbers of generated data sets.
 

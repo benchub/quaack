@@ -677,7 +677,6 @@ RSpec.describe Quaack::Driver::Report do
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
       )
       expect(blocks.map { it.last.scan('<pre class="sql">').size }).to eq([1, 1, 1])
-      expect(blocks[1].last).to include(%(<li><code class="sql">a &lt; $1</code></li>))
       expect(queries.scan('<pre class="sql">').size).to eq(3)
       expect(queries).not_to match(/<details[^>]*\bopen\b/)
     end
@@ -773,17 +772,28 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     # Task 20261012-2: how many random small databases the fuzz search
-    # compared a rewrite on, when none proved it wrong.
-    describe "the random small databases a rewrite survived" do
+    # compared a rewrite on, when none proved it wrong. Task 20261016-3: in
+    # the user's words (2026-10-16), what the rewrite survived, counting
+    # enumerate's databases too.
+    describe "the generated data sets a rewrite survived" do
       def survived(trials, fate = "ranked")
         payload["rewrites"].first.merge!("trials" => trials, "fate" => fate)
         section(render(payload), "queries")
       end
 
-      it "says how many random small databases it survived" do
-        expect(survived(41_200)).to include('<p class="fuzz">It also survived 41,200 random small databases built ' \
-                                            "around its own values.</p>")
-        expect(survived(1)).to include("It also survived 1 random small database built around its own values.")
+      def line(text) = text[%r{<p class="fuzz">(.*?)</p>}, 1]
+
+      let(:lead) { "trying to show it gives different results from the original query" }
+
+      it "says how many mechanically generated data sets it survived" do
+        expect(line(survived(41_200))).to eq("Vivid Cove survived 41,200 mechanically generated data sets #{lead}.")
+        expect(line(survived(1))).to eq("Vivid Cove survived 1 mechanically generated data set #{lead}.")
+      end
+
+      it "names the rewrite by its number past the last name" do
+        number = Quaack::Driver::RewriteNames::SIZE + 1
+        payload["rewrites"].first["rewrite"] = "rewrite_#{number}"
+        expect(line(survived(3))).to eq("Rewrite #{number} survived 3 mechanically generated data sets #{lead}.")
       end
 
       it "says nothing when fuzz compared none, disproved it, or the count isn't one" do
@@ -791,111 +801,73 @@ RSpec.describe Quaack::Driver::Report do
         expect(survived(5, "fuzz_disproved")).not_to include('class="fuzz"')
       end
 
-      # Task 20261012-3, in the user's words (2026-10-12).
-      def enumerated(bound, fate = "ranked", trials: 40)
-        payload["rewrites"].first.merge!("worlds" => 905, "bound" => bound)
-        survived(trials, fate)
+      # Task 20261012-3.
+      def enumerated(bound, fate = "ranked", trials: 40, worlds: 905)
+        payload["rewrites"].first.merge!("worlds" => worlds, "bound" => bound)
+        line(survived(trials, fate)).to_s
       end
 
-      it "says, after an enumerate pass, that no random dataset nor any dataset of up to its bound differed" do
-        expect(enumerated(2)).to include('<p class="fuzz">Found no difference on 40 random datasets, or on any ' \
-                                         "dataset of up to 2 rows over its value classes.</p>")
-        expect(enumerated(1, trials: 1)).to include("Found no difference on 1 random dataset, or on any dataset of " \
-                                                    "up to 1 row over its value classes.")
+      it "counts enumerate's data sets too, and says every data set up to its bound was among them" do
+        expect(enumerated(2)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: 40 " \
+                                    "random ones, then 905 enumerated in order of size, which covered every data " \
+                                    "set of up to 2 rows over its value classes.")
+        expect(enumerated(1, trials: 1, worlds: 1)).to eq("Vivid Cove survived 2 mechanically generated data sets " \
+                                                          "#{lead}: 1 random one, then 1 enumerated in order of " \
+                                                          "size, which covered every data set of up to 1 row over " \
+                                                          "its value classes.")
       end
 
-      it "keeps fuzz's sentence when enumerate finished no bound, the bound isn't one, or it disproved the rewrite" do
+      it "counts enumerate's data sets with no bound when it finished none, or the bound isn't one" do
         [0, nil, 5, "2", -1].each do |bound|
-          expect(enumerated(bound)).to include("It also survived 40 random small databases built around its own " \
-                                               "values.")
+          expect(enumerated(bound)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: 40 " \
+                                          "random ones, then 905 enumerated in order of size."), bound.inspect
         end
-        expect(enumerated(2, "enumerate_disproved")).not_to include("Found no difference")
-        expect(enumerated(2, trials: 0)).not_to include('class="fuzz"')
       end
 
-      it "keeps fuzz's sentence, not enumerate's, when a later stage disproved the rewrite" do
+      it "says only fuzz's count when enumerate compared none, or its count isn't one" do
+        [0, nil, -1, "9"].each do |worlds|
+          expect(enumerated(2, worlds:)).to eq("Vivid Cove survived 40 mechanically generated data sets #{lead}.")
+        end
+      end
+
+      it "says nothing when enumerate disproved it, or fuzz compared none" do
+        expect(enumerated(2, "enumerate_disproved")).to eq("")
+        expect(enumerated(2, trials: 0)).to eq("")
+      end
+
+      it "claims no bound when a later stage disproved the rewrite" do
         %w[rewrite_test_disproved counterexamples_disproved production_mismatch].each do |fate|
-          text = enumerated(2, fate)
-          expect(text).to include("It also survived 40 random small databases built around its own values.")
-          expect(text).not_to include("Found no difference")
+          expect(enumerated(2, fate)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: " \
+                                            "40 random ones, then 905 enumerated in order of size.")
         end
       end
 
-      it "keeps enumerate's sentence for a rewrite that passed every test but wasn't faster" do
-        expect(enumerated(2, "not_better")).to include('<p class="fuzz">Found no difference on 40 random datasets, ' \
-                                                       "or on any dataset of up to 2 rows over its value classes.</p>")
+      it "claims the bound for a rewrite that passed every test but wasn't faster" do
+        expect(enumerated(2, "not_better")).to end_with("which covered every data set of up to 2 rows over its " \
+                                                        "value classes.")
       end
 
       # Task 20261012-28: the accountability table's wrong results are the
-      # disproofs, so a new one there gets fuzz's sentence too.
-      it "keeps fuzz's sentence for a disproof fate the accountability table gains" do
+      # disproofs, so a new one there claims no bound either.
+      it "claims no bound for a disproof fate the accountability table gains" do
         accountability = Quaack::Driver::Report::Accountability
         stub_const("#{accountability}::OUTCOMES",
                    accountability::OUTCOMES.merge("new_stage_disproved" => accountability::WRONG))
-        text = enumerated(2, "new_stage_disproved")
-        expect(text).to include("It also survived 40 random small databases built around its own values.")
-        expect(text).not_to include("Found no difference")
+        expect(enumerated(2, "new_stage_disproved")).to end_with("905 enumerated in order of size.")
       end
     end
 
-    describe "the conditions no test ever exercised (vacuity-guard)" do
-      let(:lead) do
-        esc("QUAACK's tests never made these conditions from the original query both true and false, and they " \
-            "are in a part the rewrite changed, so they can't show the rewrite handles them the same way:")
-      end
-
-      def conditions(atoms, covered, unchanged = nil)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "covered" => covered,
-                                         "untested_unchanged" => unchanged)
-        section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
-      end
-
-      it "leads with one plain sentence and lists each as SQL" do
-        out = conditions(["a < $1", "t.b IS NULL"], nil)
-        expect(out).to start_with(%(<div class="untested"><p>#{lead}</p>))
-        expect(out).to include(%(<ul><li><code class="sql">a &lt; $1</code></li>) +
-                               %(<li><code class="sql">t.b IS NULL</code></li></ul>))
-      end
-
-      it "leaves out those the LLM's test data checked afterwards" do
-        out = conditions(["a < $1", "t.b IS NULL"], ["t.b IS NULL"])
-        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
-        expect(out).not_to include("checked later")
-      end
-
-      it "leaves out those in a part the rewrite didn't change, and says nothing when that's all of them" do
-        out = conditions(["a < $1", "t.b IS NULL"], nil, ["t.b IS NULL"])
-        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
-
-        conditions(["a < $1", "t.b IS NULL"], ["a < $1"], ["t.b IS NULL"])
+    # Task 20261016-3: the list wasn't actionable, so the report says what the
+    # rewrite survived instead. The untested conditions stay internal, for the
+    # LLM's test data to aim at.
+    describe "the conditions no test ever exercised" do
+      it "lists none of them" do
+        payload["rewrites"].first.merge!("untested_atoms" => ["a < $1", "t.b IS NULL"], "covered" => nil,
+                                         "untested_unchanged" => nil)
+        queries = section(render(payload), "queries")
         expect(queries).not_to include('class="untested"')
-      end
-
-      it "lists every untested condition when the unchanged list names none of them" do
-        out = conditions(["a < $1", "t.b IS NULL"], nil, ["c = $3", 7])
-        expect(out.scan(%r{<li>.*?</li>}).size).to eq(2)
-      end
-
-      it "shows nothing when the LLM's test data checked them all afterwards" do
-        conditions(["a < $1"], ["a < $1"])
-        expect(queries).not_to include('class="untested"')
-        expect(queries).not_to include("never made these conditions")
-      end
-
-      # Task 20261010-43 said, from vacuity-guard's search state, how each
-      # stayed unproven; task 20261012-4 removed that search, so an older
-      # entry's states say nothing now.
-      it "lists an older entry's conditions without their vacuity-guard states" do
-        payload["rewrites"].first.merge!("untested_atoms" => ["a < $1", "t.b IS NULL"],
-                                         "untested_states" => %w[searched not_searched], "covered" => nil)
-        out = section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
-        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>),
-                                                  %(<li><code class="sql">t.b IS NULL</code></li>)])
-      end
-
-      it "never lists a value that isn't a condition's SQL, such as an atom's index" do
-        out = conditions([0, "a < $1", { "shape" => "b = $2" }, 13], nil)
-        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
+        expect(queries).not_to include("t.b IS NULL")
+        expect(queries).not_to include("both true and false")
       end
     end
 

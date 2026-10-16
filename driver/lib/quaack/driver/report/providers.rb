@@ -54,16 +54,6 @@ module Quaack
           "#{Format.h("suggested by the LLM (#{by["name"]}, ")}<code>#{Format.h(by["model"])}</code>)"
         end
 
-        # Who wrote a rewrite's counterexample rounds, as a sentence, or nil
-        # if no round ran.
-        def counterexample_line(entry)
-          units = llm_record.dig("counterexamples", entry["rewrite"])
-          return "Who wrote #{TEST_DATA}: #{Words::MISSING}." if units.nil? && entry["covered"].is_a?(Array)
-          return if units.nil? || units.empty?
-
-          ["#{said_units(units)}.", Cautions::PAIRED[pairing(entry)]].compact.join(" ")
-        end
-
         # The LLM rewrites' rows by provider, each kept from kept, under the
         # LLM row, whose proposals were total. Every count in them is not
         # recorded unless the record's proposals add up to total, and then

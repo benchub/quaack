@@ -179,22 +179,6 @@ module Quaack
             size[2].between?(1, Protocol::FuzzResult::MAX_SIZE)
         end
 
-        # How many random small databases fuzz compared the rewrite on, and
-        # the bound enumerate finished, in the user's words (2026-10-12),
-        # unless either proved it wrong, or nil.
-        def fuzz_line(entry)
-          trials = entry["trials"]
-          return unless trials.is_a?(Integer) && trials.positive? && !SEARCH_FAILED.key?(entry["fate"])
-
-          bound = entry["bound"]
-          return "It also survived #{Words.count(trials, "random small database")} built around its own values." \
-            unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND) &&
-                   !later_disproof?(entry["fate"])
-
-          "Found no difference on #{Words.count(trials, "random dataset")}, or on any dataset of up to " \
-            "#{Words.count(bound, "row")} over its value classes."
-        end
-
         # Whether a stage after the searches disproved the rewrite: a fate
         # the accountability table counts as wrong results. fuzz_line says
         # nothing for fuzz's and enumerate's own, so it never asks of them.
@@ -236,30 +220,6 @@ module Quaack
         def fate_line(entry)
           "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
-
-        UNTESTED = "QUAACK's tests never made these conditions from the original query both true and false, " \
-                   "and they are in a part the rewrite changed, so they can't show the rewrite handles them the " \
-                   "same way:"
-
-        # The conditions of the original query that the search's small
-        # databases never showed both true and false (Fuzz::Coverage, task
-        # 20261012-4; vacuity-guard's before it), by their redacted shapes. Anything else
-        # the payload holds there, such as an atom's index, isn't one.
-        def atoms(entry) = Array(entry["untested_atoms"]).grep(String).uniq
-
-        # Those a counterexample round's rows exercised afterwards.
-        def checked_later(entry) = atoms(entry) & Array(entry["covered"]).grep(String)
-
-        # Those the rewrite left unchanged by position (DESIGN.md's
-        # unchanged-atoms), as the enclave found. A missing or malformed
-        # list counts none. A shape that isn't an untested one takes nothing off.
-        def unchanged_atoms(entry)
-          list = entry["untested_unchanged"]
-          list.is_a?(Array) ? list.grep(String) : []
-        end
-
-        # Those no test exercised, in a part the rewrite changed.
-        def unchecked_atoms(entry) = atoms(entry) - checked_later(entry) - unchanged_atoms(entry)
 
         # DESIGN.md's rewrite-rules: the rule-made rewrites a test disproved.
         def rule_bugs = @payload["rule_bugs"] || []
