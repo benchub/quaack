@@ -518,7 +518,8 @@ RSpec.describe Quaack::Driver::Report do
       let(:caveat_payload) do
         payload.merge("timed_out_count" => 1, "infinite_sets" => %w[slow typical],
                       "labels" => payload["labels"] + [timed_out_label, measured_timed_out_label],
-                      "hidden_statistics" => { "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 })
+                      "hidden_statistics" => { "indexes" => ["orders_lower_idx"], "extended_statistics" => 2 },
+                      "tablespace_moves" => ["public.orders"])
       end
       let(:out) { render(caveat_payload) }
       let(:timed_out_label) do
@@ -533,13 +534,13 @@ RSpec.describe Quaack::Driver::Report do
       # target has no entry, so the example below fails on it until someone says what it must name.
       let(:subjects) do
         { "timeouts" => ["Rewrite Vivid Cove with a new index", "Any candidate that finished there counts as better"],
-          "indexes" => ["orders_lower_idx"] }
+          "indexes" => ["orders_lower_idx"], "ranking" => [sq("public.orders")] }
       end
 
       it "lands every caveat the verdict gives on a section that exists and names its subject" do
         list = Quaack::Driver::Report::View.new(caveat_payload, "run").caveats
         items = verdict(out).scan(%r{<li class="warn">(.*?)</li>}m).flatten
-        expect(list.size).to be >= 3
+        expect(list.size).to be >= 4
         expect(items.size).to eq(list.size)
         list.zip(items).each do |(_, target), item|
           expect(item).to include(%(href="##{target}"))
@@ -593,6 +594,31 @@ RSpec.describe Quaack::Driver::Report do
         expect(note).not_to include("extended statistics object")
         caveat_payload["hidden_statistics"] = { "indexes" => [], "extended_statistics" => 0 }
         expect(section(render(caveat_payload), "indexes")).not_to include("hidden-statistics")
+      end
+
+      # Task 20261010-17: a table that sits in another tablespace on the run server than in
+      # production is a warning, by the table's name only. No tablespace's name reaches the driver.
+      it "warns, by table name only, of tables that sit elsewhere on the run server" do
+        caveat_payload["tablespace_moves"] = ["public.orders", 'public."Odd"']
+        html = render(caveat_payload)
+        expect(verdict(html)).to include(
+          "&#9888; 2 of the query&#39;s tables sit in a different tablespace on the run server than in " \
+          "production: #{sq("public.orders")}, #{sq("public.&quot;Odd&quot;")}. QUAACK&#39;s block counts may " \
+          "not match production&#39;s. <a href=\"#ranking\">Details</a>"
+        )
+        note = section(html, "ranking")[%r{<div id="tablespace-moves".*?</div>}m]
+        expect(note).to include("Tables that sit elsewhere on the run server", sq("public.orders"),
+                                sq("public.&quot;Odd&quot;"), "TOAST table", "indexes", "plans",
+                                "pg_class.reltablespace")
+        caveat_payload["tablespace_moves"] = ["public.<b>x</b>"]
+        html = render(caveat_payload)
+        expect(verdict(html)).to include("1 of the query&#39;s tables sits", sq("public.&lt;b&gt;x&lt;/b&gt;"))
+        expect(html).not_to include("<b>x")
+        [[], nil].each do |moves|
+          caveat_payload["tablespace_moves"] = moves
+          html = render(caveat_payload.compact)
+          expect(html).not_to include("tablespace-moves", "different tablespace")
+        end
       end
     end
   end

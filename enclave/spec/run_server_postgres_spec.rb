@@ -5,6 +5,7 @@ require "json"
 require "securerandom"
 require "shellwords"
 require "quaack/enclave/inventory/production"
+require "quaack/enclave/placement"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
@@ -114,6 +115,83 @@ RSpec.describe "quaacks run-server, against a real server" do
       store.write("relation_tablespaces", [sentinels.word])
       close_every_harness_connection
       expect(run_server.stdout).to eq(error_line("run_server_tablespace_mismatch"))
+    end
+
+    # Task 20261010-17, item 1: a table that sits in another tablespace on
+    # the racetrack than in production is a warning, not a refusal. The
+    # step records which tables moved, by name, for the report, and never a
+    # tablespace's name.
+    context "with a table that sits elsewhere on the racetrack" do
+      let(:space) { "rts_#{SecureRandom.hex(4)}" }
+
+      before do
+        dir = "/tmp/#{space}"
+        TestPostgres.docker("exec", "-u", "postgres", TestPostgres.server.container_id, "mkdir", "-p", dir)
+        TestPostgres.server.admin.exec("CREATE TABLESPACE #{space} LOCATION '#{dir}'")
+        record_inventory
+        store.write("server", production.host)
+        move(%(CREATE TABLE public.ts_probe (id int, note text); CREATE TABLE public."Odd" (id int);
+               CREATE TABLE public.ts_kid () INHERITS (public.ts_probe)))
+        store.write("query", %(SELECT p.id FROM ts_probe p JOIN "Odd" USING (id)))
+        store.write("plan", [{ "Plan" => { "Node Type" => "Result" }, "Settings" => { "search_path" => "public" } }])
+        pgpass
+        qualify = quaacks.run("qualify", "--run", store.run_id,
+                              env: libpq_env(PGPORT: production.port.to_s, PGUSER: production.user,
+                                             PGDATABASE: production.name))
+        expect(qualify.stdout).to eq(done)
+      end
+
+      after do
+        production.drop
+        TestPostgres.server.admin.exec("DROP TABLESPACE IF EXISTS #{space}")
+      end
+
+      def move(sql)
+        production.connect.tap { it.exec(sql) }.close
+        close_every_harness_connection
+      end
+
+      it "records none when every table sits where it does in production" do
+        close_every_harness_connection
+        expect(run_server.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq([])
+      end
+
+      it "records each moved table, as quote_ident writes it, and passes" do
+        move(%(ALTER TABLE public."Odd" SET TABLESPACE #{space}))
+        outcome = run_server
+        expect(outcome.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq([%(public."Odd")])
+        expect(outcome.stdout).not_to include(space)
+      end
+
+      # Review of 20261010-17: egress lets out only the tables the query names, so
+      # a moved inheritance descendant is recorded as the query's table it's under.
+      it "records a moved descendant as the query's table that takes it in, once" do
+        move("ALTER TABLE public.ts_kid SET TABLESPACE #{space}")
+        expect(run_server.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq(["public.ts_probe"])
+        move("ALTER TABLE public.ts_probe SET TABLESPACE #{space}")
+        expect(run_server.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq(["public.ts_probe"])
+      end
+
+      it "counts a moved index as its table's" do
+        move("CREATE INDEX ts_probe_note ON public.ts_probe (note)")
+        conn = production.connect
+        store.write("relation_placement", Quaack::Enclave::Placement.read(conn, [%w[public ts_probe]]))
+        conn.close
+        move("ALTER INDEX public.ts_probe_note SET TABLESPACE #{space}")
+        expect(run_server.stdout).to eq(done)
+        expect(stored.read("tablespace_moves")).to eq(["public.ts_probe"])
+      end
+
+      it "records nothing for a run whose qualify recorded no placement" do
+        File.delete(File.join(store.path, "relation_placement.json"))
+        move("ALTER TABLE public.ts_probe SET TABLESPACE #{space}")
+        expect(run_server.stdout).to eq(done)
+        expect(stored.entry?("tablespace_moves")).to be(false)
+      end
     end
 
     # PgBouncer in session mode in front of the run server reports a pid of

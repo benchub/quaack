@@ -100,8 +100,9 @@ module Quaack
 
       # scanned is relations and every inheritance descendant a reference
       # without ONLY takes in, as TableNames: each table a plan of the query
-      # may scan (see PlanTables).
-      Result = Data.define(:sql, :parse, :relations, :scanned)
+      # may scan (see PlanTables). families maps each of relations to the
+      # tables of scanned it takes in: itself, and its descendants.
+      Result = Data.define(:sql, :parse, :relations, :scanned, :families)
 
       # Each relkind but r: its rule, and how a message names it.
       KINDS = {
@@ -148,9 +149,15 @@ module Quaack
         supported!(parse)
         qualified = qualify(parse.tree, settings, connection, listed)
         functions!(parse.tree, settings, connection)
-        relations = tables(parse.tree)
-        scanned = relations.flat_map { |table, inherits| plain_table!(table, inherits, connection) }
-        Result.new(sql: qualified.query, parse: qualified, relations: relations.keys, scanned: scanned.uniq)
+        families = families(parse.tree, connection)
+        Result.new(sql: qualified.query, parse: qualified, relations: families.keys,
+                   scanned: families.values.flatten(1).uniq, families:)
+      end
+
+      # Each table the query names, with the tables it takes in: itself, and
+      # each descendant a reference without ONLY takes in.
+      def families(tree, connection)
+        tables(tree).to_h { |table, inherits| [table, plain_table!(table, inherits, connection)] }
       end
 
       def parse(sql)

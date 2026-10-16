@@ -7,6 +7,7 @@ require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/fuzz_result"
 require "quaack/protocol/hidden_statistics"
+require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/rewrite_budget"
@@ -54,7 +55,7 @@ module Quaack
     # as invalid UTF-8 or a NaN, it raises Egress::Error. The error names
     # only the type, which is on the whitelist, and has no cause, so
     # nothing from the message rides along with it.
-    module Egress
+    module Egress # rubocop:disable Metrics/ModuleLength
       class Error < StandardError; end
 
       # A value nested past JSON's limit of 100, which only a plan (the
@@ -166,6 +167,8 @@ module Quaack
       # Each rewrite's untested_unchanged must repeat only shapes of its own
       # untested_atoms, and its not_tested be nil or a fixed word. Each rewrite's fuzz sizes and trials must pass
       # check_fuzz.
+      # tablespace_moves, when sent, must name only tables original_sql
+      # names (see Protocol::TablespaceMoves.within?).
       # The report's other fields still go out unchecked.
       def check_report(fields)
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
@@ -178,6 +181,18 @@ module Quaack
         check_suggested_drops(fields["labels"])
         check_fuzz(fields)
         check_hidden_statistics(fields)
+        check_tablespace_moves(fields)
+      end
+
+      def check_tablespace_moves(fields)
+        return unless fields.key?("tablespace_moves")
+
+        moves = fields["tablespace_moves"]
+        raise Error, "a value in this report message has tablespace moves that aren't table names" unless
+          Protocol::TablespaceMoves.valid?(moves)
+        return if Protocol::TablespaceMoves.within?(moves, FuzzSizes.tables(fields["original_sql"]))
+
+        raise Error, "a value in this report message has tablespace moves that aren't the query's tables"
       end
 
       def check_hidden_statistics(fields)

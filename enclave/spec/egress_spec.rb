@@ -502,6 +502,56 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261010-17: tablespace_moves is the query's tables that sit in
+    # another tablespace on the run server, as schema.name names, never a
+    # tablespace's name (Protocol::TablespaceMoves.valid?). An older
+    # payload, or a run whose qualify recorded no placement, has none.
+    describe "tablespace_moves" do
+      let(:original_sql) { %(SELECT 1 FROM public.orders o JOIN sales."Order Lines" l ON l.order_id = o.id) }
+
+      def report_with(tablespace_moves, sql = original_sql)
+        { type: :report, original_sql: sql, original_plan: [plan_node], rewrites:, labels:, index_sources:,
+          tablespace_moves: }.compact
+      end
+
+      it "sends table names as they are, and a report without it" do
+        moves = ["public.orders", %(sales."Order Lines")]
+        expect(JSON.parse(egress.serialize(report_with(moves)))["tablespace_moves"]).to eq(moves)
+        expect(JSON.parse(egress.serialize(report_with(nil)))).not_to have_key("tablespace_moves")
+      end
+
+      [
+        ["a bare value in place of a name", [EGRESS_SENTINEL]],
+        ["a tablespace's name beside a table's", ["public.orders", "pg_default #{EGRESS_SENTINEL}"]],
+        ["a Hash in place of a name", [{ "public.orders" => EGRESS_SENTINEL }]],
+        ["a value in place of the list", "public.#{EGRESS_SENTINEL}"]
+      ].each do |what, planted|
+        it "refuses one with #{what}, without quoting it" do
+          expect do
+            egress.serialize(report_with(planted))
+          end.to raise_error(described_class::Error,
+                             "a value in this report message has tablespace moves that aren't table names") { |e|
+                   expect(e.message).not_to include(EGRESS_SENTINEL)
+                   expect(e.cause).to be_nil
+                 }
+        end
+      end
+
+      # Review of 20261010-17: a well-formed name of a relation the query doesn't
+      # name would put that relation's name out, so only the query's own tables pass.
+      it "refuses a well-formed name of a table the query doesn't name, without quoting it" do
+        planted = "private.sentinel_8f3a2c_payroll"
+        [[["public.orders", planted]], [["public.orders"], "SELECT 1"], [["public.orders"], nil]].each do |args|
+          expect { egress.serialize(report_with(*args)) }
+            .to raise_error(described_class::Error,
+                            "a value in this report message has tablespace moves that aren't the query's tables") { |e|
+              expect(e.message).not_to include("sentinel_8f3a2c", "orders")
+              expect(e.cause).to be_nil
+            }
+        end
+      end
+    end
+
     # Task 20261012-4: why the search couldn't test a rewrite that went on
     # is a fixed word from Protocol::FuzzResult::NOT_TESTED, or nil.
     describe "a rewrite's not_tested" do

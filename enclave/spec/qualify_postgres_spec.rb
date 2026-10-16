@@ -65,7 +65,8 @@ RSpec.describe "quaacks qualify, against a real server" do
 
   def expect_failed(outcome, rule)
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([error_line(rule), "", 70])
-    expect(%w[qualified_query relations relation_tablespaces search_path].select { stored.entry?(it) }).to eq([])
+    entries = %w[qualified_query relations relation_tablespaces relation_placement search_path]
+    expect(entries.select { stored.entry?(it) }).to eq([])
     expect_no_leaks(sentinels, outcome)
   end
 
@@ -319,12 +320,47 @@ RSpec.describe "quaacks qualify, against a real server" do
       expect(stored.read("relation_tablespaces")).to eq(spaces.values_at("index", "table").sort)
     end
 
+    # Task 20261010-17, item 3: a table's TOAST table is part of its
+    # storage. Postgres keeps it in its table's tablespace, and refuses to
+    # move it alone, so the spec plants another one in the catalog.
+    it "counts the tablespace of each table's TOAST table" do
+      conn = production.connect
+      conn.exec(<<~SQL)
+        SET allow_system_table_mods = on;
+        UPDATE pg_class SET reltablespace = (SELECT oid FROM pg_tablespace WHERE spcname = '#{spaces["other"]}')
+        WHERE oid = (SELECT reltoastrelid FROM pg_class WHERE oid = 'sales.orders'::regclass);
+      SQL
+      conn.close
+      store.write("query", "SELECT id FROM ONLY sales.orders")
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("relation_tablespaces")).to eq(spaces.values_at("index", "other", "table").sort)
+    end
+
+    # Task 20261010-17, item 1: run-server compares where each table the
+    # plan may scan, its TOAST table, and its indexes sit on the run server
+    # with this. "of" is the query's tables that take each in, which the
+    # report names in its place.
+    it "stores the tablespace of each scanned table, its TOAST table, and its indexes, by table" do
+      expect(qualify.stdout).to eq(done)
+      table, index, child = spaces.values_at("table", "index", "child")
+      expect(stored.read("relation_placement")).to eq(
+        [{ "schema" => "public", "name" => "items", "tablespaces" => { "table" => "pg_default" },
+           "of" => [%w[public items]] },
+         { "schema" => "sales", "name" => "orders",
+           "tablespaces" => { "table" => table, "toast" => table, "toast_index" => table,
+                              "index orders_note_idx" => index }, "of" => [%w[sales orders]] },
+         { "schema" => "sales", "name" => "orders_child",
+           "tablespaces" => { "table" => child, "toast" => child, "toast_index" => child },
+           "of" => [%w[sales orders]] }]
+      )
+    end
+
     # Task 20261010-17: a scanned relation missing from pg_class would drop
     # out of the needed set, so the step refuses on a shortfall instead.
     it "refuses when a scanned relation isn't in pg_class" do
       scanned = [Struct.new(:schema, :name).new("sales", "orders"), Struct.new(:schema, :name).new("sales", "gone")]
       conn = production.connect
-      expect { Quaack::Enclave::Steps::Qualify.tablespaces(scanned, conn) }
+      expect { Quaack::Enclave::Steps::Qualify.placement(scanned, conn) }
         .to raise_error(Quaack::Enclave::Relations::Error) { expect(it.rule).to eq("unknown_relation") }
     ensure
       conn&.close
@@ -432,7 +468,8 @@ RSpec.describe "quaacks qualify, against a real server" do
 
       expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
         .to eq([%({"type":"error","step":"qualify","rule":"production_read_failed","sqlstate":"42501"}\n), "", 70])
-      expect(%w[qualified_query relations relation_tablespaces search_path].select { stored.entry?(it) }).to eq([])
+      entries = %w[qualified_query relations relation_tablespaces relation_placement search_path]
+      expect(entries.select { stored.entry?(it) }).to eq([])
       expect_no_leaks(sentinels, outcome)
     end
   end

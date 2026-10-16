@@ -4,6 +4,7 @@ require_relative "../run_server"
 require_relative "../run_server_check"
 require_relative "../run_server_command"
 require_relative "../config"
+require_relative "../placement"
 
 module Quaack
   module Enclave
@@ -25,6 +26,11 @@ module Quaack
       # rest are what racetrack-setup and index-search depend on. Anything that fails writes
       # nothing, so a recorded run server is one that passed.
       #
+      # It also records tablespace_moves, the tables qualify's
+      # relation_placement puts in another tablespace than the racetrack
+      # does (see Placement.moves), for the report's warning. A move isn't
+      # a refusal. A run with no relation_placement records none.
+      #
       # Its only line is DONE. The host, the port, and the database names
       # are the operator's own configuration, so none of them goes out, and
       # a failed check names only its rule.
@@ -39,7 +45,8 @@ module Quaack
           entry = entry(store, options)
           raise Enclave::RunServer::Error, "run_server_no_inventory" unless store.entry?("inventory")
 
-          check(store, entry)
+          moves = check(store, entry)
+          store.write("tablespace_moves", moves) if moves
           store.write("run_server", entry)
           []
         end
@@ -63,6 +70,7 @@ module Quaack
         def check(store, entry)
           connection = Enclave::RunServer.connect_to(entry, :racetrack)
           RunServerCheck.run(store:, connection:)
+          Placement.moves(connection, store.read("relation_placement")) if store.entry?("relation_placement")
         ensure
           connection&.close
         end
