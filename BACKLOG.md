@@ -693,3 +693,21 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 - **Came from:** The build of 20261012-4, 2026-10-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error.
+
+From the second review of 20261008-60 (minor). `ExtraServer.start` (`spec/support/test_postgres.rb`) removes the container when the server never gets ready, then re-raises. If `remove_container` itself raises (Docker unavailable, permission denied), that error replaces the readiness failure. Keep the original error: attempt removal in its own rescue, and re-raise the readiness error either way. Test first: readiness and removal both raise, and the readiness error is the one reported.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261008-60, 2026-10-15 (minor).
+- **Design:** Development (test Postgres).
+- **Status:** todo
+
+### 20261015-2. counterexample_steps_postgres_spec.rb:372 flakes (untested atoms list).
+
+From the fix round of 20261008-60. `enclave/spec/counterexample_steps_postgres_spec.rb:372` failed once in a full `rake` and once in 9 runs on its own, on a branch that didn't touch it. It checks the untested atoms list, which depends on which worlds fuzz draws. 20261012-52 also notes a rare failure at line 207 of the same file. Find the cause, and pin the spec to something deterministic.
+
+- **Depends on:** None.
+- **Came from:** The fix round of 20261008-60, 2026-10-15.
+- **Design:** rewrite-test (coverage).
+- **Status:** todo
