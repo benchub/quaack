@@ -209,6 +209,8 @@ Split from 20260924-25, with that task's review findings:
 
 ### 20261008-61. Fixture-compare: a LIMIT inside a subquery or CTE isn't checked for hidden ties. Done, see BACKLOG-COMPLETE.md.
 
+### 20261008-57. Running the rules: leftovers from 20261002-2. Done, see BACKLOG-COMPLETE.md.
+
 ### 20261008-67. Inner cuts: a dead guard, and the remaining picks.
 
 1. **A dead guard (second review of 20261008-61).** The `|| select[:larg]` guard in `InnerCuts.sole_table` never fires, since a set-operation node has no `from_clause`. Remove it.
