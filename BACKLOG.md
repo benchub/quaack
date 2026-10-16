@@ -685,15 +685,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-10. Report: "Why the winner reads fewer blocks" reads like a query plan.
-
-The LLM summary should be advice for a SQL-curious developer who may not know SQL well, giving heuristics for when to write a query more like the winner than the original. For example: was the original too general for the constraints it was given? Did the data in the database make some feature of the query a poor fit, where another shape fits better? What should the developer look for next time? The plans tell the LLM why the winner won. Its job is to turn that into advice, not to retell the plans. Change the prompt and any output checks, and re-record the replays the prompt drift touches. The trust boundary is unchanged: the prompt gets only what it gets today.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16.
-- **Design:** report, LLM prompts.
-- **Status:** todo
-
 ### 20261016-11. Report: the winner's plans highlight misestimates and time, not DIFFERS.
 
 Drop the DIFFERS labels on the winner's plan rows. Instead:

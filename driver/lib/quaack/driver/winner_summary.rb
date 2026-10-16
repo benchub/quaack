@@ -4,6 +4,7 @@ require "json"
 require_relative "llm/error"
 require_relative "winner_summary/repeats"
 require_relative "winner_summary/input"
+require_relative "winner_summary/plan_steps"
 
 module Quaack
   module Driver
@@ -37,38 +38,6 @@ module Quaack
       # leaves room for a longer plan.
       MAX_CHARS = 1000
 
-      # Postgres's plan node types, as EXPLAIN names them. A summary may name
-      # one only if a plan in the input has it. One of several words is read
-      # in any case, with a space or a hyphen between words; a one-word type
-      # only as EXPLAIN capitalizes it, so the SQL keyword LIMIT or the word
-      # sort isn't read as a step. Longer names are tried first, so an Index
-      # Only Scan isn't read as an Index Scan.
-      NODE_TYPES = [
-        "Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Index Scan", "Bitmap Heap Scan", "Tid Scan",
-        "Tid Range Scan", "Subquery Scan", "Function Scan", "Table Function Scan", "Values Scan", "CTE Scan",
-        "Named Tuplestore Scan", "WorkTable Scan", "Foreign Scan", "Custom Scan", "Sample Scan", "Nested Loop",
-        "Hash Join", "Merge Join", "Hash", "Sort", "Incremental Sort", "Aggregate", "HashAggregate",
-        "GroupAggregate", "MixedAggregate", "Group", "Unique", "Limit", "Append", "Merge Append", "Materialize",
-        "Memoize", "Gather", "Gather Merge", "SetOp", "HashSetOp", "Recursive Union", "BitmapAnd", "BitmapOr",
-        "Result", "ProjectSet", "LockRows", "WindowAgg", "ModifyTable"
-      ].freeze
-      NODE_ALIASES = { "sequential scan" => "seq scan" }.freeze
-      NODE_PATTERN = Regexp.union(
-        (NODE_TYPES + NODE_ALIASES.keys).sort_by { -it.size }.map do |name|
-          words = name.split.map { Regexp.escape(it) }
-          words.size == 1 ? /\b#{words.first}\b/ : /\b#{words.join("[\\s-]+")}\b/i
-        end
-      )
-
-      # A join or parallel qualifier on a node type: Hash Anti Join, a semi
-      # join, a Parallel Seq Scan. The payload's plan nodes carry only the
-      # bare node type, not EXPLAIN's Join Type or Parallel Aware, so no
-      # summary can back one, and the check refuses it outright
-      # (20261010-37).
-      QUALIFIED = Regexp.union(/\b(?:anti|semi)(?:[\s-]+|-?)join\b/i,
-                               /\b(?:hash|merge|nested[\s-]+loop)[\s-]+(?:anti|semi)\b/i,
-                               /\bparallel[\s-]+(?:#{NODE_PATTERN.source})/i)
-
       # outcome is used, or why the report goes without: no_winner,
       # failed (the ask failed, with rule), empty, or rejected. entry is the
       # name of the entry that answered, when one did.
@@ -77,19 +46,23 @@ module Quaack
       end
 
       SYSTEM = <<~PROMPT
-        You're explaining to a database engineer why one version of a PostgreSQL query reads fewer blocks than the original. You have no database connection. The payload holds what QUAACK measured and planned, and nothing else: the original query, the winning candidate, the plans of both, and the blocks each read on each set of values.
+        You're writing for a developer who writes SQL but may not know it well. QUAACK found a version of their PostgreSQL query that reads fewer blocks than the original, and the developer wants to learn when to write a query more like the winner, so they could have written it well from the start. You have no database connection. The payload holds what QUAACK measured and planned, and nothing else: the original query, the winning candidate, the plans of both, and the blocks each read on each set of values.
 
         The winner is either a rewrite of the original query, or the original query run with new indices, or a rewrite run with new indices. Compare the winner only with the original query as it runs now, on the indices the database already has. Don't compare it with any other candidate.
 
-        The engineer wants a lesson about when this kind of change pays off, so they could have written the query well from the start. The lesson is conditional: it holds because this query, or the data and schema it runs on, has a particular feature. A takeaway that reads as a rule for every query, such as one telling the reader to use a UNION instead of an OR, is wrong and harmful, so never give one. Don't write always, never, all queries, or every query, and don't say to prefer one form over another without the condition under which it helps.
+        Your job is advice, not a retelling of the plans. Use the plans to work out why the winner won, then turn that into what the developer should take away. The report prints both plans in full below your summary, so don't walk through them: don't list plan steps, their row counts, or what each one does. Say what the database had to do in everyday words, such as reading a whole table, going straight to the matching rows through an index, reading the same table twice, or checking a list again for every row. Name a plan step's type at most once or twice, and only where the advice needs it.
+
+        Work out which of these questions the payload lets you answer, and answer those. Was the original query more general than it needed to be, given the constraints the schema provides? A rule applies only when its rule_preconditions hold, such as a column that can't be null or a key that's unique, so when the winner relies on one, the original was guarding against a case the schema already rules out, and that kept the database from a cheaper way to run it. Did the data make some feature of the query a poor fit? The plans' estimated and actual rows show how many rows a condition matched, and how far off Postgres's guess was, so you can say a condition matched few rows out of many, or far more than Postgres expected, when that's why another shape fit better. What should the developer look for next time? Give a heuristic: a sign they can spot in their own query, schema, or data without reading a plan, and the condition under which it holds.
+
+        The lesson is conditional: it holds because this query, or the data and schema it runs on, has a particular feature. A takeaway that reads as a rule for every query, such as one telling the reader to use a UNION instead of an OR, is wrong and harmful, so never give one. Don't write always, never, all queries, or every query, and don't say to prefer one form over another without the condition under which it helps.
 
         Let the length follow the situation. Keep the whole summary under 700 characters, and shorter when the case is simple.
 
-        When the winner is the original query with new indices, the query is unchanged and there is no transformation to name. In one or two sentences, and no more, say what feature of the query or its data made the new index useful, grounded in the plans, such as a filter on a column the original read with a scan that touched many more blocks than the rows it returned, say that the new index, by its definition, serves that filter, that no rewrite was needed, and how many blocks each read on the slow values.
+        When the winner is the original query with new indices, the query is unchanged and there is no transformation to name. In one or two sentences, and no more, say what about the query or its data made the new index worth having, such as a filter that picks a few rows out of many that the original found only by reading far more, say that the new index, by its definition, serves it, that no rewrite was needed, how many blocks each read on the slow values, and what to look for in other queries.
 
-        When the winner is a rewrite, write three to five short sentences in this order. First, the precondition: the feature of the original query, or the fact about the schema or data, that made the rewrite possible and useful. Each rule's rule_preconditions says what must hold for it to apply, and since the rule did apply, that held for this query; state it in those terms. The payload's repeated_conditions lists each condition shape that the original repeats across the arms of one OR or the branches of one UNION, with how many times the shape appears in the original and in the winner. A shape writes $ for any placeholder, and QUAACK gives each value its own placeholder, so two copies of a shape may compare against different values: call it the same condition repeated, never the same value. When it lists a shape the winner holds fewer times than the original, name that condition, say the original repeated it in each arm or branch, as part of the precondition, and say the winner states it fewer times, which is part of what the rewrite changed. Don't say a condition was duplicated unless repeated_conditions lists it. Second, name the transformation that precondition allowed, by the rule's name and in the terms its rule_purposes uses. Third, say why it helps in this situation, grounded in a difference between the two plans, saying what the original's form kept the planner from doing and what the winner's form let it do: a scan or join type that changed, a step that disappeared or appeared, an index the winner's plan uses, or a smaller row or block count at a named step, and give the blocks each read on the slow values, which are the values from the engineer's slow plan, and whether the winner held up on the other sets of values. Last, say in general terms, without this query's table or column names, the condition under which the same change would help, and when it would not, so the reader knows it isn't a rule for every query.
+        When the winner is a rewrite, write three to five short sentences in this order. First, what about the original query, its schema, or its data made its shape a poor fit, answering the questions above; a rule's rule_preconditions held for this query, since the rule applied, so say what they mean for it in plain words. The payload's repeated_conditions lists each condition shape that the original repeats across the arms of one OR or the branches of one UNION, with how many times the shape appears in the original and in the winner. A shape writes $ for any placeholder, and QUAACK gives each value its own placeholder, so two copies of a shape may compare against different values: call it the same condition repeated, never the same value. When it lists a shape the winner holds fewer times than the original, name that condition, say the original repeated it in each arm or branch, and say the winner states it fewer times, which is part of what the rewrite changed. Don't say a condition was duplicated unless repeated_conditions lists it. Second, what the winner does differently, in plain words, as its rule_purposes describes it; a rule's own name is QUAACK's label, so don't use it. Third, why that paid off here, in a phrase rather than a walk through the plans, grounded in a difference between them, with the blocks each read on the slow values, which are the values from the developer's slow plan, and whether the winner held up on the other sets of values. Last, the heuristic: in general terms, without this query's table or column names, the sign to look for, and when the same change would help, and when it would not, so the reader knows it isn't a rule for every query.
 
-        You may say a change let the planner do something, or that it did so because of the change, only when a difference between the two plans in the payload backs it. Say only what the SQL, plans, and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Name a plan step by a node type that appears in one of the two plans, never one that doesn't, and without a join type or parallel qualifier such as anti, semi, or parallel, since the plans in the payload don't show those. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, statistics, or data distribution, so leave those out unless a number in the payload says so. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that instead of giving a reason.
+        You may say a change let the database do something, or that it did so because of the change, only when a difference between the two plans in the payload backs it. Say only what the SQL, plans, and numbers in the payload show. Quote a plan step's own numbers, and never carry one step's row count to another step: a step that reads rows from the step below it doesn't have that step's count. Name a plan step by a node type that appears in one of the two plans, never one that doesn't, and without a join type or parallel qualifier such as anti, semi, or parallel, since the plans in the payload don't show those. Don't guess at a cause you can't see in them: a plan can't tell you about caching, table bloat, or statistics, and it shows the data only through its row counts, so say nothing about the data that those counts don't show. When a plan has no block counts, say so rather than inferring them. If the winner's plan is only an estimate, treat it as one. If the plans don't show why the winner reads fewer blocks, say that instead of giving a reason.
 
         Call a rewrite by the name in the payload's rewrite name, if it has one. Refer to an index by its definition, never by a name you make up. Don't mention any other rewrite or index.
 
@@ -180,20 +153,7 @@ module Quaack
         return false if text.scan(DOTTED).any? { !in_input?(it, sent) }
 
         winner = input.dig("winner", "rewrite", "name")
-        text.scan(REWRITE_NAME).all? { it == winner } && named_steps_planned?(text, input)
-      end
-
-      # Whether every plan node type text names is a step of the original's
-      # plan or the winner's, with no join or parallel qualifier.
-      def named_steps_planned?(text, input)
-        planned = [input.dig("original", "plan"), input.dig("winner", "plan")].flat_map { Array(it) }
-                                                                              .filter_map { it["step"]&.downcase }
-        return false if text.match?(QUALIFIED)
-
-        text.scan(NODE_PATTERN).all? do |name|
-          step = name.downcase.gsub(/[\s-]+/, " ")
-          planned.include?(NODE_ALIASES.fetch(step, step))
-        end
+        text.scan(REWRITE_NAME).all? { it == winner } && PlanSteps.planned?(text, input)
       end
 
       # Whether a dotted token is one the input holds as whole words: either

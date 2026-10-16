@@ -11953,3 +11953,13 @@ In "The original query, with new indices":
 - **Design:** report.
 - **Landed:** 2026-10-16 (task/20261016-9). Each ranked entry's heading now says only what its subsection's title doesn't: "Rewrite <Name>, with new indices:" (the name linked to its SQL), "With new indices:", or "Rewrite <Name>", with the new indices' DDL as a list under it. The "Its SQL is under" line and the "Its new indices:" block are gone, so each index and the rewrite's name appear once. A ranked label with no entry in the payload's labels says its new indices are "not recorded". Report specs check each kind's layout, the index and name counts, and the fallbacks; DESIGN.md's report says the layout.
 - **Status:** done
+
+### 20261016-10. Report: "Why the winner reads fewer blocks" reads like a query plan.
+
+The LLM summary should be advice for a SQL-curious developer who may not know SQL well, giving heuristics for when to write a query more like the winner than the original. For example: was the original too general for the constraints it was given? Did the data in the database make some feature of the query a poor fit, where another shape fits better? What should the developer look for next time? The plans tell the LLM why the winner won. Its job is to turn that into advice, not to retell the plans. Change the prompt and any output checks, and re-record the replays the prompt drift touches. The trust boundary is unchanged: the prompt gets only what it gets today.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16.
+- **Design:** report, LLM prompts.
+- **Landed:** 2026-10-16 (task/20261016-10). The winner-summary prompt now writes for a developer who writes SQL but may not know it well, as advice and heuristics, not a retelling of the plans: it says the plans are printed below, to use everyday words for what the database had to do, to name a plan step's type at most once or twice, and to answer the questions the payload allows (was the original more general than the schema's constraints required, did the data make a feature of the query a poor fit as the row counts show, and what to look for next time). A rewrite's sentences go: what made the original a poor fit, what the winner does in plain words, why it paid off in a phrase with the blocks, then the heuristic and when it wouldn't help. The guard also refuses an answer that names plan node types more than twice (counting only multi-word or run-together names, so Limit, Unique, or Sort as words don't count). The input, and so the trust boundary, is unchanged. No recorded replay holds a winner-summary prompt, so nothing needed re-recording. DESIGN.md and README.md describe the new prompt and check.
+- **Status:** done
