@@ -10,10 +10,12 @@ module Quaack
       module PlanSteps
         # Postgres's plan node types, as EXPLAIN names them. A summary may name
         # one only if a plan in the input has it. One of several words is read
-        # in any case, with a space or a hyphen between words; a one-word type
-        # only as EXPLAIN capitalizes it, so the SQL keyword LIMIT or the word
-        # sort isn't read as a step. Longer names are tried first, so an Index
-        # Only Scan isn't read as an Index Scan.
+        # in any case, with a space or a hyphen between words, and so is a
+        # run-together one such as HashAggregate, which is no plain word
+        # (20261016-13). A one-word type is read only as EXPLAIN capitalizes
+        # it, so the SQL keyword LIMIT or the word sort isn't read as a step.
+        # Longer names are tried first, so an Index Only Scan isn't read as an
+        # Index Scan.
         NODE_TYPES = [
           "Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Index Scan", "Bitmap Heap Scan", "Tid Scan",
           "Tid Range Scan", "Subquery Scan", "Function Scan", "Table Function Scan", "Values Scan", "CTE Scan",
@@ -24,10 +26,12 @@ module Quaack
           "Result", "ProjectSet", "LockRows", "WindowAgg", "ModifyTable"
         ].freeze
         NODE_ALIASES = { "sequential scan" => "seq scan" }.freeze
+        # The one-word types that are also plain words or SQL keywords.
+        ONE_WORD = NODE_TYPES.grep_v(/\s|\p{Ll}\p{Lu}/).freeze
         NODE_PATTERN = Regexp.union(
           (NODE_TYPES + NODE_ALIASES.keys).sort_by { -it.size }.map do |name|
             words = name.split.map { Regexp.escape(it) }
-            words.size == 1 ? /\b#{words.first}\b/ : /\b#{words.join("[\\s-]+")}\b/i
+            ONE_WORD.include?(name) ? /\b#{words.first}\b/ : /\b#{words.join("[\\s-]+")}\b/i
           end
         )
 
@@ -37,7 +41,13 @@ module Quaack
         # one-word type such as Limit, Unique, or Sort is also a SQL keyword
         # or a plain word.
         MOST_STEP_NAMES = 2
-        JARGON = /\s|-|\p{Ll}\p{Lu}/
+
+        # Where a sentence starts: the reply's start, or after a full stop, an
+        # exclamation mark, or a question mark and a space. A one-word type
+        # there is as likely a capitalised plain word (Limit what it reads,
+        # Group the conditions) as a step, so it isn't read as one
+        # (20261016-13).
+        SENTENCE_START = /(?:\A|[.!?]\s)\s*\z/
 
         # A join or parallel qualifier on a node type: Hash Anti Join, a semi
         # join, a Parallel Seq Scan. The payload's plan nodes carry only the
@@ -56,13 +66,22 @@ module Quaack
         def planned?(text, input)
           return false if text.match?(QUALIFIED)
 
-          names = text.scan(NODE_PATTERN)
-          return false if names.count { it.match?(JARGON) } > MOST_STEP_NAMES
+          names = step_names(text)
+          return false if names.count { !ONE_WORD.include?(it) } > MOST_STEP_NAMES
 
           planned = steps(input)
           names.all? do |name|
             step = name.downcase.gsub(/[\s-]+/, " ")
             planned.include?(NODE_ALIASES.fetch(step, step))
+          end
+        end
+
+        # The node types text names, leaving out a one-word type that starts
+        # a sentence.
+        def step_names(text)
+          text.to_enum(:scan, NODE_PATTERN).filter_map do
+            match = Regexp.last_match
+            match[0] unless ONE_WORD.include?(match[0]) && match.pre_match.match?(SENTENCE_START)
           end
         end
 

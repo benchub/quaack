@@ -233,6 +233,33 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(run(text, base)).to have_attributes(outcome: "used")
       expect(run("The winner needs no Sort and reads 40 blocks.", base)).to have_attributes(outcome: "rejected")
     end
+
+    # 20261016-13: a run-together type such as HashAggregate is no plain
+    # word, so it's read in any case.
+    it "reads a run-together node type in any case" do
+      grouped = base.merge("original_plan" => plan_of(%i[hash_join seq_orders], 9_000) +
+                                              [node("HashAggregate", nil, nil, rows: 10, blocks: 0, depth: 1)])
+      ["The winner drops the hashaggregate and reads 40 blocks.",
+       "The winner drops the HASHAGGREGATE and reads 40 blocks.",
+       "The winner drops the windowagg and reads 40 blocks.",
+       "The winner drops the WINDOWAGG and reads 40 blocks."].each do |text|
+        expect(run(text, base)).to have_attributes(outcome: "rejected"), text
+      end
+      expect(run("The winner drops the hashaggregate and reads 40 blocks.", grouped))
+        .to have_attributes(outcome: "used")
+    end
+
+    # 20261016-13: a capitalised one-word type at a sentence's start is as
+    # likely a plain word (Limit what it reads, Group the conditions) as a
+    # step, so only a one-word type inside a sentence counts.
+    it "doesn't read a one-word type that starts a sentence as a node type" do
+      text = "Limit what the query reads: the winner reads 40 blocks against 9,000. Group conditions on one " \
+             "table where you can! Sort out which columns the filter needs? Limit the table read to those."
+      expect(run(text, base)).to have_attributes(text:, outcome: "used")
+      expect(run("The winner needs no Limit and reads 40 blocks.", base)).to have_attributes(outcome: "rejected")
+      expect(run("The winner reads 40 blocks, and a Group step is gone.", base))
+        .to have_attributes(outcome: "rejected")
+    end
   end
 
   describe "the node-type check on join and parallel qualifiers" do
@@ -298,8 +325,8 @@ RSpec.describe Quaack::Driver::WinnerSummary do
   # Advice, not the plans retold (20261016-10): a summary may name a plan
   # step's type once or twice, where the advice needs it, but not three
   # times. Only names of several words, and run-together ones such as
-  # HashAggregate, count, since a one-word type such as Limit or Unique is
-  # also a SQL keyword or a plain word.
+  # HashAggregate (in any case), count, since a one-word type such as Limit
+  # or Unique is also a SQL keyword or a plain word.
   describe "the plan-retelling check" do
     let(:base) { family_payload("or_to_union") }
 
@@ -325,6 +352,17 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       plain = "Unique rows come out of an Append in the winner, after an Index Scan in each arm, where the " \
               "original ran a Seq Scan, with LIMIT nowhere, 40 blocks against 9,000."
       expect(run(plain, base)).to have_attributes(outcome: "used")
+    end
+
+    it "counts a run-together type in any case" do
+      grouped = base.merge("original_plan" => plan_of(%i[hash_join seq_orders seq_users], 9_000) +
+                                              [node("HashAggregate", nil, nil, rows: 10, blocks: 0, depth: 1)])
+      %w[hashaggregate HASHAGGREGATE].each do |name|
+        thrice = "The original ran a #{name}, then a #{name}, then a #{name} again, 9,000 blocks against 40."
+        expect(run(thrice, grouped)).to have_attributes(outcome: "rejected"), thrice
+        twice = "The original ran a #{name}, then a #{name} again, 9,000 blocks against 40."
+        expect(run(twice, grouped)).to have_attributes(outcome: "used"), twice
+      end
     end
   end
 

@@ -11997,3 +11997,15 @@ From the second review of 20261016-12, landed in error with this finding open. I
 - **Design:** report, provenance.
 - **Landed:** 2026-10-16 (task/20261016-15; driver only). `Provenance.open` notes whether the run's record file existed; `own_rewrites!` writes a first count only when this invocation starts the record. A resume before llm-rewrites of a run whose record exists but lacks `own_rewrites` (an older driver's) leaves it unknown, so the report says "not recorded" instead of "From you: 0". The replace and raise rules for a record with a count are unchanged. DESIGN.md's provenance section says so.
 - **Status:** done
+
+### 20261016-13. Winner summary guard: case handling of plan-step names.
+
+From the review of 20261016-10. Two gaps in `driver/lib/quaack/driver/winner_summary/plan_steps.rb`:
+- Run-together step types such as `HashAggregate` and `WindowAgg` are matched case-sensitively, so a reply that writes `hashaggregate` three times gets past both the cap of two step names and the check that a named step is in one of the plans. Match unambiguous run-together names case-insensitively, and keep one-word names such as `Sort`, `Limit` and `Unique` case-sensitive.
+- The existing check rejects a capitalised one-word type at the start of a sentence, such as "Limit" or "Group", when neither plan has that step. Advice-style replies may start sentences that way more often, so a good answer could be refused.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261016-10, 2026-10-16.
+- **Design:** LLM prompts.
+- **Landed:** 2026-10-16 (task/20261016-13; driver only). `PlanSteps` now reads a run-together node type (HashAggregate, WindowAgg, SetOp, ...: a lowercase letter followed by a capital) in any case, like a type of several words, so `hashaggregate` or `HASHAGGREGATE` counts toward the cap of two step names and must be a step one of the plans has. The ambiguous one-word types (Hash, Sort, Aggregate, Group, Unique, Limit, Append, Materialize, Memoize, Gather, Result) stay case-sensitive, and one that starts a sentence (the reply's start, or after `. `, `! ` or `? `) isn't read as a step, so advice such as "Limit what the query reads." or "Group conditions ..." is kept; mid-sentence a capitalised one still counts. A false one-word step at a sentence's start now slips past the in-plan check; that's the accepted cost, since there it's as likely a plain imperative. DESIGN.md's guard paragraph says so.
+- **Status:** done
