@@ -684,15 +684,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-1. Report: the hidden-statistics warning links to the wrong place.
-
-The verdict's warning that the production role couldn't see an expression index's statistics has a Details link to the proposed-indices section. It should link to that section's "Statistics QUAACK couldn't see" subsection.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-16, from their report of 2026-10-15.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261016-2. Report: drop the "Read it with care … never made some conditions … both true and false" caveat.
 
 Every tested rewrite carries it, so it says nothing: fuzz can only disprove a rewrite, never prove it, and the report accepts rewrites QED would refuse. Decided by the user (2026-10-16): drop the caveat from the queries section (and the verdict, if it appears there). Keep the other "Read it with care" sentences (such as relying on what the data holds today). The untested atoms stay internal: llm-counterexamples still aims at them.

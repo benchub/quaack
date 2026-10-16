@@ -11850,3 +11850,13 @@ From the fix round of 20261008-60. `enclave/spec/counterexample_steps_postgres_s
 - **Design:** rewrite-test (coverage).
 - **Landed:** 2026-10-15 (task/20261015-2). Cause: fuzz's seed is from the two queries' text, and the queries carry the random sentinels, so each run draws different worlds; about 1 search in 150 at 40 trials never draws a row whose note is the sentinel, leaving `o.note = $1` untested too (reproduced in-process with a fixed sentinel and seed, and in 2 of about 186 runs of the old examples). Not a fuzz bug: an atom the worlds never showed both ways is reported untested by design. Fix, spec only: the arena now pins every sentinel-bearing atom with a NOT NULL column and a CHECK, so no world can make it both true and false whatever fuzz draws: `o.note = '<sentinel>'` in the two `untested_unchanged` examples, and `o.note` and `o.total >= <sentinel>` in "sends the shapes of what it left untested and what a round covered" (the line-207 failure 20261012-52 noted, the same cause; that bullet is dropped from 20261012-52). Their exact lists are now deterministic, and the dropped-conjunct example is stronger: it lists `o.note = $1` as unchanged and leaves the dropped `o.status = $2` out. Coverage's judging stays pinned by `fuzz_coverage_postgres_spec.rb`. No production change.
 - **Status:** done
+
+### 20261016-1. Report: the hidden-statistics warning links to the wrong place.
+
+The verdict's warning that the production role couldn't see an expression index's statistics has a Details link to the proposed-indices section. It should link to that section's "Statistics QUAACK couldn't see" subsection.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-16, from their report of 2026-10-15.
+- **Design:** report.
+- **Landed:** 2026-10-16 (task/20261016-1). The verdict's hidden-statistics caveat now links to `#hidden-statistics`, the "Statistics QUAACK couldn't see" note inside the indexes section (it already had that id), not to `#indexes`. The caveat-links spec now accepts a `<div>` target as well as a `<section>`, and a new example checks the link and that the note sits in the indexes section. DESIGN.md updated. Driver only.
+- **Status:** done
