@@ -2,6 +2,6 @@
 
 module Quaack
   module Enclave
-    VERSION = "0.1.36"
+    VERSION = "0.1.37"
   end
 end
