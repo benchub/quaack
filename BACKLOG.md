@@ -715,7 +715,7 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 
 ### 20261017-5. Report: reword the not_better fate.
 
-A not_better rewrite's fate reads "It passed every test, then QUAACK measured it on the real data, where it read over 5% more blocks on some values, so QUAACK didn't rank it." That's unclear. The user suggests: "It passed every correctness test, but when measured against real data performed too poorly to be ranked." Reword `LEAD`, `TAIL`, and the three variants (small gain, regressed, either) in `driver/lib/quaack/driver/report/not_better_fate.rb`, and update `driver/spec/report_spec.rb`. Ask the user whether the variants should still say which way the rewrite fell short.
+A not_better rewrite's fate reads "It passed every test, then QUAACK measured it on the real data, where it read over 5% more blocks on some values, so QUAACK didn't rank it." That's unclear. The user suggests: "It passed every correctness test, but when measured against real data performed too poorly to be ranked." Reword `LEAD`, `TAIL`, and the three variants (small gain, regressed, either) in `driver/lib/quaack/driver/report/not_better_fate.rb`, and update `driver/spec/report_spec.rb`. The user decided (2026-10-17) on one sentence for every case: "It passed every correctness test, but when measured against real data performed too poorly to be ranked." The three variants go away.
 
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-17.
@@ -724,7 +724,7 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 
 ### 20261017-6. Report: color stripes on the ranking table.
 
-In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area.
+In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area. The user decided (2026-10-17): a stripe on the left edge of each row, in its subsection's color, with no tint across the row.
 
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-17.
@@ -733,7 +733,7 @@ In the Ranking section, each subsection has a colored stripe on its left, but th
 
 ### 20261017-7. Report: plan tables color the row-count cells, not the row, and flag the nodes driving time and blocks.
 
-In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance.
+In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance. The user decided (2026-10-17): the cue is a color gradient on the time and block cells, like the row-count cells, and it's based on each step's own share (its time and blocks minus its children's), not the inclusive numbers Postgres reports.
 
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-17.
@@ -742,7 +742,7 @@ In the plan tables under "Why the winner reads fewer blocks", the whole row take
 
 ### 20261017-8. Sankey: "Index ideas for the rewrites" carries in more ideas than the diagram above ends with.
 
-In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index ideas for the rewrites" pair ends with 35 ideas, but the second says "Carried in from the diagram above: 41". The "Index ideas for the original query" and "Rewrites" pairs agree. Find which number is wrong, and why (for example, ideas merged or deduplicated across rewrites between the two diagrams); see `report/sankey.rb` near "Carried in from the diagram above", `sankey_layers.rb`, and `sankey_parts.rb`. Then make the two agree, or have the label say why they differ. Reproduce it in a test first.
+In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index ideas for the rewrites" pair ends with 35 ideas, but the second says "Carried in from the diagram above: 41". The "Index ideas for the original query" and "Rewrites" pairs agree. Find which number is wrong, and why (for example, ideas merged or deduplicated across rewrites between the two diagrams); see `report/sankey.rb` near "Carried in from the diagram above", `sankey_layers.rb`, and `sankey_parts.rb`. Then make the two agree, or have the label say why they differ; the user left that choice to the builder (2026-10-17), whichever reads clearer. Reproduce it in a test first.
 
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-17.
