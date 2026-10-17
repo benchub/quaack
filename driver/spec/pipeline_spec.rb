@@ -9,9 +9,9 @@ require "quaack/driver/transport/base"
 require_relative "support/fake_llm"
 require_relative "support/routers"
 
-# arena-setup and index-build to selection, all stored, for specs about other steps.
+# arena-setup and index-build to selection and winner-timing, all stored, for specs about other steps.
 MEASURED = %w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
-              selection].to_h { [it, true] }.freeze
+              selection winner_timing].to_h { [it, true] }.freeze
 
 # Builds a call's argv with the real Transport::Base, so a fake transport
 # raises ArgumentError for args the enclave's CLI can't take, as the ssh
@@ -468,7 +468,9 @@ RSpec.describe Quaack::Driver::Pipeline, "arena-setup and index-build to selecti
     { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
       "rewrite_rules_applied" => true, "rewrites_generated" => true }
   end
-  let(:chain) { %w[index-build index-build baseline index-baseline candidate-runs minimax result-comparison selection] }
+  let(:chain) do
+    %w[index-build index-build baseline index-baseline candidate-runs minimax result-comparison selection winner-timing]
+  end
   let(:failing) { {} }
   let(:transport) do
     all = { "status" => [{ "type" => "status", "entries" => done }],
@@ -508,7 +510,21 @@ RSpec.describe Quaack::Driver::Pipeline, "arena-setup and index-build to selecti
     run
 
     expect(transport.calls.map(&:first)).to eq(%w[status index-feedback status index-baseline candidate-runs
-                                                  result-comparison selection])
+                                                  result-comparison selection winner-timing])
+  end
+
+  # Task 20261016-14: winner-timing runs once selection is stored, and a
+  # resume skips it once its own output is.
+  it "resumes after selection with winner-timing, and skips it once winner_timing is stored" do
+    done.merge!(%w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
+                   selection].to_h { [it, true] })
+    run
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback status winner-timing])
+
+    transport.calls.clear
+    done["winner_timing"] = true
+    run
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback status])
   end
 
   it "stops the run at a failing step, with its rule" do
@@ -558,11 +574,11 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
     expect(File.read(out)).to include("<h1>QUAACK report RUN</h1>")
   end
 
-  it "writes the report right after this run's selection step stores selection" do
-    t = transport(done.merge("selection" => false), "report-payload" => [report])
+  it "writes the report right after this run's selection and winner-timing steps store their outputs" do
+    t = transport(done.merge("selection" => false, "winner_timing" => false), "report-payload" => [report])
 
     expect(pipeline(t).run).to eq(out)
-    expect(t.calls.map(&:first).last(2)).to eq(%w[selection report-payload])
+    expect(t.calls.map(&:first).last(3)).to eq(%w[selection winner-timing report-payload])
   end
 
   it "puts the client's LLM call counts in the report's burndown, by provider" do

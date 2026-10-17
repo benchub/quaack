@@ -64,7 +64,8 @@ module CatalogNames
     ["quaack/enclave/clock_defaults.rb", "TABLE ONLY "] => "the middle of an ALTER TABLE built in pieces",
     ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces",
     ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run",
-    ["quaack/enclave/fuzz/session.rb", "EXPLAIN (ANALYZE"] => "a prefix the queries are explained after"
+    ["quaack/enclave/fuzz/session.rb", "EXPLAIN (ANALYZE"] => "a prefix the queries are explained after",
+    ["quaack/enclave/measurement.rb", "EXPLAIN (ANALYZE"] => "a prefix the measured and timed runs are explained after"
   }.freeze
 
   # Interpolations that hold a type's name that reads back as that type

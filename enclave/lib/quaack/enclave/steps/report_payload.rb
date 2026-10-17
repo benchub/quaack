@@ -20,6 +20,7 @@ require_relative "redundant_indexes"
 require_relative "rewrite_fate"
 require_relative "rewrite_source"
 require_relative "rule_bugs"
+require_relative "winner_times"
 
 module Quaack
   module Enclave
@@ -53,7 +54,15 @@ module Quaack
       #                    "measurements", "verdicts" (minimax's, per
       #                    literal set), "timed_out", "plan" (its
       #                    measured plan's node shapes on the slow literal
-      #                    set, block counts included, or nil) }
+      #                    set, block counts included, or nil; the
+      #                    winner's carries winner-timing's times and loops
+      #                    when its timed plan has the same steps,
+      #                    WinnerTimes) }
+      #   winner_timing    winner-timing's result for the winner, one of
+      #                    Protocol::WinnerTiming::RESULTS (plan_differs when
+      #                    its timed plan's steps differ from the measured
+      #                    one's), or nil when there's no winner or no
+      #                    entry; egress checks it
       #                    A ranked label also has "suggested_drops": [{ "name",
       #                    "size_bytes", "idx_scan" }], the existing indexes its
       #                    new indexes make truly redundant (RedundantIndexes),
@@ -129,10 +138,10 @@ module Quaack
       # rewrite's sql is the stored rewrite's SQL, which holds only $n and
       # what the LLM, a rule, or the operator wrote, as the inbound check
       # accepted it. DDL goes through CandidateDdlRedaction. A plan node
-      # sends only its type, relation, index name, row counts, and shared
-      # hit and read block counts (Integers or nil), never a Filter or
-      # Index Cond. Measurements are counts. Index names and relations are
-      # schema. A source, a rule name, a fate, and a fate's
+      # sends only its type, relation, index name, row counts, shared
+      # hit and read block counts (Integers or nil), and its time and
+      # loops (finite numbers or nil), never a Filter or Index Cond.
+      # Measurements are counts. Index names and relations are schema. A source, a rule name, a fate, and a fate's
       # details are QUAACK's own constants: RewriteSource and RewriteFate
       # send no other, but for an fk_cycle's tables, which are schema and
       # each one the schema_subset entry holds. Untested atoms are rewrite-test's redacted shapes.
@@ -149,11 +158,18 @@ module Quaack
           selection = store.read("selection")
           stats = PlannerStatistics.load(store).statistics
           labels = MeasuredLabels.call(store)
-          ranked = RedundantIndexes.new(store).label(selection, measured_plans(store, labels, stats))
           [{ type: :report, **selection.slice("top", "infinite_sets").transform_keys(&:to_sym),
-             **original(store, stats), labels: ranked, rewrites: rewrites(store, stats),
+             **original(store, stats), **labels(store, selection, labels, stats), rewrites: rewrites(store, stats),
              indexes: indexes(store, stats), timed_out_count: store.read("candidate_runs")["timed_out_count"],
              index_sources: IndexSources.call(store, labels, selection), **findings(store, selection) }]
+        end
+
+        # The labels, with their measured plans, the winner's with its times
+        # (WinnerTimes), and their suggested drops, and winner_timing.
+        def labels(store, selection, labels, stats)
+          timed, winner_timing = WinnerTimes.call(store, selection, measured_plans(store, labels, stats),
+                                                  ->(plan) { nodes(plan, stats) })
+          { labels: RedundantIndexes.new(store).label(selection, timed), winner_timing: }
         end
 
         # selection's excluded labels, negative-result, rewrite-rules, and burndown.

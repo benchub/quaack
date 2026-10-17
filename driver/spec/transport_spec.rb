@@ -969,6 +969,25 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261016-14. Egress sends winner_timing only if
+    # Protocol::WinnerTiming.valid? passes, so the driver checks the same.
+    it "reads a report whose winner_timing is nil or one of QUAACK's words, and refuses any other" do
+      report = lambda do |timing|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
+                        "index_sources" => index_sources, **timing })
+      end
+      lines = [{ "winner_timing" => "plan_differs" }, { "winner_timing" => nil }, {}].map { report.call(it) }
+      result = raw("print #{"#{lines.join("\n")}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.map { it["winner_timing"] }).to eq(["plan_differs", nil, nil])
+      [sentinel, ["timed"], 1].each do |planted|
+        error = refusal(report.call("winner_timing" => planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Task 20261010-17. Egress sends tablespace_moves only if it names only
     # tables original_sql names (Protocol::TablespaceMoves.within?), so the
     # driver checks the same.

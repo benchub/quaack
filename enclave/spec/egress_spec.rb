@@ -502,6 +502,34 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261016-14: winner_timing is nil or one of QUAACK's own words
+    # (Protocol::WinnerTiming.valid?). An older payload has none.
+    describe "winner_timing" do
+      def report_with(**timing)
+        { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, **timing }
+      end
+
+      it "sends each of QUAACK's own words and nil as they are, and a report without it" do
+        %w[timed timed_out failed plan_differs].each do |word|
+          expect(JSON.parse(egress.serialize(report_with(winner_timing: word)))["winner_timing"]).to eq(word)
+        end
+        expect(JSON.parse(egress.serialize(report_with(winner_timing: nil)))["winner_timing"]).to be_nil
+        expect(JSON.parse(egress.serialize(report_with))).not_to have_key("winner_timing")
+      end
+
+      [["another word", EGRESS_SENTINEL], ["a list of a word", ["timed"]], ["a count", 1]].each do |what, value|
+        it "refuses #{what}, without quoting it" do
+          expect do
+            egress.serialize(report_with(winner_timing: value))
+          end.to raise_error(described_class::Error, "a value in this report message has a winner timing that " \
+                                                     "isn't one of QUAACK's") { |e|
+                   expect(e.message).not_to include(EGRESS_SENTINEL)
+                   expect(e.cause).to be_nil
+                 }
+        end
+      end
+    end
+
     # Task 20261010-17: tablespace_moves is the query's tables that sit in
     # another tablespace on the run server, as schema.name names, never a
     # tablespace's name (Protocol::TablespaceMoves.valid?). An older
