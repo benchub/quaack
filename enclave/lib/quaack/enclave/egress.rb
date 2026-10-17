@@ -13,6 +13,7 @@ require "quaack/protocol/plan_nodes"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
 require "quaack/protocol/unchanged_atoms"
+require "quaack/protocol/winner_timing"
 require_relative "fuzz_sizes"
 require_relative "plain_data"
 
@@ -169,6 +170,8 @@ module Quaack
       # check_fuzz.
       # tablespace_moves, when sent, must name only tables original_sql
       # names (see Protocol::TablespaceMoves.within?).
+      # winner_timing, when sent, must be nil or a word from
+      # Protocol::WinnerTiming::RESULTS.
       # The report's other fields still go out unchecked.
       def check_report(fields)
         unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
@@ -180,8 +183,19 @@ module Quaack
         check_not_tested(fields["rewrites"])
         check_suggested_drops(fields["labels"])
         check_fuzz(fields)
+        check_findings(fields)
+      end
+
+      def check_findings(fields)
         check_hidden_statistics(fields)
         check_tablespace_moves(fields)
+        check_winner_timing(fields)
+      end
+
+      def check_winner_timing(fields)
+        return if Protocol::WinnerTiming.valid?(fields["winner_timing"])
+
+        raise Error, "a value in this report message has a winner timing that isn't one of QUAACK's"
       end
 
       def check_tablespace_moves(fields)

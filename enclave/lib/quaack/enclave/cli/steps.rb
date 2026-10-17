@@ -34,6 +34,7 @@ require_relative "../steps/candidate_runs"
 require_relative "../steps/minimax"
 require_relative "../steps/result_comparison"
 require_relative "../steps/selection"
+require_relative "../steps/winner_timing"
 require_relative "../steps/report_payload"
 
 module Quaack
@@ -88,6 +89,7 @@ module Quaack
         "minimax" => Step.new(handler: Steps::Minimax, run: true),
         "result-comparison" => Step.new(handler: Steps::ResultComparison, run: true),
         "selection" => Step.new(handler: Steps::Selection, run: true),
+        "winner-timing" => Step.new(handler: Steps::WinnerTiming, run: true),
         "report-payload" => Step.new(handler: Steps::ReportPayload, run: true)
       }.freeze
     end

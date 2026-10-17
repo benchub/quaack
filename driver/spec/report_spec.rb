@@ -1979,7 +1979,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(times(explanation)).to eq(["not recorded", "not recorded", "1.0 ms (100%)", "not recorded"])
       end
 
-      it "is left out, with its column, for a plan with no times, as QUAACK's own measured plans have none" do
+      it "is left out, with its column, for a plan with no times" do
         expect(explanation.scan(time_header).size).to eq(1)
         payload["original_plan"].first["actual_total_time"] = nil
         untimed = section(render(payload), "explanation")
@@ -2080,6 +2080,54 @@ RSpec.describe Quaack::Driver::Report do
         expect(plan_rows(explanation).size).to eq(2)
         expect(plan_rows(explanation).last.first).to include("<td>#{sq("quaack_a")}</td>")
         expect(plan_rows(explanation).last.first).to include(%(<td class="num">400</td></tr>))
+      end
+
+      context "and its times" do
+        let(:winner_note) do
+          "<p class=\"note\">#{ERB::Util.html_escape(described_class::Plans::WINNER_TIMED_NOTE)}</p>"
+        end
+
+        def untimed_note(result)
+          "<p class=\"note\">#{ERB::Util.html_escape(described_class::Plans::WINNER_UNTIMED.fetch(result))}</p>"
+        end
+
+        def time_note = "<p class=\"note\">#{ERB::Util.html_escape(described_class::Plans::TIME_NOTE)}</p>"
+
+        before do
+          payload["original_plan"].first["actual_total_time"] = nil
+          plan = payload["labels"].find { it["label"] == "rewrite_1:none" }["plan"]
+          plan.zip([3.0, 1.0]) { |node, time| node["actual_total_time"] = time }
+          payload["winner_timing"] = "timed"
+        end
+
+        it "shows each step's time in the winner's plan, says where the times came from and how they count" do
+          expect(plan_rows(explanation).last.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>\z}, 1] })
+            .to eq(["2.0 ms (67%)", "1.0 ms (33%)"])
+          expect(explanation).to end_with("</table>#{winner_note}\n#{time_note}\n</section>")
+          expect(explanation.scan(time_note).size).to eq(1)
+        end
+
+        it "says how times count only once, under the original's plan, when both plans have times" do
+          payload["original_plan"].first["actual_total_time"] = 12.5
+          expect(explanation.scan(time_note).size).to eq(1)
+          expect(explanation).to match(%r{</table>#{Regexp.escape(winner_note)}\n</section>})
+        end
+
+        %w[timed_out failed plan_differs].each do |result|
+          it "says why the winner's plan has no times when its timed run was #{result}" do
+            payload["labels"].find { it["label"] == "rewrite_1:none" }["plan"].each { it["actual_total_time"] = nil }
+            payload["winner_timing"] = result
+            expect(explanation).to match(%r{</table>#{Regexp.escape(untimed_note(result))}\n</section>})
+            expect(explanation).not_to include(winner_note, "Time in a step")
+          end
+        end
+
+        it "says nothing of the winner's times when the run didn't time it" do
+          payload["labels"].find { it["label"] == "rewrite_1:none" }["plan"].each { it["actual_total_time"] = nil }
+          payload.delete("winner_timing")
+          expect(explanation).to end_with("</table></section>")
+          expect(explanation).not_to include(winner_note, "Time in a step", "timed run")
+        end
       end
     end
 

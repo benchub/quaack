@@ -250,6 +250,14 @@
 <% if measured_plan %>
 <p>How it runs <%= h Words.lower(describe(winner["label"])) %>, as QUAACK measured it on the slow values:</p>
 <%= plan_table(measured_plan) %>
+<% if timed?(measured_plan) %>
+<p class="note"><%= h Plans::WINNER_TIMED_NOTE %></p>
+<% unless timed?(original_plan) %>
+<p class="note"><%= h Plans::TIME_NOTE %></p>
+<% end %>
+<% elsif (untimed = Plans::WINNER_UNTIMED[winner_timing]) %>
+<p class="note"><%= h untimed %></p>
+<% end %>
 <% else %>
 <p><%= h NO_MEASURED_PLAN %><%= " #{h ESTIMATED_PLAN}" if winner_plan %></p>
 <% if winner_plan %>

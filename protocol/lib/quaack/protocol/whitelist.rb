@@ -206,6 +206,9 @@ module Quaack
       # production (DESIGN.md's run-server), as schema.name names, which
       # are schema, never a tablespace's name, which is production
       # configuration; it must pass Protocol::TablespaceMoves.valid?.
+      # winner_timing is how the one timed EXPLAIN ANALYZE of the winner
+      # went (DESIGN.md's winner-timing), nil or one of QUAACK's own words;
+      # it must pass Protocol::WinnerTiming.valid?.
       # The plans, original_plan and each rewrite's plan, are checked on
       # the way out: the egress function sends a report only if each passes
       # Protocol::PlanNodes.valid?, so every node has exactly the fields
@@ -220,7 +223,7 @@ module Quaack
       # as it is.
       report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
                  indexes timed_out_count negative rule_bugs burndown index_sources hidden_statistics
-                 tablespace_moves].freeze,
+                 tablespace_moves winner_timing].freeze,
       # One line of index-build's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's

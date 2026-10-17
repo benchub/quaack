@@ -21,7 +21,7 @@ module Quaack
         ENTRIES = (SETUP + %w[index_search_original index_generated_original index_ranking_original
                               rewrite_rules_applied rewrites_generated operator_rewrites_checked arena_setup
                               index_build baseline index_baseline candidate_runs minimax result_comparison
-                              selection]).freeze
+                              selection winner_timing]).freeze
 
         module_function
 

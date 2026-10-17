@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261008-67
 - 20261016-4
 - 20261016-11
+- 20261016-14
 
 ## How this file works.
 
@@ -686,15 +687,6 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261016-14. Report: the winner's measured plan has no per-step times.
-
-From the build of 20261016-11. Measurement runs `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`, so the winner's measured plan carries loops but no times, and its table in "Why the winner reads fewer blocks" has no time column; only the original's plan, the operator's `EXPLAIN ANALYZE`, shows where the time went. Decide whether the winner's plan should show times too, for example from one extra timed `EXPLAIN ANALYZE` of the winner on the slow values, kept apart from the measured runs so timing overhead can't touch their block counts.
-
-- **Depends on:** None.
-- **Came from:** Build of 20261016-11, 2026-10-16.
-- **Design:** report, measurement.
-- **Status:** todo
-
 ### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence.
 
 From the review of 20261016-13. The guard still counts a capitalised one-word step type mid-sentence as a plan step, so "The rewrite can Hash the smaller input" or "Group by tenant" is refused when neither plan has that step. That's rare in replies (SQL's `GROUP BY` in capitals doesn't match), but a good answer could be refused. Consider counting a one-word type only when the words around it mark it as a step, such as "a Hash step" or "the Group node".
@@ -702,4 +694,13 @@ From the review of 20261016-13. The guard still counts a capitalised one-word st
 - **Depends on:** None.
 - **Came from:** Review of 20261016-13, 2026-10-16.
 - **Design:** LLM prompts.
+- **Status:** todo
+
+### 20261016-17. Spec flake: the trigger-refuses-every-row fuzz example gets `no_world` under load.
+
+From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexample_steps_postgres_spec.rb`'s "passes, cautioning every atom, when a trigger refuses every row, without the database's message" got `"rule" => "no_world"` with `"trials" => 0, "worlds" => 0` instead of `"rule" => nil`, while all four suites ran at once. It passed on its own four times in a row, and the build didn't touch fuzz or rewrite-test. It looks like the search's time budget running out before it tries the empty world when the machine is busy. Find why a loaded machine can end the search with no world tried, and make the example (or the search's floor) independent of machine speed, as `QUAACKS_FUZZ_TRIALS` is meant to.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261016-14, 2026-10-16.
+- **Design:** rewrite-test.
 - **Status:** todo

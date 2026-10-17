@@ -342,6 +342,117 @@ RSpec.describe "quaacks report-payload" do
     end
   end
 
+  # Task 20261016-14, DESIGN.md's winner-timing: the winner's one timed run
+  # gives its measured plan times and loops, step by step, when the two
+  # plans have the same steps. Its block counts stay the measured ones.
+  describe "the winner's times" do
+    def scan(rows, **extra)
+      node("Index Scan", rows, relation: "orders", index: "orders_created_at_id_idx").merge(extra)
+    end
+
+    def limit(scan_node, **extra) = node("Limit", 5, plans: [scan_node]).merge(extra)
+
+    # rewrite_1:none, the winner, measured with TIMING OFF.
+    let(:measured) do
+      limit(scan(5, "Shared Hit Blocks" => 30, "Shared Read Blocks" => 3, "Actual Loops" => 1),
+            "Shared Hit Blocks" => 30, "Shared Read Blocks" => 3, "Actual Loops" => 1)
+    end
+
+    # Its timed run: other block counts, as timing's run is apart.
+    let(:timed) do
+      limit(scan(5, "Shared Hit Blocks" => 99, "Actual Total Time" => 4.25, "Actual Loops" => 2,
+                    "Index Cond" => "(note = '#{sentinel}'::text)"),
+            "Shared Hit Blocks" => 99, "Actual Total Time" => 6.5, "Actual Loops" => 1)
+    end
+
+    def with_winner(store, entry)
+      runs = store.read("candidate_runs")
+      runs["candidates"]["rewrite_1"]["none"]["slow"].merge!("plans" => [[{ "Plan" => measured }]], "stable" => true)
+      store.write("candidate_runs", runs)
+      baseline = store.read("index_baseline")
+      baseline["combinations"]["original:top:1"]["slow"]["plans"] = [[{ "Plan" => scan(40, "Actual Loops" => 1) }]]
+      store.write("index_baseline", baseline)
+      store.write("winner_timing", entry) if entry
+    end
+
+    def timing_of(entry)
+      sent = JSON.parse(payload_of { with_winner(it, entry) }.stdout.lines.first)
+      expect(sent).to include("type" => "report", "winner_timing" => anything)
+      sent
+    end
+
+    def winner_plan(report) = report["labels"].find { it["label"] == "rewrite_1:none" }["plan"]
+
+    it "puts the timed run's time and loops in each step of the winner's measured plan, keeping its blocks" do
+      entry = { "label" => "rewrite_1:none", "result" => "timed", "plan" => [{ "Plan" => timed }] }
+      outcome = payload_of { with_winner(it, entry) }
+      sent = JSON.parse(outcome.stdout.lines.first)
+      expect(sent).to include("type" => "report", "winner_timing" => "timed")
+      expect(winner_plan(sent).map { it.slice("node", "shared_hit_blocks", "actual_total_time", "actual_loops") })
+        .to eq([{ "node" => "Limit", "shared_hit_blocks" => 30, "actual_total_time" => 6.5, "actual_loops" => 1 },
+                { "node" => "Index Scan", "shared_hit_blocks" => 30, "actual_total_time" => 4.25,
+                  "actual_loops" => 2 }])
+      expect(sent["labels"].find { it["label"] == "original:top:1" }["plan"].first["actual_total_time"]).to be_nil
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    it "sends a time that isn't a number as nil, so no sentinel goes out in it" do
+      bad = timed.merge("Actual Total Time" => sentinel)
+      sent = timing_of("label" => "rewrite_1:none", "result" => "timed", "plan" => [{ "Plan" => bad }])
+      expect(winner_plan(sent).map { it["actual_total_time"] }).to eq([nil, 4.25])
+      expect(JSON.generate(sent)).not_to include(sentinel)
+    end
+
+    it "puts no time in the winner's plan, and says so, when the timed run's steps aren't the measured plan's" do
+      heap = scan(5, "Actual Total Time" => 4.25, "Actual Loops" => 1).merge("Node Type" => "Bitmap Heap Scan")
+      differs = limit(heap, "Actual Total Time" => 6.5, "Actual Loops" => 1)
+      sent = timing_of("label" => "rewrite_1:none", "result" => "timed", "plan" => [{ "Plan" => differs }])
+      expect(sent["winner_timing"]).to eq("plan_differs")
+      expect(winner_plan(sent).map { it.values_at("actual_total_time", "actual_loops") }).to eq([[nil, 1], [nil, 1]])
+    end
+
+    it "puts no time in the winner's plan when a timed step reads another relation or index, or sits elsewhere" do
+      [scan(5, "Index Name" => "orders_other_idx"), scan(5, "Relation Name" => "lines"),
+       node("Limit", 5, plans: [node("Sort", 5, plans: [scan(5)])])].each do |shape|
+        plan = shape["Node Type"] == "Limit" ? shape : limit(shape)
+        sent = timing_of("label" => "rewrite_1:none", "result" => "timed", "plan" => [{ "Plan" => plan }])
+        expect(sent["winner_timing"]).to eq("plan_differs")
+      end
+    end
+
+    it "says the timed run timed out or failed, with no time in the winner's plan" do
+      %w[timed_out failed].each do |result|
+        sent = timing_of("label" => "rewrite_1:none", "result" => result, "plan" => nil)
+        expect([sent["winner_timing"], winner_plan(sent).map { it["actual_total_time"] }]).to eq([result, [nil, nil]])
+      end
+    end
+
+    it "sends nil for a run from before winner-timing, and for a timing of another label than the winner" do
+      expect(timing_of(nil)["winner_timing"]).to be_nil
+      sent = timing_of("label" => "original:top:1", "result" => "timed", "plan" => [{ "Plan" => scan(40) }])
+      expect(sent["winner_timing"]).to be_nil
+      expect(sent["labels"].map { it["plan"]&.first&.fetch("actual_total_time") }.compact).to eq([])
+    end
+
+    it "sends nil, and no plan, when the run kept no measured plan for the winner to put times in" do
+      entry = { "label" => "rewrite_1:none", "result" => "timed", "plan" => [{ "Plan" => timed }] }
+      outcome = payload_of do |store|
+        with_winner(store, entry)
+        runs = store.read("candidate_runs")
+        runs["candidates"]["rewrite_1"]["none"]["slow"].delete("plans")
+        store.write("candidate_runs", runs)
+      end
+      sent = JSON.parse(outcome.stdout.lines.first)
+      expect(sent).to include("type" => "report", "winner_timing" => nil)
+      expect(winner_plan(sent)).to be_nil
+    end
+
+    it "sends nil for a result that isn't one of QUAACK's own" do
+      sent = timing_of("label" => "rewrite_1:none", "result" => REPORT_WORD_SENTINEL, "plan" => nil)
+      expect(sent["winner_timing"]).to be_nil
+    end
+  end
+
   describe "every stored rewrite" do
     it "sends a ranked rewrite's SQL, plan, untested atoms' shapes, which of them counterexamples covered, " \
        "and counterexamples evidence" do

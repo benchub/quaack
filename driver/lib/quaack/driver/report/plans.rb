@@ -18,7 +18,7 @@ module Quaack
       # redder at each of MISESTIMATE_FLOORS, and once more over
       # MISESTIMATE_OVER. A step without both counts, as in a plan Postgres
       # only estimated, or that never ran (0 loops), isn't shaded.
-      module Plans
+      module Plans # rubocop:disable Metrics/ModuleLength -- report wording, one note per constant
         INDENT = 0.65
         STEP = 1.5
         ARROW = '<span class="arrow" aria-hidden="true">-&gt; </span>'
@@ -46,6 +46,21 @@ module Quaack
                     "Gather above them can show none. A subquery, InitPlan, or CTE's time comes off the step it's " \
                     "listed under, but Postgres counts it in the step that used its result, so one can show too " \
                     "little time and the other too much."
+        # Where the winner's times come from: QUAACK's measured runs take
+        # no times, since timing each step adds to the run, so the
+        # enclave's winner-timing step runs the winner once more for them.
+        WINNER_TIMED_NOTE = "The times come from one more run of the winner on the slow values, apart from the " \
+                            "runs QUAACK measured, since timing each step slows the query down. The blocks and " \
+                            "rows are from the measured runs."
+        # Why the winner's plan has no times, by winner-timing's result.
+        WINNER_UNTIMED = {
+          "timed_out" => "Times aren't recorded for the winner: the one more run of it that times each step ran " \
+                         "past the statement timeout.",
+          "failed" => "Times aren't recorded for the winner: the one more run of it that times each step failed.",
+          "plan_differs" => "Times aren't recorded for the winner: Postgres ran it with different steps in the one " \
+                            "more run that times each step than in the runs QUAACK measured, so its times don't " \
+                            "fit these steps."
+        }.freeze
 
         # The table of plan, with a time column if it has any times.
         def plan_table(plan)

@@ -87,8 +87,10 @@ module Quaack
         %w[top excluded infinite_sets labels rewrites indexes original_sql original_plan original_measurements
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
 
-        # DESIGN.md's negative-result, whether or not top is empty.
-        def negative = @payload["negative"]
+        # DESIGN.md's negative-result, whether or not top is empty, and
+        # winner-timing's result for the winner, or nil when the run didn't
+        # time it, as in a payload from before winner-timing.
+        %w[negative winner_timing].each { |field| define_method(field) { @payload[field] } }
 
         def h(value) = Format.h(value)
 

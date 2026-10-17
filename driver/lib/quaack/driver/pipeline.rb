@@ -37,7 +37,7 @@ module Quaack
     # orchestration task adds its stage to STAGES, and the entries it
     # checks to the enclave's Status::ENTRIES. An EnclaveError, such as the
     # plan gate's abort, stops the run where it is.
-    class Pipeline
+    class Pipeline # rubocop:disable Metrics/ClassLength -- one SAY line per step
       # DESIGN.md index-search, for the original query:
       # 1. index-search: the plan gate, index-from-query and index-from-plan filtered by index-dedupe, and
       #    index-test on the mechanical candidates.
@@ -444,14 +444,15 @@ module Quaack
         end
       end
 
-      # DESIGN.md index-build to selection, after rewrite-index-ideas, in order: each step whose output
-      # isn't stored. Earlier stages don't write these outputs, so the
-      # entries from the start of the run still hold. It returns them with
-      # the steps it ran marked done, for ReportStage.
+      # DESIGN.md index-build to selection and winner-timing, after
+      # rewrite-index-ideas, in order: each step whose output isn't stored.
+      # Each step's entry is its name with underscores. Earlier stages don't
+      # write these outputs, so the entries from the start of the run still
+      # hold. It returns them with the steps it ran marked done, for
+      # ReportStage.
       module MeasurementStage
-        STEPS = { "index-build" => "index_build", "baseline" => "baseline", "index-baseline" => "index_baseline",
-                  "candidate-runs" => "candidate_runs", "minimax" => "minimax",
-                  "result-comparison" => "result_comparison", "selection" => "selection" }.freeze
+        STEPS = %w[index-build baseline index-baseline candidate-runs minimax result-comparison selection winner-timing]
+                .to_h { [it, it.tr("-", "_")] }.freeze
 
         module_function
 
@@ -552,13 +553,13 @@ module Quaack
       # The record callable for a run with no provenance record.
       NONE = Provenance::NONE
 
-      # The number of steps a run counts in its progress: 17, plus operator-rewrites
+      # The number of steps a run counts in its progress: 18, plus operator-rewrites
       # with rewrites, plus the report with out, plus Setup's eleven when
       # the run does setup first. Sub-steps for each rewrite print under
       # their step, uncounted, since how many there are isn't known until
       # the run gets there.
       def self.total(rewrites:, out:, setup: false)
-        17 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0) + (setup ? Setup::STEPS.size : 0)
+        18 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0) + (setup ? Setup::STEPS.size : 0)
       end
 
       # Skips the step, printing so, if done, or runs the block as a step.
@@ -609,6 +610,7 @@ module Quaack
         "minimax" => "Dropping choices that lose to the original on any literal",
         "result-comparison" => "Checking that each rewrite returns the same rows on production data",
         "selection" => "Picking the top three",
+        "winner-timing" => "Timing the winner once on the slow values",
         "report" => "Writing the report"
       }.freeze
 

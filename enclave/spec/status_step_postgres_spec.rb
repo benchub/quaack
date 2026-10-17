@@ -31,7 +31,7 @@ RSpec.describe "quaacks status, against a real server" do
                           "operator_rewrites_checked" => false, "arena_setup" => false,
                           "index_build" => false, "baseline" => false, "index_baseline" => false,
                           "candidate_runs" => false, "minimax" => false, "result_comparison" => false,
-                          "selection" => false
+                          "selection" => false, "winner_timing" => false
                         })
 
     index_search
@@ -40,7 +40,7 @@ RSpec.describe "quaacks status, against a real server" do
 
     index_test(JSON.generate("ddls" => []))
     quaacks.run("index-rank", "--run", store.run_id, env: libpq_env)
-    expect(later["entries"].values).to eq([true, true, true] + ([false] * 11))
+    expect(later["entries"].values).to eq([true, true, true] + ([false] * 12))
   end
 
   it "says whether each inventory to racetrack-setup output is in the store, so quaack setup can resume" do
@@ -70,5 +70,12 @@ RSpec.describe "quaacks status, against a real server" do
     prepare
     store.write("selection", "top" => [], "excluded" => {}, "infinite_sets" => [])
     expect(status["entries"]["selection"]).to be(true)
+  end
+
+  it "says whether winner_timing is in the store, so a resume times the winner once" do
+    prepare
+    expect(status["entries"]["winner_timing"]).to be(false)
+    store.write("winner_timing", "label" => nil, "result" => nil, "plan" => nil)
+    expect(status["entries"]["winner_timing"]).to be(true)
   end
 end

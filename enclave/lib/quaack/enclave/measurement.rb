@@ -42,9 +42,26 @@ module Quaack
     #
     # The plans are redacted, but the store keeps all of it anyway: nothing
     # here goes out.
+    #
+    #   Measurement.timed(connection:, store:, sql:, combination:, timeout_ms:)
+    #   # => { "result" => "timed" | "timed_out" | "failed", "plan" => redacted plan or nil }
+    #
+    # DESIGN.md's winner-timing: runs sql once on the slow set's literals with
+    # EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON), timing on, the same way and
+    # under the same rails as measure (the same binding, the same index
+    # combination shown and confirmed, RunDiscipline's READ ONLY
+    # transaction and timeout_ms). It's never one of measure's runs, so
+    # timing's overhead never touches a block count that ranks anything.
+    # A run that hits statement_timeout is timed_out; one that raises a
+    # Postgres error or a plan too deep to read is failed, as the times are
+    # only for show. Anything else, such as the wrong indexes visible, is
+    # raised as it is in measure.
     module Measurement
       RUNS = 3
       STATEMENT = "quaack_measure"
+      MEASURED = "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) "
+      TIMED = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "
+      TIMED_SET = "slow"
       HIT = ["Shared Hit Blocks", "Local Hit Blocks"].freeze
       READ = ["Shared Read Blocks", "Local Read Blocks", "Temp Read Blocks", "Temp Written Blocks"].freeze
 
@@ -64,8 +81,25 @@ module Quaack
         end
       end
 
+      def timed(connection:, store:, sql:, combination:, timeout_ms:)
+        map = LiteralSet.load(store).sets.to_h.fetch(TIMED_SET)
+        bound = Redaction.binding(sql, map)
+        params = params(connection, bound)
+        show(connection, store.read("index_build"), combination, bound.sql, params)
+        timed_run(connection, bound, params, map, timeout_ms)
+      end
+
+      def timed_run(connection, bound, params, map, timeout_ms)
+        run = RunDiscipline.run(connection:, sql: "#{TIMED}#{bound.sql}", params:, timeout_ms:)
+        return { "result" => "timed_out", "plan" => nil } if run.timed_out
+
+        { "result" => "timed", "plan" => Redaction.plan(parse(run.result.getvalue(0, 0)), map).explain }
+      rescue PG::Error, Error
+        { "result" => "failed", "plan" => nil }
+      end
+
       def measure_set(connection, bound, params, map, timeout_ms)
-        sql = "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) #{bound.sql}"
+        sql = "#{MEASURED}#{bound.sql}"
         runs = RUNS.times.map do |i|
           run = RunDiscipline.run(connection:, sql:, params:, timeout_ms:)
           return { "timed_out" => true, "ran" => i + 1 } if run.timed_out

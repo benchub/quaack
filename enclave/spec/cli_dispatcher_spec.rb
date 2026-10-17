@@ -222,7 +222,7 @@ RSpec.describe Quaack::Enclave::CLI do
                    clock-anchor racetrack-setup arena-setup index-search index-payload index-feedback index-rank
                    status index-test rewrite-payload rewrite-rules rewrite-check rewrite-prune rewrite-test
                    counterexample-payload counterexample-round index-build baseline index-baseline candidate-runs
-                   minimax result-comparison selection report-payload]
+                   minimax result-comparison selection winner-timing report-payload]
       expect(refused).to match_array(opening)
     end
 
