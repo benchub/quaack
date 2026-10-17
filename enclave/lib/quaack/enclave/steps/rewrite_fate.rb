@@ -69,7 +69,8 @@ module Quaack
       #   below_top_three          a label beat the original and fell
       #                            outside selection's top three
       #   footprint_tie            a label beat the original and lost
-      #                            minimax's footprint tiebreak
+      #                            selection's footprint tiebreak (minimax's,
+      #                            in a store from before task 20261017-1)
       #   not_better               it was measured and minimax found no
       #                            label better than the original
       #   measurement_timed_out    every one of its runs in candidate-runs timed out

@@ -12,14 +12,15 @@ module Quaack
     # blocks, "no_worse" an increase within 5%, else "worse". A set where the
     # original timed out counts as infinite: any finishing candidate is
     # better there, and the set is listed in "infinite_sets". A survivor is
-    # better on the slow literal and no worse on every other. Two survivors
-    # within 5% of each other on the slow literal tie, and the one with the
-    # larger footprint is discarded. The rest are ranked by slow blocks, then
-    # by the sum across literals. It returns:
-    #   "survivors"      [{ "label", "slow_blocks", "total_blocks_sum", "footprint" }], ranked
-    #   "verdicts"       { label => { set => verdict } }
-    #   "discarded_ties" labels dropped by the footprint tiebreaker
-    #   "infinite_sets"  sets where the original timed out
+    # better on the slow literal and no worse on every other. Survivors are
+    # ranked by slow blocks, then by the sum across literals. Footprint ties
+    # are Selection's (task 20261017-1): it breaks them within each kind,
+    # among the candidates result-comparison kept. It returns:
+    #   "survivors"     [{ "label", "slow_blocks", "total_blocks_sum", "footprint" }], ranked
+    #   "verdicts"      { label => { set => verdict } }
+    #   "infinite_sets" sets where the original timed out
+    # A minimax entry stored before task 20261017-1 also has "discarded_ties",
+    # the labels its footprint tiebreak dropped from survivors.
     module Minimax
       SLOW = "slow"
       PERCENT = 5
@@ -38,10 +39,8 @@ module Quaack
         base = original.transform_values { it["timed_out"] ? nil : it["total_blocks"] }
         candidates = finished(candidates)
         verdicts = candidates.to_h { [it["label"], verdicts(it, base)] }
-        passing = passing(candidates, verdicts)
-        discarded = discarded(passing)
-        { "survivors" => rank(passing - discarded), "verdicts" => verdicts,
-          "discarded_ties" => discarded.map { it["label"] }, "infinite_sets" => infinite(base) }
+        { "survivors" => rank(passing(candidates, verdicts)), "verdicts" => verdicts,
+          "infinite_sets" => infinite(base) }
       end
 
       def infinite(base)
@@ -65,23 +64,8 @@ module Quaack
         base.to_h { |set, blocks| [set, verdict(candidate["sets"].fetch(set)["total_blocks"], blocks)] }
       end
 
-      # Greedy by footprint (then slow blocks): a survivor is discarded when
-      # it ties one already kept, so a discarded one knocks out nobody.
-      def discarded(passing)
-        kept = []
-        passing.sort_by { [it["footprint"], it["slow_blocks"], it["total_blocks_sum"]] }.each do |a|
-          kept << a if kept.none? { |b| tie?(a, b) }
-        end
-        passing - kept
-      end
-
       def survives?(verdicts)
         verdicts[SLOW] == "better" && verdicts.values.none?("worse")
-      end
-
-      def tie?(first, second)
-        low, high = [first["slow_blocks"], second["slow_blocks"]].minmax
-        high * 100 <= low * (100 + PERCENT)
       end
 
       def summary(candidate)

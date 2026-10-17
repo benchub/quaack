@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261017-1
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -693,15 +695,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Depends on:** None.
 - **Came from:** Build of 20261016-14, 2026-10-16.
 - **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261017-1. Selection: break footprint ties within each kind, among candidates that passed result comparison.
-
-Minimax's footprint tiebreaker (`Minimax.discarded`) runs over every survivor of every kind, before Selection groups them by kind. So a rewrite with a small index can knock out every "original query with new indices" candidate within 5% of it, and that whole class goes missing from the ranking, though the report says the three best of each class are kept. It also runs before Selection drops candidates whose rewrite failed result comparison, so a wrong rewrite can still knock out a right one. Break ties only within one kind (`Protocol::CandidateKinds`), and only among candidates whose rewrite result comparison kept. Update DESIGN.md's minimax and selection sections.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17, from a real run where the "original with new indices" class came out empty.
-- **Design:** minimax, selection.
 - **Status:** todo
 
 ### 20261017-2. Measure each candidate with the indices that made the ranking for other candidates.

@@ -38,12 +38,12 @@ RSpec.describe "quaacks minimax" do
     outcome = quaacks.run("minimax", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
 
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
-      .to eq([counts_then_done(compared: 4, survivors: 2), "", 0])
+      .to eq([counts_then_done(compared: 4, survivors: 3), "", 0])
     result = stored.read("minimax")
     expect(result["survivors"].map { it.slice("label", "footprint") }).to eq(
-      [{ "label" => "rewrite_1:none", "footprint" => 0 }, { "label" => "original:top:2", "footprint" => 100 }]
+      [{ "label" => "rewrite_1:none", "footprint" => 0 }, { "label" => "original:top:1", "footprint" => 800 },
+       { "label" => "original:top:2", "footprint" => 100 }]
     )
-    expect(result["discarded_ties"]).to eq(["original:top:1"])
     expect(result["verdicts"]["rewrite_1:top:1"]).to eq("slow" => "better", "worst_case" => "worse",
                                                         "typical" => "worse")
     expect(result["verdicts"]).not_to have_key("original:top:3")

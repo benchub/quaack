@@ -2,7 +2,8 @@
 
 require "quaack/enclave/minimax"
 
-# DESIGN.md's blocks-metric and minimax: total blocks, a 5% threshold, minimax, footprint ties.
+# DESIGN.md's blocks-metric and minimax: total blocks, a 5% threshold, minimax. Footprint ties are
+# selection's (selection_spec.rb).
 RSpec.describe Quaack::Enclave::Minimax do
   def m(blocks) = { "timed_out" => false, "total_blocks" => blocks }
   def sets(slow, worst = 100, typical = 100) = { "slow" => m(slow), "worst_case" => m(worst), "typical" => m(typical) }
@@ -50,26 +51,14 @@ RSpec.describe Quaack::Enclave::Minimax do
     expect(described_class.decide(original:, candidates: [c])["survivors"]).to eq([])
   end
 
-  it "discards the larger footprint among candidates within 5% on the slow literal, ranking the rest" do
+  it "keeps every survivor, ties and all, ranked by slow blocks, leaving footprint ties to selection" do
     out = described_class.decide(original:, candidates: [candidate("big", 50, footprint: 900),
                                                          candidate("small", 52, footprint: 100),
                                                          candidate("far", 40, footprint: 5000)])
-    expect(out["survivors"].map { it["label"] }).to eq(%w[far small])
-    expect(out["discarded_ties"]).to eq(["big"])
-  end
-
-  it "ties candidates exactly 5% apart on the slow literal" do
-    out = described_class.decide(original: sets(200), candidates: [candidate("a", 100, footprint: 900),
-                                                                   candidate("b", 105, footprint: 100)])
-    expect(out["survivors"].map { it["label"] }).to eq(["b"])
-  end
-
-  it "resolves chained ties greedily by footprint, so a discarded candidate knocks out nobody" do
-    out = described_class.decide(original: sets(200), candidates: [candidate("a", 100, footprint: 10),
-                                                                   candidate("b", 104, footprint: 5),
-                                                                   candidate("c", 108, footprint: 1)])
-    expect(out["survivors"].map { it["label"] }).to eq(%w[a c])
-    expect(out["discarded_ties"]).to eq(["b"])
+    expect(out["survivors"].map { it.slice("label", "footprint") })
+      .to eq([{ "label" => "far", "footprint" => 5000 }, { "label" => "big", "footprint" => 900 },
+              { "label" => "small", "footprint" => 100 }])
+    expect(out).not_to have_key("discarded_ties")
   end
 
   it "skips a candidate with a timed-out measurement" do
@@ -79,16 +68,10 @@ RSpec.describe Quaack::Enclave::Minimax do
     expect(out["verdicts"]).not_to have_key("t")
   end
 
-  it "does not tie candidates more than 5% apart" do
-    out = described_class.decide(original:, candidates: [candidate("a", 50, footprint: 900),
-                                                         candidate("b", 53, footprint: 100)])
-    expect(out["survivors"].map { it["label"] }).to eq(%w[a b])
-  end
-
-  it "keeps the smaller sum across literals when footprint and slow blocks are equal" do
+  it "ranks equal slow blocks by the sum across literals" do
     out = described_class.decide(original:, candidates: [candidate("a", 50, typical: 100),
                                                          candidate("b", 50, typical: 90)])
-    expect(out["survivors"].map { it["label"] }).to eq(%w[b])
+    expect(out["survivors"].map { it["label"] }).to eq(%w[b a])
     expect(out["survivors"].first).to include("slow_blocks" => 50, "total_blocks_sum" => 240, "footprint" => 0)
   end
 

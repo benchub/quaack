@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/enclave/minimax"
 require "quaack/enclave/selection"
 
 RSpec.describe Quaack::Enclave::Selection do
@@ -33,9 +34,9 @@ RSpec.describe Quaack::Enclave::Selection do
   end
 
   it "keeps the top three in each kind of change, each entry carrying its kind, best first overall" do
-    survivors = [s("original:top:1", 50, 1), s("original:top:2", 51, 1), s("original:top:3", 52, 1),
-                 s("original:combination", 53, 1), s("rewrite_1:top:1", 60, 1), s("rewrite_1:none", 70, 1),
-                 s("rewrite_2:none", 71, 1), s("rewrite_3:none", 72, 1), s("rewrite_4:none", 73, 1),
+    survivors = [s("original:top:1", 50, 1), s("original:top:2", 60, 1), s("original:top:3", 70, 1),
+                 s("original:combination", 80, 1), s("rewrite_1:top:1", 60, 1), s("rewrite_1:none", 70, 1),
+                 s("rewrite_2:none", 80, 1), s("rewrite_3:none", 90, 1), s("rewrite_4:none", 100, 1),
                  s("rewrite_2:top:1", 5, 1), s("rewrite_2:top:2", 6, 1), s("rewrite_2:top:3", 7, 1),
                  s("rewrite_2:combination", 8, 1)]
     result = pick(minimax(survivors))
@@ -57,8 +58,8 @@ RSpec.describe Quaack::Enclave::Selection do
   end
 
   it "breaks ties in slow blocks by the sum across literals" do
-    result = pick(minimax([s("a:none", 10, 50), s("b:none", 10, 20)]))
-    expect(result["top"].map { it["label"] }).to eq(%w[b:none a:none])
+    result = pick(minimax([s("rewrite_1:none", 10, 50), s("original:top:1", 10, 20)]))
+    expect(result["top"].map { it["label"] }).to eq(%w[original:top:1 rewrite_1:none])
   end
 
   it "removes every combination of a rewrite that result-comparison discarded, but not index-only candidates" do
@@ -83,9 +84,73 @@ RSpec.describe Quaack::Enclave::Selection do
                                      "rewrite_4:none" => "result_mismatch")
   end
 
-  it "explains candidates dropped by minimax and by the footprint tiebreaker" do
+  it "explains candidates dropped by minimax, and footprint ties a minimax entry from an older store names" do
     result = pick(minimax([s("a:none", 1, 1)], verdicts: { "b:none" => {} }, ties: ["c:none"]))
     expect(result["excluded"]).to eq("b:none" => "not_better", "c:none" => "footprint_tie")
+  end
+
+  it "reads a minimax entry with no discarded_ties" do
+    result = pick(minimax([s("a:none", 1, 1)]).except("discarded_ties"))
+    expect(result["top"].map { it["label"] }).to eq(["a:none"])
+    expect(result["excluded"]).to eq({})
+  end
+
+  describe "footprint ties" do
+    def m(blocks) = { "timed_out" => false, "total_blocks" => blocks }
+
+    def run(label, slow, footprint)
+      { "label" => label, "footprint" => footprint, "sets" => { "slow" => m(slow), "typical" => m(100) } }
+    end
+
+    # Minimax.decide over the measured runs, then selection, as the steps run them.
+    def decided(runs, discarded = [])
+      pick(Quaack::Enclave::Minimax.decide(original: { "slow" => m(1000), "typical" => m(100) }, candidates: runs),
+           discarded)
+    end
+
+    it "discards the larger footprint among candidates of one kind within 5% on the slow literal" do
+      result = decided([run("original:top:1", 500, 900), run("original:top:2", 520, 100),
+                        run("original:top:3", 400, 5000)])
+      expect(result["top"].map { it["label"] }).to eq(%w[original:top:3 original:top:2])
+      expect(result["excluded"]).to eq("original:top:1" => "footprint_tie")
+    end
+
+    it "ties candidates exactly 5% apart, and not more than 5% apart" do
+      expect(decided([run("original:top:1", 100, 900), run("original:top:2", 105, 100)])["excluded"])
+        .to eq("original:top:1" => "footprint_tie")
+      expect(decided([run("original:top:1", 100, 900), run("original:top:2", 106, 100)])["excluded"]).to eq({})
+    end
+
+    it "resolves chained ties greedily by footprint, so a discarded candidate knocks out nobody" do
+      result = decided([run("original:top:1", 100, 10), run("original:top:2", 104, 5),
+                        run("original:top:3", 108, 1)])
+      expect(result["top"].map { it["label"] }).to eq(%w[original:top:1 original:top:3])
+      expect(result["excluded"]).to eq("original:top:2" => "footprint_tie")
+    end
+
+    it "keeps the smaller sum across literals when footprint and slow blocks are equal" do
+      result = decided([run("rewrite_1:none", 50, 0).tap { it["sets"]["typical"] = m(100) },
+                        run("rewrite_2:none", 50, 0).tap { it["sets"]["typical"] = m(90) }])
+      expect(result["top"].map { it["label"] }).to eq(%w[rewrite_2:none])
+      expect(result["excluded"]).to eq("rewrite_1:none" => "footprint_tie")
+    end
+
+    it "breaks ties only within a kind, so a rewrite with a small index leaves the original's best index" do
+      result = decided([run("rewrite_1:top:1", 500, 10), run("original:top:1", 505, 300),
+                        run("original:top:2", 510, 200), run("original:combination", 495, 900),
+                        run("rewrite_1:none", 502, 0)])
+      kinds = result["top"].to_h { [it["kind"], it["label"]] }
+      expect(kinds).to eq("rewrite_new_indexes" => "rewrite_1:top:1", "original_new_indexes" => "original:top:2",
+                          "rewrite_same_indexes" => "rewrite_1:none")
+      expect(result["excluded"]).to eq("original:top:1" => "footprint_tie", "original:combination" => "footprint_tie")
+    end
+
+    it "lets no candidate result-comparison discarded knock out one it kept" do
+      result = decided([run("rewrite_1:none", 500, 0), run("rewrite_2:none", 510, 0),
+                        run("rewrite_1:top:1", 480, 10), run("rewrite_2:top:1", 490, 20)], ["rewrite_1"])
+      expect(result["top"].map { it["label"] }).to eq(%w[rewrite_2:top:1 rewrite_2:none])
+      expect(result["excluded"]).to eq("rewrite_1:none" => "result_mismatch", "rewrite_1:top:1" => "result_mismatch")
+    end
   end
 
   it "passes on the sets where the original was infinite" do

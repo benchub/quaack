@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/protocol/candidate_kinds"
+require_relative "minimax"
 require_relative "result_comparator"
 
 module Quaack
@@ -12,10 +13,17 @@ module Quaack
     # Drops every minimax survivor whose rewrite result-comparison discarded (a label's
     # rewrite is the part before its first ":", so "rewrite_1:top:2" goes
     # with "rewrite_1"; "original:..." index-only candidates are never
-    # discarded), ranks the rest by slow blocks and then by the sum across
-    # literals, and keeps the top three of each kind of change
+    # discarded), then groups the rest by kind of change
     # (Protocol::CandidateKinds: the original with new indexes, a rewrite
-    # with new indexes, a rewrite with none). It returns:
+    # with new indexes, a rewrite with none). Within each kind it breaks
+    # footprint ties: two candidates within Minimax::PERCENT of each other on
+    # the slow literal tie, and greedily, from the smallest footprint up (then
+    # slow blocks, then the sum across literals), each is kept unless it ties
+    # one already kept, so a discarded one knocks out nobody. So a candidate
+    # result-comparison dropped, or one of another kind, never knocks one
+    # out (task 20261017-1). It ranks the rest of each kind by slow blocks
+    # and then by the sum across literals, and keeps the top three of each
+    # kind. It returns:
     #   "top"           [{ "label", "slow_blocks", "total_blocks_sum", "footprint", "kind" }], best first overall
     #   "excluded"      { label => one of REASONS } for every other candidate.
     #                   A label whose rewrite result-comparison discarded is
@@ -34,26 +42,51 @@ module Quaack
       def select(minimax:, result_comparison:)
         discarded = result_comparison["discarded"]
         mismatched, kept = minimax["survivors"].partition { discarded.include?(it["label"].split(":").first) }
-        top, below = by_kind(kept)
-        { "top" => top, "excluded" => excluded(minimax, dropped(result_comparison, mismatched), below, top),
+        groups, ties = untied(kept)
+        top, below = by_kind(groups)
+        { "top" => top, "excluded" => excluded(minimax, dropped(result_comparison, mismatched), below, top, ties),
           "infinite_sets" => minimax["infinite_sets"] }
       end
 
       # [top, below]: the best KEEP of each kind, each tagged with its kind and best first overall, and the
-      # rest. A label with no kind (the baseline) is in neither.
-      def by_kind(kept)
-        ranked = kept.sort_by { rank(it) }.group_by { Protocol::CandidateKinds.of(it["label"]) }.except(nil)
+      # rest.
+      def by_kind(groups)
+        ranked = groups.transform_values { |entries| entries.sort_by { rank(it) } }
         top = ranked.flat_map { |kind, entries| entries.first(KEEP).map { it.merge("kind" => kind) } }
         [top.sort_by { rank(it) }, ranked.values.flat_map { it.drop(KEEP) }]
+      end
+
+      # [{ kind => entries }, ties]: the entries grouped by kind less those
+      # their kind's footprint tiebreak discards, and those. A label with no
+      # kind (the baseline) is in neither.
+      def untied(kept)
+        groups = kept.group_by { Protocol::CandidateKinds.of(it["label"]) }.except(nil)
+        ties = groups.values.flat_map { tied(it) }
+        [groups.transform_values { it - ties }, ties]
+      end
+
+      # The entries of one kind its footprint tiebreak discards.
+      def tied(entries)
+        kept = []
+        entries.sort_by { [it["footprint"], *rank(it)] }.each do |a|
+          kept << a if kept.none? { |b| tie?(a, b) }
+        end
+        entries - kept
+      end
+
+      def tie?(first, second)
+        low, high = [first["slow_blocks"], second["slow_blocks"]].minmax
+        high * 100 <= low * (100 + Minimax::PERCENT)
       end
 
       def rank(entry)
         [entry["slow_blocks"], entry["total_blocks_sum"]]
       end
 
-      def excluded(minimax, dropped, below, top)
-        ties = minimax["discarded_ties"].to_h { [it, "footprint_tie"] }
-        reasons = dropped.merge(labelled(below, "below_top_three"), ties)
+      # A minimax entry stored before task 20261017-1 names its own footprint ties.
+      def excluded(minimax, dropped, below, top, ties)
+        stored = minimax.fetch("discarded_ties", []).to_h { [it, "footprint_tie"] }
+        reasons = dropped.merge(labelled(below, "below_top_three"), stored, labelled(ties, "footprint_tie"))
         rest = minimax["verdicts"].keys - reasons.keys - top.map { it["label"] }
         reasons.merge(rest.to_h { [it, "not_better"] })
       end
