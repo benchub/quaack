@@ -208,11 +208,11 @@ module Quaack
           end
         end
 
-        # A report's index_sources, top, labels' suggested_drops, tablespace_moves, and winner_timing, as egress
-        # checks.
+        # A report's index_sources, top and labels (Protocol::CandidateKinds.report?), labels' suggested_drops,
+        # tablespace_moves, and winner_timing, as egress checks.
         def report_counts?(line)
           Protocol::IndexSources.valid?(line["index_sources"]) && Protocol::FuzzResult.rewrites?(line["rewrites"]) &&
-            Protocol::CandidateKinds.valid?(line.fetch("top", [])) && suggested_drops?(line) && indexes?(line) &&
+            Protocol::CandidateKinds.report?(line) && suggested_drops?(line) && indexes?(line) &&
             TablespaceMovesCheck.ok?(line) && Protocol::WinnerTiming.valid?(line["winner_timing"])
         end
 

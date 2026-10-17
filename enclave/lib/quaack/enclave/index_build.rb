@@ -26,7 +26,9 @@ module Quaack
     # ever hidden. index_build is:
     #   "indexes"      { name => { "ddl", "size" } }
     #   "combinations" { "<search>:top:<n>" | "<search>:combination" |
-    #                    "<search>:set_aside:<n>" => [name] }
+    #                    "<search>:set_aside:<n>" | "<search>:shared:<n>" => [name] }
+    # A shared combination is one index another candidate ranked
+    # (IndexShare), already built for that candidate.
     # Each name is quaack_ and a hash of the DDL, in the table's schema, so a
     # rerun finds and skips an index it already built. The DDL can hold a
     # literal, so index_build stays in the store. An Error's message is its
@@ -42,14 +44,18 @@ module Quaack
       # 1-based position, the total, and its stored DDL, which can hold a
       # literal, so the caller must redact it before it leaves. built, if
       # given, is called with the built indexes before index_build is written.
-      def build(store, connection, starting: nil, built: nil)
+      # share, if given, is called with the connection and index_build as
+      # built, and returns more combinations of built names to add
+      # (IndexShare's), which build nothing new.
+      def build(store, connection, starting: nil, built: nil, share: nil)
         BuildConnection.configure(connection)
         combinations = combinations(store)
         indexes = create_all(connection, BuildOrder.ddls(combinations), starting)
         hide_all(connection, "indexes" => indexes)
+        names = combinations.transform_values { it.map { name(it) } }
+        names = names.merge(share.call(connection, "indexes" => indexes, "combinations" => names)) if share
         built&.call(indexes)
-        store.write("index_build", "indexes" => indexes,
-                                   "combinations" => combinations.transform_values { it.map { name(it) } })
+        store.write("index_build", "indexes" => indexes, "combinations" => names)
       end
 
       # Builds each of ddls, telling starting first, and returns

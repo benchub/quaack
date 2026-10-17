@@ -377,6 +377,35 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261017-2: every label in top, labels, and excluded must be one
+    # QUAACK makes itself (Protocol::CandidateKinds.labels?), shared ones included.
+    it "sends a report whose labels are QUAACK's own, shared pairings included" do
+      shared = [{ "label" => "rewrite_1:shared:1", "kind" => "rewrite_new_indexes" }]
+      out = egress.serialize(type: :report, original_plan: [plan_node], rewrites:, index_sources:, top: shared,
+                             labels: labels + [{ "label" => "original:shared:2", "plan" => nil }],
+                             excluded: { "original:shared:1" => "not_better" })
+
+      expect(JSON.parse(out).values_at("top", "excluded")).to eq([shared, { "original:shared:1" => "not_better" }])
+    end
+
+    [
+      ["a planted label in top", { top: [{ "label" => EGRESS_SENTINEL, "kind" => "rewrite_new_indexes" }] }],
+      ["a top entry with no label", { top: [{ "kind" => "rewrite_new_indexes" }] }],
+      ["a planted label in labels", ->(l) { { labels: l + [{ "label" => "original:shared:#{EGRESS_SENTINEL}" }] } }],
+      ["a planted label in excluded", { excluded: { EGRESS_SENTINEL => "not_better" } }],
+      ["a value in place of excluded", { excluded: [EGRESS_SENTINEL] }]
+    ].each do |what, change|
+      it "refuses one with #{what}, without quoting it" do
+        message = { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, top: }
+        message.merge!(change.respond_to?(:call) ? change.call(labels) : change)
+        refusal = "a value in this report message has a label that isn't one of QUAACK's"
+        expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
+          expect(e.message).not_to include(EGRESS_SENTINEL)
+          expect(e.cause).to be_nil
+        }
+      end
+    end
+
     # Task 20261004-80: index_sources must be only counts under QUAACK's own
     # source names (Protocol::IndexSources.valid?).
     [

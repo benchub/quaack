@@ -11,6 +11,12 @@ RSpec.describe Quaack::Enclave::Steps::MeasuredLabels do
     )
   end
 
+  # Task 20261017-2.
+  it "sends a shared pairing's label, and never one QUAACK doesn't make" do
+    expect(described_class.excluded("original:shared:1" => "not_better", "secret:shared:1" => "not_better"))
+      .to eq("original:shared:1" => "not_better")
+  end
+
   it "sends an unknown reason as nil" do
     expect(described_class.excluded("rewrite_1:none" => "secret")).to eq("rewrite_1:none" => nil)
   end

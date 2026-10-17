@@ -209,7 +209,7 @@
 <tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
 <% end %>
 </tbody></table>
-<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indices:", to where the new indices it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. It says <%= h Words::MISSING %> where this run didn't record who proposed the indices ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
+<p class="note">Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after "indices:", to where the new indices it ran with came from: "from the query's text", "from the query's plan", or "from the LLM". An index that more than one of them proposed lists each. A pairing QUAACK tried with indices another candidate's search proposed says "from another candidate", then where that candidate had them from. It says <%= h Words::MISSING %> where this run didn't record who proposed the indices ("and others <%= h Words::MISSING %>" when it recorded some of them), and for a rewrite whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>
 </details>
 <% end %>
 </section>

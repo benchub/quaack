@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261017-1
+- 20261017-2
 
 ## How this file works.
 
@@ -695,15 +696,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Depends on:** None.
 - **Came from:** Build of 20261016-14, 2026-10-16.
 - **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261017-2. Measure each candidate with the indices that made the ranking for other candidates.
-
-Each candidate is measured only with the indices proposed for it: the original's own index search, or its rewrite's (rewrite-index-ideas). So a good index the LLM proposed for one candidate is never tried with another candidate on the same table, and the best pairing depends on the LLM proposing the same index twice. In a real run, a small partial index that read about half the original's blocks with a rewrite in one run was proposed in the next run only for a different rewrite, and the better pairing was never measured. After each candidate's own index search, also measure each candidate with every index that made the ranking for some other candidate (kept by index-rank or rewrite-index-rerank) and is on a table the candidate reads. Keep the extra runs bounded, and say in the report where a candidate's indices came from ("from another candidate"). Update DESIGN.md.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
-- **Design:** rewrite-index-ideas, index-rank, measurement.
 - **Status:** todo
 
 ### 20261017-3. Report: a footprint tie between equal-sized indices says the winner's take less disk space.

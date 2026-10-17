@@ -164,7 +164,9 @@ module Quaack
       # under either is checked.
       # index_sources must be exactly counts under QUAACK's own source
       # names (see Protocol::IndexSources.valid?), and is needed too. The
-      # top, when sent, must carry only kinds from Protocol::CandidateKinds::KINDS.
+      # top, when sent, must carry only kinds from Protocol::CandidateKinds::KINDS,
+      # and every label in top, labels, and excluded must be one QUAACK
+      # makes itself (Protocol::CandidateKinds.labels?).
       # Each rewrite's untested_unchanged must repeat only shapes of its own
       # untested_atoms, and its not_tested be nil or a fixed word. Each rewrite's fuzz sizes and trials must pass
       # check_fuzz.
@@ -179,6 +181,7 @@ module Quaack
         end
 
         check_ranking(fields)
+        check_labels(fields)
         check_untested_atoms(fields["rewrites"])
         check_not_tested(fields["rewrites"])
         check_suggested_drops(fields["labels"])
@@ -264,6 +267,13 @@ module Quaack
         return if Protocol::CandidateKinds.valid?(fields.fetch("top", []))
 
         raise Error, "a value in this report message has a top that doesn't carry a kind from the fixed list"
+      end
+
+      # Every label in top, labels, and excluded must be QUAACK's own (Protocol::CandidateKinds.labels?).
+      def check_labels(fields)
+        return if Protocol::CandidateKinds.labels?(fields)
+
+        raise Error, "a value in this report message has a label that isn't one of QUAACK's"
       end
 
       # Whether entries (the rewrites or the labels) is an Array of Hashes,

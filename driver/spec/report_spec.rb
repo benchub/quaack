@@ -1507,7 +1507,9 @@ RSpec.describe Quaack::Driver::Report do
           "Who proposed it starts with who proposed the rewrite, if there is one, and goes on, after " \
           "\"indices:\", to where the new indices it ran with came from: \"from the query's text\", " \
           "\"from the query's plan\", or \"from the LLM\". An index that more than " \
-          "one of them proposed lists each. It says not recorded where this run didn't record who proposed " \
+          "one of them proposed lists each. A pairing QUAACK tried with indices another candidate's search " \
+          "proposed says \"from another candidate\", then where that candidate had them from. " \
+          "It says not recorded where this run didn't record who proposed " \
           "the indices (\"and others not recorded\" when it recorded some of them), and for a rewrite " \
           "whose source this run didn't record, or that's missing from what QUAACK's jump server sent.</p>"
         )
@@ -1553,6 +1555,22 @@ RSpec.describe Quaack::Driver::Report do
         expect(fresh.call(nil)).to eq(["#{rule} and others not recorded", "not recorded"])
         expect(fresh.call([])).to eq(["#{rule} and others not recorded", "not recorded"])
         expect(fresh.call(%w[llm])).to eq(["#{rule}, from the LLM", "Indices: from the LLM"])
+      end
+
+      # Task 20261017-2: a shared pairing ran with indices another candidate's search ranked.
+      it "says a shared pairing's indices came from another candidate, then where that one had them from" do
+        payload["labels"][2]["label"] = "rewrite_1:shared:1"
+        payload["excluded"] = { "rewrite_1:shared:1" => "not_better" }
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indices: from another candidate, " \
+                            "which had them from the query&#39;s plan"])
+        payload["indexes"].each_value { it.delete("sources") }
+        expect(rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
+          .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] })
+          .to eq(["Made by transform rule key_in_self_join; indices: from another candidate"])
+        expect(section(render(payload), "ranking")).to include(
+          "A pairing QUAACK tried with indices another candidate's search proposed says \"from another " \
+          "candidate\", then where that candidate had them from."
+        )
       end
 
       it "shows only the rewrite's source for a label with no new indices" do
