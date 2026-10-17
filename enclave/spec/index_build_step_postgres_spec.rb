@@ -78,7 +78,7 @@ RSpec.describe "quaacks index-build, against a real server" do
   it "records rewrite-index-ideas' rewrites and the indexes it built in the burndown, once when rerun" do
     ranked_run
     [true, false].each.with_index(1) do |survived, n|
-      store.write("rewrite_#{n}", "sql" => "SELECT #{n}")
+      store.write("rewrite_#{n}", "sql" => "SELECT #{n}", "anchored_sql" => "SELECT #{n}")
       store.write("rewrite_survived_#{n}", "survived" => survived)
     end
 

@@ -3,16 +3,20 @@
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_build"
 require_relative "../index_candidate"
+require_relative "../index_share"
+require_relative "../rewrite_entry"
 require_relative "../rewrite_burndown"
 require_relative "../run_server"
+require_relative "index_search"
 
 module Quaack
   module Enclave
     module Steps
       # `quaacks index-build --run <run ID> [--index <n>]` (DESIGN.md's
       # index-build). Without --index, it builds and hides
-      # every ranked and set-aside index on the racetrack (IndexBuild) and
-      # writes index_build. Before each index it sends an
+      # every ranked and set-aside index on the racetrack (IndexBuild), pairs
+      # each candidate with the indexes other candidates ranked
+      # (IndexShare), and writes index_build. Before each index it sends an
       # index_build_progress line: its position, the total, and its DDL.
       # Its only other line is DONE. Before it writes index_build, it records
       # rewrite-index-ideas' burndown and the indexes it built
@@ -59,7 +63,17 @@ module Quaack
           return build_one(store, connection, number, starting) if number
 
           built = ->(indexes) { RewriteBurndown.record_build(store, indexes.size) }
-          Enclave::IndexBuild.build(store, connection, starting:, built:)
+          share = ->(conn, build) { Enclave::IndexShare.combinations(conn, store, build, candidates(store)) }
+          Enclave::IndexBuild.build(store, connection, starting:, built:, share:)
+        end
+
+        # The candidates that go on to measurement, each with the SQL it
+        # runs: the original, then each rewrite candidate-runs measures.
+        def candidates(store)
+          rewrites = (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.map { "rewrite_#{it}" }
+                          .select { IndexSearch.llm_search?(store, it) }
+          { "original" => store.read("anchored_query") }
+            .merge(rewrites.to_h { [it, RewriteEntry.run_sql(store.read(it))] })
         end
 
         # Builds only the number-th (1-based) of IndexBuild.build's indexes,

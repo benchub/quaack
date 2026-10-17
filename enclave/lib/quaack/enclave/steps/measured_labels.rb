@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/candidate_kinds"
 require_relative "../selection"
 
 module Quaack
@@ -29,9 +30,9 @@ module Quaack
       # Trust boundary. Counts, booleans, set names, built index names, and
       # labels. A label goes out only if it matches LABEL, the labels
       # QUAACK makes itself: a search and "none" or an IndexBuild
-      # combination key.
+      # combination key, shared ones included (Protocol::CandidateKinds::LABEL).
       module MeasuredLabels
-        LABEL = /\A(?:original|rewrite_[1-9]\d*):(?:none|combination|(?:top|set_aside):[1-9]\d*)\z/
+        LABEL = Protocol::CandidateKinds::LABEL
 
         module_function
 

@@ -9,6 +9,38 @@ RSpec.describe Quaack::Protocol::CandidateKinds do
     expect(described_class.of("rewrite_3:top:2")).to eq("rewrite_new_indexes")
     expect(described_class.of("rewrite_3:none")).to eq("rewrite_same_indexes")
     expect(described_class.of("original:none")).to be_nil
+    expect(described_class.of("original:shared:1")).to eq("original_new_indexes")
+    expect(described_class.of("rewrite_2:shared:3")).to eq("rewrite_new_indexes")
+  end
+
+  # Task 20261017-2: the labels QUAACK makes itself, and only those.
+  it "accepts only QUAACK's own labels" do
+    ok = %w[original:none original:combination original:top:1 rewrite_12:set_aside:3 rewrite_1:shared:2]
+    expect(ok.map { described_class.label?(it) }).to all(be(true))
+    bad = ["original:shared:0", "original:shared", "rewrite_0:none", "rewrite_1:shared:1 ", "x:none",
+           "original:shared:1\nSELECT secret", "original:other:1", :"original:none", nil]
+    expect(bad.map { described_class.label?(it) }).to all(be(false))
+  end
+
+  it "accepts a report's top, labels, and excluded only if each label is QUAACK's own" do
+    good = { "top" => [{ "label" => "rewrite_1:shared:1" }], "labels" => [{ "label" => "original:shared:2" }],
+             "excluded" => { "original:shared:1" => "not_better" } }
+    expect(described_class.labels?(good)).to be(true)
+    expect(described_class.labels?({ "top" => [], "labels" => [], "excluded" => {} })).to be(true)
+    [{ "top" => [{ "label" => "SELECT secret" }] }, { "top" => [{ "kind" => "rewrite_same_indexes" }] },
+     { "labels" => [{ "label" => "original:shared:x" }] }, { "excluded" => { "secret" => "not_better" } },
+     { "labels" => ["original:none"] }, { "excluded" => [] }, { "top" => nil }].each do |planted|
+      expect(described_class.labels?(good.merge(planted))).to be(false), planted.inspect
+    end
+  end
+
+  it "takes a report's ranking only when its top carries listed kinds and every label is QUAACK's own" do
+    good = { "top" => [{ "label" => "rewrite_1:shared:1", "kind" => "rewrite_new_indexes" }],
+             "labels" => [{ "label" => "original:shared:2" }], "excluded" => { "original:none" => "not_better" } }
+    expect(described_class.report?(good)).to be(true)
+    expect(described_class.report?(good.merge("top" => [{ "label" => "rewrite_1:shared:1" }]))).to be(false)
+    expect(described_class.report?(good.merge("excluded" => { "original:shared:x" => "not_better" }))).to be(false)
+    expect(described_class.report?({})).to be(true)
   end
 
   it "accepts a top whose entries all carry a listed kind" do

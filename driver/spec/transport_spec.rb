@@ -1078,6 +1078,29 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261017-2. Egress sends a report only if every label in top,
+    # labels, and excluded is one QUAACK makes itself, so the driver checks the same.
+    it "reads a report whose labels are QUAACK's own, shared pairings included, and refuses a planted one" do
+      report = lambda do |fields|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
+                        "index_sources" => index_sources, "top" => [], "excluded" => {} }.merge(fields))
+      end
+      good = { "top" => [{ "label" => "rewrite_1:shared:1", "kind" => "rewrite_new_indexes" }],
+               "labels" => [{ "label" => "original:shared:2" }], "excluded" => { "original:shared:1" => "not_better" } }
+      result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.map { it.slice("top", "labels", "excluded") }).to eq([good])
+      [{ "top" => [{ "label" => sentinel, "kind" => "rewrite_new_indexes" }] },
+       { "top" => [{ "kind" => "rewrite_new_indexes" }] },
+       { "labels" => [{ "label" => "original:shared:#{sentinel}" }] },
+       { "excluded" => { sentinel => "not_better" } }, { "excluded" => [sentinel] }].each do |planted|
+        error = refusal(report.call(planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     it "refuses a message that repeats a key" do
       expect(refusal(%({"type":"version","version":"1","version":"2"})).rule).to eq("unexpected_output")
       expect(refusal(%({"type":"burndown","stages":{"a":1,"a":2},"totals":{}})).rule).to eq("unexpected_output")
