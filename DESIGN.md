@@ -1402,7 +1402,7 @@ Use total blocks, and nothing else. The rewrite worth shipping is the one that t
 
 ### minimax. Minimax rule.
 
-A candidate must beat the original on the slow literal, and it must be no worse than the original on every other literal. When candidates tie, discard the one with the largest index footprint. Ties happen often when you rank on a single, nearly deterministic metric, so this tiebreaker matters. Ties are resolved greedily: take the survivors from smallest footprint up, and keep each one unless it ties one already kept, so a discarded candidate never knocks out another.
+A candidate must beat the original on the slow literal, and it must be no worse than the original on every other literal. Minimax keeps every candidate that does, ranked by blocks on the slow values, then by the sum across literals. Ties are broken later, in selection, among candidates of the same kind that result-comparison kept (task 20261017-1). A minimax entry stored before that task also lists the candidates its own tiebreak dropped, across every kind, and selection still excludes them as `footprint_tie`.
 
 ### result-comparison. Result comparison.
 
@@ -1422,7 +1422,7 @@ A real difference here means a bug slipped past rewrite-test and counterexamples
 
 ### selection. Selection.
 
-Rank the candidates that survived minimax and result-comparison by blocks on the slow values, then by the sum across literals. Keep the top three in each of three kinds of change, from a fixed list in the protocol gem (`Protocol::CandidateKinds`): `rewrite_new_indexes` (a rewrite with new indices), `rewrite_same_indexes` (a rewrite with no new indices, `rewrite_<n>:none`), and `original_new_indexes` (the same query with new indices: `original:top:<n>` and the original's combinations). A label's kind comes from its name. The original with no new indices is the baseline, never a candidate. Each kept entry carries its kind, and the kept entries are ordered best first overall. A label that beat the original and falls outside its own kind's top three keeps the `below_top_three` fate, even if its blocks would have made another kind's top three. The egress function sends a report only if every entry of `top` carries a kind from that list, and the driver refuses one that doesn't.
+Drop the minimax survivors whose rewrite result-comparison discarded. The original with new indices is never discarded there. Group the rest by kind of change (below), and break footprint ties within each kind. Two candidates tie when they're within 5% of each other on the slow literal, and the one with the larger index footprint is discarded. Ties happen often when you rank on a single, nearly deterministic metric, so this tiebreaker matters. Ties are resolved greedily: take a kind's candidates from smallest footprint up (then fewest slow blocks, then the smallest sum across literals), and keep each one unless it ties one already kept, so a discarded candidate never knocks out another. Breaking ties only within a kind, and only among candidates result-comparison kept, means a rewrite with a small index can't wipe out the original-with-new-indices kind, and a rewrite whose results were wrong can't knock out a right one (task 20261017-1). Rank what's left by blocks on the slow values, then by the sum across literals. Keep the top three in each of three kinds of change, from a fixed list in the protocol gem (`Protocol::CandidateKinds`): `rewrite_new_indexes` (a rewrite with new indices), `rewrite_same_indexes` (a rewrite with no new indices, `rewrite_<n>:none`), and `original_new_indexes` (the same query with new indices: `original:top:<n>` and the original's combinations). A label's kind comes from its name. The original with no new indices is the baseline, never a candidate. Each kept entry carries its kind, and the kept entries are ordered best first overall. A label that beat the original and falls outside its own kind's top three keeps the `below_top_three` fate, even if its blocks would have made another kind's top three. The egress function sends a report only if every entry of `top` carries a kind from that list, and the driver refuses one that doesn't.
 
 ### winner-timing. Timing the winner.
 
@@ -1457,7 +1457,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `production_timed_out` | result-comparison dropped it for a timeout, and no literal's results differed. | |
 | `production_not_compared` | result-comparison dropped it without comparing its results. | Rule. |
 | `below_top_three` | It beat the original and fell outside the top three of its kind of change. | |
-| `footprint_tie` | It beat the original and lost the footprint tiebreak. | |
+| `footprint_tie` | It beat the original and lost the footprint tiebreak to a candidate of its own kind (to any candidate, in a store from before task 20261017-1). | |
 | `not_better` | It was measured, and minimax found it no better than the original. | |
 | `measurement_timed_out` | Every one of its runs in candidate-runs timed out. | |
 | `unfinished` | The run took it no further. | The last stage it finished. |

@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261017-1
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -695,15 +697,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261017-1. Selection: break footprint ties within each kind, among candidates that passed result comparison.
-
-Minimax's footprint tiebreaker (`Minimax.discarded`) runs over every survivor of every kind, before Selection groups them by kind. So a rewrite with a small index can knock out every "original query with new indices" candidate within 5% of it, and that whole class goes missing from the ranking, though the report says the three best of each class are kept. It also runs before Selection drops candidates whose rewrite failed result comparison, so a wrong rewrite can still knock out a right one. Break ties only within one kind (`Protocol::CandidateKinds`), and only among candidates whose rewrite result comparison kept. Update DESIGN.md's minimax and selection sections.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17, from a real run where the "original with new indices" class came out empty.
-- **Design:** minimax, selection.
-- **Status:** todo
-
 ### 20261017-2. Measure each candidate with the indices that made the ranking for other candidates.
 
 Each candidate is measured only with the indices proposed for it: the original's own index search, or its rewrite's (rewrite-index-ideas). So a good index the LLM proposed for one candidate is never tried with another candidate on the same table, and the best pairing depends on the LLM proposing the same index twice. In a real run, a small partial index that read about half the original's blocks with a rewrite in one run was proposed in the next run only for a different rewrite, and the better pairing was never measured. After each candidate's own index search, also measure each candidate with every index that made the ranking for some other candidate (kept by index-rank or rewrite-index-rerank) and is on a table the candidate reads. Keep the extra runs bounded, and say in the report where a candidate's indices came from ("from another candidate"). Update DESIGN.md.
@@ -711,4 +704,13 @@ Each candidate is measured only with the indices proposed for it: the original's
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-17.
 - **Design:** rewrite-index-ideas, index-rank, measurement.
+- **Status:** todo
+
+### 20261017-3. Report: a footprint tie between equal-sized indices says the winner's take less disk space.
+
+From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks, then total blocks, so of two tied candidates with the same footprint (such as two rewrites with no new indices) one is dropped as `footprint_tie`. The report's wording in `driver/lib/quaack/driver/report/candidates.rb` and `report/rewrites.rb` still says it "tied with a candidate whose new indices take less disk space". Word the equal-footprint case truthfully, such as "tied with a candidate whose new indices take no more disk space and that read fewer blocks".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-1, 2026-10-17.
+- **Design:** report, selection.
 - **Status:** todo
