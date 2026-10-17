@@ -694,3 +694,21 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Came from:** Build of 20261016-14, 2026-10-16.
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261017-1. Selection: break footprint ties within each kind, among candidates that passed result comparison.
+
+Minimax's footprint tiebreaker (`Minimax.discarded`) runs over every survivor of every kind, before Selection groups them by kind. So a rewrite with a small index can knock out every "original query with new indices" candidate within 5% of it, and that whole class goes missing from the ranking, though the report says the three best of each class are kept. It also runs before Selection drops candidates whose rewrite failed result comparison, so a wrong rewrite can still knock out a right one. Break ties only within one kind (`Protocol::CandidateKinds`), and only among candidates whose rewrite result comparison kept. Update DESIGN.md's minimax and selection sections.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17, from a real run where the "original with new indices" class came out empty.
+- **Design:** minimax, selection.
+- **Status:** todo
+
+### 20261017-2. Measure each candidate with the indices that made the ranking for other candidates.
+
+Each candidate is measured only with the indices proposed for it: the original's own index search, or its rewrite's (rewrite-index-ideas). So a good index the LLM proposed for one candidate is never tried with another candidate on the same table, and the best pairing depends on the LLM proposing the same index twice. In a real run, a small partial index that read about half the original's blocks with a rewrite in one run was proposed in the next run only for a different rewrite, and the better pairing was never measured. After each candidate's own index search, also measure each candidate with every index that made the ranking for some other candidate (kept by index-rank or rewrite-index-rerank) and is on a table the candidate reads. Keep the extra runs bounded, and say in the report where a candidate's indices came from ("from another candidate"). Update DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** rewrite-index-ideas, index-rank, measurement.
+- **Status:** todo
