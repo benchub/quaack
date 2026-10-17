@@ -705,3 +705,12 @@ Each candidate is measured only with the indices proposed for it: the original's
 - **Came from:** The user, 2026-10-17.
 - **Design:** rewrite-index-ideas, index-rank, measurement.
 - **Status:** todo
+
+### 20261017-3. Report: a footprint tie between equal-sized indices says the winner's take less disk space.
+
+From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks, then total blocks, so of two tied candidates with the same footprint (such as two rewrites with no new indices) one is dropped as `footprint_tie`. The report's wording in `driver/lib/quaack/driver/report/candidates.rb` and `report/rewrites.rb` still says it "tied with a candidate whose new indices take less disk space". Word the equal-footprint case truthfully, such as "tied with a candidate whose new indices take no more disk space and that read fewer blocks".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-1, 2026-10-17.
+- **Design:** report, selection.
+- **Status:** todo
