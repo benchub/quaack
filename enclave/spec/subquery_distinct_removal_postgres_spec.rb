@@ -121,7 +121,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::SubqueryDistinctRemoval do
     kept = "SELECT e.user_id FROM public.enrollments e WHERE e.course_id = $1"
     { "users.id NOT IN" => "NOT users.id IN", "users.id = ANY" => "users.id = ANY",
       "users.id OPERATOR(pg_catalog.=) ANY" => "users.id OPERATOR(pg_catalog.=) ANY",
-      "users.id != ALL" => "users.id <> ALL" }.each do |test, deparsed|
+      "users.id != ALL" => "users.id <> ALL",
+      "users.id OPERATOR(pg_catalog.<>) ALL" => "users.id OPERATOR(pg_catalog.<>) ALL" }.each do |test, deparsed|
       expect_rewrites(users_where("#{test} (#{subquery})"), users_where("#{deparsed} (#{kept})"))
     end
   end
@@ -290,7 +291,20 @@ RSpec.describe Quaack::Enclave::RewriteRules::SubqueryDistinctRemoval do
        ["#{distinct} UNION ALL SELECT s.user_id FROM public.submissions s",
         "#{distinct} UNION SELECT s.user_id FROM public.submissions s"],
        [users_where("users.id IN (SELECT s.user_id FROM public.submissions s UNION ALL #{distinct} LIMIT 3)"),
-        users_where("users.id IN (SELECT s.user_id FROM public.submissions s UNION ALL #{distinct})")]]
+        users_where("users.id IN (SELECT s.user_id FROM public.submissions s UNION ALL #{distinct})")],
+       [users_where("users.id IN (SELECT s.user_id FROM public.submissions s UNION ALL #{distinct} OFFSET 1)"),
+        users_where("users.id IN (SELECT s.user_id FROM public.submissions s UNION ALL #{distinct})")],
+       [users_where("users.id IN (SELECT s.user_id FROM public.submissions s INTERSECT ALL #{distinct} OFFSET 1)"),
+        users_where("users.id IN (SELECT s.user_id FROM public.submissions s INTERSECT ALL #{distinct})")]]
+    )
+  end
+
+  it "drops the DISTINCT of a reader nested in an IN's left side" do
+    expect_rewrites(
+      users_where("(users.id IN (SELECT DISTINCT e.user_id FROM public.enrollments e)) IN " \
+                  "(SELECT s.score > 8 FROM public.submissions s)"),
+      users_where("users.id IN (SELECT e.user_id FROM public.enrollments e) IN " \
+                  "(SELECT s.score > $1 FROM public.submissions s)")
     )
   end
 
