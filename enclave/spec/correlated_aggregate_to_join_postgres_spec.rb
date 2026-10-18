@@ -207,6 +207,45 @@ RSpec.describe Quaack::Enclave::RewriteRules::CorrelatedAggregateToJoin do
     expect(rewritten(sql)).to eq([])
   end
 
+  # Each pair is a correlation the rule must refuse, then the same query
+  # with that one thing fixed, which it takes, so each refusal is the
+  # check's own.
+  it "refuses a correlation whose keys group other than the equality matches" do
+    conn.exec(<<~SQL)
+      CREATE SCHEMA other;
+      CREATE TABLE other.customers (id int);
+      CREATE COLLATION public.loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+      CREATE TABLE public.a (id int, k text, kc text COLLATE "C", kl text COLLATE public.loose, kb box, total int);
+      CREATE TABLE public.b (k text, kc text COLLATE "C", kl text COLLATE public.loose, kb box, kc2 text COLLATE "C",
+                             kl2 text COLLATE public.loose, kb2 box);
+    SQL
+    sub = ->(key, outer) { "(SELECT avg(a2.total) FROM public.a a2 WHERE a2.#{key} = b.#{outer})" }
+    on_b = ->(key, outer) { rewritten("SELECT b.k FROM public.b b WHERE 1 < #{sub.call(key, outer)}") }
+    customers = "(SELECT avg(o2.total) FROM public.orders o2 WHERE o2.customer_id = customers.id)"
+    [
+      # Differing collations.
+      [on_b.call("kc", "k"), on_b.call("kc", "kc2")],
+      # A nondeterministic collation, which = reads loosely.
+      [on_b.call("kl", "kl2"), on_b.call("kc", "kc2")],
+      # A type that GROUP BY can't hash or sort as its = compares.
+      [on_b.call("kb", "kb2"), on_b.call("kc", "kc2")],
+      # Two outer items of one name.
+      [rewritten("SELECT 1 FROM public.customers, other.customers WHERE 1 < #{customers}"),
+       rewritten("SELECT 1 FROM public.customers WHERE 1 < #{customers}")]
+    ].each do |refused, taken|
+      expect([refused, taken.size]).to eq([[], 1])
+    end
+  end
+
+  it "refuses a correlation key named as the derived table's aggregate column" do
+    conn.exec("CREATE TABLE public.a (quaack_agg int, k int, total int)")
+    sql = lambda do |key|
+      "SELECT o.id FROM public.orders o WHERE o.total > " \
+        "(SELECT avg(a.total) FROM public.a a WHERE a.#{key} = o.region)"
+    end
+    expect([rewritten(sql.call("quaack_agg")), rewritten(sql.call("k")).size]).to eq([[], 1])
+  end
+
   it "leaves an outer SELECT with a bare star alone, since the join would add columns" do
     expect(rewritten("SELECT * FROM public.orders o WHERE o.total > #{average}")).to eq([])
   end

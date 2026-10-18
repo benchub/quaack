@@ -12050,6 +12050,35 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 - **Landed:** 2026-10-17 (task/20261017-5; driver only). Every not_better rewrite's fate is now the one sentence, kept in `Report::Rewrites::FATES`. `Report::NotBetterFate` (its verdict reading and `PERCENT`) is gone. A not_better rewrite that went on untested (out_of_time or not_tested) still gets its opening reworded by `went_on`, which gained a pair for "It passed every correctness test,". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
 
+### 20261017-6. Report: color stripes on the ranking table.
+
+In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area. The user decided (2026-10-17): a stripe on the left edge of each row, in its subsection's color, with no tint across the row.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-6; driver only). In the Ranking table, each kind's heading row and ranked rows carry that kind's `stripe-<kind>` class, the same class its block below uses, and `tr.kind > :first-child, tr.rank > :first-child` draws a 5px left border in `var(--stripe)`, with no background. The baseline row has no stripe. A rewrite ranked under two kinds gets each kind's stripe on its row there. DESIGN.md's report section says so.
+- **Status:** done
+
+### 20261017-7. Report: plan tables color the row-count cells, not the row, and flag the nodes driving time and blocks.
+
+In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance. The user decided (2026-10-17): the cue is a color gradient on the time and block cells, like the row-count cells, and it's based on each step's own share (its time and blocks minus its children's), not the inclusive numbers Postgres reports.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-7; driver only). The misestimate gradient is on the estimated and actual rows cells, with its title on each. The blocks read and time cells get an amber gradient (`--cost-1` to `--cost-8`, both themes) by the step's own share of the plan's: its blocks, or its time times loops, less its direct children's, clamped at 0 (`Plans#own_shares`), over the plan's own ones added up, from 5%, 10%, 20%, 30%, 40%, 50%, 65%, and 80%. The blocks cell still shows the inclusive count; a shaded cell's title gives the own number and share. A second legend line explains it. The payload has no Parent Relationship or worker data, so InitPlans, SubPlans, CTEs, and parallel workers are taken off the node they're listed under, as DESIGN.md and the existing notes say. No VERSION bump.
+- **Status:** done
+
+### 20261017-8. Sankey: "Index ideas for the rewrites" carries in more ideas than the diagram above ends with.
+
+In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index ideas for the rewrites" pair ends with 35 ideas, but the second says "Carried in from the diagram above: 41". The "Index ideas for the original query" and "Rewrites" pairs agree. Find which number is wrong, and why (for example, ideas merged or deduplicated across rewrites between the two diagrams); see `report/sankey.rb` near "Carried in from the diagram above", `sankey_layers.rb`, and `sankey_parts.rb`. Then make the two agree, or have the label say why they differ; the user left that choice to the builder (2026-10-17), whichever reads clearer. Reproduce it in a test first.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report, sankey.
+- **Landed:** 2026-10-18 (task/20261017-8; driver only). The enclave's per-search counts were right; the driver's sum was not. The LLM's index rounds run only for rewrites that survived testing and weren't pruned, but index-rank ranks every rewrite, so summing each stage over only the searches that recorded it dropped the skipped rewrites' ideas (6 in that report) at the LLM rows and brought them back at index-rank. `Stages#rewrite_searches` now passes a skipped rewrite's ideas through each LLM round unchanged, so the ideas diagram ends with what the sets diagram carries in; the table counts them under Also counted ("ideas from rewrites the LLM wasn't asked about, passed on unchanged"), and the layers' hovers say how many went on unchanged. DESIGN.md's Sankey section says so. No VERSION bump.
+
 ### 20261018-16. StalledLogger: accept the `anon_pipe_write` wait channel.
 
 Found while building 20261018-1. The Docker VM's kernel is now `7.0.14-linuxkit`, and Linux 6.14 and later name a backend blocked writing to a pipe `anon_pipe_write`, not `pipe_write`. `enclave/spec/support/stalled_logger.rb` waits for a wait channel of exactly `pipe_write`, so the two examples in `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` (lines 38 and 52) fail with "backend N never blocked logging BEGIN/ROLLBACK", alone too, and every per-commit check fails with them. Accept either name, in the helper and in what those examples expect, and keep the examples testing what they test now.
@@ -12308,4 +12337,16 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Came from:** Builds and reviews of 20261018-5, -8, and -11, 2026-10-18.
 - **Design:** rewrite-rules, fixture-compare.
 - **Landed:** 2026-10-18 (task/20261018-26; enclave and docs). coalesce_comparison_split checks an uncast default with the oracle (`pg_typeof(COALESCE(NULL::<coltype>, $d)) = pg_typeof(NULL::<coltype>)`), refusing without literals; FROM ONLY tested; the subquery_order_removal page notes ties. The fixture-compare item reproduced but isn't small: filed as 20261018-28.
+- **Status:** done
+
+### 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
+
+- date_cast_to_range (20261018-10): any schema-qualified operator is taken as pg_catalog's, so `OPERATOR(public.=)` would be rewritten (require pg_catalog and test a user operator); a bare `date(col)` could be shadowed by a user function on the search_path; `ts::date = CURRENT_DATE` isn't taken.
+- scalar_aggregates_to_filter (20261018-12): a shared range placeholder can get another pick in the typical set (a `<` paired with `>=` picks like BETWEEN), which costs a candidate in result-comparison; untested refusals for mixing `ONLY t` with `t` and for an aggregate outside the list (or with ORDER BY) under an outer FROM; not yet taken: a member inside an expression such as `coalesce((SELECT ...), 0)`, and members in nested queries.
+- correlated_aggregate_to_join (20261018-13): untested refusals for differing collations, a nondeterministic collation, the comparable check, and two outer items sharing a name; a correlation key named `quaack_agg` gives the derived table two columns of that name; not yet taken: a correlated aggregate in the select list, as in e2e case 069 (needs a LEFT JOIN, or proof every outer row has a group).
+
+- **Depends on:** None.
+- **Came from:** Builds and reviews of 20261018-10, -12, and -13, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-27; enclave). date_cast_to_range already required pg_catalog (now pinned by a spec). New refusal tests for scalar_aggregates_to_filter and correlated_aggregate_to_join; the latter now refuses a correlation key named quaack_agg. Still open, unsupported in v1: a user date() shadowing the built-in, ts::date = CURRENT_DATE, members inside expressions, and the select-list correlated aggregate (case 069).
 - **Status:** done

@@ -192,6 +192,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::DateCastToRange do
     end
   end
 
+  it "leaves a user's operator alone, even one named =, and takes pg_catalog's" do
+    conn.exec(<<~SQL)
+      CREATE FUNCTION public.always(date, date) RETURNS boolean LANGUAGE sql AS 'SELECT true';
+      CREATE OPERATOR public.= (LEFTARG = date, RIGHTARG = date, FUNCTION = public.always);
+    SQL
+    expect(rewritten(orders("o.at::date OPERATOR(public.=) '2025-03-09'::date"))).to eq([])
+    expect(rewritten(orders("o.at::date OPERATOR(pg_catalog.=) '2025-03-09'::date")).size).to eq(1)
+  end
+
   it "leaves a left join's ON alone" do
     sql = "SELECT c.id FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id " \
           "AND o.at::date = '2025-03-09'"
