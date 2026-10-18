@@ -713,15 +713,6 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Design:** run-server check, trust boundary.
 - **Status:** todo
 
-### 20261017-8. Sankey: "Index ideas for the rewrites" carries in more ideas than the diagram above ends with.
-
-In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index ideas for the rewrites" pair ends with 35 ideas, but the second says "Carried in from the diagram above: 41". The "Index ideas for the original query" and "Rewrites" pairs agree. Find which number is wrong, and why (for example, ideas merged or deduplicated across rewrites between the two diagrams); see `report/sankey.rb` near "Carried in from the diagram above", `sankey_layers.rb`, and `sankey_parts.rb`. Then make the two agree, or have the label say why they differ; the user left that choice to the builder (2026-10-17), whichever reads clearer. Reproduce it in a test first.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
-- **Design:** report, sankey.
-- **Status:** todo
-
 ### 20261017-9. Report fates: minors from the review of 20261017-5.
 
 1. When a not_better rewrite went on untested (out of time, or not tested), its fate says "real data" twice: "…so QUAACK checked it only on test data the LLM wrote to break it and on the real data, but when measured against real data performed too poorly to be ranked." Reword it so real data is mentioned once, in `went_on` in `driver/lib/quaack/driver/report/rewrites.rb`.

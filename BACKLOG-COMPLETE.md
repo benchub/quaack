@@ -12069,3 +12069,13 @@ In the plan tables under "Why the winner reads fewer blocks", the whole row take
 - **Design:** report.
 - **Landed:** 2026-10-18 (task/20261017-7; driver only). The misestimate gradient is on the estimated and actual rows cells, with its title on each. The blocks read and time cells get an amber gradient (`--cost-1` to `--cost-8`, both themes) by the step's own share of the plan's: its blocks, or its time times loops, less its direct children's, clamped at 0 (`Plans#own_shares`), over the plan's own ones added up, from 5%, 10%, 20%, 30%, 40%, 50%, 65%, and 80%. The blocks cell still shows the inclusive count; a shaded cell's title gives the own number and share. A second legend line explains it. The payload has no Parent Relationship or worker data, so InitPlans, SubPlans, CTEs, and parallel workers are taken off the node they're listed under, as DESIGN.md and the existing notes say. No VERSION bump.
 - **Status:** done
+
+### 20261017-8. Sankey: "Index ideas for the rewrites" carries in more ideas than the diagram above ends with.
+
+In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index ideas for the rewrites" pair ends with 35 ideas, but the second says "Carried in from the diagram above: 41". The "Index ideas for the original query" and "Rewrites" pairs agree. Find which number is wrong, and why (for example, ideas merged or deduplicated across rewrites between the two diagrams); see `report/sankey.rb` near "Carried in from the diagram above", `sankey_layers.rb`, and `sankey_parts.rb`. Then make the two agree, or have the label say why they differ; the user left that choice to the builder (2026-10-17), whichever reads clearer. Reproduce it in a test first.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report, sankey.
+- **Landed:** 2026-10-18 (task/20261017-8; driver only). The enclave's per-search counts were right; the driver's sum was not. The LLM's index rounds run only for rewrites that survived testing and weren't pruned, but index-rank ranks every rewrite, so summing each stage over only the searches that recorded it dropped the skipped rewrites' ideas (6 in that report) at the LLM rows and brought them back at index-rank. `Stages#rewrite_searches` now passes a skipped rewrite's ideas through each LLM round unchanged, so the ideas diagram ends with what the sets diagram carries in; the table counts them under Also counted ("ideas from rewrites the LLM wasn't asked about, passed on unchanged"), and the layers' hovers say how many went on unchanged. DESIGN.md's Sankey section says so. No VERSION bump.
+- **Status:** done
