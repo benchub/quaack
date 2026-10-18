@@ -739,3 +739,13 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Came from:** The user, 2026-10-17.
 - **Design:** report, sankey.
 - **Status:** todo
+
+### 20261017-9. Report fates: minors from the review of 20261017-5.
+
+1. When a not_better rewrite went on untested (out of time, or not tested), its fate says "real data" twice: "…so QUAACK checked it only on test data the LLM wrote to break it and on the real data, but when measured against real data performed too poorly to be ranked." Reword it so real data is mentioned once, in `went_on` in `driver/lib/quaack/driver/report/rewrites.rb`.
+2. The other fates (such as `footprint_tie` and `measurement_timed_out`) still say "It passed every test", while not_better now says "It passed every correctness test". Make them consistent.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-5, 2026-10-17.
+- **Design:** report.
+- **Status:** todo
