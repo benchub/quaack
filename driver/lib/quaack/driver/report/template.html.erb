@@ -111,9 +111,30 @@
   svg.sankey text.step { font-style: italic; }
   svg.sankey text.counts { fill: var(--sankey-text); }
   svg.sankey text.flow { fill: var(--sankey-text); }
+  nav#toc { font-size: 0.9rem; border-left: 3px solid var(--rule); padding: 0.25rem 0.75rem; margin: 0 0 1.5rem;
+            background: var(--bg); color: var(--muted); }
+  nav#toc ol { list-style: none; margin: 0; padding: 0; }
+  nav#toc li { margin: 0.2rem 0; }
+  nav#toc a:visited { color: var(--accent); }
+  @media (min-width: 88rem) {
+    nav#toc { position: fixed; top: 1rem; left: 1rem; width: calc((100vw - 62rem) / 2 - 2rem);
+              max-height: calc(100vh - 2rem); overflow-y: auto; margin: 0; box-sizing: border-box; }
+  }
+  @media print {
+    nav#toc { display: none; }
+  }
 </style>
 </head><body>
 <h1>QUAACK report <%= h run_id %></h1>
+<% toc = [] %>
+<% toc << ["quaack-bugs", "QUAACK bug"] unless rule_bugs.empty? %>
+<% toc.push(["summary", "Summary"], ["queries", "The queries"], ["ranking", "Ranking"]) %>
+<% toc << ["timeouts", "Runs that timed out"] if timed_out_count.positive? || !infinite_sets.empty? %>
+<% toc << ["explanation", "Why the winner reads fewer blocks"] if winner %>
+<% if negative && winner %><% toc << ["index-ideas", "Index ideas that went nowhere"] %>
+<% elsif negative %><% toc << ["negative-result", "Why nothing beat the original"] %><% end %>
+<% toc.push(["indexes", "Indices"], ["accountability", "Who proposed what"], ["burndown", "Burndown"]) %>
+<nav id="toc" aria-label="Contents"><ol><% toc.each do |id, label| %><li><a href="#<%= id %>"><%= label %></a></li><% end %></ol></nav>
 <% unless rule_bugs.empty? %>
 <section id="quaack-bugs"><h2>QUAACK bug: a rule made a wrong rewrite</h2>
 <p>The transform rules are meant to be sound: a rewrite one makes should return the same rows as the original query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>
