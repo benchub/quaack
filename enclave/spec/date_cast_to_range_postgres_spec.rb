@@ -156,7 +156,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DateCastToRange do
 
     expect(rewrite).to eq(["SELECT c.id FROM public.customers c JOIN public.orders o ON o.customer_id = c.id " \
                            "AND o.at >= $1::pg_catalog.date " \
-                           "AND o.at <($1::pg_catalog.date OPERATOR(pg_catalog.+) 1) " \
+                           "AND o.at < ($1::pg_catalog.date OPERATOR(pg_catalog.+) 1) " \
                            "WHERE c.id IN (SELECT p.customer_id " \
                            "FROM public.orders p WHERE p.local >= $2::pg_catalog.date)"])
     expect(same_ids(sql, rewrite.first)).to eq(%w[1])
