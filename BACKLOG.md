@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-5. Rule `subquery_order_removal`.
 - 20261018-8. Rule `union_to_union_all`.
 - 20261018-11. Rule `coalesce_comparison_split`.
+- 20261018-10. Rule `date_cast_to_range`.
 
 ## How this file works.
 
@@ -869,14 +870,7 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 
 ### 20261018-9. Rule `count_distinct_to_subquery`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-10. Rule `date_cast_to_range`.
-
-A comparison of a `timestamp` or `timestamptz` column, cast to `date` (`ts::date`, `CAST(ts AS date)`, or `date(ts)`), with a placeholder becomes a half-open range on the column, which a btree on the column can serve. `= $1` becomes `ts >= $1::date AND ts < $1::date + 1`. `>= $1` becomes `ts >= $1::date`, `> $1` becomes `ts >= $1::date + 1`, `< $1` becomes `ts < $1::date`, `<= $1` becomes `ts < $1::date + 1`, and `BETWEEN $1 AND $2` (not `SYMMETRIC`) becomes `ts >= $1::date AND ts < $2::date + 1`. Either side works. For `timestamptz`, both the cast and the comparison with a date read the session's `TimeZone`, so they agree, DST days included. Both forms are NULL when either side is. It takes a top-level conjunct of a `WHERE` or an inner join's `ON`. The literal oracle must say each date is finite, and that the day after it is within `timestamp`'s range. Check that literals keeps those placeholders at their slow literal in every set (they're compared with an expression, not a plain column). If it doesn't, check that every value it can pick also passes. Rests on nothing. e2e case 046 (a `both` case) covers it.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-10. Rule `date_cast_to_range`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-11. Rule `coalesce_comparison_split`. Done, see BACKLOG-COMPLETE.md.
 

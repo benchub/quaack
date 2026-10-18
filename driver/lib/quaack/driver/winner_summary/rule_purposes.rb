@@ -52,6 +52,9 @@ module Quaack
                                   "unique, not-null key of its table and a tag that differs from every other arm's.",
           "coalesce_comparison_split" => "Splits a COALESCE of a column compared with a value into a comparison of " \
                                          "the column and a test for its NULLs, which an index on the column can serve.",
+          "date_cast_to_range" => "Turns a timestamp column cast to date and compared with a day, such as " \
+                                  "created_at::date = $1, into a range on the column, which a btree on the " \
+                                  "column can serve.",
           "aggregate_before_join" => "Aggregates the joined table first, by its join columns, in place of " \
                                      "grouping every joined row by the other table's key, so Postgres joins " \
                                      "one row per key instead of every row it aggregates."
