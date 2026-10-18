@@ -12261,3 +12261,13 @@ From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the sam
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-21; enclave spec and docs). Tests for the OFFSET refusals, OPERATOR(pg_catalog.<>) ALL, and a reader inside an IN's tested value. The sound-but-refused items weren't small (functional dependence; expression types and collations) and stay unsupported in v1.
 - **Status:** done
+
+### 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
+
+Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.status = 'x') > 0 ... GROUP BY (SELECT count(*) FROM ... WHERE o.status = 'x') > 0`, redact gives the two copies' constants different placeholders, so the select list no longer matches the GROUP BY key and the redacted query fails to prepare (42803). Reproduce it in a test first, then share the placeholder the way redact already does for a GROUP BY key that matches a select-list expression.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-3, 2026-10-18.
+- **Design:** redact.
+- **Landed:** 2026-10-18 (task/20261018-19; enclave). `Redaction::Sharing#constants` walks subqueries for every matched key, so the two copies' constants share placeholders in tree order. Minor, open: no test pins that keys whose subqueries differ only in constants keep separate placeholders.
+- **Status:** done

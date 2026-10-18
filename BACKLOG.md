@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-12. Rule `scalar_aggregates_to_filter`.
 - 20261018-13. Rule `correlated_aggregate_to_join`.
 - 20261018-14. Rule `aggregate_before_join`.
+- 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
 
 ## How this file works.
 
@@ -753,15 +754,6 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-17.
 - **Design:** report, sankey.
-- **Status:** todo
-
-### 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
-
-Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.status = 'x') > 0 ... GROUP BY (SELECT count(*) FROM ... WHERE o.status = 'x') > 0`, redact gives the two copies' constants different placeholders, so the select list no longer matches the GROUP BY key and the redacted query fails to prepare (42803). Reproduce it in a test first, then share the placeholder the way redact already does for a GROUP BY key that matches a select-list expression.
-
-- **Depends on:** None.
-- **Came from:** Build of 20261018-3, 2026-10-18.
-- **Design:** redact.
 - **Status:** todo
 
 ### 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
