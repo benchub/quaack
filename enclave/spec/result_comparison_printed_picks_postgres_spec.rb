@@ -52,6 +52,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       .to eq(refused)
   end
 
+  it "checks a filtered max's ties among the rows its FILTER keeps" do
+    expect(verdict("SELECT max(n) FILTER (WHERE grp = 1) FROM items",
+                   data: rows([1, 1, "10"], [2, 1, "10.0"], [3, 2, "11"]))).to eq(refused)
+  end
+
+  it "leaves a window max alone" do
+    expect(verdict("SELECT id, max(n) OVER (PARTITION BY grp) FROM items")).to eq(matched)
+  end
+
   it "refuses when the original's own pick decides its answer, though a candidate with none matches by luck" do
     expect(verdict("SELECT n FROM items GROUP BY n", "SELECT n FROM items WHERE id <> 2")).to eq(refused)
   end
