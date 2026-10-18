@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "deparse"
 require_relative "rewrite_rules/count_to_exists"
+require_relative "rewrite_rules/coalesce_comparison_split"
 require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/count_distinct_to_subquery"
 require_relative "rewrite_rules/cte_hoist_dedupe"
@@ -97,7 +98,8 @@ module Quaack
         CountToExists.new,
         CountDistinctToSubquery.new,
         SubqueryOrderRemoval.new,
-        UnionToUnionAll.new
+        UnionToUnionAll.new,
+        CoalesceComparisonSplit.new
       ].freeze
 
       DEPTH = 2

@@ -16,6 +16,8 @@ The UI treats a NULL status as `'new'`, so the query wraps the column in `COALES
 
 `status = 'blocked'`. Stated assumption: the literal isn't `'new'`, the `COALESCE` default. For `'new'` the original would also return the NULL rows. The literal is compared with an expression, so literals keeps the slow literal in every set. The other sets here only prove equivalence, and rewrite-test or counterexamples should test the default value itself.
 
+The rule [`coalesce_comparison_split`](../../../docs/transforms/coalesce_comparison_split.md) makes a rewrite as good from `slow.sql`, with no assumption: `status = $2 OR (status IS NULL AND COALESCE($1, status) = $2)`, which Postgres folds to `status = 'blocked'` once it knows the literals.
+
 ## Proof.
 
 `ruby e2e/verify.rb 032` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.
