@@ -2018,8 +2018,8 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says what the shading means, once, with a swatch for each step of it" do
-        legend = '<p class="note legend">Each step is shaded by how far its estimated rows were from its actual ' \
-                 "rows, per loop, either way: " \
+        legend = '<p class="note legend">Each step&#39;s estimated and actual rows are shaded by how far apart ' \
+                 "they were, per loop, either way: " \
                  '<span class="misestimate-1">2x</span> <span class="misestimate-2">5x</span> ' \
                  '<span class="misestimate-3">10x</span> <span class="misestimate-4">20x</span> ' \
                  '<span class="misestimate-5">50x</span> <span class="misestimate-6">100x</span> ' \
@@ -2060,9 +2060,9 @@ RSpec.describe Quaack::Driver::Report do
       def flat(*blocks, **) = blocks.map { pnode("Seq Scan", 0, hit: it, read: 0, **) }
 
       it "shades blocks from 5%, 10%, 20%, 30%, 40%, 50%, 65%, and 80% of the plan's, and not under 5%" do
-        expected = { [49, 51, 900] => [nil, 1, 8], [50, 950] => [1, 8], [100, 199, 701] => [2, 2, 7],
-                     [200, 300, 500] => [3, 4, 6], [399, 601] => [4, 6], [400, 600] => [5, 6],
-                     [649, 351] => [6, 4], [650, 350] => [7, 4], [799, 201] => [7, 3], [800, 200] => [8, 3] }
+        expected = { [44, 45, 911] => [nil, 1, 8], [50, 950] => [1, 8], [100, 194, 706] => [2, 2, 7],
+                     [200, 300, 500] => [3, 4, 6], [394, 606] => [4, 6], [395, 605] => [5, 6],
+                     [644, 356] => [6, 4], [645, 355] => [7, 4], [794, 206] => [7, 3], [795, 205] => [8, 3] }
         expected.each do |blocks, buckets|
           payload["original_plan"] = flat(*blocks)
           expect(cost_shades(section(render(payload), "explanation"), 6))
@@ -2094,6 +2094,15 @@ RSpec.describe Quaack::Driver::Report do
         expect(cost_shades(explanation, 7)).to eq(["cost-2", "cost-3", "cost-2", "cost-5", nil, nil, nil])
         expect(cell_tags(plan_rows(explanation).first[3])[7])
           .to eq('<td class="num cost-5" title="5.0 ms in the step itself, 42% of the plan&#39;s">')
+      end
+
+      it "buckets a step by its share as the cell rounds it, so the cell and the legend agree" do
+        payload["original_plan"] = [pnode("Seq Scan", 0, time: 4.96), pnode("Seq Scan", 0, time: 19.6),
+                                    pnode("Seq Scan", 0, time: 4.44), pnode("Seq Scan", 0, time: 71.0)]
+        expect(cost_shades(explanation, 7)).to eq(["cost-1", "cost-3", nil, "cost-7"])
+        expect(cell_tags(plan_rows(explanation).first[0])[7])
+          .to eq('<td class="num cost-1" title="5.0 ms in the step itself, 5% of the plan&#39;s">')
+        expect(plan_rows(explanation).first[0]).to include("5.0 ms (5%)")
       end
 
       it "shades nothing in a plan whose steps took no time or read no blocks" do
