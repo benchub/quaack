@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261018-1. Rule generator: never cap a one-rule rewrite.
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -785,14 +786,7 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 - e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
 - Opus builder and reviewer for each rule.
 
-### 20261018-1. Rule generator: never cap a one-rule rewrite.
-
-The user decided (2026-10-18) that every rule that applies gets its rewrites tested before any combination of rules is. Today `RewriteRules.generate` keeps the first `MAX` (10) results of its breadth-first chain, so with 25 rules a query that many rules match loses one-rule rewrites to the cap. Keep every one-rule result. `MAX` then caps only the two-rule results that follow them, at 10 (the user left the combination cap open; keep 10). `over_cap` counts only the two-rule results dropped. Update DESIGN.md's rewrite-rules ("Keep at most ten rewrites" and the paragraph after it), README's "ten from the transform rules" and the spec in `spec/transform_docs_spec.rb` that checks it, and anything downstream that assumes at most ten rule rewrites, such as rewrite numbering, report words, the burndown, and the `rewrite_rules_applied` marker.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules, burndown.
-- **Status:** todo
+### 20261018-1. Rule generator: never cap a one-rule rewrite. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-2. Rule `cte_fence_removal`.
 
