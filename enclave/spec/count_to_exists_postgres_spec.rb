@@ -382,7 +382,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountToExists do
       end.to raise_error(PG::DivisionByZero)
       expect(rewritten(sql)).to eq([])
     end
-end
+  end
 
   it "leaves alone a query that calls a volatile function, in the subquery or anywhere else" do
     in_subquery = "(SELECT count(*) FROM public.orders o WHERE o.customer_id = c.id AND random() < 2) > 0"
