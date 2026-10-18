@@ -137,6 +137,24 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
     expect(catalog.column_info("public", "t", "name").type).to eq(catalog.type_name("varchar(10)"))
   end
 
+  # public.int4 is a composite named for a built-in type, so it's found by
+  # oid, not name.
+  it "calls a column's type a row type when it's a composite or a domain over one, at any depth" do
+    conn.exec(<<~SQL)
+      CREATE DOMAIN public.boxed AS public.int4;
+      CREATE DOMAIN public.reboxed AS public.boxed;
+      CREATE TABLE public.rows (pair public.int4, boxed public.boxed, reboxed public.reboxed, pairs public.int4[],
+                                id int, size public.small, mood public.mood);
+    SQL
+    names = %w[pair boxed reboxed pairs id size mood missing]
+
+    expect(names.to_h { [it, catalog.row_type?("public", "rows", it)] }).to eq(
+      "pair" => true, "boxed" => true, "reboxed" => true, "pairs" => false, "id" => false, "size" => false,
+      "mood" => false, "missing" => false
+    )
+    expect(catalog.row_type?("public", "missing", "pair")).to be(false)
+  end
+
   it "says whether a query calls a volatile function, refusing what it can't check", :aggregate_failures do
     {
       "SELECT t.id FROM public.t WHERE t.id < random()" => true,
@@ -176,6 +194,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
               catalog.row_wise?(calls("SELECT lower('a')"))]).to eq([false, false, true])
       expect([catalog.default_btree?("public", "t", "born"), catalog.default_btree?("public", "t", "doc")])
         .to eq([true, false])
+      expect([catalog.row_type?("public", "t", "pair"), catalog.row_type?("public", "t", "size")]).to eq([true, false])
     end
 
     it "calls a function an aggregate only when every function of its name is one" do

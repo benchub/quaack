@@ -41,7 +41,10 @@ module Quaack
                                    "neither drop nor repeat a row.",
           "polymorphic_key_copy" => "A child table joins a parent filtered to one Rails polymorphic type and id, " \
                                     "and the child has its own column for that type's id, which QUAACK checked " \
-                                    "holds the same id in the data."
+                                    "holds the same id in the data.",
+          "count_to_exists" => "A scalar subquery selects only count(*), or a count of a column of one of its " \
+                               "own tables, and the query compares it with a constant, such as > 0, >= 1, or = 0, " \
+                               "so the comparison only asks whether any row matches."
         }.freeze
       end
     end
