@@ -740,6 +740,15 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Design:** report, sankey.
 - **Status:** todo
 
+### 20261018-15. Report: a floating table of contents in the left margin.
+
+The report is getting long to scroll through. Add a `<nav>` of links to the report's top-level sections, by their existing `id`s (`summary`, `queries`, `ranking`, `explanation`, `indexes`, `accountability`, `burndown`, and the ones only some runs have, such as `quaack-bugs`, `timeouts`, `index-ideas`, and `negative-result`), built from the same conditions that decide which sections render, so it never links to a missing one. CSS only, since the report runs no script: on a window wide enough (about `88rem`), it's `position: fixed` at the top left, inside the margin the body's `max-width: 62rem` leaves (`width: calc((100vw - 62rem) / 2 - 2rem)`), with `max-height: calc(100vh - 2rem)` and `overflow-y: auto`. On a narrower window, the same list sits inline under the title. It uses the page's color variables, so dark mode works, and it's hidden in print. Its labels are QUAACK's own fixed words. No highlight of the current section, since that needs a script or scroll-driven animation (the user agreed, 2026-10-18). Update DESIGN.md's report section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** report.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
