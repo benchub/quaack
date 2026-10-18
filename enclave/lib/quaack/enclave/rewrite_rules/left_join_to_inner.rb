@@ -52,8 +52,10 @@ module Quaack
       #   pair (Catalog#strict_foreign_key?, as unused_join_removal asks),
       #   the joined table with no row-level security, and every joining
       #   column not null.
-      # - Nowhere does the query have a locking clause, which locks the rows
-      #   of an inner join's tables that a LEFT JOIN's nullable side doesn't.
+      # - Nowhere does the query have a locking clause. A FOR UPDATE that
+      #   reaches a LEFT JOIN's nullable side fails, but on an inner join it
+      #   runs and locks that table's rows. QUAACK refuses such queries
+      #   before any rule runs, and the rule checks again.
       class LeftJoinToInner
         # One LEFT JOIN the rule might make inner: the JoinExpr, the joining
         # table's RangeVar, the joined table's, and the [joining column,
