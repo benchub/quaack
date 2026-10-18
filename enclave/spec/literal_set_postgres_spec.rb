@@ -380,6 +380,20 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(rows(sql, result.sets["typical"]).size).to eq(10_000)
     end
 
+    it "for a count subquery's threshold with =, with OPERATOR(pg_catalog.>), and outside WHERE" do
+      sql, result = literal_sets("SELECT (SELECT count(*) FROM public.readings x WHERE x.id = r.id) = 0 FROM " \
+                                 "public.readings r WHERE (SELECT count(*) FROM public.readings x " \
+                                 "WHERE x.id = r.id) OPERATOR(pg_catalog.>) 0 GROUP BY r.id " \
+                                 "HAVING (SELECT count(*) FROM public.readings x WHERE x.id = r.id) >= 1")
+      thresholds = { "$1" => "0", "$2" => "0", "$3" => "1" }
+
+      expect(sql).to include("r.id) = $1 FROM", "r.id) OPERATOR(pg_catalog.>) $2", "r.id) >= $3")
+      expect(values(result, "worst_case")).to eq(thresholds)
+      expect(values(result, "typical")).to eq(thresholds)
+      expect(result.fallbacks["typical"]).to eq(thresholds.transform_values { "unsupported_shape" })
+      rows(sql, result.sets["typical"])
+    end
+
     it "for a placeholder that more than one expression shares" do
       sql, result = literal_sets("SELECT count(*) FROM public.readings r GROUP BY r.k = 5 HAVING r.k = 5")
 

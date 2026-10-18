@@ -34,7 +34,7 @@ Stored, the body runs once, and every read gets the same rows. Not stored, the b
 So when the body can run more than once, the rule needs a body whose rows can't depend on that order. It refuses a body with any of these, at any depth:
 
 - `LIMIT`, `OFFSET`, or `FETCH FIRST`, which keep the rows that come first.
-- `DISTINCT`, `DISTINCT ON`, `GROUP BY`, or a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL`. Each keeps one row of the rows that it counts as equal. Two values can be equal but differ, such as `1.0` and `1.00`, so each run can keep another one.
+- `DISTINCT`, `DISTINCT ON`, `GROUP BY`, or a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL`, or an `INTERSECT ALL` or `EXCEPT ALL`. Each keeps one row of the rows that it counts as equal. Two values can be equal but differ, such as `1.0` and `1.00`, so each run can keep another one.
 - An aggregate, window, or set-returning function. `array_agg`, `row_number`, and a sum of floats all depend on the order.
 
 The same holds for each CTE that the body reads, at any depth. If Postgres doesn't store that CTE, the body runs it again in each run.

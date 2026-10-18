@@ -33,9 +33,12 @@ module Quaack
       # row of 0. It states no assumption.
       #
       # The query must be a top-level SELECT with a FROM, whose select list
-      # is the grouping columns, each written name.column, and exactly one
-      # count(DISTINCT e) of one argument, with no FILTER and no ORDER BY of
-      # its own. Its GROUP BY must be exactly those columns, as a set. Each
+      # is the grouping columns, each written name.column or bare, and
+      # exactly one count(DISTINCT e) of one argument, with no FILTER and no
+      # ORDER BY of its own. Its GROUP BY must be exactly those columns, as
+      # a set, each written as the select list writes it or as an ordinal
+      # of its select-list item. A bare column in the subquery reads the
+      # same FROM, so it names the same column. Each
       # output keeps its name. An ORDER BY may name a grouping column as
       # written, which becomes the subquery's column, an output's name, or
       # an ordinal, which stay as they are. LIMIT, OFFSET, and WITH stay on
@@ -88,7 +91,7 @@ module Quaack
 
         # The outer query's GROUP BY and ORDER BY, on table's columns.
         def grouped(select, table)
-          { group_clause: select.group_clause.map { reference(table, Shape.column(it).last) },
+          { group_clause: select.group_clause.map { reference(table, Shape.group_column(it, select).last) },
             sort_clause: select.sort_clause.map { sorted(it, select, table) } }
         end
 
@@ -101,7 +104,7 @@ module Quaack
         # The SELECT DISTINCT of select's grouping columns and the counted
         # value, as column.
         def inner(select, argument, column)
-          targets = Shape.columns(select).map { PgQuery::Node.new(res_target: PgQuery::ResTarget.new(val: ref(it))) }
+          targets = Shape.columns(select).map { PgQuery::Node.new(res_target: PgQuery::ResTarget.new(val: ref(it.compact))) }
           targets << PgQuery::Node.new(res_target: PgQuery::ResTarget.new(name: column, val: argument))
           PgQuery::SelectStmt.new(distinct_clause: [PgQuery::Node.new], target_list: targets,
                                   from_clause: select.from_clause.to_a, where_clause: select.where_clause,

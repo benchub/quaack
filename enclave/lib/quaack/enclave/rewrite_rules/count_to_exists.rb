@@ -66,6 +66,7 @@ module Quaack
       #   the placeholder's own type, as the query compares the count, so
       #   0.0 is 0 and 0.5 is neither.
       # - The subquery is a count the rule can read (see Counted).
+      # - No GROUP BY holds the subquery bare (see grouped_bare?).
       # - Nothing in the subquery's FROM or WHERE can raise on some rows
       #   (see raises?). It's judged with any count inside it already
       #   rewritten.
@@ -93,7 +94,7 @@ module Quaack
           return [] unless literals
 
           tree = Deparse.copy(parse.tree)
-          tests = nodes(tree).filter_map { test(it, catalog, literals) }
+          tests = tests(tree, catalog, literals)
           return [] if tests.empty? || catalog.calls_volatile?(Deparse.faithfully(tree))
 
           # Inner comparisons first, so an outer one's copy of its subquery
@@ -167,6 +168,28 @@ module Quaack
         def raises?(select, catalog)
           [select.from_clause, select.where_clause].any? { OrToUnion::Arms.raises?(it, catalog) }
         end
+
+        # Whether a GROUP BY holds a copy of the test's subquery that isn't
+        # itself a test's, as in GROUP BY (SELECT count(*) ...). A
+        # comparison in the select list then reads the grouped count, and
+        # as EXISTS, it would read a subquery the GROUP BY doesn't hold, so
+        # the query wouldn't prepare.
+        # Every Test in tree, but those grouped_bare? refuses.
+        def tests(tree, catalog, literals)
+          found = nodes(tree).filter_map { test(it, catalog, literals) }
+          found.reject { grouped_bare?(it, tree, found) }
+        end
+
+        def grouped_bare?(test, tree, tests)
+          wanted = located_nowhere(test.link)
+          Tree.find_all(tree, PgQuery::SelectStmt).flat_map(&:group_clause).any? do |item|
+            Tree.find_all(item, PgQuery::SubLink).any? do |link|
+              tests.none? { it.link.equal?(link) } && located_nowhere(link) == wanted
+            end
+          end
+        end
+
+        def located_nowhere(link) = Deparse.copy(link).tap { Deparse.clear_locations(it) }
 
         # Every Node in node, in tree order, each before those inside it.
         def nodes(node, found = [])

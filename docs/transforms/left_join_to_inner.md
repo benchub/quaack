@@ -37,7 +37,7 @@ These cases are unsupported in v1:
 
 ## Why it can be faster.
 
-A `LEFT JOIN` limits the plans Postgres can choose. Postgres must read the left side first and look up each row's match, because it has to keep the rows that have none. So for `ORDER BY users.name LIMIT 20`, it joins every matching row to its user, sorts them all by name, and keeps 20. An inner join can be read in either order. Postgres can walk an index on `users.name` in order, look up each user's rows, and stop once it has 20. Postgres already makes a `LEFT JOIN` inner when the `WHERE` throws away the rows that it fills with `NULL`, but it doesn't use a foreign key to do so.
+A `LEFT JOIN` limits the plans Postgres can choose. It has to return every row of the left side, even one with no match, so it can't start from the joined table and stop early. So for `ORDER BY users.name LIMIT 20`, it joins every one of the course's enrollments to its user, sorts them all by name, and keeps 20. An inner join can be read in either order. Postgres can walk an index on `users.name` in order, look up each user's rows, and stop once it has 20. Postgres already makes a `LEFT JOIN` inner when the `WHERE` throws away the rows that it fills with `NULL`, but it doesn't use a foreign key to do so.
 
 ## What it rests on.
 

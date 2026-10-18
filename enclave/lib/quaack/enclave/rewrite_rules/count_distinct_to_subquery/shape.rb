@@ -62,13 +62,30 @@ module Quaack
             !%i[a_const param_ref].include?(node.node)
           end
 
-          # [qualifier, column] of a name.column, or nil.
-          def column(node) = (Tree.qualified(node.column_ref) if node.node == :column_ref)
+          # [qualifier, column] of a name.column, [nil, column] of a bare
+          # column, or nil. A bare name in the subquery reads the same FROM,
+          # so it means what it did.
+          def column(node)
+            return unless node.node == :column_ref
+
+            ref = node.column_ref
+            Tree.qualified(ref) || ([nil, Tree.bare_name(ref)] if Tree.bare_name(ref))
+          end
+
+          # The column a GROUP BY item names: a column as column reads it,
+          # or an ordinal's select-list item's, or nil.
+          def group_column(node, select)
+            return column(node) unless node.node == :a_const && node.a_const.val == :ival
+
+            index = node.a_const.ival.ival
+            target = select.target_list[index - 1] if index.positive? # Postgres refuses 0.
+            column(target.res_target.val) if target
+          end
 
           def columns(select) = select.target_list.filter_map { column(it.res_target.val) }
 
           def grouped_by_columns?(select)
-            groups = select.group_clause.map { column(it) }
+            groups = select.group_clause.map { group_column(it, select) }
             groups.all? && groups.to_set == columns(select).to_set
           end
 
