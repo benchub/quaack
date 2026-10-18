@@ -16,7 +16,7 @@ This page calls the first table in the `FROM` the first table. The `FROM` must h
 
 Each join's `ON` must pair every column of a unique key of the joined table with a column of a table before it. Each pair is a plain `=` between two columns written `name.column`, at the top level of the `ON`'s `AND`. The `ON` can hold other conditions too, since they only filter. So each row of the first table gets at most one row of each joined table. An inner join can drop the row, and a left join keeps it with `NULL`s, but neither repeats it.
 
-The two columns of each pair must have one type, and its `=` must be the operator of the type's default btree family, which the key's unique index also uses. Neither column can have a nondeterministic collation. Otherwise one row could be `=` to two rows of the joined table.
+The two columns of each pair must have one type, or be two of `smallint`, `integer`, and `bigint`, as an `integer` foreign key to a `bigint` primary key is in older Rails schemas. The pair's `=` must be the operator of the type's default btree family, which the key's unique index also uses. Neither column can have a nondeterministic collation. Otherwise one row could be `=` to two rows of the joined table.
 
 The select list must hold every column of a unique, not-null key of the first table. Each key column is written `name.column`, alone, or the table's `name.*` stands for all its columns. An alias, as in `posts.slug AS s`, is fine. An expression such as `posts.id + 0` doesn't count. The key's columns can't have a nondeterministic collation. Since each row of the first table gives at most one row, and the key tells those rows apart, no two rows are equal.
 
@@ -31,7 +31,9 @@ With no `GROUP BY`, an aggregate or a `HAVING` makes the whole `SELECT` one grou
 These cases are unsupported in v1:
 
 - a join whose key is paired with a constant or a parameter, as in `ON users.id = $1`,
-- a join whose pair has two types, such as `int` and `bigint`, or whose `=` names its schema,
+- a join whose pair has two types other than two integer types, such as `integer` and `numeric`, or whose `=` names its schema,
+- a `UNION`, `INTERSECT`, or `EXCEPT` arm whose select list holds a bare constant or parameter, as in `SELECT DISTINCT posts.id, 'Post' AS kind ... UNION ALL ...`. With `DISTINCT`, Postgres makes that constant `text`. Without it, the constant takes the other arm's type, which may compare otherwise, as `citext` does,
+- a has_one join on a unique foreign key that's nullable, such as `LEFT JOIN profiles ON profiles.user_id = users.id`, since the `unique` assumption also requires the key not null,
 - a key column with a nondeterministic collation, even when its unique index uses the same collation,
 - a select list with a subquery that calls an aggregate, such as `(SELECT count(*) FROM comments ...)`,
 - a table read with `ONLY`, and

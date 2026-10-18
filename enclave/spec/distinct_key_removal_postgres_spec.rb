@@ -35,6 +35,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctKeyRemoval do
       CREATE TABLE public.comments (id int PRIMARY KEY, post_id int, body text);
       CREATE TABLE public.memberships (user_id int, org_id int, role text, PRIMARY KEY (user_id, org_id));
       CREATE TABLE public.wide (id bigint PRIMARY KEY, name text);
+      CREATE TABLE public.amounts (id numeric PRIMARY KEY);
       INSERT INTO public.orgs VALUES (5, 'five'), (6, 'six');
       INSERT INTO public.users VALUES (1, 'ann', 5), (2, 'bob', 5), (3, 'ann', 6);
       INSERT INTO public.posts VALUES
@@ -164,6 +165,24 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctKeyRemoval do
                                             ["same", "13", nil]])
   end
 
+  it "takes a join of an int column to a bigint key, whose = is in the key's btree family" do
+    sql = "SELECT DISTINCT p.id, w.name FROM public.posts p JOIN public.wide w ON w.id = p.user_id"
+
+    rewrites = rewritten(sql)
+
+    expect(rewrites).to eq([sql.sub("SELECT DISTINCT", "SELECT")])
+    expect(same_rows(sql, rewrites)).to eq([%w[10 one], %w[11 one], %w[12 two]])
+  end
+
+  it "takes a set operation's arm whose constants are typed, and an untyped constant outside one" do
+    arm = "SELECT DISTINCT p.id, 'Post'::text AS kind FROM public.posts p " \
+          "UNION ALL SELECT u.id, u.name FROM public.users u"
+    plain = "SELECT DISTINCT p.id, 'Post' AS kind FROM public.posts p"
+
+    expect(rewritten(arm)).to eq([arm.sub("SELECT DISTINCT", "SELECT")])
+    expect(rewritten(plain)).to eq([plain.sub("SELECT DISTINCT", "SELECT")])
+  end
+
   it "takes a chain of joins, each on a key paired with a table before it, and states every key" do
     sql = "SELECT DISTINCT p.id, o.name, m.role FROM public.posts p JOIN public.users u ON u.id = p.user_id " \
           "LEFT JOIN public.orgs o ON o.id = u.org_id " \
@@ -286,8 +305,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctKeyRemoval do
       "SELECT DISTINCT p.id FROM public.posts p JOIN public.users u ON u.id OPERATOR(pg_catalog.=) p.user_id",
     "a join column is cast" =>
       "SELECT DISTINCT p.id FROM public.posts p JOIN public.users u ON u.id = p.user_id::int",
-    "the join's columns differ in type" =>
-      "SELECT DISTINCT p.id, w.name FROM public.posts p JOIN public.wide w ON w.id = p.user_id",
+    "the join's columns differ in type, one not an integer" =>
+      "SELECT DISTINCT p.id, w.name FROM public.posts p JOIN public.wide w ON w.name = p.slug::varchar",
+    "the join pairs an integer column with a numeric key" =>
+      "SELECT DISTINCT p.id FROM public.posts p JOIN public.amounts a ON a.id = p.user_id",
+    "a set operation's arm selects an untyped constant" =>
+      "SELECT t.id, t.kind FROM (SELECT DISTINCT p.id, 'Post' AS kind FROM public.posts p " \
+      "UNION ALL SELECT u.id, u.name FROM public.users u) t WHERE t.kind = 'post'",
+    "a set operation's arm selects a parameter" =>
+      "SELECT DISTINCT p.id, $1 FROM public.posts p UNION SELECT u.id, u.name FROM public.users u",
+    "a set operation's arm selects an untyped NULL" =>
+      "SELECT u.id, u.name FROM public.users u EXCEPT SELECT DISTINCT p.id, NULL FROM public.posts p",
     "it's a cross join" => "SELECT DISTINCT p.id FROM public.posts p CROSS JOIN public.orgs o",
     "it's a comma join" =>
       "SELECT DISTINCT p.id FROM public.posts p, public.users u WHERE u.id = p.user_id",

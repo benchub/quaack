@@ -61,14 +61,14 @@ module Quaack
           # The joined table's column that condition pairs with a column of
           # a table before it, or nil. The condition must be a plain
           # unqualified = between two columns written name.column, of one
-          # base type, each with a deterministic collation or none, whose =
+          # base type or two integer types (one_family?), each with a deterministic collation or none, whose =
           # is the type's default btree family's (Catalog#default_btree?).
           # With the unique assumption's = being that family's too, at most
           # one row of the joined table is = to each value.
           def paired(condition, join, catalog)
             own, other = sides(condition, Tree.refname(join.table))
             table = join.before.find { Tree.refname(it) == other.first } if own
-            own.last if table && comparable?(catalog, [*pair(join.table), own.last], [*pair(table), other.last])
+            own.last if table && pairable?(catalog, [*pair(join.table), own.last], [*pair(table), other.last])
           end
 
           # The two columns condition equates, the one of the table named
@@ -89,10 +89,27 @@ module Quaack
             refs if refs.all?
           end
 
-          def comparable?(catalog, column, other)
+          # Whether the pair is comparable?, or two integers whose = is the
+          # key's integer_ops one. Only this rule's joins take the second.
+          def pairable?(catalog, column, other)
+            comparable?(catalog, column, other, integers: true)
+          end
+
+          def comparable?(catalog, column, other, integers: false)
             info, other_info = [column, other].map { catalog.column_info(*it) }
-            info && other_info && info.base_type == other_info.base_type && info.deterministic &&
+            info && other_info && one_family?(info.base_type, other_info.base_type, integers) && info.deterministic &&
               other_info.deterministic && catalog.default_btree?(*column)
+          end
+
+          # Postgres's integer types, whose = across any two of them is an
+          # operator of integer_ops, the family of each one's default btree
+          # opclass, as an int column joined to a bigint key is.
+          INTEGERS = %w[smallint integer bigint].freeze
+
+          # Whether = between the two base types is the key type's own
+          # family's: the types are one, or, if integers, both are integers.
+          def one_family?(type, other, integers)
+            type == other || (integers && [type, other].all? { INTEGERS.include?(it) })
           end
 
           def unique_not_null(table, key)

@@ -62,6 +62,9 @@ module Quaack
       #   function runs before the DISTINCT and doesn't change which rows
       #   it sees, but v1 refuses one too, as it does an aggregate in a
       #   subquery.
+      # - If it's an arm of a UNION, INTERSECT, or EXCEPT, its select list
+      #   holds no bare constant or parameter, whose type the DISTINCT
+      #   settles.
       class DistinctKeyRemoval
         # One SELECT the rule can take, and what its rewrite rests on.
         Removal = Data.define(:select, :assumptions)
@@ -86,7 +89,20 @@ module Quaack
 
         # Every SELECT in tree whose DISTINCT the rule can remove, in tree
         # order.
-        def removals(tree, catalog) = Tree.find_all(tree, PgQuery::SelectStmt).filter_map { removal(it, catalog) }
+        def removals(tree, catalog)
+          selects = Tree.find_all(tree, PgQuery::SelectStmt)
+          arms = selects.reject { it.op == :SETOP_NONE }.flat_map { [it.larg, it.rarg] }
+          selects.filter_map { removal(it, catalog) unless untyped_arm?(it, arms) }
+        end
+
+        # Whether select is an arm of a set operation and selects an untyped
+        # constant or parameter. Its DISTINCT resolves that to text, and
+        # without one it takes the other arm's type, which can compare
+        # otherwise, as citext does.
+        def untyped_arm?(select, arms)
+          arms.any? { it.equal?(select) } &&
+            select.target_list.any? { %i[a_const param_ref].include?(it.res_target.val.node) }
+        end
 
         def removal(select, catalog)
           from = From.read(select.from_clause) if distinct?(select) && row_wise?(select, catalog)
