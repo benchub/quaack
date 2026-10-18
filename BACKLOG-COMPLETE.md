@@ -12219,3 +12219,13 @@ The report is getting long to scroll through. Add a `<nav>` of links to the repo
 - **Design:** report.
 - **Landed:** 2026-10-18 (task/20261018-15; driver only). `<nav id="toc">` after the h1, built from the section conditions; fixed at 88rem and wider, hidden in print. One fix round: a test for the rule-bug link.
 - **Status:** done
+
+### 20261018-14. Rule `aggregate_before_join`.
+
+`SELECT <t's columns>, <aggregates over s> FROM t JOIN s ON s.f = t.c ... WHERE ... GROUP BY <t's columns>` aggregates `s` first: `FROM t JOIN (SELECT s.f, agg(...) AS a_1, ... FROM s WHERE <s's conjuncts> GROUP BY s.f) quaack_pre_1 ON quaack_pre_1.f = t.c`, with no outer `GROUP BY`. This is the Rails `joins(:orders).group("users.id").count` shape. The `FROM` is exactly two plain tables, `t` and `s`, in an inner join (`JOIN ... ON` or a comma join with `WHERE` equalities). The join conditions are equalities between columns of `s` and `t`, each pair of one type with a deterministic collation. The `GROUP BY` holds every column of a unique, not-null key of `t`, and only columns of `t`, so each group is one row of `t`, and each row of `t` joins at most one row of the derived table. Every aggregate reads only `s` (`count(*)` counts `s`'s rows). Every other `WHERE` conjunct reads only `t`, where it stays, or only `s`, where it moves into the derived table. A `HAVING` over `s`'s aggregates only moves into the derived table. The select list and `ORDER BY` read `t`'s columns and the aggregates, which become the derived table's columns. It refuses outer joins, `DISTINCT`, windows, grouping sets, volatile calls, and a bare `*`. Rests on `unique` and `not_null` for `t`'s key. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-14; enclave, protocol, and driver). Refuses moved conditions and aggregate arguments that can raise; inherits or_to_union's LIKE-parameter risk, and accepts that an aggregate's own overflow (a float8 sum) can raise in a group the join drops (DESIGN.md says so). e2e case 107 (`107-orders-count-per-user`): 34358 to 30715 blocks on the slow literals. One fix round: tests for the OVER and nullable-unique-key refusals. Not yet taken: a subquery in a key-table condition (Rails `where(id: subquery)`), an expression over key columns or wrapping an aggregate (`coalesce(sum(...), 0)`), and an ORDER BY aggregate.
+- **Status:** done

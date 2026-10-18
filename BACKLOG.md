@@ -19,6 +19,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-10. Rule `date_cast_to_range`.
 - 20261018-12. Rule `scalar_aggregates_to_filter`.
 - 20261018-13. Rule `correlated_aggregate_to_join`.
+- 20261018-14. Rule `aggregate_before_join`.
 
 ## How this file works.
 
@@ -882,11 +883,5 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 
 ### 20261018-13. Rule `correlated_aggregate_to_join`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-14. Rule `aggregate_before_join`.
+### 20261018-14. Rule `aggregate_before_join`. Done, see BACKLOG-COMPLETE.md.
 
-`SELECT <t's columns>, <aggregates over s> FROM t JOIN s ON s.f = t.c ... WHERE ... GROUP BY <t's columns>` aggregates `s` first: `FROM t JOIN (SELECT s.f, agg(...) AS a_1, ... FROM s WHERE <s's conjuncts> GROUP BY s.f) quaack_pre_1 ON quaack_pre_1.f = t.c`, with no outer `GROUP BY`. This is the Rails `joins(:orders).group("users.id").count` shape. The `FROM` is exactly two plain tables, `t` and `s`, in an inner join (`JOIN ... ON` or a comma join with `WHERE` equalities). The join conditions are equalities between columns of `s` and `t`, each pair of one type with a deterministic collation. The `GROUP BY` holds every column of a unique, not-null key of `t`, and only columns of `t`, so each group is one row of `t`, and each row of `t` joins at most one row of the derived table. Every aggregate reads only `s` (`count(*)` counts `s`'s rows). Every other `WHERE` conjunct reads only `t`, where it stays, or only `s`, where it moves into the derived table. A `HAVING` over `s`'s aggregates only moves into the derived table. The select list and `ORDER BY` read `t`'s columns and the aggregates, which become the derived table's columns. It refuses outer joins, `DISTINCT`, windows, grouping sets, volatile calls, and a bare `*`. Rests on `unique` and `not_null` for `t`'s key. Needs a new e2e case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
