@@ -58,7 +58,10 @@ module Quaack
                                   "with NULLs.",
           "count_to_exists" => "A scalar subquery selects only count(*), or a count of a column of one of its " \
                                "own tables, and the query compares it with a constant, such as > 0, >= 1, or = 0, " \
-                               "so the comparison only asks whether any row matches."
+                               "so the comparison only asks whether any row matches.",
+          "count_distinct_to_subquery" => "A SELECT with a FROM selects only its GROUP BY columns, each written " \
+                                          "name.column, and one count(DISTINCT e), with no HAVING, window, or " \
+                                          "DISTINCT, and calls no volatile function."
         }.freeze
       end
     end

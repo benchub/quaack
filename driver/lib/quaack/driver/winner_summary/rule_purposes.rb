@@ -42,7 +42,10 @@ module Quaack
                                   "inner join, which Postgres can reorder, so the joined table can drive.",
           "count_to_exists" => "Turns a count subquery that only asks whether any row matches, such as " \
                                "count(*) > 0 or count(*) = 0, into an EXISTS or a NOT EXISTS, which can stop at " \
-                               "the first match."
+                               "the first match.",
+          "count_distinct_to_subquery" => "Counts the rows of a SELECT DISTINCT of the GROUP BY columns and the " \
+                                          "counted value, in place of a count(DISTINCT), so Postgres can hash " \
+                                          "instead of sorting inside the aggregate."
         }.freeze
       end
     end

@@ -1,0 +1,28 @@
+{
+  "title": "Dashboard count of distinct users",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "count(DISTINCT) per group",
+    "SELECT DISTINCT that can hash",
+    "sort that spills to temp files (blocks-metric)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "submissions",
+      "replace": {
+        "'page_view'": "'submission'"
+      }
+    },
+    {
+      "name": "no such kind",
+      "replace": {
+        "'page_view'": "'quiz'"
+      }
+    }
+  ]
+}
