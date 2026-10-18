@@ -1270,7 +1270,7 @@ RSpec.describe Quaack::Driver::Report do
       it "says how a rewrite that passed every test lost" do
         expect(fate("not_better")).to eq("It passed every correctness test, but when measured against real data " \
                                          "performed too poorly to be ranked.")
-        expect(fate("footprint_tie")).to include("tied with a candidate whose new indices take less disk space")
+        expect(fate("footprint_tie")).to include("tied with a candidate whose new indices take no more disk space")
         expect(fate("below_top_three")).to include("three others of its kind did better")
         expect(fate("measurement_timed_out")).to include("every measurement run of it timed out")
       end
@@ -1685,7 +1685,7 @@ RSpec.describe Quaack::Driver::Report do
       it "says a candidate lost a tie on index size, fell outside the top three, or was dropped on real data" do
         payload["excluded"] = { "rewrite_1:top:1" => "footprint_tie" }
         expect(unranked).to include("(a, b)</code></td><td>#{rule}</td><td>Beat the original query, but tied with a " \
-                                    "candidate whose new indices take less disk space.</td></tr>")
+                                    "candidate whose new indices take no more disk space.</td></tr>")
         payload["excluded"] = { "rewrite_1:top:1" => "below_top_three" }
         expect(section(render(payload), "ranking")).to include("<td>Beat the original query, but three others of its " \
                                                                "kind did better.</td></tr>")
