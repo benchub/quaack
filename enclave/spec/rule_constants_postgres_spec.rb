@@ -40,6 +40,7 @@ module RuleConstantsFixtures
     "count_distinct_to_subquery" => ["'active'"],
     "subquery_order_removal" => %w[42],
     "union_to_union_all" => ["'Submission'", "42", "'Enrollment'", "42"],
+    "coalesce_comparison_split" => %w[42 0 0],
     "correlated_aggregate_to_join" => ["'graded'", "'graded'"]
   }.freeze
 

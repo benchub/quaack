@@ -69,6 +69,8 @@ module Quaack
           "union_to_union_all" => "Each arm of a UNION reads one table and selects every column of a unique, " \
                                   "not-null key of it, and in one position every arm selects a constant tag that " \
                                   "differs from every other arm's, so no two of the UNION's rows can be equal.",
+          "coalesce_comparison_split" => "Nothing about the data. The comparison is a condition of a WHERE or an " \
+                                         "inner join's ON, which drops a row whether the test is false or NULL.",
           "correlated_aggregate_to_join" => "A WHERE condition compares with a scalar subquery of avg, sum, min, or " \
                                             "max over one table, correlated only by equalities of one type, so an " \
                                             "outer row with no group is dropped either way."
