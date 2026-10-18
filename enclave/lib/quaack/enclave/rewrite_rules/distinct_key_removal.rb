@@ -58,8 +58,10 @@ module Quaack
       # - No function or operator the select list calls, in a subquery
       #   too, could return a set or be an aggregate or window function
       #   (Catalog#row_wise?). A set-returning call gives several rows for
-      #   one row of the FROM, and a window function can give one value
-      #   per row of the FROM that isn't the row's own.
+      #   one row of the FROM, which the DISTINCT may merge. A window
+      #   function runs before the DISTINCT and doesn't change which rows
+      #   it sees, but v1 refuses one too, as it does an aggregate in a
+      #   subquery.
       class DistinctKeyRemoval
         # One SELECT the rule can take, and what its rewrite rests on.
         Removal = Data.define(:select, :assumptions)
