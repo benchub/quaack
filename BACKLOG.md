@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261018-1. Rule generator: never cap a one-rule rewrite.
 - 20261018-4. Rule `subquery_distinct_removal`.
+- 20261018-6. Rule `distinct_key_removal`.
 
 ## How this file works.
 
@@ -790,6 +791,25 @@ From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the sam
 - **Design:** rewrite-rules.
 - **Status:** todo
 
+### 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
+
+From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_removal) or a join (unused_join_removal) inside a derived table can change the order in which rows reach the reading query. If that query feeds them to an aggregate whose result depends on order and that has no `ORDER BY` of its own, such as `string_agg(t.name, ',')` or `array_agg(t.id)` over the derived table, the result changes, and result-comparison would report a sound rewrite as a rule bug. Decide whether these rules refuse such a reader (an allowlist of order-blind aggregates, as 20261018-5 uses), or whether fixture-compare and result-comparison should treat such an aggregate's result as unordered. Reproduce it first.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-6, 2026-10-18.
+- **Design:** rewrite-rules, result-comparison.
+- **Status:** todo
+
+### 20261018-23. distinct_key_removal: minors from the build and review of 20261018-6.
+
+- Refuse a set-operation arm whose select list holds an untyped constant or parameter. With `DISTINCT`, Postgres resolves it to `text`; without it, it stays `unknown` and the `UNION` takes the other arm's type, so a citext arm makes `t.kind = 'post'` match `'Post'` where the original didn't (review's repro: `SELECT t.id, t.kind FROM (SELECT DISTINCT p.id, 'Post' AS kind FROM public.posts p UNION ALL SELECT g.id, g.name FROM public.tags g) t WHERE t.kind = 'post'` with `tags.name` citext). List it as unsupported in v1.
+- Sound but refused in v1: a join pair of two integer types in one btree family (`int = bigint`, common in older Rails schemas), a join key paired with a constant or parameter (`ON users.id = $1`), a scalar subquery that aggregates in the select list (check only calls outside subqueries), a nondeterministic key whose unique index uses the same collation, and a has_one join on a unique but nullable foreign key (`LEFT JOIN profiles ON profiles.user_id = users.id`).
+
+- **Depends on:** None.
+- **Came from:** Build and review of 20261018-6, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
@@ -830,14 +850,7 @@ An `ORDER BY` with no `LIMIT`, `OFFSET`, or `FETCH`, in a derived table or a CTE
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-6. Rule `distinct_key_removal`.
-
-`SELECT DISTINCT` (not `DISTINCT ON`) loses its `DISTINCT` when every output row comes from a different row of one table. The `FROM` is one plain table, the root, plus any inner or left joins to plain tables, each on `ON` equalities that pair every column of a unique key of the joined table with columns of the tables before it, so each row of the root gets at most one row of each. The select list holds every column of a unique, not-null key of the root, written `name.column` or as `root.*`. It refuses `GROUP BY`, aggregates, window functions, and set-returning functions in the select list, and keys or join columns with a nondeterministic collation or a type whose `=` isn't the key index's own (reuse the catalog checks that distinct_join_to_exists and unused_join_removal use). `ORDER BY` and `LIMIT` stay. It complements distinct_join_to_exists, which handles joins that fan out. Rests on `unique` and `not_null` for the root's key, and `unique` for each joined table's key. Needs a new e2e case, such as a Rails `.distinct` over a to-one join.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-6. Rule `distinct_key_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-7. Rule `left_join_to_inner`.
 
