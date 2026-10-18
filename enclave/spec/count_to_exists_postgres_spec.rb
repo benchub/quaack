@@ -341,16 +341,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountToExists do
       expect(rewritten(sql)).to eq([])
     end
 
-    it "still rewrites an uncorrelated count, which runs its conditions on every row it reads either way" do
-      sql = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND (SELECT count(*) " \
-            "FROM public.purchases p WHERE p.buyer_id = 2 AND #{cast}) > 0"
-      rewrite = rewritten(sql)
-
-      expect(rewrite).to eq(["SELECT count(*) FROM public.buyers b WHERE b.tier = $1 AND EXISTS (SELECT 1 " \
-                             "FROM public.purchases p WHERE p.buyer_id = $2 AND (p.metadata ->> $3)::numeric >= $4)"])
-      expect(same_rows(sql, rewrite.first)).to eq([["5000"]])
-    end
-
     it "still rewrites a correlated count whose conditions can't raise, and judges an outer count by its rewrite" do
       latest = "(SELECT count(*) FROM public.purchases q WHERE q.buyer_id = p.buyer_id AND q.id > p.id) = 0"
       sql = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND (SELECT count(*) " \
@@ -363,6 +353,36 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountToExists do
       expect(same_rows(sql, rewrite.first)).to eq([["5000"]])
     end
   end
+
+  # 20261018-24. An uncorrelated count reads only the rows its index on
+  # created_at finds, every fifth, so it never divides by purchase 8's
+  # zero qty. EXISTS can plan a seq scan whose filter divides first.
+  describe "an uncorrelated count whose conditions can raise on some rows" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.purchases (id int PRIMARY KEY, amount int NOT NULL, qty int NOT NULL,
+                                       created_at timestamptz NOT NULL);
+        INSERT INTO public.purchases
+          SELECT j, CASE WHEN j < 8 THEN 10 ELSE 100 END, CASE WHEN j = 8 THEN 0 ELSE 1 END,
+                 CASE WHEN j % 5 = 0 THEN now() ELSE now() - interval '30 days' END
+          FROM generate_series(1, 200000) AS j;
+        CREATE INDEX purchases_created_at ON public.purchases (created_at);
+        ANALYZE public.purchases;
+      SQL
+    end
+
+    it "leaves it alone, since EXISTS can run the conditions on rows the count never reads" do
+      sql = "SELECT (SELECT count(*) FROM public.purchases p WHERE p.amount / p.qty > 30 " \
+            "AND p.created_at > now() - interval '7 days') > 0"
+
+      expect(conn.exec(sql).values).to eq([["t"]])
+      expect do
+        conn.exec("SELECT EXISTS (SELECT 1 FROM public.purchases p WHERE p.amount / p.qty > 30 " \
+                  "AND p.created_at > now() - interval '7 days')")
+      end.to raise_error(PG::DivisionByZero)
+      expect(rewritten(sql)).to eq([])
+    end
+end
 
   it "leaves alone a query that calls a volatile function, in the subquery or anywhere else" do
     in_subquery = "(SELECT count(*) FROM public.orders o WHERE o.customer_id = c.id AND random() < 2) > 0"
