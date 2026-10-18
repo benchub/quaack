@@ -167,6 +167,13 @@ RSpec.describe Quaack::Driver::Report do
         expect(toc_targets(out)).not_to include("explanation")
       end
 
+      it "links the rule-bug section first when a rule made a wrong rewrite" do
+        bugs = [{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"], "step" => "rewrite-test" }]
+        out = render(payload.merge("rule_bugs" => bugs))
+        expect(toc_targets(out)).to eq(section_ids(out))
+        expect(toc_targets(out).first).to eq("quaack-bugs")
+      end
+
       it "leaves out the timeouts section when nothing timed out" do
         out = render(payload.merge("timed_out_count" => 0))
         expect(toc_targets(out)).to eq(section_ids(out))
