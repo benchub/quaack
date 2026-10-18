@@ -739,3 +739,138 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Came from:** The user, 2026-10-17.
 - **Design:** report, sankey.
 - **Status:** todo
+
+## New transform rules (2026-10-18).
+
+The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
+
+- Each rule is an enclave change. It goes on the "Unreleased enclave changes" list when it lands, and nothing bumps a `VERSION` (the user, 2026-10-18: another session's work joins the same batch, and the user will ask for the bump).
+- Each rule gets its page in `docs/transforms/`, in the style of the others, with an intro, "What it does.", "Why it can be faster.", "What it rests on.", and "Example." made by the rule on Postgres 18 from the shared schema. Use Oxford commas in lists. It also gets a row at the end of DESIGN.md's rewrite-rules table, a line at the end of `RULES`, and a `RuleConstantsFixtures::LITERALS` entry.
+- e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
+- Opus builder and reviewer for each rule.
+
+### 20261018-1. Rule generator: never cap a one-rule rewrite.
+
+The user decided (2026-10-18) that every rule that applies gets its rewrites tested before any combination of rules is. Today `RewriteRules.generate` keeps the first `MAX` (10) results of its breadth-first chain, so with 25 rules a query that many rules match loses one-rule rewrites to the cap. Keep every one-rule result. `MAX` then caps only the two-rule results that follow them, at 10 (the user left the combination cap open; keep 10). `over_cap` counts only the two-rule results dropped. Update DESIGN.md's rewrite-rules ("Keep at most ten rewrites" and the paragraph after it), README's "ten from the transform rules" and the spec in `spec/transform_docs_spec.rb` that checks it, and anything downstream that assumes at most ten rule rewrites, such as rewrite numbering, report words, the burndown, and the `rewrite_rules_applied` marker.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules, burndown.
+- **Status:** todo
+
+### 20261018-2. Rule `cte_fence_removal`.
+
+A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than once (which Postgres materializes), becomes `AS NOT MATERIALIZED`, so the planner can push the reader's filters into it and use the table's indices. One rewrite per CTE. It refuses a `RECURSIVE` `WITH`, a data-modifying CTE anywhere, a body that calls a volatile function (`Catalog#calls_volatile?`), and a CTE whose name starts with `quaack_` (shared_scan_cte's, which this would undo). Inlining lets the planner evaluate a reader's condition on rows that the body's own filter would have dropped first, so it also refuses a reader whose conditions on the CTE's columns can raise on some rows, as or_to_union refuses such an arm (reuse that check if it fits). Rests on nothing. e2e cases 028, 029, and 050 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-3. Rule `count_to_exists`.
+
+`(SELECT count(*) FROM ... WHERE ...) > $n`, where the literal oracle says `$n` is 0, becomes `EXISTS (SELECT 1 FROM ... WHERE ...)`. So do `>= 1`, `<> 0`, and the mirrored forms (`0 < (...)`). `= 0`, `<= 0`, and `< 1` become `NOT EXISTS`. `count(col)` works too, with `col IS NOT NULL` added to the subquery's `WHERE`. The subquery is a plain SELECT whose select list is that one `count`, with no `GROUP BY`, `HAVING`, `DISTINCT`, window, `LIMIT`, `OFFSET`, or set operation. It can be correlated. Since a count is never NULL and the constant isn't either, the test is only true or false, so any position is safe. Check that literals keeps `$n` at its slow literal in every set (a placeholder compared with a subquery isn't compared with a plain column). If it doesn't, result-comparison would run the rewrite with another value. Rests on nothing. e2e case 035 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-4. Rule `subquery_distinct_removal`.
+
+A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `DISTINCT ON`), its `ORDER BY` when it has no `LIMIT`, `OFFSET`, or `FETCH`, and a `GROUP BY` whose items are exactly its select list's columns, with no aggregate, `HAVING`, or grouping set. The readers are the subquery of `IN`, `= ANY`, `NOT IN`, and `<> ALL`, and an arm with a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL` at or above it in its set-operation tree, since that operation dedupes everything under it. `EXISTS` is left out: Postgres already drops these clauses there (`simplify_EXISTS_query`). It refuses a select list that calls a volatile or set-returning function. Rests on nothing. e2e case 044 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-5. Rule `subquery_order_removal`.
+
+An `ORDER BY` with no `LIMIT`, `OFFSET`, or `FETCH`, in a derived table or a CTE body, is removed when no reader depends on the order. Postgres can't flatten a subquery that sorts, so it sorts rows that nothing reads in order, as in Kaminari's `SELECT count(*) FROM (SELECT ... ORDER BY ...) subquery_for_count`. A reader is order-blind when it has its own `ORDER BY`, or when it aggregates (has aggregates or `GROUP BY`) with only aggregates whose result doesn't depend on input order: an allowlist such as `count`, `min`, `max`, `bool_and`, `bool_or`, `every`, `sum` and `avg` over non-float types, and any aggregate with its own `ORDER BY`. A reader with a window function, or with `LIMIT` or `OFFSET` and no `ORDER BY` of its own, isn't order-blind. Neither is a reader with no `ORDER BY` that doesn't aggregate, since an app may rely on that order even though SQL doesn't promise it. Every reader of a CTE must be order-blind. It refuses a body with `DISTINCT ON` or a volatile call. Rests on nothing. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-6. Rule `distinct_key_removal`.
+
+`SELECT DISTINCT` (not `DISTINCT ON`) loses its `DISTINCT` when every output row comes from a different row of one table. The `FROM` is one plain table, the root, plus any inner or left joins to plain tables, each on `ON` equalities that pair every column of a unique key of the joined table with columns of the tables before it, so each row of the root gets at most one row of each. The select list holds every column of a unique, not-null key of the root, written `name.column` or as `root.*`. It refuses `GROUP BY`, aggregates, window functions, and set-returning functions in the select list, and keys or join columns with a nondeterministic collation or a type whose `=` isn't the key index's own (reuse the catalog checks that distinct_join_to_exists and unused_join_removal use). `ORDER BY` and `LIMIT` stay. It complements distinct_join_to_exists, which handles joins that fan out. Rests on `unique` and `not_null` for the root's key, and `unique` for each joined table's key. Needs a new e2e case, such as a Rails `.distinct` over a to-one join.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-7. Rule `left_join_to_inner`.
+
+`x LEFT JOIN u ON ...` becomes an inner join when each row on the left has exactly one row of `u`. Every `ON` conjunct is a plain `=` between a column of `u` and a column of one plain table `t` on the left side, and the pairs are a strict foreign key from `t` to `u` (`Catalog#strict_foreign_key?`, as unused_join_removal uses, which also refuses row-level security on `u`). Each `t` column is not null, and `t` isn't on the nullable side of an outer join inside the left side, where a NULL-extended row would match nothing. `u` is a plain table. One rewrite per join. Postgres already makes a `LEFT JOIN` inner when the `WHERE` rejects its NULL rows, so the rule matters elsewhere: an inner join can be reordered, so, for example, `u` can drive a nested loop for `ORDER BY u.name LIMIT 20`. Rests on `foreign_key` and `not_null`. Needs a new e2e case, such as Rails `eager_load` with an order on the association's column.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-8. Rule `union_to_union_all`.
+
+A `UNION` becomes `UNION ALL` when no two of its rows can be equal. The set-operation tree is all `UNION` without `ALL`. Each arm is a plain SELECT over one plain table, with no `DISTINCT`, `GROUP BY`, aggregate, window, or set-returning function, and it selects every column of a unique, not-null key of its table, so it has no duplicates of its own. One output position holds, in every arm, a bare placeholder (a cast is allowed), and the literal oracle says every pair of them differs, compared as the `UNION`'s column type. That's the tag column of an activity feed, such as `SELECT 'post' AS kind, p.id ... UNION SELECT 'comment', c.id ...`, so the arms can't share a row. It refuses key columns with a nondeterministic collation or of a type the catalog doesn't mark comparable. Check that literals keeps the tag placeholders at their slow literal in every set (they're outside any predicate). Rests on `unique` and `not_null` for each arm's key. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-9. Rule `count_distinct_to_subquery`.
+
+`SELECT g1, ..., count(DISTINCT e) FROM ... WHERE ... GROUP BY g1, ...` becomes `SELECT d.g1, ..., count(d.e) FROM (SELECT DISTINCT g1, ..., e FROM ... WHERE ...) d GROUP BY d.g1, ...`, with the output names kept. With no `GROUP BY`, it becomes `SELECT count(d.e) FROM (SELECT DISTINCT e ...) d`, which still gives 0 on no rows. Postgres runs `count(DISTINCT)` by sorting inside the aggregate, while a `SELECT DISTINCT` can hash. The select list is the grouping columns, each written `name.column` and in the `GROUP BY`, and exactly one `count(DISTINCT e)` of one argument, with no `FILTER` and no `ORDER BY` inside. The query has no `HAVING`, window, `DISTINCT`, or grouping set. `ORDER BY` may name grouping columns, the count's alias, or ordinals, which the rule rewrites to `d`'s columns. It refuses other `ORDER BY` items and volatile calls. NULLs and collations agree: both forms skip a NULL `e` and compare `e` with its type's equality and collation. Rests on nothing. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-10. Rule `date_cast_to_range`.
+
+A comparison of a `timestamp` or `timestamptz` column, cast to `date` (`ts::date`, `CAST(ts AS date)`, or `date(ts)`), with a placeholder becomes a half-open range on the column, which a btree on the column can serve. `= $1` becomes `ts >= $1::date AND ts < $1::date + 1`. `>= $1` becomes `ts >= $1::date`, `> $1` becomes `ts >= $1::date + 1`, `< $1` becomes `ts < $1::date`, `<= $1` becomes `ts < $1::date + 1`, and `BETWEEN $1 AND $2` (not `SYMMETRIC`) becomes `ts >= $1::date AND ts < $2::date + 1`. Either side works. For `timestamptz`, both the cast and the comparison with a date read the session's `TimeZone`, so they agree, DST days included. Both forms are NULL when either side is. It takes a top-level conjunct of a `WHERE` or an inner join's `ON`. The literal oracle must say each date is finite, and that the day after it is within `timestamp`'s range. Check that literals keeps those placeholders at their slow literal in every set (they're compared with an expression, not a plain column). If it doesn't, check that every value it can pick also passes. Rests on nothing. e2e case 046 (a `both` case) covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-11. Rule `coalesce_comparison_split`.
+
+`COALESCE(t.c, $d) = $v`, a top-level conjunct of a `WHERE` or an inner join's `ON`, becomes `(t.c = $v OR (t.c IS NULL AND $d = $v))`. `<>` becomes `(t.c <> $v OR (t.c IS NULL AND $d <> $v))`. Either side works. `t.c` is a column written `name.column`, and `$d` and `$v` are bare placeholders (a cast is allowed). The rewrite holds for any literals, so it needs no oracle, and Postgres folds `$d = $v` once it knows the values, which leaves `t.c = $v` or `t.c = $v OR t.c IS NULL`, both of which an index can serve. The two forms differ only between NULL and false, which a `WHERE` or `ON` conjunct treats alike. That's why the rule takes only those positions. It refuses unless `COALESCE`'s result type is the column's own type, so that the split compares with the same operator. Rests on nothing. e2e case 032 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-12. Rule `scalar_aggregates_to_filter`.
+
+Two or more uncorrelated scalar subqueries `(SELECT agg(...) FROM s.t WHERE P_i)` in one SELECT's select list, over the same plain table, become one pass. The rule adds `(SELECT agg(...) FILTER (WHERE R_1) AS a_1, ... FROM s.t WHERE S) quaack_aggs_1` to that SELECT's `FROM`, as a comma item or as the whole `FROM` if it had none, and each subquery becomes `quaack_aggs_1.a_i`. `S` holds the conjuncts every member shares (the literal oracle decides placeholder matches, as in shared_scan_cte), and `R_i` holds the rest of member `i`'s. A member with no rest gets no `FILTER`. Each member reads one table with no join, its select list is one aggregate call with no `FILTER` of its own, and it has no `GROUP BY`, `HAVING`, `DISTINCT`, `ORDER BY`, `LIMIT`, `OFFSET`, window, set-returning call, `WITH`, set operation, or subquery. It refuses volatile calls, and an outer SELECT with a bare `*`. A one-row derived table changes no row count, and an aggregate over no rows gives what the member gave over no rows. Postgres evaluates `FILTER` before an aggregate's arguments, so an argument runs only on the rows its member read. Rests on nothing. e2e cases 039 and 051 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-13. Rule `correlated_aggregate_to_join`.
+
+A top-level `WHERE` conjunct `e op (SELECT agg(x) FROM s WHERE s.k = t.c AND P(s))`, either side, becomes a join to a grouped derived table. `op` is a comparison, and `agg` is `avg`, `sum`, `min`, or `max`, which give NULL over no rows. The rule adds `(SELECT s.k, agg(x) AS quaack_agg FROM s WHERE P(s) GROUP BY s.k) quaack_agg_1` to the `FROM` as a comma item, adds `quaack_agg_1.k = t.c` to the `WHERE`, and replaces the subquery with `quaack_agg_1.quaack_agg`. Several correlation equalities group by each column. The subquery reads one plain table, its conjuncts are either correlation equalities with columns of the outer SELECT's own `FROM` tables, written `name.column`, or read only `s`, and it has no `GROUP BY`, `HAVING`, `DISTINCT`, `ORDER BY`, `LIMIT`, window, set operation, or nested subquery. Each pair has one type and a deterministic collation. It refuses volatile calls, `count` (0 over no rows, not NULL), and an outer SELECT with a bare `*`. A row of `t` with no group, or a NULL `t.c`, gets a NULL aggregate in the original and no join partner in the rewrite, and the `WHERE` drops it either way. Each key has one group, so no row repeats. Rests on nothing. e2e cases 038 and 069 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-14. Rule `aggregate_before_join`.
+
+`SELECT <t's columns>, <aggregates over s> FROM t JOIN s ON s.f = t.c ... WHERE ... GROUP BY <t's columns>` aggregates `s` first: `FROM t JOIN (SELECT s.f, agg(...) AS a_1, ... FROM s WHERE <s's conjuncts> GROUP BY s.f) quaack_pre_1 ON quaack_pre_1.f = t.c`, with no outer `GROUP BY`. This is the Rails `joins(:orders).group("users.id").count` shape. The `FROM` is exactly two plain tables, `t` and `s`, in an inner join (`JOIN ... ON` or a comma join with `WHERE` equalities). The join conditions are equalities between columns of `s` and `t`, each pair of one type with a deterministic collation. The `GROUP BY` holds every column of a unique, not-null key of `t`, and only columns of `t`, so each group is one row of `t`, and each row of `t` joins at most one row of the derived table. Every aggregate reads only `s` (`count(*)` counts `s`'s rows). Every other `WHERE` conjunct reads only `t`, where it stays, or only `s`, where it moves into the derived table. A `HAVING` over `s`'s aggregates only moves into the derived table. The select list and `ORDER BY` read `t`'s columns and the aggregates, which become the derived table's columns. It refuses outer joins, `DISTINCT`, windows, grouping sets, volatile calls, and a bare `*`. Rests on `unique` and `not_null` for `t`'s key. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
