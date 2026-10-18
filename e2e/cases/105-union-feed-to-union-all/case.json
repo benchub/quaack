@@ -1,0 +1,39 @@
+{
+  "title": "Activity feed UNION of two tables",
+  "category": "rewrite",
+  "compare": "ordered",
+  "features": [
+    "activity feed: a UNION of two tables with a tag column",
+    "UNION that unique keys and distinct tags make redundant",
+    "uniqueness assumption (assumption-check)",
+    "literal oracle on select-list placeholders that literals keeps slow",
+    "filter and LIMIT that reach each table's index only through UNION ALL"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another group",
+      "replace": {
+        "= 7": "= 3"
+      },
+      "minimax": false
+    },
+    {
+      "name": "a longer page",
+      "replace": {
+        "LIMIT 20": "LIMIT 500"
+      },
+      "minimax": false
+    },
+    {
+      "name": "no such group",
+      "replace": {
+        "= 7": "= 999"
+      },
+      "minimax": false
+    }
+  ]
+}
