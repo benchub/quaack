@@ -49,7 +49,9 @@ module Quaack
           "subquery_order_removal" => "Removes an ORDER BY with no LIMIT or OFFSET from a subquery in FROM or a CTE " \
                                       "when nothing that reads it depends on that order, such as a count of its rows.",
           "union_to_union_all" => "Turns a UNION whose rows can't repeat into a UNION ALL: each arm selects a " \
-                                  "unique, not-null key of its table and a tag that differs from every other arm's."
+                                  "unique, not-null key of its table and a tag that differs from every other arm's.",
+          "correlated_aggregate_to_join" => "Computes a correlated avg, sum, min, or max subquery once for each " \
+                                            "group, in a grouped derived table that the query joins."
         }.freeze
       end
     end

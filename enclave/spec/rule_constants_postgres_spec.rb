@@ -39,7 +39,8 @@ module RuleConstantsFixtures
     "count_to_exists" => ["'registered'", "'graded'", "0"],
     "count_distinct_to_subquery" => ["'active'"],
     "subquery_order_removal" => %w[42],
-    "union_to_union_all" => ["'Submission'", "42", "'Enrollment'", "42"]
+    "union_to_union_all" => ["'Submission'", "42", "'Enrollment'", "42"],
+    "correlated_aggregate_to_join" => ["'graded'", "'graded'"]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

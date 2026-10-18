@@ -23,3 +23,5 @@ For the "after the data" set, both versions touch only a few blocks: the planner
 ## Proof.
 
 `ruby e2e/verify.rb 038` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.
+
+The rule `correlated_aggregate_to_join` makes this case's rewrite from `slow.sql`: it joins a derived table grouped by `customer_id` in place of the correlated average, which reads as the CTE in `fast.sql` does.
