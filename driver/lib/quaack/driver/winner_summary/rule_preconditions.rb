@@ -77,7 +77,10 @@ module Quaack
           "scalar_aggregates_to_filter" => "Two or more select-list items are uncorrelated scalar subqueries, each " \
                                            "one aggregate over the same one table with no join, GROUP BY, or " \
                                            "LIMIT, in a SELECT with no GROUP BY or bare *, and nothing calls a " \
-                                           "volatile function."
+                                           "volatile function.",
+          "correlated_aggregate_to_join" => "A WHERE condition compares with a scalar subquery of avg, sum, min, or " \
+                                            "max over one table, correlated only by equalities of one type, so an " \
+                                            "outer row with no group is dropped either way."
         }.freeze
       end
     end

@@ -166,7 +166,7 @@ RSpec.describe Quaack::Enclave::RewriteRules do
                 union_outer_filter_removal unused_join_removal polymorphic_key_copy subquery_distinct_removal
                 distinct_key_removal cte_fence_removal left_join_to_inner count_to_exists count_distinct_to_subquery
                 subquery_order_removal union_to_union_all coalesce_comparison_split date_cast_to_range
-                scalar_aggregates_to_filter])
+                scalar_aggregates_to_filter correlated_aggregate_to_join])
     expect(described_class::RULES).to all(respond_to(:rewrites) & have_attributes(description: a_kind_of(String)))
   end
 

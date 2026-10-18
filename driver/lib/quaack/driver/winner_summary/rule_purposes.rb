@@ -57,7 +57,9 @@ module Quaack
                                   "column can serve.",
           "scalar_aggregates_to_filter" => "Reads one table once for several scalar aggregate subqueries over it, " \
                                            "in one derived table with a FILTER for each, in place of one scan " \
-                                           "for each subquery."
+                                           "for each subquery.",
+          "correlated_aggregate_to_join" => "Computes a correlated avg, sum, min, or max subquery once for each " \
+                                            "group, in a grouped derived table that the query joins."
         }.freeze
       end
     end

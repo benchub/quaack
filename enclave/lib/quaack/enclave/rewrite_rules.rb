@@ -27,6 +27,7 @@ require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
 require_relative "rewrite_rules/union_to_union_all"
 require_relative "rewrite_rules/unused_join_removal"
+require_relative "rewrite_rules/correlated_aggregate_to_join"
 
 module Quaack
   module Enclave
@@ -103,7 +104,8 @@ module Quaack
         UnionToUnionAll.new,
         CoalesceComparisonSplit.new,
         DateCastToRange.new,
-        ScalarAggregatesToFilter.new
+        ScalarAggregatesToFilter.new,
+        CorrelatedAggregateToJoin.new
       ].freeze
 
       DEPTH = 2

@@ -19,3 +19,5 @@ Pre-aggregate the averages once and join. Float sums can differ in the last bits
 ## Proof.
 
 `ruby e2e/verify.rb 069` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.
+
+The rule `correlated_aggregate_to_join` doesn't make this case's rewrite. It takes only a top-level `WHERE` condition, and this subquery is in the select list, where a sample with no group keeps a `NULL` in the original but would lose its row to the join.
