@@ -213,6 +213,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::ScalarAggregatesToFilter do
          "SELECT (SELECT count(*) FROM public.orders WHERE amount > 1) AS a, #{member} FROM public.customers"],
         ["SELECT (SELECT sum(amount + 1) FROM public.orders) AS a, #{member} FROM public.customers",
          "SELECT (SELECT sum(amount) FROM public.orders) AS a, #{member} FROM public.customers"],
+        # With an outer FROM, an aggregate outside the list, or one with an
+        # ORDER BY.
+        ["SELECT (SELECT array_agg(status) FROM public.orders) AS a, #{member} FROM public.customers",
+         "SELECT (SELECT max(status) FROM public.orders) AS a, #{member} FROM public.customers"],
+        ["SELECT (SELECT max(amount ORDER BY id) FROM public.orders) AS a, #{member} FROM public.customers",
+         "SELECT (SELECT max(amount) FROM public.orders) AS a, #{member} FROM public.customers"],
+        # ONLY the table beside the table, which reads its children too.
+        ["SELECT (SELECT count(*) FROM ONLY public.orders) AS a, #{member}",
+         "SELECT (SELECT count(*) FROM public.orders) AS a, #{member}"],
         # No outer FROM, but a WHERE.
         ["SELECT (SELECT count(*) FROM public.orders) AS a, #{member} WHERE false",
          "SELECT (SELECT count(*) FROM public.orders) AS a, #{member}"]
