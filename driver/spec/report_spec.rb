@@ -150,6 +150,39 @@ RSpec.describe Quaack::Driver::Report do
         .not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
     end
 
+    describe "the table of contents" do
+      def toc_targets(out) = out[%r{<nav id="toc".*?</nav>}m].to_s.scan(/href="#([\w-]+)"/).flatten
+      def section_ids(out) = out.scan(/<section id="([\w-]+)"/).flatten
+
+      it "links every rendered section, in order, and nothing else" do
+        expect(toc_targets(html)).to eq(section_ids(html))
+        expect(toc_targets(html)).to include("summary", "timeouts", "explanation", "burndown")
+        expect(toc_targets(html)).not_to include("negative-result", "index-ideas", "quaack-bugs")
+      end
+
+      it "follows the sections a negative report renders" do
+        out = render(negative_payload)
+        expect(toc_targets(out)).to eq(section_ids(out))
+        expect(toc_targets(out)).to include("negative-result")
+        expect(toc_targets(out)).not_to include("explanation")
+      end
+
+      it "leaves out the timeouts section when nothing timed out" do
+        out = render(payload.merge("timed_out_count" => 0))
+        expect(toc_targets(out)).to eq(section_ids(out))
+        expect(toc_targets(out)).not_to include("timeouts")
+      end
+
+      it "sits fixed in the left margin on a wide window, inline otherwise, and never in print" do
+        style = html[%r{<style>(.*?)</style>}m, 1]
+        wide = style[/@media \(min-width: 88rem\) \{(.*?)\n  \}\n/m, 1]
+        expect(wide.to_s).to include("position: fixed", "width: calc((100vw - 62rem) / 2 - 2rem)",
+                                     "max-height: calc(100vh - 2rem)", "overflow-y: auto")
+        expect(style[/@media print \{(.*?)\n  \}\n/m, 1]).to match(/nav#toc \{ display: none; \}/)
+        expect(html.index('<nav id="toc"')).to be > html.index("<h1>")
+      end
+    end
+
     describe "the color theme" do
       let(:style) { html[%r{<style>(.*?)</style>}m, 1] }
       let(:dark) { style[/@media \(prefers-color-scheme: dark\) \{(.*?)\n  \}\n/m, 1] }
