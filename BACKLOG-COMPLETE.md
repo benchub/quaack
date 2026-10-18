@@ -12309,3 +12309,15 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Design:** rewrite-rules, fixture-compare.
 - **Landed:** 2026-10-18 (task/20261018-26; enclave and docs). coalesce_comparison_split checks an uncast default with the oracle (`pg_typeof(COALESCE(NULL::<coltype>, $d)) = pg_typeof(NULL::<coltype>)`), refusing without literals; FROM ONLY tested; the subquery_order_removal page notes ties. The fixture-compare item reproduced but isn't small: filed as 20261018-28.
 - **Status:** done
+
+### 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
+
+- date_cast_to_range (20261018-10): any schema-qualified operator is taken as pg_catalog's, so `OPERATOR(public.=)` would be rewritten (require pg_catalog and test a user operator); a bare `date(col)` could be shadowed by a user function on the search_path; `ts::date = CURRENT_DATE` isn't taken.
+- scalar_aggregates_to_filter (20261018-12): a shared range placeholder can get another pick in the typical set (a `<` paired with `>=` picks like BETWEEN), which costs a candidate in result-comparison; untested refusals for mixing `ONLY t` with `t` and for an aggregate outside the list (or with ORDER BY) under an outer FROM; not yet taken: a member inside an expression such as `coalesce((SELECT ...), 0)`, and members in nested queries.
+- correlated_aggregate_to_join (20261018-13): untested refusals for differing collations, a nondeterministic collation, the comparable check, and two outer items sharing a name; a correlation key named `quaack_agg` gives the derived table two columns of that name; not yet taken: a correlated aggregate in the select list, as in e2e case 069 (needs a LEFT JOIN, or proof every outer row has a group).
+
+- **Depends on:** None.
+- **Came from:** Builds and reviews of 20261018-10, -12, and -13, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-27; enclave). date_cast_to_range already required pg_catalog (now pinned by a spec). New refusal tests for scalar_aggregates_to_filter and correlated_aggregate_to_join; the latter now refuses a correlation key named quaack_agg. Still open, unsupported in v1: a user date() shadowing the built-in, ts::date = CURRENT_DATE, members inside expressions, and the select-list correlated aggregate (case 069).
+- **Status:** done

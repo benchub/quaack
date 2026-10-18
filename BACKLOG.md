@@ -24,6 +24,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-23. distinct_key_removal: minors from the build and review of 20261018-6.
 - 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
 - 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
+- 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
 
 ## How this file works.
 
@@ -766,17 +767,6 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Depends on:** None.
 - **Came from:** Build of 20261018-6, 2026-10-18.
 - **Design:** rewrite-rules, result-comparison.
-- **Status:** todo
-
-### 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
-
-- date_cast_to_range (20261018-10): any schema-qualified operator is taken as pg_catalog's, so `OPERATOR(public.=)` would be rewritten (require pg_catalog and test a user operator); a bare `date(col)` could be shadowed by a user function on the search_path; `ts::date = CURRENT_DATE` isn't taken.
-- scalar_aggregates_to_filter (20261018-12): a shared range placeholder can get another pick in the typical set (a `<` paired with `>=` picks like BETWEEN), which costs a candidate in result-comparison; untested refusals for mixing `ONLY t` with `t` and for an aggregate outside the list (or with ORDER BY) under an outer FROM; not yet taken: a member inside an expression such as `coalesce((SELECT ...), 0)`, and members in nested queries.
-- correlated_aggregate_to_join (20261018-13): untested refusals for differing collations, a nondeterministic collation, the comparable check, and two outer items sharing a name; a correlation key named `quaack_agg` gives the derived table two columns of that name; not yet taken: a correlated aggregate in the select list, as in e2e case 069 (needs a LEFT JOIN, or proof every outer row has a group).
-
-- **Depends on:** None.
-- **Came from:** Builds and reviews of 20261018-10, -12, and -13, 2026-10-18.
-- **Design:** rewrite-rules.
 - **Status:** todo
 
 ### 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
