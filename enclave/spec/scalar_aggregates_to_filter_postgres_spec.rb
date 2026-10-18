@@ -175,6 +175,12 @@ RSpec.describe Quaack::Enclave::RewriteRules::ScalarAggregatesToFilter do
          "FROM public.customers c",
          "SELECT (SELECT count(*) FROM public.orders WHERE orders.customer_id = 1) AS a, #{member} " \
          "FROM public.customers c"],
+        # A member correlated with an outer copy of its own table, which the
+        # derived table's name would capture.
+        ["SELECT orders.id, (SELECT count(*) FROM public.orders WHERE status = 'pending') AS p, " \
+         "(SELECT count(*) FROM public.orders o2 WHERE o2.customer_id = orders.customer_id) AS n FROM public.orders",
+         "SELECT orders.id, (SELECT count(*) FROM public.orders WHERE status = 'pending') AS p, " \
+         "(SELECT count(*) FROM public.orders o2 WHERE o2.customer_id = 1) AS n FROM public.orders"],
         # A member's own FILTER, GROUP BY, LIMIT, join, and nested subquery.
         ["SELECT (SELECT count(*) FILTER (WHERE amount > 1) FROM public.orders) AS a, #{member}",
          "SELECT (SELECT count(*) FROM public.orders WHERE amount > 1) AS a, #{member}"],

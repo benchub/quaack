@@ -64,10 +64,25 @@ module Quaack
             return unless shape?(select) && aggregate?(call_of(select), catalog)
 
             range = select.from_clause.first.range_var
+            return unless own_columns?(select, range, catalog)
+
             conditions = Tree.conjuncts(select.where_clause).map { requalified(it, Tree.refname(range), COPY) }
             return if from && raises?(conditions, select)
 
             Member.new(target:, select:, range:, call: call_of(select), conditions:)
+          end
+
+          # Whether every column select names is its table's: under the
+          # table's name, or bare and one of its columns. Any other name reads
+          # an outer query, which the derived table could capture, as when the
+          # outer query reads the same table under the name the member's copy
+          # gets in the derived table.
+          def own_columns?(select, range, catalog)
+            columns = catalog.column_names(range.schemaname, range.relname)
+            Tree.find(select, PgQuery::ColumnRef).all? do |ref|
+              qualified = Tree.qualified(ref)
+              qualified ? qualified.first == Tree.refname(range) : columns.include?(Tree.bare_name(ref))
+            end
           end
 
           def raises?(conditions, select) = !(conditions.all? { harmless?(it) } && harmless_call?(call_of(select)))

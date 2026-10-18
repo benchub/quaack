@@ -28,9 +28,9 @@ module Quaack
       # reading one plain table, with no join, whose select list is one
       # aggregate call with no FILTER, window, or WITHIN GROUP, and which
       # has no GROUP BY, HAVING, DISTINCT, ORDER BY, LIMIT, OFFSET, WINDOW,
-      # WITH, set operation, or subquery. A member that reads the outer
-      # query is correlated, and the rewrite then names a column the
-      # derived table can't see, so Postgres can't prepare it. Two or more members
+      # WITH, set operation, or subquery. Each column it names is its
+      # table's, under the table's name or bare and one of its columns, so
+      # it reads no outer query (see Members#own_columns?). Two or more members
       # over the same table (and the same ONLY) make one derived table.
       # Its WHERE holds the conjuncts every member shares, the literal
       # oracle deciding whether two placeholders match, with the first
