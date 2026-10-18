@@ -33,7 +33,9 @@ module Quaack
                                     "filters the child's own column for that type to the same id.",
           "subquery_distinct_removal" => "Removes a DISTINCT, an ORDER BY, or a GROUP BY of just the select list's " \
                                          "columns from a subquery whose reader ignores duplicates and order, such " \
-                                         "as an IN subquery or a UNION arm."
+                                         "as an IN subquery or a UNION arm.",
+          "subquery_order_removal" => "Removes an ORDER BY with no LIMIT or OFFSET from a subquery in FROM or a CTE " \
+                                      "when nothing that reads it depends on that order, such as a count of its rows."
         }.freeze
       end
     end

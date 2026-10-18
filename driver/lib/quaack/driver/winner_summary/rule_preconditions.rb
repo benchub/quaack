@@ -45,7 +45,11 @@ module Quaack
           "subquery_distinct_removal" => "The subquery of an IN, = ANY, NOT IN, or <> ALL, or an arm under a UNION, " \
                                          "INTERSECT, or EXCEPT without ALL, has a DISTINCT, an ORDER BY, or a GROUP " \
                                          "BY of just its select list's columns, and no LIMIT or OFFSET, so its " \
-                                         "reader can't see the duplicates or the order those clauses change."
+                                         "reader can't see the duplicates or the order those clauses change.",
+          "subquery_order_removal" => "A subquery in FROM or a CTE body has an ORDER BY and no LIMIT, OFFSET, or " \
+                                      "DISTINCT ON, and every query that reads it either sorts its own rows or only " \
+                                      "aggregates them with aggregates, such as count, that ignore their input's " \
+                                      "order."
         }.freeze
       end
     end
