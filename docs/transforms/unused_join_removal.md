@@ -33,7 +33,7 @@ The `SELECT` that joins the table has no bare `*`. Any other condition on the jo
 These cases are unsupported in v1:
 
 - a nullable joining column that the `WHERE` requires to be non-null,
-- a statement that reads the order its rows come in anywhere, such as `string_agg` or `array_agg` with no `ORDER BY` of its own, `min`, `max`, `sum`, or `avg`, a window function, or `ARRAY(SELECT ...)` with no `ORDER BY`. Without the join, rows can come in another order, which can change those results. `count` and an aggregate with its own `ORDER BY` are fine,
+- a statement that reads the order its rows come in anywhere, such as `string_agg` or `array_agg` with no `ORDER BY` of its own, `min`, `max`, `sum`, or `avg` of an expression or of a column of another type, a window function, or `ARRAY(SELECT ...)` with no `ORDER BY`. Without the join, rows can come in another order, which can change those results. `count`, an aggregate with its own `ORDER BY`, `min`, `max`, and `sum` of an integer, date, or timestamp column, and `avg` of an integer column are fine. A `float`, `numeric`, text, or `interval` column isn't,
 - a joined table read with `ONLY`, and
 - a `JOIN` whose `ON` holds a condition that does not read the joined table.
 
