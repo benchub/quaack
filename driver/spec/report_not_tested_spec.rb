@@ -84,13 +84,13 @@ RSpec.describe Quaack::Driver::Report do
         ["#{lead}, and it returned different results from the original query on the real data, so it's wrong.",
          "It passed the tests on made-up data, but returned different results"],
       ["below_top_three", nil] => ["#{lead}, and it beat the original query, but three others",
-                                   "It passed every test and beat the original query, but three"],
-      ["not_better", nil] => ["#{lead}, but when measured against real data performed too poorly to be ranked.",
+                                   "It passed every correctness test and beat the original query, but three"],
+      ["not_better", nil] => ["#{lead}, but when measured it performed too poorly to be ranked.",
                               "It passed every correctness test, but when measured against real data"],
       %w[unfinished rewrite-test] => ["#{short}, and the run ended before going further.",
                                       "It passed the tests on made-up data, and the run ended"],
       %w[unfinished counterexamples] => ["#{short}, it passed the LLM's test data, and the run ended before " \
-                                         "measuring it.", "It passed every test, and the run ended"]
+                                         "measuring it.", "It passed every correctness test, and the run ended"]
     }.each do |(fate, after), (untested, normal)|
       it "says what happened for #{fate} #{after}, and keeps the usual words without a reason" do
         rewrites.replace([fated(1, fate, after:, not_tested: "no_world"), fated(2, fate, after:, not_tested: nil)])
