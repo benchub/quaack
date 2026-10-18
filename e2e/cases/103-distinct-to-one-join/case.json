@@ -1,0 +1,35 @@
+{
+  "title": "DISTINCT over a to-one join",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "Rails .distinct over a to-one join",
+    "DISTINCT that a unique key makes redundant",
+    "uniqueness assumption (assumption-check)",
+    "sort that spills to temp files (blocks-metric)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another region",
+      "replace": {
+        "'eu'": "'na'"
+      }
+    },
+    {
+      "name": "pending orders",
+      "replace": {
+        "'shipped'": "'pending'"
+      }
+    },
+    {
+      "name": "no such region",
+      "replace": {
+        "'eu'": "'mars'"
+      }
+    }
+  ]
+}
