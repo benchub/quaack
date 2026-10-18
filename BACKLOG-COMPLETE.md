@@ -12229,3 +12229,13 @@ The report is getting long to scroll through. Add a `<nav>` of links to the repo
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-14; enclave, protocol, and driver). Refuses moved conditions and aggregate arguments that can raise; inherits or_to_union's LIKE-parameter risk, and accepts that an aggregate's own overflow (a float8 sum) can raise in a group the join drops (DESIGN.md says so). e2e case 107 (`107-orders-count-per-user`): 34358 to 30715 blocks on the slow literals. One fix round: tests for the OVER and nullable-unique-key refusals. Not yet taken: a subquery in a key-table condition (Rails `where(id: subquery)`), an expression over key columns or wrapping an aggregate (`coalesce(sum(...), 0)`), and an ORDER BY aggregate.
 - **Status:** done
+
+### 20261018-17. Rule rewrites: decide whether a run needs a limit on the total.
+
+From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the 25 rules match, or one rule matches many times (one rewrite per `IN`, say), sends that many rewrites on. Each gets up to 90 seconds of fuzz and enumerate, a 5-minute rewrite-test budget, its own index search, and LLM counterexample rounds. Once real runs with all the rules show the run time and LLM cost, decide with the user whether a run needs a limit on the total or on one rule's matches.
+
+- **Depends on:** 20261018-1, and the rule tasks 20261018-2 to 20261018-14.
+- **Came from:** Build of 20261018-1, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18: decided, nothing to build. The user: setting up a run database already takes many hours, so a run taking a few more hours for a much better result is time well spent. No limit on one-rule rewrites.
+- **Status:** dropped

@@ -755,15 +755,6 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Design:** report, sankey.
 - **Status:** todo
 
-### 20261018-17. Rule rewrites: decide whether a run needs a limit on the total.
-
-From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the 25 rules match, or one rule matches many times (one rewrite per `IN`, say), sends that many rewrites on. Each gets up to 90 seconds of fuzz and enumerate, a 5-minute rewrite-test budget, its own index search, and LLM counterexample rounds. Once real runs with all the rules show the run time and LLM cost, decide with the user whether a run needs a limit on the total or on one rule's matches.
-
-- **Depends on:** 20261018-1, and the rule tasks 20261018-2 to 20261018-14.
-- **Came from:** Build of 20261018-1, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
 ### 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
 
 Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.status = 'x') > 0 ... GROUP BY (SELECT count(*) FROM ... WHERE o.status = 'x') > 0`, redact gives the two copies' constants different placeholders, so the select list no longer matches the GROUP BY key and the redacted query fails to prepare (42803). Reproduce it in a test first, then share the placeholder the way redact already does for a GROUP BY key that matches a select-list expression.
