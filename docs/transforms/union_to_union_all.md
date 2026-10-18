@@ -12,12 +12,12 @@ Each arm must have this form:
 
 - Its `FROM` is one schema-qualified table, read without `ONLY` and without column aliases.
 - It has no `DISTINCT` and no `GROUP BY`.
-- Its select list and `ORDER BY` might not call a set-returning function, an aggregate, or a window function, even inside a subquery. A set-returning function can give one row of the table more than once.
+- Its select list and `ORDER BY` call no set-returning function, aggregate, or window function, even inside a subquery. A set-returning function can give one row of the table more than once.
 - It can have a `WHERE`, an `ORDER BY`, a `LIMIT`, and an `OFFSET`, since those only drop rows.
 
 Each arm's select list must hold every column of a unique, not-null key of its table. Each key column is written `name.column` or bare, alone, or the table's `name.*` or `*` stands for all its columns. An alias, as in `posts.id AS item_id`, is fine. An expression such as `posts.id + 0` doesn't count, and neither does a cast. So no two rows of one arm are equal.
 
-Where a key column stands in the select list, every arm must output a column of its own table, of the same type, such as `bigint` in each. Then the `UNION` casts none of them, and compares them as the key's unique index does. The key's type must be an enum or a built-in type that Postgres can hash and sort, with no collation or a deterministic one.
+Where a key column stands in the select list, every arm must output a column of its own table, of the same type, such as `bigint` in each. A typmod can differ, as `varchar(10)` beside `varchar(20)`. Then the `UNION` changes none of their values, and compares them as the key's unique index does. The key's type must be an enum or a built-in type that Postgres can hash and sort, with no collation or a deterministic one.
 
 In one position, every arm's select list must have a tag: a constant, which QUAACK makes a placeholder, maybe with a cast, as in `'post' AS kind` or `'post'::text`. The query must hold that placeholder nowhere else. The rule asks the literal oracle whether the tags all differ, compared the way the `UNION` compares them, in its column's type. So `1` and `1.0` match, since the column is `numeric`. A row of one arm then has another tag than every row of the others. The rule reads no value.
 
@@ -25,7 +25,8 @@ The rule refuses:
 
 - a set operation with a `UNION ALL`, an `INTERSECT`, or an `EXCEPT` in it,
 - an arm that joins, or reads a subquery, a CTE, or `VALUES`,
-- an arm with no key in its select list, or a key that can be `NULL`, and
+- an arm with no key in its select list, or a key that can be `NULL`,
+- a column or a star of an outer query, even one with a key column's name, and
 - two tags that hold the same literal, or that the `UNION`'s type makes equal.
 
 These cases are unsupported in v1:
@@ -33,7 +34,7 @@ These cases are unsupported in v1:
 - a `UNION` under a `UNION ALL`, as in `(a UNION b) UNION ALL c`,
 - a key column whose position holds another type in another arm, such as `int` beside `bigint`, or a constant,
 - a key with a nondeterministic collation, even when its unique index uses the same collation,
-- a nullable key, even one whose unique index is `NULLS NOT DISTINCT`,
+- a nullable key whose unique index is `NULLS NOT DISTINCT`, which can't repeat a row either,
 - a table read with `ONLY`,
 - an arm whose select list has a subquery that calls an aggregate, such as `(SELECT count(*) FROM comments ...)`, or a window function, and
 - arms whose rows differ in some other way, such as a key of each table in its own column, with `NULL` in the others.

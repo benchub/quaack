@@ -41,6 +41,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionToUnionAll do
       CREATE TABLE public.likes (id bigint PRIMARY KEY, group_id bigint NOT NULL, created_at timestamptz NOT NULL);
       CREATE TABLE public.shares (id bigint PRIMARY KEY, group_id bigint NOT NULL, created_at timestamptz NOT NULL);
       CREATE TABLE public.memberships (user_id bigint, group_id bigint, role text, PRIMARY KEY (user_id, group_id));
+      CREATE TABLE public.short_codes (code varchar(10) PRIMARY KEY);
+      CREATE TABLE public.long_codes (code varchar(20) PRIMARY KEY);
       CREATE TABLE public.small_posts (id int PRIMARY KEY, group_id bigint NOT NULL, created_at timestamptz NOT NULL);
       CREATE TABLE public.drafts (id bigint UNIQUE, group_id bigint NOT NULL, created_at timestamptz NOT NULL);
       CREATE TABLE public.notes (id bigint UNIQUE NULLS NOT DISTINCT, group_id bigint NOT NULL);
@@ -59,6 +61,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionToUnionAll do
       INSERT INTO public.likes VALUES (1, 1, '2026-01-01 07:00+00'), (7, 2, '2026-01-01 08:00+00');
       INSERT INTO public.shares VALUES (1, 1, '2026-01-01 09:00+00'), (2, 1, '2026-01-01 10:00+00');
       INSERT INTO public.memberships VALUES (1, 1, 'admin'), (1, 2, 'member'), (2, 1, 'member');
+      INSERT INTO public.short_codes VALUES ('a'), ('b');
+      INSERT INTO public.long_codes VALUES ('a'), ('c');
       INSERT INTO public.small_posts VALUES (1, 1, '2026-01-01 01:00+00'), (2, 1, '2026-01-01 02:00+00');
       INSERT INTO public.drafts VALUES (NULL, 1, '2026-01-01 01:00+00'), (NULL, 1, '2026-01-01 01:00+00'),
         (3, 1, '2026-01-01 03:00+00');
@@ -259,6 +263,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionToUnionAll do
         { "kind" => "not_null", "table" => "public.memberships", "column" => "group_id" },
         { "kind" => "unique", "table" => "public.posts", "columns" => ["id"] },
         { "kind" => "not_null", "table" => "public.posts", "column" => "id" }]]
+    )
+  end
+
+  it "takes key columns of one type with different typmods, whose values the UNION doesn't change" do
+    expect_rewrite(
+      "SELECT 'short' AS kind, short_codes.code FROM public.short_codes " \
+      "UNION SELECT 'long', long_codes.code FROM public.long_codes",
+      "SELECT $1 AS kind, short_codes.code FROM public.short_codes " \
+      "UNION ALL SELECT $2, long_codes.code FROM public.long_codes"
     )
   end
 
