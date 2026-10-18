@@ -110,6 +110,22 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
     expect(conn.exec("SELECT count(*) FROM pg_catalog.pg_prepared_statements").getvalue(0, 0)).to eq("0")
   end
 
+  # Postgres describes a domain's column by the domain's base type.
+  it "names the types of a query's columns as format_type does, or nil when it doesn't analyze", :aggregate_failures do
+    {
+      "SELECT t.id, t.name, t.born, t.size, t.tags FROM public.t" =>
+        ["integer", "character varying", "timestamp with time zone", "integer", "text[]"],
+      "SELECT t.id + $1, $2 AS label, sum(t.id) FROM public.t GROUP BY t.id" => %w[integer text bigint],
+      "SELECT t.* FROM public.t WHERE t.id = $1" =>
+        ["integer", "character varying", "timestamp with time zone", "json", "jsonb", "text[]", "mood",
+         "public.int4", "integer", "text", "text", "uuid"],
+      "SELECT t.id FROM public.t WHERE t.id = outer_t.id" => nil
+    }.each do |sql, types|
+      expect(catalog.result_types(sql)).to eq(types), sql
+    end
+    expect(conn.exec("SELECT count(*) FROM pg_catalog.pg_prepared_statements").getvalue(0, 0)).to eq("0")
+  end
+
   it "says whether a query analyzes on its own inside a transaction, which a failure doesn't end" do
     conn.transaction do
       expect(catalog.self_contained?("SELECT t.id FROM public.t WHERE t.id = outer_t.id")).to be(false)
@@ -202,6 +218,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
               catalog.only_aggregates?("public", "max"), catalog.only_aggregates?(nil, "lower"),
               catalog.only_aggregates?(nil, "no_such_function"), catalog.only_aggregates?(nil, "many")])
         .to eq([true, true, false, false, false, false])
+    end
+
+    it "calls a function a built-in aggregate only when every function of its name is pg_catalog's aggregate" do
+      conn.exec("CREATE AGGREGATE public.sum(text) (SFUNC = textcat, STYPE = text)")
+      expect([catalog.builtin_aggregate?(nil, "count"), catalog.builtin_aggregate?("pg_catalog", "count"),
+              catalog.builtin_aggregate?(nil, "sum"), catalog.builtin_aggregate?("pg_catalog", "sum"),
+              catalog.builtin_aggregate?("public", "sum"), catalog.builtin_aggregate?(nil, "lower"),
+              catalog.builtin_aggregate?(nil, "no_such_function"), catalog.builtin_aggregate?(nil, "many")])
+        .to eq([true, true, false, true, false, false, false, false])
     end
 
     # Task 20261007-32: a public <> that says no would let a key whose

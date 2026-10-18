@@ -45,7 +45,9 @@ module Quaack
                                "the first match.",
           "count_distinct_to_subquery" => "Counts the rows of a SELECT DISTINCT of the GROUP BY columns and the " \
                                           "counted value, in place of a count(DISTINCT), so Postgres can hash " \
-                                          "instead of sorting inside the aggregate."
+                                          "instead of sorting inside the aggregate.",
+          "subquery_order_removal" => "Removes an ORDER BY with no LIMIT or OFFSET from a subquery in FROM or a CTE " \
+                                      "when nothing that reads it depends on that order, such as a count of its rows."
         }.freeze
       end
     end

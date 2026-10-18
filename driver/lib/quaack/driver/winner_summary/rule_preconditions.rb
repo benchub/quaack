@@ -61,7 +61,11 @@ module Quaack
                                "so the comparison only asks whether any row matches.",
           "count_distinct_to_subquery" => "A SELECT with a FROM selects only its GROUP BY columns, each written " \
                                           "name.column, and one count(DISTINCT e), with no HAVING, window, or " \
-                                          "DISTINCT, and calls no volatile function."
+                                          "DISTINCT, and calls no volatile function.",
+          "subquery_order_removal" => "A subquery in FROM or a CTE body has an ORDER BY and no LIMIT, OFFSET, or " \
+                                      "DISTINCT ON, and every query that reads it either sorts its own rows or only " \
+                                      "aggregates them with aggregates, such as count, that ignore their input's " \
+                                      "order."
         }.freeze
       end
     end
