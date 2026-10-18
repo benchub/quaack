@@ -24,7 +24,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::AggregateBeforeJoin do
   # lost the filter, or counted the wrong rows would show.
   before do
     conn.exec(<<~SQL)
-      CREATE TABLE public.users (id int PRIMARY KEY, name text NOT NULL, team int);
+      CREATE TABLE public.users (id int PRIMARY KEY, name text NOT NULL, team int, code int UNIQUE);
       CREATE TABLE public.orders (id int PRIMARY KEY, user_id int, big_user_id bigint, total int NOT NULL,
                                   status text NOT NULL);
       CREATE TABLE public.notes (user_id int, body text);
@@ -135,6 +135,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::AggregateBeforeJoin do
     expect_refusals(
       [["SELECT u.id, count(*) AS n FROM public.users u LEFT JOIN public.orders o ON o.user_id = u.id GROUP BY u.id",
         fires],
+       ["SELECT u.id, count(*) OVER () AS n #{join} GROUP BY u.id", fires],
+       ["SELECT u.code, count(*) AS n #{join} GROUP BY u.code", fires],
        ["SELECT DISTINCT u.id, count(*) AS n #{join} GROUP BY u.id", fires],
        ["SELECT u.id, count(*) AS n, rank() OVER () #{join} GROUP BY u.id", fires],
        ["SELECT u.id, count(*) AS n #{join} WHERE random() < 2 GROUP BY u.id",
