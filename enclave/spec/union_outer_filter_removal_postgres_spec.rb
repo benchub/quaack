@@ -248,10 +248,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
                "(SELECT user_id FROM users_in_account) AND users.workflow_state <> $14) users ORDER BY users.id"
     redacted, literals = literals_for(sql)
 
-    generated = Quaack::Enclave::RewriteRules.generate(PgQuery.parse(redacted), catalog, literals)
-    chained = generated.rewrites.find { it.rules.map(&:name) == %w[cte_hoist_dedupe union_outer_filter_removal] }
+    # The two rules by hand, so another rule firing on this query can't
+    # push the chain past the generator's cap.
+    deparse = Quaack::Enclave::Deparse
+    hoisted = Quaack::Enclave::RewriteRules::CteHoistDedupe.new.rewrites(PgQuery.parse(redacted), catalog, literals)
+    chained = hoisted.flat_map { rule.rewrites(PgQuery.parse(deparse.faithfully(it.tree)), catalog, literals) }
 
-    expect(chained&.sql).to eq(expected)
+    expect(chained.map { deparse.faithfully(it.tree) }).to include(expected)
     expect_same_rows(sql, expected)
   end
 
