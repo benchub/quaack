@@ -37,7 +37,9 @@ module Quaack
           "distinct_key_removal" => "Removes a DISTINCT that can't remove a row: the select list holds a unique, " \
                                     "not-null key of the first table, and each join matches at most one row.",
           "cte_fence_removal" => "Writes a CTE that Postgres would store, because it's MATERIALIZED or read more " \
-                                 "than once, as NOT MATERIALIZED, so each reader's conditions can reach its tables."
+                                 "than once, as NOT MATERIALIZED, so each reader's conditions can reach its tables.",
+          "left_join_to_inner" => "Turns a LEFT JOIN on a validated foreign key whose columns are not null into an " \
+                                  "inner join, which Postgres can reorder, so the joined table can drive."
         }.freeze
       end
     end

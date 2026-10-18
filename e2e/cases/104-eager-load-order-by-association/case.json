@@ -1,0 +1,35 @@
+{
+  "title": "eager_load ordered by the association's column",
+  "category": "rewrite",
+  "compare": "ordered",
+  "features": [
+    "LEFT OUTER JOIN from Rails' eager_load on a belongs_to",
+    "validated FK plus NOT NULL assumption (assumption-check)",
+    "ORDER BY the joined table's column under a LIMIT"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "shipped orders",
+      "replace": {
+        "'pending'": "'shipped'"
+      }
+    },
+    {
+      "name": "cancelled orders",
+      "replace": {
+        "'pending'": "'cancelled'"
+      }
+    },
+    {
+      "name": "a deep page",
+      "replace": {
+        "LIMIT 25": "LIMIT 25 OFFSET 49000"
+      },
+      "minimax": false
+    }
+  ]
+}

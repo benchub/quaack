@@ -9,6 +9,7 @@ require_relative "rewrite_rules/distinct_key_removal"
 require_relative "rewrite_rules/existence_in_flip"
 require_relative "rewrite_rules/implied_predicate_removal"
 require_relative "rewrite_rules/key_in_self_join"
+require_relative "rewrite_rules/left_join_to_inner"
 require_relative "rewrite_rules/literals"
 require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
@@ -87,7 +88,8 @@ module Quaack
         PolymorphicKeyCopy.new,
         SubqueryDistinctRemoval.new,
         DistinctKeyRemoval.new,
-        CteFenceRemoval.new
+        CteFenceRemoval.new,
+        LeftJoinToInner.new
       ].freeze
 
       DEPTH = 2

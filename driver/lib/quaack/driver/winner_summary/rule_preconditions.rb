@@ -51,7 +51,11 @@ module Quaack
                                     "key of the joined table, so no two of its rows can be equal.",
           "cte_fence_removal" => "The query has a CTE written AS MATERIALIZED, or a plain CTE it reads more than " \
                                  "once, whose body calls no volatile function, and no condition that could reach " \
-                                 "the body's tables can raise an error."
+                                 "the body's tables can raise an error.",
+          "left_join_to_inner" => "A LEFT JOIN is on a validated, enforced foreign key from a table on its left " \
+                                  "side that no outer join there can fill with NULLs, and the foreign key's " \
+                                  "columns are not null, so every left row has a match and the join extends no row " \
+                                  "with NULLs."
         }.freeze
       end
     end
