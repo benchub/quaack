@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "rewrite_rules/count_to_exists"
 require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/cte_hoist_dedupe"
 require_relative "rewrite_rules/distinct_join_to_exists"
@@ -89,7 +90,8 @@ module Quaack
         SubqueryDistinctRemoval.new,
         DistinctKeyRemoval.new,
         CteFenceRemoval.new,
-        LeftJoinToInner.new
+        LeftJoinToInner.new,
+        CountToExists.new
       ].freeze
 
       DEPTH = 2

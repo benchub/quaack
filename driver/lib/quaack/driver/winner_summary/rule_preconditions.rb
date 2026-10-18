@@ -55,7 +55,10 @@ module Quaack
           "left_join_to_inner" => "A LEFT JOIN is on a validated, enforced foreign key from a table on its left " \
                                   "side that no outer join there can fill with NULLs, and the foreign key's " \
                                   "columns are not null, so every left row has a match and the join extends no row " \
-                                  "with NULLs."
+                                  "with NULLs.",
+          "count_to_exists" => "A scalar subquery selects only count(*), or a count of a column of one of its " \
+                               "own tables, and the query compares it with a constant, such as > 0, >= 1, or = 0, " \
+                               "so the comparison only asks whether any row matches."
         }.freeze
       end
     end

@@ -39,7 +39,10 @@ module Quaack
           "cte_fence_removal" => "Writes a CTE that Postgres would store, because it's MATERIALIZED or read more " \
                                  "than once, as NOT MATERIALIZED, so each reader's conditions can reach its tables.",
           "left_join_to_inner" => "Turns a LEFT JOIN on a validated foreign key whose columns are not null into an " \
-                                  "inner join, which Postgres can reorder, so the joined table can drive."
+                                  "inner join, which Postgres can reorder, so the joined table can drive.",
+          "count_to_exists" => "Turns a count subquery that only asks whether any row matches, such as " \
+                               "count(*) > 0 or count(*) = 0, into an EXISTS or a NOT EXISTS, which can stop at " \
+                               "the first match."
         }.freeze
       end
     end

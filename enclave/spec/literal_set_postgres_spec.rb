@@ -344,6 +344,25 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       rows(sql, result.sets["typical"])
     end
 
+    # count_to_exists asks the literal oracle whether such a placeholder is
+    # 0 or 1 and drops it from its rewrite, which result-comparison runs
+    # with every set. So no set may give it another value. <> keeps it as
+    # any <> does.
+    it "for a count subquery's threshold, on either side, though a column inside the subquery is picked" do
+      sql, result = literal_sets("SELECT r.id FROM public.readings r WHERE " \
+                                 "(SELECT count(*) FROM public.readings x WHERE x.id = r.id AND x.k = 12345) > 0 " \
+                                 "OR 1 <= (SELECT count(x.amount) FROM public.readings x WHERE x.id = r.id) " \
+                                 "OR (SELECT count(*) FROM public.readings x WHERE x.id = r.id) <> 0")
+      thresholds = { "$2" => "0", "$3" => "1", "$4" => "0" }
+      fallbacks = { "$2" => "unsupported_shape", "$3" => "unsupported_shape", "$4" => "operator" }
+
+      expect(sql).to include("x.k = $1) > $2 OR $3 <= (SELECT count(x.amount)", "x.id = r.id) <> $4")
+      expect(values(result, "worst_case")).to eq("$1" => "7", **thresholds)
+      expect(values(result, "typical")).to eq("$1" => middle("k"), **thresholds)
+      expect(result.fallbacks).to eq("worst_case" => fallbacks, "typical" => fallbacks)
+      expect(rows(sql, result.sets["typical"]).size).to eq(10_000)
+    end
+
     it "for a placeholder that more than one expression shares" do
       sql, result = literal_sets("SELECT count(*) FROM public.readings r GROUP BY r.k = 5 HAVING r.k = 5")
 

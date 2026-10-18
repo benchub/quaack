@@ -14,7 +14,7 @@ Gold customers with a shipped order. Counting reads all 10 orders per customer, 
 
 ## Expected result.
 
-`EXISTS`, which can stop at the first match. The planner turns it into a semi-join.
+`EXISTS`, which can stop at the first match. The planner turns it into a semi-join. The `count_to_exists` transform rule makes this rewrite from `slow.sql`.
 
 ## Proof.
 
