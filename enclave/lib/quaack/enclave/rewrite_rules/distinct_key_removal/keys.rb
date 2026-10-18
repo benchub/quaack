@@ -61,7 +61,7 @@ module Quaack
           # The joined table's column that condition pairs with a column of
           # a table before it, or nil. The condition must be a plain
           # unqualified = between two columns written name.column, of one
-          # base type, each with a deterministic collation or none, whose =
+          # base type or two integer types (one_family?), each with a deterministic collation or none, whose =
           # is the type's default btree family's (Catalog#default_btree?).
           # With the unique assumption's = being that family's too, at most
           # one row of the joined table is = to each value.
@@ -91,9 +91,18 @@ module Quaack
 
           def comparable?(catalog, column, other)
             info, other_info = [column, other].map { catalog.column_info(*it) }
-            info && other_info && info.base_type == other_info.base_type && info.deterministic &&
+            info && other_info && one_family?(info.base_type, other_info.base_type) && info.deterministic &&
               other_info.deterministic && catalog.default_btree?(*column)
           end
+
+          # Postgres's integer types, whose = across any two of them is an
+          # operator of integer_ops, the family of each one's default btree
+          # opclass, as an int column joined to a bigint key is.
+          INTEGERS = %w[smallint integer bigint].freeze
+
+          # Whether = between the two base types is the key type's own
+          # family's: the types are one, or both are integers.
+          def one_family?(type, other) = type == other || [type, other].all? { INTEGERS.include?(it) }
 
           def unique_not_null(table, key)
             [unique(table, key), *key.map { { "kind" => "not_null", "table" => name(table), "column" => it } }]
