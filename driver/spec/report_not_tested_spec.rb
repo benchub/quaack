@@ -85,8 +85,8 @@ RSpec.describe Quaack::Driver::Report do
          "It passed the tests on made-up data, but returned different results"],
       ["below_top_three", nil] => ["#{lead}, and it beat the original query, but three others",
                                    "It passed every test and beat the original query, but three"],
-      ["not_better", nil] => ["#{lead}, then QUAACK measured it on the real data, where it",
-                              "It passed every test, then QUAACK measured it"],
+      ["not_better", nil] => ["#{lead}, but when measured against real data performed too poorly to be ranked.",
+                              "It passed every correctness test, but when measured against real data"],
       %w[unfinished rewrite-test] => ["#{short}, and the run ended before going further.",
                                       "It passed the tests on made-up data, and the run ended"],
       %w[unfinished counterexamples] => ["#{short}, it passed the LLM's test data, and the run ended before " \
@@ -96,7 +96,7 @@ RSpec.describe Quaack::Driver::Report do
         rewrites.replace([fated(1, fate, after:, not_tested: "no_world"), fated(2, fate, after:, not_tested: nil)])
         sentences = html.scan(%r{<span class="fate">What became of it: (.*?)</span>}m).flatten
         expect(sentences.first).to include(untested)
-        expect(sentences.first).not_to match(/passed (the tests on made-up data|every test)/)
+        expect(sentences.first).not_to match(/passed (the tests on made-up data|every (correctness )?test)/)
         expect(sentences.last).to include(normal)
       end
     end

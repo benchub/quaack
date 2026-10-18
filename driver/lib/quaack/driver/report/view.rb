@@ -11,7 +11,6 @@ require_relative "suggested_drops"
 require_relative "kinds"
 require_relative "verdict"
 require_relative "rewrites"
-require_relative "not_better_fate"
 require_relative "rule_links"
 require_relative "indexes"
 require_relative "accountability"
@@ -38,7 +37,6 @@ module Quaack
         include RankedEntries
         include IndexProposers
         include SuggestedDrops
-        include NotBetterFate
         include Kinds
         include Verdict
         include Rewrites

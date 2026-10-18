@@ -51,7 +51,8 @@ module Quaack
                                "did better.",
           "footprint_tie" => "It passed every test and beat the original query, but tied with a candidate " \
                              "whose new indices take less disk space.",
-          "not_better" => nil, # worded by NotBetterFate
+          "not_better" => "It passed every correctness test, but when measured against real data performed too " \
+                          "poorly to be ranked.",
           "measurement_timed_out" => "It passed every test, but every measurement run of it timed out."
         }.freeze
 
@@ -94,7 +95,8 @@ module Quaack
            ["It passed the tests on made-up data, but QUAACK", "#{lead}, but QUAACK"],
            ["It passed the tests on made-up data, but", "#{lead}, and it"],
            ["It passed every test and beat", "#{lead}, and it beat"],
-           ["It passed every test,", "#{lead},"]]
+           ["It passed every test,", "#{lead},"],
+           ["It passed every correctness test,", "#{lead},"]]
         end
 
         # text, reworded by went_on when entry went on untested.
@@ -140,7 +142,7 @@ module Quaack
           return untimed(entry, UNFINISHED.fetch(entry["after"], UNFINISHED[nil])) if entry["fate"] == "unfinished"
 
           text = untimed(entry, fate_text(entry) || (return "#{Words::MISSING}."))
-          format(text, percent: NotBetterFate::PERCENT, **fills(entry), **because(entry))
+          format(text, **fills(entry), **because(entry))
         end
 
         # The fate sentences' bracketed details.
@@ -185,7 +187,6 @@ module Quaack
         def later_disproof?(fate) = Accountability::OUTCOMES[fate] == Accountability::WRONG
 
         def fate_text(entry)
-          return not_better_text(entry) if entry["fate"] == "not_better"
           return SEARCH_FAILED[entry["fate"]] if SEARCH_FAILED.key?(entry["fate"]) && entry["rule"] == "query_failed"
 
           FATES[entry["fate"]]
