@@ -6,18 +6,23 @@
 #   ruby e2e/verify.rb 001 017         # cases whose directory starts with these
 #   ruby e2e/verify.rb --write         # also rewrite each results.md and CASES.md
 #
-# It starts its own throwaway Postgres container, labeled quaack.e2e, and
-# removes it and its volume at exit. It needs only Docker and the standard
-# library. Each case loads into a fresh database, which is dropped when the
-# case finishes. See e2e/README.md for what's checked.
+# It starts its own throwaway Postgres container, labeled quaack.e2e and with
+# its pid and host, and removes it and its volume at exit. At start it removes
+# only leftovers whose owner on this host is gone, so runs can go at the same
+# time. It needs only Docker and the standard library. Each case loads into a
+# fresh database, which is dropped when the case finishes. See e2e/README.md
+# for what's checked.
 
 require "json"
 require "open3"
+require "socket"
 
 module E2E
   ROOT = File.expand_path(__dir__)
   IMAGE = ENV.fetch("QUAACK_E2E_IMAGE", "postgres:18")
   LABEL = "quaack.e2e"
+  OWNER_LABEL = "quaack.e2e.owner-pid"
+  HOST_LABEL = "quaack.e2e.owner-host"
   # DESIGN.md's blocks-metric: better means more than 5% fewer total blocks.
   WIN = 0.95
   # How far a count may move between repeated runs and still count as stable.
@@ -27,11 +32,17 @@ module E2E
 
   # One throwaway Postgres container, reached with docker exec and psql.
   class Postgres
-    def initialize
-      system("docker", "rm", "-f", "-v", *leftovers, out: File::NULL, err: File::NULL) unless leftovers.empty?
+    attr_reader :id
+
+    # The label is a parameter so a spec can use one of its own and never
+    # touch the containers of a real run.
+    def initialize(label: LABEL)
+      @label = label
+      remove_stale_containers
       # Autovacuum is off, as DESIGN.md's run-server requires of the run server, so a
       # background vacuum or analyze can't change a measurement.
-      @id = capture("docker", "run", "-d", "--label", LABEL, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE,
+      @id = capture("docker", "run", "-d", "--label", @label, "--label", "#{OWNER_LABEL}=#{Process.pid}",
+                    "--label", "#{HOST_LABEL}=#{Socket.gethostname}", "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE,
                     "-c", "autovacuum=off").strip
       at_exit { system("docker", "rm", "-f", "-v", @id, out: File::NULL, err: File::NULL) }
       wait_until_ready
@@ -44,8 +55,33 @@ module E2E
 
     private
 
-    def leftovers
-      @leftovers ||= capture("docker", "ps", "-aq", "--filter", "label=#{LABEL}").split
+    # Removes containers whose owning run is gone. One whose owner is still
+    # running is another run's server, maybe from another worktree, so it
+    # stays. So does one another host started, since its pid can't be checked
+    # here. One with no owner label predates the labels and counts as gone,
+    # the way spec/support/test_postgres.rb treats it.
+    def remove_stale_containers
+      format = "{{.ID}}|{{.Label \"#{OWNER_LABEL}\"}}|{{.Label \"#{HOST_LABEL}\"}}"
+      rows = capture("docker", "ps", "-a", "--filter", "label=#{@label}", "--format", format).lines
+      stale = rows.map { it.chomp.split("|", -1) }.reject do |_id, pid, host|
+        foreign?(host) || process_alive?(Integer(pid, exception: false))
+      end
+      # Another run may be removing the same one. rm -f then reports it, and
+      # it's gone either way.
+      system("docker", "rm", "-f", "-v", *stale.map(&:first), out: File::NULL, err: File::NULL) unless stale.empty?
+    end
+
+    def foreign?(host) = !host.empty? && host != Socket.gethostname
+
+    def process_alive?(pid)
+      return false unless pid&.positive?
+
+      Process.kill(0, pid)
+      true
+    rescue Errno::ESRCH
+      false
+    rescue Errno::EPERM
+      true
     end
 
     def wait_until_ready
