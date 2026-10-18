@@ -47,7 +47,9 @@ module Quaack
                                           "counted value, in place of a count(DISTINCT), so Postgres can hash " \
                                           "instead of sorting inside the aggregate.",
           "subquery_order_removal" => "Removes an ORDER BY with no LIMIT or OFFSET from a subquery in FROM or a CTE " \
-                                      "when nothing that reads it depends on that order, such as a count of its rows."
+                                      "when nothing that reads it depends on that order, such as a count of its rows.",
+          "union_to_union_all" => "Turns a UNION whose rows can't repeat into a UNION ALL: each arm selects a " \
+                                  "unique, not-null key of its table and a tag that differs from every other arm's."
         }.freeze
       end
     end

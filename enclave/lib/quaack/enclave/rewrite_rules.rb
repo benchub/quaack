@@ -22,6 +22,7 @@ require_relative "rewrite_rules/subquery_distinct_removal"
 require_relative "rewrite_rules/subquery_order_removal"
 require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
+require_relative "rewrite_rules/union_to_union_all"
 require_relative "rewrite_rules/unused_join_removal"
 
 module Quaack
@@ -95,7 +96,8 @@ module Quaack
         LeftJoinToInner.new,
         CountToExists.new,
         CountDistinctToSubquery.new,
-        SubqueryOrderRemoval.new
+        SubqueryOrderRemoval.new,
+        UnionToUnionAll.new
       ].freeze
 
       DEPTH = 2

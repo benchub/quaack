@@ -65,7 +65,10 @@ module Quaack
           "subquery_order_removal" => "A subquery in FROM or a CTE body has an ORDER BY and no LIMIT, OFFSET, or " \
                                       "DISTINCT ON, and every query that reads it either sorts its own rows or only " \
                                       "aggregates them with aggregates, such as count, that ignore their input's " \
-                                      "order."
+                                      "order.",
+          "union_to_union_all" => "Each arm of a UNION reads one table and selects every column of a unique, " \
+                                  "not-null key of it, and in one position every arm selects a constant tag that " \
+                                  "differs from every other arm's, so no two of the UNION's rows can be equal."
         }.freeze
       end
     end
