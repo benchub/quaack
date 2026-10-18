@@ -296,6 +296,74 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountToExists do
     expect(rule.rewrites(PgQuery.parse("#{redacted.sql}; #{redacted.sql}"), catalog, literals)).to eq([])
   end
 
+  # The review of 20261018-3. As a SubPlan, the correlated count runs its
+  # cast only on the purchases of each gold buyer, as the index finds them.
+  # As EXISTS or NOT EXISTS, Postgres plans a hash join over every purchase,
+  # and the cast meets purchase 8's 'n/a', which is silver buyer 9's.
+  describe "a correlated count whose conditions can raise on some rows" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.buyers (id int PRIMARY KEY, tier text NOT NULL);
+        CREATE TABLE public.purchases (id int PRIMARY KEY, buyer_id int NOT NULL, status text NOT NULL,
+                                       metadata jsonb NOT NULL);
+        INSERT INTO public.buyers SELECT i, CASE WHEN i % 2 = 0 THEN 'gold' ELSE 'silver' END
+          FROM generate_series(1, 10000) AS i;
+        INSERT INTO public.purchases
+          SELECT j, 1 + j % 10000, 'paid', jsonb_build_object('total', CASE WHEN j = 8 THEN 'n/a' ELSE (j % 250)::text END)
+          FROM generate_series(1, 100000) AS j;
+        CREATE INDEX purchases_buyer_id ON public.purchases (buyer_id);
+        ANALYZE public.buyers, public.purchases;
+      SQL
+    end
+
+    cast = "(p.metadata->>'total')::numeric >= 0"
+    correlated = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND (SELECT count(*) " \
+                 "FROM public.purchases p WHERE p.buyer_id = b.id AND #{cast}) "
+
+    it "leaves it alone, since EXISTS can run the conditions on rows no outer row matches" do
+      expect(conn.exec("#{correlated}> 0").values).to eq([["5000"]])
+      expect(conn.exec("#{correlated}= 0").values).to eq([["0"]])
+      %w[> =].each do |operator|
+        exists = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND #{"NOT " if operator == "="}" \
+                 "EXISTS (SELECT 1 FROM public.purchases p WHERE p.buyer_id = b.id AND #{cast})"
+        expect { conn.exec(exists) }.to raise_error(PG::InvalidTextRepresentation)
+      end
+
+      expect([rewritten("#{correlated}> 0"), rewritten("#{correlated}= 0")]).to eq([[], []])
+    end
+
+    it "leaves it alone when the cast is in a join's ON inside the subquery" do
+      sql = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND (SELECT count(*) " \
+            "FROM public.purchases p JOIN public.buyers s ON s.id = p.buyer_id AND #{cast} " \
+            "WHERE p.buyer_id = b.id) > 0"
+
+      expect(conn.exec(sql).values).to eq([["5000"]])
+      expect(rewritten(sql)).to eq([])
+    end
+
+    it "still rewrites an uncorrelated count, which runs its conditions on every row it reads either way" do
+      sql = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND (SELECT count(*) " \
+            "FROM public.purchases p WHERE p.buyer_id = 2 AND #{cast}) > 0"
+      rewrite = rewritten(sql)
+
+      expect(rewrite).to eq(["SELECT count(*) FROM public.buyers b WHERE b.tier = $1 AND EXISTS (SELECT 1 " \
+                             "FROM public.purchases p WHERE p.buyer_id = $2 AND (p.metadata ->> $3)::numeric >= $4)"])
+      expect(same_rows(sql, rewrite.first)).to eq([["5000"]])
+    end
+
+    it "still rewrites a correlated count whose conditions can't raise, and judges an outer count by its rewrite" do
+      latest = "(SELECT count(*) FROM public.purchases q WHERE q.buyer_id = p.buyer_id AND q.id > p.id) = 0"
+      sql = "SELECT count(*) FROM public.buyers b WHERE b.tier = 'gold' AND (SELECT count(*) " \
+            "FROM public.purchases p WHERE p.buyer_id = b.id AND p.status = 'paid' AND #{latest}) > 0"
+      rewrite = rewritten(sql)
+
+      expect(rewrite).to eq(["SELECT count(*) FROM public.buyers b WHERE b.tier = $1 AND EXISTS (SELECT 1 " \
+                             "FROM public.purchases p WHERE p.buyer_id = b.id AND p.status = $2 AND NOT EXISTS " \
+                             "(SELECT 1 FROM public.purchases q WHERE q.buyer_id = p.buyer_id AND q.id > p.id))"])
+      expect(same_rows(sql, rewrite.first)).to eq([["5000"]])
+    end
+  end
+
   it "leaves alone a query that calls a volatile function, in the subquery or anywhere else" do
     in_subquery = "(SELECT count(*) FROM public.orders o WHERE o.customer_id = c.id AND random() < 2) > 0"
     expect(rewritten(shipped(in_subquery))).to eq([])

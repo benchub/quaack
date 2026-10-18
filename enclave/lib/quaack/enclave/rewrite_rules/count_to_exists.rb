@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "rewrite"
 require_relative "../deparse"
 require_relative "count_to_exists/counted"
+require_relative "or_to_union/arms"
 
 module Quaack
   module Enclave
@@ -65,6 +66,9 @@ module Quaack
       #   the placeholder's own type, as the query compares the count, so
       #   0.0 is 0 and 0.5 is neither.
       # - The subquery is a count the rule can read (see Counted).
+      # - If the subquery reads the outer query, nothing in its FROM or
+      #   WHERE can raise on some rows (see raises?). It's judged with any
+      #   count inside it already rewritten.
       class CountToExists
         # For each operator, with the count on its left: the value the
         # placeholder must hold, and whether the test asks that some row
@@ -93,9 +97,9 @@ module Quaack
           return [] if tests.empty? || catalog.calls_volatile?(Deparse.faithfully(tree))
 
           # Inner comparisons first, so an outer one's copy of its subquery
-          # holds their rewrites.
-          tests.reverse_each { rewrite!(it) }
-          [Rewrite.new(tree:, assumptions: [])]
+          # holds their rewrites, and is judged with them.
+          replaced = tests.reverse.filter_map { |test| exists_of(test, catalog)&.tap { replace!(test, it) } }
+          replaced.empty? ? [] : [Rewrite.new(tree:, assumptions: [])]
         end
 
         private
@@ -133,17 +137,40 @@ module Quaack
           names.first if names.size == 1 && TESTS.key?(names.first)
         end
 
-        # Puts EXISTS, or NOT EXISTS, of a copy of the subquery in the
-        # comparison's place.
-        def rewrite!(test)
+        # EXISTS of a copy of the subquery, or nil when its conditions could
+        # raise where the count's don't (see raises?).
+        def exists_of(test, catalog)
           link = PgQuery::SubLink.decode(PgQuery::SubLink.encode(test.link))
+          return if raises?(link.subselect.select_stmt, catalog)
+
           Counted.exists!(link.subselect.select_stmt, test.count)
           link.sub_link_type = :EXISTS_SUBLINK
+          link
+        end
+
+        # Puts link, or NOT link, in the comparison's place.
+        def replace!(test, link)
           if test.exists
             test.node.sub_link = link
           else
             test.node.bool_expr = PgQuery::BoolExpr.new(boolop: :NOT_EXPR, args: [PgQuery::Node.new(sub_link: link)])
           end
+        end
+
+        # Whether the subquery reads the outer query, and its FROM or WHERE
+        # holds anything that can raise on some rows, such as a cast (see
+        # OrToUnion::Arms.raises?). Postgres runs a correlated count as a
+        # SubPlan, so its conditions see only the rows that match the
+        # correlation, as an index finds them. EXISTS or NOT EXISTS can run
+        # as a semi-join or an anti-join, or a hashed SubPlan, that runs them
+        # on every row of the table, rows no outer row matches included. An
+        # uncorrelated count runs its conditions on every row it reads
+        # already. A subquery that doesn't deparse counts as correlated.
+        def raises?(select, catalog)
+          [select.from_clause, select.where_clause].any? { OrToUnion::Arms.raises?(it, catalog) } &&
+            !catalog.self_contained?(Deparse.statement(select))
+        rescue Deparse::Error
+          true
         end
 
         # Every Node in node, in tree order, each before those inside it.

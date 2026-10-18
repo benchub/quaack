@@ -25,6 +25,7 @@ The rule does not change these:
 - A count of a column whose type is a composite type, or a domain over one. `IS NOT NULL` of a row is true only when every field isn't NULL, but `count` counts a row whose fields are all NULL.
 - A count of `t.col` where `t`'s alias renames its columns, of a whole row (`count(t)` or `count(t.*)`), or of a function written as a column (`t.f`).
 - A query that calls a volatile function anywhere. `EXISTS` stops at the first match, so a volatile call would run another number of times.
+- A correlated count whose `FROM` or `WHERE` holds something that can fail on some rows, such as a cast like `(o.metadata->>'total')::numeric`, a function call, or arithmetic like `/`. Postgres runs a correlated count once for each outer row, so its conditions only see the rows that match that outer row, often found through an index. Postgres can run `EXISTS` or `NOT EXISTS` as a semi-join or an anti-join that checks the conditions on every row of the table. Then a value that can't be cast, on a row that no outer row matches, makes the rewrite fail where the original doesn't. An uncorrelated count already checks every row it reads, so the rule still rewrites it.
 
 ## Why it can be faster.
 
