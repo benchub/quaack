@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-1. Rule generator: never cap a one-rule rewrite.
 - 20261018-4. Rule `subquery_distinct_removal`.
 - 20261018-6. Rule `distinct_key_removal`.
+- 20261018-2. Rule `cte_fence_removal`.
 
 ## How this file works.
 
@@ -810,6 +811,15 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Design:** rewrite-rules.
 - **Status:** todo
 
+### 20261018-24. count_to_exists: refuse an uncorrelated count that can raise.
+
+From the second review of 20261018-3. The fix round refuses a correlated count whose subquery can raise, but keeps an uncorrelated one on the claim that it already checks every row it reads. That claim is false: the count reads only the rows its access path returns, and EXISTS can pick a seq scan whose filter runs the division first. Repro (PG 18): `purchases(id int PK, amount int, qty int, created_at timestamptz)` with an index on `created_at`, 200k rows, `qty = 0` on row 8, 20% recent; `SELECT (SELECT count(*) FROM public.purchases p WHERE p.amount / p.qty > 30 AND p.created_at > now() - interval '7 days') > 0` returns `t`, the rewrite raises `division_by_zero`. Fix: refuse any count whose FROM or WHERE holds what `OrToUnion::Arms.raises?` flags, flip the uncorrelated spec to a refusal on this data, and fix the page. Builds on branch `task/20261018-3`, which then lands with this task.
+
+- **Depends on:** None.
+- **Came from:** Second review of 20261018-3, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
@@ -821,14 +831,7 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 
 ### 20261018-1. Rule generator: never cap a one-rule rewrite. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-2. Rule `cte_fence_removal`.
-
-A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than once (which Postgres materializes), becomes `AS NOT MATERIALIZED`, so the planner can push the reader's filters into it and use the table's indices. One rewrite per CTE. It refuses a `RECURSIVE` `WITH`, a data-modifying CTE anywhere, a body that calls a volatile function (`Catalog#calls_volatile?`), and a CTE whose name starts with `quaack_` (shared_scan_cte's, which this would undo). Inlining lets the planner evaluate a reader's condition on rows that the body's own filter would have dropped first, so it also refuses a reader whose conditions on the CTE's columns can raise on some rows, as or_to_union refuses such an arm (reuse that check if it fits). Rests on nothing. e2e cases 028, 029, and 050 cover it.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-2. Rule `cte_fence_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-3. Rule `count_to_exists`.
 

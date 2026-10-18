@@ -12099,3 +12099,13 @@ A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-6; enclave, protocol, and driver). The rule removes a plain DISTINCT at any depth when the select list holds every column of a unique, not-null key of the first table and each inner or left join, nested on the left, pairs every column of a unique key of the joined table by a plain `=`. It refuses RIGHT, FULL, comma, cross, NATURAL, and USING joins, set-returning, aggregate, and window calls in the select list, and join pairs of two types or with a nondeterministic collation. e2e case 103 (`103-distinct-to-one-join`) proves about 29% fewer blocks, from the sort's temp blocks. One fix round made the RIGHT JOIN refusal test non-vacuous.
 - **Status:** done
+
+### 20261018-2. Rule `cte_fence_removal`.
+
+A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than once (which Postgres materializes), becomes `AS NOT MATERIALIZED`, so the planner can push the reader's filters into it and use the table's indices. One rewrite per CTE. It refuses a `RECURSIVE` `WITH`, a data-modifying CTE anywhere, a body that calls a volatile function (`Catalog#calls_volatile?`), and a CTE whose name starts with `quaack_` (shared_scan_cte's, which this would undo). Inlining lets the planner evaluate a reader's condition on rows that the body's own filter would have dropped first, so it also refuses a reader whose conditions on the CTE's columns can raise on some rows, as or_to_union refuses such an arm (reuse that check if it fits). Rests on nothing. e2e cases 028, 029, and 050 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-2; enclave, protocol, and driver). Beyond the text above, it also refuses a body read more than once (or from a sublink, LATERAL, or another CTE) that can give different rows per run (LIMIT, DISTINCT, GROUP BY, non-ALL set operations, aggregates, windows, set-returning calls), and checks every non-output SELECT's conditions and computed columns with `OrToUnion::Arms.raises?`, accepting or_to_union's LIKE lone-backslash risk. Cases 028, 029, and 050 name the rule.
+- **Status:** done
