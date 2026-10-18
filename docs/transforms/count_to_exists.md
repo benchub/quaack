@@ -18,7 +18,10 @@ The rule does not change these:
 
 - A subquery with `WITH`, `DISTINCT`, `GROUP BY`, `HAVING`, `WINDOW`, `ORDER BY`, `LIMIT`, or `OFFSET`, or a `UNION`. With `GROUP BY` or `OFFSET`, the subquery can give no row, and the count is NULL.
 - A subquery whose select list is anything but one `count`, such as `max(...)`, `count(DISTINCT ...)`, `count(1)` (whose `1` is a placeholder), a count of an expression, or a `count` with `FILTER`, `ORDER BY`, or `OVER`. `count` must be `pg_catalog`'s, written bare or as `pg_catalog.count`.
-- A comparison with anything but a placeholder, such as a column or an expression, or with a cast of the count. A comparison with an operator other than `=`, `<>`, `<`, `<=`, `>`, or `>=`, or with one that names a schema other than `pg_catalog`. A test such as `count > 1`, whose constant isn't the one the operator needs.
+- A comparison of the count with anything but a placeholder, such as a column or an expression, or a comparison of a cast of the count.
+- An operator other than `=`, `<>`, `<`, `<=`, `>`, or `>=`, or one that names a schema other than `pg_catalog`.
+- A test such as `count > 1` or `count >= 0`, whose constant isn't the one the operator needs.
+- `ARRAY(SELECT count(*) ...)`, which is an array, not a count.
 - A count of a column whose type is a composite type, or a domain over one. `IS NOT NULL` of a row is true only when every field isn't NULL, but `count` counts a row whose fields are all NULL.
 - A count of `t.col` where `t`'s alias renames its columns, of a whole row (`count(t)` or `count(t.*)`), or of a function written as a column (`t.f`).
 - A query that calls a volatile function anywhere. `EXISTS` stops at the first match, so a volatile call would run another number of times.
