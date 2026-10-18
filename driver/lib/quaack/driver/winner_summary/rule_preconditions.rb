@@ -41,7 +41,10 @@ module Quaack
                                    "neither drop nor repeat a row.",
           "polymorphic_key_copy" => "A child table joins a parent filtered to one Rails polymorphic type and id, " \
                                     "and the child has its own column for that type's id, which QUAACK checked " \
-                                    "holds the same id in the data."
+                                    "holds the same id in the data.",
+          "cte_fence_removal" => "The query has a CTE written AS MATERIALIZED, or a plain CTE it reads more than " \
+                                 "once, whose body calls no volatile function, and no condition that could reach " \
+                                 "the body's tables can raise an error."
         }.freeze
       end
     end

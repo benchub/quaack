@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/cte_hoist_dedupe"
 require_relative "rewrite_rules/distinct_join_to_exists"
 require_relative "rewrite_rules/existence_in_flip"
@@ -78,7 +79,8 @@ module Quaack
         CteHoistDedupe.new,
         UnionOuterFilterRemoval.new,
         UnusedJoinRemoval.new,
-        PolymorphicKeyCopy.new
+        PolymorphicKeyCopy.new,
+        CteFenceRemoval.new
       ].freeze
 
       DEPTH = 2
