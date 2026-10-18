@@ -48,7 +48,10 @@ module Quaack
                                          "reader can't see the duplicates or the order those clauses change.",
           "distinct_key_removal" => "A SELECT DISTINCT selects every column of a unique, not-null key of its first " \
                                     "table, and each of its inner or left joins is on every column of a unique " \
-                                    "key of the joined table, so no two of its rows can be equal."
+                                    "key of the joined table, so no two of its rows can be equal.",
+          "union_to_union_all" => "Each arm of a UNION reads one table and selects every column of a unique, " \
+                                  "not-null key of it, and in one position every arm selects a constant tag that " \
+                                  "differs from every other arm's, so no two of the UNION's rows can be equal."
         }.freeze
       end
     end

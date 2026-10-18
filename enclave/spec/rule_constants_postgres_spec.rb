@@ -33,7 +33,8 @@ module RuleConstantsFixtures
     "unused_join_removal" => %w[5],
     "polymorphic_key_copy" => ["'Course'", "42"],
     "subquery_distinct_removal" => %w[42],
-    "distinct_key_removal" => %w[42]
+    "distinct_key_removal" => %w[42],
+    "union_to_union_all" => ["'Submission'", "42", "'Enrollment'", "42"]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

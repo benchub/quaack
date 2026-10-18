@@ -35,7 +35,9 @@ module Quaack
                                          "columns from a subquery whose reader ignores duplicates and order, such " \
                                          "as an IN subquery or a UNION arm.",
           "distinct_key_removal" => "Removes a DISTINCT that can't remove a row: the select list holds a unique, " \
-                                    "not-null key of the first table, and each join matches at most one row."
+                                    "not-null key of the first table, and each join matches at most one row.",
+          "union_to_union_all" => "Turns a UNION whose rows can't repeat into a UNION ALL: each arm selects a " \
+                                  "unique, not-null key of its table and a tag that differs from every other arm's."
         }.freeze
       end
     end
