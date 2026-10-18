@@ -21,6 +21,9 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-13. Rule `correlated_aggregate_to_join`.
 - 20261018-14. Rule `aggregate_before_join`.
 - 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
+- 20261018-23. distinct_key_removal: minors from the build and review of 20261018-6.
+- 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
+- 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
 
 ## How this file works.
 
@@ -765,41 +768,6 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Design:** rewrite-rules, result-comparison.
 - **Status:** todo
 
-### 20261018-23. distinct_key_removal: minors from the build and review of 20261018-6.
-
-- Refuse a set-operation arm whose select list holds an untyped constant or parameter. With `DISTINCT`, Postgres resolves it to `text`; without it, it stays `unknown` and the `UNION` takes the other arm's type, so a citext arm makes `t.kind = 'post'` match `'Post'` where the original didn't (review's repro: `SELECT t.id, t.kind FROM (SELECT DISTINCT p.id, 'Post' AS kind FROM public.posts p UNION ALL SELECT g.id, g.name FROM public.tags g) t WHERE t.kind = 'post'` with `tags.name` citext). List it as unsupported in v1.
-- Sound but refused in v1: a join pair of two integer types in one btree family (`int = bigint`, common in older Rails schemas), a join key paired with a constant or parameter (`ON users.id = $1`), a scalar subquery that aggregates in the select list (check only calls outside subqueries), a nondeterministic key whose unique index uses the same collation, and a has_one join on a unique but nullable foreign key (`LEFT JOIN profiles ON profiles.user_id = users.id`).
-
-- **Depends on:** None.
-- **Came from:** Build and review of 20261018-6, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
-### 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
-
-- cte_fence_removal (20261018-2): refuse `INTERSECT ALL` and `EXCEPT ALL` in a body that runs more than once (they keep one of two equal values, such as `1.0` and `1.00`, by input order); add tests for an `OFFSET` without `LIMIT` and for a refusal nested inside such a body. Sound but refused in v1: order-insensitive aggregates in such a body, and computed columns no condition reads.
-- count_to_exists (20261018-3): refuse when a `GROUP BY` item holds the same count subquery (the select-list copy becomes EXISTS and the query no longer prepares); extend the LiteralSet guard spec to `=`, `OPERATOR(pg_catalog...)` forms, and a comparison outside `WHERE`. Sound but refused in v1: `count(1)`, `count(DISTINCT col)`, and `FILTER`.
-- left_join_to_inner (20261018-7): take a mirrored `RIGHT JOIN`, a `FULL JOIN` that the same key makes a `LEFT JOIN`, and a nullable joining column the `WHERE` requires non-null; fix two wording slips (the header on locking, and "Why it can be faster").
-- count_distinct_to_subquery (20261018-9): the `window_clause.empty?` guard has no test; accept bare grouping columns and `GROUP BY` ordinals (ORMs write both), a `count(DISTINCT)` below the top level, and a `GROUP BY` column not in the select list.
-- The union_outer_filter_removal Canvas chain spec depends on how many rules fire on its query, so a new rule can push its chain past the two-rule cap.
-
-- **Depends on:** None.
-- **Came from:** Builds and reviews of 20261018-2, -3, -7, and -9, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
-### 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
-
-- coalesce_comparison_split (20261018-11): `own_type?` checks only an explicit cast on the default, so an uncast default can widen the COALESCE. With an int column, `COALESCE(i, 0.5) = '1.0'` returns a row, and the split raises `invalid input syntax for type integer`. Compare the COALESCE's resolved type with the column's, or list it as unsupported and fix the comment and page. `FROM ONLY` is untested. Not yet taken: a COALESCE in a CASE or HAVING, or with a non-placeholder default.
-- subquery_order_removal (20261018-5): type checks for readers below the top level, order-blindness passed through nested readers, `VALUES` of bare constants, domains over allowed types, and `bit_and`, `bit_or`, and `array_agg(DISTINCT ...)`. Note on the page that an outer `ORDER BY ... LIMIT` with ties may return other tied rows.
-- fixture-compare (from 20261018-5): DESIGN.md says "A GROUP BY picks nothing of its own", but a GROUP BY key, and min or max over equal values that print differently (numeric `10` and `10.0`), keep whichever row comes first. The arbitrary-pick checks don't cover these.
-- union_to_union_all (20261018-8): a distinct UNION under a UNION ALL, key positions of types that widen without loss (int beside bigint), and arms told apart by keys in their own columns with NULL elsewhere.
-
-- **Depends on:** None.
-- **Came from:** Builds and reviews of 20261018-5, -8, and -11, 2026-10-18.
-- **Design:** rewrite-rules, fixture-compare.
-- **Status:** todo
-
 ### 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
 
 - date_cast_to_range (20261018-10): any schema-qualified operator is taken as pg_catalog's, so `OPERATOR(public.=)` would be rewritten (require pg_catalog and test a user operator); a bare `date(col)` could be shadowed by a user function on the search_path; `ts::date = CURRENT_DATE` isn't taken.
@@ -809,6 +777,15 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Depends on:** None.
 - **Came from:** Builds and reviews of 20261018-10, -12, and -13, 2026-10-18.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
+
+From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric `10` and `10.0` prints `10` or `10.0` by load order, and so does `max(n)`. DESIGN.md says "A GROUP BY picks nothing of its own", which is wrong for these. Treat GROUP BY keys, and min or max, of types where equal values can print differently (numeric, float, interval, bpchar, citext, nondeterministic collations) as arbitrary picks, forced and checked like the others, or refuse them; then fix DESIGN.md's sentence.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-26, 2026-10-18.
+- **Design:** fixture-compare, result-comparison.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

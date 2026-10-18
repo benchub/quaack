@@ -12271,3 +12271,41 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Design:** redact.
 - **Landed:** 2026-10-18 (task/20261018-19; enclave). `Redaction::Sharing#constants` walks subqueries for every matched key, so the two copies' constants share placeholders in tree order. Minor, open: no test pins that keys whose subqueries differ only in constants keep separate placeholders.
 - **Status:** done
+
+### 20261018-23. distinct_key_removal: minors from the build and review of 20261018-6.
+
+- Refuse a set-operation arm whose select list holds an untyped constant or parameter. With `DISTINCT`, Postgres resolves it to `text`; without it, it stays `unknown` and the `UNION` takes the other arm's type, so a citext arm makes `t.kind = 'post'` match `'Post'` where the original didn't (review's repro: `SELECT t.id, t.kind FROM (SELECT DISTINCT p.id, 'Post' AS kind FROM public.posts p UNION ALL SELECT g.id, g.name FROM public.tags g) t WHERE t.kind = 'post'` with `tags.name` citext). List it as unsupported in v1.
+- Sound but refused in v1: a join pair of two integer types in one btree family (`int = bigint`, common in older Rails schemas), a join key paired with a constant or parameter (`ON users.id = $1`), a scalar subquery that aggregates in the select list (check only calls outside subqueries), a nondeterministic key whose unique index uses the same collation, and a has_one join on a unique but nullable foreign key (`LEFT JOIN profiles ON profiles.user_id = users.id`).
+
+- **Depends on:** None.
+- **Came from:** Build and review of 20261018-6, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-23; enclave). Refuses an untyped constant, parameter, or NULL in a set-operation arm's select list; takes smallint/integer/bigint join pairs (integer_ops). Not taken: has_one on a nullable unique FK (needs a new assumption kind), constant-paired keys, aggregating scalar subqueries, nondeterministic keys.
+- **Status:** done
+
+### 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
+
+- cte_fence_removal (20261018-2): refuse `INTERSECT ALL` and `EXCEPT ALL` in a body that runs more than once (they keep one of two equal values, such as `1.0` and `1.00`, by input order); add tests for an `OFFSET` without `LIMIT` and for a refusal nested inside such a body. Sound but refused in v1: order-insensitive aggregates in such a body, and computed columns no condition reads.
+- count_to_exists (20261018-3): refuse when a `GROUP BY` item holds the same count subquery (the select-list copy becomes EXISTS and the query no longer prepares); extend the LiteralSet guard spec to `=`, `OPERATOR(pg_catalog...)` forms, and a comparison outside `WHERE`. Sound but refused in v1: `count(1)`, `count(DISTINCT col)`, and `FILTER`.
+- left_join_to_inner (20261018-7): take a mirrored `RIGHT JOIN`, a `FULL JOIN` that the same key makes a `LEFT JOIN`, and a nullable joining column the `WHERE` requires non-null; fix two wording slips (the header on locking, and "Why it can be faster").
+- count_distinct_to_subquery (20261018-9): the `window_clause.empty?` guard has no test; accept bare grouping columns and `GROUP BY` ordinals (ORMs write both), a `count(DISTINCT)` below the top level, and a `GROUP BY` column not in the select list.
+- The union_outer_filter_removal Canvas chain spec depends on how many rules fire on its query, so a new rule can push its chain past the two-rule cap.
+
+- **Depends on:** None.
+- **Came from:** Builds and reviews of 20261018-2, -3, -7, and -9, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-25; enclave). All required refusals and tests done; count_distinct_to_subquery now takes bare grouping columns and GROUP BY ordinals; the Canvas chain spec runs its two rules by hand. Other extensions stay unsupported in v1.
+- **Status:** done
+
+### 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
+
+- coalesce_comparison_split (20261018-11): `own_type?` checks only an explicit cast on the default, so an uncast default can widen the COALESCE. With an int column, `COALESCE(i, 0.5) = '1.0'` returns a row, and the split raises `invalid input syntax for type integer`. Compare the COALESCE's resolved type with the column's, or list it as unsupported and fix the comment and page. `FROM ONLY` is untested. Not yet taken: a COALESCE in a CASE or HAVING, or with a non-placeholder default.
+- subquery_order_removal (20261018-5): type checks for readers below the top level, order-blindness passed through nested readers, `VALUES` of bare constants, domains over allowed types, and `bit_and`, `bit_or`, and `array_agg(DISTINCT ...)`. Note on the page that an outer `ORDER BY ... LIMIT` with ties may return other tied rows.
+- fixture-compare (from 20261018-5): DESIGN.md says "A GROUP BY picks nothing of its own", but a GROUP BY key, and min or max over equal values that print differently (numeric `10` and `10.0`), keep whichever row comes first. The arbitrary-pick checks don't cover these.
+- union_to_union_all (20261018-8): a distinct UNION under a UNION ALL, key positions of types that widen without loss (int beside bigint), and arms told apart by keys in their own columns with NULL elsewhere.
+
+- **Depends on:** None.
+- **Came from:** Builds and reviews of 20261018-5, -8, and -11, 2026-10-18.
+- **Design:** rewrite-rules, fixture-compare.
+- **Landed:** 2026-10-18 (task/20261018-26; enclave and docs). coalesce_comparison_split checks an uncast default with the oracle (`pg_typeof(COALESCE(NULL::<coltype>, $d)) = pg_typeof(NULL::<coltype>)`), refusing without literals; FROM ONLY tested; the subquery_order_removal page notes ties. The fixture-compare item reproduced but isn't small: filed as 20261018-28.
+- **Status:** done
