@@ -15,7 +15,7 @@ module Quaack
       # read against the original and why that wasn't enough.
       module Candidates
         ORIGINAL = "the original query"
-        LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indices take less " \
+        LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indices take no more " \
                                     "disk space.",
                  "below_top_three" => "beat #{ORIGINAL}, but three others of its kind did better." }.freeze
 
