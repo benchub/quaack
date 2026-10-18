@@ -78,7 +78,7 @@ module Quaack
             return column(node) unless node.node == :a_const && node.a_const.val == :ival
 
             index = node.a_const.ival.ival
-            target = select.target_list[index - 1] if index.positive?
+            target = select.target_list[index - 1] if index.positive? # Postgres refuses 0.
             column(target.res_target.val) if target
           end
 

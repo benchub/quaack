@@ -12,10 +12,10 @@ The rule gives the subquery and its counted column fresh names, so they can't cl
 
 The rule takes a `SELECT` with a `FROM` whose select list holds:
 
-- the grouping columns, each written `name.column`, and
+- the grouping columns, each written `name.column` or as a bare column, and
 - exactly one `count(DISTINCT e)`, or `pg_catalog.count(DISTINCT e)`, of one argument, with no `FILTER` and no `ORDER BY` of its own.
 
-The `GROUP BY` must name exactly those columns, in any order. An `ORDER BY` may name a grouping column, an output's name, or an ordinal. The rule points a grouping column at the subquery's copy and leaves the rest alone. A `LIMIT`, an `OFFSET`, and a `WITH` stay on the outer query.
+The `GROUP BY` must name exactly those columns, in any order, each written as the select list writes it or as an ordinal of its select-list item. An `ORDER BY` may name a grouping column, an output's name, or an ordinal. The rule points a grouping column at the subquery's copy and leaves the rest alone. A `LIMIT`, an `OFFSET`, and a `WITH` stay on the outer query.
 
 The rule refuses:
 
@@ -28,8 +28,9 @@ The rule refuses:
 
 These cases are unsupported in v1:
 
-- a grouping column written as a bare column, or an expression, in the select list or the `GROUP BY`,
-- a `GROUP BY` that names a column the select list doesn't, or that uses an ordinal,
+- a grouping column written as an expression, in the select list or the `GROUP BY`,
+- a grouping column written `name.column` in one place and bare in the other,
+- a `GROUP BY` that names a column the select list doesn't,
 - more than one `count(DISTINCT)`, and
 - a `count(DISTINCT)` in a subquery. The rule only rewrites the top-level query.
 

@@ -33,9 +33,12 @@ module Quaack
       # row of 0. It states no assumption.
       #
       # The query must be a top-level SELECT with a FROM, whose select list
-      # is the grouping columns, each written name.column, and exactly one
-      # count(DISTINCT e) of one argument, with no FILTER and no ORDER BY of
-      # its own. Its GROUP BY must be exactly those columns, as a set. Each
+      # is the grouping columns, each written name.column or bare, and
+      # exactly one count(DISTINCT e) of one argument, with no FILTER and no
+      # ORDER BY of its own. Its GROUP BY must be exactly those columns, as
+      # a set, each written as the select list writes it or as an ordinal
+      # of its select-list item. A bare column in the subquery reads the
+      # same FROM, so it names the same column. Each
       # output keeps its name. An ORDER BY may name a grouping column as
       # written, which becomes the subquery's column, an output's name, or
       # an ordinal, which stay as they are. LIMIT, OFFSET, and WITH stay on
