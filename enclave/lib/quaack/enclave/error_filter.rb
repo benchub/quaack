@@ -46,6 +46,12 @@ module Quaack
     #   Integer, then backend_start, a UTC time such as
     #   2026-09-29T16:01:02Z. Otherwise the whole field is
     #   left out, so no other detail of a client is ever sent.
+    # - The settings come from the error's settings method, and are sent
+    #   only for SETTINGS_RULES (DESIGN.md's run-server): the names of the
+    #   settings, pg_database fields, or libraries that don't match
+    #   production, never their values. They must be an Array of 1 to
+    #   MAX_SETTINGS Strings, each of SETTING's shape. Otherwise the whole
+    #   field is left out.
     # - The column comes from the error's column method, and is sent only
     #   when the rule is unsupported_type or domain_check (DESIGN.md's
     #   rewrite-test): the table, column, and type that rewrite-test can't fill, which are
@@ -81,6 +87,11 @@ module Quaack
       CLIENTS_RULE = "run_server_other_clients"
       CLIENT_KEYS = %w[pid backend_start].freeze
       MAX_CLIENTS = 20
+      SETTINGS_RULES = %w[run_server_guc_mismatch run_server_locale_mismatch run_server_preload_mismatch].freeze
+      # A setting's name as pg_settings gives it, such as TimeZone or
+      # quaack.planner_knob: never a value, which can hold anything.
+      SETTING = /\A[A-Za-z_][A-Za-z0-9_.]{0,62}\z/
+      MAX_SETTINGS = 64
       COLUMN_RULES = %w[unsupported_type domain_check].freeze
       COLUMN_KEYS = %w[table column type].freeze
       IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
@@ -115,6 +126,7 @@ module Quaack
           reason: (reason(ask(exception, :reason)) if UNREADABLE_RULES.include?(rule)),
           function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
           clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE),
+          settings: (settings(ask(exception, :settings)) if SETTINGS_RULES.include?(rule)),
           parser_major: (Protocol::ParserMajor.check(ParserVersion::MAJOR) if rule == Protocol::ParserMajor::RULE),
           **schema_names(exception, rule) }.compact
       end
@@ -197,6 +209,14 @@ module Quaack
         return unless clients.instance_of?(Array) && (1..MAX_CLIENTS).cover?(clients.size)
 
         clients if clients.all? { client?(it) }
+      end
+
+      # settings if it's an Array of 1 to MAX_SETTINGS names, each of
+      # SETTING's shape, and nil otherwise.
+      def settings(settings)
+        return unless settings.instance_of?(Array) && (1..MAX_SETTINGS).cover?(settings.size)
+
+        settings if settings.all? { shaped?(it, SETTING) }
       end
 
       # The class checks are exact, since a subclass can write itself out

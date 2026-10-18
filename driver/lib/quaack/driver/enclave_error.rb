@@ -14,8 +14,10 @@ module Quaack
     # column (its table, name, and type), an fk_cycle refusal's cycle (its
     # tables, in the order their foreign keys point), a
     # run_server_other_clients failure's clients (each pid and start time),
-    # and a dump_object_unreadable refusal's tables (the ones the operator's role
-    # can't read, for the operator only),
+    # a run-server check failure's settings (the names, never the values,
+    # of what doesn't match production), and a dump_object_unreadable
+    # refusal's tables (the ones the operator's role can't read, for the
+    # operator only),
     # likewise checked, and how the process ended. It never carries the
     # process's output, and it's raised with no cause.
     #
@@ -65,8 +67,12 @@ module Quaack
       TIMEOUT_HINT = "; raise `enclave_timeout_seconds` in ~/.quaack/driver.json, or pass " \
                      "--enclave-timeout-seconds to quaack run"
 
+      # Who has the settings a run-server check failure named, by rule.
+      MISMATCH_OWNERS = { "run_server_guc_mismatch" => "The run server's",
+                          "run_server_locale_mismatch" => "The racetrack database's" }.freeze
+
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major settings].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
@@ -79,12 +85,12 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, tables: nil, parser_major: nil,
+                     clients: nil, tables: nil, parser_major: nil, settings: nil,
                      exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
         @timeout_seconds = timeout_seconds
         @rule = rule
-        @line = { step:, sqlstate:, reason:, function:, column:, clients:, tables:, parser_major: }.freeze
+        @line = { step:, sqlstate:, reason:, function:, column:, clients:, tables:, parser_major:, settings: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -191,8 +197,23 @@ module Quaack
       def facts
         return reason_message(reason) if Protocol::UnreadableReasons::RULES.include?(rule) && reason
 
-        named_schema || function || (described_clients if clients)
+        named_schema || function || named_run_server
       end
+
+      # The other clients, or what doesn't match production, that a
+      # run-server check failure named, or nil.
+      def named_run_server = (described_clients if clients) || (mismatched if settings)
+
+      # What doesn't match production, for the operator to change.
+      def mismatched
+        names = listed(settings)
+        return "One server preloads #{names} and the other doesn't" if rule == "run_server_preload_mismatch"
+
+        "#{MISMATCH_OWNERS.fetch(rule)} #{names} #{settings.size == 1 ? "isn't" : "aren't"} production's"
+      end
+
+      # names as words: a, a and b, or a, b, and c.
+      def listed(names) = names.size < 3 ? names.join(" and ") : "#{names[0..-2].join(", ")}, and #{names.last}"
 
       def timed_out(hint)
         total = timeout_seconds.ceil
@@ -223,7 +244,7 @@ module Quaack
       # The schema and clients the error line named.
       def named_details
         [("column #{described_column}" if column), ("clients #{described_clients}" if clients),
-         ("tables #{described_tables}" if tables)]
+         ("tables #{described_tables}" if tables), ("settings #{settings.join(", ")}" if settings)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]

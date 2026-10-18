@@ -239,12 +239,16 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect_no_leaks(sentinels, outcome)
     end
 
-    it "aborts on a planner setting that isn't production's, without its name or value" do
+    it "aborts on a planner setting that isn't production's, naming it but never its value" do
       record_inventory
       pgpass
-      TestPostgres.server.admin.exec(%(ALTER DATABASE "#{production.name}" SET search_path = public))
+      TestPostgres.server.admin.exec(%(ALTER DATABASE "#{production.name}" SET search_path = "#{sentinels.word}"))
+      outcome = run_server
 
-      expect_failed(run_server, "run_server_guc_mismatch")
+      expect([outcome.stdout, outcome.status.exitstatus])
+        .to eq([%({"type":"error","step":"run-server","rule":"run_server_guc_mismatch","settings":["search_path"]}\n),
+                70])
+      expect_no_leaks(sentinels, outcome)
     end
 
     # The postgres database, on the same server, lacks the hypopg extension

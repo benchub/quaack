@@ -28,6 +28,12 @@ module Quaack
         CLIENT_KEYS = %w[pid backend_start].freeze
         BACKEND_START = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
         MAX_CLIENTS = 20
+        # A run-server check failure's settings (DESIGN.md's run-server), as
+        # the enclave's ErrorFilter shapes them: 1 to MAX_SETTINGS names of
+        # the settings, pg_database fields, or libraries that don't match.
+        SETTINGS_RULES = %w[run_server_guc_mismatch run_server_locale_mismatch run_server_preload_mismatch].freeze
+        SETTING = /\A[A-Za-z_][A-Za-z0-9_.]{0,62}\z/
+        MAX_SETTINGS = 64
         # A rewrite-test refusal's column (DESIGN.md's rewrite-test), as the enclave's
         # ErrorFilter shapes it: exactly a qualified table, a column name,
         # and a type as format_type prints it.
@@ -60,6 +66,7 @@ module Quaack
         def named(rule, error)
           { column: (column(error["column"]) if COLUMN_RULES.include?(rule)),
             clients: (clients(error["clients"]) if rule == CLIENTS_RULE),
+            settings: (settings(error["settings"]) if SETTINGS_RULES.include?(rule)),
             tables: (tables(error["tables"]) if rule == TABLES_RULE),
             parser_major: (Protocol::ParserMajor.check(error["parser_major"]) if rule == Protocol::ParserMajor::RULE) }
         end
@@ -84,6 +91,12 @@ module Quaack
           return unless clients.instance_of?(Array) && (1..MAX_CLIENTS).cover?(clients.size)
 
           clients if clients.all? { client?(it) }
+        end
+
+        def settings(settings)
+          return unless settings.instance_of?(Array) && (1..MAX_SETTINGS).cover?(settings.size)
+
+          settings if settings.all? { shaped(it, SETTING) }
         end
 
         def client?(client)

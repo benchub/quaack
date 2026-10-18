@@ -1405,6 +1405,21 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.message).to eq("quaacks probe failed: pg_dump_failed (exit 0)")
     end
 
+    it "shows the settings a run_server_guc_mismatch failure names" do
+      error = refusal(%({"type":"error","rule":"run_server_guc_mismatch","settings":["TimeZone","work_mem"]}))
+
+      expect(error.settings).to eq(%w[TimeZone work_mem])
+      expect(error.message).to eq("quaacks probe failed: run_server_guc_mismatch (settings TimeZone, work_mem, exit 0)")
+    end
+
+    it "drops settings on a rule that doesn't name them, or of the wrong shape" do
+      other = refusal(%({"type":"error","rule":"run_server_other_clients","settings":["work_mem"]}))
+      bad = refusal(%({"type":"error","rule":"run_server_guc_mismatch","settings":["work_mem","SENTINEL = 1"]}))
+
+      expect([other.settings, bad.settings]).to eq([nil, nil])
+      expect(bad.message).to eq("quaacks probe failed: run_server_guc_mismatch (exit 0)")
+    end
+
     it "shows the pids and start times of the other clients a run_server_other_clients failure names" do
       clients = %([{"pid":1234,"backend_start":"2026-09-29T16:01:02Z"},) +
                 %({"pid":5678,"backend_start":"2026-09-29T17:00:00Z"}])
