@@ -1,0 +1,22 @@
+{
+  "title": "count over a list query that still sorts",
+  "category": "rewrite",
+  "compare": "ordered",
+  "features": [
+    "count(*) FROM (... ORDER BY ...)",
+    "subquery ORDER BY with no LIMIT blocks flattening",
+    "index-only count"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a user with no posts",
+      "replace": {
+        "user_id = 42": "user_id = 999"
+      }
+    }
+  ]
+}
