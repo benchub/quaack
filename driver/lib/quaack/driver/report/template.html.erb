@@ -66,6 +66,7 @@
   .stripe-original_new_indexes { --stripe: var(--st-brown); }
   div.kind-group { border-left: 5px solid var(--stripe); padding: 0.1rem 1.25rem 0.75rem; margin: 1.25rem 0; }
   div.kind-group > h3.kind { margin-top: 0.75rem; }
+  tr.kind > :first-child, tr.rank > :first-child { border-left: 5px solid var(--stripe); }
   tr.baseline td { background: var(--baseline-bg); font-style: italic; }
   table.plan td.step { white-space: nowrap; }
   table.plan .arrow { color: var(--muted); }
@@ -168,9 +169,9 @@
 <tbody>
 <tr class="baseline"><td class="num"></td><td>The original query (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
 <% ranked_by_kind.each do |kind, entries| %>
-<tr class="kind"><th scope="rowgroup" colspan="5"><%= h KIND_NAMES.fetch(kind) %></th></tr>
+<tr class="kind stripe-<%= kind %>"><th scope="rowgroup" colspan="5"><%= h KIND_NAMES.fetch(kind) %></th></tr>
 <% entries.each_with_index do |t, i| %>
-<tr class="rank"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
+<tr class="rank stripe-<%= kind %>"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
 <% end %>
 <% end %>
 </tbody></table>
