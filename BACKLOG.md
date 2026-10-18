@@ -750,3 +750,14 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Came from:** Review of 20261017-6, 2026-10-17.
 - **Design:** report.
 - **Status:** todo
+
+### 20261017-11. Plan-table shading: minors from the review of 20261017-7.
+
+1. The first legend (`LEGEND_LEAD`) still says "Each step is shaded by how far its estimated rows…". Since 20261017-7, only the estimated and actual rows cells get that shading. Say so.
+2. README.md (around lines 710–725) quotes the old legend, marks shading on the step ("Index Scan *(shaded 10x)*"), says "Each step is shaded redder…", and never mentions the blocks and time shading. Update it.
+3. A time cell's percentage is rounded but its bucket isn't, so the cell can disagree with the legend. A share of 4.96% reads "(5%)" with no shading, though the legend says shading starts at 5%, and 19.6% reads "(20%)" but is shaded in the 10% bucket. Bucket by the rounded share, or show the share unrounded near the edges.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-7, 2026-10-17.
+- **Design:** report.
+- **Status:** todo
