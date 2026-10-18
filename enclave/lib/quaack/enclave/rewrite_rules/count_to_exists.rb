@@ -94,8 +94,7 @@ module Quaack
           return [] unless literals
 
           tree = Deparse.copy(parse.tree)
-          tests = nodes(tree).filter_map { test(it, catalog, literals) }
-          tests = tests.reject { grouped_bare?(it, tree, tests) }
+          tests = tests(tree, catalog, literals)
           return [] if tests.empty? || catalog.calls_volatile?(Deparse.faithfully(tree))
 
           # Inner comparisons first, so an outer one's copy of its subquery
@@ -175,6 +174,12 @@ module Quaack
         # comparison in the select list then reads the grouped count, and
         # as EXISTS, it would read a subquery the GROUP BY doesn't hold, so
         # the query wouldn't prepare.
+        # Every Test in tree, but those grouped_bare? refuses.
+        def tests(tree, catalog, literals)
+          found = nodes(tree).filter_map { test(it, catalog, literals) }
+          found.reject { grouped_bare?(it, tree, found) }
+        end
+
         def grouped_bare?(test, tree, tests)
           wanted = located_nowhere(test.link)
           Tree.find_all(tree, PgQuery::SelectStmt).flat_map(&:group_clause).any? do |item|
