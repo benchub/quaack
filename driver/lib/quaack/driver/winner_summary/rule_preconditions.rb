@@ -48,7 +48,10 @@ module Quaack
                                          "reader can't see the duplicates or the order those clauses change.",
           "distinct_key_removal" => "A SELECT DISTINCT selects every column of a unique, not-null key of its first " \
                                     "table, and each of its inner or left joins is on every column of a unique " \
-                                    "key of the joined table, so no two of its rows can be equal."
+                                    "key of the joined table, so no two of its rows can be equal.",
+          "cte_fence_removal" => "The query has a CTE written AS MATERIALIZED, or a plain CTE it reads more than " \
+                                 "once, whose body calls no volatile function, and no condition that could reach " \
+                                 "the body's tables can raise an error."
         }.freeze
       end
     end

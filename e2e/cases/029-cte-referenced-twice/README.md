@@ -16,6 +16,8 @@ Two customers' totals from one CTE. Postgres 12+ materializes a CTE that's refer
 
 `NOT MATERIALIZED` (or inlining it). Each branch then uses the index.
 
+The transform rule `cte_fence_removal` makes `fast.sql` from `slow.sql`.
+
 ## Proof.
 
 `ruby e2e/verify.rb 029` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

@@ -16,6 +16,8 @@ One account's purchases, through a `MATERIALIZED` CTE.
 
 Inline the CTE, and add `events (account_id, kind)`. The fence stops the index from helping the original, and without the index the inlined query still scans the table.
 
+The transform rule `cte_fence_removal` makes the CTE `NOT MATERIALIZED` from `slow.sql`. With the index, that touches as many blocks as `fast.sql` on every literal set, and without it, as many as `fast.sql` alone.
+
 ## Proof.
 
 `ruby e2e/verify.rb 050` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

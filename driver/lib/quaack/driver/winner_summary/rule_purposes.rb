@@ -35,7 +35,9 @@ module Quaack
                                          "columns from a subquery whose reader ignores duplicates and order, such " \
                                          "as an IN subquery or a UNION arm.",
           "distinct_key_removal" => "Removes a DISTINCT that can't remove a row: the select list holds a unique, " \
-                                    "not-null key of the first table, and each join matches at most one row."
+                                    "not-null key of the first table, and each join matches at most one row.",
+          "cte_fence_removal" => "Writes a CTE that Postgres would store, because it's MATERIALIZED or read more " \
+                                 "than once, as NOT MATERIALIZED, so each reader's conditions can reach its tables."
         }.freeze
       end
     end
