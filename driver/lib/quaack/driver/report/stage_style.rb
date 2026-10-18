@@ -2,6 +2,7 @@
 
 require "erb"
 require_relative "format"
+require_relative "words"
 
 module Quaack
   module Driver
@@ -66,7 +67,17 @@ module Quaack
           untimed = untimed(record)
           untested = untested(record, stage)
           [untimed && "#{Format.number(untimed)} not tested in time on made-up data #{CHECKED_ONLY}",
-           untested && "#{Format.number(untested)} not tested on made-up data #{CHECKED_ONLY}"].compact
+           untested && "#{Format.number(untested)} not tested on made-up data #{CHECKED_ONLY}",
+           not_asked(record)].compact
+        end
+
+        # The ideas of the rewrites the LLM wasn't asked about, which its rounds pass on
+        # unchanged (Stages#rewrite_searches), or nil for none.
+        def self.not_asked(record)
+          count = record.is_a?(Hash) && record["extra"].is_a?(Hash) ? record["extra"]["not_asked"] : nil
+          return unless count.is_a?(Integer) && count.positive?
+
+          "#{Words.count(count, "idea")} from rewrites the LLM wasn't asked about went on unchanged."
         end
 
         # A record's [in, out], [in, nil] if it has no out, or [nil, nil] if

@@ -733,30 +733,44 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Design:** run-server check, trust boundary.
 - **Status:** todo
 
-### 20261017-6. Report: color stripes on the ranking table.
+### 20261017-9. Report fates: minors from the review of 20261017-5.
 
-In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area. The user decided (2026-10-17): a stripe on the left edge of each row, in its subsection's color, with no tint across the row.
+1. When a not_better rewrite went on untested (out of time, or not tested), its fate says "real data" twice: "…so QUAACK checked it only on test data the LLM wrote to break it and on the real data, but when measured against real data performed too poorly to be ranked." Reword it so real data is mentioned once, in `went_on` in `driver/lib/quaack/driver/report/rewrites.rb`.
+2. The other fates (such as `footprint_tie` and `measurement_timed_out`) still say "It passed every test", while not_better now says "It passed every correctness test". Make them consistent.
 
 - **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
+- **Came from:** Review of 20261017-5, 2026-10-17.
 - **Design:** report.
 - **Status:** todo
 
-### 20261017-7. Report: plan tables color the row-count cells, not the row, and flag the nodes driving time and blocks.
+### 20261017-10. Ranking stripes: minors from the review of 20261017-6.
 
-In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance. The user decided (2026-10-17): the cue is a color gradient on the time and block cells, like the row-count cells, and it's based on each step's own share (its time and blocks minus its children's), not the inclusive numbers Postgres reports.
+1. The "no tint" spec got narrower. 20261017-6 dropped main's guard `expect(style).not_to match(/\btr\.[^{]*\{[^}]*--stripe/)`, and the new spec only checks that the stripe rule itself has no `background`. A separate rule such as `tr.rank td { background: var(--stripe); }` leaves every example green. Assert that no `tr.kind`/`tr.rank` rule other than the stripe rule uses `--stripe` or sets a `background`.
+2. With collapsed borders, the 5px stripe on the kind and rank rows reaches about 2px further left than the baseline row's 1px border. This is cosmetic. Line them up if it's cheap, for example by giving the baseline row's first cell a transparent 5px left border.
 
 - **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
+- **Came from:** Review of 20261017-6, 2026-10-17.
 - **Design:** report.
 - **Status:** todo
 
-### 20261017-8. Sankey: "Index ideas for the rewrites" carries in more ideas than the diagram above ends with.
+### 20261017-11. Plan-table shading: minors from the review of 20261017-7.
 
-In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index ideas for the rewrites" pair ends with 35 ideas, but the second says "Carried in from the diagram above: 41". The "Index ideas for the original query" and "Rewrites" pairs agree. Find which number is wrong, and why (for example, ideas merged or deduplicated across rewrites between the two diagrams); see `report/sankey.rb` near "Carried in from the diagram above", `sankey_layers.rb`, and `sankey_parts.rb`. Then make the two agree, or have the label say why they differ; the user left that choice to the builder (2026-10-17), whichever reads clearer. Reproduce it in a test first.
+1. The first legend (`LEGEND_LEAD`) still says "Each step is shaded by how far its estimated rows…". Since 20261017-7, only the estimated and actual rows cells get that shading. Say so.
+2. README.md (around lines 710–725) quotes the old legend, marks shading on the step ("Index Scan *(shaded 10x)*"), says "Each step is shaded redder…", and never mentions the blocks and time shading. Update it.
+3. A time cell's percentage is rounded but its bucket isn't, so the cell can disagree with the legend. A share of 4.96% reads "(5%)" with no shading, though the legend says shading starts at 5%, and 19.6% reads "(20%)" but is shaded in the 10% bucket. Bucket by the rounded share, or show the share unrounded near the edges.
 
 - **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
+- **Came from:** Review of 20261017-7, 2026-10-17.
+- **Design:** report.
+- **Status:** todo
+
+### 20261017-12. Rewrites' index-ideas Sankey: minors from the review of 20261017-8.
+
+1. DESIGN.md (about line 1544) still says that in the rewrites' table "a round may carry less than the stages before it left, never more", which no longer holds since 20261017-8. `spec/pipeline_replay_spec.rb` (about line 95) still checks `rewrite_index_rows` loosely, so a regression on real runs would go unseen. Pass `strict: true` there (the reviewer showed all 7 per-commit runs pass with it) and fix the DESIGN sentence.
+2. The "Also counted" wording, "ideas from rewrites the LLM wasn't asked about, passed on unchanged", doesn't say why. Add the reason, such as "(ruled out or pruned before the LLM's rounds)".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-8, 2026-10-18.
 - **Design:** report, sankey.
 - **Status:** todo
 
