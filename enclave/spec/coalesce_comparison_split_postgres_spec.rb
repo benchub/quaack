@@ -36,7 +36,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::CoalesceComparisonSplit do
     production.drop
   end
 
-  def rewritten(sql) = rule.rewrites(PgQuery.parse(sql), catalog).map { Quaack::Enclave::Deparse.faithfully(it.tree) }
+  # The rule's rewrites of sql, each as SQL. Its literals type each
+  # placeholder as map says, or as an untyped string, as a quoted literal is.
+  def rewritten(sql, map = {})
+    rule.rewrites(PgQuery.parse(sql), catalog, literals(sql, map)).map { Quaack::Enclave::Deparse.faithfully(it.tree) }
+  end
+
+  def literals(sql, map = {})
+    count = sql.scan(/\$(\d+)/).flatten.map(&:to_i).max || 0
+    placeholders = (1..count).to_h { ["$#{it}", map.fetch("$#{it}", { "type" => "unknown", "value" => "x" })] }
+    Quaack::Enclave::RewriteRules::Literals.new(conn, placeholders)
+  end
 
   def rows(sql, params) = conn.exec_params(sql, params).values.sort_by(&:to_s)
 
@@ -70,7 +80,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CoalesceComparisonSplit do
     expect(rewrites).to eq(
       ["SELECT t.id FROM public.tasks t WHERE t.status = $2 OR (t.status IS NULL AND COALESCE($1, t.status) = $2)"]
     )
-    expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq([[]])
+    expect(rule.rewrites(PgQuery.parse(sql), catalog, literals(sql)).map(&:assumptions)).to eq([[]])
     expect(same_rows(sql, rewrites, pairs)).to eq([["1"]])
   end
 
@@ -128,11 +138,46 @@ RSpec.describe Quaack::Enclave::RewriteRules::CoalesceComparisonSplit do
     expect(same_rows(sql, rewrites, pairs.map { it + it })).to eq([["ann"]])
   end
 
+  it "takes a FROM ONLY table" do
+    sql = "SELECT t.id FROM ONLY public.tasks t WHERE COALESCE(t.status, $1) = $2"
+
+    expect(rewritten(sql)).to eq(
+      ["SELECT t.id FROM ONLY public.tasks t WHERE t.status = $2 OR (t.status IS NULL AND COALESCE($1, t.status) = $2)"]
+    )
+  end
+
+  it "takes an uncast number default of the column's own type" do
+    sql = "SELECT t.id FROM public.tasks t WHERE COALESCE(t.owner_id, $1) = $2"
+    map = { "$1" => { "type" => "integer", "value" => "0" }, "$2" => { "type" => "integer", "value" => "0" } }
+
+    expect(rewritten(sql, map)).to eq(
+      ["SELECT t.id FROM public.tasks t WHERE t.owner_id = $2 OR (t.owner_id IS NULL AND COALESCE($1, t.owner_id) = $2)"]
+    )
+  end
+
+  # COALESCE(owner_id, 0.5) is numeric, so '1.0' reads as numeric and
+  # matches owner_id 1, but the split's owner_id = '1.0' reads '1.0' as an
+  # integer and fails.
+  it "doesn't fire when an uncast default widens the COALESCE past the column's type" do
+    sql = "SELECT t.id FROM public.tasks t WHERE COALESCE(t.owner_id, $1) = $2"
+    map = { "$1" => { "type" => "numeric", "value" => "0.5" }, "$2" => { "type" => "unknown", "value" => "1.0" } }
+
+    expect(conn.exec("SELECT t.id FROM public.tasks t WHERE COALESCE(t.owner_id, 0.5) = '1.0'").values)
+      .to eq([["1"], ["2"]])
+    expect(rewritten(sql, map)).to eq([])
+  end
+
+  it "doesn't fire on an uncast default without the literals to type it" do
+    sql = "SELECT t.id FROM public.tasks t WHERE COALESCE(t.status, $1) = $2"
+
+    expect(rule.rewrites(PgQuery.parse(sql), catalog)).to eq([])
+  end
+
   it "doesn't change the parse it was given" do
     parse = PgQuery.parse("SELECT t.id FROM public.tasks t WHERE COALESCE(t.status, $1) = $2")
     before = PgQuery::ParseResult.decode(PgQuery::ParseResult.encode(parse.tree))
 
-    expect(rule.rewrites(parse, catalog).size).to eq(1)
+    expect(rule.rewrites(parse, catalog, literals(parse.query)).size).to eq(1)
     expect(parse.tree).to eq(before)
   end
 
