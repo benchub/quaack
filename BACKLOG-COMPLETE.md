@@ -12189,3 +12189,33 @@ A comparison of a `timestamp` or `timestamptz` column, cast to `date` (`ts::date
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-10; enclave, protocol, and driver). Writes `$n::pg_catalog.date` and `OPERATOR(pg_catalog.+) 1` (catalog_names). Specs run across the 2025-03-09 DST change in America/New_York. The docs page adds `submissions.submitted_at timestamptz` to the shared schema. Case 046 names the rule. Minor, open: any schema-qualified operator is taken as pg_catalog's (`OPERATOR(public.=)`); a bare `date(col)` could be shadowed by a user function on the search_path; `ts::date = CURRENT_DATE` isn't taken.
 - **Status:** done
+
+### 20261018-12. Rule `scalar_aggregates_to_filter`.
+
+Two or more uncorrelated scalar subqueries `(SELECT agg(...) FROM s.t WHERE P_i)` in one SELECT's select list, over the same plain table, become one pass. The rule adds `(SELECT agg(...) FILTER (WHERE R_1) AS a_1, ... FROM s.t WHERE S) quaack_aggs_1` to that SELECT's `FROM`, as a comma item or as the whole `FROM` if it had none, and each subquery becomes `quaack_aggs_1.a_i`. `S` holds the conjuncts every member shares (the literal oracle decides placeholder matches, as in shared_scan_cte), and `R_i` holds the rest of member `i`'s. A member with no rest gets no `FILTER`. Each member reads one table with no join, its select list is one aggregate call with no `FILTER` of its own, and it has no `GROUP BY`, `HAVING`, `DISTINCT`, `ORDER BY`, `LIMIT`, `OFFSET`, window, set-returning call, `WITH`, set operation, or subquery. It refuses volatile calls, and an outer SELECT with a bare `*`. A one-row derived table changes no row count, and an aggregate over no rows gives what the member gave over no rows. Postgres evaluates `FILTER` before an aggregate's arguments, so an argument runs only on the rows its member read. Rests on nothing. e2e cases 039 and 051 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-12; enclave, protocol, and driver). Top-level SELECT only. Only shared conjuncts that can't raise go to the shared WHERE; with an outer FROM, every member's conditions and aggregate must be harmless. One fix round: a member must name only its own table's columns (a correlated member had its outer reference captured). Cases 039 and 051 name the rule.
+- **Status:** done
+
+### 20261018-13. Rule `correlated_aggregate_to_join`.
+
+A top-level `WHERE` conjunct `e op (SELECT agg(x) FROM s WHERE s.k = t.c AND P(s))`, either side, becomes a join to a grouped derived table. `op` is a comparison, and `agg` is `avg`, `sum`, `min`, or `max`, which give NULL over no rows. The rule adds `(SELECT s.k, agg(x) AS quaack_agg FROM s WHERE P(s) GROUP BY s.k) quaack_agg_1` to the `FROM` as a comma item, adds `quaack_agg_1.k = t.c` to the `WHERE`, and replaces the subquery with `quaack_agg_1.quaack_agg`. Several correlation equalities group by each column. The subquery reads one plain table, its conjuncts are either correlation equalities with columns of the outer SELECT's own `FROM` tables, written `name.column`, or read only `s`, and it has no `GROUP BY`, `HAVING`, `DISTINCT`, `ORDER BY`, `LIMIT`, window, set operation, or nested subquery. Each pair has one type and a deterministic collation. It refuses volatile calls, `count` (0 over no rows, not NULL), and an outer SELECT with a bare `*`. A row of `t` with no group, or a NULL `t.c`, gets a NULL aggregate in the original and no join partner in the rewrite, and the `WHERE` drops it either way. Each key has one group, so no row repeats. Rests on nothing. e2e cases 038 and 069 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-13; enclave, protocol, and driver). Also refuses conditions that can raise, sum/avg over non-integer, non-numeric types, and a bare column that the new join would make ambiguous. One fix round: a test for the refusal of a subquery whose own table hides the outer one. Case 038 names the rule; case 069 (aggregate in the select list) isn't covered.
+- **Status:** done
+
+### 20261018-15. Report: a floating table of contents in the left margin.
+
+The report is getting long to scroll through. Add a `<nav>` of links to the report's top-level sections, by their existing `id`s (`summary`, `queries`, `ranking`, `explanation`, `indexes`, `accountability`, `burndown`, and the ones only some runs have, such as `quaack-bugs`, `timeouts`, `index-ideas`, and `negative-result`), built from the same conditions that decide which sections render, so it never links to a missing one. CSS only, since the report runs no script: on a window wide enough (about `88rem`), it's `position: fixed` at the top left, inside the margin the body's `max-width: 62rem` leaves (`width: calc((100vw - 62rem) / 2 - 2rem)`), with `max-height: calc(100vh - 2rem)` and `overflow-y: auto`. On a narrower window, the same list sits inline under the title. It uses the page's color variables, so dark mode works, and it's hidden in print. Its labels are QUAACK's own fixed words. No highlight of the current section, since that needs a script or scroll-driven animation (the user agreed, 2026-10-18). Update DESIGN.md's report section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261018-15; driver only). `<nav id="toc">` after the h1, built from the section conditions; fixed at 88rem and wider, hidden in print. One fix round: a test for the rule-bug link.
+- **Status:** done
