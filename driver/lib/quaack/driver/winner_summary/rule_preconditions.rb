@@ -41,7 +41,10 @@ module Quaack
                                    "neither drop nor repeat a row.",
           "polymorphic_key_copy" => "A child table joins a parent filtered to one Rails polymorphic type and id, " \
                                     "and the child has its own column for that type's id, which QUAACK checked " \
-                                    "holds the same id in the data."
+                                    "holds the same id in the data.",
+          "distinct_key_removal" => "A SELECT DISTINCT selects every column of a unique, not-null key of its first " \
+                                    "table, and each of its inner or left joins is on every column of a unique " \
+                                    "key of the joined table, so no two of its rows can be equal."
         }.freeze
       end
     end

@@ -1,0 +1,112 @@
+# frozen_string_literal: true
+
+require "pg_query"
+require_relative "rewrite"
+require_relative "../deparse"
+require_relative "tree"
+require_relative "distinct_key_removal/from"
+require_relative "distinct_key_removal/keys"
+
+module Quaack
+  module Enclave
+    module RewriteRules
+      # DESIGN.md's rewrite-rules' distinct_key_removal. An ORM that may
+      # join a has-many association adds DISTINCT, and keeps it when the
+      # joins it made are all to-one:
+      #
+      #   SELECT DISTINCT posts.* FROM posts JOIN users ON users.id = posts.user_id WHERE users.name = $1
+      #
+      # Postgres sorts or hashes every row to find duplicates that can't be
+      # there. users.id is unique, so each row of posts joins at most one
+      # row of users, and the join gives each row of posts at most once.
+      # posts.id is unique and not null and in the select list, so no two
+      # of those rows are equal, and the DISTINCT removes nothing. It's the
+      # same as
+      #
+      #   SELECT posts.* FROM posts JOIN users ON users.id = posts.user_id WHERE users.name = $1
+      #
+      # The first table's key must be among the columns the DISTINCT
+      # compares, and compared as its unique index compares it, which the
+      # unique assumption checks. Each join's = must be the joined key's
+      # own, or two rows of the joined table could match one row.
+      #
+      # It removes the DISTINCT of one SELECT, at any depth, and states the
+      # first table's key unique with each of its columns not null, and
+      # each joined table's key unique. It gives one rewrite per SELECT it
+      # can take, each from the original, so the generator's second pass
+      # takes two. ORDER BY, LIMIT, and OFFSET stay as they were: with
+      # DISTINCT, every ORDER BY item is in the select list, and the rows
+      # they order are the same.
+      #
+      # It's conservative. It fires only when all of this holds, and
+      # otherwise gives nothing:
+      #
+      # - The SELECT has a plain DISTINCT: no DISTINCT ON, no GROUP BY,
+      #   whose grouping sets can repeat a key as NULL, and no locking
+      #   clause, which Postgres refuses with DISTINCT and would take
+      #   without it. With no GROUP BY, an aggregate or a HAVING makes the
+      #   SELECT one group, and Postgres then refuses the key's bare
+      #   column, so those need no check of their own.
+      # - Its FROM is one plain table, then inner or left joins to plain
+      #   tables (see From).
+      # - Each join's ON ANDs a plain = for every column of a unique key of
+      #   the joined table, with a column of a table before it (see
+      #   Keys.paired). Other conditions there only filter, and may stay.
+      # - The select list holds every column of a unique, not-null key of
+      #   the first table, with no nondeterministic collation (see
+      #   Keys.root).
+      # - No function or operator the select list calls, in a subquery
+      #   too, could return a set or be an aggregate or window function
+      #   (Catalog#row_wise?). A set-returning call gives several rows for
+      #   one row of the FROM, and a window function can give one value
+      #   per row of the FROM that isn't the row's own.
+      class DistinctKeyRemoval
+        # One SELECT the rule can take, and what its rewrite rests on.
+        Removal = Data.define(:select, :assumptions)
+
+        def name = "distinct_key_removal"
+
+        def description
+          "A SELECT DISTINCT loses its DISTINCT when its select list holds a unique, not-null key of its first table " \
+            "and each of its joins matches at most one row, by a unique key of the joined table."
+        end
+
+        def rewrites(parse, catalog, _literals = nil)
+          Array.new(removals(parse.tree, catalog).size) do |i|
+            tree = Deparse.copy(parse.tree)
+            removal = removals(tree, catalog)[i]
+            removal.select.distinct_clause.clear
+            Rewrite.new(tree:, assumptions: removal.assumptions)
+          end
+        end
+
+        private
+
+        # Every SELECT in tree whose DISTINCT the rule can remove, in tree
+        # order.
+        def removals(tree, catalog) = Tree.find_all(tree, PgQuery::SelectStmt).filter_map { removal(it, catalog) }
+
+        def removal(select, catalog)
+          from = From.read(select.from_clause) if distinct?(select) && row_wise?(select, catalog)
+          assumptions = keys(select, from, catalog) if from
+          Removal.new(select:, assumptions:) if assumptions
+        end
+
+        def row_wise?(select, catalog) = catalog.row_wise?(select.target_list.map { it.res_target.val })
+
+        # The assumptions that state the first table's key and every
+        # joined table's, each once, or nil unless there's each of them.
+        def keys(select, from, catalog)
+          root = Keys.root(select, from.root, catalog)
+          joins = from.joins.map { Keys.join(it, catalog) }
+          (root + joins.flatten(1)).uniq if root && joins.all?
+        end
+
+        def distinct?(select)
+          select.distinct_clause.size == 1 && select.distinct_clause.first.node.nil? && select.group_clause.empty? &&
+            select.locking_clause.empty?
+        end
+      end
+    end
+  end
+end
