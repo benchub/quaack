@@ -4,7 +4,7 @@ require "pg_query"
 require_relative "rewrite"
 require_relative "tree"
 require_relative "../deparse"
-require_relative "or_to_union/arms"
+require_relative "correlated_aggregate_to_join/grouped"
 
 module Quaack
   module Enclave
@@ -56,20 +56,14 @@ module Quaack
       #   the derived table's columns, and nothing in the statement could
       #   call a volatile function (Catalog#calls_volatile?), which would
       #   run another number of times.
+      # - No bare column in the statement has the name of a column of a
+      #   derived table, which would make it ambiguous.
       #
-      # It gives one rewrite, with every conjunct it can rewrite rewritten.
+      # Grouped reads the subquery. It gives one rewrite, with every
+      # conjunct it can rewrite rewritten.
       class CorrelatedAggregateToJoin
-        AGGREGATES = %w[avg sum min max].freeze
         COMPARISONS = %w[= <> < <= > >=].freeze
-        # The types sum and avg take without a chance of overflow.
-        SUMMABLE = %w[smallint integer bigint numeric].freeze
         COLUMN = "quaack_agg"
-
-        # One conjunct to rewrite: the Node that holds the subquery, its
-        # table's name and RangeVar, the aggregate call, the conditions
-        # that read only the table, and [k, outer ColumnRef] for each
-        # correlation.
-        Found = Data.define(:node, :name, :table, :call, :own, :keys)
 
         def name = "correlated_aggregate_to_join"
 
@@ -81,13 +75,8 @@ module Quaack
         def rewrites(parse, catalog, _literals = nil)
           tree = Deparse.copy(parse.tree)
           select = Tree.select(tree)
-          return [] unless select && !select.from_clause.empty? && !star?(select)
-
-          items = Tree.from_items(select.from_clause)
-          return [] if items.any? { it.name.nil? }
-
-          found = Tree.conjuncts(select.where_clause).filter_map { found(it, items, catalog) }
-          return [] if found.empty? || volatile?(tree, catalog)
+          found = select ? found(select, catalog) : []
+          return [] if found.empty? || ambiguous?(tree, found) || volatile?(tree, catalog)
 
           names = Tree::Names.new(tree)
           found.each { join!(select, it, names.fresh(COLUMN)) }
@@ -96,11 +85,39 @@ module Quaack
 
         private
 
+        # The Grouped::Found of each top-level WHERE conjunct the rule
+        # rewrites.
+        def found(select, catalog)
+          items = Tree.from_items(select.from_clause)
+          return [] if items.empty? || items.any? { it.name.nil? } || star?(select)
+
+          Tree.conjuncts(select.where_clause).filter_map do |conjunct|
+            node = compared(conjunct)
+            Grouped.read(node, items, catalog) if node
+          end
+        end
+
+        # The scalar subquery's Node of e op (subquery), either side, or nil.
+        def compared(conjunct)
+          expr = conjunct.a_expr if conjunct.node == :a_expr
+          return unless expr&.kind == :AEXPR_OP && expr.name.size == 1 &&
+                        COMPARISONS.include?(expr.name.first.string.sval)
+
+          [expr.lexpr, expr.rexpr].find { it.node == :sub_link }
+        end
+
         def star?(select)
           select.target_list.any? do |target|
             ref = target.res_target.val&.column_ref
             ref && ref.fields.size == 1 && ref.fields.first.node == :a_star
           end
+        end
+
+        # Whether a bare column anywhere in the statement has the name of a
+        # derived table's column.
+        def ambiguous?(tree, found)
+          columns = found.flat_map { it.keys.map(&:first) } + [COLUMN]
+          Tree.find_all(tree, PgQuery::ColumnRef).any? { columns.include?(Tree.bare_name(it)) }
         end
 
         def volatile?(tree, catalog)
@@ -109,136 +126,37 @@ module Quaack
           true
         end
 
-        # The Found of a conjunct, or nil.
-        def found(conjunct, items, catalog)
-          expr = conjunct.a_expr if conjunct.node == :a_expr
-          return unless expr&.kind == :AEXPR_OP && expr.name.size == 1 &&
-                        COMPARISONS.include?(expr.name.first.string.sval)
-
-          node = [expr.lexpr, expr.rexpr].find { it.node == :sub_link }
-          read(node, items, catalog) if node && node.sub_link.sub_link_type == :EXPR_SUBLINK
-        end
-
-        def read(node, items, catalog)
-          select = node.sub_link.subselect.select_stmt
-          return unless select && plain?(select) && select.from_clause.size == 1
-
-          table = select.from_clause.first.range_var
-          return unless table && Tree.plain_table?(table)
-
-          name = Tree.refname(table)
-          call = aggregate(select, name, table, catalog)
-          return unless call && !OrToUnion::Arms.raises?(select.where_clause, catalog)
-
-          own, keys = split(select.where_clause, name, table, items, catalog)
-          # A key named as the aggregate's column would make it ambiguous.
-          return unless own && keys.any? && keys.none? { it.first == COLUMN }
-
-          Found.new(node:, name:, table:, call:, own:, keys:)
-        end
-
-        def plain?(select)
-          Tree.plain_select?(select) && select.distinct_clause.empty? && select.target_list.size == 1 &&
-            select.op == :SETOP_NONE && Tree.find_all(select.where_clause, PgQuery::SubLink).empty?
-        end
-
-        # The select list's FuncCall, if it's one of AGGREGATES of a column
-        # of the table it can take.
-        def aggregate(select, name, table, catalog)
-          call = select.target_list.first.res_target.val.func_call
-          return unless call && call.funcname.size == 1 && AGGREGATES.include?(call.funcname.first.string.sval)
-          return unless call.agg_filter.nil? && call.over.nil? && call.agg_order.empty? && !call.agg_distinct &&
-                        !call.agg_star && call.args.size == 1
-
-          column = own_column(call.args.first, name)
-          info = column && catalog.column_info(table.schemaname, table.relname, column)
-          call if info && (%w[min max].include?(call.funcname.first.string.sval) || SUMMABLE.include?(info.base_type))
-        end
-
-        # The column node names, if it's written name.column, or nil.
-        def own_column(node, name)
-          qualifier, column = Tree.qualified(node.column_ref) if node.node == :column_ref
-          column if qualifier == name
-        end
-
-        # [the conditions that read only the table, the correlations], or
-        # nil if a condition is neither.
-        def split(where, name, table, items, catalog)
-          own = []
-          keys = []
-          Tree.conjuncts(where).each do |conjunct|
-            key = correlation(conjunct, name, table, items, catalog)
-            if key then keys << key
-            elsif own?(conjunct, name) then own << conjunct
-            else return
-            end
-          end
-          [own, keys]
-        end
-
-        # Whether every column conjunct reads is written name.column.
-        def own?(conjunct, name)
-          Tree.find_all(conjunct, PgQuery::ColumnRef).all? { Tree.qualified(it)&.first == name }
-        end
-
-        # [k, the outer ColumnRef] if conjunct is name.k = outer.c, either
-        # way round, of one comparable type and a deterministic collation.
-        def correlation(conjunct, name, table, items, catalog)
-          expr = conjunct.a_expr if conjunct.node == :a_expr
-          return unless expr&.kind == :AEXPR_OP && expr.name.size == 1 && expr.name.first.string.sval == "="
-
-          sides = [expr.lexpr, expr.rexpr]
-          sides.reverse! unless own_column(sides.first, name)
-          key = own_column(sides.first, name)
-          outer = outer_column(sides.last, name, items)
-          return unless key && outer && same_type?([table.schemaname, table.relname, key], outer[1], catalog)
-
-          [key, sides.last.column_ref]
-        end
-
-        # [the ColumnRef, [schema, table, column]] for outer.c, where outer
-        # is a plain table of the outer FROM that the subquery's table
-        # doesn't hide.
-        def outer_column(node, name, items)
-          qualifier, column = Tree.qualified(node.column_ref) if node.node == :column_ref
-          return unless qualifier && qualifier != name
-
-          named = items.select { it.name == qualifier }
-          table = named.first.table if named.size == 1
-          [node.column_ref, [table.schemaname, table.relname, column]] if table && Tree.plain_table?(table)
-        end
-
-        def same_type?(key, outer, catalog)
-          one = catalog.column_info(*key)
-          other = catalog.column_info(*outer)
-          comparable = catalog.columns(key[0], key[1]).find { it.name == key[2] }&.comparable
-          one && other && comparable && one.type == other.type && one.collation == other.collation &&
-            one.deterministic
-        end
-
         # Adds the derived table to select's FROM, the join conditions to
         # its WHERE, and the derived table's aggregate in the subquery's
         # place.
         def join!(select, found, alias_name)
-          keys = found.keys.map(&:first).uniq
-          derived = PgQuery.parse(derived_sql(found, keys, alias_name)).tree.stmts.first.stmt.select_stmt
-          sub = derived.from_clause.first.range_subselect.subquery.select_stmt
-          sub.from_clause[0] = PgQuery::Node.new(range_var: found.table)
-          sub.target_list[-1].res_target.val = PgQuery::Node.new(func_call: found.call)
-          sub.where_clause = Tree.all_of(found.own)
-          select.from_clause << derived.from_clause.first
-
+          select.from_clause << derived(found, alias_name)
           found.node.column_ref = column_ref(alias_name, COLUMN).column_ref
           joins = found.keys.map { |key, outer| equal(column_ref(alias_name, key), outer) }
           select.where_clause = Tree.all_of(Tree.conjuncts(select.where_clause) + joins)
         end
 
-        # The derived table's shape, for join! to fill with the subquery's
-        # own nodes. The names are double-quoted, so any name reads as
-        # itself.
-        def derived_sql(found, keys, alias_name)
-          columns = keys.map { %("#{quote(found.name)}"."#{quote(it)}") }.join(", ")
-          "SELECT FROM (SELECT #{columns}, NULL AS \"#{COLUMN}\" FROM t GROUP BY #{columns}) \"#{alias_name}\""
+        # The derived table's FROM item, from a shape filled with the
+        # subquery's own nodes. The names are double-quoted, so any name
+        # reads as itself.
+        def derived(found, alias_name)
+          item = shape(found, alias_name)
+          fill!(item.range_subselect.subquery.select_stmt, found)
+          item
+        end
+
+        def shape(found, alias_name)
+          columns = keys(found)
+          sql = "SELECT FROM (SELECT #{columns}, NULL AS #{COLUMN} FROM t GROUP BY #{columns}) \"#{alias_name}\""
+          PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt.from_clause.first
+        end
+
+        def keys(found) = found.keys.map(&:first).uniq.map { %("#{quote(found.table.name)}"."#{quote(it)}") }.join(", ")
+
+        def fill!(sub, found)
+          sub.from_clause[0] = PgQuery::Node.new(range_var: found.table.range)
+          sub.target_list[-1].res_target.val = PgQuery::Node.new(func_call: found.call)
+          sub.where_clause = Tree.all_of(found.own)
         end
 
         def quote(name) = name.gsub('"', '""')

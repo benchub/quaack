@@ -107,8 +107,9 @@ RSpec.describe Quaack::Enclave::RewriteRules::CorrelatedAggregateToJoin do
 
     expect(rewrite).to eq(["SELECT o.id FROM public.orders o, (SELECT o2.customer_id, o2.region, " \
                            "max(o2.total) AS quaack_agg FROM public.orders o2 WHERE o2.status = $1 " \
-                           "GROUP BY o2.customer_id, o2.region) quaack_agg_1 WHERE o.total >= quaack_agg_1.quaack_agg " \
-                           "AND quaack_agg_1.customer_id = o.customer_id AND quaack_agg_1.region = o.region"])
+                           "GROUP BY o2.customer_id, o2.region) quaack_agg_1 WHERE " \
+                           "o.total >= quaack_agg_1.quaack_agg AND quaack_agg_1.customer_id = o.customer_id " \
+                           "AND quaack_agg_1.region = o.region"])
     expect(same_rows(sql, rewrite.first)).to eq([["12"], ["13"], ["21"]])
   end
 
@@ -121,7 +122,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CorrelatedAggregateToJoin do
                            "o.customer_id = c.id, (SELECT o2.customer_id, sum(o2.total) AS quaack_agg FROM " \
                            "public.orders o2 GROUP BY o2.customer_id) quaack_agg_1 WHERE o.total < " \
                            "quaack_agg_1.quaack_agg AND quaack_agg_1.customer_id = c.id GROUP BY c.name"])
-    expect(same_rows(sql, rewrite.first)).to eq([["a", "3"]])
+    expect(same_rows(sql, rewrite.first)).to eq([%w[a 3]])
   end
 
   it "takes min over a text column, and an ORM's quoted, unaliased tables" do
@@ -146,7 +147,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CorrelatedAggregateToJoin do
 
   {
     "a count, which is 0 over no rows" => "o.total > (SELECT count(*) FROM public.orders o2 " \
-                                           "WHERE o2.customer_id = o.customer_id)",
+                                          "WHERE o2.customer_id = o.customer_id)",
     "a count of a column" => "o.total > (SELECT count(o2.total) FROM public.orders o2 " \
                              "WHERE o2.customer_id = o.customer_id)",
     "an aggregate of an expression" => "o.total > (SELECT avg(o2.total + 1) FROM public.orders o2 " \
@@ -190,6 +191,11 @@ RSpec.describe Quaack::Enclave::RewriteRules::CorrelatedAggregateToJoin do
       expect(rewritten("SELECT o.id FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
                        "WHERE #{test}")).to eq([])
     end
+  end
+
+  it "leaves a statement alone whose bare column the derived table's key column would make ambiguous" do
+    expect(rewritten("SELECT o.id FROM public.orders o WHERE region > 0 AND o.total > " \
+                     "(SELECT avg(o2.total) FROM public.orders o2 WHERE o2.region = o.region)")).to eq([])
   end
 
   it "leaves an outer SELECT with a bare star alone, since the join would add columns" do
