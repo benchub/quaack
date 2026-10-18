@@ -752,3 +752,13 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Came from:** Review of 20261017-7, 2026-10-17.
 - **Design:** report.
 - **Status:** todo
+
+### 20261017-12. Rewrites' index-ideas Sankey: minors from the review of 20261017-8.
+
+1. DESIGN.md (about line 1544) still says that in the rewrites' table "a round may carry less than the stages before it left, never more", which no longer holds since 20261017-8. `spec/pipeline_replay_spec.rb` (about line 95) still checks `rewrite_index_rows` loosely, so a regression on real runs would go unseen. Pass `strict: true` there (the reviewer showed all 7 per-commit runs pass with it) and fix the DESIGN sentence.
+2. The "Also counted" wording, "ideas from rewrites the LLM wasn't asked about, passed on unchanged", doesn't say why. Add the reason, such as "(ruled out or pruned before the LLM's rounds)".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-8, 2026-10-18.
+- **Design:** report, sankey.
+- **Status:** todo
