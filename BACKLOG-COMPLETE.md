@@ -12361,3 +12361,13 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Design:** report.
 - **Landed:** 2026-10-18 (task/20261017-9; driver only). The untested not_better sentence says real data once; every fate that passed says "passed every correctness test".
 - **Status:** done
+
+### 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
+
+From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_removal) or a join (unused_join_removal) inside a derived table can change the order in which rows reach the reading query. If that query feeds them to an aggregate whose result depends on order and that has no `ORDER BY` of its own, such as `string_agg(t.name, ',')` or `array_agg(t.id)` over the derived table, the result changes, and result-comparison would report a sound rewrite as a rule bug. Decide whether these rules refuse such a reader (an allowlist of order-blind aggregates, as 20261018-5 uses), or whether fixture-compare and result-comparison should treat such an aggregate's result as unordered. Reproduce it first.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-6, 2026-10-18.
+- **Design:** rewrite-rules, result-comparison.
+- **Landed:** 2026-10-18 (task/20261018-22; enclave). Decided: the rules refuse. New `RewriteRules::InputOrder` (reusing SubqueryOrderRemoval::Blind) makes distinct_key_removal and unused_join_removal refuse when the statement has a window, an ARRAY subquery with no ORDER BY, or an aggregate whose result depends on input order; sum/min/max over int2/4/8, date, timestamp(tz) and avg over integers are allowed (one fix round, after the first version blocked Rails .sum). Not yet: narrowing to the actual readers.
+- **Status:** done

@@ -25,6 +25,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
 - 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
 - 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
+- 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
 
 ## How this file works.
 
@@ -762,15 +763,6 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Depends on:** None.
 - **Came from:** Review of 20261017-8, 2026-10-18.
 - **Design:** report, sankey.
-- **Status:** todo
-
-### 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
-
-From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_removal) or a join (unused_join_removal) inside a derived table can change the order in which rows reach the reading query. If that query feeds them to an aggregate whose result depends on order and that has no `ORDER BY` of its own, such as `string_agg(t.name, ',')` or `array_agg(t.id)` over the derived table, the result changes, and result-comparison would report a sound rewrite as a rule bug. Decide whether these rules refuse such a reader (an allowlist of order-blind aggregates, as 20261018-5 uses), or whether fixture-compare and result-comparison should treat such an aggregate's result as unordered. Reproduce it first.
-
-- **Depends on:** None.
-- **Came from:** Build of 20261018-6, 2026-10-18.
-- **Design:** rewrite-rules, result-comparison.
 - **Status:** todo
 
 ### 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
