@@ -23,9 +23,10 @@ module Quaack
         # - LIMIT, OFFSET, or FETCH FIRST, which keep whichever rows come
         #   first.
         # - DISTINCT, DISTINCT ON, GROUP BY, or a UNION, INTERSECT, or
-        #   EXCEPT without ALL. Each keeps one row of a set it counts as
-        #   equal, and two values can be equal but differ, such as 1.0 and
-        #   1.00.
+        #   EXCEPT without ALL, or an INTERSECT ALL or EXCEPT ALL. Each keeps
+        #   one row of a set it counts as equal, and two values can be equal
+        #   but differ, such as 1.0 and 1.00. INTERSECT ALL and EXCEPT ALL
+        #   keep the left arm's rows, which ones by input order.
         # - An aggregate, window, or set-returning function
         #   (Catalog#row_wise?). array_agg, row_number, and a sum of floats
         #   all depend on the order.
@@ -72,7 +73,7 @@ module Quaack
 
           def unordered?(select)
             select.limit_count.nil? && select.limit_offset.nil? && select.distinct_clause.empty? &&
-              select.group_clause.empty? && (select.op == :SETOP_NONE || select.all)
+              select.group_clause.empty? && (select.op == :SETOP_NONE || (select.op == :SETOP_UNION && select.all))
           end
         end
       end

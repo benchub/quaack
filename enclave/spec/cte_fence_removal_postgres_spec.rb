@@ -331,6 +331,29 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteFenceRemoval do
                          "SELECT a.id FROM ids a JOIN ids b ON b.id = a.id")).to eq([])
       end
 
+      it "refuses a CTE read twice whose body is an INTERSECT ALL, which keeps one of two equal values by order" do
+        expect(rewritten("WITH ids AS (SELECT orders.user_id AS id FROM public.orders " \
+                         "INTERSECT ALL SELECT users.id FROM public.users) " \
+                         "SELECT a.id FROM ids a JOIN ids b ON b.id = a.id")).to eq([])
+      end
+
+      it "refuses a CTE read twice whose body is an EXCEPT ALL, which keeps one of two equal values by order" do
+        expect(rewritten("WITH ids AS (SELECT orders.user_id AS id FROM public.orders " \
+                         "EXCEPT ALL SELECT users.id FROM public.users) " \
+                         "SELECT a.id FROM ids a JOIN ids b ON b.id = a.id")).to eq([])
+      end
+
+      it "refuses a CTE read twice whose body has an OFFSET and no LIMIT" do
+        expect(rewritten("WITH rest AS (SELECT orders.id FROM public.orders ORDER BY orders.total OFFSET 3) " \
+                         "SELECT a.id FROM rest a JOIN rest b ON b.id = a.id")).to eq([])
+      end
+
+      it "refuses a CTE read twice whose body holds a subquery with a LIMIT" do
+        expect(rewritten("WITH few AS (SELECT users.id FROM public.users WHERE users.id IN " \
+                         "(SELECT orders.user_id FROM public.orders ORDER BY orders.total LIMIT 3)) " \
+                         "SELECT a.id FROM few a JOIN few b ON b.id = a.id")).to eq([])
+      end
+
       it "rewrites a CTE read twice whose body is a UNION ALL" do
         expect_rewrites(
           "WITH ids AS (SELECT orders.user_id AS id FROM public.orders UNION ALL SELECT users.id FROM public.users) " \
