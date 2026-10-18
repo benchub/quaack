@@ -12391,3 +12391,14 @@ From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric
 - **Design:** fixture-compare, result-comparison.
 - **Landed:** 2026-10-18 (task/20261018-28; enclave). GROUP BY keys and min/max become checked picks: a HAVING check per key and a CASE around min/max divide by zero when equal values print two ways, so the comparison refuses with unsupported_order rather than reporting a false difference. Applies to every type; DESIGN.md updated. Minor, open: a GROUP BY name that's both an input column and an output alias is checked against the alias (a clean refusal); limiting the checks to types that can print two ways; greatest/least.
 - **Status:** done
+
+### 20261017-10. Ranking stripes: minors from the review of 20261017-6.
+
+1. The "no tint" spec got narrower. 20261017-6 dropped main's guard `expect(style).not_to match(/\btr\.[^{]*\{[^}]*--stripe/)`, and the new spec only checks that the stripe rule itself has no `background`. A separate rule such as `tr.rank td { background: var(--stripe); }` leaves every example green. Assert that no `tr.kind`/`tr.rank` rule other than the stripe rule uses `--stripe` or sets a `background`.
+2. With collapsed borders, the 5px stripe on the kind and rank rows reaches about 2px further left than the baseline row's 1px border. This is cosmetic. Line them up if it's cheap, for example by giving the baseline row's first cell a transparent 5px left border.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-6, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-10; driver only). The stripe spec fails on any other tr.kind/tr.rank rule with a background or --stripe; the baseline row's first cell gets a transparent 5px left border so its edge lines up with the stripes.
+- **Status:** done
