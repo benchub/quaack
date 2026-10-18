@@ -37,11 +37,11 @@ module Quaack
       # data, and doesn't recurse gives the same rows as a subquery as it
       # does stored. A body read once becomes a subquery in that one place,
       # as if the query had been written that way. A body read more than
-      # once runs once per read, and from inside a subquery expression, a
-      # LATERAL subquery, or another CTE's body, it can run once per row
-      # there. Each run must then give the same rows, so Repeats refuses a
-      # body whose rows can depend on the order it reads rows in. So the
-      # rule refuses:
+      # once runs once per read, and a read inside a subquery expression, a
+      # LATERAL subquery, or another CTE's body can run it more than once.
+      # Every run must then give the same rows, so Repeats refuses a body
+      # whose rows can depend on the order it reads rows in. So the rule
+      # refuses:
       #
       # - A query with a RECURSIVE WITH, or a data-modifying CTE, anywhere.
       # - A body that calls a volatile function.

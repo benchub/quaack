@@ -46,10 +46,16 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteFenceRemoval do
 
   def redacted(sql) = Quaack::Enclave::Redaction.query(PgQuery.parse(sql))
 
+  # The SQL of each rewrite of sql, each of which states no assumptions.
   def rewritten(sql)
-    redacted = redacted(sql)
+    made = made(redacted(sql))
+    expect(made.map(&:assumptions)).to all(eq([]))
+    made.map { Quaack::Enclave::Deparse.faithfully(it.tree) }
+  end
+
+  def made(redacted)
     literals = Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map)
-    rule.rewrites(PgQuery.parse(redacted.sql), catalog, literals).map { Quaack::Enclave::Deparse.faithfully(it.tree) }
+    rule.rewrites(PgQuery.parse(redacted.sql), catalog, literals)
   end
 
   def rows(sql, map)
