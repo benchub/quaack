@@ -12109,3 +12109,13 @@ A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than o
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-2; enclave, protocol, and driver). Beyond the text above, it also refuses a body read more than once (or from a sublink, LATERAL, or another CTE) that can give different rows per run (LIMIT, DISTINCT, GROUP BY, non-ALL set operations, aggregates, windows, set-returning calls), and checks every non-output SELECT's conditions and computed columns with `OrToUnion::Arms.raises?`, accepting or_to_union's LIKE lone-backslash risk. Cases 028, 029, and 050 name the rule.
 - **Status:** done
+
+### 20261018-7. Rule `left_join_to_inner`.
+
+`x LEFT JOIN u ON ...` becomes an inner join when each row on the left has exactly one row of `u`. Every `ON` conjunct is a plain `=` between a column of `u` and a column of one plain table `t` on the left side, and the pairs are a strict foreign key from `t` to `u` (`Catalog#strict_foreign_key?`, as unused_join_removal uses, which also refuses row-level security on `u`). Each `t` column is not null, and `t` isn't on the nullable side of an outer join inside the left side, where a NULL-extended row would match nothing. `u` is a plain table. One rewrite per join. Postgres already makes a `LEFT JOIN` inner when the `WHERE` rejects its NULL rows, so the rule matters elsewhere: an inner join can be reordered, so, for example, `u` can drive a nested loop for `ORDER BY u.name LIMIT 20`. Rests on `foreign_key` and `not_null`. Needs a new e2e case, such as Rails `eager_load` with an order on the association's column.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-7; enclave, protocol, and driver). Reuses `UnusedJoinRemoval::Candidates`. e2e case 104 (`104-eager-load-order-by-association`): 6844 to 353 blocks on the slow literals. Not yet taken: RIGHT JOIN mirrored, FULL to LEFT on the same grounds, and a nullable joining column the WHERE requires non-null.
+- **Status:** done

@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-4. Rule `subquery_distinct_removal`.
 - 20261018-6. Rule `distinct_key_removal`.
 - 20261018-2. Rule `cte_fence_removal`.
+- 20261018-7. Rule `left_join_to_inner`.
 
 ## How this file works.
 
@@ -855,14 +856,7 @@ An `ORDER BY` with no `LIMIT`, `OFFSET`, or `FETCH`, in a derived table or a CTE
 
 ### 20261018-6. Rule `distinct_key_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-7. Rule `left_join_to_inner`.
-
-`x LEFT JOIN u ON ...` becomes an inner join when each row on the left has exactly one row of `u`. Every `ON` conjunct is a plain `=` between a column of `u` and a column of one plain table `t` on the left side, and the pairs are a strict foreign key from `t` to `u` (`Catalog#strict_foreign_key?`, as unused_join_removal uses, which also refuses row-level security on `u`). Each `t` column is not null, and `t` isn't on the nullable side of an outer join inside the left side, where a NULL-extended row would match nothing. `u` is a plain table. One rewrite per join. Postgres already makes a `LEFT JOIN` inner when the `WHERE` rejects its NULL rows, so the rule matters elsewhere: an inner join can be reordered, so, for example, `u` can drive a nested loop for `ORDER BY u.name LIMIT 20`. Rests on `foreign_key` and `not_null`. Needs a new e2e case, such as Rails `eager_load` with an order on the association's column.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-7. Rule `left_join_to_inner`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-8. Rule `union_to_union_all`.
 
