@@ -749,3 +749,13 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Came from:** Review of 20261017-5, 2026-10-17.
 - **Design:** report.
 - **Status:** todo
+
+### 20261017-10. Ranking stripes: minors from the review of 20261017-6.
+
+1. The "no tint" spec got narrower. 20261017-6 dropped main's guard `expect(style).not_to match(/\btr\.[^{]*\{[^}]*--stripe/)`, and the new spec only checks that the stripe rule itself has no `background`. A separate rule such as `tr.rank td { background: var(--stripe); }` leaves every example green. Assert that no `tr.kind`/`tr.rank` rule other than the stripe rule uses `--stripe` or sets a `background`.
+2. With collapsed borders, the 5px stripe on the kind and rank rows reaches about 2px further left than the baseline row's 1px border. This is cosmetic. Line them up if it's cheap, for example by giving the baseline row's first cell a transparent 5px left border.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-6, 2026-10-17.
+- **Design:** report.
+- **Status:** todo
