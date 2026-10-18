@@ -57,11 +57,13 @@ RSpec.describe E2E::Postgres do
     unowned = create_container
     owned_by_live = create_container(*owner(live_owner))
     owned_by_other_host = create_container(*owner(dead_pid, "not-#{this_host}"))
+    # pid 1 belongs to root, so signalling it gives EPERM: alive, not ours.
+    owned_by_other_user = create_container(*owner(1))
 
     described_class.new(label: label)
 
     expect([stale, unowned].map { listed?(it) }).to eq([false, false])
-    expect([owned_by_live, owned_by_other_host].map { listed?(it) }).to eq([true, true])
+    expect([owned_by_live, owned_by_other_host, owned_by_other_user].map { listed?(it) }).to eq([true, true, true])
   ensure
     Process.kill("TERM", live_owner) if live_owner
     Process.wait(live_owner) if live_owner
