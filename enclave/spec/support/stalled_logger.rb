@@ -31,6 +31,11 @@ class StalledLogger
 
   WAIT_SECONDS = 10
 
+  # What the kernel calls a task blocked writing to a pipe. Linux 6.14 and
+  # later name it anon_pipe_write; earlier kernels name it pipe_write. The
+  # Docker VM's kernel decides which one a spec run sees.
+  PIPE_WRITE_CHANNELS = %w[pipe_write anon_pipe_write].freeze
+
   def initialize(server)
     @server = server
     @logger = shell("pgrep -f '^postgres: logger'").strip
@@ -44,8 +49,8 @@ class StalledLogger
 
   # In a thread, since the backend's own client is blocked until it's done.
   # Its value is the backend's kernel wait channel when the cancel went out,
-  # "pipe_write" when it was held in its log line, so the cancel couldn't
-  # have missed the statement.
+  # one of PIPE_WRITE_CHANNELS when it was held in its log line, so the cancel
+  # couldn't have missed the statement.
   def cancel_when_logging(pid, statement)
     Thread.new do
       admin = PG.connect(host: @server.host, port: @server.port, dbname: "postgres",
@@ -64,7 +69,7 @@ class StalledLogger
 
   def wait_for(admin, pid, statement)
     deadline = now + WAIT_SECONDS
-    until running?(admin, pid, statement) && wchan(pid) == "pipe_write"
+    until running?(admin, pid, statement) && PIPE_WRITE_CHANNELS.include?(wchan(pid))
       raise "backend #{pid} never blocked logging #{statement}" if now > deadline
 
       sleep 0.02

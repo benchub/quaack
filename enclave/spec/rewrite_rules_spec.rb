@@ -53,14 +53,27 @@ RSpec.describe Quaack::Enclave::RewriteRules do
     expect(sqls(generated).last).to eq("SELECT 1, 'b', 'b'")
   end
 
-  it "keeps at most ten, and counts the rest as over the cap" do
-    generated = generate(*(1..11).map { one_shot("rule#{it}") },
+  # Task 20261018-1: every rule that applies gets its rewrites tested
+  # before any combination of rules is.
+  it "keeps every one-rule result, however many rules made one" do
+    generated = generate(*(1..12).map { one_shot("rule#{it}") },
                          one_shot("duplicate_rule2", "rule2"), one_shot("duplicate_rule7", "rule7"))
 
-    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([10, 1, 2])
-    expect(names(generated)).to eq((1..10).map { ["rule#{it}"] })
-    expect([sqls(generated).first, sqls(generated).last]).to eq(["SELECT 1, 'rule1'", "SELECT 1, 'rule10'"])
-    expect(generated.made).to include("rule11" => 1, "duplicate_rule2" => 1, "duplicate_rule7" => 1)
+    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([12, 0, 2])
+    expect(names(generated)).to eq((1..12).map { ["rule#{it}"] })
+    expect([sqls(generated).first, sqls(generated).last]).to eq(["SELECT 1, 'rule1'", "SELECT 1, 'rule12'"])
+  end
+
+  # Twelve one-shot rules and z, which appends to anything: thirteen
+  # one-rule results, then thirteen two-rule ones, each with z last.
+  def capped = generate(*(1..12).map { one_shot("rule#{it}") }, appending("z"))
+
+  it "keeps at most ten two-rule results, after every one-rule result, and counts the rest as over the cap" do
+    generated = capped
+
+    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([23, 3, 0])
+    expect(names(generated)).to eq([*(1..12).map { ["rule#{it}"] }, ["z"], *(1..10).map { ["rule#{it}", "z"] }])
+    expect(sqls(generated).last).to eq("SELECT 1, 'rule10', 'z'")
   end
 
   it "goes at most two rules deep" do
@@ -99,8 +112,12 @@ RSpec.describe Quaack::Enclave::RewriteRules do
 
   describe "made, for the rewrite-rules burndown" do
     it "counts every result by the last rule applied, those kept and those over the cap" do
-      # a, b, a a, a b, and b a are kept, and b b is over the cap.
       expect(generate(appending("a"), appending("b")).made).to eq("a" => 3, "b" => 3)
+
+      # z made thirteen two-rule results, three of them over the cap.
+      generated = capped
+      expect(generated.made).to eq((1..12).to_h { ["rule#{it}", 1] }.merge("z" => 14))
+      expect(generated.made.values.sum).to eq(generated.rewrites.size + generated.duplicates + generated.over_cap)
     end
 
     it "counts a chained result under its last rule, not its first" do

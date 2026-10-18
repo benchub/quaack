@@ -12049,3 +12049,23 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 - **Design:** report.
 - **Landed:** 2026-10-17 (task/20261017-5; driver only). Every not_better rewrite's fate is now the one sentence, kept in `Report::Rewrites::FATES`. `Report::NotBetterFate` (its verdict reading and `PERCENT`) is gone. A not_better rewrite that went on untested (out_of_time or not_tested) still gets its opening reworded by `went_on`, which gained a pair for "It passed every correctness test,". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
+
+### 20261018-16. StalledLogger: accept the `anon_pipe_write` wait channel.
+
+Found while building 20261018-1. The Docker VM's kernel is now `7.0.14-linuxkit`, and Linux 6.14 and later name a backend blocked writing to a pipe `anon_pipe_write`, not `pipe_write`. `enclave/spec/support/stalled_logger.rb` waits for a wait channel of exactly `pipe_write`, so the two examples in `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` (lines 38 and 52) fail with "backend N never blocked logging BEGIN/ROLLBACK", alone too, and every per-commit check fails with them. Accept either name, in the helper and in what those examples expect, and keep the examples testing what they test now.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-1, 2026-10-18.
+- **Design:** None (test support).
+- **Landed:** 2026-10-18 (task/20261018-16; enclave spec support only). `StalledLogger::PIPE_WRITE_CHANNELS` holds both names, `wait_for` waits for either, and the two foreign-cancel examples check the channel is one of them, then the rule, step, and sqlstate exactly as before.
+- **Status:** done
+
+### 20261018-1. Rule generator: never cap a one-rule rewrite.
+
+The user decided (2026-10-18) that every rule that applies gets its rewrites tested before any combination of rules is. Today `RewriteRules.generate` keeps the first `MAX` (10) results of its breadth-first chain, so with 25 rules a query that many rules match loses one-rule rewrites to the cap. Keep every one-rule result. `MAX` then caps only the two-rule results that follow them, at 10 (the user left the combination cap open; keep 10). `over_cap` counts only the two-rule results dropped. Update DESIGN.md's rewrite-rules ("Keep at most ten rewrites" and the paragraph after it), README's "ten from the transform rules" and the spec in `spec/transform_docs_spec.rb` that checks it, and anything downstream that assumes at most ten rule rewrites, such as rewrite numbering, report words, the burndown, and the `rewrite_rules_applied` marker.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules, burndown.
+- **Landed:** 2026-10-18 (task/20261018-1; enclave and driver). `RewriteRules.generate` keeps every one-rule result, then the first `MAX` (10) results that apply more than one rule; `over_cap` counts only those dropped. DESIGN.md, README, and the report say the ten is on rewrites made by two rules in a row. Nothing downstream needed a cap on the total; 20261018-17 holds the run-cost question.
+- **Status:** done
