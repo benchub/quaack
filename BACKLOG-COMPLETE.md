@@ -12089,3 +12089,23 @@ A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-4; enclave, protocol, and driver). The rule removes a DISTINCT, a GROUP BY of exactly the select list's columns, or an ORDER BY with no LIMIT, from the subquery of IN, = ANY, NOT IN, or <> ALL, and from a set-operation arm with a deduplicating UNION, INTERSECT, or EXCEPT above it. Two departures from the text above, both found sound in review: an arm reaches that operation only through UNION ALL or INTERSECT ALL with no LIMIT or OFFSET (an EXCEPT ALL in between subtracts counts, so it stops the walk), and DISTINCT and GROUP BY go only when every item is a plain table column the catalog marks comparable (citext or a nondeterministic collation could be told apart by the reader otherwise). `RULE_PURPOSES` moved to `driver/lib/quaack/driver/winner_summary/rule_purposes.rb`. e2e case 044 names the rule.
 - **Status:** done
+
+### 20261018-6. Rule `distinct_key_removal`.
+
+`SELECT DISTINCT` (not `DISTINCT ON`) loses its `DISTINCT` when every output row comes from a different row of one table. The `FROM` is one plain table, the root, plus any inner or left joins to plain tables, each on `ON` equalities that pair every column of a unique key of the joined table with columns of the tables before it, so each row of the root gets at most one row of each. The select list holds every column of a unique, not-null key of the root, written `name.column` or as `root.*`. It refuses `GROUP BY`, aggregates, window functions, and set-returning functions in the select list, and keys or join columns with a nondeterministic collation or a type whose `=` isn't the key index's own (reuse the catalog checks that distinct_join_to_exists and unused_join_removal use). `ORDER BY` and `LIMIT` stay. It complements distinct_join_to_exists, which handles joins that fan out. Rests on `unique` and `not_null` for the root's key, and `unique` for each joined table's key. Needs a new e2e case, such as a Rails `.distinct` over a to-one join.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-6; enclave, protocol, and driver). The rule removes a plain DISTINCT at any depth when the select list holds every column of a unique, not-null key of the first table and each inner or left join, nested on the left, pairs every column of a unique key of the joined table by a plain `=`. It refuses RIGHT, FULL, comma, cross, NATURAL, and USING joins, set-returning, aggregate, and window calls in the select list, and join pairs of two types or with a nondeterministic collation. e2e case 103 (`103-distinct-to-one-join`) proves about 29% fewer blocks, from the sort's temp blocks. One fix round made the RIGHT JOIN refusal test non-vacuous.
+- **Status:** done
+
+### 20261018-2. Rule `cte_fence_removal`.
+
+A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than once (which Postgres materializes), becomes `AS NOT MATERIALIZED`, so the planner can push the reader's filters into it and use the table's indices. One rewrite per CTE. It refuses a `RECURSIVE` `WITH`, a data-modifying CTE anywhere, a body that calls a volatile function (`Catalog#calls_volatile?`), and a CTE whose name starts with `quaack_` (shared_scan_cte's, which this would undo). Inlining lets the planner evaluate a reader's condition on rows that the body's own filter would have dropped first, so it also refuses a reader whose conditions on the CTE's columns can raise on some rows, as or_to_union refuses such an arm (reuse that check if it fits). Rests on nothing. e2e cases 028, 029, and 050 cover it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-2; enclave, protocol, and driver). Beyond the text above, it also refuses a body read more than once (or from a sublink, LATERAL, or another CTE) that can give different rows per run (LIMIT, DISTINCT, GROUP BY, non-ALL set operations, aggregates, windows, set-returning calls), and checks every non-output SELECT's conditions and computed columns with `OrToUnion::Arms.raises?`, accepting or_to_union's LIKE lone-backslash risk. Cases 028, 029, and 050 name the rule.
+- **Status:** done

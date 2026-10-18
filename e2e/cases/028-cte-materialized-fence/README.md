@@ -16,6 +16,8 @@ Someone wrapped the filter in a `MATERIALIZED` CTE, a habit from before Postgres
 
 Inline the CTE (or make it `NOT MATERIALIZED`). The index finds the customer's 10 orders directly.
 
+The transform rule `cte_fence_removal` makes the `NOT MATERIALIZED` form from `slow.sql`, and it touches as many blocks as `fast.sql` on every literal set.
+
 ## Proof.
 
 `ruby e2e/verify.rb 028` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

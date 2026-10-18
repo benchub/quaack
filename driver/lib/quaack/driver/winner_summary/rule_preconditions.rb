@@ -46,6 +46,12 @@ module Quaack
                                          "INTERSECT, or EXCEPT without ALL, has a DISTINCT, an ORDER BY, or a GROUP " \
                                          "BY of just its select list's columns, and no LIMIT or OFFSET, so its " \
                                          "reader can't see the duplicates or the order those clauses change.",
+          "distinct_key_removal" => "A SELECT DISTINCT selects every column of a unique, not-null key of its first " \
+                                    "table, and each of its inner or left joins is on every column of a unique " \
+                                    "key of the joined table, so no two of its rows can be equal.",
+          "cte_fence_removal" => "The query has a CTE written AS MATERIALIZED, or a plain CTE it reads more than " \
+                                 "once, whose body calls no volatile function, and no condition that could reach " \
+                                 "the body's tables can raise an error.",
           "count_to_exists" => "A scalar subquery selects only count(*), or a count of a column of one of its " \
                                "own tables, and the query compares it with a constant, such as > 0, >= 1, or = 0, " \
                                "so the comparison only asks whether any row matches."
