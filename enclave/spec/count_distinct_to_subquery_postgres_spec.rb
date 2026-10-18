@@ -144,13 +144,28 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountDistinctToSubquery do
     )
   end
 
+  it "takes bare grouping columns and GROUP BY ordinals, as ORMs write them" do
+    expect_rewrite(
+      "SELECT course_id, kind, count(DISTINCT user_id) AS n FROM public.events GROUP BY kind, course_id",
+      "SELECT d_1.course_id, d_1.kind, count(d_1.user_id_1) AS n FROM (SELECT DISTINCT course_id, kind, " \
+      "user_id AS user_id_1 FROM public.events) d_1 GROUP BY d_1.kind, d_1.course_id"
+    )
+    expect_rewrite(
+      "SELECT e.course_id, e.kind, count(DISTINCT e.user_id) AS n FROM public.events e GROUP BY 2, 1 ORDER BY 1, 2",
+      "SELECT d_1.course_id, d_1.kind, count(d_1.user_id_1) AS n FROM (SELECT DISTINCT e.course_id, e.kind, " \
+      "e.user_id AS user_id_1 FROM public.events e) d_1 GROUP BY d_1.kind, d_1.course_id ORDER BY 1, 2",
+      ordered: true
+    )
+  end
+
   it "refuses what it can't rewrite, and rewrites each one's twin" do
     base = "SELECT e.course_id, count(DISTINCT e.user_id) AS n FROM public.events e"
     fires = "#{base} GROUP BY e.course_id"
     expect_refusals(
       [["#{fires} HAVING count(DISTINCT e.user_id) > 0", fires],
        ["#{base} GROUP BY e.course_id, e.kind", fires],
-       ["#{base} GROUP BY 1", fires],
+       ["#{base} GROUP BY 1, e.kind", fires],
+       ["#{fires} WINDOW w AS (ORDER BY e.course_id)", fires],
        ["SELECT DISTINCT e.course_id, count(DISTINCT e.user_id) AS n FROM public.events e GROUP BY e.course_id",
         fires],
        ["#{fires} ORDER BY count(DISTINCT e.user_id)", "#{fires} ORDER BY n"],
@@ -168,7 +183,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountDistinctToSubquery do
        ["SELECT e.course_id, count(DISTINCT e.user_id), max(e.id) FROM public.events e GROUP BY e.course_id", fires],
        ["SELECT e.course_id, count(DISTINCT e.user_id), rank() OVER () FROM public.events e " \
         "GROUP BY e.course_id", fires],
-       ["SELECT course_id, count(DISTINCT e.user_id) AS n FROM public.events e GROUP BY course_id", fires],
+       ["SELECT course_id, count(DISTINCT e.user_id) AS n FROM public.events e GROUP BY e.course_id", fires],
        ["SELECT e.id AS eid, c.id AS cid, count(DISTINCT e.user_id) AS n FROM public.events e JOIN public.courses c " \
         "ON c.id = e.course_id GROUP BY e.id, c.id", fires],
        ["SELECT e.course_id AS n, count(DISTINCT e.user_id) AS n FROM public.events e GROUP BY e.course_id", fires],
