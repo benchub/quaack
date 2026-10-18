@@ -12049,3 +12049,13 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 - **Design:** report.
 - **Landed:** 2026-10-17 (task/20261017-5; driver only). Every not_better rewrite's fate is now the one sentence, kept in `Report::Rewrites::FATES`. `Report::NotBetterFate` (its verdict reading and `PERCENT`) is gone. A not_better rewrite that went on untested (out_of_time or not_tested) still gets its opening reworded by `went_on`, which gained a pair for "It passed every correctness test,". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
+
+### 20261017-7. Report: plan tables color the row-count cells, not the row, and flag the nodes driving time and blocks.
+
+In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance. The user decided (2026-10-17): the cue is a color gradient on the time and block cells, like the row-count cells, and it's based on each step's own share (its time and blocks minus its children's), not the inclusive numbers Postgres reports.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-7; driver only). The misestimate gradient is on the estimated and actual rows cells, with its title on each. The blocks read and time cells get an amber gradient (`--cost-1` to `--cost-8`, both themes) by the step's own share of the plan's: its blocks, or its time times loops, less its direct children's, clamped at 0 (`Plans#own_shares`), over the plan's own ones added up, from 5%, 10%, 20%, 30%, 40%, 50%, 65%, and 80%. The blocks cell still shows the inclusive count; a shaded cell's title gives the own number and share. A second legend line explains it. The payload has no Parent Relationship or worker data, so InitPlans, SubPlans, CTEs, and parallel workers are taken off the node they're listed under, as DESIGN.md and the existing notes say. No VERSION bump.
+- **Status:** done
