@@ -35,7 +35,8 @@ module RuleConstantsFixtures
     "subquery_distinct_removal" => %w[42],
     "distinct_key_removal" => %w[42],
     "cte_fence_removal" => ["'active'", "42"],
-    "left_join_to_inner" => %w[42 20]
+    "left_join_to_inner" => %w[42 20],
+    "coalesce_comparison_split" => %w[42 0 0]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

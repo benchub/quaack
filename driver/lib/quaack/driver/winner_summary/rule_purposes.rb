@@ -39,7 +39,9 @@ module Quaack
           "cte_fence_removal" => "Writes a CTE that Postgres would store, because it's MATERIALIZED or read more " \
                                  "than once, as NOT MATERIALIZED, so each reader's conditions can reach its tables.",
           "left_join_to_inner" => "Turns a LEFT JOIN on a validated foreign key whose columns are not null into an " \
-                                  "inner join, which Postgres can reorder, so the joined table can drive."
+                                  "inner join, which Postgres can reorder, so the joined table can drive.",
+          "coalesce_comparison_split" => "Splits a COALESCE of a column compared with a value into a comparison of " \
+                                         "the column and a test for its NULLs, which an index on the column can serve."
         }.freeze
       end
     end

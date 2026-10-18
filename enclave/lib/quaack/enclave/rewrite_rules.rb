@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "rewrite_rules/coalesce_comparison_split"
 require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/cte_hoist_dedupe"
 require_relative "rewrite_rules/distinct_join_to_exists"
@@ -89,7 +90,8 @@ module Quaack
         SubqueryDistinctRemoval.new,
         DistinctKeyRemoval.new,
         CteFenceRemoval.new,
-        LeftJoinToInner.new
+        LeftJoinToInner.new,
+        CoalesceComparisonSplit.new
       ].freeze
 
       DEPTH = 2

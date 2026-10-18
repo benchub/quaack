@@ -55,7 +55,9 @@ module Quaack
           "left_join_to_inner" => "A LEFT JOIN is on a validated, enforced foreign key from a table on its left " \
                                   "side that no outer join there can fill with NULLs, and the foreign key's " \
                                   "columns are not null, so every left row has a match and the join extends no row " \
-                                  "with NULLs."
+                                  "with NULLs.",
+          "coalesce_comparison_split" => "Nothing about the data. The comparison is a condition of a WHERE or an " \
+                                         "inner join's ON, which drops a row whether the test is false or NULL."
         }.freeze
       end
     end
