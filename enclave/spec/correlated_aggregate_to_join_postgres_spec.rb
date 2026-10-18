@@ -198,6 +198,15 @@ RSpec.describe Quaack::Enclave::RewriteRules::CorrelatedAggregateToJoin do
                      "(SELECT avg(o2.total) FROM public.orders o2 WHERE o2.region = o.region)")).to eq([])
   end
 
+  it "leaves a correlation alone whose outer name the subquery's own table hides" do
+    sql = "SELECT orders.id FROM public.orders WHERE orders.total > (SELECT avg(orders.total) " \
+          "FROM public.orders WHERE orders.customer_id = orders.customer_id)"
+    # The subquery's orders.customer_id = orders.customer_id reads only its
+    # own table, so it averages every order with a customer: 135 / 5 = 27.
+    expect(rows(sql, {})).to contain_exactly(["13"], ["31"], ["41"])
+    expect(rewritten(sql)).to eq([])
+  end
+
   it "leaves an outer SELECT with a bare star alone, since the join would add columns" do
     expect(rewritten("SELECT * FROM public.orders o WHERE o.total > #{average}")).to eq([])
   end
