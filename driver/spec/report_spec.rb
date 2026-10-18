@@ -2474,9 +2474,9 @@ RSpec.describe Quaack::Driver::Report do
     it "says what the not kept column counts: every rewrite dropped before it was stored" do
       expect(accountable).to include(
         "A rewrite not kept is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, " \
-        "ten from the transform rules), assumed something QUAACK can't check or your data doesn't hold, failed the " \
-        "checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, " \
-        "or, from a transform rule, repeated another."
+        "ten made by two transform rules in a row), assumed something QUAACK can't check or your data doesn't " \
+        "hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its " \
+        "clock pinned, or, from a transform rule, repeated another."
       )
       expect(accountable).not_to include("refused on arrival")
     end
@@ -3068,9 +3068,11 @@ RSpec.describe Quaack::Driver::Report do
                                            "the same as another idea: 1", 0, 1, "none"))
     end
 
-    it "says how many rule rewrites were over the limit of ten" do
+    # Task 20261018-1: only rewrites made by two rules in a row have a cap.
+    it "says how many rewrites made by two rules in a row were over the limit of ten" do
       burndown["stages"]["rewrite-rules"]["rewrites"]["dropped"]["over_cap"] = 2
-      expect(rewrite_table).to include("the same as another idea: 1; over the limit of ten: 2")
+      expect(rewrite_table)
+        .to include("the same as another idea: 1; made by two rules in a row, over the limit of ten: 2")
     end
 
     it "totals the rewrites' own index searches per stage" do
