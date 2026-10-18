@@ -758,6 +758,24 @@ From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the
 - **Design:** rewrite-rules.
 - **Status:** todo
 
+### 20261018-18. e2e/verify.rb: a run removes other running verifies' containers.
+
+Found while building 20261018-2. `e2e/verify.rb` labels its container `quaack.e2e` and, at start, removes every container with that label, so a run started while another verify is running kills that run's server ("connection to server on socket failed"). Rule builders now prove e2e cases in parallel. Do what `spec/support/test_postgres.rb` does: label the container with its owner's pid and host, and at start remove only leftovers whose owner on this host is no longer alive. Check `e2e/run.rb` for the same pattern. Tested with two runs at once.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-2, 2026-10-18.
+- **Design:** None (e2e tooling).
+- **Status:** todo
+
+### 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
+
+Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.status = 'x') > 0 ... GROUP BY (SELECT count(*) FROM ... WHERE o.status = 'x') > 0`, redact gives the two copies' constants different placeholders, so the select list no longer matches the GROUP BY key and the redacted query fails to prepare (42803). Reproduce it in a test first, then share the placeholder the way redact already does for a GROUP BY key that matches a select-list expression.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-3, 2026-10-18.
+- **Design:** redact.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
