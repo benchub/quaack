@@ -20,6 +20,8 @@ Each aggregate that a reader calls must give a result that doesn't depend on the
 - `sum` and `avg` must add integers or a `numeric`. A float's sum rounds differently in another order, and a sum of `interval` or `money` can overflow in one order but not in another.
 - Any aggregate with its own `ORDER BY`, `WITHIN GROUP` included, sorts its input itself.
 
+Any other function that a reader calls must give one value per row. A set-returning function, such as `unnest`, makes the rule refuse.
+
 Each of these must be one of `pg_catalog`'s own aggregates, written with a bare name or as `pg_catalog.name`. The rule refuses it when another schema has a function of the same name. A `GROUP BY` and a plain `DISTINCT` also keep one of each group's equal values. So each `GROUP BY` item, and each column of a `DISTINCT`, needs one of the types that `min` and `max` need.
 
 Postgres says what these types are. It can type a reader's values only when the reader is the top-level `SELECT`. QUAACK first types them with each constant left for Postgres to type. Then its literal oracle checks each type again with the constants' own types. A constant such as `1.0` is a `numeric`, so `CASE WHEN ... THEN 1.0 ELSE 1.00 END` is a `numeric` too, and the rule refuses a `GROUP BY` of it.
@@ -51,7 +53,7 @@ Postgres can't merge a subquery that has an `ORDER BY` into the query that reads
 
 ## What it rests on.
 
-The rule makes no assumption. SQL never promises a subquery's order to the query that reads it. Each reader that the rule accepts either sets the order of its own rows, or gives results that don't depend on the order of its input. So the output returns the same rows as the input, on any data that the schema allows. Rows that tie on the reader's own `ORDER BY` can come back in another order, which SQL allows too. The rule reads the types of the reader's values from Postgres.
+The rule makes no assumption. SQL never promises a subquery's order to the query that reads it. Each reader that the rule accepts either sets the order of its own rows, or gives results that don't depend on the order of its input. So the output returns the same rows as the input, on any data that the schema allows. Rows that tie on the reader's own `ORDER BY` can come back in another order, and a `LIMIT` can keep other rows of a tie, which SQL allows too. The rule reads the types of the reader's values from Postgres.
 
 ## Example.
 

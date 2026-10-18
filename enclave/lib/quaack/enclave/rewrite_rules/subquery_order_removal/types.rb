@@ -50,8 +50,12 @@ module Quaack
           # deterministic collation.
           TEXT = ["text", "character varying", "name"].freeze
 
-          # Asserts that the value in the first ARRAY has the type.
-          ASSERT = "SELECT WHERE pg_catalog.btarraycmp(ARRAY[NULL], ARRAY[NULL::%s])"
+          # Each type of EXACT, SAME, and TEXT by its name in pg_catalog.
+          CASTS = { "smallint" => "int2", "integer" => "int4", "bigint" => "int8", "numeric" => "numeric",
+                    "oid" => "oid", "boolean" => "bool", "date" => "date", "time without time zone" => "time",
+                    "timestamp without time zone" => "timestamp", "timestamp with time zone" => "timestamptz",
+                    "uuid" => "uuid", "bytea" => "bytea", "text" => "text", "character varying" => "varchar",
+                    "name" => "name" }.freeze
 
           module_function
 
@@ -101,7 +105,7 @@ module Quaack
           # btarraycmp(ARRAY[value], ARRAY[NULL::type]), for a type of
           # EXACT, SAME, or TEXT.
           def asserted(value, type)
-            call = Tree.where_of(format(ASSERT, type))
+            call = Tree.where_of("SELECT WHERE pg_catalog.btarraycmp(ARRAY[NULL], ARRAY[NULL::pg_catalog.#{CASTS.fetch(type)}])")
             call.func_call.args.first.a_array_expr.elements[0] = Deparse.copy(value)
             call
           end

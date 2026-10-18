@@ -244,7 +244,11 @@ RSpec.describe Quaack::Enclave::RewriteRules::SubqueryOrderRemoval do
     expect_refusals(
       [*["array_agg(d.id)", "string_agg(d.title, ',')", "json_agg(d.id)", "sum(d.ratio)", "avg(d.ratio)",
          "sum(d.wait)", "max(d.score)", "min(d.wait)", "max(d.ratio)", "count(*), (SELECT string_agg(d.title, ','))",
-         "count(*), (SELECT max(d.id))"].map { [over_d(it), counted] },
+         "count(*), (SELECT max(d.id))", "bit_and(d.user_id)", "array_agg(DISTINCT d.id)"]
+        .map { [over_d(it), counted] },
+       ["#{over_d("unnest(ARRAY[d.id]) AS x")} ORDER BY 1", "#{over_d("d.id AS x")} ORDER BY 1"],
+       ["SELECT sum(v.x) FROM (VALUES (1), (2) ORDER BY 1) v(x)",
+        "SELECT count(*) FROM (VALUES (1), (2) ORDER BY 1) v(x)"],
        ["#{over_d("d.score, count(*)")} GROUP BY d.score", "#{over_d("d.user_id, count(*)")} GROUP BY d.user_id"],
        ["#{over_d("d.wait, count(*)")} GROUP BY 1", "#{over_d("d.user_id, count(*)")} GROUP BY 1"],
        ["SELECT DISTINCT d.score FROM #{ordered} ORDER BY d.score",
