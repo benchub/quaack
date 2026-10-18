@@ -8,7 +8,7 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 Some readers of a subquery only ask which rows it returns. They don't count the copies of a row, and they don't look at the order. The rule knows these readers:
 
-- The subquery of an `IN`, `= ANY`, `NOT IN`, or `<> ALL`. Each asks only whether some row of the subquery equals the tested value, or whether none does. The `=` or `<>` can also be written `OPERATOR(pg_catalog.=)` or `OPERATOR(pg_catalog.<>)`.
+- The subquery of an `IN`, `= ANY`, `NOT IN`, or `<> ALL`. Each asks only whether some row of the subquery equals the tested value, or whether none does. The `=` or `<>` can also be written `OPERATOR(pg_catalog.=)` or `OPERATOR(pg_catalog.<>)`. Such a subquery counts wherever it sits, even inside the tested value of another `IN`.
 - An arm under a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL`, at any depth. That set operation removes the duplicates of everything under it.
 - An arm of a set operation that is one of these subqueries, as in `x IN (SELECT ... UNION ALL SELECT ...)`.
 
