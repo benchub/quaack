@@ -1408,6 +1408,16 @@ RSpec.describe Quaack::Driver::Report do
       row_rule = style[/^  tr\.kind > :first-child, tr\.rank > :first-child \{[^}]*\}/]
       expect(row_rule).to include("border-left: 5px solid var(--stripe)")
       expect(row_rule).not_to match(/background/)
+      # Task 20261017-10 item 1: no other rule on the kind or rank rows tints them or reuses the stripe.
+      row_rules = style.scan(/^  [^{}\n]*\btr\.(?:kind|rank)\b[^{}\n]*\{[^}]*\}/)
+      expect(row_rules).to include(row_rule)
+      (row_rules - [row_rule]).each { expect(it).not_to match(/background|--stripe/) }
+    end
+
+    # Task 20261017-10 item 2: with collapsed borders, the baseline row's left edge lines up with the stripes.
+    it "gives the baseline row's first cell a transparent 5px left border, as wide as the stripes" do
+      style = html[%r{<style>(.*?)</style>}m, 1]
+      expect(style).to match(/^  tr\.baseline > :first-child \{ border-left: 5px solid transparent; \}/)
     end
 
     it "gives each kind's block no shading of its own, so it shows the page background in light and dark mode" do
