@@ -8,18 +8,18 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 Some readers of a subquery only ask which rows it returns. They don't count the copies of a row, and they don't look at the order. The rule knows these readers:
 
-- The subquery of an `IN`, `= ANY`, `NOT IN`, or `<> ALL`. Each asks only whether some row of the subquery equals the tested value, or whether none does. The `=` or `<>` can also be written `OPERATOR(pg_catalog.=)`.
+- The subquery of an `IN`, `= ANY`, `NOT IN`, or `<> ALL`. Each asks only whether some row of the subquery equals the tested value, or whether none does. The `=` or `<>` can also be written `OPERATOR(pg_catalog.=)` or `OPERATOR(pg_catalog.<>)`.
 - An arm under a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL`, at any depth. That set operation removes the duplicates of everything under it.
-- An arm of such a subquery's set operation.
+- An arm of a set operation that is one of these subqueries, as in `x IN (SELECT ... UNION ALL SELECT ...)`.
 
-An arm passes through a `UNION ALL` or an `INTERSECT ALL` on its way to its reader. Each of these gives the same set of rows, however many copies of a row its arms hold. An `EXCEPT ALL` stops the search, because it subtracts counts: one more copy of a row on either side can add that row or remove it. A `UNION ALL` or `INTERSECT ALL` with its own `LIMIT` or `OFFSET` stops it too.
+An arm can reach its reader through a `UNION ALL` or an `INTERSECT ALL`. Each of these gives the same set of rows, however many copies of a row its arms hold. An `EXCEPT ALL` in between cuts the arm off from its reader, because it subtracts counts: one more copy of a row on either side can add that row or remove it. So does a `UNION ALL` or `INTERSECT ALL` with its own `LIMIT` or `OFFSET`.
 
 The rule leaves `EXISTS` alone, because Postgres already drops these clauses from an `EXISTS` subquery. A scalar subquery, an `ARRAY(...)`, a subquery in `FROM`, a CTE, and the top-level query all see every row, so the rule leaves them alone too.
 
 From each subquery that such a reader reads, the rule removes these clauses:
 
 - A plain `DISTINCT`. It doesn't remove `DISTINCT ON`, which picks one row of each group by the `ORDER BY`.
-- A `GROUP BY` whose items are exactly the select list's columns, in any order, written the same way. The `GROUP BY` must have no `HAVING`. With no aggregate in the select list, such a `GROUP BY` works as a `DISTINCT`.
+- A `GROUP BY` whose items are exactly the select list's columns, in any order, each written the same way in both. The `GROUP BY` must have no `HAVING`. With no aggregate in the select list, such a `GROUP BY` works as a `DISTINCT`.
 - An `ORDER BY`.
 
 `DISTINCT` and `GROUP BY` merge values that their type calls equal. A reader that compares the values in another way could tell the merged copies apart. For example, `text = citext` compares as `text`, so it tells `'ann'` from `'ANN'`, but a `DISTINCT` on `citext` merges them. Thus the rule removes a `DISTINCT` or `GROUP BY` only when each item of the select list is a column of a table in the subquery's own `FROM`, and the catalog knows the column's type. The type must be a built-in type that can be hashed and sorted, or an enum. Its collation, if it has one, must be deterministic. A column is written `name.column`, or as a bare column that exactly one `FROM` table has. The table must be schema-qualified, with no alias that renames its columns.
