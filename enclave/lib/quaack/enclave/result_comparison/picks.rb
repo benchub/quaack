@@ -61,6 +61,10 @@ module Quaack
           jsonb_object_agg_unique_strict
         ].to_set.freeze
 
+        # Aggregates that keep one of several values Postgres calls equal,
+        # which can print differently, as numeric's 10 and 10.0 do.
+        EXTREMES = %w[min max].to_set.freeze
+
         # The alias of the subquery a forced DISTINCT or set operation
         # reads, and the name of its whole row.
         PICK = "quaack_pick"
@@ -93,10 +97,11 @@ module Quaack
         def verdict(original, candidate, run, &compare)
           verdict = compare.call(candidate)
           guarded(original) do
-            run.call(checked(original)) if picks?(original)
-            next verdict unless verdict.match? && picks?(candidate)
+            run.call(checked(original)) if checks?(original)
+            next verdict unless verdict.match? && checks?(candidate)
 
-            forced_runs(candidate, &compare).find { !it.match? } || (run.call(checked(candidate)) && verdict)
+            (picks?(candidate) && forced_runs(candidate, &compare).find { !it.match? }) ||
+              (run.call(checked(candidate)) && verdict)
           end
         end
 
@@ -122,11 +127,29 @@ module Quaack
           end
         end
 
+        # Whether shape's query has a pick to check: one to force, or a
+        # GROUP BY or a min or max, which keep one of the values Postgres
+        # calls equal (EXTREMES) but need no forcing, since the check alone
+        # proves they had no choice.
+        def checks?(shape)
+          shape.kept(%i[picks checks]) { picks?(shape) || printed?(shape.tree) }
+        end
+
+        def printed?(node)
+          case node
+          when Hash
+            node[:group_clause]&.any? || (node[:func_call] && extreme?(node[:func_call])) ||
+              node.values.any? { printed?(it) }
+          when Array then node.any? { printed?(it) }
+          else false
+          end
+        end
+
         # Whether the original or the candidate SQL has a pick, or one
         # compare can't parse or force, so that equal results aren't yet a
         # match.
         def any?(original, candidate)
-          picks?(Shape.parse(original, :original)) || picks?(Shape.parse(candidate, :candidate))
+          checks?(Shape.parse(original, :original)) || checks?(Shape.parse(candidate, :candidate))
         rescue Unforceable, Error
           true
         end
@@ -158,22 +181,41 @@ module Quaack
           root = tree[:stmts].first[:stmt][:select_stmt]
           # Innermost first, so an aggregate's copies of its arguments carry
           # the aggregates inside them already forced.
-          forced = aggregates(root).reverse.each { force_aggregate!(it, descending, check) }.size
-          [tree, forced + force_selects(root, descending, top, check)]
+          [tree, force_aggregates!(root, descending, check) + force_selects(root, descending, top, check)]
+        end
+
+        # Forces each aggregate pick, and checks each min or max when
+        # check, and returns how many it forced.
+        def force_aggregates!(root, descending, check)
+          aggregates(root).reverse.count do |node|
+            next force_aggregate!(node, descending, check) || true unless extreme?(node[:func_call])
+
+            check && node.replace(PickChecks.extreme(node[:func_call])) && false
+          end
         end
 
         def force_selects(root, descending, top, check)
           ([root] + InnerCuts.selects(root)).reverse.sum do |select|
+            check_groups!(select) if check
             force_distinct_on!(select, descending, check) +
               (top || !select.equal?(root) ? force_dedup!(select, descending, check) : 0)
           end
         end
 
-        # Each aggregate's node, outermost first.
+        # Adds to select's HAVING the check that its GROUP BY keys print one
+        # way in each group.
+        def check_groups!(select)
+          check = PickChecks.grouped(select) or return
+          having = select[:having_clause]
+          select[:having_clause] = having ? PickChecks.both(having, check) : check
+        end
+
+        # Each aggregate's node, min and max among them, outermost first.
         def aggregates(node)
           case node
           when Hash
-            own = node[:func_call] && aggregate?(node[:func_call]) ? [node] : []
+            call = node[:func_call]
+            own = call && (aggregate?(call) || extreme?(call)) ? [node] : []
             own + node.values.flat_map { aggregates(it) }
           when Array then node.flat_map { aggregates(it) }
           else []
@@ -182,6 +224,13 @@ module Quaack
 
         def aggregate?(call)
           catalog_aggregate?(call[:funcname].map { it.dig(:string, :sval) }) && !call[:over] && !call[:agg_distinct]
+        end
+
+        # A min or max over one argument, outside a window.
+        def extreme?(call)
+          names = call[:funcname].map { it.dig(:string, :sval) }
+          (names.size == 1 || (names.size == 2 && names.first == "pg_catalog")) && EXTREMES.include?(names.last) &&
+            call[:args]&.size == 1 && !call[:over]
         end
 
         def catalog_aggregate?(names)
