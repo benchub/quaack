@@ -33,7 +33,9 @@ module Quaack
                                     "filters the child's own column for that type to the same id.",
           "subquery_distinct_removal" => "Removes a DISTINCT, an ORDER BY, or a GROUP BY of just the select list's " \
                                          "columns from a subquery whose reader ignores duplicates and order, such " \
-                                         "as an IN subquery or a UNION arm."
+                                         "as an IN subquery or a UNION arm.",
+          "left_join_to_inner" => "Turns a LEFT JOIN on a validated foreign key whose columns are not null into an " \
+                                  "inner join, which Postgres can reorder, so the joined table can drive."
         }.freeze
       end
     end

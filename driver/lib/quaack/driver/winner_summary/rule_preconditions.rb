@@ -45,7 +45,11 @@ module Quaack
           "subquery_distinct_removal" => "The subquery of an IN, = ANY, NOT IN, or <> ALL, or an arm under a UNION, " \
                                          "INTERSECT, or EXCEPT without ALL, has a DISTINCT, an ORDER BY, or a GROUP " \
                                          "BY of just its select list's columns, and no LIMIT or OFFSET, so its " \
-                                         "reader can't see the duplicates or the order those clauses change."
+                                         "reader can't see the duplicates or the order those clauses change.",
+          "left_join_to_inner" => "A LEFT JOIN is on a validated, enforced foreign key from a table on its left " \
+                                  "side that no outer join there can fill with NULLs, and the foreign key's " \
+                                  "columns are not null, so every left row has a match and the join extends no row " \
+                                  "with NULLs."
         }.freeze
       end
     end
