@@ -733,16 +733,6 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Design:** run-server check, trust boundary.
 - **Status:** todo
 
-### 20261017-9. Report fates: minors from the review of 20261017-5.
-
-1. When a not_better rewrite went on untested (out of time, or not tested), its fate says "real data" twice: "…so QUAACK checked it only on test data the LLM wrote to break it and on the real data, but when measured against real data performed too poorly to be ranked." Reword it so real data is mentioned once, in `went_on` in `driver/lib/quaack/driver/report/rewrites.rb`.
-2. The other fates (such as `footprint_tie` and `measurement_timed_out`) still say "It passed every test", while not_better now says "It passed every correctness test". Make them consistent.
-
-- **Depends on:** None.
-- **Came from:** Review of 20261017-5, 2026-10-17.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261017-10. Ranking stripes: minors from the review of 20261017-6.
 
 1. The "no tint" spec got narrower. 20261017-6 dropped main's guard `expect(style).not_to match(/\btr\.[^{]*\{[^}]*--stripe/)`, and the new spec only checks that the stripe rule itself has no `background`. A separate rule such as `tr.rank td { background: var(--stripe); }` leaves every example green. Assert that no `tr.kind`/`tr.rank` rule other than the stripe rule uses `--stripe` or sets a `background`.

@@ -12350,3 +12350,14 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-27; enclave). date_cast_to_range already required pg_catalog (now pinned by a spec). New refusal tests for scalar_aggregates_to_filter and correlated_aggregate_to_join; the latter now refuses a correlation key named quaack_agg. Still open, unsupported in v1: a user date() shadowing the built-in, ts::date = CURRENT_DATE, members inside expressions, and the select-list correlated aggregate (case 069).
 - **Status:** done
+
+### 20261017-9. Report fates: minors from the review of 20261017-5.
+
+1. When a not_better rewrite went on untested (out of time, or not tested), its fate says "real data" twice: "…so QUAACK checked it only on test data the LLM wrote to break it and on the real data, but when measured against real data performed too poorly to be ranked." Reword it so real data is mentioned once, in `went_on` in `driver/lib/quaack/driver/report/rewrites.rb`.
+2. The other fates (such as `footprint_tie` and `measurement_timed_out`) still say "It passed every test", while not_better now says "It passed every correctness test". Make them consistent.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-5, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-9; driver only). The untested not_better sentence says real data once; every fate that passed says "passed every correctness test".
+- **Status:** done
