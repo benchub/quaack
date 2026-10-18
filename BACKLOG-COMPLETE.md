@@ -12371,3 +12371,23 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Design:** rewrite-rules, result-comparison.
 - **Landed:** 2026-10-18 (task/20261018-22; enclave). Decided: the rules refuse. New `RewriteRules::InputOrder` (reusing SubqueryOrderRemoval::Blind) makes distinct_key_removal and unused_join_removal refuse when the statement has a window, an ARRAY subquery with no ORDER BY, or an aggregate whose result depends on input order; sum/min/max over int2/4/8, date, timestamp(tz) and avg over integers are allowed (one fix round, after the first version blocked Rails .sum). Not yet: narrowing to the actual readers.
 - **Status:** done
+
+### 20261017-3. Report: a footprint tie between equal-sized indices says the winner's take less disk space.
+
+From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks, then total blocks, so of two tied candidates with the same footprint (such as two rewrites with no new indices) one is dropped as `footprint_tie`. The report's wording in `driver/lib/quaack/driver/report/candidates.rb` and `report/rewrites.rb` still says it "tied with a candidate whose new indices take less disk space". Word the equal-footprint case truthfully, such as "tied with a candidate whose new indices take no more disk space and that read fewer blocks".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-1, 2026-10-17.
+- **Design:** report, selection.
+- **Landed:** 2026-10-18 (task/20261017-3; driver only). Both footprint_tie sentences say the other candidate's new indices take no more disk space; blocks are left out, since a smaller footprint can win while reading more.
+- **Status:** done
+
+### 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
+
+From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric `10` and `10.0` prints `10` or `10.0` by load order, and so does `max(n)`. DESIGN.md says "A GROUP BY picks nothing of its own", which is wrong for these. Treat GROUP BY keys, and min or max, of types where equal values can print differently (numeric, float, interval, bpchar, citext, nondeterministic collations) as arbitrary picks, forced and checked like the others, or refuse them; then fix DESIGN.md's sentence.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-26, 2026-10-18.
+- **Design:** fixture-compare, result-comparison.
+- **Landed:** 2026-10-18 (task/20261018-28; enclave). GROUP BY keys and min/max become checked picks: a HAVING check per key and a CASE around min/max divide by zero when equal values print two ways, so the comparison refuses with unsupported_order rather than reporting a false difference. Applies to every type; DESIGN.md updated. Minor, open: a GROUP BY name that's both an input column and an output alias is checked against the alias (a clean refusal); limiting the checks to types that can print two ways; greatest/least.
+- **Status:** done

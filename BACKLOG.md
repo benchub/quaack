@@ -26,6 +26,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
 - 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
 - 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
+- 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
 
 ## How this file works.
 
@@ -716,15 +717,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261017-3. Report: a footprint tie between equal-sized indices says the winner's take less disk space.
-
-From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks, then total blocks, so of two tied candidates with the same footprint (such as two rewrites with no new indices) one is dropped as `footprint_tie`. The report's wording in `driver/lib/quaack/driver/report/candidates.rb` and `report/rewrites.rb` still says it "tied with a candidate whose new indices take less disk space". Word the equal-footprint case truthfully, such as "tied with a candidate whose new indices take no more disk space and that read fewer blocks".
-
-- **Depends on:** None.
-- **Came from:** Review of 20261017-1, 2026-10-17.
-- **Design:** report, selection.
-- **Status:** todo
-
 ### 20261017-4. run-server check: say which planner setting doesn't match production.
 
 `quaack setup` failing with `run_server_guc_mismatch` says only that "a planner setting" differs, and lists the kinds it might be, so the operator has to diff every planner setting by hand. The enclave already knows the setting's name (`RunServerCheck` raises `run_server_guc_mismatch: <name>`), but ErrorFilter sends only the rule. A setting's name is not production data; only its value is. Send the name, checked strictly as a GUC name (such as `/\A[A-Za-z_][A-Za-z0-9_.]*\z/`, or one of the names `PLANNER_SQL` returns), never the value, and have the driver say which setting to change, e.g. "The run server's random_page_cost isn't production's." Consider listing every mismatched setting, not just the first, so the operator fixes them all in one go. The same applies to `run_server_locale_mismatch` (its field name) and the other run-server rules whose Error names what failed. Test with a sentinel value that the value never crosses.
@@ -763,15 +755,6 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Depends on:** None.
 - **Came from:** Review of 20261017-8, 2026-10-18.
 - **Design:** report, sankey.
-- **Status:** todo
-
-### 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
-
-From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric `10` and `10.0` prints `10` or `10.0` by load order, and so does `max(n)`. DESIGN.md says "A GROUP BY picks nothing of its own", which is wrong for these. Treat GROUP BY keys, and min or max, of types where equal values can print differently (numeric, float, interval, bpchar, citext, nondeterministic collations) as arbitrary picks, forced and checked like the others, or refuse them; then fix DESIGN.md's sentence.
-
-- **Depends on:** None.
-- **Came from:** Build of 20261018-26, 2026-10-18.
-- **Design:** fixture-compare, result-comparison.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).
