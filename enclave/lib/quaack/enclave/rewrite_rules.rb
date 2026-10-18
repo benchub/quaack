@@ -52,10 +52,13 @@ module Quaack
     # how two matches in one query both get rewritten. A result whose
     # deparsed SQL is the original's, or was already produced, is dropped
     # and counted in duplicates. So is one pg_query can't deparse faithfully
-    # (see Deparse), though it isn't counted. The first MAX results are
-    # kept, and over_cap counts the rest. made counts every result that was
-    # kept, a duplicate, or over the cap, by the name of the last rule
-    # applied to make it, for the rewrite-rules burndown (DESIGN.md's burndown).
+    # (see Deparse), though it isn't counted. Every one-rule result is
+    # kept, however many there are, so every rule that applies gets its
+    # rewrites tested before any combination of rules is (task 20261018-1).
+    # Of the results that apply more than one rule, the first MAX are kept,
+    # and over_cap counts the rest. made counts every result that was kept,
+    # a duplicate, or over the cap, by the name of the last rule applied to
+    # make it, for the rewrite-rules burndown (DESIGN.md's burndown).
     #
     # A Candidate's sql is its tree deparsed, parse that SQL's own parse,
     # rules the rules applied, in order, and assumptions those of every rule
@@ -82,6 +85,8 @@ module Quaack
       ].freeze
 
       DEPTH = 2
+      # How many results that apply more than one rule are kept. A one-rule
+      # result has no cap.
       MAX = 10
 
       module_function
@@ -90,9 +95,19 @@ module Quaack
         original = Candidate.new(sql: Deparse.faithfully(parse.tree), parse:, rules: [], assumptions: [])
         made = chain([original], rules, catalog, literals, { original.sql => true })
         kept = made.grep(Candidate)
-        Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max,
+        Generated.new(rewrites: capped(kept), duplicates: made.size - kept.size, over_cap: over_cap(kept),
                       made: tally(made))
       end
+
+      # Every one-rule Candidate of kept, then the first MAX of the rest.
+      def capped(kept) = kept.select { it.rules.one? } + longer(kept).first(MAX)
+
+      # How many Candidates of kept that apply more than one rule are past
+      # the first MAX.
+      def over_cap(kept) = [longer(kept).size - MAX, 0].max
+
+      # The Candidates of kept that apply more than one rule.
+      def longer(kept) = kept.reject { it.rules.one? }
 
       # How many of made, Candidates and Duplicates, each rule made, by the
       # name of the last rule applied.
