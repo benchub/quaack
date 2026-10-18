@@ -45,12 +45,45 @@ module Quaack
         def summed(stages) = stages.map { |stage, name| [name, sum(burndown["stages"].fetch(stage, {}).values), stage] }
 
         def search_rows
+          searched = rewrite_searches
           rows = Words::INDEX_STAGES.filter_map do |stage, name|
-            found = burndown["stages"].fetch(stage, {}).except("original").values
+            found = searched.fetch(stage).values
             ["Index ideas for the rewrites: #{Words.lower(name)}", sum(found), stage] unless found.empty?
           end
           rows.empty? ? [["Index ideas for the rewrites", nil, nil]] : rows
         end
+
+        # The LLM's rounds of index ideas, which run only for the rewrites that survived testing.
+        LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
+
+        # Each index stage's records of the rewrites' searches. The LLM searches only the
+        # rewrites that survived testing, but index-rank ranks every one, so a rewrite the
+        # LLM wasn't asked about passes its ideas through the LLM's rounds unchanged
+        # (PASSED), and each row's sum carries on what the row above sent (task 20261017-8).
+        def rewrite_searches
+          stages = Words::INDEX_STAGES.keys.to_h { [it, burndown["stages"].fetch(it, {}).except("original")] }
+          asked = LLM_ROUNDS.flat_map { stages.fetch(it).keys }
+          stages.values.flat_map(&:keys).uniq.reject { asked.include?(it) }.each { pass_through(stages, it) }
+          stages
+        end
+
+        # The search's ideas, through each LLM round some other search recorded.
+        def pass_through(stages, search)
+          carried = nil
+          stages.each do |stage, records|
+            next carried = records[search]["out"] if records.key?(search)
+
+            records[search] = passed(carried) if LLM_ROUNDS.include?(stage) && records.any? && carried.is_a?(Integer)
+          end
+        end
+
+        def passed(count)
+          { "in" => count, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => count,
+            "extra" => { PASSED => count } }
+        end
+
+        # The extra count of the ideas a rewrite the LLM wasn't asked about passed on.
+        PASSED = "not_asked"
 
         # The records added together, or nil if there are none.
         def sum(records)

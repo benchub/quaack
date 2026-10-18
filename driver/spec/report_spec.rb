@@ -3213,6 +3213,28 @@ RSpec.describe Quaack::Driver::Report do
       )
     end
 
+    # Task 20261017-8: the LLM searches only the rewrites that survived testing, but index-rank ranks every one.
+    # rewrite_3's run stopped before its second round, which the LLM was asked about, so it isn't passed on.
+    it "passes a rewrite's ideas through the LLM's rounds unchanged, and says so, when the LLM skipped that rewrite" do
+      burndown["stages"].merge!(
+        "index-test" => { "rewrite_1" => rec(1, 1), "rewrite_2" => rec(1, 1), "rewrite_3" => rec(1, 1) },
+        "llm-index-ideas" => { "rewrite_1" => rec(1, 3, added: { "llm" => 3 }, dropped: { "never_used" => 1 }),
+                               "rewrite_3" => rec(1, 1) },
+        "llm-index-refine" => { "rewrite_1" => rec(3, 3, extra: { "nothing_fell_short" => 1 }) },
+        "index-rank" => { "rewrite_1" => rec(3, 1), "rewrite_2" => rec(1, 1) }
+      )
+      passed = "ideas from rewrites the LLM wasn&#39;t asked about, passed on unchanged: 1"
+      expect(rewrite_index_table).to include(
+        row("Index ideas for the rewrites: ideas from the LLM", 0, "from the LLM: 3", "never used by the planner: 1",
+            0, 5, passed)
+      )
+      expect(rewrite_index_table).to include(
+        row("Index ideas for the rewrites: the LLM's second round of ideas", 0, "none", "none", 0, 4,
+            "skipped, since none of the LLM&#39;s ideas fell short: 1; #{passed}")
+      )
+      expect(index_table).not_to include("passed on unchanged")
+    end
+
     it "says the rewrites' index searches weren't recorded when none was" do
       burndown["stages"].delete("index-dedupe")
       expect(rewrite_index_table).to include('<tr><th scope="row">Index ideas for the rewrites</th>' \
@@ -3631,6 +3653,36 @@ RSpec.describe Quaack::Driver::Report do
           expect(svg).not_to include("Went on")
           expect(nodes(svg, "end")).to eq([])
         end
+      end
+    end
+
+    # Task 20261017-8: rewrite_2 was pruned, so only rewrite_1 got the LLM's rounds, but both were ranked.
+    it "carries into the rewrites' ranking what the diagram above ends with, when the LLM skipped a rewrite" do
+      searched = { "index-from-query" => { "rewrite_1" => rec(0, 3, added: { "generator_one" => 3 }),
+                                           "rewrite_2" => rec(0, 2, added: { "generator_one" => 2 }) },
+                   "index-dedupe" => { "rewrite_1" => rec(3, 3), "rewrite_2" => rec(2, 2) },
+                   "index-test" => { "rewrite_1" => rec(3, 2, dropped: { "never_used" => 1 }),
+                                     "rewrite_2" => rec(2, 1, dropped: { "never_used" => 1 }) },
+                   "llm-index-ideas" => { "rewrite_1" => rec(2, 4, added: { "llm" => 3 },
+                                                                   dropped: { "never_used" => 1 }) },
+                   "llm-index-refine" => { "rewrite_1" => rec(4, 5, added: { "llm" => 2 },
+                                                                    dropped: { "never_used" => 1 }) },
+                   "index-rank" => { "rewrite_1" => rec(5, 1, added: { "combinations" => 4 },
+                                                              dropped: { "below_top_three" => 4,
+                                                                         "combination_not_chosen" => 4 }),
+                                     "rewrite_2" => rec(1, 1) } }
+      html = render(payload.merge("burndown" => { "stages" => searched, "totals" => {} }))
+      expect(layers("rewrite-index", 1, html)).to eq(
+        ["Index ideas from the query&#39;s text: 5", "After removing duplicates and indices you already have: 5",
+         "After testing for planner utility: 3", "Combined with new ideas from the LLM: 6",
+         "After testing the LLM&#39;s ideas: 5", "Combined with the LLM&#39;s second round of ideas: 7",
+         "After the LLM&#39;s second round of ideas: 6"]
+      )
+      expect(layers("rewrite-index", 2, html).first).to eq("Carried in from the diagram above: 6")
+      svg = sankey("rewrite-index", 1, html)
+      ["After testing the LLM&#39;s ideas: 5", "After the LLM&#39;s second round of ideas: 6"].each do |words|
+        expect(layer_named(svg, words)["title"])
+          .to include("1 idea from rewrites the LLM wasn&#39;t asked about went on unchanged.")
       end
     end
 

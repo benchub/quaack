@@ -68,8 +68,11 @@ module Quaack
         # Where fuzz's query_failed disproved a rewrite (task 20261012-2).
         FUZZ_FAILED = "it failed and the original query ran"
 
-        # An extra count a stage words its own way, by stage (task 20261012-3).
-        STAGE_EXTRAS = { "enumerate" => { "untested" => "not tested by enumeration" } }.freeze
+        # An extra count a stage words its own way, by stage (task 20261012-3). The LLM's rounds
+        # count the ideas of the rewrites it wasn't asked about (Stages#rewrite_searches, task 20261017-8).
+        NOT_ASKED = { "not_asked" => "ideas from rewrites the LLM wasn't asked about, passed on unchanged" }.freeze
+        STAGE_EXTRAS = { "enumerate" => { "untested" => "not tested by enumeration" },
+                         "llm-index-ideas" => NOT_ASKED, "llm-index-refine" => NOT_ASKED }.freeze
 
         # DESIGN.md's burndown's stages: the original query's index search.
         INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",
