@@ -24,10 +24,14 @@ module Quaack
       # Each check reads its own group, so it holds for every group and
       # every run of a subquery, and a check over a pick downstream of
       # another reads the values the first one could only have kept.
-      module PickChecks
+      module PickChecks # rubocop:disable Metrics/ModuleLength -- one check per kind of pick
         CHECKS = {
           aggregate: "CASE WHEN quaack_first = quaack_last THEN quaack_value " \
                      "WHEN 1 / (0 * length(quaack_first)) = 0 THEN quaack_value END",
+          extreme: "CASE WHEN quaack_first IS NOT DISTINCT FROM quaack_last THEN quaack_value " \
+                   "WHEN 1 / (0 * length(quaack_first)) = 0 THEN quaack_value END",
+          group: "CASE WHEN quaack_min IS NOT DISTINCT FROM quaack_max THEN true " \
+                 "ELSE 1 / (0 * length(quaack_min)) = 0 END",
           distinct_on: "CASE WHEN rank() OVER (PARTITION BY quaack_keys ORDER BY quaack_sorts) <> 1 THEN 0 " \
                        "WHEN min(quaack_row) OVER (PARTITION BY quaack_ties) = " \
                        "max(quaack_row) OVER (PARTITION BY quaack_ties) THEN 0 " \
@@ -50,6 +54,48 @@ module Quaack
           c_text(func_call: copy(call).merge(funcname: [Picks.name("pg_catalog"), Picks.name("array_agg")],
                                              args: [template("ROW(quaack_texts)", texts:)], agg_order: order,
                                              func_variadic: false))
+        end
+
+        # A min or max in a check that its argument's values tied for the
+        # min or max all print the same: the first and the last of their
+        # texts, sorted by the argument and then its text, are one text.
+        def extreme(call)
+          arg = call[:args].first
+          direction = call[:funcname].last.dig(:string, :sval) == "max" ? "DESC" : ""
+          bounds = %w[ASC DESC].to_h do |order|
+            [order, tied_text(call, arg, "#{direction}, quaack_text #{order}")]
+          end
+          template(CHECKS[:extreme], first: bounds["ASC"], last: bounds["DESC"], value: { func_call: copy(call) })
+        end
+
+        def tied_text(call, arg, order)
+          filter = call[:agg_filter] ? "quaack_arg IS NOT NULL AND (quaack_filter)" : "quaack_arg IS NOT NULL"
+          template("(pg_catalog.array_agg(quaack_text ORDER BY quaack_arg #{order}) FILTER (WHERE #{filter}))[1]",
+                   text: c_text(copy(arg)), arg: copy(arg), filter: copy(call[:agg_filter]))
+        end
+
+        # The check, for a HAVING, that each of select's GROUP BY keys
+        # prints one way in each group, or nil when it has none. (Grouping
+        # sets are unsupported in v1, so SupportedSql refuses them first.)
+        def grouped(select)
+          checks = Array(select[:group_clause]).map do |key|
+            text = c_text(resolved(select, key))
+            template(CHECKS[:group], min: aggregate_of("min", text), max: aggregate_of("max", copy(text)))
+          end
+          checks.reduce { |all, check| both(all, check) }
+        end
+
+        # left AND right, as one AND over their terms, as Postgres parses it.
+        def both(left, right)
+          node = template("quaack_left AND quaack_right", left:, right:)
+          node[:bool_expr][:args] = node[:bool_expr][:args].flat_map do |term|
+            term.dig(:bool_expr, :boolop) == :AND_EXPR ? term[:bool_expr][:args] : [term]
+          end
+          node
+        end
+
+        def aggregate_of(name, arg)
+          template("pg_catalog.#{name}(quaack_arg)", arg:)
         end
 
         # The check of select's DISTINCT ON keys, sorted by sorts.
