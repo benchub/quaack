@@ -8,7 +8,7 @@ require "rbconfig"
 RSpec.describe "A rewrite rule file required alone" do
   lib = File.expand_path("../lib", __dir__)
   shared = %w[rewrite_rules/literals rewrite_rules/rewrite]
-  helpers = %w[rewrite_rules/catalog rewrite_rules/tree]
+  helpers = %w[rewrite_rules/catalog rewrite_rules/input_order rewrite_rules/tree]
   rules = File.read(File.join(lib, "quaack/enclave/rewrite_rules.rb"))
               .scan(%r{require_relative "(rewrite_rules/[a-z_]+)"}).flatten - shared
 

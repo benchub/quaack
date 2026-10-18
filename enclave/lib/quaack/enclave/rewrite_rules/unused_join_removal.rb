@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "rewrite"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "input_order"
 require_relative "unused_join_removal/candidates"
 require_relative "unused_join_removal/reads"
 
@@ -68,6 +69,9 @@ module Quaack
       #   blocks the rule.
       # - Nowhere does the query have a locking clause, which can name the
       #   table, or a NATURAL or USING join, whose columns are found by name.
+      # - Nothing in the query reads the order its rows come in, such as
+      #   string_agg with no ORDER BY of its own (InputOrder), since
+      #   without the join they can come in another order.
       class UnusedJoinRemoval
         def name = "unused_join_removal"
 
@@ -89,7 +93,7 @@ module Quaack
 
         # Every join the rule can remove from tree, in tree order.
         def removals(tree, catalog)
-          return [] unless allowed?(tree)
+          return [] unless allowed?(tree) && !InputOrder.sensitive?(tree, catalog)
 
           Candidates.in(tree).select { unread?(it, catalog) && proven?(it, catalog) }
         end

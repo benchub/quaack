@@ -36,6 +36,7 @@ These cases are unsupported in v1:
 - a has_one join on a unique foreign key that's nullable, such as `LEFT JOIN profiles ON profiles.user_id = users.id`, since the `unique` assumption also requires the key not null,
 - a key column with a nondeterministic collation, even when its unique index uses the same collation,
 - a select list with a subquery that calls an aggregate, such as `(SELECT count(*) FROM comments ...)`,
+- a statement that reads the order its rows come in anywhere, such as `string_agg` or `array_agg` with no `ORDER BY` of its own, `min`, `max`, `sum`, or `avg` of an expression or of a column of another type, a window function, or `ARRAY(SELECT ...)` with no `ORDER BY`. Without the `DISTINCT`, rows can come in another order, which can change those results. `count`, an aggregate with its own `ORDER BY`, `min`, `max`, and `sum` of an integer, date, or timestamp column, and `avg` of an integer column are fine. A `float`, `numeric`, text, or `interval` column isn't,
 - a table read with `ONLY`, and
 - a nullable key, even one whose unique index is `NULLS NOT DISTINCT`.
 

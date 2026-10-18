@@ -451,4 +451,70 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnusedJoinRemoval do
       expect(rewritten(sql)).to eq([])
     end
   end
+  # 20261018-22. Without the join, the rows can reach an aggregate that
+  # reads them in order in another order, and it then gives another result.
+  context "with an aggregate that reads the rows in order" do
+    {
+      "string_agg in the SELECT itself" =>
+        "SELECT string_agg(p.title, ',') FROM public.posts p JOIN public.users u ON p.user_id = u.id",
+      "array_agg above a derived table" =>
+        "SELECT array_agg(d.id) FROM (SELECT p.id FROM public.posts p JOIN public.users u ON p.user_id = u.id) d",
+      "a window function" =>
+        "SELECT p.id, row_number() OVER () FROM public.posts p JOIN public.users u ON p.user_id = u.id"
+    }.each do |why, sql|
+      it "doesn't fire with #{why}" do
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
+    it "would give another result for string_agg, which is why it refuses" do
+      sql = "SELECT string_agg(p.title, ',') FROM public.users u JOIN public.posts p ON p.user_id = u.id"
+      conn.exec("CREATE INDEX ON public.posts (user_id); SET enable_hashjoin = off; SET enable_mergejoin = off")
+      conn.exec("UPDATE public.posts SET title = title WHERE id = 10; SET enable_seqscan = off")
+      expect(conn.exec(sql).values).not_to eq(conn.exec("SELECT string_agg(p.title, ',') FROM public.posts p").values)
+    end
+
+    # sum, min, and max of an integer or a date or time, and avg of an
+    # integer, give the same result in any input order.
+    context "with sum, min, max, and avg of exact types" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE TABLE public.customers (id int PRIMARY KEY);
+          CREATE TABLE public.orders (id int PRIMARY KEY, customer_id int NOT NULL REFERENCES public.customers,
+                                      total_cents bigint, created_at timestamptz, rate float8, price numeric,
+                                      note text);
+        SQL
+      end
+
+      it "fires on Rails' .sum over an unused join" do
+        sql = "SELECT sum(o.total_cents) FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
+              "WHERE o.created_at >= $1"
+        expect(rewritten(sql)).to eq(["SELECT sum(o.total_cents) FROM public.orders o WHERE o.created_at >= $1"])
+      end
+
+      it "fires on a GROUP BY report with max of a timestamptz and avg of an integer" do
+        sql = "SELECT o.customer_id, max(o.created_at), avg(o.id) FROM public.orders o " \
+              "JOIN public.customers c ON c.id = o.customer_id GROUP BY o.customer_id"
+        expect(rewritten(sql).size).to eq(1)
+      end
+
+      {
+        "sum of a float" => "sum(o.rate)", "avg of a numeric" => "avg(o.price)", "max of text" => "max(o.note)",
+        "avg of an interval" => "avg(o.created_at - o.created_at)", "sum of an expression" => "sum(o.id + 1)",
+        "avg of a timestamptz, which only integers keep blind" => "avg(o.created_at)",
+        "sum of an outer column in a subquery" => "(SELECT sum(o.total_cents) FROM public.customers c2)"
+      }.each do |why, call|
+        it "doesn't fire on #{why}" do
+          sql = "SELECT #{call} FROM public.orders o JOIN public.customers c ON c.id = o.customer_id"
+          expect(rewritten(sql)).to eq([])
+        end
+      end
+    end
+
+    it "fires under count and under an aggregate with its own ORDER BY" do
+      sql = "SELECT count(*), string_agg(p.title, ',' ORDER BY p.id) FROM public.posts p " \
+            "JOIN public.users u ON p.user_id = u.id"
+      expect(rewritten(sql).size).to eq(1)
+    end
+  end
 end
