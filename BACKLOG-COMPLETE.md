@@ -12049,3 +12049,13 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 - **Design:** report.
 - **Landed:** 2026-10-17 (task/20261017-5; driver only). Every not_better rewrite's fate is now the one sentence, kept in `Report::Rewrites::FATES`. `Report::NotBetterFate` (its verdict reading and `PERCENT`) is gone. A not_better rewrite that went on untested (out_of_time or not_tested) still gets its opening reworded by `went_on`, which gained a pair for "It passed every correctness test,". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
+
+### 20261017-6. Report: color stripes on the ranking table.
+
+In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area. The user decided (2026-10-17): a stripe on the left edge of each row, in its subsection's color, with no tint across the row.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-6; driver only). In the Ranking table, each kind's heading row and ranked rows carry that kind's `stripe-<kind>` class, the same class its block below uses, and `tr.kind > :first-child, tr.rank > :first-child` draws a 5px left border in `var(--stripe)`, with no background. The baseline row has no stripe. A rewrite ranked under two kinds gets each kind's stripe on its row there. DESIGN.md's report section says so.
+- **Status:** done

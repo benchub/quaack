@@ -1288,7 +1288,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "ranks the candidates within each kind, each described in words" do
-      expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
+      expect(ranking.scan(%r{<tr class="rank[^"]*"><td class="num">(\d)</td><td>(.*?)</td>}))
         .to eq([["1", "Rewrite Vivid Cove with no new indices"],
                 ["1", "The original query with a new index on #{sq("public.t (created_at)")}"]])
     end
@@ -1304,7 +1304,7 @@ RSpec.describe Quaack::Driver::Report do
         { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
           "footprint" => 0 }
       ]
-      expect(ranking.scan(/<tr class="(?:kind|rank)">(?:<th[^>]*>|<td class="num">)([^<]*)/))
+      expect(ranking.scan(/<tr class="(?:kind|rank)[^"]*">(?:<th[^>]*>|<td class="num">)([^<]*)/))
         .to eq([["A rewrite of the original query, with new indices"], ["1"], ["2"],
                 ["A rewrite of the original query, with no new indices"], ["1"],
                 ["The original query, with new indices"], ["1"]])
@@ -1322,11 +1322,6 @@ RSpec.describe Quaack::Driver::Report do
         { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
           "footprint" => 0 }
       ]
-      # The table keeps its heading rows and numbering as plain structure: no stripe class on them.
-      table = ranking[%r{<table>.*?</table>}m]
-      expect(table.scan('<tr class="kind"><th scope="rowgroup" colspan="5">').size).to eq(3)
-      expect(table.scan('<tr class="rank">').size).to eq(4)
-      expect(table).not_to include("stripe-")
       groups = ranking.scan(%r{<div class="kind-group (stripe-\w+)">\n(.*?)\n</div>}m)
       expect(groups.map(&:first))
         .to eq(%w[stripe-rewrite_new_indexes stripe-rewrite_same_indexes stripe-original_new_indexes])
@@ -1338,11 +1333,40 @@ RSpec.describe Quaack::Driver::Report do
       stripes = style.scan(/\.stripe-(\w+) \{ --stripe: (var\(--st-[a-z]+\)); \}/)
       expect(stripes.map(&:first)).to eq(%w[rewrite_new_indexes rewrite_same_indexes original_new_indexes])
       expect(stripes.map(&:last)).to eq(%w[var(--st-teal) var(--st-violet) var(--st-brown)])
-      expect(style).not_to match(/\btr\.[^{]*\{[^}]*--stripe/)
       group = style[/div\.kind-group \{[^}]*\}/]
       expect(group).to include("border-left: 5px solid var(--stripe)")
       dark = style[/prefers-color-scheme: dark\).*?\n  \}\n/m]
       expect(dark).to include("--st-teal:", "--st-violet:", "--st-brown:")
+    end
+
+    it "stripes each of the table's rows on its left edge in its kind's block's color, and leaves the baseline plain" do
+      # rewrite_1 is ranked in two kinds: each of its rows takes the stripe of the kind it sits under.
+      payload["top"] = [
+        { "label" => "original:top:1", "kind" => "original_new_indexes", "slow_blocks" => 10, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:none", "kind" => "rewrite_same_indexes", "slow_blocks" => 20, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:top:1", "kind" => "rewrite_new_indexes", "slow_blocks" => 30, "total_blocks_sum" => 1,
+          "footprint" => 0 },
+        { "label" => "rewrite_1:top:2", "kind" => "rewrite_new_indexes", "slow_blocks" => 40, "total_blocks_sum" => 1,
+          "footprint" => 0 }
+      ]
+      table = ranking[%r{<table>.*?</table>}m]
+      rows = table.scan(/<tr class="([^"]*)">(?:<th[^>]*>|<td class="num">)([^<]*)/)
+      expect(rows).to eq([["baseline", ""],
+                          ["kind stripe-rewrite_new_indexes", "A rewrite of the original query, with new indices"],
+                          ["rank stripe-rewrite_new_indexes", "1"], ["rank stripe-rewrite_new_indexes", "2"],
+                          ["kind stripe-rewrite_same_indexes", "A rewrite of the original query, with no new indices"],
+                          ["rank stripe-rewrite_same_indexes", "1"],
+                          ["kind stripe-original_new_indexes", "The original query, with new indices"],
+                          ["rank stripe-original_new_indexes", "1"]])
+      # Each row's stripe class names the same kind as the block below that holds its entry.
+      blocks = ranking.scan(/<div class="kind-group (stripe-\w+)">/).flatten
+      expect(rows.map { it.first[/stripe-\w+/] }.compact.uniq).to eq(blocks)
+      style = html[%r{<style>(.*?)</style>}m, 1]
+      row_rule = style[/^  tr\.kind > :first-child, tr\.rank > :first-child \{[^}]*\}/]
+      expect(row_rule).to include("border-left: 5px solid var(--stripe)")
+      expect(row_rule).not_to match(/background/)
     end
 
     it "gives each kind's block no shading of its own, so it shows the page background in light and dark mode" do
