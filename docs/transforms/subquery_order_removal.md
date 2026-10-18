@@ -8,7 +8,7 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 The rule looks at each subquery in a `FROM`, `LATERAL` ones and those in a join included, and at each CTE body. When one of them has an `ORDER BY`, the rule looks at each query that reads its rows. A subquery in `FROM` has one reader, the `SELECT` whose `FROM` holds it. A CTE's readers are all the `SELECT`s that name it in their `FROM`. The rule removes the `ORDER BY` only when every reader is blind to the order of the rows it reads. A reader is blind to that order when it has no window function, no `WINDOW` clause, and no `DISTINCT ON`, and one of these holds:
 
-- It has its own `ORDER BY`. That `ORDER BY` decides the order of its rows, and which rows a `LIMIT` or `OFFSET` keeps.
+- It has its own `ORDER BY`. That `ORDER BY` decides the order of its rows, and which rows a `LIMIT` or `OFFSET` keeps. When rows tie on that `ORDER BY`, a `LIMIT` may keep other tied rows than it did before, since the subquery's order no longer breaks the tie. SQL never promised which tied rows it keeps.
 - It aggregates, with a `GROUP BY` or an aggregate call, and it has no `LIMIT` or `OFFSET`.
 
 A reader with neither returns its rows in the order they arrive. SQL doesn't promise that order, but an app may rely on it, so the rule leaves such a subquery alone.
