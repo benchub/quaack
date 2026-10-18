@@ -120,8 +120,10 @@ module Quaack
           column, default = node.coalesce_expr.args
           param, cast = value(default)
           info = column.node == :column_ref && own_column_info(column.column_ref, select, catalog)
-          return false unless info && param && once?(param.param_ref, tree)
+          info && param && once?(param.param_ref, tree) && default_typed?(param, cast, info, catalog, literals)
+        end
 
+        def default_typed?(param, cast, info, catalog, literals)
           cast ? own_type?(cast, info, catalog) : resolves_to_column?(param.param_ref, info, literals)
         end
 

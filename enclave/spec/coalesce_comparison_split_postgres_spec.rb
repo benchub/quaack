@@ -151,7 +151,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::CoalesceComparisonSplit do
     map = { "$1" => { "type" => "integer", "value" => "0" }, "$2" => { "type" => "integer", "value" => "0" } }
 
     expect(rewritten(sql, map)).to eq(
-      ["SELECT t.id FROM public.tasks t WHERE t.owner_id = $2 OR (t.owner_id IS NULL AND COALESCE($1, t.owner_id) = $2)"]
+      ["SELECT t.id FROM public.tasks t WHERE t.owner_id = $2 OR " \
+       "(t.owner_id IS NULL AND COALESCE($1, t.owner_id) = $2)"]
     )
   end
 
