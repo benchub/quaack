@@ -1833,11 +1833,29 @@ RSpec.describe Quaack::Driver::Report do
     # Each plan table in the section, by its rows.
     def plan_rows(html) = html.scan(%r{<table class="plan">.*?</table>}m).map { it.scan(%r{<tr.*?</tr>}m).drop(1) }
 
-    # Each row's misestimate class in the first plan table, or nil for a row with none.
-    def shades(html) = plan_rows(html).first.map { it[/\A<tr class="(misestimate-\d)"/, 1] }
+    # Each cell's opening tag in a plan row.
+    def cell_tags(row) = row.scan(/<td[^>]*>/)
+
+    # Each row's misestimate class in the first plan table, or nil for a row with none: the class its estimated
+    # and actual rows cells share, failing if they don't, or if the row or another cell has one.
+    def shades(html) = plan_rows(html).first.map { row_shade(it) }
+
+    def row_shade(row)
+      tags = cell_tags(row)
+      est, actual = tags.values_at(3, 4).map { it[/misestimate-\d/] }
+      expect(est).to eq(actual)
+      expect([row[/\A<tr[^>]*>/], *tags.values_at(0, 1, 2, 5, 6, 7).compact].join).not_to include("misestimate")
+      est
+    end
+
+    # The text of a plan row's last cell.
+    def last_cell(row) = row[%r{>([^<]*)</td></tr>\z}, 1]
 
     # Each row's time cell in the first plan table.
-    def times(html) = plan_rows(html).first.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>\z}, 1] }
+    def times(html) = plan_rows(html).first.map { last_cell(it) }
+
+    # Each row's own-share class on its blocks cell (index 6) or time cell (index 7) in the first plan table.
+    def cost_shades(html, index) = plan_rows(html).first.map { cell_tags(it)[index][/cost-\d/] }
 
     let(:header) do
       '<tr><th scope="col">Step</th><th scope="col">Table</th><th scope="col">Index</th>' \
@@ -1855,8 +1873,10 @@ RSpec.describe Quaack::Driver::Report do
       expect(explanation.scan("#{header}</tr>").size).to eq(1)
       expect(plan_rows(explanation)).to eq(
         [[[%(<tr><td class="step" style="padding-left: 0.65rem">Seq Scan</td><td>#{sq("public.t")}</td><td></td>),
-           %(<td class="num">50</td><td class="num">50</td><td class="num">5.0%</td><td class="num">1,234</td>),
-           %(<td class="num">12.5 ms (100%)</td></tr>)].join],
+           %(<td class="num">50</td><td class="num">50</td><td class="num">5.0%</td>),
+           %(<td class="num cost-8" title="1,234 blocks in the step itself, 100% of the plan&#39;s">1,234</td>),
+           %(<td class="num cost-8" title="12.5 ms in the step itself, 100% of the plan&#39;s">12.5 ms (100%)</td>),
+           %(</tr>)].join],
          [[%(<tr><td class="step" style="padding-left: 0.65rem">Index Scan</td><td>#{sq("public.t")}</td>),
            %(<td>#{sq("t_a_idx")}</td><td class="num">5</td><td class="missing">not recorded</td>),
            %(<td class="num">0.5%</td><td class="missing">not recorded</td></tr>)].join]]
@@ -1882,7 +1902,8 @@ RSpec.describe Quaack::Driver::Report do
           %(<td class="num"></td><td class="num">7</td></tr>)].join,
          [%(<tr><td class="step" style="padding-left: 3.65rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
           %(Seq Scan</td><td>#{sq("public.t")}</td><td></td><td class="num">9,000</td><td class="num">12,345</td>),
-          %(<td class="num">50.0%</td><td class="num">7</td></tr>)].join]
+          %(<td class="num">50.0%</td>),
+          %(<td class="num cost-8" title="7 blocks in the step itself, 100% of the plan&#39;s">7</td></tr>)].join]
       )
     end
 
@@ -1911,22 +1932,24 @@ RSpec.describe Quaack::Driver::Report do
         expect(shades(explanation)).to eq([nil, nil, nil, "misestimate-6"])
       end
 
-      it "says how far off a shaded step is in its title" do
+      it "says how far off a shaded step is in the title of its row count cells, and leaves the row unshaded" do
         payload["original_plan"] = shaded([10, 20], [1, 1001], [1, 1])
-        expect(plan_rows(explanation).first.map { it[/\A<tr[^>]*>/] }).to eq(
-          ['<tr class="misestimate-1" title="Estimated rows off by 2x or more">',
-           '<tr class="misestimate-8" title="Estimated rows off by over 1000x">', "<tr>"]
+        expect(plan_rows(explanation).first.map { it[/\A<tr[^>]*>/] }).to eq(%w[<tr> <tr> <tr>])
+        expect(plan_rows(explanation).first.map { cell_tags(it).values_at(3, 4) }).to eq(
+          [['<td class="num misestimate-1" title="Estimated rows off by 2x or more">'] * 2,
+           ['<td class="num misestimate-8" title="Estimated rows off by over 1000x">'] * 2,
+           ['<td class="num">'] * 2]
         )
       end
 
       it "doesn't shade a plan Postgres only estimated" do
-        expect(plan_rows(explanation).last.first).to start_with("<tr><td")
+        expect(plan_rows(explanation).last.first).not_to include("misestimate")
       end
 
       it "shades the winner's measured plan too" do
         payload["labels"].each { it["plan"] = nil }
         payload["labels"].find { it["label"] == "rewrite_1:none" }["plan"] = shaded([1, 300])
-        expect(plan_rows(explanation).last.first).to start_with('<tr class="misestimate-6"')
+        expect(cell_tags(plan_rows(explanation).last.first)[4]).to start_with('<td class="num misestimate-6"')
       end
 
       it "says what the shading means, once, with a swatch for each step of it" do
@@ -1938,13 +1961,13 @@ RSpec.describe Quaack::Driver::Report do
                  '<span class="misestimate-7">500x</span> <span class="misestimate-8">over 1000x</span>. ' \
                  "A count under 1 counts as 1, so an estimate of 1 row against none isn&#39;t shaded, and " \
                  "neither is a step that never ran.</p>"
-        expect(explanation).to include("#{legend}<p>How Postgres runs the original query now:</p>")
-        expect(explanation.scan("note legend").size).to eq(1)
+        expect(explanation).to include("#{legend}<p class=\"note legend\">Blocks read and time are shaded")
+        expect(explanation.scan(legend).size).to eq(1)
       end
 
       it "says nothing of shading when no plan it shows has actual rows" do
         payload["original_plan"] = shaded([10, nil])
-        expect(explanation).not_to include("legend", "misestimate")
+        expect(explanation).not_to include("misestimate")
       end
 
       it "gets redder, step by step, in both themes, with the text readable on each" do
@@ -1961,8 +1984,93 @@ RSpec.describe Quaack::Driver::Report do
         expect(theme_variables[:light]["--misestimate-8"]).not_to eq(theme_variables[:dark]["--misestimate-8"])
         style = html[%r{<style>(.*?)</style>}m, 1]
         (1..8).each do |n|
-          expect(style).to include("table.plan tr.misestimate-#{n} td, .legend .misestimate-#{n} " \
+          expect(style).to include("table.plan td.misestimate-#{n}, .legend .misestimate-#{n} " \
                                    "{ background: var(--misestimate-#{n}); }")
+        end
+        expect(style).not_to include("tr.misestimate")
+      end
+    end
+
+    describe "shading each step's blocks and time by its own share of the plan's" do
+      def flat(*blocks, **) = blocks.map { pnode("Seq Scan", 0, hit: it, read: 0, **) }
+
+      it "shades blocks from 5%, 10%, 20%, 30%, 40%, 50%, 65%, and 80% of the plan's, and not under 5%" do
+        expected = { [49, 51, 900] => [nil, 1, 8], [50, 950] => [1, 8], [100, 199, 701] => [2, 2, 7],
+                     [200, 300, 500] => [3, 4, 6], [399, 601] => [4, 6], [400, 600] => [5, 6],
+                     [649, 351] => [6, 4], [650, 350] => [7, 4], [799, 201] => [7, 3], [800, 200] => [8, 3] }
+        expected.each do |blocks, buckets|
+          payload["original_plan"] = flat(*blocks)
+          expect(cost_shades(section(render(payload), "explanation"), 6))
+            .to eq(buckets.map { it && "cost-#{it}" }), blocks.inspect
+        end
+      end
+
+      it "counts a step's own blocks, without the blocks of the steps directly under it, never below zero" do
+        payload["original_plan"] = [pnode("Limit", 0, hit: 900, read: 100), pnode("Hash Join", 1, hit: 900, read: 100),
+                                    pnode("Seq Scan", 2, hit: 600, read: 100), pnode("Hash", 2, hit: 300, read: 0),
+                                    pnode("Seq Scan", 3, hit: 300, read: 0),
+                                    pnode("Result", 1, hit: 0, read: 0), pnode("Seq Scan", 2, hit: 20, read: 0)]
+        expect(cost_shades(explanation, 6)).to eq([nil, nil, "cost-7", nil, "cost-3", nil, nil])
+        expect(cell_tags(plan_rows(explanation).first[2])[6])
+          .to eq('<td class="num cost-7" title="700 blocks in the step itself, 69% of the plan&#39;s">')
+      end
+
+      it "doesn't shade a step whose own blocks it can't count, and leaves them out of the plan's" do
+        payload["original_plan"] = [pnode("Limit", 0, hit: 1000, read: 0), pnode("Seq Scan", 1, hit: nil),
+                                    pnode("Seq Scan", 0, hit: 100, read: 0), pnode("Seq Scan", 0, hit: 300, read: 0)]
+        expect(cost_shades(explanation, 6)).to eq([nil, nil, "cost-3", "cost-7"])
+      end
+
+      it "shades a step's own time over all its loops the same way, by its share of the plan's" do
+        payload["original_plan"] = [pnode("Limit", 0, time: 12.0), pnode("Nested Loop", 1, time: 9.5),
+                                    pnode("Seq Scan", 2, time: 2.0), pnode("Index Scan", 2, time: 0.05, loops: 100),
+                                    pnode("Result", 1, time: 0.25, loops: 2), pnode("Function Scan", 2, time: 0.1),
+                                    pnode("Seq Scan", 0, time: nil)]
+        expect(cost_shades(explanation, 7)).to eq(["cost-2", "cost-3", "cost-2", "cost-5", nil, nil, nil])
+        expect(cell_tags(plan_rows(explanation).first[3])[7])
+          .to eq('<td class="num cost-5" title="5.0 ms in the step itself, 42% of the plan&#39;s">')
+      end
+
+      it "shades nothing in a plan whose steps took no time or read no blocks" do
+        payload["original_plan"] = [pnode("Result", 0, time: 0.0, hit: 0, read: 0)]
+        expect(plan_rows(explanation).first.first).not_to include("cost-")
+      end
+
+      it "doesn't shade a plan Postgres only estimated" do
+        expect(plan_rows(explanation).last.first).not_to include("cost-")
+      end
+
+      it "says what the shading means, once, with a swatch for each step of it" do
+        legend = '<p class="note legend">Blocks read and time are shaded by how much of the plan&#39;s each step ' \
+                 "did itself, without the steps under it: " \
+                 '<span class="cost-1">5%</span> <span class="cost-2">10%</span> ' \
+                 '<span class="cost-3">20%</span> <span class="cost-4">30%</span> ' \
+                 '<span class="cost-5">40%</span> <span class="cost-6">50%</span> ' \
+                 '<span class="cost-7">65%</span> <span class="cost-8">80%</span> or more. ' \
+                 "So a step whose blocks read are high only because of the steps under it isn&#39;t shaded.</p>"
+        expect(explanation).to include("#{legend}<p>How Postgres runs the original query now:</p>")
+        expect(explanation.scan("cost-1\">5%").size).to eq(1)
+      end
+
+      it "says nothing of it when no plan it shows has blocks or times" do
+        payload["original_plan"] = [pnode("Seq Scan", 0, hit: nil, read: nil)]
+        expect(explanation).not_to include("cost-")
+      end
+
+      it "gets darker amber, step by step, in both themes, with the text readable on each" do
+        theme_variables.each do |name, v|
+          shades = (1..8).map { v["--cost-#{it}"] }
+          expect(shades).to all(match(/\A#\h{6}\z/)), "#{name}: #{shades}"
+          against_page = shades.map { contrast(it, v["--bg"]) }
+          expect(against_page.each_cons(2)).to all(satisfy { |a, b| b > a }), "#{name}: #{against_page}"
+          shades.each do |shade|
+            expect(rgb(shade).then { |r, g, b| r > g && g > b }).to be(true), shade
+            expect(contrast(v["--text"], shade)).to be >= 4.5, "#{name} --text on #{shade}"
+          end
+        end
+        style = html[%r{<style>(.*?)</style>}m, 1]
+        (1..8).each do |n|
+          expect(style).to include("table.plan td.cost-#{n}, .legend .cost-#{n} { background: var(--cost-#{n}); }")
         end
       end
     end
@@ -2036,13 +2144,13 @@ RSpec.describe Quaack::Driver::Report do
       payload["original_plan"] = [[12_000, 345], [0, 0], [nil, 9], [8, nil], [nil, nil]].map do |hit, read|
         pnode("Seq Scan", 0, hit:, read:)
       end
-      expect(plan_rows(explanation).first.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>}, 1] })
+      expect(plan_rows(explanation).first.map { last_cell(it) })
         .to eq(["12,345", "0", "not recorded", "not recorded", "not recorded"])
     end
 
     it "says a share is under 0.1% only when it is above zero and would round to 0.0%" do
       payload["original_plan"] = [0.0, 0.0004, 0.0005, 0.004].map { pnode("Seq Scan", 0, selectivity: it) }
-      expect(plan_rows(explanation).first.map { it[%r{<td class="num">([^<]*)</td><td class="num">7</td></tr>}, 1] })
+      expect(plan_rows(explanation).first.map { it[%r{<td class="num">([^<]*)</td><td class="num[^>]*>7</td>}, 1] })
         .to eq(["0.0%", "under 0.1%", "0.1%", "0.4%"])
     end
 
@@ -2082,7 +2190,7 @@ RSpec.describe Quaack::Driver::Report do
                                        "it on the slow values:</p>")
         expect(explanation).not_to include("How it runs rewrite Vivid Cove with no new indices:</p>")
         expect(plan_rows(explanation).size).to eq(2)
-        expect(plan_rows(explanation).last.map { it[%r{<td class="num">([^<]*)</td></tr>}, 1] }).to eq(%w[300 290])
+        expect(plan_rows(explanation).last.map { last_cell(it) }).to eq(%w[300 290])
         expect(plan_rows(explanation).last.last).to include("<td>#{sq("t_a_idx")}</td>")
         expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::NO_MEASURED_PLAN))
         expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::ESTIMATED_PLAN))
@@ -2094,7 +2202,9 @@ RSpec.describe Quaack::Driver::Report do
         expect(explanation).not_to include("The plan with the new indices: not recorded.")
         expect(plan_rows(explanation).size).to eq(2)
         expect(plan_rows(explanation).last.first).to include("<td>#{sq("quaack_a")}</td>")
-        expect(plan_rows(explanation).last.first).to include(%(<td class="num">400</td></tr>))
+        expect(plan_rows(explanation).last.first).to include(
+          %(<td class="num cost-8" title="400 blocks in the step itself, 100% of the plan&#39;s">400</td></tr>)
+        )
       end
 
       context "and its times" do
@@ -2116,8 +2226,7 @@ RSpec.describe Quaack::Driver::Report do
         end
 
         it "shows each step's time in the winner's plan, says where the times came from and how they count" do
-          expect(plan_rows(explanation).last.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>\z}, 1] })
-            .to eq(["2.0 ms (67%)", "1.0 ms (33%)"])
+          expect(plan_rows(explanation).last.map { last_cell(it) }).to eq(["2.0 ms (67%)", "1.0 ms (33%)"])
           expect(explanation).to end_with("</table>#{winner_note}\n#{time_note}\n</section>")
           expect(explanation.scan(time_note).size).to eq(1)
         end

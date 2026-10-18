@@ -9,6 +9,8 @@
     --baseline-bg: #f7f8fa;
     --misestimate-1: #fdf0f0; --misestimate-2: #fadede; --misestimate-3: #f7cbcb; --misestimate-4: #f4b9b9;
     --misestimate-5: #f2a7a7; --misestimate-6: #ef9595; --misestimate-7: #eb7f7f; --misestimate-8: #e76d6d;
+    --cost-1: #fdf5e4; --cost-2: #fbecc9; --cost-3: #f9e2ae; --cost-4: #f7d993;
+    --cost-5: #f5cf78; --cost-6: #f3c55d; --cost-7: #f0b942; --cost-8: #eead2a;
     --query-edge: #7b4bb3; --query-accent: #5b3a8a;
     --rose-edge: #b02a5b; --rose-accent: #8e1f48;
     --sankey-text: #1c2430; --sankey-count: #515b69;
@@ -26,6 +28,8 @@
       --baseline-bg: #1c222b;
       --misestimate-1: #2a1a1e; --misestimate-2: #3a1b20; --misestimate-3: #4a1b22; --misestimate-4: #591c24;
       --misestimate-5: #691d26; --misestimate-6: #791d28; --misestimate-7: #8c1e2a; --misestimate-8: #9e1f2c;
+      --cost-1: #2a2216; --cost-2: #362a15; --cost-3: #423214; --cost-4: #4e3a13;
+      --cost-5: #5a4212; --cost-6: #664a11; --cost-7: #704f10; --cost-8: #7a5810;
       --query-edge: #a37ad6; --query-accent: #c4a3ee;
       --rose-edge: #e0699a; --rose-accent: #f2a3c4;
       --sankey-text: #e6eaf0; --sankey-count: #a9b3c1;
@@ -69,14 +73,23 @@
   tr.baseline td { background: var(--baseline-bg); font-style: italic; }
   table.plan td.step { white-space: nowrap; }
   table.plan .arrow { color: var(--muted); }
-  table.plan tr.misestimate-1 td, .legend .misestimate-1 { background: var(--misestimate-1); }
-  table.plan tr.misestimate-2 td, .legend .misestimate-2 { background: var(--misestimate-2); }
-  table.plan tr.misestimate-3 td, .legend .misestimate-3 { background: var(--misestimate-3); }
-  table.plan tr.misestimate-4 td, .legend .misestimate-4 { background: var(--misestimate-4); }
-  table.plan tr.misestimate-5 td, .legend .misestimate-5 { background: var(--misestimate-5); }
-  table.plan tr.misestimate-6 td, .legend .misestimate-6 { background: var(--misestimate-6); }
-  table.plan tr.misestimate-7 td, .legend .misestimate-7 { background: var(--misestimate-7); }
-  table.plan tr.misestimate-8 td, .legend .misestimate-8 { background: var(--misestimate-8); }
+  table.plan td.misestimate-1, .legend .misestimate-1 { background: var(--misestimate-1); }
+  table.plan td.misestimate-2, .legend .misestimate-2 { background: var(--misestimate-2); }
+  table.plan td.misestimate-3, .legend .misestimate-3 { background: var(--misestimate-3); }
+  table.plan td.misestimate-4, .legend .misestimate-4 { background: var(--misestimate-4); }
+  table.plan td.misestimate-5, .legend .misestimate-5 { background: var(--misestimate-5); }
+  table.plan td.misestimate-6, .legend .misestimate-6 { background: var(--misestimate-6); }
+  table.plan td.misestimate-7, .legend .misestimate-7 { background: var(--misestimate-7); }
+  table.plan td.misestimate-8, .legend .misestimate-8 { background: var(--misestimate-8); }
+  table.plan td.cost-1, .legend .cost-1 { background: var(--cost-1); }
+  table.plan td.cost-2, .legend .cost-2 { background: var(--cost-2); }
+  table.plan td.cost-3, .legend .cost-3 { background: var(--cost-3); }
+  table.plan td.cost-4, .legend .cost-4 { background: var(--cost-4); }
+  table.plan td.cost-5, .legend .cost-5 { background: var(--cost-5); }
+  table.plan td.cost-6, .legend .cost-6 { background: var(--cost-6); }
+  table.plan td.cost-7, .legend .cost-7 { background: var(--cost-7); }
+  table.plan td.cost-8, .legend .cost-8 { background: var(--cost-8); }
+  table.plan td[title] { cursor: help; }
   .legend span { color: var(--text); padding: 0.05em 0.4em; border-radius: 3px; white-space: nowrap; }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
   code.sql { background: var(--code-bg); border-radius: 3px; padding: 0.05em 0.3em; white-space: pre-wrap;
@@ -240,6 +253,9 @@
 <% winner_plan = measured_plan || ((r = rewrite_of(winner["label"])) && r["plan"]) %>
 <% if shaded?(original_plan, winner_plan) %>
 <%= misestimate_legend %>
+<% end %>
+<% if cost_shaded?(original_plan, winner_plan) %>
+<%= cost_legend %>
 <% end %>
 <p>How Postgres runs the original query now:</p>
 <%= plan_table(original_plan) %>
