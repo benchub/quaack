@@ -41,7 +41,11 @@ module Quaack
                                    "neither drop nor repeat a row.",
           "polymorphic_key_copy" => "A child table joins a parent filtered to one Rails polymorphic type and id, " \
                                     "and the child has its own column for that type's id, which QUAACK checked " \
-                                    "holds the same id in the data."
+                                    "holds the same id in the data.",
+          "subquery_distinct_removal" => "The subquery of an IN, = ANY, NOT IN, or <> ALL, or an arm under a UNION, " \
+                                         "INTERSECT, or EXCEPT without ALL, has a DISTINCT, an ORDER BY, or a GROUP " \
+                                         "BY of just its select list's columns, and no LIMIT or OFFSET, so its " \
+                                         "reader can't see the duplicates or the order those clauses change."
         }.freeze
       end
     end
