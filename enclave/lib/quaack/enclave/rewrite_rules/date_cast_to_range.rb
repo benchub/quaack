@@ -194,10 +194,11 @@ module Quaack
           param = node.param_ref || cast&.arg&.param_ref
           return false unless param
 
-          day = "$#{param.number}::date"
+          day = "$#{param.number}::pg_catalog.date"
           literals.holds?(
-            "isfinite(#{day}) AND #{day}::timestamp IS NOT NULL AND #{day}::timestamptz IS NOT NULL AND " \
-            "(#{day} + 1)::timestamp IS NOT NULL AND (#{day} + 1)::timestamptz IS NOT NULL"
+            "pg_catalog.isfinite(#{day}) AND #{day}::pg_catalog.timestamp IS NOT NULL AND " \
+            "#{day}::pg_catalog.timestamptz IS NOT NULL AND (#{day} OPERATOR(pg_catalog.+) 1)::pg_catalog.timestamp " \
+            "IS NOT NULL AND (#{day} OPERATOR(pg_catalog.+) 1)::pg_catalog.timestamptz IS NOT NULL"
           )
         end
       end

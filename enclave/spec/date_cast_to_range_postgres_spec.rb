@@ -89,29 +89,45 @@ RSpec.describe Quaack::Enclave::RewriteRules::DateCastToRange do
     expect(found.map(&:assumptions)).to eq([[]])
     rewrite = Quaack::Enclave::Deparse.faithfully(found.first.tree)
     expect(rewrite).to eq("SELECT o.id FROM public.orders o WHERE o.customer_id > $1 AND " \
-                          "o.at >= $2::date AND o.at < ($2::date + 1)")
+                          "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)")
     expect(same_ids(sql, rewrite)).to eq(%w[2 3])
   end
 
   range = "SELECT o.id FROM public.orders o WHERE o.customer_id > $1 AND "
   {
-    "o.at::date >= '2025-03-09'" => ["o.at >= $2::date", %w[2 3 4 5 7]],
-    "o.at::date > '2025-03-09'" => ["o.at >= ($2::date + 1)", %w[4 5 7]],
-    "o.at::date < '2025-03-09'" => ["o.at < $2::date", %w[1]],
-    "o.at::date <= '2025-03-09'" => ["o.at < ($2::date + 1)", %w[1 2 3]],
-    "'2025-03-09' < o.at::date" => ["o.at >= ($2::date + 1)", %w[4 5 7]],
-    "'2025-03-09' >= o.at::date" => ["o.at < ($2::date + 1)", %w[1 2 3]],
-    "'2025-03-09' = o.at::date" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[2 3]],
-    "o.at::date OPERATOR(pg_catalog.=) '2025-03-09'" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[2 3]],
-    "o.at::date BETWEEN '2025-03-09' AND '2025-03-10'" => ["o.at >= $2::date AND o.at < ($3::date + 1)", %w[2 3 4]],
-    "CAST(o.at AS date) = '2025-03-10'" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[4]],
-    "date(o.at) = '2025-03-10'" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[4]],
-    "pg_catalog.date(o.at) = '2025-03-10'" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[4]],
-    "o.at::pg_catalog.date = '2025-03-10'" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[4]],
-    "o.at::date = '2025-03-10'::date" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[4]],
-    "o.at::date = DATE '2025-03-10'" => ["o.at >= $2::date AND o.at < ($2::date + 1)", %w[4]],
-    "o.local::date = '2025-03-09'" => ["o.local >= $2::date AND o.local < ($2::date + 1)", %w[2 3]],
-    "o.local::date > '2025-03-09'" => ["o.local >= ($2::date + 1)", %w[4 5 7]]
+    "o.at::date >= '2025-03-09'" => ["o.at >= $2::pg_catalog.date", %w[2 3 4 5 7]],
+    "o.at::date > '2025-03-09'" => ["o.at >= ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4 5 7]],
+    "o.at::date < '2025-03-09'" => ["o.at < $2::pg_catalog.date", %w[1]],
+    "o.at::date <= '2025-03-09'" => ["o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[1 2 3]],
+    "'2025-03-09' < o.at::date" => ["o.at >= ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4 5 7]],
+    "'2025-03-09' >= o.at::date" => ["o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[1 2 3]],
+    "'2025-03-09' = o.at::date" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[2 3]
+    ],
+    "o.at::date OPERATOR(pg_catalog.=) '2025-03-09'" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[2 3]
+    ],
+    "o.at::date BETWEEN '2025-03-09' AND '2025-03-10'" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($3::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[2 3 4]
+    ],
+    "CAST(o.at AS date) = '2025-03-10'" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4]
+    ],
+    "date(o.at) = '2025-03-10'" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4]
+    ],
+    "pg_catalog.date(o.at) = '2025-03-10'" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4]
+    ],
+    "o.at::pg_catalog.date = '2025-03-10'" => [
+      "o.at >= $2::pg_catalog.date AND o.at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4]
+    ],
+    "o.at::date = '2025-03-10'::date" => ["o.at >= $2::date AND o.at < ($2::date OPERATOR(pg_catalog.+) 1)", %w[4]],
+    "o.at::date = DATE '2025-03-10'" => ["o.at >= $2::date AND o.at < ($2::date OPERATOR(pg_catalog.+) 1)", %w[4]],
+    "o.local::date = '2025-03-09'" => [
+      "o.local >= $2::pg_catalog.date AND o.local < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[2 3]
+    ],
+    "o.local::date > '2025-03-09'" => ["o.local >= ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)", %w[4 5 7]]
   }.each do |test, (expected, ids)|
     it "rewrites #{test}" do
       rewrite = rewritten(orders(test))
@@ -125,9 +141,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::DateCastToRange do
     sql = 'SELECT "orders"."id" FROM "public"."orders" WHERE ("orders"."at"::date = \'2025-03-09\')'
     bare = "SELECT id FROM public.orders WHERE at::date = '2025-03-09'"
 
-    expect(rewritten(sql)).to eq(["SELECT orders.id FROM public.orders WHERE orders.at >= $1::date AND " \
-                                  "orders.at < ($1::date + 1)"])
-    expect(rewritten(bare)).to eq(["SELECT id FROM public.orders WHERE at >= $1::date AND at < ($1::date + 1)"])
+    expect(rewritten(sql)).to eq(["SELECT orders.id FROM public.orders WHERE orders.at >= $1::pg_catalog.date AND " \
+                                  "orders.at < ($1::pg_catalog.date OPERATOR(pg_catalog.+) 1)"])
+    expect(rewritten(bare)).to eq(["SELECT id FROM public.orders WHERE at >= $1::pg_catalog.date AND " \
+                                   "at < ($1::pg_catalog.date OPERATOR(pg_catalog.+) 1)"])
     expect(same_ids(bare, rewritten(bare).first)).to eq(%w[2 3])
   end
 
@@ -138,8 +155,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::DateCastToRange do
     rewrite = rewritten(sql)
 
     expect(rewrite).to eq(["SELECT c.id FROM public.customers c JOIN public.orders o ON o.customer_id = c.id " \
-                           "AND o.at >= $1::date AND o.at < ($1::date + 1) WHERE c.id IN (SELECT p.customer_id " \
-                           "FROM public.orders p WHERE p.local >= $2::date)"])
+                           "AND o.at >= $1::pg_catalog.date " \
+                           "AND o.at <($1::pg_catalog.date OPERATOR(pg_catalog.+) 1) " \
+                           "WHERE c.id IN (SELECT p.customer_id " \
+                           "FROM public.orders p WHERE p.local >= $2::pg_catalog.date)"])
     expect(same_ids(sql, rewrite.first)).to eq(%w[1])
   end
 

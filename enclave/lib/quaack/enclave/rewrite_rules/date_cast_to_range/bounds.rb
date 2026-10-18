@@ -30,13 +30,13 @@ module Quaack
             copy = PgQuery::Node.decode(PgQuery::Node.encode(node))
             return copy if node.node == :type_cast
 
-            cast = Tree.where_of("SELECT WHERE $1::date").type_cast
+            cast = Tree.where_of("SELECT WHERE $1::pg_catalog.date").type_cast
             cast.arg = copy
             PgQuery::Node.new(type_cast: cast)
           end
 
           def plus_one(day)
-            sum = Tree.where_of("SELECT WHERE $1 + 1").a_expr
+            sum = Tree.where_of("SELECT WHERE $1 OPERATOR(pg_catalog.+) 1").a_expr
             sum.lexpr = day
             PgQuery::Node.new(a_expr: sum)
           end

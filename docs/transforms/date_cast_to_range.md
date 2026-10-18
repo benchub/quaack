@@ -6,7 +6,7 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 ## What it does.
 
-`ts::date` is the day `ts` falls on. So `ts::date = d` holds exactly when `ts` is at or after midnight of `d` and before midnight of the next day. The rule writes that as `ts >= d AND ts < d + 1`, with `d` cast to `date`. The other comparisons work the same way:
+`ts::date` is the day `ts` falls on. So `ts::date = d` holds exactly when `ts` is at or after midnight of `d` and before midnight of the next day. The rule writes that as `ts >= d AND ts < d + 1`, with `d` cast to `date`. It writes the cast and the `+` as `pg_catalog`'s, so nothing on the `search_path` can change them, but keeps a cast to `date` that the query already wrote. The other comparisons work the same way:
 
 | Before | After |
 | --- | --- |
@@ -92,6 +92,6 @@ SELECT submissions.*
 FROM public.submissions
 WHERE
   submissions.course_id = $1
-  AND submissions.submitted_at >= $2::date
-  AND submissions.submitted_at < ($2::date + 1)
+  AND submissions.submitted_at >= $2::pg_catalog.date
+  AND submissions.submitted_at < ($2::pg_catalog.date OPERATOR(pg_catalog.+) 1)
 ```

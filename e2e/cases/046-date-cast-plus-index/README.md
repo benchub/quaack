@@ -14,7 +14,7 @@ One day's orders. The cast hides `created_at` from any index, and there's no ind
 
 ## Expected result.
 
-- **Rewrite:** a half-open range in the session's time zone. Stated assumption: the run server's `TimeZone` matches production's, which run-server checks. The `date_cast_to_range` rule makes this rewrite from `slow.sql`, the same as `fast.sql`.
+- **Rewrite:** a half-open range in the session's time zone. Stated assumption: the run server's `TimeZone` matches production's, which run-server checks. The `date_cast_to_range` rule makes this rewrite from `slow.sql`, the same as `fast.sql`, with its cast and `+` written as `pg_catalog`'s.
 - **Index:** `orders (created_at)`.
 - An expression index on `(created_at::date)` can't be built, because the cast depends on `TimeZone`. If the LLM proposes it, the DDL fails, and that should feed llm-index-refine rather than crash the run.
 
