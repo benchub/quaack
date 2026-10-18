@@ -713,15 +713,6 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Design:** run-server check, trust boundary.
 - **Status:** todo
 
-### 20261017-6. Report: color stripes on the ranking table.
-
-In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area. The user decided (2026-10-17): a stripe on the left edge of each row, in its subsection's color, with no tint across the row.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261017-7. Report: plan tables color the row-count cells, not the row, and flag the nodes driving time and blocks.
 
 In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance. The user decided (2026-10-17): the cue is a color gradient on the time and block cells, like the row-count cells, and it's based on each step's own share (its time and blocks minus its children's), not the inclusive numbers Postgres reports.
