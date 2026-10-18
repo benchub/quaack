@@ -25,7 +25,7 @@ module Quaack
                       subquery_distinct_removal distinct_key_removal cte_fence_removal
                       left_join_to_inner count_to_exists count_distinct_to_subquery
                       subquery_order_removal union_to_union_all coalesce_comparison_split
-                      date_cast_to_range].map(&:freeze).freeze
+                      date_cast_to_range scalar_aggregates_to_filter].map(&:freeze).freeze
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12

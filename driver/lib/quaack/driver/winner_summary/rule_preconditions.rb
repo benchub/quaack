@@ -73,7 +73,11 @@ module Quaack
                                          "inner join's ON, which drops a row whether the test is false or NULL.",
           "date_cast_to_range" => "A top-level WHERE or inner-join ON condition compares a timestamp or " \
                                   "timestamptz column, cast to date, with a finite day, using =, <, <=, >, " \
-                                  ">=, or BETWEEN."
+                                  ">=, or BETWEEN.",
+          "scalar_aggregates_to_filter" => "Two or more select-list items are uncorrelated scalar subqueries, each " \
+                                           "one aggregate over the same one table with no join, GROUP BY, or " \
+                                           "LIMIT, in a SELECT with no GROUP BY or bare *, and nothing calls a " \
+                                           "volatile function."
         }.freeze
       end
     end

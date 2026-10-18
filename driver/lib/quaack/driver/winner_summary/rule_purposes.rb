@@ -54,7 +54,10 @@ module Quaack
                                          "the column and a test for its NULLs, which an index on the column can serve.",
           "date_cast_to_range" => "Turns a timestamp column cast to date and compared with a day, such as " \
                                   "created_at::date = $1, into a range on the column, which a btree on the " \
-                                  "column can serve."
+                                  "column can serve.",
+          "scalar_aggregates_to_filter" => "Reads one table once for several scalar aggregate subqueries over it, " \
+                                           "in one derived table with a FILTER for each, in place of one scan " \
+                                           "for each subquery."
         }.freeze
       end
     end

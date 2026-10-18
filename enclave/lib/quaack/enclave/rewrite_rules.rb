@@ -19,6 +19,7 @@ require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
 require_relative "rewrite_rules/polymorphic_key_copy"
 require_relative "rewrite_rules/rewrite"
+require_relative "rewrite_rules/scalar_aggregates_to_filter"
 require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/subquery_distinct_removal"
 require_relative "rewrite_rules/subquery_order_removal"
@@ -101,7 +102,8 @@ module Quaack
         SubqueryOrderRemoval.new,
         UnionToUnionAll.new,
         CoalesceComparisonSplit.new,
-        DateCastToRange.new
+        DateCastToRange.new,
+        ScalarAggregatesToFilter.new
       ].freeze
 
       DEPTH = 2
