@@ -31,7 +31,8 @@ module RuleConstantsFixtures
     "cte_hoist_dedupe" => ["'available'", "'available'"],
     "union_outer_filter_removal" => %w[5 5 5],
     "unused_join_removal" => %w[5],
-    "polymorphic_key_copy" => ["'Course'", "42"]
+    "polymorphic_key_copy" => ["'Course'", "42"],
+    "subquery_distinct_removal" => %w[42]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

@@ -16,6 +16,8 @@ An ORM wrote the customer lookup as `IN (SELECT DISTINCT ...)`.
 
 A plain join. Stated assumption: `customers.email` is unique, so the join can't duplicate orders. The win is small, about 13% on the slow literals, because Postgres already turns the `IN` into a semi-join. What remains is the cost of the `DISTINCT` step.
 
+The transform rule `subquery_distinct_removal` makes a rewrite as good, with no assumption: it drops the `DISTINCT` and keeps the `IN`. Since `customers.id` is the primary key, Postgres plans that `IN` as the same join as `fast.sql`, and it touches the same 20 blocks on the slow literals and 6 on the other set.
+
 ## Proof.
 
 `ruby e2e/verify.rb 044` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.
