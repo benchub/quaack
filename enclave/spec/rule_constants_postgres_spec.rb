@@ -43,7 +43,8 @@ module RuleConstantsFixtures
     "coalesce_comparison_split" => %w[42 0 0],
     "date_cast_to_range" => ["42", "'2025-03-09'"],
     "scalar_aggregates_to_filter" => ["42", "'submitted'", "42", "'graded'", "42", "'graded'"],
-    "correlated_aggregate_to_join" => ["'graded'", "'graded'"]
+    "correlated_aggregate_to_join" => ["'graded'", "'graded'"],
+    "aggregate_before_join" => ["'graded'"]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

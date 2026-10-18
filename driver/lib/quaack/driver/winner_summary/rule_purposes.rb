@@ -59,7 +59,10 @@ module Quaack
                                            "in one derived table with a FILTER for each, in place of one scan " \
                                            "for each subquery.",
           "correlated_aggregate_to_join" => "Computes a correlated avg, sum, min, or max subquery once for each " \
-                                            "group, in a grouped derived table that the query joins."
+                                            "group, in a grouped derived table that the query joins.",
+          "aggregate_before_join" => "Aggregates the joined table first, by its join columns, in place of " \
+                                     "grouping every joined row by the other table's key, so Postgres joins " \
+                                     "one row per key instead of every row it aggregates."
         }.freeze
       end
     end

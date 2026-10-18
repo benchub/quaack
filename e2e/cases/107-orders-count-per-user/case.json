@@ -1,0 +1,29 @@
+{
+  "title": "Paid orders counted per user",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "GROUP BY a key over a has-many join",
+    "aggregate before the join",
+    "hash aggregate that spills to temp files (blocks-metric)",
+    "uniqueness assumption (assumption-check)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "refunded",
+      "replace": {
+        "'paid'": "'refunded'"
+      }
+    },
+    {
+      "name": "no such status",
+      "replace": {
+        "'paid'": "'pending'"
+      }
+    }
+  ]
+}

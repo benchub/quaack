@@ -80,7 +80,10 @@ module Quaack
                                            "volatile function.",
           "correlated_aggregate_to_join" => "A WHERE condition compares with a scalar subquery of avg, sum, min, or " \
                                             "max over one table, correlated only by equalities of one type, so an " \
-                                            "outer row with no group is dropped either way."
+                                            "outer row with no group is dropped either way.",
+          "aggregate_before_join" => "The query inner joins two tables on equalities and groups by columns " \
+                                     "of one of them that hold a unique, not-null key of it, and its " \
+                                     "aggregates read only the other table."
         }.freeze
       end
     end

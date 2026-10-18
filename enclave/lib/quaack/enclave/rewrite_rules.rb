@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "deparse"
 require_relative "rewrite_rules/count_to_exists"
+require_relative "rewrite_rules/aggregate_before_join"
 require_relative "rewrite_rules/coalesce_comparison_split"
 require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/count_distinct_to_subquery"
@@ -105,7 +106,8 @@ module Quaack
         CoalesceComparisonSplit.new,
         DateCastToRange.new,
         ScalarAggregatesToFilter.new,
-        CorrelatedAggregateToJoin.new
+        CorrelatedAggregateToJoin.new,
+        AggregateBeforeJoin.new
       ].freeze
 
       DEPTH = 2
