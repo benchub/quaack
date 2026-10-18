@@ -12149,3 +12149,33 @@ From the second review of 20261018-3. The fix round refuses a correlated count w
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-9; enclave, protocol, and driver). Top-level SELECT only, grouping columns written name.column. e2e case 106 (`106-count-distinct-users`): 19750 to 14019 blocks on the slow literals.
 - **Status:** done
+
+### 20261018-5. Rule `subquery_order_removal`.
+
+An `ORDER BY` with no `LIMIT`, `OFFSET`, or `FETCH`, in a derived table or a CTE body, is removed when no reader depends on the order. Postgres can't flatten a subquery that sorts, so it sorts rows that nothing reads in order, as in Kaminari's `SELECT count(*) FROM (SELECT ... ORDER BY ...) subquery_for_count`. A reader is order-blind when it has its own `ORDER BY`, or when it aggregates (has aggregates or `GROUP BY`) with only aggregates whose result doesn't depend on input order: an allowlist such as `count`, `min`, `max`, `bool_and`, `bool_or`, `every`, `sum` and `avg` over non-float types, and any aggregate with its own `ORDER BY`. A reader with a window function, or with `LIMIT` or `OFFSET` and no `ORDER BY` of its own, isn't order-blind. Neither is a reader with no `ORDER BY` that doesn't aggregate, since an app may rely on that order even though SQL doesn't promise it. Every reader of a CTE must be order-blind. It refuses a body with `DISTINCT ON` or a volatile call. Rests on nothing. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-5; enclave, protocol, and driver). Beyond the text above: GROUP BY and DISTINCT keys and min/max must be of types that keep equal values identical (a numeric key prints 1.00 or 1.0 by row order), checked with new `Catalog#result_types` and the literal oracle's `prepares?`, top-level readers only; aggregates must be pg_catalog's (`Catalog#builtin_aggregate?`). e2e case 102 (`102-count-over-sorted-subquery`): 409 to 7 blocks. Known and allowed: an outer ORDER BY with ties may return other tied rows.
+- **Status:** done
+
+### 20261018-8. Rule `union_to_union_all`.
+
+A `UNION` becomes `UNION ALL` when no two of its rows can be equal. The set-operation tree is all `UNION` without `ALL`. Each arm is a plain SELECT over one plain table, with no `DISTINCT`, `GROUP BY`, aggregate, window, or set-returning function, and it selects every column of a unique, not-null key of its table, so it has no duplicates of its own. One output position holds, in every arm, a bare placeholder (a cast is allowed), and the literal oracle says every pair of them differs, compared as the `UNION`'s column type. That's the tag column of an activity feed, such as `SELECT 'post' AS kind, p.id ... UNION SELECT 'comment', c.id ...`, so the arms can't share a row. It refuses key columns with a nondeterministic collation or of a type the catalog doesn't mark comparable. Check that literals keeps the tag placeholders at their slow literal in every set (they're outside any predicate). Rests on `unique` and `not_null` for each arm's key. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-8; enclave, protocol, and driver). The tag check asks the oracle whether a UNION of just the tags, in the same tree shape, has one row per arm, so tags compare in the UNION's own type. A spec holds the tags at their slow literals in every set. e2e case 105 (`105-union-feed-to-union-all`): 18128 to 22 blocks. Not yet taken: a UNION under a UNION ALL, and key positions of widening types.
+- **Status:** done
+
+### 20261018-11. Rule `coalesce_comparison_split`.
+
+`COALESCE(t.c, $d) = $v`, a top-level conjunct of a `WHERE` or an inner join's `ON`, becomes `(t.c = $v OR (t.c IS NULL AND $d = $v))`. `<>` becomes `(t.c <> $v OR (t.c IS NULL AND $d <> $v))`. Either side works. `t.c` is a column written `name.column`, and `$d` and `$v` are bare placeholders (a cast is allowed). The rewrite holds for any literals, so it needs no oracle, and Postgres folds `$d = $v` once it knows the values, which leaves `t.c = $v` or `t.c = $v OR t.c IS NULL`, both of which an index can serve. The two forms differ only between NULL and false, which a `WHERE` or `ON` conjunct treats alike. That's why the rule takes only those positions. It refuses unless `COALESCE`'s result type is the column's own type, so that the split compares with the same operator. Rests on nothing. e2e case 032 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-11; enclave, protocol, and driver). The NULL branch is `COALESCE($d, col) = $v`, not `$d = $v`, so it compares in the original's type and collation (citext stays case-blind); Postgres folds it once the values are known. Also takes a bare column when the FROM is one plain table (case 032's slow.sql). Case 032 names the rule.
+- **Status:** done

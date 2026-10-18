@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "deparse"
 require_relative "rewrite_rules/count_to_exists"
+require_relative "rewrite_rules/coalesce_comparison_split"
 require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/count_distinct_to_subquery"
 require_relative "rewrite_rules/cte_hoist_dedupe"
@@ -20,8 +21,10 @@ require_relative "rewrite_rules/rewrite"
 require_relative "rewrite_rules/scalar_aggregates_to_filter"
 require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/subquery_distinct_removal"
+require_relative "rewrite_rules/subquery_order_removal"
 require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
+require_relative "rewrite_rules/union_to_union_all"
 require_relative "rewrite_rules/unused_join_removal"
 
 module Quaack
@@ -95,6 +98,9 @@ module Quaack
         LeftJoinToInner.new,
         CountToExists.new,
         CountDistinctToSubquery.new,
+        SubqueryOrderRemoval.new,
+        UnionToUnionAll.new,
+        CoalesceComparisonSplit.new,
         ScalarAggregatesToFilter.new
       ].freeze
 

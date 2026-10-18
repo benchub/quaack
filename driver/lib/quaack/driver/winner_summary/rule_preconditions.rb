@@ -62,6 +62,15 @@ module Quaack
           "count_distinct_to_subquery" => "A SELECT with a FROM selects only its GROUP BY columns, each written " \
                                           "name.column, and one count(DISTINCT e), with no HAVING, window, or " \
                                           "DISTINCT, and calls no volatile function.",
+          "subquery_order_removal" => "A subquery in FROM or a CTE body has an ORDER BY and no LIMIT, OFFSET, or " \
+                                      "DISTINCT ON, and every query that reads it either sorts its own rows or only " \
+                                      "aggregates them with aggregates, such as count, that ignore their input's " \
+                                      "order.",
+          "union_to_union_all" => "Each arm of a UNION reads one table and selects every column of a unique, " \
+                                  "not-null key of it, and in one position every arm selects a constant tag that " \
+                                  "differs from every other arm's, so no two of the UNION's rows can be equal.",
+          "coalesce_comparison_split" => "Nothing about the data. The comparison is a condition of a WHERE or an " \
+                                         "inner join's ON, which drops a row whether the test is false or NULL.",
           "scalar_aggregates_to_filter" => "Two or more select-list items are uncorrelated scalar subqueries, each " \
                                            "one aggregate over the same one table with no join, GROUP BY, or " \
                                            "LIMIT, in a SELECT with no GROUP BY or bare *, and nothing calls a " \

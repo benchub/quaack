@@ -46,6 +46,12 @@ module Quaack
           "count_distinct_to_subquery" => "Counts the rows of a SELECT DISTINCT of the GROUP BY columns and the " \
                                           "counted value, in place of a count(DISTINCT), so Postgres can hash " \
                                           "instead of sorting inside the aggregate.",
+          "subquery_order_removal" => "Removes an ORDER BY with no LIMIT or OFFSET from a subquery in FROM or a CTE " \
+                                      "when nothing that reads it depends on that order, such as a count of its rows.",
+          "union_to_union_all" => "Turns a UNION whose rows can't repeat into a UNION ALL: each arm selects a " \
+                                  "unique, not-null key of its table and a tag that differs from every other arm's.",
+          "coalesce_comparison_split" => "Splits a COALESCE of a column compared with a value into a comparison of " \
+                                         "the column and a test for its NULLs, which an index on the column can serve.",
           "scalar_aggregates_to_filter" => "Reads one table once for several scalar aggregate subqueries over it, " \
                                            "in one derived table with a FILTER for each, in place of one scan " \
                                            "for each subquery."

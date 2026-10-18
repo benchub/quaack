@@ -13,6 +13,9 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-7. Rule `left_join_to_inner`.
 - 20261018-3. Rule `count_to_exists`.
 - 20261018-9. Rule `count_distinct_to_subquery`.
+- 20261018-5. Rule `subquery_order_removal`.
+- 20261018-8. Rule `union_to_union_all`.
+- 20261018-11. Rule `coalesce_comparison_split`.
 
 ## How this file works.
 
@@ -827,6 +830,18 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Design:** rewrite-rules.
 - **Status:** todo
 
+### 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
+
+- coalesce_comparison_split (20261018-11): `own_type?` checks only an explicit cast on the default, so an uncast default can widen the COALESCE. With an int column, `COALESCE(i, 0.5) = '1.0'` returns a row, and the split raises `invalid input syntax for type integer`. Compare the COALESCE's resolved type with the column's, or list it as unsupported and fix the comment and page. `FROM ONLY` is untested. Not yet taken: a COALESCE in a CASE or HAVING, or with a non-placeholder default.
+- subquery_order_removal (20261018-5): type checks for readers below the top level, order-blindness passed through nested readers, `VALUES` of bare constants, domains over allowed types, and `bit_and`, `bit_or`, and `array_agg(DISTINCT ...)`. Note on the page that an outer `ORDER BY ... LIMIT` with ties may return other tied rows.
+- fixture-compare (from 20261018-5): DESIGN.md says "A GROUP BY picks nothing of its own", but a GROUP BY key, and min or max over equal values that print differently (numeric `10` and `10.0`), keep whichever row comes first. The arbitrary-pick checks don't cover these.
+- union_to_union_all (20261018-8): a distinct UNION under a UNION ALL, key positions of types that widen without loss (int beside bigint), and arms told apart by keys in their own columns with NULL elsewhere.
+
+- **Depends on:** None.
+- **Came from:** Builds and reviews of 20261018-5, -8, and -11, 2026-10-18.
+- **Design:** rewrite-rules, fixture-compare.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
@@ -844,27 +859,13 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 
 ### 20261018-4. Rule `subquery_distinct_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-5. Rule `subquery_order_removal`.
-
-An `ORDER BY` with no `LIMIT`, `OFFSET`, or `FETCH`, in a derived table or a CTE body, is removed when no reader depends on the order. Postgres can't flatten a subquery that sorts, so it sorts rows that nothing reads in order, as in Kaminari's `SELECT count(*) FROM (SELECT ... ORDER BY ...) subquery_for_count`. A reader is order-blind when it has its own `ORDER BY`, or when it aggregates (has aggregates or `GROUP BY`) with only aggregates whose result doesn't depend on input order: an allowlist such as `count`, `min`, `max`, `bool_and`, `bool_or`, `every`, `sum` and `avg` over non-float types, and any aggregate with its own `ORDER BY`. A reader with a window function, or with `LIMIT` or `OFFSET` and no `ORDER BY` of its own, isn't order-blind. Neither is a reader with no `ORDER BY` that doesn't aggregate, since an app may rely on that order even though SQL doesn't promise it. Every reader of a CTE must be order-blind. It refuses a body with `DISTINCT ON` or a volatile call. Rests on nothing. Needs a new e2e case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-5. Rule `subquery_order_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-6. Rule `distinct_key_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-7. Rule `left_join_to_inner`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-8. Rule `union_to_union_all`.
-
-A `UNION` becomes `UNION ALL` when no two of its rows can be equal. The set-operation tree is all `UNION` without `ALL`. Each arm is a plain SELECT over one plain table, with no `DISTINCT`, `GROUP BY`, aggregate, window, or set-returning function, and it selects every column of a unique, not-null key of its table, so it has no duplicates of its own. One output position holds, in every arm, a bare placeholder (a cast is allowed), and the literal oracle says every pair of them differs, compared as the `UNION`'s column type. That's the tag column of an activity feed, such as `SELECT 'post' AS kind, p.id ... UNION SELECT 'comment', c.id ...`, so the arms can't share a row. It refuses key columns with a nondeterministic collation or of a type the catalog doesn't mark comparable. Check that literals keeps the tag placeholders at their slow literal in every set (they're outside any predicate). Rests on `unique` and `not_null` for each arm's key. Needs a new e2e case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-8. Rule `union_to_union_all`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-9. Rule `count_distinct_to_subquery`. Done, see BACKLOG-COMPLETE.md.
 
@@ -877,14 +878,7 @@ A comparison of a `timestamp` or `timestamptz` column, cast to `date` (`ts::date
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-11. Rule `coalesce_comparison_split`.
-
-`COALESCE(t.c, $d) = $v`, a top-level conjunct of a `WHERE` or an inner join's `ON`, becomes `(t.c = $v OR (t.c IS NULL AND $d = $v))`. `<>` becomes `(t.c <> $v OR (t.c IS NULL AND $d <> $v))`. Either side works. `t.c` is a column written `name.column`, and `$d` and `$v` are bare placeholders (a cast is allowed). The rewrite holds for any literals, so it needs no oracle, and Postgres folds `$d = $v` once it knows the values, which leaves `t.c = $v` or `t.c = $v OR t.c IS NULL`, both of which an index can serve. The two forms differ only between NULL and false, which a `WHERE` or `ON` conjunct treats alike. That's why the rule takes only those positions. It refuses unless `COALESCE`'s result type is the column's own type, so that the split compares with the same operator. Rests on nothing. e2e case 032 covers it.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-11. Rule `coalesce_comparison_split`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-12. Rule `scalar_aggregates_to_filter`.
 

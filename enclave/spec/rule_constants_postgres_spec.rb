@@ -38,6 +38,9 @@ module RuleConstantsFixtures
     "left_join_to_inner" => %w[42 20],
     "count_to_exists" => ["'registered'", "'graded'", "0"],
     "count_distinct_to_subquery" => ["'active'"],
+    "subquery_order_removal" => %w[42],
+    "union_to_union_all" => ["'Submission'", "42", "'Enrollment'", "42"],
+    "coalesce_comparison_split" => %w[42 0 0],
     "scalar_aggregates_to_filter" => ["42", "'submitted'", "42", "'graded'", "42", "'graded'"]
   }.freeze
 
