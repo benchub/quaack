@@ -713,15 +713,6 @@ From the review of 20261017-1. The tiebreak sorts by footprint, then slow blocks
 - **Design:** run-server check, trust boundary.
 - **Status:** todo
 
-### 20261017-5. Report: reword the not_better fate.
-
-A not_better rewrite's fate reads "It passed every test, then QUAACK measured it on the real data, where it read over 5% more blocks on some values, so QUAACK didn't rank it." That's unclear. The user suggests: "It passed every correctness test, but when measured against real data performed too poorly to be ranked." Reword `LEAD`, `TAIL`, and the three variants (small gain, regressed, either) in `driver/lib/quaack/driver/report/not_better_fate.rb`, and update `driver/spec/report_spec.rb`. The user decided (2026-10-17) on one sentence for every case: "It passed every correctness test, but when measured against real data performed too poorly to be ranked." The three variants go away.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261017-6. Report: color stripes on the ranking table.
 
 In the Ranking section, each subsection has a colored stripe on its left, but the ranking table above them has none. Repeat each subsection's stripe color on the matching part of the ranking table, so the table and its subsections read as one area. The user decided (2026-10-17): a stripe on the left edge of each row, in its subsection's color, with no tint across the row.
