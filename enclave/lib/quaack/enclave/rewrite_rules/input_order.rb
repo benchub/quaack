@@ -84,15 +84,23 @@ module Quaack
         # The base type of a plain column of a plain table in owner's FROM,
         # or nil.
         def column_type(node, owner, catalog)
-          fields = node.column_ref&.fields&.map { it.string&.sval }
-          return unless fields&.all? && [1, 2].include?(fields.size)
+          fields = fields(node)
+          table = table(fields, owner) if fields
+          catalog.column_info(table.schemaname, table.relname, fields.last)&.base_type if table
+        end
 
+        # The names of a column written column or name.column, or nil.
+        def fields(node)
+          fields = node.column_ref&.fields&.map { it.string&.sval }
+          fields if fields&.all? && [1, 2].include?(fields.size)
+        end
+
+        # The plain table in owner's FROM that fields' column is of, or nil.
+        def table(fields, owner)
           items = Tree.from_items(owner.from_clause)
           named = fields.size == 2 ? items.select { it.name == fields.first } : items
           table = named.first.table if named.size == 1
-          return unless table && Tree.plain_table?(table)
-
-          catalog.column_info(table.schemaname, table.relname, fields.last)&.base_type
+          table if table && Tree.plain_table?(table)
         end
       end
     end
