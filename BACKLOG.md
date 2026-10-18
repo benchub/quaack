@@ -764,17 +764,6 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Design:** redact.
 - **Status:** todo
 
-### 20261018-21. subquery_distinct_removal: minors from the build and review of 20261018-4.
-
-- Untested refusal: `Readers.passes?` can drop its `limit_offset.nil?` check and the suite stays green, since nothing tests an `OFFSET` on a `UNION ALL` or `INTERSECT ALL` between an arm and its reader. Add the refusal pair beside the `LIMIT` one.
-- Untested forms the page claims: `OPERATOR(pg_catalog.<>) ALL`, and a reader nested in an `IN`'s left side (`walk(link.testexpr, ...)`). Losing either only makes the rule refuse more, but the page says it takes them.
-- Sound but refused in v1: a `GROUP BY` of a subset of the select list (a primary key with columns that depend on it), and `DISTINCT` of expressions or stars, which needs the expression's type and collation.
-
-- **Depends on:** None.
-- **Came from:** Build and review of 20261018-4, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
-
 ### 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
 
 From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_removal) or a join (unused_join_removal) inside a derived table can change the order in which rows reach the reading query. If that query feeds them to an aggregate whose result depends on order and that has no `ORDER BY` of its own, such as `string_agg(t.name, ',')` or `array_agg(t.id)` over the derived table, the result changes, and result-comparison would report a sound rewrite as a rule bug. Decide whether these rules refuse such a reader (an allowlist of order-blind aggregates, as 20261018-5 uses), or whether fixture-compare and result-comparison should treat such an aggregate's result as unordered. Reproduce it first.

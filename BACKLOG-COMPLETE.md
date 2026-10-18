@@ -12249,3 +12249,15 @@ From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the sam
 - **Design:** None (test and e2e tooling).
 - **Landed:** 2026-10-18 (task/20261018-20; spec and e2e tooling). spec/e2e_verify_spec.rb now keeps a pid-1 owned container; test_postgres_spec already had a pid-1 test. Both go red when EPERM counts as dead.
 - **Status:** done
+
+### 20261018-21. subquery_distinct_removal: minors from the build and review of 20261018-4.
+
+- Untested refusal: `Readers.passes?` can drop its `limit_offset.nil?` check and the suite stays green, since nothing tests an `OFFSET` on a `UNION ALL` or `INTERSECT ALL` between an arm and its reader. Add the refusal pair beside the `LIMIT` one.
+- Untested forms the page claims: `OPERATOR(pg_catalog.<>) ALL`, and a reader nested in an `IN`'s left side (`walk(link.testexpr, ...)`). Losing either only makes the rule refuse more, but the page says it takes them.
+- Sound but refused in v1: a `GROUP BY` of a subset of the select list (a primary key with columns that depend on it), and `DISTINCT` of expressions or stars, which needs the expression's type and collation.
+
+- **Depends on:** None.
+- **Came from:** Build and review of 20261018-4, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-21; enclave spec and docs). Tests for the OFFSET refusals, OPERATOR(pg_catalog.<>) ALL, and a reader inside an IN's tested value. The sound-but-refused items weren't small (functional dependence; expression types and collations) and stay unsupported in v1.
+- **Status:** done
