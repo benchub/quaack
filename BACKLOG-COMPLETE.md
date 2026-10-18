@@ -12049,3 +12049,13 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 - **Design:** report.
 - **Landed:** 2026-10-17 (task/20261017-5; driver only). Every not_better rewrite's fate is now the one sentence, kept in `Report::Rewrites::FATES`. `Report::NotBetterFate` (its verdict reading and `PERCENT`) is gone. A not_better rewrite that went on untested (out_of_time or not_tested) still gets its opening reworded by `went_on`, which gained a pair for "It passed every correctness test,". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
+
+### 20261018-16. StalledLogger: accept the `anon_pipe_write` wait channel.
+
+Found while building 20261018-1. The Docker VM's kernel is now `7.0.14-linuxkit`, and Linux 6.14 and later name a backend blocked writing to a pipe `anon_pipe_write`, not `pipe_write`. `enclave/spec/support/stalled_logger.rb` waits for a wait channel of exactly `pipe_write`, so the two examples in `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` (lines 38 and 52) fail with "backend N never blocked logging BEGIN/ROLLBACK", alone too, and every per-commit check fails with them. Accept either name, in the helper and in what those examples expect, and keep the examples testing what they test now.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-1, 2026-10-18.
+- **Design:** None (test support).
+- **Landed:** 2026-10-18 (task/20261018-16; enclave spec support only). `StalledLogger::PIPE_WRITE_CHANNELS` holds both names, `wait_for` waits for either, and the two foreign-cancel examples check the channel is one of them, then the rule, step, and sqlstate exactly as before.
+- **Status:** done

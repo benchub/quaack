@@ -749,15 +749,6 @@ The report is getting long to scroll through. Add a `<nav>` of links to the repo
 - **Design:** report.
 - **Status:** todo
 
-### 20261018-16. StalledLogger: accept the `anon_pipe_write` wait channel.
-
-Found while building 20261018-1. The Docker VM's kernel is now `7.0.14-linuxkit`, and Linux 6.14 and later name a backend blocked writing to a pipe `anon_pipe_write`, not `pipe_write`. `enclave/spec/support/stalled_logger.rb` waits for a wait channel of exactly `pipe_write`, so the two examples in `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` (lines 38 and 52) fail with "backend N never blocked logging BEGIN/ROLLBACK", alone too, and every per-commit check fails with them. Accept either name, in the helper and in what those examples expect, and keep the examples testing what they test now.
-
-- **Depends on:** None.
-- **Came from:** Build of 20261018-1, 2026-10-18.
-- **Design:** None (test support).
-- **Status:** todo
-
 ### 20261018-17. Rule rewrites: decide whether a run needs a limit on the total.
 
 From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the 25 rules match, or one rule matches many times (one rewrite per `IN`, say), sends that many rewrites on. Each gets up to 90 seconds of fuzz and enumerate, a 5-minute rewrite-test budget, its own index search, and LLM counterexample rounds. Once real runs with all the rules show the run time and LLM cost, decide with the user whether a run needs a limit on the total or on one rule's matches.
