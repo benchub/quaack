@@ -23,7 +23,8 @@ module Quaack
                       or_to_union not_in_to_not_exists existence_in_flip distinct_join_to_exists cte_hoist_dedupe
                       union_outer_filter_removal unused_join_removal polymorphic_key_copy
                       subquery_distinct_removal distinct_key_removal cte_fence_removal
-                      left_join_to_inner count_to_exists count_distinct_to_subquery].map(&:freeze).freeze
+                      left_join_to_inner count_to_exists count_distinct_to_subquery
+                      date_cast_to_range].map(&:freeze).freeze
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12

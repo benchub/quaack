@@ -45,7 +45,10 @@ module Quaack
                                "the first match.",
           "count_distinct_to_subquery" => "Counts the rows of a SELECT DISTINCT of the GROUP BY columns and the " \
                                           "counted value, in place of a count(DISTINCT), so Postgres can hash " \
-                                          "instead of sorting inside the aggregate."
+                                          "instead of sorting inside the aggregate.",
+          "date_cast_to_range" => "Turns a timestamp column cast to date and compared with a day, such as " \
+                                  "created_at::date = $1, into a range on the column, which a btree on the " \
+                                  "column can serve."
         }.freeze
       end
     end

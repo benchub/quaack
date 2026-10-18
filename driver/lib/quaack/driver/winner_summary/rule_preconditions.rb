@@ -61,7 +61,10 @@ module Quaack
                                "so the comparison only asks whether any row matches.",
           "count_distinct_to_subquery" => "A SELECT with a FROM selects only its GROUP BY columns, each written " \
                                           "name.column, and one count(DISTINCT e), with no HAVING, window, or " \
-                                          "DISTINCT, and calls no volatile function."
+                                          "DISTINCT, and calls no volatile function.",
+          "date_cast_to_range" => "A top-level WHERE or inner-join ON condition compares a timestamp or " \
+                                  "timestamptz column, cast to date, with a finite day, using =, <, <=, >, " \
+                                  ">=, or BETWEEN."
         }.freeze
       end
     end

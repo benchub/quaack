@@ -37,7 +37,8 @@ module RuleConstantsFixtures
     "cte_fence_removal" => ["'active'", "42"],
     "left_join_to_inner" => %w[42 20],
     "count_to_exists" => ["'registered'", "'graded'", "0"],
-    "count_distinct_to_subquery" => ["'active'"]
+    "count_distinct_to_subquery" => ["'active'"],
+    "date_cast_to_range" => ["42", "'2025-03-09'"]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

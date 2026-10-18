@@ -318,6 +318,13 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       "a cast date against a timestamp column" => [
         "SELECT o.id FROM public.orders o WHERE o.created_at >= '2025-03-01'::date", "unsupported_shape"
       ],
+      # date_cast_to_range relies on these keeping the slow day.
+      "a timestamp column cast to date" => [
+        "SELECT o.id FROM public.orders o WHERE o.created_at::date = '2025-03-01'", "unsupported_shape"
+      ],
+      "a timestamp column passed to date()" => [
+        "SELECT o.id FROM public.orders o WHERE '2025-03-01' <= date(o.created_at)", "unsupported_shape"
+      ],
       "a LIMIT" => ["SELECT r.id FROM public.readings r LIMIT 5", "unsupported_shape"],
       "a subquery's column" => ["SELECT s.k FROM (SELECT r.k FROM public.readings r) s WHERE s.k = 5",
                                 "unsupported_shape"]
@@ -330,6 +337,16 @@ RSpec.describe Quaack::Enclave::LiteralSet do
         expect(result.fallbacks).to eq("worst_case" => { "$1" => reason }, "typical" => { "$1" => reason })
         rows(sql, result.sets["typical"])
       end
+    end
+
+    it "for both days of a timestamp column cast to date BETWEEN them, as date_cast_to_range relies on" do
+      sql, result = literal_sets("SELECT o.id FROM public.orders o WHERE CAST(o.created_at AS date) " \
+                                 "BETWEEN '2025-03-01' AND '2025-03-31'")
+
+      expect(result.sets["worst_case"]).to eq(result.sets["slow"])
+      expect(result.sets["typical"]).to eq(result.sets["slow"])
+      expect(result.fallbacks["typical"]).to eq("$1" => "unsupported_shape", "$2" => "unsupported_shape")
+      rows(sql, result.sets["typical"])
     end
 
     it "for each literal of a keyset row comparison, and binds and runs every set" do

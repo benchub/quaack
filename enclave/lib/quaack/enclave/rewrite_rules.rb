@@ -6,6 +6,7 @@ require_relative "rewrite_rules/count_to_exists"
 require_relative "rewrite_rules/cte_fence_removal"
 require_relative "rewrite_rules/count_distinct_to_subquery"
 require_relative "rewrite_rules/cte_hoist_dedupe"
+require_relative "rewrite_rules/date_cast_to_range"
 require_relative "rewrite_rules/distinct_join_to_exists"
 require_relative "rewrite_rules/distinct_key_removal"
 require_relative "rewrite_rules/existence_in_flip"
@@ -93,7 +94,8 @@ module Quaack
         CteFenceRemoval.new,
         LeftJoinToInner.new,
         CountToExists.new,
-        CountDistinctToSubquery.new
+        CountDistinctToSubquery.new,
+        DateCastToRange.new
       ].freeze
 
       DEPTH = 2
