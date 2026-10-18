@@ -16,6 +16,10 @@ The rule gives one rewrite for each `IN` it can rewrite. With two or more, it fi
 
 The rule refuses an `IN` under `OR` or `NOT`, in a select list, or in a `HAVING`, and an `IN` that tests a table of an enclosing query.
 
+## Why it can be faster.
+
+The subquery reads the same table the outer query already reads, only to filter it and hand back its key. Postgres then has to scan that table twice and match the two copies up. Because the key is unique, each outer row matches at most one inner row, and that row is the outer row itself. So the inner copy's filters can move straight onto the outer table, and the second scan goes away. Whatever the subquery checked in other tables stays as an `EXISTS`, which Postgres can stop at the first match.
+
 ## What it rests on.
 
 The rule needs `k` to be unique and not null. The rule applies only when it can prove this. It states the catalog facts that it relies on as assumptions. assumption-check checks these assumptions again, as it checks all other assumptions.

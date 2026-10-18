@@ -41,6 +41,10 @@ Postgres must still be able to prepare the rewrite. Thus the rule refuses a quer
 
 A single read is not always faster, because the CTE hides the indices of the table from the filters and join conditions of the copies. plan-pruning and the steps after it decide if it is faster. The index search of plan-pruning covers the scan of the base table by the CTE, as index-from-query covers any CTE body.
 
+## Why it can be faster.
+
+A self-join reads the same table twice, and each read applies the same filter. If that filter matches a small part of a large table, reading and filtering the table once and reusing the result can cut the work roughly in half. The `MATERIALIZED` keyword tells Postgres to compute the CTE once and keep it, rather than folding it back into each copy. The trade-off is that the stored result has no indexes, so the join between the copies can get slower. That's why QUAACK measures this rewrite rather than assuming it helps.
+
 ## What it rests on.
 
 No assumption. Its output returns the same rows as its input on any data the schema allows.

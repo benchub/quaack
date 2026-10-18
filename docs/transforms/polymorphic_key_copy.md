@@ -19,6 +19,10 @@ The constant stays a placeholder, and the copy reuses it.
 
 If the column has foreign keys, each foreign key must reference `<x>s` or `<x>es`. The rule refuses when two columns of the child match. It adds nothing when the copy is already there. The rule does not support single-table inheritance or acronym inflections.
 
+## Why it can be faster.
+
+The query filters the parent table, then joins to the child. Postgres has to find the matching parents first and then look up each one's children, and it may scan many child rows along the way. The child table already holds its own copy of the id, often with an index on it. Adding a filter on that copy lets Postgres go straight to the right child rows through that index. The filter adds no new meaning as long as the copy is accurate, which is why QUAACK checks the data before it trusts the rewrite.
+
 ## What it rests on.
 
 It is a heuristic rule. It rests on a `denormalized_equal` assumption, which the schema cannot state. The assumption is that the child's copy equals the parent's polymorphic id wherever the parent's type column names that class. assumption-check checks the assumption against the data before the rewrite continues. Thus the rewrite is only as good as the data was at that time. The report says so, and names the columns.

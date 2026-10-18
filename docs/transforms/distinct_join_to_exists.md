@@ -25,6 +25,10 @@ A bare name counts only when it is the key's column. For this, every select-list
 
 When a call names a schema, the rule matches the function or operator by that schema. When the call names no schema, the rule refuses if any schema has a set-returning, aggregate, or window function with that name. The rule also refuses when the key's column has a nondeterministic collation that its unique index does not share. In that case, `DISTINCT` would combine rows that the index keeps separate.
 
+## Why it can be faster.
+
+A join can match one row to many. If a user has five enrollments in the course, the join produces that user five times, and `DISTINCT` then has to sort or hash every row to throw the extra copies away. `EXISTS` asks a simpler question: does at least one match exist? Postgres can stop looking at the first match, and it never builds the duplicates, so there's nothing to clean up. The key in the select list is what guarantees the two forms give the same rows, since each kept-table row appears exactly once either way.
+
 ## What it rests on.
 
 The select list holds every column of a unique key of the kept table, and each of these columns is not null. The key can have several columns. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

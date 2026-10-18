@@ -34,6 +34,10 @@ The rule refuses:
 
 The rule removes only that conjunct. Thus the outer `GROUP BY` and `HAVING` do not change.
 
+## Why it can be faster.
+
+Every arm of the `UNION` already applies the filter, so every row that comes out of it already passes. Checking it again outside costs time on each row. It can also mislead the planner, which treats the outer filter as if it removes more rows and so underestimates the size of the result. A low estimate can lead Postgres to choose a plan that works well for a few rows and badly for many. Removing the repeated filter avoids both problems.
+
 ## What it rests on.
 
 The rule makes no assumption. Its output returns the same rows as its input, on any data that the schema allows.

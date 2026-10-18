@@ -31,6 +31,10 @@ The rule ignores type modifiers, so `varchar(20)` against `varchar(255)` is perm
 
 The rule never uses, or copies to, a column on the nullable side of an outer join.
 
+## Why it can be faster.
+
+If `a.x = b.y` and `a.x` is one of a few values, then `b.y` must be one of those values too. A person sees that right away, but Postgres doesn't draw that conclusion for lists or ranges. It does for a single `=`. Without the copy, Postgres may read far more rows of the second table than it needs and throw most of them away at the join. With the copy written out, it can use an index on `b.y` to fetch only the rows that can match, and it gets a better estimate of how many rows the join will produce.
+
 ## What it rests on.
 
 No assumption. Its output returns the same rows as its input on any data the schema allows.

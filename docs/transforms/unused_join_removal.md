@@ -36,6 +36,10 @@ These cases are unsupported in v1:
 - a joined table read with `ONLY`, and
 - a `JOIN` whose `ON` holds a condition that does not read the joined table.
 
+## Why it can be faster.
+
+A join costs work even when the query never uses the joined table's columns: Postgres still has to look up the matching row for every row of the other table. An inner join could, in general, remove rows that have no match, so Postgres keeps it to be safe. A validated foreign key on a not-null column promises that every row has exactly one match. With that promise, the join can't drop or repeat rows, so it does nothing but cost time, and removing it gives the same result with less work.
+
 ## What it rests on.
 
 The rule needs a foreign key from the joining columns to the joined columns. Each joining column must also be not null. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

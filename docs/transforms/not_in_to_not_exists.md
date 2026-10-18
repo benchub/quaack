@@ -33,6 +33,10 @@ The rule does not change these:
 - A `UNION` without `ALL` of a type that Postgres cannot dedupe, such as `box`.
 - A row with a pair whose `=` is not an operator of a btree family, such as the `=` of `box`.
 
+## Why it can be faster.
+
+`NOT IN` has awkward rules for `NULL`: if the subquery returns even one `NULL`, `NOT IN` can't say "not in" for anything. Postgres has to honor that, so it often runs `NOT IN` by checking each outer row against the whole subquery result, which gets slow as the result grows. `NOT EXISTS` doesn't have that quirk, so Postgres can run it as an anti-join: a join that keeps only the rows with no match, using an index or a hash table. When neither side can be `NULL`, the two forms mean the same thing, and the anti-join is usually much faster.
+
 ## What it rests on.
 
 The rule rests on these conditions: `x` and `y` are not null, and neither table is on the nullable side of an outer join.

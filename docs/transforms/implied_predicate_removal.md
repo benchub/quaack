@@ -25,6 +25,10 @@ The rule refuses these:
 
 Literals are compared only inside Postgres. Placeholders are bound as parameters, and cast to the type and collation of the column.
 
+## Why it can be faster.
+
+If a column must equal one value, every other condition on that same column is either always true or makes the query return nothing. Here, the extra conditions are always true. Postgres still checks them on every row, and worse, it may count them as extra filters when it estimates how many rows will match. That can make it think a result is much smaller than it is, and pick a plan suited to a tiny result. Dropping the redundant conditions saves the per-row checks and gives the planner a more accurate row estimate.
+
 ## What it rests on.
 
 The rule needs no assumption. Its output returns the same rows as its input on any data that the schema allows.

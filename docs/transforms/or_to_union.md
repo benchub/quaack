@@ -62,6 +62,10 @@ A `*` in the select list stands for every column of every `FROM` table, in the `
 
 It leaves a `*` alone when a table has a column of a type `UNION` can't compare, such as `json`, and a `*` with `GROUP BY`, since the columns it stands for aren't each grouped. A `*` never includes a system column, and neither does the rewrite.
 
+## Why it can be faster.
+
+An index helps Postgres find rows that meet one condition. When a `WHERE` says "this condition OR that one", and the two conditions live in different tables or subqueries, no single index can answer both. Postgres often falls back to reading every row and testing both conditions on each. Splitting the `OR` into a `UNION` gives each half its own query, so each half can use the index that suits it. The `UNION` then merges the two results and removes rows that both halves found, which is why the rule needs a key to tell rows apart.
+
 ## What it rests on.
 
 The rule needs a unique key of every `FROM` table, of one or more columns, each of which is not null. With this key, `UNION` removes exactly the rows that both arms return. The rule applies only when it can prove this. It states the catalog facts that it relies on as assumptions. assumption-check checks these assumptions again, as it checks all other assumptions.

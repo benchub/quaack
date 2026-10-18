@@ -27,6 +27,10 @@ A copy merges only if Postgres can analyze its body alone. Thus the copy:
 
 The rule refuses a copy in a `RECURSIVE` `WITH`. It refuses the whole query when the top-level `WITH` is `RECURSIVE`, or when any CTE modifies data. A copy inside the body of another copy moves with that copy.
 
+## Why it can be faster.
+
+ORMs and view layers often paste the same small subquery into several places. Postgres treats each copy as a separate piece of work, so it may run the same lookup two or three times. With one shared CTE, Postgres has the option to compute the result once, keep it, and hand it to every place that needs it. That isn't always a win, since a stored result can't use the indexes of the table it came from, so QUAACK measures both versions before it picks one.
+
 ## What it rests on.
 
 No assumption. Its output returns the same rows as its input on any data the schema allows.
