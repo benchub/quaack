@@ -61,7 +61,11 @@ module Quaack
                                "so the comparison only asks whether any row matches.",
           "count_distinct_to_subquery" => "A SELECT with a FROM selects only its GROUP BY columns, each written " \
                                           "name.column, and one count(DISTINCT e), with no HAVING, window, or " \
-                                          "DISTINCT, and calls no volatile function."
+                                          "DISTINCT, and calls no volatile function.",
+          "scalar_aggregates_to_filter" => "Two or more select-list items are uncorrelated scalar subqueries, each " \
+                                           "one aggregate over the same one table with no join, GROUP BY, or " \
+                                           "LIMIT, in a SELECT with no GROUP BY or bare *, and nothing calls a " \
+                                           "volatile function."
         }.freeze
       end
     end

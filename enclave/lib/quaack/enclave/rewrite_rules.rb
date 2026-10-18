@@ -17,6 +17,7 @@ require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
 require_relative "rewrite_rules/polymorphic_key_copy"
 require_relative "rewrite_rules/rewrite"
+require_relative "rewrite_rules/scalar_aggregates_to_filter"
 require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/subquery_distinct_removal"
 require_relative "rewrite_rules/transitive_predicate_copy"
@@ -93,7 +94,8 @@ module Quaack
         CteFenceRemoval.new,
         LeftJoinToInner.new,
         CountToExists.new,
-        CountDistinctToSubquery.new
+        CountDistinctToSubquery.new,
+        ScalarAggregatesToFilter.new
       ].freeze
 
       DEPTH = 2

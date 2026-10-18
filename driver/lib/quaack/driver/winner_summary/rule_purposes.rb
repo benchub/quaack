@@ -45,7 +45,10 @@ module Quaack
                                "the first match.",
           "count_distinct_to_subquery" => "Counts the rows of a SELECT DISTINCT of the GROUP BY columns and the " \
                                           "counted value, in place of a count(DISTINCT), so Postgres can hash " \
-                                          "instead of sorting inside the aggregate."
+                                          "instead of sorting inside the aggregate.",
+          "scalar_aggregates_to_filter" => "Reads one table once for several scalar aggregate subqueries over it, " \
+                                           "in one derived table with a FILTER for each, in place of one scan " \
+                                           "for each subquery."
         }.freeze
       end
     end
