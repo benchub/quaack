@@ -12119,3 +12119,33 @@ A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than o
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18 (task/20261018-7; enclave, protocol, and driver). Reuses `UnusedJoinRemoval::Candidates`. e2e case 104 (`104-eager-load-order-by-association`): 6844 to 353 blocks on the slow literals. Not yet taken: RIGHT JOIN mirrored, FULL to LEFT on the same grounds, and a nullable joining column the WHERE requires non-null.
 - **Status:** done
+
+### 20261018-24. count_to_exists: refuse an uncorrelated count that can raise.
+
+From the second review of 20261018-3. The fix round refuses a correlated count whose subquery can raise, but keeps an uncorrelated one on the claim that it already checks every row it reads. That claim is false: the count reads only the rows its access path returns, and EXISTS can pick a seq scan whose filter runs the division first. Repro (PG 18): `purchases(id int PK, amount int, qty int, created_at timestamptz)` with an index on `created_at`, 200k rows, `qty = 0` on row 8, 20% recent; `SELECT (SELECT count(*) FROM public.purchases p WHERE p.amount / p.qty > 30 AND p.created_at > now() - interval '7 days') > 0` returns `t`, the rewrite raises `division_by_zero`. Fix: refuse any count whose FROM or WHERE holds what `OrToUnion::Arms.raises?` flags, flip the uncorrelated spec to a refusal on this data, and fix the page. Builds on branch `task/20261018-3`, which then lands with this task.
+
+- **Depends on:** None.
+- **Came from:** Second review of 20261018-3, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (on task/20261018-3, with that task). The rule refuses any count whose FROM or WHERE holds what `OrToUnion::Arms.raises?` flags, correlated or not; a spec shows the EXISTS form raising on a seq scan where the count's index scan doesn't.
+- **Status:** done
+
+### 20261018-3. Rule `count_to_exists`.
+
+`(SELECT count(*) FROM ... WHERE ...) > $n`, where the literal oracle says `$n` is 0, becomes `EXISTS (SELECT 1 FROM ... WHERE ...)`. So do `>= 1`, `<> 0`, and the mirrored forms (`0 < (...)`). `= 0`, `<= 0`, and `< 1` become `NOT EXISTS`. `count(col)` works too, with `col IS NOT NULL` added to the subquery's `WHERE`. The subquery is a plain SELECT whose select list is that one `count`, with no `GROUP BY`, `HAVING`, `DISTINCT`, window, `LIMIT`, `OFFSET`, or set operation. It can be correlated. Since a count is never NULL and the constant isn't either, the test is only true or false, so any position is safe. Check that literals keeps `$n` at its slow literal in every set (a placeholder compared with a subquery isn't compared with a plain column). If it doesn't, result-comparison would run the rewrite with another value. Rests on nothing. e2e case 035 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-3, with 20261018-24; enclave, protocol, and driver). Beyond the text above: count(col) adds col IS NOT NULL (refusing row-typed columns via a new `Catalog#row_type?`), every count in the query is rewritten in one rewrite, and a count whose FROM or WHERE can raise is refused (first review: correlated; 20261018-24: any). A LiteralSet spec holds the threshold placeholder at its slow literal. e2e case 035 names the rule.
+- **Status:** done
+
+### 20261018-9. Rule `count_distinct_to_subquery`.
+
+`SELECT g1, ..., count(DISTINCT e) FROM ... WHERE ... GROUP BY g1, ...` becomes `SELECT d.g1, ..., count(d.e) FROM (SELECT DISTINCT g1, ..., e FROM ... WHERE ...) d GROUP BY d.g1, ...`, with the output names kept. With no `GROUP BY`, it becomes `SELECT count(d.e) FROM (SELECT DISTINCT e ...) d`, which still gives 0 on no rows. Postgres runs `count(DISTINCT)` by sorting inside the aggregate, while a `SELECT DISTINCT` can hash. The select list is the grouping columns, each written `name.column` and in the `GROUP BY`, and exactly one `count(DISTINCT e)` of one argument, with no `FILTER` and no `ORDER BY` inside. The query has no `HAVING`, window, `DISTINCT`, or grouping set. `ORDER BY` may name grouping columns, the count's alias, or ordinals, which the rule rewrites to `d`'s columns. It refuses other `ORDER BY` items and volatile calls. NULLs and collations agree: both forms skip a NULL `e` and compare `e` with its type's equality and collation. Rests on nothing. Needs a new e2e case.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-9; enclave, protocol, and driver). Top-level SELECT only, grouping columns written name.column. e2e case 106 (`106-count-distinct-users`): 19750 to 14019 blocks on the slow literals.
+- **Status:** done

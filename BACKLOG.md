@@ -11,6 +11,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-6. Rule `distinct_key_removal`.
 - 20261018-2. Rule `cte_fence_removal`.
 - 20261018-7. Rule `left_join_to_inner`.
+- 20261018-3. Rule `count_to_exists`.
+- 20261018-9. Rule `count_distinct_to_subquery`.
 
 ## How this file works.
 
@@ -812,12 +814,16 @@ From the build of 20261018-6. A rule that removes a `DISTINCT` (distinct_key_rem
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-24. count_to_exists: refuse an uncorrelated count that can raise.
+### 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
 
-From the second review of 20261018-3. The fix round refuses a correlated count whose subquery can raise, but keeps an uncorrelated one on the claim that it already checks every row it reads. That claim is false: the count reads only the rows its access path returns, and EXISTS can pick a seq scan whose filter runs the division first. Repro (PG 18): `purchases(id int PK, amount int, qty int, created_at timestamptz)` with an index on `created_at`, 200k rows, `qty = 0` on row 8, 20% recent; `SELECT (SELECT count(*) FROM public.purchases p WHERE p.amount / p.qty > 30 AND p.created_at > now() - interval '7 days') > 0` returns `t`, the rewrite raises `division_by_zero`. Fix: refuse any count whose FROM or WHERE holds what `OrToUnion::Arms.raises?` flags, flip the uncorrelated spec to a refusal on this data, and fix the page. Builds on branch `task/20261018-3`, which then lands with this task.
+- cte_fence_removal (20261018-2): refuse `INTERSECT ALL` and `EXCEPT ALL` in a body that runs more than once (they keep one of two equal values, such as `1.0` and `1.00`, by input order); add tests for an `OFFSET` without `LIMIT` and for a refusal nested inside such a body. Sound but refused in v1: order-insensitive aggregates in such a body, and computed columns no condition reads.
+- count_to_exists (20261018-3): refuse when a `GROUP BY` item holds the same count subquery (the select-list copy becomes EXISTS and the query no longer prepares); extend the LiteralSet guard spec to `=`, `OPERATOR(pg_catalog...)` forms, and a comparison outside `WHERE`. Sound but refused in v1: `count(1)`, `count(DISTINCT col)`, and `FILTER`.
+- left_join_to_inner (20261018-7): take a mirrored `RIGHT JOIN`, a `FULL JOIN` that the same key makes a `LEFT JOIN`, and a nullable joining column the `WHERE` requires non-null; fix two wording slips (the header on locking, and "Why it can be faster").
+- count_distinct_to_subquery (20261018-9): the `window_clause.empty?` guard has no test; accept bare grouping columns and `GROUP BY` ordinals (ORMs write both), a `count(DISTINCT)` below the top level, and a `GROUP BY` column not in the select list.
+- The union_outer_filter_removal Canvas chain spec depends on how many rules fire on its query, so a new rule can push its chain past the two-rule cap.
 
 - **Depends on:** None.
-- **Came from:** Second review of 20261018-3, 2026-10-18.
+- **Came from:** Builds and reviews of 20261018-2, -3, -7, and -9, 2026-10-18.
 - **Design:** rewrite-rules.
 - **Status:** todo
 
@@ -834,14 +840,7 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 
 ### 20261018-2. Rule `cte_fence_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-3. Rule `count_to_exists`.
-
-`(SELECT count(*) FROM ... WHERE ...) > $n`, where the literal oracle says `$n` is 0, becomes `EXISTS (SELECT 1 FROM ... WHERE ...)`. So do `>= 1`, `<> 0`, and the mirrored forms (`0 < (...)`). `= 0`, `<= 0`, and `< 1` become `NOT EXISTS`. `count(col)` works too, with `col IS NOT NULL` added to the subquery's `WHERE`. The subquery is a plain SELECT whose select list is that one `count`, with no `GROUP BY`, `HAVING`, `DISTINCT`, window, `LIMIT`, `OFFSET`, or set operation. It can be correlated. Since a count is never NULL and the constant isn't either, the test is only true or false, so any position is safe. Check that literals keeps `$n` at its slow literal in every set (a placeholder compared with a subquery isn't compared with a plain column). If it doesn't, result-comparison would run the rewrite with another value. Rests on nothing. e2e case 035 covers it.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-3. Rule `count_to_exists`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-4. Rule `subquery_distinct_removal`. Done, see BACKLOG-COMPLETE.md.
 
@@ -867,14 +866,7 @@ A `UNION` becomes `UNION ALL` when no two of its rows can be equal. The set-oper
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-9. Rule `count_distinct_to_subquery`.
-
-`SELECT g1, ..., count(DISTINCT e) FROM ... WHERE ... GROUP BY g1, ...` becomes `SELECT d.g1, ..., count(d.e) FROM (SELECT DISTINCT g1, ..., e FROM ... WHERE ...) d GROUP BY d.g1, ...`, with the output names kept. With no `GROUP BY`, it becomes `SELECT count(d.e) FROM (SELECT DISTINCT e ...) d`, which still gives 0 on no rows. Postgres runs `count(DISTINCT)` by sorting inside the aggregate, while a `SELECT DISTINCT` can hash. The select list is the grouping columns, each written `name.column` and in the `GROUP BY`, and exactly one `count(DISTINCT e)` of one argument, with no `FILTER` and no `ORDER BY` inside. The query has no `HAVING`, window, `DISTINCT`, or grouping set. `ORDER BY` may name grouping columns, the count's alias, or ordinals, which the rule rewrites to `d`'s columns. It refuses other `ORDER BY` items and volatile calls. NULLs and collations agree: both forms skip a NULL `e` and compare `e` with its type's equality and collation. Rests on nothing. Needs a new e2e case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-9. Rule `count_distinct_to_subquery`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-10. Rule `date_cast_to_range`.
 
