@@ -532,4 +532,38 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctKeyRemoval do
       )
     end
   end
+  # 20261018-22. Without its DISTINCT, a derived table can give its rows in
+  # another order, and an aggregate above it that reads them in that order
+  # then gives another result.
+  context "with an aggregate above that reads its rows in order" do
+    it "would give another result there, which is why it refuses" do
+      nested = "SELECT string_agg(d.title || d.id, ',') FROM " \
+               "(SELECT DISTINCT posts.id, posts.title FROM public.posts) d"
+      plain = "SELECT string_agg(d.title || d.id, ',') FROM (SELECT posts.id, posts.title FROM public.posts) d"
+      conn.exec("SET enable_hashagg = off; UPDATE public.posts SET title = title WHERE id = 10")
+      expect(ordered_rows(nested)).not_to eq(ordered_rows(plain))
+    end
+
+    {
+      "string_agg" => "SELECT string_agg(d.title, ',') FROM (SELECT DISTINCT p.id, p.title FROM public.posts p) d",
+      "array_agg in a CTE's reader" =>
+        "WITH d AS (SELECT DISTINCT p.id FROM public.posts p) SELECT array_agg(d.id) FROM d",
+      "a window function" => "SELECT d.id, row_number() OVER () FROM (SELECT DISTINCT p.id FROM public.posts p) d",
+      "an ARRAY subquery with no ORDER BY" => "SELECT ARRAY(SELECT DISTINCT p.id FROM public.posts p)",
+      "min, whose input order picks between equal values" =>
+        "SELECT min(d.title) FROM (SELECT DISTINCT p.id, p.title FROM public.posts p) d",
+      "a user aggregate" => "SELECT public.my_agg(d.id) FROM (SELECT DISTINCT p.id FROM public.posts p) d"
+    }.each do |why, sql|
+      it "doesn't fire under #{why}" do
+        conn.exec("CREATE AGGREGATE public.my_agg(int) (sfunc = int4pl, stype = int)")
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
+    it "fires under count, under an aggregate with its own ORDER BY, and under an ARRAY subquery that sorts" do
+      expect(rewritten("SELECT count(*), string_agg(d.title, ',' ORDER BY d.id) FROM " \
+                       "(SELECT DISTINCT p.id, p.title FROM public.posts p) d").size).to eq(1)
+      expect(rewritten("SELECT ARRAY(SELECT DISTINCT p.id FROM public.posts p ORDER BY p.id)").size).to eq(1)
+    end
+  end
 end

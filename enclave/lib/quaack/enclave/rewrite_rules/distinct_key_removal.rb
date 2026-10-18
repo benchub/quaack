@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "rewrite"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "input_order"
 require_relative "distinct_key_removal/from"
 require_relative "distinct_key_removal/keys"
 
@@ -65,6 +66,10 @@ module Quaack
       # - If it's an arm of a UNION, INTERSECT, or EXCEPT, its select list
       #   holds no bare constant or parameter, whose type the DISTINCT
       #   settles.
+      # - Nothing in the statement reads the order rows come in, such as
+      #   string_agg with no ORDER BY of its own over a derived table
+      #   (InputOrder), since without the DISTINCT they can come in
+      #   another order.
       class DistinctKeyRemoval
         # One SELECT the rule can take, and what its rewrite rests on.
         Removal = Data.define(:select, :assumptions)
@@ -90,6 +95,8 @@ module Quaack
         # Every SELECT in tree whose DISTINCT the rule can remove, in tree
         # order.
         def removals(tree, catalog)
+          return [] if InputOrder.sensitive?(tree, catalog)
+
           selects = Tree.find_all(tree, PgQuery::SelectStmt)
           arms = selects.reject { it.op == :SETOP_NONE }.flat_map { [it.larg, it.rarg] }
           selects.filter_map { removal(it, catalog) unless untyped_arm?(it, arms) }

@@ -451,4 +451,33 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnusedJoinRemoval do
       expect(rewritten(sql)).to eq([])
     end
   end
+  # 20261018-22. Without the join, the rows can reach an aggregate that
+  # reads them in order in another order, and it then gives another result.
+  context "with an aggregate that reads the rows in order" do
+    {
+      "string_agg in the SELECT itself" =>
+        "SELECT string_agg(p.title, ',') FROM public.posts p JOIN public.users u ON p.user_id = u.id",
+      "array_agg above a derived table" =>
+        "SELECT array_agg(d.id) FROM (SELECT p.id FROM public.posts p JOIN public.users u ON p.user_id = u.id) d",
+      "a window function" =>
+        "SELECT p.id, row_number() OVER () FROM public.posts p JOIN public.users u ON p.user_id = u.id"
+    }.each do |why, sql|
+      it "doesn't fire with #{why}" do
+        expect(rewritten(sql)).to eq([])
+      end
+    end
+
+    it "would give another result for string_agg, which is why it refuses" do
+      sql = "SELECT string_agg(p.title, ',') FROM public.users u JOIN public.posts p ON p.user_id = u.id"
+      conn.exec("CREATE INDEX ON public.posts (user_id); SET enable_hashjoin = off; SET enable_mergejoin = off")
+      conn.exec("UPDATE public.posts SET title = title WHERE id = 10; SET enable_seqscan = off")
+      expect(conn.exec(sql).values).not_to eq(conn.exec("SELECT string_agg(p.title, ',') FROM public.posts p").values)
+    end
+
+    it "fires under count and under an aggregate with its own ORDER BY" do
+      sql = "SELECT count(*), string_agg(p.title, ',' ORDER BY p.id) FROM public.posts p " \
+            "JOIN public.users u ON p.user_id = u.id"
+      expect(rewritten(sql).size).to eq(1)
+    end
+  end
 end
