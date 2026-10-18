@@ -390,7 +390,7 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(sql).to include("r.id) = $1 FROM", "r.id) OPERATOR(pg_catalog.>) $2", "r.id) >= $3")
       expect(values(result, "worst_case")).to eq(thresholds)
       expect(values(result, "typical")).to eq(thresholds)
-      expect(result.fallbacks["typical"].keys).to eq(%w[$1 $2 $3])
+      expect(result.fallbacks["typical"]).to eq(thresholds.transform_values { "unsupported_shape" })
       rows(sql, result.sets["typical"])
     end
 
