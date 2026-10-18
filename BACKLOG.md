@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261018-1. Rule generator: never cap a one-rule rewrite.
+- 20261018-4. Rule `subquery_distinct_removal`.
 
 ## How this file works.
 
@@ -760,15 +761,6 @@ From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-18. e2e/verify.rb: a run removes other running verifies' containers.
-
-Found while building 20261018-2. `e2e/verify.rb` labels its container `quaack.e2e` and, at start, removes every container with that label, so a run started while another verify is running kills that run's server ("connection to server on socket failed"). Rule builders now prove e2e cases in parallel. Do what `spec/support/test_postgres.rb` does: label the container with its owner's pid and host, and at start remove only leftovers whose owner on this host is no longer alive. Check `e2e/run.rb` for the same pattern. Tested with two runs at once.
-
-- **Depends on:** None.
-- **Came from:** Build of 20261018-2, 2026-10-18.
-- **Design:** None (e2e tooling).
-- **Status:** todo
-
 ### 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
 
 Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.status = 'x') > 0 ... GROUP BY (SELECT count(*) FROM ... WHERE o.status = 'x') > 0`, redact gives the two copies' constants different placeholders, so the select list no longer matches the GROUP BY key and the redacted query fails to prepare (42803). Reproduce it in a test first, then share the placeholder the way redact already does for a GROUP BY key that matches a select-list expression.
@@ -776,6 +768,26 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Depends on:** None.
 - **Came from:** Build of 20261018-3, 2026-10-18.
 - **Design:** redact.
+- **Status:** todo
+
+### 20261018-20. Test the EPERM branch of the owner-alive check in verify.rb and TestPostgres.
+
+From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the same code in `spec/support/test_postgres.rb`, treat `Errno::EPERM` (a live process of another user) as alive, but no test covers it: making that branch return false leaves the specs green, and a run would then remove another user's live container. Add a test, such as with pid 1, which gives EPERM to a non-root user on macOS.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261018-18, 2026-10-18.
+- **Design:** None (test and e2e tooling).
+- **Status:** todo
+
+### 20261018-21. subquery_distinct_removal: minors from the build and review of 20261018-4.
+
+- Untested refusal: `Readers.passes?` can drop its `limit_offset.nil?` check and the suite stays green, since nothing tests an `OFFSET` on a `UNION ALL` or `INTERSECT ALL` between an arm and its reader. Add the refusal pair beside the `LIMIT` one.
+- Untested forms the page claims: `OPERATOR(pg_catalog.<>) ALL`, and a reader nested in an `IN`'s left side (`walk(link.testexpr, ...)`). Losing either only makes the rule refuse more, but the page says it takes them.
+- Sound but refused in v1: a `GROUP BY` of a subset of the select list (a primary key with columns that depend on it), and `DISTINCT` of expressions or stars, which needs the expression's type and collation.
+
+- **Depends on:** None.
+- **Came from:** Build and review of 20261018-4, 2026-10-18.
+- **Design:** rewrite-rules.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).
@@ -807,14 +819,7 @@ A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than o
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-4. Rule `subquery_distinct_removal`.
-
-A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `DISTINCT ON`), its `ORDER BY` when it has no `LIMIT`, `OFFSET`, or `FETCH`, and a `GROUP BY` whose items are exactly its select list's columns, with no aggregate, `HAVING`, or grouping set. The readers are the subquery of `IN`, `= ANY`, `NOT IN`, and `<> ALL`, and an arm with a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL` at or above it in its set-operation tree, since that operation dedupes everything under it. `EXISTS` is left out: Postgres already drops these clauses there (`simplify_EXISTS_query`). It refuses a select list that calls a volatile or set-returning function. Rests on nothing. e2e case 044 covers it.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-4. Rule `subquery_distinct_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-5. Rule `subquery_order_removal`.
 

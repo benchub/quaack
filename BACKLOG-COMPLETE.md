@@ -12069,3 +12069,23 @@ The user decided (2026-10-18) that every rule that applies gets its rewrites tes
 - **Design:** rewrite-rules, burndown.
 - **Landed:** 2026-10-18 (task/20261018-1; enclave and driver). `RewriteRules.generate` keeps every one-rule result, then the first `MAX` (10) results that apply more than one rule; `over_cap` counts only those dropped. DESIGN.md, README, and the report say the ten is on rewrites made by two rules in a row. Nothing downstream needed a cap on the total; 20261018-17 holds the run-cost question.
 - **Status:** done
+
+### 20261018-18. e2e/verify.rb: a run removes other running verifies' containers.
+
+Found while building 20261018-2. `e2e/verify.rb` labels its container `quaack.e2e` and, at start, removes every container with that label, so a run started while another verify is running kills that run's server ("connection to server on socket failed"). Rule builders now prove e2e cases in parallel. Do what `spec/support/test_postgres.rb` does: label the container with its owner's pid and host, and at start remove only leftovers whose owner on this host is no longer alive. Check `e2e/run.rb` for the same pattern. Tested with two runs at once.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-2, 2026-10-18.
+- **Design:** None (e2e tooling).
+- **Landed:** 2026-10-18 (task/20261018-18; e2e tooling). `e2e/verify.rb` labels its container with its owner's pid and host, and removes at start only leftovers whose owner on this host is dead, as TestPostgres does. `spec/e2e_verify_spec.rb` covers it with containers under its own label. `e2e/run.rb` already went through TestPostgres.
+- **Status:** done
+
+### 20261018-4. Rule `subquery_distinct_removal`.
+
+A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `DISTINCT ON`), its `ORDER BY` when it has no `LIMIT`, `OFFSET`, or `FETCH`, and a `GROUP BY` whose items are exactly its select list's columns, with no aggregate, `HAVING`, or grouping set. The readers are the subquery of `IN`, `= ANY`, `NOT IN`, and `<> ALL`, and an arm with a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL` at or above it in its set-operation tree, since that operation dedupes everything under it. `EXISTS` is left out: Postgres already drops these clauses there (`simplify_EXISTS_query`). It refuses a select list that calls a volatile or set-returning function. Rests on nothing. e2e case 044 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-4; enclave, protocol, and driver). The rule removes a DISTINCT, a GROUP BY of exactly the select list's columns, or an ORDER BY with no LIMIT, from the subquery of IN, = ANY, NOT IN, or <> ALL, and from a set-operation arm with a deduplicating UNION, INTERSECT, or EXCEPT above it. Two departures from the text above, both found sound in review: an arm reaches that operation only through UNION ALL or INTERSECT ALL with no LIMIT or OFFSET (an EXCEPT ALL in between subtracts counts, so it stops the walk), and DISTINCT and GROUP BY go only when every item is a plain table column the catalog marks comparable (citext or a nondeterministic collation could be told apart by the reader otherwise). `RULE_PURPOSES` moved to `driver/lib/quaack/driver/winner_summary/rule_purposes.rb`. e2e case 044 names the rule.
+- **Status:** done
