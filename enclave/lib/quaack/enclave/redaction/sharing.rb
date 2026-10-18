@@ -19,7 +19,8 @@ module Quaack
       # - An aggregate's DISTINCT arguments and its ORDER BY (42P10).
       # A subquery can't use a grouped expression of the query outside it,
       # shared or not, so the search doesn't go into subqueries. But a key
-      # that's a whole subquery shares its constants with its copies'.
+      # that holds a subquery, whole or inside a larger expression, shares
+      # the subquery's constants with its copies'.
       # A key written by position or alias stands for its select-list entry
       # (see Keys).
       #
@@ -105,12 +106,6 @@ module Quaack
           PgQuery::Node.encode(copy, recursion_limit: Deparse::DEPTH)
         end
 
-        # Every Node under this one, and it, but not inside a subquery.
-        def nodes(node, &)
-          yield node
-          children(node.inner).each { |child| nodes(child, &) }
-        end
-
         # The Nodes right under a message, but only a subquery's test
         # expression, not the subquery.
         def children(message)
@@ -139,12 +134,12 @@ module Quaack
           constants(key).zip(constants(node)).each { |one, other| union(one, other) }
         end
 
-        # The locations of the placeholders under a node, in tree order. A
-        # key that's a whole subquery holds the subquery's constants too.
+        # The locations of the placeholders under a node, in tree order,
+        # subqueries included: a pair's forms match through its subqueries
+        # too, so their constants line up there as well.
         def constants(node)
           found = []
-          walk = node.sub_link ? method(:everything) : method(:nodes)
-          walk.call(node) { |n| found << n.a_const.location if n.a_const && @found.key?(n.a_const.location) }
+          everything(node) { |n| found << n.a_const.location if n.a_const && @found.key?(n.a_const.location) }
           found
         end
 

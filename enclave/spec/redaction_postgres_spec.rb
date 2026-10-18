@@ -300,6 +300,12 @@ RSpec.describe Quaack::Enclave::Redaction do
       # A whole subquery as the key.
       "SELECT #{REDACTION_SUBQUERY} FROM public.orders o WHERE o.id < 50 GROUP BY #{REDACTION_SUBQUERY} ORDER BY 1",
       "SELECT DISTINCT #{REDACTION_SUBQUERY} FROM public.orders o WHERE o.id < 50 ORDER BY #{REDACTION_SUBQUERY}",
+      # A key that holds a subquery inside a larger expression.
+      "SELECT (#{REDACTION_SUBQUERY} || 'y') > 'x' FROM public.orders o WHERE o.id < 50 " \
+      "GROUP BY (#{REDACTION_SUBQUERY} || 'y') > 'x' ORDER BY 1",
+      "SELECT (SELECT count(*) FROM public.orders i WHERE i.status = 'x' AND i.customer_id = o.customer_id) > 0 " \
+      "FROM public.orders o GROUP BY (SELECT count(*) FROM public.orders i WHERE i.status = 'x' " \
+      "AND i.customer_id = o.customer_id) > 0 ORDER BY 1",
       # A named window, an expression with several constants, and a chain
       # of matches two links long.
       "SELECT rank() OVER w FROM public.orders o GROUP BY o.status || 'a' WINDOW w AS (ORDER BY o.status || 'a') " \
