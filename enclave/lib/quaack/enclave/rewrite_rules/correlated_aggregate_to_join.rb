@@ -114,9 +114,12 @@ module Quaack
         end
 
         # Whether a bare column anywhere in the statement has the name of a
-        # derived table's column.
+        # derived table's column, or a key has its aggregate's name, which
+        # would give the derived table two columns of that name.
         def ambiguous?(tree, found)
           columns = found.flat_map { it.keys.map(&:first) } + [COLUMN]
+          return true if columns.count(COLUMN) > 1
+
           Tree.find_all(tree, PgQuery::ColumnRef).any? { columns.include?(Tree.bare_name(it)) }
         end
 
