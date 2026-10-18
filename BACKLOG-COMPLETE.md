@@ -12059,3 +12059,13 @@ In the Ranking section, each subsection has a colored stripe on its left, but th
 - **Design:** report.
 - **Landed:** 2026-10-18 (task/20261017-6; driver only). In the Ranking table, each kind's heading row and ranked rows carry that kind's `stripe-<kind>` class, the same class its block below uses, and `tr.kind > :first-child, tr.rank > :first-child` draws a 5px left border in `var(--stripe)`, with no background. The baseline row has no stripe. A rewrite ranked under two kinds gets each kind's stripe on its row there. DESIGN.md's report section says so.
 - **Status:** done
+
+### 20261017-7. Report: plan tables color the row-count cells, not the row, and flag the nodes driving time and blocks.
+
+In the plan tables under "Why the winner reads fewer blocks", the whole row takes the estimate-vs-actual row-count color, which misleads. Keep that gradient on only the estimated and actual row-count cells. Add a similar visual cue for each node's time and block reads, so the nodes driving the time and the block reads stand out at a glance. The user decided (2026-10-17): the cue is a color gradient on the time and block cells, like the row-count cells, and it's based on each step's own share (its time and blocks minus its children's), not the inclusive numbers Postgres reports.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-7; driver only). The misestimate gradient is on the estimated and actual rows cells, with its title on each. The blocks read and time cells get an amber gradient (`--cost-1` to `--cost-8`, both themes) by the step's own share of the plan's: its blocks, or its time times loops, less its direct children's, clamped at 0 (`Plans#own_shares`), over the plan's own ones added up, from 5%, 10%, 20%, 30%, 40%, 50%, 65%, and 80%. The blocks cell still shows the inclusive count; a shaded cell's title gives the own number and share. A second legend line explains it. The payload has no Parent Relationship or worker data, so InitPlans, SubPlans, CTEs, and parallel workers are taken off the node they're listed under, as DESIGN.md and the existing notes say. No VERSION bump.
+- **Status:** done
