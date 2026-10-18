@@ -467,6 +467,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountToExists do
         .to eq([%w[f 1], %w[t 1], %w[t 4]])
     end
 
+    it "still rewrites a count when a GROUP BY holds another subquery" do
+      sql = "SELECT c.id FROM public.customers c WHERE c.tier = 'gold' AND #{count} > 0 " \
+            "GROUP BY c.id, (SELECT count(*) FROM public.items i WHERE i.order_id = c.id) ORDER BY c.id"
+      rewrite = rewritten(sql)
+
+      expect(rewrite).to eq(["SELECT c.id FROM public.customers c WHERE c.tier = $1 AND EXISTS (#{inner}) " \
+                             "GROUP BY c.id, (SELECT count(*) FROM public.items i WHERE i.order_id = c.id) " \
+                             "ORDER BY c.id"])
+      expect(same_rows(sql, rewrite.first)).to eq([["1"], ["5"], ["6"]])
+    end
+
     it "rewrites a count in a HAVING, a CTE, and a UNION arm" do
       sql = "WITH gold AS (SELECT c.id FROM public.customers c WHERE #{count} > 0) " \
             "SELECT g.id FROM gold g UNION SELECT c.id FROM public.customers c WHERE #{count} = 0 " \
