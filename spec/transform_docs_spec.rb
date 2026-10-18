@@ -56,7 +56,9 @@ RSpec.describe "docs/transforms" do
 
   it "says transform rules in the README's account of a rewrite that wasn't kept, and not mechanical rewrite rules" do
     readme = File.read(File.join(REPO_ROOT, "README.md"))
-    expect(readme).to include("ten from the transform rules")
+    # Task 20261018-1: the cap of ten is only on rewrites made by two rules in a row.
+    expect(readme).to include("ten made by two transform rules in a row")
+    expect(readme).to include("as made by two rules in a row and over the limit of ten")
     expect(readme).not_to match(/mechanical rewrite rules/i)
   end
 end

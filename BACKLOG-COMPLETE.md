@@ -12049,3 +12049,43 @@ A not_better rewrite's fate reads "It passed every test, then QUAACK measured it
 - **Design:** report.
 - **Landed:** 2026-10-17 (task/20261017-5; driver only). Every not_better rewrite's fate is now the one sentence, kept in `Report::Rewrites::FATES`. `Report::NotBetterFate` (its verdict reading and `PERCENT`) is gone. A not_better rewrite that went on untested (out_of_time or not_tested) still gets its opening reworded by `went_on`, which gained a pair for "It passed every correctness test,". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
+
+### 20261018-16. StalledLogger: accept the `anon_pipe_write` wait channel.
+
+Found while building 20261018-1. The Docker VM's kernel is now `7.0.14-linuxkit`, and Linux 6.14 and later name a backend blocked writing to a pipe `anon_pipe_write`, not `pipe_write`. `enclave/spec/support/stalled_logger.rb` waits for a wait channel of exactly `pipe_write`, so the two examples in `enclave/spec/arena_runner_foreign_cancel_postgres_spec.rb` (lines 38 and 52) fail with "backend N never blocked logging BEGIN/ROLLBACK", alone too, and every per-commit check fails with them. Accept either name, in the helper and in what those examples expect, and keep the examples testing what they test now.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-1, 2026-10-18.
+- **Design:** None (test support).
+- **Landed:** 2026-10-18 (task/20261018-16; enclave spec support only). `StalledLogger::PIPE_WRITE_CHANNELS` holds both names, `wait_for` waits for either, and the two foreign-cancel examples check the channel is one of them, then the rule, step, and sqlstate exactly as before.
+- **Status:** done
+
+### 20261018-1. Rule generator: never cap a one-rule rewrite.
+
+The user decided (2026-10-18) that every rule that applies gets its rewrites tested before any combination of rules is. Today `RewriteRules.generate` keeps the first `MAX` (10) results of its breadth-first chain, so with 25 rules a query that many rules match loses one-rule rewrites to the cap. Keep every one-rule result. `MAX` then caps only the two-rule results that follow them, at 10 (the user left the combination cap open; keep 10). `over_cap` counts only the two-rule results dropped. Update DESIGN.md's rewrite-rules ("Keep at most ten rewrites" and the paragraph after it), README's "ten from the transform rules" and the spec in `spec/transform_docs_spec.rb` that checks it, and anything downstream that assumes at most ten rule rewrites, such as rewrite numbering, report words, the burndown, and the `rewrite_rules_applied` marker.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules, burndown.
+- **Landed:** 2026-10-18 (task/20261018-1; enclave and driver). `RewriteRules.generate` keeps every one-rule result, then the first `MAX` (10) results that apply more than one rule; `over_cap` counts only those dropped. DESIGN.md, README, and the report say the ten is on rewrites made by two rules in a row. Nothing downstream needed a cap on the total; 20261018-17 holds the run-cost question.
+- **Status:** done
+
+### 20261018-18. e2e/verify.rb: a run removes other running verifies' containers.
+
+Found while building 20261018-2. `e2e/verify.rb` labels its container `quaack.e2e` and, at start, removes every container with that label, so a run started while another verify is running kills that run's server ("connection to server on socket failed"). Rule builders now prove e2e cases in parallel. Do what `spec/support/test_postgres.rb` does: label the container with its owner's pid and host, and at start remove only leftovers whose owner on this host is no longer alive. Check `e2e/run.rb` for the same pattern. Tested with two runs at once.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-2, 2026-10-18.
+- **Design:** None (e2e tooling).
+- **Landed:** 2026-10-18 (task/20261018-18; e2e tooling). `e2e/verify.rb` labels its container with its owner's pid and host, and removes at start only leftovers whose owner on this host is dead, as TestPostgres does. `spec/e2e_verify_spec.rb` covers it with containers under its own label. `e2e/run.rb` already went through TestPostgres.
+- **Status:** done
+
+### 20261018-4. Rule `subquery_distinct_removal`.
+
+A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `DISTINCT ON`), its `ORDER BY` when it has no `LIMIT`, `OFFSET`, or `FETCH`, and a `GROUP BY` whose items are exactly its select list's columns, with no aggregate, `HAVING`, or grouping set. The readers are the subquery of `IN`, `= ANY`, `NOT IN`, and `<> ALL`, and an arm with a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL` at or above it in its set-operation tree, since that operation dedupes everything under it. `EXISTS` is left out: Postgres already drops these clauses there (`simplify_EXISTS_query`). It refuses a select list that calls a volatile or set-returning function. Rests on nothing. e2e case 044 covers it.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Landed:** 2026-10-18 (task/20261018-4; enclave, protocol, and driver). The rule removes a DISTINCT, a GROUP BY of exactly the select list's columns, or an ORDER BY with no LIMIT, from the subquery of IN, = ANY, NOT IN, or <> ALL, and from a set-operation arm with a deduplicating UNION, INTERSECT, or EXCEPT above it. Two departures from the text above, both found sound in review: an arm reaches that operation only through UNION ALL or INTERSECT ALL with no LIMIT or OFFSET (an EXCEPT ALL in between subtracts counts, so it stops the walk), and DISTINCT and GROUP BY go only when every item is a plain table column the catalog marks comparable (citext or a nondeterministic collation could be told apart by the reader otherwise). `RULE_PURPOSES` moved to `driver/lib/quaack/driver/winner_summary/rule_purposes.rb`. e2e case 044 names the rule.
+- **Status:** done

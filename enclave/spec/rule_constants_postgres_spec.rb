@@ -32,6 +32,7 @@ module RuleConstantsFixtures
     "union_outer_filter_removal" => %w[5 5 5],
     "unused_join_removal" => %w[5],
     "polymorphic_key_copy" => ["'Course'", "42"],
+    "subquery_distinct_removal" => %w[42],
     "count_to_exists" => ["'registered'", "'graded'", "0"]
   }.freeze
 

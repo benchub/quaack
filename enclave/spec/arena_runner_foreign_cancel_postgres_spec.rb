@@ -41,8 +41,8 @@ RSpec.describe Quaack::Enclave::ArenaRunner, "against a foreign cancel of its BE
     ran = false
     error = canceled { runner.with_fixture { ran = true } }
 
-    expect([canceller.value, error&.rule, error&.step, error&.sqlstate])
-      .to eq(["pipe_write", :statement_canceled, :begin, "57014"])
+    expect(StalledLogger::PIPE_WRITE_CHANNELS).to include(canceller.value)
+    expect([error&.rule, error&.step, error&.sqlstate]).to eq([:statement_canceled, :begin, "57014"])
     expect([described_class::Cancel.foreign?(error), ran, conn.transaction_status]).to eq([true, false, PG::PQTRANS_IDLE])
   end
 
@@ -60,8 +60,8 @@ RSpec.describe Quaack::Enclave::ArenaRunner, "against a foreign cancel of its BE
       end
     end
 
-    expect([canceller.value, error&.rule, error&.step, error&.sqlstate])
-      .to eq(["pipe_write", :statement_canceled, :rollback, "57014"])
+    expect(StalledLogger::PIPE_WRITE_CHANNELS).to include(canceller.value)
+    expect([error&.rule, error&.step, error&.sqlstate]).to eq([:statement_canceled, :rollback, "57014"])
     expect([described_class::Cancel.foreign?(error), result, conn.transaction_status])
       .to eq([true, [["1"]], PG::PQTRANS_INERROR])
   end

@@ -34,9 +34,11 @@ module Quaack
       #
       # It records the rewrite-rules burndown stage (DESIGN.md's burndown), search rewrites:
       # added is every result the generator counted, by the name of the last
-      # rule applied; dropped is duplicate, over_cap, and failed_checks, the
-      # ones inbound-check rejected; out is the rewrites that got past it. A rule's
-      # name is QUAACK's own constant, never anything read from the query.
+      # rule applied; dropped is duplicate, over_cap (the two-rule results
+      # past the generator's cap: a one-rule result has none), and
+      # failed_checks, the ones inbound-check rejected; out is the rewrites
+      # that got past it. A rule's name is QUAACK's own constant, never
+      # anything read from the query.
       #
       # It writes the rewrite_rules_applied marker, which `quaacks status`
       # reports, so a resumed run doesn't run the rules again. The marker

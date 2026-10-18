@@ -31,6 +31,9 @@ module Quaack
                                    "foreign key whose columns are not null.",
           "polymorphic_key_copy" => "Where a joined parent is filtered to one Rails polymorphic type and id, " \
                                     "filters the child's own column for that type to the same id.",
+          "subquery_distinct_removal" => "Removes a DISTINCT, an ORDER BY, or a GROUP BY of just the select list's " \
+                                         "columns from a subquery whose reader ignores duplicates and order, such " \
+                                         "as an IN subquery or a UNION arm.",
           "count_to_exists" => "Turns a count subquery that only asks whether any row matches, such as " \
                                "count(*) > 0 or count(*) = 0, into an EXISTS or a NOT EXISTS, which can stop at " \
                                "the first match."

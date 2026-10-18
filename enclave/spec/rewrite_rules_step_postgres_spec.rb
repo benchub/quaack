@@ -349,27 +349,43 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(fired(messages)).to eq(%w[key_in_self_join or_to_union])
     end
 
-    it "counts the rewrites over the cap in the marker and the rewrite-rules burndown" do
+    # Task 20261018-1: every one-rule rewrite is stored, and only the
+    # two-rule ones have a cap.
+    it "stores every one-rule rewrite, then ten two-rule ones, and counts the rest as over the cap" do
       prepare
       select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
       eleven = (1..11).map { fake_rule.new(name: "rule#{it}", sql: "#{select} AND #{it} = #{it}", assumptions: []) }
       duplicates = [fake_rule.new(name: "duplicate_rule2", sql: "#{select} AND 2 = 2", assumptions: []),
                     fake_rule.new(name: "duplicate_rule7", sql: "#{select} AND 7 = 7", assumptions: [])]
+      # Fires on each one-shot rule's rewrite, and on nothing else.
+      chain = Data.define(:name) do
+        def description = "the fake rule #{name}"
 
-      outcomes = outcomes_of(call_step([*eleven, *duplicates]))
+        def rewrites(parse, _catalog, _literals)
+          return [] unless parse.query.match?(/ AND (\d+) = \1\z/)
 
-      expect(outcomes.map { it[:rewrite] }).to eq((1..10).map { "rewrite_#{it}" })
-      expect(stored.read("rewrite_1").slice("sql", "transformation", "rules")).to eq(
-        "sql" => "#{select} AND 1 = 1", "transformation" => "the fake rule rule1", "rules" => ["rule1"]
+          [Quaack::Enclave::RewriteRules::Rewrite.new(tree: PgQuery.parse("#{parse.query} AND true").tree,
+                                                      assumptions: [])]
+        end
+      end.new(name: "chain")
+
+      outcomes = outcomes_of(call_step([*eleven, *duplicates, chain]))
+
+      expect(outcomes.map { it[:rewrite] }).to eq((1..21).map { "rewrite_#{it}" })
+      expect(stored.read("rewrite_11").slice("sql", "transformation", "rules")).to eq(
+        "sql" => "#{select} AND 11 = 11", "transformation" => "the fake rule rule11", "rules" => ["rule11"]
       )
-      expect(stored.read("rewrite_10").slice("sql", "transformation", "rules")).to eq(
-        "sql" => "#{select} AND 10 = 10", "transformation" => "the fake rule rule10", "rules" => ["rule10"]
+      expect(stored.read("rewrite_12").slice("sql", "transformation", "rules")).to eq(
+        "sql" => "#{select} AND 1 = 1 AND true", "transformation" => "the fake rule rule1 the fake rule chain",
+        "rules" => %w[rule1 chain]
       )
-      expect(stored.entry?("rewrite_11")).to be(false)
+      expect(stored.read("rewrite_21")["rules"]).to eq(%w[rule10 chain])
+      expect(stored.entry?("rewrite_22")).to be(false)
       expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 2, "over_cap" => 1)
       expect(burndown("rewrite-rules"))
-        .to eq(six_c((1..11).to_h { ["rule#{it}", 1] }.merge("duplicate_rule2" => 1, "duplicate_rule7" => 1),
-                     10, duplicate: 2, over_cap: 1))
+        .to eq(six_c((1..11).to_h { ["rule#{it}", 1] }.merge("duplicate_rule2" => 1, "duplicate_rule7" => 1,
+                                                             "chain" => 11),
+                     21, duplicate: 2, over_cap: 1))
     end
   end
 

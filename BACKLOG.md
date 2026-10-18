@@ -6,6 +6,9 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261018-1. Rule generator: never cap a one-rule rewrite.
+- 20261018-4. Rule `subquery_distinct_removal`.
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -740,6 +743,53 @@ In `quaack-20261017T172321Z-f6f85d4c.html`, the first diagram of the "Index idea
 - **Design:** report, sankey.
 - **Status:** todo
 
+### 20261018-15. Report: a floating table of contents in the left margin.
+
+The report is getting long to scroll through. Add a `<nav>` of links to the report's top-level sections, by their existing `id`s (`summary`, `queries`, `ranking`, `explanation`, `indexes`, `accountability`, `burndown`, and the ones only some runs have, such as `quaack-bugs`, `timeouts`, `index-ideas`, and `negative-result`), built from the same conditions that decide which sections render, so it never links to a missing one. CSS only, since the report runs no script: on a window wide enough (about `88rem`), it's `position: fixed` at the top left, inside the margin the body's `max-width: 62rem` leaves (`width: calc((100vw - 62rem) / 2 - 2rem)`), with `max-height: calc(100vh - 2rem)` and `overflow-y: auto`. On a narrower window, the same list sits inline under the title. It uses the page's color variables, so dark mode works, and it's hidden in print. Its labels are QUAACK's own fixed words. No highlight of the current section, since that needs a script or scroll-driven animation (the user agreed, 2026-10-18). Update DESIGN.md's report section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18.
+- **Design:** report.
+- **Status:** todo
+
+### 20261018-17. Rule rewrites: decide whether a run needs a limit on the total.
+
+From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the 25 rules match, or one rule matches many times (one rewrite per `IN`, say), sends that many rewrites on. Each gets up to 90 seconds of fuzz and enumerate, a 5-minute rewrite-test budget, its own index search, and LLM counterexample rounds. Once real runs with all the rules show the run time and LLM cost, decide with the user whether a run needs a limit on the total or on one rule's matches.
+
+- **Depends on:** 20261018-1, and the rule tasks 20261018-2 to 20261018-14.
+- **Came from:** Build of 20261018-1, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
+
+Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.status = 'x') > 0 ... GROUP BY (SELECT count(*) FROM ... WHERE o.status = 'x') > 0`, redact gives the two copies' constants different placeholders, so the select list no longer matches the GROUP BY key and the redacted query fails to prepare (42803). Reproduce it in a test first, then share the placeholder the way redact already does for a GROUP BY key that matches a select-list expression.
+
+- **Depends on:** None.
+- **Came from:** Build of 20261018-3, 2026-10-18.
+- **Design:** redact.
+- **Status:** todo
+
+### 20261018-20. Test the EPERM branch of the owner-alive check in verify.rb and TestPostgres.
+
+From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the same code in `spec/support/test_postgres.rb`, treat `Errno::EPERM` (a live process of another user) as alive, but no test covers it: making that branch return false leaves the specs green, and a run would then remove another user's live container. Add a test, such as with pid 1, which gives EPERM to a non-root user on macOS.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261018-18, 2026-10-18.
+- **Design:** None (test and e2e tooling).
+- **Status:** todo
+
+### 20261018-21. subquery_distinct_removal: minors from the build and review of 20261018-4.
+
+- Untested refusal: `Readers.passes?` can drop its `limit_offset.nil?` check and the suite stays green, since nothing tests an `OFFSET` on a `UNION ALL` or `INTERSECT ALL` between an arm and its reader. Add the refusal pair beside the `LIMIT` one.
+- Untested forms the page claims: `OPERATOR(pg_catalog.<>) ALL`, and a reader nested in an `IN`'s left side (`walk(link.testexpr, ...)`). Losing either only makes the rule refuse more, but the page says it takes them.
+- Sound but refused in v1: a `GROUP BY` of a subset of the select list (a primary key with columns that depend on it), and `DISTINCT` of expressions or stars, which needs the expression's type and collation.
+
+- **Depends on:** None.
+- **Came from:** Build and review of 20261018-4, 2026-10-18.
+- **Design:** rewrite-rules.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
@@ -749,14 +799,7 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 - e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
 - Opus builder and reviewer for each rule.
 
-### 20261018-1. Rule generator: never cap a one-rule rewrite.
-
-The user decided (2026-10-18) that every rule that applies gets its rewrites tested before any combination of rules is. Today `RewriteRules.generate` keeps the first `MAX` (10) results of its breadth-first chain, so with 25 rules a query that many rules match loses one-rule rewrites to the cap. Keep every one-rule result. `MAX` then caps only the two-rule results that follow them, at 10 (the user left the combination cap open; keep 10). `over_cap` counts only the two-rule results dropped. Update DESIGN.md's rewrite-rules ("Keep at most ten rewrites" and the paragraph after it), README's "ten from the transform rules" and the spec in `spec/transform_docs_spec.rb` that checks it, and anything downstream that assumes at most ten rule rewrites, such as rewrite numbering, report words, the burndown, and the `rewrite_rules_applied` marker.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules, burndown.
-- **Status:** todo
+### 20261018-1. Rule generator: never cap a one-rule rewrite. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-2. Rule `cte_fence_removal`.
 
@@ -776,14 +819,7 @@ A CTE written `AS MATERIALIZED`, or a plain CTE that the query reads more than o
 - **Design:** rewrite-rules.
 - **Status:** todo
 
-### 20261018-4. Rule `subquery_distinct_removal`.
-
-A subquery whose reader ignores duplicates and order loses its `DISTINCT` (not `DISTINCT ON`), its `ORDER BY` when it has no `LIMIT`, `OFFSET`, or `FETCH`, and a `GROUP BY` whose items are exactly its select list's columns, with no aggregate, `HAVING`, or grouping set. The readers are the subquery of `IN`, `= ANY`, `NOT IN`, and `<> ALL`, and an arm with a `UNION`, `INTERSECT`, or `EXCEPT` without `ALL` at or above it in its set-operation tree, since that operation dedupes everything under it. `EXISTS` is left out: Postgres already drops these clauses there (`simplify_EXISTS_query`). It refuses a select list that calls a volatile or set-returning function. Rests on nothing. e2e case 044 covers it.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-4. Rule `subquery_distinct_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-5. Rule `subquery_order_removal`.
 

@@ -42,6 +42,10 @@ module Quaack
           "polymorphic_key_copy" => "A child table joins a parent filtered to one Rails polymorphic type and id, " \
                                     "and the child has its own column for that type's id, which QUAACK checked " \
                                     "holds the same id in the data.",
+          "subquery_distinct_removal" => "The subquery of an IN, = ANY, NOT IN, or <> ALL, or an arm under a UNION, " \
+                                         "INTERSECT, or EXCEPT without ALL, has a DISTINCT, an ORDER BY, or a GROUP " \
+                                         "BY of just its select list's columns, and no LIMIT or OFFSET, so its " \
+                                         "reader can't see the duplicates or the order those clauses change.",
           "count_to_exists" => "A scalar subquery selects only count(*), or a count of a column of one of its " \
                                "own tables, and the query compares it with a constant, such as > 0, >= 1, or = 0, " \
                                "so the comparison only asks whether any row matches."
