@@ -292,7 +292,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctKeyRemoval do
     "it's a comma join" =>
       "SELECT DISTINCT p.id FROM public.posts p, public.users u WHERE u.id = p.user_id",
     "it's a RIGHT JOIN" =>
-      "SELECT DISTINCT p.id FROM public.users u RIGHT JOIN public.posts p ON u.id = p.user_id",
+      "SELECT DISTINCT p.id FROM public.posts p RIGHT JOIN public.users u ON u.id = p.user_id",
     "it's a FULL JOIN" =>
       "SELECT DISTINCT p.id, u.name FROM public.posts p FULL JOIN public.users u ON u.id = p.user_id",
     "the join is USING" => "SELECT DISTINCT p.id FROM public.posts p JOIN public.comments c USING (id)",
@@ -361,6 +361,14 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctKeyRemoval do
     it "would be wrong on #{why}: the DISTINCT removes rows" do
       expect(without_distinct(sql).size).to be > rows(sql).size
     end
+  end
+
+  it "would be wrong on a RIGHT JOIN: each user with no posts gives the first table's key as NULL" do
+    conn.exec("INSERT INTO public.users VALUES (4, 'dee', 6), (5, 'eve', 6)")
+    sql = "SELECT DISTINCT p.id FROM public.posts p RIGHT JOIN public.users u ON u.id = p.user_id"
+
+    expect(rewritten(sql)).to eq([])
+    expect(without_distinct(sql).size).to be > rows(sql).size
   end
 
   context "with collations and key indexes" do
