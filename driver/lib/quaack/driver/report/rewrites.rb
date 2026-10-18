@@ -47,13 +47,13 @@ module Quaack
                                     "on the real data, #{DROPPED}",
           "production_not_compared" => "#{PASSED} QUAACK couldn't compare its results with the original query's on " \
                                        "the real data%<why>s, #{DROPPED}",
-          "below_top_three" => "It passed every test and beat the original query, but three others of its kind " \
-                               "did better.",
-          "footprint_tie" => "It passed every test and beat the original query, but tied with a candidate " \
-                             "whose new indices take less disk space.",
+          "below_top_three" => "It passed every correctness test and beat the original query, but three others of " \
+                               "its kind did better.",
+          "footprint_tie" => "It passed every correctness test and beat the original query, but tied with a " \
+                             "candidate whose new indices take less disk space.",
           "not_better" => "It passed every correctness test, but when measured against real data performed too " \
                           "poorly to be ranked.",
-          "measurement_timed_out" => "It passed every test, but every measurement run of it timed out."
+          "measurement_timed_out" => "It passed every correctness test, but every measurement run of it timed out."
         }.freeze
 
         # fuzz_disproved by query_failed: the rewrite failed where the
@@ -67,7 +67,7 @@ module Quaack
         # An unfinished rewrite, by the last stage it finished.
         UNFINISHED = { nil => "QUAACK kept it, but the run ended before testing it.",
                        "rewrite-test" => "It passed the tests on made-up data, and the run ended before going further.",
-                       "counterexamples" => "It passed every test, and the run ended before measuring it.",
+                       "counterexamples" => "It passed every correctness test, and the run ended before measuring it.",
                        "measurement" => "It was measured, and the run ended before QUAACK judged it." }.freeze
 
         # A rewrite whose rewrite-test ran out of time and went on (task
@@ -91,11 +91,13 @@ module Quaack
         def went_on(short)
           lead = "#{short}, #{CHECKED_ONLY}"
           [["It passed the tests on made-up data, and the run ended", "#{short}, and the run ended"],
-           ["It passed every test, and the run ended", "#{short}, it passed the LLM's test data, and the run ended"],
+           ["It passed every correctness test, and the run ended",
+            "#{short}, it passed the LLM's test data, and the run ended"],
            ["It passed the tests on made-up data, but QUAACK", "#{lead}, but QUAACK"],
            ["It passed the tests on made-up data, but", "#{lead}, and it"],
-           ["It passed every test and beat", "#{lead}, and it beat"],
-           ["It passed every test,", "#{lead},"],
+           ["It passed every correctness test and beat", "#{lead}, and it beat"],
+           ["It passed every correctness test, but when measured against real data",
+            "#{lead}, but when measured it"],
            ["It passed every correctness test,", "#{lead},"]]
         end
 

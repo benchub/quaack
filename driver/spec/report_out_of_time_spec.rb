@@ -75,17 +75,17 @@ RSpec.describe Quaack::Driver::Report do
       ["production_not_compared", nil] => ["#{lead}, but QUAACK couldn't compare its results",
                                            "It passed the tests on made-up data, but QUAACK couldn't"],
       ["below_top_three", nil] => ["#{lead}, and it beat the original query, but three others",
-                                   "It passed every test and beat the original query, but three"],
+                                   "It passed every correctness test and beat the original query, but three"],
       ["footprint_tie", nil] => ["#{lead}, and it beat the original query, but tied",
-                                 "It passed every test and beat the original query, but tied"],
+                                 "It passed every correctness test and beat the original query, but tied"],
       ["measurement_timed_out", nil] => ["#{lead}, but every measurement run of it timed out.",
-                                         "It passed every test, but every measurement run"],
-      ["not_better", nil] => ["#{lead}, but when measured against real data performed too poorly to be ranked.",
+                                         "It passed every correctness test, but every measurement run"],
+      ["not_better", nil] => ["#{lead}, but when measured it performed too poorly to be ranked.",
                               "It passed every correctness test, but when measured against real data"],
       %w[unfinished rewrite-test] => ["#{short}, and the run ended before going further.",
                                       "It passed the tests on made-up data, and the run ended"],
       %w[unfinished counterexamples] => ["#{short}, it passed the LLM's test data, and the run ended before " \
-                                         "measuring it.", "It passed every test, and the run ended"]
+                                         "measuring it.", "It passed every correctness test, and the run ended"]
     }.each do |(fate, after), (untimed, normal)|
       it "says what happened for #{fate} #{after}, and keeps the usual words when out_of_time isn't true" do
         rewrites.replace([fated(1, fate, after:, out_of_time: true), fated(2, fate, after:, out_of_time: "true")])

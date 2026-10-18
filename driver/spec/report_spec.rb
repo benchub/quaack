@@ -1291,7 +1291,8 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("unfinished")).to eq("QUAACK kept it, but the run ended before testing it.")
         expect(fate("unfinished",
                     after: "rewrite-test")).to include("passed the tests on made-up data, and the run ended")
-        expect(fate("unfinished", after: "counterexamples")).to include("passed every test, and the run ended before")
+        expect(fate("unfinished", after: "counterexamples")).to include("passed every correctness test, and the run " \
+                                                                        "ended before")
         expect(fate("unfinished", after: "measurement")).to include("was measured, and the run ended before")
       end
 
