@@ -40,7 +40,8 @@ module RuleConstantsFixtures
     "count_distinct_to_subquery" => ["'active'"],
     "subquery_order_removal" => %w[42],
     "union_to_union_all" => ["'Submission'", "42", "'Enrollment'", "42"],
-    "coalesce_comparison_split" => %w[42 0 0]
+    "coalesce_comparison_split" => %w[42 0 0],
+    "date_cast_to_range" => ["42", "'2025-03-09'"]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of

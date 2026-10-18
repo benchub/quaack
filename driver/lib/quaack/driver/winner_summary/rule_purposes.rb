@@ -51,7 +51,10 @@ module Quaack
           "union_to_union_all" => "Turns a UNION whose rows can't repeat into a UNION ALL: each arm selects a " \
                                   "unique, not-null key of its table and a tag that differs from every other arm's.",
           "coalesce_comparison_split" => "Splits a COALESCE of a column compared with a value into a comparison of " \
-                                         "the column and a test for its NULLs, which an index on the column can serve."
+                                         "the column and a test for its NULLs, which an index on the column can serve.",
+          "date_cast_to_range" => "Turns a timestamp column cast to date and compared with a day, such as " \
+                                  "created_at::date = $1, into a range on the column, which a btree on the " \
+                                  "column can serve."
         }.freeze
       end
     end
