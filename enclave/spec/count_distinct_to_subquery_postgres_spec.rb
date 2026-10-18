@@ -50,9 +50,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountDistinctToSubquery do
 
   def rows(sql, map, ordered: false)
     name = "quaack_rule_spec"
-    binding = Quaack::Enclave::Redaction.binding(sql, map)
-    binding.prepare(conn, name)
-    result = binding.execute(conn, name)
+    result = Quaack::Enclave::Redaction.binding(sql, map).tap { it.prepare(conn, name) }.execute(conn, name)
     [result.fields, ordered ? result.values : result.values.sort_by(&:to_s)]
   ensure
     begin
@@ -101,7 +99,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountDistinctToSubquery do
                         "(SELECT DISTINCT events.course_id, events.user_id AS user_id_1 FROM public.events " \
                         "WHERE events.created_at > $1) d_1 GROUP BY d_1.course_id")
     expect(generated(sql).map(&:assumptions)).to eq([[]])
-    expect(rows(redacted(sql).sql, redacted(sql).placeholder_map).last).to include(["3", "0"], [nil, "1"])
+    expect(rows(redacted(sql).sql, redacted(sql).placeholder_map).last).to include(%w[3 0], [nil, "1"])
   end
 
   it "counts an ungrouped count(DISTINCT), which still gives 0 on no rows" do
@@ -168,7 +166,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::CountDistinctToSubquery do
        ["SELECT e.course_id, count(DISTINCT e.user_id) AS a, count(DISTINCT e.kind) AS b FROM public.events e " \
         "GROUP BY e.course_id", fires],
        ["SELECT e.course_id, count(DISTINCT e.user_id), max(e.id) FROM public.events e GROUP BY e.course_id", fires],
-       ["SELECT e.course_id, count(DISTINCT e.user_id), rank() OVER () FROM public.events e GROUP BY e.course_id", fires],
+       ["SELECT e.course_id, count(DISTINCT e.user_id), rank() OVER () FROM public.events e " \
+        "GROUP BY e.course_id", fires],
        ["SELECT course_id, count(DISTINCT e.user_id) AS n FROM public.events e GROUP BY course_id", fires],
        ["SELECT e.id AS eid, c.id AS cid, count(DISTINCT e.user_id) AS n FROM public.events e JOIN public.courses c " \
         "ON c.id = e.course_id GROUP BY e.id, c.id", fires],
