@@ -13,6 +13,8 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-7. Rule `left_join_to_inner`.
 - 20261018-3. Rule `count_to_exists`.
 - 20261018-9. Rule `count_distinct_to_subquery`.
+- 20261018-5. Rule `subquery_order_removal`.
+- 20261018-8. Rule `union_to_union_all`.
 
 ## How this file works.
 
@@ -844,27 +846,13 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 
 ### 20261018-4. Rule `subquery_distinct_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-5. Rule `subquery_order_removal`.
-
-An `ORDER BY` with no `LIMIT`, `OFFSET`, or `FETCH`, in a derived table or a CTE body, is removed when no reader depends on the order. Postgres can't flatten a subquery that sorts, so it sorts rows that nothing reads in order, as in Kaminari's `SELECT count(*) FROM (SELECT ... ORDER BY ...) subquery_for_count`. A reader is order-blind when it has its own `ORDER BY`, or when it aggregates (has aggregates or `GROUP BY`) with only aggregates whose result doesn't depend on input order: an allowlist such as `count`, `min`, `max`, `bool_and`, `bool_or`, `every`, `sum` and `avg` over non-float types, and any aggregate with its own `ORDER BY`. A reader with a window function, or with `LIMIT` or `OFFSET` and no `ORDER BY` of its own, isn't order-blind. Neither is a reader with no `ORDER BY` that doesn't aggregate, since an app may rely on that order even though SQL doesn't promise it. Every reader of a CTE must be order-blind. It refuses a body with `DISTINCT ON` or a volatile call. Rests on nothing. Needs a new e2e case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-5. Rule `subquery_order_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-6. Rule `distinct_key_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-7. Rule `left_join_to_inner`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261018-8. Rule `union_to_union_all`.
-
-A `UNION` becomes `UNION ALL` when no two of its rows can be equal. The set-operation tree is all `UNION` without `ALL`. Each arm is a plain SELECT over one plain table, with no `DISTINCT`, `GROUP BY`, aggregate, window, or set-returning function, and it selects every column of a unique, not-null key of its table, so it has no duplicates of its own. One output position holds, in every arm, a bare placeholder (a cast is allowed), and the literal oracle says every pair of them differs, compared as the `UNION`'s column type. That's the tag column of an activity feed, such as `SELECT 'post' AS kind, p.id ... UNION SELECT 'comment', c.id ...`, so the arms can't share a row. It refuses key columns with a nondeterministic collation or of a type the catalog doesn't mark comparable. Check that literals keeps the tag placeholders at their slow literal in every set (they're outside any predicate). Rests on `unique` and `not_null` for each arm's key. Needs a new e2e case.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261018-8. Rule `union_to_union_all`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-9. Rule `count_distinct_to_subquery`. Done, see BACKLOG-COMPLETE.md.
 
