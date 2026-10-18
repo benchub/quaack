@@ -51,7 +51,10 @@ module Quaack
                                     "key of the joined table, so no two of its rows can be equal.",
           "cte_fence_removal" => "The query has a CTE written AS MATERIALIZED, or a plain CTE it reads more than " \
                                  "once, whose body calls no volatile function, and no condition that could reach " \
-                                 "the body's tables can raise an error."
+                                 "the body's tables can raise an error.",
+          "count_distinct_to_subquery" => "A SELECT with a FROM selects only its GROUP BY columns, each written " \
+                                          "name.column, and one count(DISTINCT e), with no HAVING, window, or " \
+                                          "DISTINCT, and calls no volatile function."
         }.freeze
       end
     end

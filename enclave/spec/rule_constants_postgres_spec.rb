@@ -34,7 +34,8 @@ module RuleConstantsFixtures
     "polymorphic_key_copy" => ["'Course'", "42"],
     "subquery_distinct_removal" => %w[42],
     "distinct_key_removal" => %w[42],
-    "cte_fence_removal" => ["'active'", "42"]
+    "cte_fence_removal" => ["'active'", "42"],
+    "count_distinct_to_subquery" => ["'active'"]
   }.freeze
 
   # The rule's fixture: its schema and its query with literals in place of
