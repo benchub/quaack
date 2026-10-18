@@ -45,7 +45,10 @@ module Quaack
           "subquery_distinct_removal" => "The subquery of an IN, = ANY, NOT IN, or <> ALL, or an arm under a UNION, " \
                                          "INTERSECT, or EXCEPT without ALL, has a DISTINCT, an ORDER BY, or a GROUP " \
                                          "BY of just its select list's columns, and no LIMIT or OFFSET, so its " \
-                                         "reader can't see the duplicates or the order those clauses change."
+                                         "reader can't see the duplicates or the order those clauses change.",
+          "distinct_key_removal" => "A SELECT DISTINCT selects every column of a unique, not-null key of its first " \
+                                    "table, and each of its inner or left joins is on every column of a unique " \
+                                    "key of the joined table, so no two of its rows can be equal."
         }.freeze
       end
     end
