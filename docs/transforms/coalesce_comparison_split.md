@@ -6,7 +6,7 @@ It's one of QUAACK's transform rules (see [DESIGN.md's rewrite-rules](../../DESI
 
 ## What it does.
 
-The rule takes a condition of the form `COALESCE(t.c, $d) = $v`. It writes it as `(t.c = $v OR (t.c IS NULL AND COALESCE($d, t.c) = $v))`. A `<>` splits the same way, and the `COALESCE` may be on either side. The column is written `name.column`, or as a bare name when the `FROM` is just one table that has it. `$d` and `$v` are placeholders. Either may be cast, but a cast on `$d` must be to the column's own type.
+The rule takes a condition of the form `COALESCE(t.c, $d) = $v`. It writes it as `(t.c = $v OR (t.c IS NULL AND COALESCE($d, t.c) = $v))`. A `<>` splits the same way, and the `COALESCE` may be on either side. The column is written `name.column`, or as a bare name when the `FROM` is just one table that has it. `$d` and `$v` are placeholders. Either may be cast, but a cast on `$d` must be to the column's own type. When `$d` isn't cast, the rule asks the literal oracle whether the `COALESCE` still has the column's type, since a number can widen it, as `0.5` makes an `integer` column's `COALESCE` a `numeric`.
 
 When the column isn't `NULL`, both forms compare the column with `$v`. When it's `NULL`, both compare `$d` with `$v`. The new `COALESCE` holds the same arguments, swapped, so it has the original's type and collation. The rule needs the `COALESCE`'s type to be the column's own, so that `t.c = $v` uses the same operator as the original.
 
@@ -18,7 +18,7 @@ The rule refuses:
 - any other operator, such as `<`, `IS NOT DISTINCT FROM`, or `= ANY`, and an operator with a schema,
 - a `COALESCE` with more than two arguments, or whose arguments aren't the column and then a placeholder,
 - a default placeholder that the query uses anywhere else, since that use could give it another type,
-- a default cast to a type other than the column's own, and
+- a default cast to a type other than the column's own, or an uncast default that gives the `COALESCE` another type, and
 - a column whose table the `SELECT`'s `FROM` doesn't name once as a plain table, such as one with column aliases, a CTE, or an outer query's table.
 
 These cases are unsupported in v1:

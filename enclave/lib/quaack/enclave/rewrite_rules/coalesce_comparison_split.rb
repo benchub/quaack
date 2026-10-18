@@ -48,8 +48,9 @@ module Quaack
       #   The placeholder may be cast to any type, which applies alike to
       #   the column and the COALESCE.
       # - The COALESCE has two arguments: a column, then a placeholder used
-      #   nowhere else in the query (so nothing else picks its type), bare
-      #   or cast to the column's own type, modifiers included.
+      #   nowhere else in the query (so nothing else picks its type), cast
+      #   to the column's own type, modifiers included, or bare when the
+      #   literal oracle says the COALESCE then has the column's type.
       # - The column is written name.column, for a plain table that the
       #   SELECT's FROM names once (Tree.plain_table?, ONLY allowed), or as
       #   a bare name when that FROM is just one plain table that has it.
@@ -70,10 +71,10 @@ module Quaack
             "inner-join ON, is split into a comparison of the column and a test for its NULLs."
         end
 
-        def rewrites(parse, catalog, _literals = nil)
-          Array.new(changes(parse.tree, catalog).size) do |i|
+        def rewrites(parse, catalog, literals = nil)
+          Array.new(changes(parse.tree, catalog, literals).size) do |i|
             tree = Deparse.copy(parse.tree)
-            split!(changes(tree, catalog)[i])
+            split!(changes(tree, catalog, literals)[i])
             Rewrite.new(tree:, assumptions: [])
           end
         end
@@ -82,11 +83,11 @@ module Quaack
 
         # Every conjunct the rule can split in tree, a WHERE's before its
         # SELECT's joins, outer SELECTs first.
-        def changes(tree, catalog)
+        def changes(tree, catalog, literals)
           Tree.find_all(tree, PgQuery::SelectStmt).flat_map do |select|
             holders(select).flat_map do |holder, field|
               Tree.conjuncts(holder[field]).each_with_index.filter_map do |condition, index|
-                left = side(condition, select, tree, catalog)
+                left = side(condition, select, tree, catalog, literals)
                 Change.new(holder:, field:, index:, expr: condition.a_expr, left:) unless left.nil?
               end
             end
@@ -100,26 +101,43 @@ module Quaack
 
         # true when the condition is one the rule can split with its
         # COALESCE on the left, false when on the right, or nil.
-        def side(condition, select, tree, catalog)
+        def side(condition, select, tree, catalog, literals)
           expr = condition.a_expr if condition.node == :a_expr
           return unless operator?(expr)
 
           [true, false].find do |left|
             coalesce, other = left ? [expr.lexpr, expr.rexpr] : [expr.rexpr, expr.lexpr]
-            value(other) && splittable?(coalesce, select, tree, catalog)
+            value(other) && splittable?(coalesce, select, tree, catalog, literals)
           end
         end
 
         # A plain = or <>, not = ANY or IS DISTINCT FROM, whose names are = too.
         def operator?(expr) = expr&.kind == :AEXPR_OP && OPERATORS.include?(operator(expr))
 
-        def splittable?(node, select, tree, catalog)
+        def splittable?(node, select, tree, catalog, literals)
           return false unless node.node == :coalesce_expr && node.coalesce_expr.args.size == 2
 
           column, default = node.coalesce_expr.args
           param, cast = value(default)
           info = column.node == :column_ref && own_column_info(column.column_ref, select, catalog)
-          info && param && once?(param.param_ref, tree) && own_type?(cast, info, catalog)
+          info && param && once?(param.param_ref, tree) && default_typed?(param, cast, info, catalog, literals)
+        end
+
+        def default_typed?(param, cast, info, catalog, literals)
+          cast ? own_type?(cast, info, catalog) : resolves_to_column?(param.param_ref, info, literals)
+        end
+
+        # Whether COALESCE(column, $n), with $n typed as its literal is,
+        # has the column's type. An untyped string takes the column's, but
+        # a number may widen it, as 0.5 makes an integer's numeric. Every
+        # literal set binds each placeholder with its slow literal's type
+        # (LiteralSet), and the default feeds no column predicate, so it
+        # keeps its slow value too, and the answer holds in each set.
+        def resolves_to_column?(param, info, literals)
+          return false unless literals
+
+          null = "NULL::#{info.type}"
+          literals.holds?("pg_typeof(COALESCE(#{null}, $#{param.number})) = pg_typeof(#{null})")
         end
 
         def own_column_info(column, select, catalog)
