@@ -12239,3 +12239,13 @@ From 20261018-1. Every one-rule rewrite is now kept, so a query that many of the
 - **Design:** rewrite-rules.
 - **Landed:** 2026-10-18: decided, nothing to build. The user: setting up a run database already takes many hours, so a run taking a few more hours for a much better result is time well spent. No limit on one-rule rewrites.
 - **Status:** dropped
+
+### 20261018-20. Test the EPERM branch of the owner-alive check in verify.rb and TestPostgres.
+
+From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the same code in `spec/support/test_postgres.rb`, treat `Errno::EPERM` (a live process of another user) as alive, but no test covers it: making that branch return false leaves the specs green, and a run would then remove another user's live container. Add a test, such as with pid 1, which gives EPERM to a non-root user on macOS.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261018-18, 2026-10-18.
+- **Design:** None (test and e2e tooling).
+- **Landed:** 2026-10-18 (task/20261018-20; spec and e2e tooling). spec/e2e_verify_spec.rb now keeps a pid-1 owned container; test_postgres_spec already had a pid-1 test. Both go red when EPERM counts as dead.
+- **Status:** done

@@ -764,15 +764,6 @@ Found while building 20261018-3. In `SELECT (SELECT count(*) FROM ... WHERE o.st
 - **Design:** redact.
 - **Status:** todo
 
-### 20261018-20. Test the EPERM branch of the owner-alive check in verify.rb and TestPostgres.
-
-From the review of 20261018-18. `process_alive?` in `e2e/verify.rb`, and the same code in `spec/support/test_postgres.rb`, treat `Errno::EPERM` (a live process of another user) as alive, but no test covers it: making that branch return false leaves the specs green, and a run would then remove another user's live container. Add a test, such as with pid 1, which gives EPERM to a non-root user on macOS.
-
-- **Depends on:** None.
-- **Came from:** Review of 20261018-18, 2026-10-18.
-- **Design:** None (test and e2e tooling).
-- **Status:** todo
-
 ### 20261018-21. subquery_distinct_removal: minors from the build and review of 20261018-4.
 
 - Untested refusal: `Readers.passes?` can drop its `limit_offset.nil?` check and the suite stays green, since nothing tests an `OFFSET` on a `UNION ALL` or `INTERSECT ALL` between an arm and its reader. Add the refusal pair beside the `LIMIT` one.
