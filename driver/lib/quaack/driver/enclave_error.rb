@@ -72,7 +72,7 @@ module Quaack
                           "run_server_locale_mismatch" => "The racetrack database's" }.freeze
 
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major settings].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major settings position].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
@@ -85,12 +85,13 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, tables: nil, parser_major: nil, settings: nil,
+                     clients: nil, tables: nil, parser_major: nil, settings: nil, position: nil,
                      exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
         @timeout_seconds = timeout_seconds
         @rule = rule
-        @line = { step:, sqlstate:, reason:, function:, column:, clients:, tables:, parser_major:, settings: }.freeze
+        @line = { step:, sqlstate:, reason:, function:, column:, clients:, tables:, parser_major:, settings:,
+                  position: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -197,7 +198,7 @@ module Quaack
       def facts
         return reason_message(reason) if Protocol::UnreadableReasons::RULES.include?(rule) && reason
 
-        named_schema || function || named_run_server
+        named_schema || function || named_run_server || ("The literal at character #{position}" if position)
       end
 
       # The other clients, or what doesn't match production, that a
@@ -244,7 +245,8 @@ module Quaack
       # The schema and clients the error line named.
       def named_details
         [("column #{described_column}" if column), ("clients #{described_clients}" if clients),
-         ("tables #{described_tables}" if tables), ("settings #{settings.join(", ")}" if settings)]
+         ("tables #{described_tables}" if tables), ("settings #{settings.join(", ")}" if settings),
+         ("position #{position}" if position)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]

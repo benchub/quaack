@@ -51,6 +51,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "single_candidate_test.rb" => [1, "guarded's and hypopg's callers"],
     "single_candidate_test/hypopg.rb" => [1, "hypopg's callers"],
     "steps/counterexamples.rb" => [2, "<prefix>_unknown_search and <prefix>_no_arena_setup, read below"],
+    "steps/redact_rewrite.rb" => [1, "RewriteRedaction::Refusal's rule, raised again as usage"],
     "steps/rewrite_check.rb" => [1, "StructuralDiscard's reasons, rescued into the rewrite's outcome"],
     "store.rb" => [1, "a message for Store::BadBase, whose rule is fixed"],
     "supported_sql.rb" => [1, "a node type for an Error whose rule is fixed"],
