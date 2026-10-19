@@ -225,7 +225,7 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       let(:style) { html[%r{<style>(.*?)</style>}m, 1] }
-      let(:wide) { style[/@media \(min-width: 64rem\) \{(.*?)\n  \}\n/m, 1].to_s }
+      let(:wide) { style[/@media screen and \(min-width: 64rem\) \{(.*?)\n  \}\n/m, 1].to_s }
 
       # A rule's declarations in css, as {property => value}.
       def rule(css, selector)
@@ -239,6 +239,12 @@ RSpec.describe Quaack::Driver::Report do
                                                  "overflow-y" => "auto")
         expect(style[/@media print \{(.*?)\n  \}\n/m, 1]).to match(/nav#toc \{ display: none; \}/)
         expect(html.index('<nav id="toc"')).to be > html.index("<h1>")
+      end
+
+      # Review of 20261019-1: printed in landscape, the page kept the wide margin for the hidden contents.
+      it "keeps the wide layout to the screen, so print gets no margin for the hidden contents" do
+        expect(style).to include("@media screen and (min-width: 64rem) {")
+        expect(style).not_to match(/@media \(min-width/)
       end
 
       it "has a border in the page's rule color" do
@@ -3532,7 +3538,8 @@ RSpec.describe Quaack::Driver::Report do
       note = burndown[%r{<p class="note" id="burndown-units">(.*?)</p>}m, 1]
       expect(note).to eq("An index idea is one proposed index, and an index set is the ideas QUAACK tries " \
                          "together, one alone or two or three combined; a rewrite is a rewritten version of your " \
-                         "query, and a candidate is a rewrite together with the indices chosen for it.")
+                         "query, and a candidate is your original query or a rewrite, measured with one index set, " \
+                         "or a rewrite measured with no new indices.")
       expect(burndown.index('id="burndown-units"')).to be > burndown.index('<table id="burndown-rewrite-index">')
       expect(burndown.index('id="burndown-units"')).to be < burndown.index("<h3>LLM calls</h3>")
       expect(burndown.scan('id="burndown-units"').size).to eq(1)

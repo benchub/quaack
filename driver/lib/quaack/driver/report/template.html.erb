@@ -135,7 +135,7 @@
   nav#toc a:visited { color: var(--accent); }
   /* On a wide window, the contents sit in a narrow left margin and the rest of the width goes to the report,
      so a wide plan table can use it. Prose and diagrams keep a readable width. */
-  @media (min-width: 64rem) {
+  @media screen and (min-width: 64rem) {
     body { max-width: none; margin-left: 15rem; }
     p, ul, svg.sankey { max-width: 62rem; }
     nav#toc { position: fixed; top: 1rem; left: 1rem; width: 13rem;
@@ -465,7 +465,7 @@ for (const time of document.querySelectorAll("time.local")) {
 </tbody></table>
 <p class="note" id="burndown-<%= id %>-held-back">Set aside for testing during ranking means QUAACK kept the idea instead of dropping it, so it can test it by building it while it ranks the indices. index-dedupe, and the LLM&#39;s rounds of index ideas, set aside GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test sets aside B-tree ideas on columns with few distinct values that the planner left unused.</p>
 <% end %>
-<p class="note" id="burndown-units">An index idea is one proposed index, and an index set is the ideas QUAACK tries together, one alone or two or three combined; a rewrite is a rewritten version of your query, and a candidate is a rewrite together with the indices chosen for it.</p>
+<p class="note" id="burndown-units">An index idea is one proposed index, and an index set is the ideas QUAACK tries together, one alone or two or three combined; a rewrite is a rewritten version of your query, and a candidate is your original query or a rewrite, measured with one index set, or a rewrite measured with no new indices.</p>
 <h3>LLM calls</h3>
 <% if call_rows.empty? %>
 <p id="llm-calls">No LLM calls were counted in this run.</p>
