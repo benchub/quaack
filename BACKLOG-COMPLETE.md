@@ -12465,3 +12465,13 @@ Run 20261019T011100Z-fe1f9d46 built and shared both `submissions (id, assignment
 - **Answers (from the user, 2026-10-18):**
   - The widening is the existing merge layer's combinations input (a named input of sets with its own ribbon). No separate trapezoid node.
   - One width scale for the whole diagram, above and below the line.
+
+### 20261018-31. index-share: skip shared pairings for a candidate that timed out without new indices.
+
+In run 20261019T011100Z-fe1f9d46, rewrite "Snowy Crown" timed out with no new indices, and then with all 3 of its shared pairings. Each run burned the full timeout. When a candidate's no-new-index measurement times out, don't measure its shared pairings. Say so in the report if the report lists them. If the timing of the steps makes this hard (share pairings get chosen before measurement), stop and ask.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18. Follows 20261017-2.
+- **Design:** index-share, measurement.
+- **Landed:** 2026-10-18 (task/20261018-31; enclave, protocol, driver). candidate-runs measures a rewrite's `:none` first; once it times out, its `:shared:<k>` pairings are skipped and listed in `skipped`. Report labels carry `skipped: true`, which `Protocol::CandidateKinds.labels?` accepts only on `rewrite_<n>:shared:<k>` with no timeout and no measurements. The "Runs that timed out" section lists them; measured and not-better counts leave them out. The step_counts progress line doesn't count them. No VERSION bump; on the Unreleased list.
+- **Status:** done

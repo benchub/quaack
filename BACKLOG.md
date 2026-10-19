@@ -6,9 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261018-29
-- 20261018-30
-- 20261018-31
 
 ## How this file works.
 
@@ -706,24 +703,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Depends on:** None.
 - **Came from:** The builder of 20261018-30, 2026-10-18.
 - **Design:** index-build, index-share.
-- **Status:** todo
-
-### 20261018-32. index-build: build indices that differ only in spelling once.
-
-20261018-30 made index-share treat indices with equal `pg_get_indexdef` (name ignored) as one, but index-build still builds each spelling, so the run pays for the duplicate build and measures both. Deduping before the build changes the `--index` order and totals the driver relies on, and the `indexes` list the report uses. Build each once and map the other spellings to it, or canonicalize the DDL before naming it.
-
-- **Depends on:** None.
-- **Came from:** The builder of 20261018-30, 2026-10-18.
-- **Design:** index-build, index-share.
-- **Status:** todo
-
-### 20261018-31. index-share: skip shared pairings for a candidate that timed out without new indices.
-
-In run 20261019T011100Z-fe1f9d46, rewrite "Snowy Crown" timed out with no new indices, and then with all 3 of its shared pairings. Each run burned the full timeout. When a candidate's no-new-index measurement times out, don't measure its shared pairings. Say so in the report if the report lists them. If the timing of the steps makes this hard (share pairings get chosen before measurement), stop and ask.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-18. Follows 20261017-2.
-- **Design:** index-share, measurement.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).
