@@ -107,6 +107,11 @@ RSpec.describe Quaack::Enclave::RewriteRedaction do
     expect(refusal(sql, from:).rule).to eq("redact_rewrite_no_match")
   end
 
+  it "refuses a literal on the other side of the comparison, which would reverse its meaning" do
+    sql = "SELECT o.id FROM orders o WHERE 99 > o.total"
+    expect([refusal(sql).rule, refusal(sql).position]).to eq(["redact_rewrite_no_match", sql.index("99") + 1])
+  end
+
   it "refuses a statement that already has placeholders of its own" do
     expect { redact("SELECT o.id FROM orders o WHERE o.status = $1") }
       .to raise_error(Quaack::Enclave::Redaction::Error, "query_has_parameters")
