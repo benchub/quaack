@@ -53,8 +53,12 @@ module Quaack
       # 1 to 64 names of the settings, pg_database fields, or libraries
       # that don't match production, each a plain GUC-shaped name such as
       # random_page_cost or TimeZone. A name is configuration's shape; a
-      # setting's value never goes out.
-      error: %i[step rule sqlstate reason function clients column tables parser_major settings].freeze,
+      # setting's value never goes out. position is only on a
+      # redact_rewrite_no_match or redact_rewrite_ambiguous refusal: the
+      # 1-based character position of the operator's literal that has no
+      # placeholder, or more than one, a positive Integer, never the
+      # literal.
+      error: %i[step rule sqlstate reason function clients column tables parser_major settings position].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,
@@ -136,6 +140,10 @@ module Quaack
       # { "assumption", "kind" }, one per unmet inferred assumption
       # (operator-rewrites): its 1-based position and its kind, from the fixed vocabulary.
       rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
+      # DESIGN.md's redact-rewrite, from `quaacks redact-rewrite`: sql is the
+      # operator's own rewrite with each literal replaced by the run's $n
+      # placeholder, which RewriteRedaction checked holds no literal.
+      redacted_rewrite: %i[sql].freeze,
       # rewrite-test's verdict on one stored rewrite, from `quaacks rewrite-test`.
       # rewrite is the entry name, such as rewrite_2. passed is true or
       # false. rule is nil or one of the enclave's rule constants, such as

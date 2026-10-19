@@ -45,6 +45,9 @@ module Quaack
         # the enclave's ErrorFilter shapes them: 1 to 64 schema.name Strings
         # (quoted where the catalog quotes them), for the operator.
         TABLES_RULE = "dump_object_unreadable"
+        # A redact-rewrite refusal's position (DESIGN.md's redact-rewrite): the
+        # 1-based character position of the operator's literal, never its value.
+        POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous].freeze
         TABLES_SIZES = (1..64)
         # One part of a table's name, as the catalog's quote_ident writes it:
         # a bare lowercase name, or a quoted one of printable characters (no
@@ -59,7 +62,7 @@ module Quaack
           rule = shaped(error["rule"], RULE) || "unexpected_output"
           { rule:, step: shaped(error["step"], STEP), sqlstate: shaped(error["sqlstate"], SQLSTATE),
             reason: reason(rule, error["reason"]), function: shaped(error["function"], FUNCTION),
-            **named(rule, error) }
+            position: position(rule, error["position"]), **named(rule, error) }
         end
 
         # The fields only one rule's error line has.
@@ -69,6 +72,10 @@ module Quaack
             settings: (settings(error["settings"]) if SETTINGS_RULES.include?(rule)),
             tables: (tables(error["tables"]) if rule == TABLES_RULE),
             parser_major: (Protocol::ParserMajor.check(error["parser_major"]) if rule == Protocol::ParserMajor::RULE) }
+        end
+
+        def position(rule, value)
+          value if POSITION_RULES.include?(rule) && value.instance_of?(Integer) && value.positive?
         end
 
         def reason(rule, reason) = (reason if REASON_RULES.include?(rule) && REASONS.include?(reason))

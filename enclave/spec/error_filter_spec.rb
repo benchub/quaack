@@ -133,6 +133,36 @@ end
 RSpec::Matchers.define_negated_matcher :not_output, :output
 
 RSpec.describe Quaack::Enclave::ErrorFilter do
+  describe "a redact-rewrite refusal's position" do
+    def position_line(rule, position)
+      error = Class.new(StandardError) do
+        define_method(:rule) { rule }
+        define_method(:position) { position }
+      end.new
+      described_class.to_egress(error, step: "redact-rewrite")
+    end
+
+    it "sends a position in range on the two redact-rewrite rules" do
+      expect(position_line("redact_rewrite_no_match", 42))
+        .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_no_match", position: 42))
+      expect(position_line("redact_rewrite_ambiguous", described_class::MAX_POSITION))
+        .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_ambiguous",
+                    position: described_class::MAX_POSITION))
+    end
+
+    it "drops a position on any other rule" do
+      expect(position_line("bad_input", 42)).to eq(line(step: "redact-rewrite", rule: "bad_input"))
+    end
+
+    [["zero", 0], ["past the max", Quaack::Enclave::ErrorFilter::MAX_POSITION + 1], ["a String", "42"],
+     ["a Float", 42.0]].each do |what, position|
+      it "drops a position that's #{what}" do
+        expect(position_line("redact_rewrite_no_match", position))
+          .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_no_match"))
+      end
+    end
+  end
+
   let(:filter) { described_class }
   # ERROR_SENTINEL is fixed, since the fakes above are built before any
   # example runs, and it's there to scan for alongside the made ones.

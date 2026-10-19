@@ -8,20 +8,20 @@ require_relative "setup_command"
 module Quaack
   module Driver
     # The quaack command line, run by an engineer on their laptop.
-    class CLI
+    class CLI # rubocop:disable Metrics/ClassLength
       USAGE = "Usage: quaack --version\n       " \
               "quaack start --server <name> --query <file> --plan <file> [--port <n>] [--database <name>] " \
               "[--captured-at <time>]\n       quaack deploy --host <jump server>\n       " \
               "quaack setup --run <ID> #{SetupCommand::USAGE}\n       " \
               "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] [--enclave-timeout-seconds <n>] " \
-              "#{SetupCommand::USAGE}\n".freeze
+              "#{SetupCommand::USAGE}\n       quaack redact-rewrite --run <ID> < rewrite.sql\n".freeze
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
       START_OPTIONAL = %w[--port --database --captured-at].freeze
       RUN_OPTIONAL = (%w[--rewrites --out --enclave-timeout-seconds] + SetupCommand::OPTIONS).freeze
       # What setup and run load, only once they run.
       RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline progress
-                     provenance runs setup teardown transport/ssh].freeze
+                     provenance redact_rewrite_command runs setup teardown transport/ssh].freeze
 
       # transport builds the transport to a jump host, and client the LLM
       # client from its LLM::Settings. Specs pass fakes for both, since
@@ -33,7 +33,8 @@ module Quaack
       # to a closed pipe (`quaack … 2>&1 | head`), the rest there are
       # skipped and the command goes on to its own exit status
       # (QuietStream).
-      def initialize(stdout: $stdout, stderr: $stderr, home: Dir.home, transport: nil, client: nil)
+      def initialize(stdout: $stdout, stderr: $stderr, home: Dir.home, transport: nil, client: nil, stdin: $stdin) # rubocop:disable Metrics/ParameterLists
+        @stdin = stdin
         @stdout = QuietStream.wrap(stdout)
         @stderr = QuietStream.wrap(stderr)
         @home = home
@@ -55,13 +56,14 @@ module Quaack
 
       private
 
-      # The exit status of a well-formed start, setup, run, or deploy, or nil.
+      # The exit status of a well-formed subcommand, or nil.
       def subcommand(argv)
         case argv.first
         when "start" then (options = start_options(argv.drop(1))) && start(options)
         when "setup" then setup(argv.drop(1))
         when "run" then (options = run_options(argv.drop(1))) && run_command(**options)
         when "deploy" then deploy(argv.drop(1))
+        else redact_rewrite(argv)
         end
       end
 
@@ -92,6 +94,12 @@ module Quaack
       def deploy(argv)
         require_relative "deploy"
         Deploy.main(argv, stdout: @stdout, stderr: @stderr)
+      end
+
+      # The exit status of a well-formed `redact-rewrite`, or nil.
+      def redact_rewrite(argv)
+        argv.first == "redact-rewrite" && require_run &&
+          RedactRewriteCommand.new(@home, @transport, @stdin, @stdout, @stderr).call(argv.drop(1))
       end
 
       # The exit status of a well-formed `setup`, or nil.

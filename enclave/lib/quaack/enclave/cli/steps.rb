@@ -12,6 +12,7 @@ require_relative "../steps/statistics"
 require_relative "../steps/volatility"
 require_relative "../steps/classify"
 require_relative "../steps/redact"
+require_relative "../steps/redact_rewrite"
 require_relative "../steps/literals"
 require_relative "../steps/anchor"
 require_relative "../steps/racetrack_setup"
@@ -90,7 +91,8 @@ module Quaack
         "result-comparison" => Step.new(handler: Steps::ResultComparison, run: true),
         "selection" => Step.new(handler: Steps::Selection, run: true),
         "winner-timing" => Step.new(handler: Steps::WinnerTiming, run: true),
-        "report-payload" => Step.new(handler: Steps::ReportPayload, run: true)
+        "report-payload" => Step.new(handler: Steps::ReportPayload, run: true),
+        "redact-rewrite" => Step.new(handler: Steps::RedactRewrite, run: true, input: true)
       }.freeze
     end
   end

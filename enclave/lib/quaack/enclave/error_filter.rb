@@ -60,6 +60,10 @@ module Quaack
     #   the function; column, one plain name; and type, as format_type
     #   prints it, unquoted, such as numeric(5,2) or bigint[]. Otherwise the
     #   whole field is left out.
+    # - The position comes from the error's position method, and is sent
+    #   only for POSITION_RULES (DESIGN.md's redact-rewrite): the 1-based
+    #   character position of a literal in the operator's rewrite. It must be
+    #   an Integer from 1 to MAX_POSITION. Otherwise it's left out.
     # - No error line names a foreign key cycle's tables (20261010-6): an
     #   fk_cycle refusal goes out as its rule alone, whatever the error's
     #   cycle method gives. Its tables go out only in the report payload,
@@ -93,6 +97,9 @@ module Quaack
       SETTING = /\A[A-Za-z_][A-Za-z0-9_.]{0,62}\z/
       MAX_SETTINGS = 64
       COLUMN_RULES = %w[unsupported_type domain_check].freeze
+      POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous].freeze
+      # Past any statement Input takes.
+      MAX_POSITION = 64 * 1024 * 1024
       COLUMN_KEYS = %w[table column type].freeze
       IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
       # A type as format_type prints it, unquoted: a name, maybe schema
@@ -131,9 +138,12 @@ module Quaack
           **schema_names(exception, rule) }.compact
       end
 
-      # The column or tables only some rules' error lines have.
+      def position(value) = (value if value.instance_of?(Integer) && value.between?(1, MAX_POSITION))
+
+      # The column, tables, or position only some rules' error lines have.
       def schema_names(exception, rule)
         { column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
+          position: (position(ask(exception, :position)) if POSITION_RULES.include?(rule)),
           tables: (Tables.check(ask(exception, :tables)) if rule == Tables::RULE) }
       end
 
