@@ -726,16 +726,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** run-server check, trust boundary.
 - **Status:** todo
 
-### 20261017-12. Rewrites' index-ideas Sankey: minors from the review of 20261017-8.
-
-1. DESIGN.md (about line 1544) still says that in the rewrites' table "a round may carry less than the stages before it left, never more", which no longer holds since 20261017-8. `spec/pipeline_replay_spec.rb` (about line 95) still checks `rewrite_index_rows` loosely, so a regression on real runs would go unseen. Pass `strict: true` there (the reviewer showed all 7 per-commit runs pass with it) and fix the DESIGN sentence.
-2. The "Also counted" wording, "ideas from rewrites the LLM wasn't asked about, passed on unchanged", doesn't say why. Add the reason, such as "(ruled out or pruned before the LLM's rounds)".
-
-- **Depends on:** None.
-- **Came from:** Review of 20261017-8, 2026-10-18.
-- **Design:** report, sankey.
-- **Status:** todo
-
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:

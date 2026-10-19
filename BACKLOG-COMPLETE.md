@@ -12414,3 +12414,14 @@ From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric
 - **Design:** report.
 - **Landed:** 2026-10-18 (task/20261017-11; driver and README). The legend says the rows cells are shaded; README's legend, sample, and prose match; blocks and time bucket by the rounded share their cell shows.
 - **Status:** done
+
+### 20261017-12. Rewrites' index-ideas Sankey: minors from the review of 20261017-8.
+
+1. DESIGN.md (about line 1544) still says that in the rewrites' table "a round may carry less than the stages before it left, never more", which no longer holds since 20261017-8. `spec/pipeline_replay_spec.rb` (about line 95) still checks `rewrite_index_rows` loosely, so a regression on real runs would go unseen. Pass `strict: true` there (the reviewer showed all 7 per-commit runs pass with it) and fix the DESIGN sentence.
+2. The "Also counted" wording, "ideas from rewrites the LLM wasn't asked about, passed on unchanged", doesn't say why. Add the reason, such as "(ruled out or pruned before the LLM's rounds)".
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-8, 2026-10-18.
+- **Design:** report, sankey.
+- **Landed:** 2026-10-18 (task/20261017-12; driver, DESIGN.md, and the replay spec). The replay spec checks the rewrites' index burndown strictly; DESIGN.md says a rewrite the LLM wasn't asked about passes its ideas through unchanged; NOT_ASKED says so too. The non-strict branch of burndown_joins? is now unused.
+- **Status:** done
