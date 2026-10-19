@@ -55,7 +55,8 @@ module Quaack
           stages = sankey_stages(rows, of_rewrite)
           stages.zip(rows) { |stage, row| stage.unit = sankey_unit(row[2]) }
           layers, steps = sankey_states(stages, sankey_start(stages.first))
-          words = "#{title}, stage by stage, as a Sankey diagram. The table below has the exact numbers."
+          words = "#{title}, stage by stage: what came in, what dropped out and why, and what went on. " \
+                  "The table below has the exact numbers."
           SankeyDrawing.new(id: key, title: words, layers:, steps:).svg + sankey_note(key, stages, of_rewrite)
         end
 

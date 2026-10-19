@@ -11,7 +11,9 @@ module Quaack
     # summary that opens "Why the winner reads fewer blocks" (summary:, from
     # WinnerSummary), under a label that says so. Without one, the section
     # reads as it always has. It's one
-    # file: plain CSS, no scripts, and nothing loaded from the network.
+    # file: plain CSS, one small inline script that shows when the report
+    # was generated in the reader's own time (the UTC time stays when it
+    # doesn't run), and nothing loaded from the network.
     #
     #   Report.render(payload, run_id:, llm_calls: burndown.llm_calls)  # => HTML String
     #   Report.write(payload, run_id:, path:)  # => path
@@ -29,6 +31,7 @@ module Quaack
     #
     # In order, it shows:
     #
+    # - The title, and under it when the report was generated.
     # - A QUAACK bug, only if the payload's rule_bugs lists a rule-made
     #   rewrite that a test disproved (DESIGN.md's rewrite-rules).
     # - The verdict.
@@ -42,8 +45,9 @@ module Quaack
     #   nothing beat the original (negative-result).
     # - The built indexes (Indexes).
     # - Who proposed what (Accountability).
-    # - The burndown (burndown, Stages), each table under its Sankey diagram
-    #   (Sankey), with llm_calls, the driver's own Burndown#llm_calls.
+    # - The burndown (burndown, Stages), each table under its diagram
+    #   (Sankey), then what an index idea, an index set, a rewrite, and a
+    #   candidate are, with llm_calls, the driver's own Burndown#llm_calls.
     # - Which LLM provider did what (Providers), from llm: the driver's own
     #   provenance record and its calls by provider, never the enclave's.
     #
@@ -60,9 +64,13 @@ module Quaack
       # string. own_rewrites is how many rewrites of your own the run was
       # given (`--rewrites`), as its provenance record says, or nil when
       # nothing says (OwnRewrites).
-      def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil, own_rewrites: nil) # rubocop:disable Metrics/ParameterLists
+      #
+      # generated_at is when the report says it was generated, now unless
+      # given.
+      def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil, own_rewrites: nil, generated_at: Time.now) # rubocop:disable Metrics/ParameterLists
         run_id = Format.unmarked(run_id)
-        View.new(named(OwnRewrites.fill(payload, own_rewrites), run_id), run_id, llm_calls, llm, summary).render
+        View.new(named(OwnRewrites.fill(payload, own_rewrites), run_id), run_id, llm_calls, llm, summary,
+                 generated_at).render
       end
 
       def write(payload, path:, **)
