@@ -12435,3 +12435,13 @@ From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric
 - **Design:** run-server check, trust boundary.
 - **Landed:** 2026-10-18 (task/20261017-4; enclave, protocol, and driver). run_server_guc_mismatch, _locale_mismatch, and _preload_mismatch send a `settings` field of names only (every mismatch for GUCs and locale), checked in ErrorFilter and the driver against a strict name pattern, 1 to 64 entries; the preload name comes only from QUAACK's fixed PLANNER_LIBRARIES. The driver names them. Minor, open: preload names only the first library; locale reports pg_database fields before default_text_search_config; a stale header comment in run_server_check.rb; extension_missing/_version could send names too.
 - **Status:** done
+
+### 20261018-29. index-share: raise the run-wide cap to 42.
+
+IndexShare caps shared pairings at 3 per candidate and 12 per run (20261017-2). In run 20261019T011100Z-fe1f9d46, four candidates took 3 each and filled the run-wide 12, so the eventual winner (a key_in_self_join then or_to_union rewrite) got no shared pairing at all. It never ran with the small partial index on `assignments (context_id, id) WHERE ...` that another candidate ranked. That index read 53% fewer blocks than the original query with the same rewrite in run 20261017T172321Z-f6f85d4c. Raise `IndexShare::TOTAL` from 12 to 42 (decided by the user, 2026-10-18: spend more time to find the right pairing). Keep `PER_CANDIDATE` at 3. Add a test where the old cap starves a candidate and the new one doesn't. Update DESIGN.md's index-share section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18, comparing those two reports. Follows 20261017-2.
+- **Design:** index-share.
+- **Landed:** 2026-10-18 (task/20261018-29; enclave). `IndexShare::TOTAL` is 42; PER_CANDIDATE stays 3. Specs cover a fifth candidate keeping its pairings and trimming 45 to 42. No VERSION bump; on the Unreleased list.
+- **Status:** done
