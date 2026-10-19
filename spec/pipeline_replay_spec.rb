@@ -92,7 +92,7 @@ RSpec.describe PipelineReplay do
             joined_runs << [query.name, variant]
             view = Quaack::Driver::Report::View.new(outcome.report, "run")
             gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
-                   burndown_gaps(view.rewrite_index_rows)
+                   burndown_gaps(view.rewrite_index_rows, strict: true)
             expect(gaps).to eq([])
           end
 

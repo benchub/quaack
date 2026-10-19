@@ -70,7 +70,10 @@ module Quaack
 
         # An extra count a stage words its own way, by stage (task 20261012-3). The LLM's rounds
         # count the ideas of the rewrites it wasn't asked about (Stages#rewrite_searches, task 20261017-8).
-        NOT_ASKED = { "not_asked" => "ideas from rewrites the LLM wasn't asked about, passed on unchanged" }.freeze
+        NOT_ASKED = {
+          "not_asked" => "ideas from rewrites the LLM wasn't asked about (ruled out or pruned before its rounds), " \
+                         "passed on unchanged"
+        }.freeze
         STAGE_EXTRAS = { "enumerate" => { "untested" => "not tested by enumeration" },
                          "llm-index-ideas" => NOT_ASKED, "llm-index-refine" => NOT_ASKED }.freeze
 

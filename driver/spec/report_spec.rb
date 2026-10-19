@@ -3266,7 +3266,8 @@ RSpec.describe Quaack::Driver::Report do
         "llm-index-refine" => { "rewrite_1" => rec(3, 3, extra: { "nothing_fell_short" => 1 }) },
         "index-rank" => { "rewrite_1" => rec(3, 1), "rewrite_2" => rec(1, 1) }
       )
-      passed = "ideas from rewrites the LLM wasn&#39;t asked about, passed on unchanged: 1"
+      passed = "ideas from rewrites the LLM wasn&#39;t asked about (ruled out or pruned before its rounds), " \
+               "passed on unchanged: 1"
       expect(rewrite_index_table).to include(
         row("Index ideas for the rewrites: ideas from the LLM", 0, "from the LLM: 3", "never used by the planner: 1",
             0, 5, passed)
