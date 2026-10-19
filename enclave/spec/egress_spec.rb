@@ -393,7 +393,9 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a top entry with no label", { top: [{ "kind" => "rewrite_new_indexes" }] }],
       ["a planted label in labels", ->(l) { { labels: l + [{ "label" => "original:shared:#{EGRESS_SENTINEL}" }] } }],
       ["a planted label in excluded", { excluded: { EGRESS_SENTINEL => "not_better" } }],
-      ["a value in place of excluded", { excluded: [EGRESS_SENTINEL] }]
+      ["a value in place of excluded", { excluded: [EGRESS_SENTINEL] }],
+      # Task 20261018-31: skipped is only ever true or false.
+      ["a planted value in a label's skipped", ->(l) { { labels: [l.first.merge("skipped" => EGRESS_SENTINEL)] } }]
     ].each do |what, change|
       it "refuses one with #{what}, without quoting it" do
         message = { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, top: }

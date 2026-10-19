@@ -34,6 +34,19 @@ RSpec.describe Quaack::Protocol::CandidateKinds do
     end
   end
 
+  # Task 20261018-31: a label candidate-runs skipped says so with skipped,
+  # and that's only ever true or false.
+  it "accepts a label's skipped only as true or false" do
+    labels = ->(skipped) { { "labels" => [{ "label" => "rewrite_1:shared:1", **skipped }] } }
+    [{}, { "skipped" => true }, { "skipped" => false }, { skipped: true }].each do |skipped|
+      expect(described_class.labels?(labels.call(skipped))).to be(true), skipped.inspect
+    end
+    [{ "skipped" => "SELECT secret" }, { "skipped" => nil }, { "skipped" => 1 },
+     { skipped: "secret" }].each do |planted|
+      expect(described_class.labels?(labels.call(planted))).to be(false), planted.inspect
+    end
+  end
+
   it "takes a report's ranking only when its top carries listed kinds and every label is QUAACK's own" do
     good = { "top" => [{ "label" => "rewrite_1:shared:1", "kind" => "rewrite_new_indexes" }],
              "labels" => [{ "label" => "original:shared:2" }], "excluded" => { "original:none" => "not_better" } }

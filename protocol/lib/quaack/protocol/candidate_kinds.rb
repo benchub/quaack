@@ -32,13 +32,19 @@ module Quaack
 
       # Whether a report's fields carry only QUAACK's own labels: each
       # entry of top and of labels is a Hash whose label passes label?, and
-      # each key of excluded does. A field the report doesn't have counts as
+      # each key of excluded does. Each entry of labels carries skipped, a
+      # label candidate-runs didn't run (task 20261018-31), only as true or
+      # false, if at all. A field the report doesn't have counts as
       # empty. Keys may be Strings or Symbols, as JSON writes either.
       def labels?(fields)
         top, labels, excluded = EMPTY.map { |key, empty| fields.fetch(key) { fields.fetch(key.to_sym, empty) } }
-        entries?(top) && entries?(labels) &&
+        entries?(top) && label_entries?(labels) &&
           excluded.is_a?(Hash) && excluded.keys.all? { label?(it.is_a?(Symbol) ? it.to_s : it) }
       end
+
+      def label_entries?(labels) = entries?(labels) && labels.all? { skipped?(it) }
+
+      def skipped?(entry) = [true, false].include?(entry.fetch("skipped") { entry.fetch(:skipped, false) })
 
       # Whether a report's top carries kinds (valid?) and every label in it
       # is QUAACK's own (labels?), as the driver checks both.
@@ -55,7 +61,7 @@ module Quaack
         top.is_a?(Array) && top.all? { it.is_a?(Hash) && KINDS.include?(it["kind"] || it[:kind]) }
       end
 
-      private_class_method :entries?
+      private_class_method :entries?, :label_entries?, :skipped?
     end
   end
 end

@@ -174,7 +174,8 @@ module Quaack
       # per literal set. top, excluded, and infinite_sets are the selection
       # selection. labels is every measured label, ranked or not: its
       # search, the built names of the indexes it ran with, its block
-      # counts, minimax's per-literal verdicts, and whether it timed out.
+      # counts, minimax's per-literal verdicts, whether it timed out, and,
+      # for a shared pairing candidate-runs skipped, skipped (true or false).
       # rewrites is every stored rewrite, ranked or not: its entry name,
       # its $n SQL, its source (rule, llm, or operator) and, if a rewrite-rules rule
       # made it, the rule names and the tables and columns of the

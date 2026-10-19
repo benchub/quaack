@@ -135,10 +135,11 @@ module Quaack
         # so an index with mixed labels (one not better, one that beat the
         # original and tied) isn't counted here. Neither is one whose label
         # tied, fell below the top three, was dropped in result-comparison, or timed out,
-        # nor one no label ran with. Those count only as built.
+        # nor one no label ran with. Those count only as built. A shared
+        # pairing QUAACK skipped (task 20261018-31) never ran with it.
         def not_better_indexes
           indexes.keys.select do |name|
-            ran = labels.select { it["indexes"].include?(name) }
+            ran = labels.select { it["indexes"].include?(name) && !it["skipped"] }
             !ran.empty? && ran.all? { excluded[it["label"]] == "not_better" }
           end
         end

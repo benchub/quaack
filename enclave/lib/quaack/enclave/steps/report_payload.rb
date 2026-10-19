@@ -52,7 +52,9 @@ module Quaack
       #                    (MeasuredLabels): { "label", "search" (original
       #                    or rewrite_<n>), "indexes" (built names),
       #                    "measurements", "verdicts" (minimax's, per
-      #                    literal set), "timed_out", "plan" (its
+      #                    literal set), "timed_out", "skipped" (only
+      #                    on a shared pairing candidate-runs skipped,
+      #                    task 20261018-31), "plan" (its
       #                    measured plan's node shapes on the slow literal
       #                    set, block counts included, or nil; the
       #                    winner's carries winner-timing's times and loops
