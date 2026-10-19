@@ -12455,3 +12455,5 @@ Run 20261019T011100Z-fe1f9d46 built and shared both `submissions (id, assignment
 - **Design:** index-share, index-build.
 - **Landed:** 2026-10-18 (task/20261018-30; enclave). `IndexBuild.definitions` reads each built index's `pg_get_indexdef` without its name; `IndexShare.pool` keeps the first of equal definitions and drops any equal to one in the candidate's own combinations. Matching indices are still built twice; see 20261018-32. No VERSION bump; on the Unreleased list.
 - **Status:** done
+
+
