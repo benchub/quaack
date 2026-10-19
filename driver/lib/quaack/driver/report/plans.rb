@@ -33,7 +33,7 @@ module Quaack
         MISESTIMATE_FLOORS = [2, 5, 10, 20, 50, 100, 500].freeze
         MISESTIMATE_OVER = 1000
         MISESTIMATE_LABELS = [*MISESTIMATE_FLOORS.map { "#{it}x" }, "over #{MISESTIMATE_OVER}x"].freeze
-        LEGEND_LEAD = "Each step is shaded by how far its estimated rows were from its actual rows, per loop, " \
+        LEGEND_LEAD = "Each step's estimated and actual rows are shaded by how far apart they were, per loop, " \
                       "either way: "
         LEGEND_TAIL = ". A count under 1 counts as 1, so an estimate of 1 row against none isn't shaded, and " \
                       "neither is a step that never ran."
@@ -210,13 +210,15 @@ module Quaack
 
         # The class and title for a cell whose step's own share of the
         # plan's total is own, said as said, or nil when it's under the
-        # first of COST_FLOORS, unknown, or the plan's total is zero.
+        # first of COST_FLOORS, unknown, or the plan's total is zero. The
+        # bucket goes by the share rounded as the cells show it, so a cell
+        # that reads 5% is shaded as the legend's 5% says.
         def cost(own, total, said)
           return unless own && total.positive?
 
-          share = percent(own, total)
+          share = percent(own, total).round
           bucket = COST_FLOORS.rindex { share >= it } or return
-          ["cost-#{bucket + 1}", "#{said} in the step itself, #{share.round}% of the plan's"]
+          ["cost-#{bucket + 1}", "#{said} in the step itself, #{share}% of the plan's"]
         end
 
         def percent(part, whole) = part * 100.0 / whole
