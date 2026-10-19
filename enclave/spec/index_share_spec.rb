@@ -16,12 +16,31 @@ RSpec.describe Quaack::Enclave::IndexShare do
     end
 
     it "keeps the TOTAL lowest ratios over every candidate" do
-      scored = (1..7).flat_map { |n| [pair("rewrite_#{n}", "a", n / 10.0), pair("rewrite_#{n}", "b", n / 100.0)] }
+      scored = (1..22).flat_map { |n| [pair("rewrite_#{n}", "a", n / 10.0), pair("rewrite_#{n}", "b", n / 100.0)] }
 
       chosen = described_class.choose(scored)
 
       expect(chosen.size).to eq(described_class::TOTAL)
       expect(chosen.map { it["ratio"] }).to eq(scored.map { it["ratio"] }.sort.first(described_class::TOTAL))
+    end
+
+    # Task 20261018-29: a run-wide cap of 12 let four candidates' three
+    # pairings each starve a fifth whose pairings priced higher.
+    it "keeps a fifth candidate's pairings after four others take PER_CANDIDATE each" do
+      scored = (1..4).flat_map { |n| %w[a b c].map { pair("rewrite_#{n}", it, n / 100.0) } } +
+               %w[a b c].map { pair("original", it, 0.9) }
+
+      expect(described_class.choose(scored).select { it["search"] == "original" }.map { it["name"] })
+        .to eq(%w[a b c])
+    end
+
+    it "keeps no more than 42 pairs in a run" do
+      scored = (1..15).flat_map { |n| %w[a b c].map { pair("rewrite_#{n}", it, n / 100.0) } }
+
+      chosen = described_class.choose(scored)
+
+      expect(chosen.size).to eq(42)
+      expect(chosen.map { it["search"] }.uniq).to eq((1..14).map { "rewrite_#{it}" })
     end
 
     it "keeps the earlier of two pairs with the same ratio" do
