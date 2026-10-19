@@ -136,6 +136,21 @@ RSpec.describe Quaack::Driver::FixedNotes do
       .to start_with("run_server_other_clients: pid 42 started 2026-10-08T01:02:03Z. Another client is connected")
   end
 
+  it "says which planner setting to change" do
+    expect(error("run_server_guc_mismatch", settings: %w[random_page_cost]).rule_with_note)
+      .to start_with("run_server_guc_mismatch: The run server's random_page_cost isn't production's. A planner")
+  end
+
+  it "names every setting, pg_database field, or library that doesn't match" do
+    expect(error("run_server_guc_mismatch", settings: %w[TimeZone work_mem]).rule_with_note)
+      .to start_with("run_server_guc_mismatch: The run server's TimeZone and work_mem aren't production's. ")
+    expect(error("run_server_locale_mismatch", settings: %w[datctype datlocale datcollversion]).rule_with_note)
+      .to start_with("run_server_locale_mismatch: The racetrack database's datctype, datlocale, and " \
+                     "datcollversion aren't production's. ")
+    expect(error("run_server_preload_mismatch", settings: %w[pg_hint_plan]).rule_with_note)
+      .to start_with("run_server_preload_mismatch: One server preloads pg_hint_plan and the other doesn't. ")
+  end
+
   it "keeps every note to fixed text, with no placeholder but {next}" do
     texts = [*described_class::BY_RULE.values, described_class::MISSING_ENTRY, described_class::INTERNAL_NOTE]
 

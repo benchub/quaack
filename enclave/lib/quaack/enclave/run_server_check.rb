@@ -71,14 +71,21 @@ module Quaack
     # operator's to stop.
     module RunServerCheck
       class Error < StandardError
-        attr_reader :rule, :clients
+        attr_reader :rule, :clients, :settings
 
+        # name is what failed, or an Array of them. For SETTINGS_RULES it's
+        # the names ErrorFilter sends as settings: never a value.
         def initialize(rule, name, clients: nil)
           @rule = rule
           @clients = clients
-          super("#{rule}: #{name}")
+          @settings = Array(name) if SETTINGS_RULES.include?(rule)
+          super("#{rule}: #{Array(name).join(", ")}")
         end
       end
+
+      # The rules whose Error names settings, pg_database fields, or
+      # libraries, which ErrorFilter sends.
+      SETTINGS_RULES = %w[run_server_guc_mismatch run_server_locale_mismatch run_server_preload_mismatch].freeze
 
       LOCALE_FIELDS = %w[datcollate datctype datlocprovider datlocale datcollversion].freeze
 
@@ -157,9 +164,8 @@ module Quaack
 
       def check_locale(connection, inventory)
         database = connection.exec(Inventory::Production::DATABASE_SQL).first
-        LOCALE_FIELDS.each do |field|
-          fail!("run_server_locale_mismatch", field) unless database[field] == inventory.fetch("database")[field]
-        end
+        fields = LOCALE_FIELDS.reject { database[it] == inventory.fetch("database")[it] }
+        fail!("run_server_locale_mismatch", fields) unless fields.empty?
         return if show(connection, "default_text_search_config") == inventory.fetch("default_text_search_config")
 
         fail!("run_server_locale_mismatch", "default_text_search_config")
@@ -176,12 +182,13 @@ module Quaack
         unlisted_ok = connection.exec(PLANNER_SQL).values.to_h
         names = (unlisted_ok.keys | inventory.fetch("plan_settings").keys).sort
         current = Inventory::Production.settings(connection, names)
-        mismatch = first_mismatch(names, recorded_settings(inventory), unlisted_ok, current)
-        fail!("run_server_guc_mismatch", mismatch) if mismatch
+        mismatches = mismatches(names, recorded_settings(inventory), unlisted_ok, current)
+        fail!("run_server_guc_mismatch", mismatches) unless mismatches.empty?
       end
 
-      def first_mismatch(names, recorded, unlisted_ok, current)
-        names.find { recorded.key?(it) ? recorded[it] != current[it] : unlisted_ok[it] != "t" }
+      # Every setting in names that doesn't match, in names' order.
+      def mismatches(names, recorded, unlisted_ok, current)
+        names.select { recorded.key?(it) ? recorded[it] != current[it] : unlisted_ok[it] != "t" }
       end
 
       # Every setting value inventory recorded, by name.

@@ -61,6 +61,17 @@ module FilterFakes
     end
   end
 
+  # A run-server check failure that names the settings that don't match.
+  class SettingsError < StandardError
+    attr_reader :rule, :settings
+
+    def initialize(rule:, settings:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @settings = settings
+    end
+  end
+
   # A rewrite-test refusal, which names the column it can't fill.
   class ColumnError < StandardError
     attr_reader :rule, :column
@@ -225,6 +236,46 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
         expect(out).to eq(line(step: "volatility", rule: "volatile_function"))
         expect(out).not_to include("SENTINEL")
+      end
+    end
+
+    describe "a run-server check failure's settings" do
+      def settings_line(settings, rule: "run_server_guc_mismatch")
+        filter.to_egress(FilterFakes::SettingsError.new(rule:, settings:), step: "run-server")
+      end
+
+      %w[run_server_guc_mismatch run_server_locale_mismatch run_server_preload_mismatch].each do |rule|
+        it "sends the setting names a #{rule} failure gives" do
+          expect(settings_line(%w[TimeZone random_page_cost quaack.planner_knob], rule:))
+            .to eq(line(step: "run-server", rule:, settings: %w[TimeZone random_page_cost quaack.planner_knob]))
+        end
+      end
+
+      it "sends no settings for any other rule" do
+        expect(settings_line(%w[work_mem], rule: "run_server_other_clients"))
+          .to eq(line(step: "run-server", rule: "run_server_other_clients"))
+      end
+
+      [
+        ["a value beside the name", ["work_mem = #{ERROR_SENTINEL}"]],
+        ["a sentinel with a space", ["#{ERROR_SENTINEL} x"]],
+        ["a quoted name", [%("#{ERROR_SENTINEL}")]],
+        ["a name on a line after a sentinel", ["#{ERROR_SENTINEL}\nwork_mem"]],
+        ["a name with a newline after it", ["work_mem\n"]],
+        ["a good name and a bad one", ["work_mem", "#{ERROR_SENTINEL}="]],
+        ["a String subclass", [Class.new(String).new("work_mem")]],
+        ["a Symbol", [:work_mem]],
+        ["an empty Array", []],
+        ["sixty-five names", Array.new(65) { "s#{it}" }],
+        ["a lone String", "work_mem"],
+        ["nil", nil]
+      ].each do |label, settings|
+        it "drops settings with #{label}, and still sends the rule" do
+          out = settings_line(settings)
+
+          expect(out).to eq(line(step: "run-server", rule: "run_server_guc_mismatch"))
+          expect(out).not_to include("SENTINEL")
+        end
       end
     end
 

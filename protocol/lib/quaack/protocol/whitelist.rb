@@ -48,7 +48,13 @@ module Quaack
       # and never reach the LLM. parser_major is only on a query_unparsable
       # refusal: the Postgres major of the enclave's pg_query grammar, the
       # enclave's own constant, an Integer from 10 to 99 (ParserMajor).
-      error: %i[step rule sqlstate reason function clients column tables parser_major].freeze,
+      # settings is only on a run_server_guc_mismatch,
+      # run_server_locale_mismatch, or run_server_preload_mismatch failure:
+      # 1 to 64 names of the settings, pg_database fields, or libraries
+      # that don't match production, each a plain GUC-shaped name such as
+      # random_page_cost or TimeZone. A name is configuration's shape; a
+      # setting's value never goes out.
+      error: %i[step rule sqlstate reason function clients column tables parser_major settings].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

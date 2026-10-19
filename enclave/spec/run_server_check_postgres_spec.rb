@@ -138,6 +138,15 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       end
     end
 
+    it "names every pg_database field that doesn't match" do
+      record_inventory do |inventory|
+        inventory["database"]["datctype"] = "#{inventory["database"]["datctype"]}x"
+        inventory["database"]["datcollversion"] = "#{inventory["database"]["datcollversion"]}x"
+      end
+
+      expect(failure.settings).to eq(%w[datctype datcollversion])
+    end
+
     it "fails when default_text_search_config isn't production's" do
       record_inventory
       run_server.exec("SET default_text_search_config = 'pg_catalog.english'")
@@ -238,8 +247,20 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect(store.read("inventory")["plan_settings"]["search_path"]).to include(sentinels.text)
       expect([error.rule, error.message]).to eq(["run_server_guc_mismatch", "run_server_guc_mismatch: search_path"])
       line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "4")
-      expect(line).to eq('{"type":"error","step":"4","rule":"run_server_guc_mismatch"}')
+      expect(line).to eq('{"type":"error","step":"4","rule":"run_server_guc_mismatch","settings":["search_path"]}')
       expect_no_leaks(sentinels, stdout: line, objects: { error: })
+    end
+
+    it "names every setting that doesn't match, in name order, in its error line" do
+      record_inventory
+      run_server.exec("SET enable_seqscan = off")
+      run_server.exec("SET TimeZone = 'America/New_York'")
+      error = failure
+
+      expect([error.message, error.settings])
+        .to eq(["run_server_guc_mismatch: TimeZone, enable_seqscan", %w[TimeZone enable_seqscan]])
+      expect(Quaack::Enclave::ErrorFilter.to_egress(error, step: "4"))
+        .to eq('{"type":"error","step":"4","rule":"run_server_guc_mismatch","settings":["TimeZone","enable_seqscan"]}')
     end
   end
 
@@ -313,6 +334,7 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       record_inventory { it["preload_libraries"] = %w[pg_stat_statements pg_hint_plan] }
 
       expect_failure("run_server_preload_mismatch", "pg_hint_plan")
+      expect(failure.settings).to eq(%w[pg_hint_plan])
     end
 
     it "passes libraries that don't change plans, such as pg_stat_statements and auto_explain" do
@@ -729,7 +751,7 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect(store.read("inventory")["database"]["datname"]).to eq(sentinels.word)
       expect(error.rule).to eq("run_server_locale_mismatch")
       line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "4")
-      expect(line).to eq('{"type":"error","step":"4","rule":"run_server_locale_mismatch"}')
+      expect(line).to eq('{"type":"error","step":"4","rule":"run_server_locale_mismatch","settings":["datcollate"]}')
       expect_no_leaks(sentinels, stdout: line, objects: { error: })
     end
   end
