@@ -16,7 +16,7 @@ module Quaack
         # SankeyStages). kind is :start or :stage; state is :full, :partial (counted
         # what came in only), or :unknown.
         Stage = Struct.new(:id, :kind, :name, :state, :inn, :out, :sources, :sinks, :color, :tip,
-                           :sentences, :keys, keyword_init: true) do
+                           :sentences, :keys, :unit, keyword_init: true) do
           def added = sources.sum(&:amount)
 
           def drops = sinks.reject { it.kind == :held }
@@ -24,13 +24,14 @@ module Quaack
           def held = sinks.select { it.kind == :held }
         end
         # A layer: a state, drawn as a bar as wide as its count (nil when it wasn't
-        # counted). role is :start (what the diagram above sent), :merge (what came in
+        # counted). role is :start (what came in before the first stage), :merge (what came in
         # plus what a stage added, fed by its sources), :after (what went on after a
         # stage's drops), or :held (what the diagram set aside for testing during
-        # ranking). spread is whether its sources span the whole picture. The rest
-        # (y, x, width, above) is the layout's.
-        Layer = Struct.new(:id, :role, :name, :state, :total, :line, :tip, :color, :sources, :spread,
-                           :y, :x, :width, :above, keyword_init: true) do
+        # ranking). spread is whether its sources span the whole picture. divider is
+        # [unit above, unit below] on the first layer after the unit changes. The rest
+        # (y, x, width, above, divider_y) is the layout's.
+        Layer = Struct.new(:id, :role, :name, :state, :total, :line, :tip, :color, :sources, :spread, :divider,
+                           :y, :x, :width, :above, :divider_y, keyword_init: true) do
           def bottom = y + BAR_HEIGHT
 
           def grey? = state != :full

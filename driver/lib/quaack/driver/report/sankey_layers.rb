@@ -48,6 +48,8 @@ module Quaack
           %w[llm-rewrites operator-rewrites] => "Rewrites from the LLM and your own",
           %w[rewrite-rules llm-rewrites operator-rewrites] => "Rewrites from every source"
         }.freeze
+        # What the line where the unit changes calls each unit.
+        UNITS = { ideas: "ideas", sets: "sets", rewrites: "rewrites", candidates: "candidates" }.freeze
       end
 
       # The layers and steps of a Sankey diagram (see Sankey).
@@ -81,7 +83,7 @@ module Quaack
 
         # Whether the next stage joins the run so far.
         def sankey_merge?(run, stage)
-          [run, stage].all? { sankey_adds_only?(it) } && stage.inn == run.out
+          [run, stage].all? { sankey_adds_only?(it) } && stage.inn == run.out && stage.unit == run.unit
         end
 
         def sankey_adds_only?(stage) = stage.state == :full && stage.sinks.empty? && stage.added.positive?
@@ -95,22 +97,33 @@ module Quaack
           run.name = "#{run.name}; #{stage.name}"
         end
 
-        # The [layers, steps] for a diagram: start is the layer of what the diagram above
-        # sent, or nil; after is whether a diagram follows.
-        def sankey_states(stages, start, after:)
+        # The [layers, steps] for a diagram: start is the layer of what came in before
+        # the first stage, or nil.
+        def sankey_states(stages, start)
           @sankey_layers = [start].compact
           @sankey_steps = []
+          @sankey_unit = nil
           sankey_runs(stages).each { sankey_layers_of(it) }
-          sankey_went_below if after
           sankey_held
           [@sankey_layers, @sankey_steps]
         end
 
+        # A node's layers. The first layer after the unit changes carries the divider.
         def sankey_layers_of(node)
+          sankey_unit_of(node)
           return sankey_unknown(node) if node.state == :unknown
 
           sankey_merge_layer(node) if node.sources.any?
           sankey_after(node) if node.sinks.any? || node.sources.empty? || node.state == :partial
+        end
+
+        # Notes where the unit changes, for the next layer to carry.
+        def sankey_unit_of(node)
+          if @sankey_unit && node.unit != @sankey_unit
+            @sankey_divide = [UNITS.fetch(@sankey_unit),
+                              UNITS.fetch(node.unit)]
+          end
+          @sankey_unit = node.unit
         end
 
         def sankey_last = @sankey_layers.last
@@ -145,10 +158,13 @@ module Quaack
           sankey_step(node, from, layer, step, [[top, 0].max, went], node.sinks)
         end
 
-        # A new layer, after the last one.
+        # A new layer, after the last one, with the divider if the unit just changed.
         def sankey_layer(node, role, count, line, state: :full, sources: [], spread: false) # rubocop:disable Metrics/ParameterLists
+          divider = @sankey_divide
+          @sankey_divide = nil
           P::Layer.new(id: "n#{@sankey_layers.size}", role:, name: node.name, state:, total: count, line:,
-                       tip: sankey_tip(node), color: node.color, sources:, spread:).tap { @sankey_layers << it }
+                       tip: sankey_tip(node), color: node.color, sources:, spread:, divider:)
+                  .tap { @sankey_layers << it }
         end
 
         # The step from the layer before, from, into layer, if there is one before.
@@ -162,11 +178,6 @@ module Quaack
             grey: from.grey? || layer.state == :unknown || counts.any?(&:nil?),
             carry_tip: [*node.sentences, ("#{Format.number(went)} went on." if went)].compact.join(" ")
           )
-        end
-
-        def sankey_went_below
-          last = @sankey_layers.reverse.find(&:total) or return
-          last.tip = "#{last.tip} #{Format.number(last.total)} went on to the diagram below."
         end
 
         # The layer of what the diagram set aside, at the bottom, if it set anything aside.

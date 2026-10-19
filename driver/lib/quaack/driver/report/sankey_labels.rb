@@ -26,6 +26,19 @@ module Quaack
            *layers.flat_map { |layer| layer.above.map { source_label(it) } }]
         end
 
+        # The dashed line where the unit changes, across the whole picture, with the unit above
+        # it just over it at the right edge, and the unit below just under it.
+        def dividers
+          layers.select(&:divider_y).flat_map do |layer|
+            y = layer.divider_y
+            over, under = layer.divider
+            ends = %(x1="0" y1="#{y}" x2="#{VIEW_WIDTH}" y2="#{y}")
+            [%(<line class="unit-divider" #{ends} style="stroke: var(--sk-divider)" stroke-dasharray="6 4"/>),
+             tag("unit", VIEW_WIDTH - LEFT_EDGE, y - 5, "Above the line: #{over}", "end"),
+             tag("unit", VIEW_WIDTH - LEFT_EDGE, y + 15, "Below the line: #{under}", "end")]
+          end
+        end
+
         # A step's words, then its drops' labels, each in a row of its own.
         def step_words(step)
           line = tag("step", TEXT_X, step.from.bottom + SankeyLayout::PAD + 12, cut(step.line, LABEL_MAX)) if step.line
