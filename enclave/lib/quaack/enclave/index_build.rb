@@ -165,6 +165,17 @@ module Quaack
         raise Error, "plan_too_deep", cause: nil
       end
 
+      # { name => definition } for each of build's indexes on the server:
+      # pg_get_indexdef with the name left out, so two spellings of one
+      # index, which build under two names, map to one definition. The
+      # definition can hold a literal, so it stays in the enclave.
+      def definitions(connection, build)
+        pairs = schemas(build).to_a
+        enc = PG::TextEncoder::Array.new
+        connection.exec_params(DEFINITIONS_SQL, [enc.encode(pairs.map(&:last)), enc.encode(pairs.map(&:first))])
+                  .values.to_h { |name, indexdef| [name, indexdef.sub(" #{name} ", " ")] }
+      end
+
       # The names of build's indexes that are valid, matched on schema and name.
       def valid_names(connection, build)
         pairs = schemas(build).to_a
