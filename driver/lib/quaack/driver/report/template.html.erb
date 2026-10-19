@@ -42,7 +42,8 @@
   }
   body { font: 16px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--text); background: var(--bg);
          max-width: 62rem; margin: 2rem auto; padding: 0 1.5rem; }
-  h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+  p.generated { font-size: 0.9rem; color: var(--muted); margin: 0 0 1.5rem; }
   h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 2px solid var(--rule); }
   h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
   p, ul { margin: 0.5rem 0; }
@@ -127,13 +128,17 @@
   svg.sankey text.unit { font-weight: 600; fill: var(--sankey-text); }
   svg.sankey text.counts { fill: var(--sankey-text); }
   svg.sankey text.flow { fill: var(--sankey-text); }
-  nav#toc { font-size: 0.9rem; border-left: 3px solid var(--rule); padding: 0.25rem 0.75rem; margin: 0 0 1.5rem;
+  nav#toc { font-size: 0.9rem; border: 1px solid var(--rule); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0 0 1.5rem;
             background: var(--bg); color: var(--muted); }
   nav#toc ol { list-style: none; margin: 0; padding: 0; }
   nav#toc li { margin: 0.2rem 0; }
   nav#toc a:visited { color: var(--accent); }
-  @media (min-width: 88rem) {
-    nav#toc { position: fixed; top: 1rem; left: 1rem; width: calc((100vw - 62rem) / 2 - 2rem);
+  /* On a wide window, the contents sit in a narrow left margin and the rest of the width goes to the report,
+     so a wide plan table can use it. Prose and diagrams keep a readable width. */
+  @media screen and (min-width: 64rem) {
+    body { max-width: none; margin-left: 15rem; }
+    p, ul, svg.sankey { max-width: 62rem; }
+    nav#toc { position: fixed; top: 1rem; left: 1rem; width: 13rem;
               max-height: calc(100vh - 2rem); overflow-y: auto; margin: 0; box-sizing: border-box; }
   }
   @media print {
@@ -142,6 +147,13 @@
 </style>
 </head><body>
 <h1>QUAACK report <%= h run_id %></h1>
+<p class="generated">Generated on <time class="local" datetime="<%= generated_iso %>"><%= generated_utc %></time></p>
+<script>
+for (const time of document.querySelectorAll("time.local")) {
+  time.textContent = new Date(time.dateTime).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+}
+</script>
 <% toc = [] %>
 <% toc << ["quaack-bugs", "QUAACK bug"] unless rule_bugs.empty? %>
 <% toc.push(["summary", "Summary"], ["queries", "The queries"], ["ranking", "Ranking"]) %>
@@ -442,7 +454,7 @@
 <% [["index", "Index ideas for the original query", index_rows], ["rewrite", "Rewrites", rewrite_rows],
    ["rewrite-index", "Index ideas for the rewrites", rewrite_index_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
-<h4>Sankey diagram</h4>
+<h4>Diagram</h4>
 <%= sankeys(id, title, rows, of_rewrite: id == "rewrite-index") %>
 <h4>Table, with the exact numbers</h4>
 <table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside for testing during ranking</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
@@ -453,6 +465,7 @@
 </tbody></table>
 <p class="note" id="burndown-<%= id %>-held-back">Set aside for testing during ranking means QUAACK kept the idea instead of dropping it, so it can test it by building it while it ranks the indices. index-dedupe, and the LLM&#39;s rounds of index ideas, set aside GIN, GiST, and SP-GiST ideas, which can&#39;t be tested without building them. index-test sets aside B-tree ideas on columns with few distinct values that the planner left unused.</p>
 <% end %>
+<p class="note" id="burndown-units">An index idea is one proposed index, and an index set is the ideas QUAACK tries together, one alone or two or three combined; a rewrite is a rewritten version of your query, and a candidate is your original query or a rewrite, measured with one index set, or a rewrite measured with no new indices.</p>
 <h3>LLM calls</h3>
 <% if call_rows.empty? %>
 <p id="llm-calls">No LLM calls were counted in this run.</p>

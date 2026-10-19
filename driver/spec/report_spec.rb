@@ -140,14 +140,58 @@ RSpec.describe Quaack::Driver::Report do
       html.gsub(/<a href="#{Regexp.escape(docs)}\w+\.md" target="_blank" rel="noopener">/, "")
     end
 
-    it "is one file of plain HTML and CSS: no scripts, no animation, nothing from the network" do
+    # The one script the report has: the inline one that shows when it was generated in the reader's time.
+    def scripts(out) = out.scan(%r{<script\b[^>]*>.*?</script>}m)
+
+    def scriptless(out) = scripts(out).reduce(out) { |rest, script| rest.sub(script, "") }
+
+    it "is one file of plain HTML and CSS, bar one inline script: no animation, nothing from the network" do
       expect(html).to start_with("<!DOCTYPE html>").and include("<style>")
-      expect(unlinked(html)).not_to match(/<script|<link|<img|<iframe|https?:|url\(|@import|animation|transition|src=/i)
+      expect(scripts(html).size).to eq(1)
+      expect(unlinked(scriptless(html)))
+        .not_to match(/<script|<link|<img|<iframe|https?:|url\(|@import|animation|transition|src=/i)
     end
 
     it "loads nothing from the network in a negative report either" do
-      expect(unlinked(render(negative_payload)))
+      expect(unlinked(scriptless(render(negative_payload))))
         .not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
+    end
+
+    it "keeps its one script inline and local: it only rewrites the generated-on time" do
+      script = scripts(html).first
+      expect(script).to start_with("<script>")
+      expect(script).not_to match(/src=|https?:|fetch|XMLHttpRequest|import|eval|innerHTML|location|cookie|storage/i)
+      expect(script).to include('querySelectorAll("time.local")', "toLocaleString(", "textContent")
+    end
+
+    describe "the generated-on line" do
+      let(:at) { Time.utc(2026, 10, 19, 1, 11, 7) }
+
+      def generated(out) = out[%r{<p class="generated">.*?</p>}m]
+
+      it "says under the title when the report was generated, as UTC without a script" do
+        out = render(payload, generated_at: at)
+        expect(generated(out)).to eq('<p class="generated">Generated on <time class="local" ' \
+                                     'datetime="2026-10-19T01:11:07Z">2026-10-19 01:11 UTC</time></p>')
+        expect(out.index(generated(out))).to be > out.index("</h1>")
+        expect(out.index(generated(out))).to be < out.index('<nav id="toc"')
+      end
+
+      it "turns a time in another zone into UTC" do
+        out = render(payload, generated_at: Time.new(2026, 10, 19, 3, 11, 7, "+02:00"))
+        expect(generated(out)).to include('datetime="2026-10-19T01:11:07Z">2026-10-19 01:11 UTC<')
+      end
+
+      it "uses the time it renders, when it isn't given one" do
+        before = Time.now.utc
+        stamp = Time.iso8601(generated(render(payload))[/datetime="([^"]+)"/, 1])
+        expect(stamp).to be_between(Time.at(before.to_i), Time.now.utc)
+      end
+
+      it "shows it in the reader's own locale and time zone, in smaller text, with a script" do
+        expect(scripts(html).first).to include("toLocaleString(undefined,")
+        expect(html[%r{<style>(.*?)</style>}m, 1]).to match(/p\.generated \{[^}]*font-size: 0\.9rem/)
+      end
     end
 
     describe "the table of contents" do
@@ -180,13 +224,47 @@ RSpec.describe Quaack::Driver::Report do
         expect(toc_targets(out)).not_to include("timeouts")
       end
 
+      let(:style) { html[%r{<style>(.*?)</style>}m, 1] }
+      let(:wide) { style[/@media screen and \(min-width: 64rem\) \{(.*?)\n  \}\n/m, 1].to_s }
+
+      # A rule's declarations in css, as {property => value}.
+      def rule(css, selector)
+        css[/^\s*#{Regexp.escape(selector)} \{([^}]*)\}/, 1].to_s.scan(/([a-z-]+): ([^;]+);/).to_h
+      end
+
+      def rem(value) = value[/\A([\d.]+)rem\z/, 1]&.to_f
+
       it "sits fixed in the left margin on a wide window, inline otherwise, and never in print" do
-        style = html[%r{<style>(.*?)</style>}m, 1]
-        wide = style[/@media \(min-width: 88rem\) \{(.*?)\n  \}\n/m, 1]
-        expect(wide.to_s).to include("position: fixed", "width: calc((100vw - 62rem) / 2 - 2rem)",
-                                     "max-height: calc(100vh - 2rem)", "overflow-y: auto")
+        expect(rule(wide, "nav#toc")).to include("position" => "fixed", "max-height" => "calc(100vh - 2rem)",
+                                                 "overflow-y" => "auto")
         expect(style[/@media print \{(.*?)\n  \}\n/m, 1]).to match(/nav#toc \{ display: none; \}/)
         expect(html.index('<nav id="toc"')).to be > html.index("<h1>")
+      end
+
+      # Review of 20261019-1: printed in landscape, the page kept the wide margin for the hidden contents.
+      it "keeps the wide layout to the screen, so print gets no margin for the hidden contents" do
+        expect(style).to include("@media screen and (min-width: 64rem) {")
+        expect(style).not_to match(/@media \(min-width/)
+      end
+
+      it "has a border in the page's rule color" do
+        expect(rule(style, "nav#toc")).to include("border" => "1px solid var(--rule)")
+      end
+
+      # Task 20261019-1: the margin grew with the window, so a wider window showed no more of a wide plan.
+      it "keeps the left margin as wide as the contents, and gives the rest of a wide window to the report" do
+        toc = rule(wide, "nav#toc")
+        body = rule(wide, "body")
+        expect(style).not_to include("100vw")
+        expect(body).to include("max-width" => "none")
+        expect(rem(toc["width"])).to be_between(10, 16)
+        expect(rem(body["margin-left"])).to be > rem(toc["left"]) + rem(toc["width"])
+        expect(rem(body["margin-left"])).to be <= rem(toc["left"]) + rem(toc["width"]) + 2
+      end
+
+      it "keeps the prose and the diagrams to a readable width, but not the tables or the SQL" do
+        expect(rule(wide, "p, ul, svg.sankey")).to include("max-width" => "62rem")
+        expect(wide).not_to match(/table[^{]*\{[^}]*max-width|pre[^{]*\{[^}]*max-width/)
       end
     end
 
@@ -808,7 +886,8 @@ RSpec.describe Quaack::Driver::Report do
     it "labels the bar Collapse while open and Expand while closed, with no script" do
       expect(html).to include('details.fold > summary::after { content: "\\25BC  Expand";')
       expect(html).to include('details.fold[open] > summary::after { content: "\\25B2  Collapse"; }')
-      expect(html).not_to include("<script")
+      expect(html.scan("<script").size).to eq(1)
+      expect(html[%r{<script>.*?</script>}m]).not_to match(/details|open|Collapse|Expand/)
     end
 
     it "outlines the section a link lands on, so it stands out from the others" do
@@ -3437,10 +3516,33 @@ RSpec.describe Quaack::Driver::Report do
         expect(burndown.index(%(<svg id="sankey-#{id}"))).to be < burndown.index(%(<table id="burndown-#{id}">))
       end
       expect(burndown.scan(%r{<h4>(.*?)</h4>}).flatten)
-        .to eq(["Sankey diagram", "Table, with the exact numbers"] * 3)
+        .to eq(["Diagram", "Table, with the exact numbers"] * 3)
       expect(out).not_to match(/funnel/i)
       expect(burndown).not_to include('class="note compare"')
       expect(burndown).not_to include("Both pictures")
+    end
+
+    # Task 20261019-1: "Sankey diagram" was a leftover from before; the reader needs no chart's name.
+    it "never calls a diagram a Sankey diagram, and names each by what it shows" do
+      expect(out).not_to match(/sankey diagram|<h4>sankey|as a sankey/i)
+      expect(section(out, "burndown").scan(%r{<title id="sankey-[\w-]+-title">(.*?)</title>}).flatten).to eq(
+        ["Index ideas for the original query", "Rewrites", "Index ideas for the rewrites"].map do |title|
+          "#{title}, stage by stage: what came in, what dropped out and why, and what went on. " \
+            "The table below has the exact numbers."
+        end
+      )
+    end
+
+    it "says once, below the diagrams, how an index idea differs from an index set and a rewrite from a candidate" do
+      burndown = section(out, "burndown")
+      note = burndown[%r{<p class="note" id="burndown-units">(.*?)</p>}m, 1]
+      expect(note).to eq("An index idea is one proposed index, and an index set is the ideas QUAACK tries " \
+                         "together, one alone or two or three combined; a rewrite is a rewritten version of your " \
+                         "query, and a candidate is your original query or a rewrite, measured with one index set, " \
+                         "or a rewrite measured with no new indices.")
+      expect(burndown.index('id="burndown-units"')).to be > burndown.index('<table id="burndown-rewrite-index">')
+      expect(burndown.index('id="burndown-units"')).to be < burndown.index("<h3>LLM calls</h3>")
+      expect(burndown.scan('id="burndown-units"').size).to eq(1)
     end
 
     it "keeps no funnel drawing in the driver" do

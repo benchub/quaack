@@ -24,6 +24,7 @@ require_relative "failed_branches"
 require_relative "cautions"
 require_relative "tablespace_moves"
 require_relative "llm_summary"
+require_relative "times"
 
 module Quaack
   module Driver
@@ -53,6 +54,7 @@ module Quaack
         include Cautions
         include TablespaceMoves
         include LLMSummary
+        include Times
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze
         MISSING = %(<td class="missing">#{Words::MISSING}</td>).freeze
@@ -72,12 +74,16 @@ module Quaack
         # summary is the LLM-written summary (WinnerSummary), a Hash with its
         # "text" and the "name" and "model" of the entry that wrote it, or
         # nil.
-        def initialize(payload, run_id, llm_calls = {}, llm = {}, summary = nil)
+        #
+        # generated_at is when the report was generated, for the line under
+        # the title.
+        def initialize(payload, run_id, llm_calls = {}, llm = {}, summary = nil, generated_at = Time.now) # rubocop:disable Metrics/ParameterLists
           @payload = Format.unmarked(payload)
           @run_id = Format.unmarked(run_id)
           @llm_calls = Format.unmarked(llm_calls)
           @llm = Format.unmarked(llm)
           @summary = Format.unmarked(summary)
+          @generated_at = generated_at.utc
         end
 
         attr_reader :run_id
@@ -151,12 +157,6 @@ module Quaack
         def sql(text) = %(<pre class="sql"><code>#{h Format.sql(text)}</code></pre>)
 
         def sql_code(text) = h(Format.sql_span(text))
-
-        # A wait in seconds: "12.3 s", or "1 min 1.5 s" from a minute on.
-        def wait(seconds)
-          minutes, rest = seconds.divmod(60)
-          minutes.zero? ? Format.decimal(rest, "s") : "#{Format.number(minutes.to_i)} min #{Format.decimal(rest, "s")}"
-        end
 
         def num(value) = %(<td class="num">#{h(value.is_a?(Integer) ? Format.number(value) : value)}</td>)
 
