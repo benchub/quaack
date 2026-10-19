@@ -6,29 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261018-1. Rule generator: never cap a one-rule rewrite.
-- 20261018-4. Rule `subquery_distinct_removal`.
-- 20261018-6. Rule `distinct_key_removal`.
-- 20261018-2. Rule `cte_fence_removal`.
-- 20261018-7. Rule `left_join_to_inner`.
-- 20261018-3. Rule `count_to_exists`.
-- 20261018-9. Rule `count_distinct_to_subquery`.
-- 20261018-5. Rule `subquery_order_removal`.
-- 20261018-8. Rule `union_to_union_all`.
-- 20261018-11. Rule `coalesce_comparison_split`.
-- 20261018-10. Rule `date_cast_to_range`.
-- 20261018-12. Rule `scalar_aggregates_to_filter`.
-- 20261018-13. Rule `correlated_aggregate_to_join`.
-- 20261018-14. Rule `aggregate_before_join`.
-- 20261018-19. redact: a constant inside a GROUP BY key's subquery doesn't share its placeholder with the select list's copy.
-- 20261018-23. distinct_key_removal: minors from the build and review of 20261018-6.
-- 20261018-25. Rule minors from the builds and reviews of 20261018-2, -3, -7, and -9.
-- 20261018-26. Rule minors from the builds and reviews of 20261018-5, -8, and -11.
-- 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
-- 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
-- 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
-- 20261017-4. run-server check: say which planner setting doesn't match production.
-
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
