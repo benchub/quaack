@@ -12445,3 +12445,13 @@ IndexShare caps shared pairings at 3 per candidate and 12 per run (20261017-2). 
 - **Design:** index-share.
 - **Landed:** 2026-10-18 (task/20261018-29; enclave). `IndexShare::TOTAL` is 42; PER_CANDIDATE stays 3. Specs cover a fifth candidate keeping its pairings and trimming 45 to 42. No VERSION bump; on the Unreleased list.
 - **Status:** done
+
+### 20261018-30. index-share: treat indices that differ only in spelling as one.
+
+Run 20261019T011100Z-fe1f9d46 built and shared both `submissions (id, assignment_id) WHERE workflow_state <> 'deleted'` and `... WHERE workflow_state::text <> 'deleted'::text`. These are the same index spelled two ways, and together they used two of a candidate's three shared slots. Indices whose built definitions match (`pg_get_indexdef` with the name ignored) count as one, both in a candidate's shared pool and against its own combinations. Building each once is better still, if that's easy in index-build. Update DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18. Follows 20261017-2.
+- **Design:** index-share, index-build.
+- **Landed:** 2026-10-18 (task/20261018-30; enclave). `IndexBuild.definitions` reads each built index's `pg_get_indexdef` without its name; `IndexShare.pool` keeps the first of equal definitions and drops any equal to one in the candidate's own combinations. Matching indices are still built twice; see 20261018-32. No VERSION bump; on the Unreleased list.
+- **Status:** done

@@ -698,13 +698,13 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261018-30. index-share: treat indices that differ only in spelling as one.
+### 20261018-32. index-build: build indices that differ only in spelling once.
 
-Run 20261019T011100Z-fe1f9d46 built and shared both `submissions (id, assignment_id) WHERE workflow_state <> 'deleted'` and `... WHERE workflow_state::text <> 'deleted'::text`. These are the same index spelled two ways, and together they used two of a candidate's three shared slots. Indices whose built definitions match (`pg_get_indexdef` with the name ignored) count as one, both in a candidate's shared pool and against its own combinations. Building each once is better still, if that's easy in index-build. Update DESIGN.md.
+20261018-30 made index-share treat indices with equal `pg_get_indexdef` (name ignored) as one, but index-build still builds each spelling, so the run pays for the duplicate build and measures both. Deduping before the build changes the `--index` order and totals the driver relies on, and the `indexes` list the report uses. Build each once and map the other spellings to it, or canonicalize the DDL before naming it.
 
 - **Depends on:** None.
-- **Came from:** The user, 2026-10-18. Follows 20261017-2.
-- **Design:** index-share, index-build.
+- **Came from:** The builder of 20261018-30, 2026-10-18.
+- **Design:** index-build, index-share.
 - **Status:** todo
 
 ### 20261018-31. index-share: skip shared pairings for a candidate that timed out without new indices.
