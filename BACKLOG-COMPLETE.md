@@ -12501,3 +12501,22 @@ Since 20261019-1, `@media screen and (min-width: 64rem)` puts the TOC in a fixed
 - **Design:** report.
 - **Landed:** 2026-10-19 (task/20261019-2; driver). The breakpoint is 80rem (15rem margin + 1.5rem padding each side + 62rem); a spec derives that sum from the CSS.
 - **Status:** done
+
+### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite.
+
+Writing your own rewrite means swapping every literal for the run's `$N` by hand. Add `quaacks redact-rewrite --run <run ID>`, which reads one SQL statement from stdin (or `--file <path>`) and writes it to stdout (or `--out <path>`) with each literal replaced by the placeholder the run's original query has in the same place. Add `quaack redact-rewrite --run <run ID>` on the driver, which sends the statement over ssh and prints what comes back.
+
+Decisions (the user, 2026-10-19):
+
+- The enclave command runs where the placeholder map is, since the laptop never holds real literals. The driver wrapper reads stdin only: no `--file` and no argument that takes the statement, so it never writes the real-literal query to disk. Its output (stdout, so the user can redirect it to a file) holds only placeholders. The driver must not log or echo the input, put it on a command line, or keep it in the run record. Test this with a sentinel literal.
+- Match by comparison, not by position (the user, 2026-10-19, after the builder showed position matching fails when a predicate moves into a JOIN's ON, a CTE, or an EXISTS). Each literal in the user's statement takes the placeholder of the literal in the run's `redacted_query` that sits in the same comparison: the same column (table alias resolved), operator, side, and IN-list slot. It refuses, with a clean error that names the literal's position and never its value, when nothing matches or more than one original comparison matches. It never looks at literal values and never mints a placeholder. A literal with no column context (`SELECT 1`, `LIMIT`) stays as written only where the redactor itself leaves such constants alone (positional ORDER BY or GROUP BY numbers, cast typmods, the parser's own FETCH FIRST 1); any other is refused. Reuse `Redaction::Query` so both sides agree on what counts as a literal, and the existing PredicateAtoms and atom-position code where it fits.
+- The output is checked: it parses, holds no literal the run's `placeholder_map` has, and the real literals appear in no output, error, or log line. The enclave never connects to production for this.
+- The sensitive data is production query literals, which can hold student data (FERPA, and Security's rules on production data on laptops). Say in DESIGN.md that the literals pass through the user's terminal and the ssh pipe, and that `--rewrites` files hold only placeholders.
+- Enclave and driver change. The enclave part goes on "Unreleased enclave changes" when it lands, and nothing bumps a `VERSION`.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-19.
+- **Design:** Operator rewrites (`--rewrites`), redact.
+- **Open questions:** None.
+- **Landed:** 2026-10-19 (task/20261019-1, merged f4d5cce5; enclave and driver). The branch and its commits say 20261019-1 because the ID was taken twice and the branch was cut before that was noticed. It matches literals by comparison, not position. Review minors are 20261019-4 and 20261019-5.
+- **Status:** done

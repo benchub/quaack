@@ -6,7 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261019-1 (`quaacks redact-rewrite`, the `redacted_rewrite` message, and the error line's `position`).
+- 20261019-3 (`quaacks redact-rewrite`, the `redacted_rewrite` message, and the error line's `position`).
 
 ## How this file works.
 
@@ -706,22 +706,24 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** index-build, index-share.
 - **Status:** todo
 
-### 20261019-1. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite.
+### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite. Done, see BACKLOG-COMPLETE.md.
 
-Writing your own rewrite means swapping every literal for the run's `$N` by hand. Add `quaacks redact-rewrite --run <run ID>`, which reads one SQL statement from stdin (or `--file <path>`) and writes it to stdout (or `--out <path>`) with each literal replaced by the placeholder the run's original query has in the same place. Add `quaack redact-rewrite --run <run ID>` on the driver, which sends the statement over ssh and prints what comes back.
+### 20261019-4. redact-rewrite: LIMIT, EXISTS (SELECT 1), and CTE-column loose ends.
 
-Decisions (the user, 2026-10-19):
+From the review of 20261019-3 (minor). The comparison matcher refuses three common ORM shapes cleanly. (1) `LIMIT 10` in a rewrite whose original's LIMIT was redacted to `$n`: match a LIMIT or OFFSET literal to the original's one. (2) `EXISTS (SELECT 1 ...)`: the redactor replaces the `1`, so the user has to write `SELECT *`; either keep `SELECT 1` as written when it's an EXISTS target list, or say the workaround in DESIGN.md and the refusal's note. (3) A column reached through a CTE's name (`WITH x AS (SELECT * FROM orders ...) ... WHERE x.user_id = 5`) resolves to a table `x` and finds no match; resolve a CTE that selects `*` from one table to that table. Each stays a clean refusal for anything it can't resolve.
 
-- The enclave command runs where the placeholder map is, since the laptop never holds real literals. The driver wrapper reads stdin only: no `--file` and no argument that takes the statement, so it never writes the real-literal query to disk. Its output (stdout, so the user can redirect it to a file) holds only placeholders. The driver must not log or echo the input, put it on a command line, or keep it in the run record. Test this with a sentinel literal.
-- Match by comparison, not by position (the user, 2026-10-19, after the builder showed position matching fails when a predicate moves into a JOIN's ON, a CTE, or an EXISTS). Each literal in the user's statement takes the placeholder of the literal in the run's `redacted_query` that sits in the same comparison: the same column (table alias resolved), operator, side, and IN-list slot. It refuses, with a clean error that names the literal's position and never its value, when nothing matches or more than one original comparison matches. It never looks at literal values and never mints a placeholder. A literal with no column context (`SELECT 1`, `LIMIT`) stays as written only where the redactor itself leaves such constants alone (positional ORDER BY or GROUP BY numbers, cast typmods, the parser's own FETCH FIRST 1); any other is refused. Reuse `Redaction::Query` so both sides agree on what counts as a literal, and the existing PredicateAtoms and atom-position code where it fits.
-- The output is checked: it parses, holds no literal the run's `placeholder_map` has, and the real literals appear in no output, error, or log line. The enclave never connects to production for this.
-- The sensitive data is production query literals, which can hold student data (FERPA, and Security's rules on production data on laptops). Say in DESIGN.md that the literals pass through the user's terminal and the ssh pipe, and that `--rewrites` files hold only placeholders.
-- Enclave and driver change. The enclave part goes on "Unreleased enclave changes" when it lands, and nothing bumps a `VERSION`.
+- **Depends on:** 20261019-3.
+- **Came from:** The review of 20261019-3, 2026-10-19.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Status:** todo
 
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-19.
-- **Design:** Operator rewrites (`--rewrites`), redact.
-- **Open questions:** None.
+### 20261019-5. redact-rewrite: better errors for unparseable and multi-statement input, and tests for surviving mutations.
+
+From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds two statements, comes back as `internal_error`; give it a rule that says so (and a `parse_error` or one-statement rule), without echoing the statement. Also add tests for mutations that survive: `reverse_each` changed to `each` in alias scope lookup (alias shadowing across scopes), removing `BoolExpr` from `BOUNDARIES`, the byte-to-character position conversion (a multibyte statement), and `input.keys == ["sql"]` loosened to `true` (an extra key is refused as `bad_input`). Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261019-3.
+- **Came from:** The review of 20261019-3, 2026-10-19.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).
