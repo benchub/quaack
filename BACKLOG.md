@@ -705,6 +705,21 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** index-build, index-share.
 - **Status:** todo
 
+### 20261019-1. Report polish: TOC border, generated-on line, left margin, burndown text.
+
+From the user, 2026-10-19:
+1. The floating table of contents gets a border.
+2. Under the "QUAACK report <id>" title, a line in smaller text: "Generated on <date and time>", in the reader's locale. Render it in the browser from an ISO timestamp (`Intl`/`toLocaleString`), with the UTC time as the no-script fallback.
+3. The left margin is too wide, and it grows as the window widens, so a wider window doesn't show more of the plan tables in "Why the winner reads fewer blocks". Keep the margin narrow (room for the TOC), and let the content use the extra width.
+4. Burndown: drop the leftover "Sankey diagram" wording (from an older visualization). Add one sentence below the diagrams that explains the difference between index ideas and index sets, and between rewrites and candidates.
+
+Driver only; no enclave change.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-19.
+- **Design:** report.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
