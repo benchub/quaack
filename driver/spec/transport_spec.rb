@@ -1077,6 +1077,20 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261018-31. Only a rewrite's shared pairing that neither timed out
+    # nor was measured is skipped, as egress checks.
+    it "refuses skipped on any other label, or on one that timed out or was measured" do
+      report = lambda do |label|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "index_sources" => index_sources,
+                        "labels" => [{ "skipped" => true, **label }] })
+      end
+      [{ "label" => "original:none" }, { "label" => "rewrite_1:top:1" }, { "label" => "original:shared:1" },
+       { "label" => "rewrite_1:shared:1", "timed_out" => true },
+       { "label" => "rewrite_1:shared:1", "measurements" => { "slow" => { "total_blocks" => 1 } } }].each do |label|
+        expect(refusal(report.call(label)).rule).to eq("unexpected_output"), "for #{label}"
+      end
+    end
+
     # Task 20261009-6. Egress sends a report's top only if each entry carries a
     # kind from Protocol::CandidateKinds::KINDS, so the driver checks the same.
     it "reads a report whose top carries listed kinds, and refuses one that doesn't" do

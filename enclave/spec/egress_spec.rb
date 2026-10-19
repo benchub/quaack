@@ -395,7 +395,15 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a planted label in excluded", { excluded: { EGRESS_SENTINEL => "not_better" } }],
       ["a value in place of excluded", { excluded: [EGRESS_SENTINEL] }],
       # Task 20261018-31: skipped is only ever true or false.
-      ["a planted value in a label's skipped", ->(l) { { labels: [l.first.merge("skipped" => EGRESS_SENTINEL)] } }]
+      ["a planted value in a label's skipped", ->(l) { { labels: [l.first.merge("skipped" => EGRESS_SENTINEL)] } }],
+      # Only a rewrite's shared pairing that neither timed out nor was measured is skipped.
+      ["skipped on a rewrite's run with no new indices", ->(l) { { labels: [l.last.merge("skipped" => true)] } }],
+      ["skipped on the original's combination",
+       ->(_) { { labels: [{ "label" => "original:top:1", "skipped" => true, "plan" => nil }] } }],
+      ["skipped on a shared pairing that timed out",
+       ->(_) { { labels: [{ "label" => "rewrite_1:shared:1", "skipped" => true, "timed_out" => true }] } }],
+      ["skipped on a shared pairing with measurements",
+       ->(_) { { labels: [{ "label" => "rewrite_1:shared:1", "skipped" => true, "measurements" => {} }] } }]
     ].each do |what, change|
       it "refuses one with #{what}, without quoting it" do
         message = { type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources:, top: }
@@ -463,6 +471,14 @@ RSpec.describe Quaack::Enclave::Egress do
           }
         end
       end
+    end
+
+    # Task 20261018-31.
+    it "sends a rewrite's shared pairing that candidate-runs skipped" do
+      skipped = { "label" => "rewrite_1:shared:1", "skipped" => true, "timed_out" => false, "measurements" => nil,
+                  "plan" => nil }
+      message = { type: :report, original_plan: [plan_node], rewrites:, labels: labels + [skipped], index_sources: }
+      expect(JSON.parse(egress.serialize(message))["labels"].last).to eq(skipped)
     end
 
     # Task 20261009-8: a label's suggested_drops is index names and counts
