@@ -695,6 +695,33 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** rewrite-test.
 - **Status:** todo
 
+### 20261018-29. index-share: raise the run-wide cap to 42.
+
+IndexShare caps shared pairings at 3 per candidate and 12 per run (20261017-2). In run 20261019T011100Z-fe1f9d46, four candidates took 3 each and filled the run-wide 12, so the eventual winner (a key_in_self_join then or_to_union rewrite) got no shared pairing at all. It never ran with the small partial index on `assignments (context_id, id) WHERE ...` that another candidate ranked. That index read 53% fewer blocks than the original query with the same rewrite in run 20261017T172321Z-f6f85d4c. Raise `IndexShare::TOTAL` from 12 to 42 (decided by the user, 2026-10-18: spend more time to find the right pairing). Keep `PER_CANDIDATE` at 3. Add a test where the old cap starves a candidate and the new one doesn't. Update DESIGN.md's index-share section.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18, comparing those two reports. Follows 20261017-2.
+- **Design:** index-share.
+- **Status:** todo
+
+### 20261018-30. index-share: treat indices that differ only in spelling as one.
+
+Run 20261019T011100Z-fe1f9d46 built and shared both `submissions (id, assignment_id) WHERE workflow_state <> 'deleted'` and `... WHERE workflow_state::text <> 'deleted'::text`. These are the same index spelled two ways, and together they used two of a candidate's three shared slots. Indices whose built definitions match (`pg_get_indexdef` with the name ignored) count as one, both in a candidate's shared pool and against its own combinations. Building each once is better still, if that's easy in index-build. Update DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18. Follows 20261017-2.
+- **Design:** index-share, index-build.
+- **Status:** todo
+
+### 20261018-31. index-share: skip shared pairings for a candidate that timed out without new indices.
+
+In run 20261019T011100Z-fe1f9d46, rewrite "Snowy Crown" timed out with no new indices, and then with all 3 of its shared pairings. Each run burned the full timeout. When a candidate's no-new-index measurement times out, don't measure its shared pairings. Say so in the report if the report lists them. If the timing of the steps makes this hard (share pairings get chosen before measurement), stop and ask.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-18. Follows 20261017-2.
+- **Design:** index-share, measurement.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
