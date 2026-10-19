@@ -71,5 +71,17 @@ RSpec.describe Quaack::Enclave::IndexShare do
       expect(described_class.pool(combinations, "rewrite_2", searches)).to eq(["b"])
       expect(described_class.pool(combinations, "original", searches)).to eq(%w[b c])
     end
+
+    # Task 20261018-30: two spellings of one index, such as a cast the LLM
+    # left out, are built under two names but are the same index.
+    it "takes indexes with the same definition once, and none whose definition the candidate has" do
+      combinations = { "original:top:1" => ["a"], "rewrite_1:top:1" => ["b"], "rewrite_2:top:1" => ["c"],
+                       "rewrite_2:combination" => %w[c d] }
+      same = { "a" => "x", "b" => "y", "c" => "y", "d" => "x" }
+      searches = %w[original rewrite_1 rewrite_2]
+
+      expect(described_class.pool(combinations, "original", searches, same)).to eq(["b"])
+      expect(described_class.pool(combinations, "rewrite_1", searches, same)).to eq(["a"])
+    end
   end
 end

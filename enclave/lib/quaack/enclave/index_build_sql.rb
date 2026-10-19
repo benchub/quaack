@@ -27,6 +27,16 @@ module Quaack
           AND NOT i.indisunique AND NOT i.indisprimary AND NOT i.indisexclusion
       SQL
 
+      # Each index whose schema is in $1 and name, at the same place, in $2,
+      # with its definition.
+      DEFINITIONS_SQL = <<~SQL
+        SELECT c.relname, pg_catalog.pg_get_indexdef(c.oid) FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+        WHERE (n.nspname, c.relname) OPERATOR(pg_catalog.=) ANY (
+            SELECT * FROM ROWS FROM (pg_catalog.unnest($1::pg_catalog.text[]), pg_catalog.unnest($2::pg_catalog.text[])))
+          AND c.relkind OPERATOR(pg_catalog.=) 'i'
+      SQL
+
       # The names of the valid indexes whose schema is in $1 and name, at
       # the same place, in $2. ROWS FROM, since only an unqualified unnest
       # takes several arrays.

@@ -102,4 +102,21 @@ RSpec.describe "quaacks index-build's shared pairings, against a real server" do
     expect(build["combinations"].select { |key, _| key.include?(":shared:") })
       .to eq("original:shared:1" => names(build, note))
   end
+
+  # Task 20261018-30: an LLM's spelling and Postgres's of one partial index
+  # are built under two names, but are the same index, so they share as one.
+  it "shares two spellings of one index as one, and never with a candidate that has either" do
+    bare = "CREATE INDEX ON public.orders USING btree (note) WHERE status <> 'deleted'"
+    cast = "CREATE INDEX ON public.orders USING btree (note) WHERE status::text <> 'deleted'::text"
+    searched
+    add_rewrite(1, "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1", top: [bare])
+    add_rewrite(2, "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND o.status = $2 ORDER BY 1",
+                top: [cast])
+
+    run("index-build")
+
+    build = stored.read("index_build")
+    expect(build["combinations"].select { |key, _| key.include?(":shared:") })
+      .to eq("original:shared:1" => names(build, bare))
+  end
 end

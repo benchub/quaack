@@ -19,7 +19,10 @@ module Quaack
     # on to measurement, each with the SQL it runs. A candidate's pool is
     # every index in another candidate's ranked combinations (its top
     # entries and its combination, never its set-aside ones), each on its
-    # own, less any index in the candidate's own combinations. Each one is
+    # own, less any index in the candidate's own combinations. Two built
+    # names whose definitions match (IndexBuild.definitions), such as one
+    # spelled with Postgres's casts and one without, are one index: the
+    # pool takes the first, and none the candidate has. Each one is
     # shown alone, and a plain EXPLAIN of the candidate on the slow values
     # keeps it only if the plan uses it, so it's on a table the candidate
     # reads and could change its blocks. Of those kept, choose keeps the
@@ -38,8 +41,9 @@ module Quaack
 
       def combinations(connection, store, build, searches)
         slow = LiteralSet.load(store).sets.to_h.fetch(Measurement::TIMED_SET)
+        same = IndexBuild.definitions(connection, build)
         scored = searches.flat_map do |search, sql|
-          score(connection, build, search, pool(build["combinations"], search, searches.keys),
+          score(connection, build, search, pool(build["combinations"], search, searches.keys, same),
                 Redaction.binding(sql, slow))
         end
         label(choose(scored), searches.keys)
@@ -49,12 +53,19 @@ module Quaack
 
       # The built names search could share, in the order the other
       # candidates ranked them.
-      def pool(combinations, search, searches)
-        ranked = combinations.select do |key, _|
+      # same maps a built name to its definition, so two names with one
+      # definition count as one index; a name missing from it is its own.
+      def pool(combinations, search, searches, same = {})
+        definition = ->(name) { same.fetch(name, name) }
+        own = combinations.select { |key, _| key.start_with?("#{search}:") }.values.flatten.map(&definition)
+        ranked(combinations, search, searches).uniq(&definition).reject { own.include?(definition.call(it)) }
+      end
+
+      # The built names in the ranked combinations of searches other than search.
+      def ranked(combinations, search, searches)
+        combinations.select do |key, _|
           (owner = RANKED.match(key)&.[](:search)) && owner != search && searches.include?(owner)
-        end
-        own = combinations.select { |key, _| key.start_with?("#{search}:") }.values.flatten
-        ranked.values.flatten.uniq - own
+        end.values.flatten
       end
 
       # [{ "search", "name", "ratio" }] for each of names the plan of bound
