@@ -12402,3 +12402,15 @@ From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric
 - **Design:** report.
 - **Landed:** 2026-10-18 (task/20261017-10; driver only). The stripe spec fails on any other tr.kind/tr.rank rule with a background or --stripe; the baseline row's first cell gets a transparent 5px left border so its edge lines up with the stripes.
 - **Status:** done
+
+### 20261017-11. Plan-table shading: minors from the review of 20261017-7.
+
+1. The first legend (`LEGEND_LEAD`) still says "Each step is shaded by how far its estimated rows…". Since 20261017-7, only the estimated and actual rows cells get that shading. Say so.
+2. README.md (around lines 710–725) quotes the old legend, marks shading on the step ("Index Scan *(shaded 10x)*"), says "Each step is shaded redder…", and never mentions the blocks and time shading. Update it.
+3. A time cell's percentage is rounded but its bucket isn't, so the cell can disagree with the legend. A share of 4.96% reads "(5%)" with no shading, though the legend says shading starts at 5%, and 19.6% reads "(20%)" but is shaded in the 10% bucket. Bucket by the rounded share, or show the share unrounded near the edges.
+
+- **Depends on:** None.
+- **Came from:** Review of 20261017-7, 2026-10-17.
+- **Design:** report.
+- **Landed:** 2026-10-18 (task/20261017-11; driver and README). The legend says the rows cells are shaded; README's legend, sample, and prose match; blocks and time bucket by the rounded share their cell shows.
+- **Status:** done
