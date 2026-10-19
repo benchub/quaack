@@ -29,7 +29,8 @@ module Quaack
       # Ranked and not better are as the driver's report counts them for
       # every source together: ranked if a ranked label ran with it, not
       # better if at least one measured label ran with it and selection
-      # excluded every one as not_better.
+      # excluded every one as not_better. A shared pairing candidate-runs
+      # skipped (task 20261018-31) wasn't measured, so it doesn't count.
       #
       # Trust boundary. Only counts, under the names of NAMES, which are
       # Protocol::IndexSources::SOURCES. A stored source that isn't one of
@@ -131,7 +132,7 @@ module Quaack
 
         def not_better(labels, excluded, names)
           names.select do |name|
-            ran = labels.select { it["indexes"].include?(name) }
+            ran = labels.select { it["indexes"].include?(name) && !it["skipped"] }
             !ran.empty? && ran.all? { excluded[it["label"]] == "not_better" }
           end
         end

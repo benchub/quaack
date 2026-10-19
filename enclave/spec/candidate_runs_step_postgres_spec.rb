@@ -98,6 +98,34 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(entry["measurement_runs"]).to eq(12)
   end
 
+  # Task 20261018-31: a rewrite that timed out with no new indices skips its
+  # shared pairings, but still runs its own combinations.
+  it "skips the shared pairings of a rewrite whose run with no new indices timed out" do
+    prepare
+    run("index-search")
+    run("index-rank")
+    run("index-build")
+    run("baseline")
+    stored.write("baseline", stored.read("baseline").merge("timeout_ms" => 100))
+    add_rewrite(1, "SELECT pg_sleep(0.5), $1::text IS NULL")
+    add_rewrite(2, rewrite)
+    build = stored.read("index_build")
+    added = { "rewrite_1:top:1" => [], "rewrite_1:shared:1" => [], "rewrite_1:shared:2" => [],
+              "rewrite_2:shared:1" => [] }
+    stored.write("index_build", build.merge("combinations" => build["combinations"].merge(added)))
+
+    outcome = run("candidate-runs")
+
+    expect(outcome.stdout).to eq(counts_then_done(measured: 4, timed_out: 2))
+    entry = stored.read("candidate_runs")
+    expect(entry["candidates"]["rewrite_2"].keys).to eq(%w[none rewrite_2:shared:1])
+    expect(entry["timed_out"]).to eq(%w[rewrite_1:none rewrite_1:top:1])
+    expect(entry["skipped"]).to eq(%w[rewrite_1:shared:1 rewrite_1:shared:2])
+    expect(entry["timed_out_count"]).to eq(2)
+    # Nine runs for each of rewrite_2's two, and the first run of each set of rewrite_1's two.
+    expect(entry["measurement_runs"]).to eq(24)
+  end
+
   # DESIGN.md's clock-anchor: baseline runs the candidate's anchored_sql, so it reads the
   # anchored clock. Here that clock is years back, and only the real clock
   # makes the candidate sleep past the timeout.

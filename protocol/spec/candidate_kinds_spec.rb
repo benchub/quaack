@@ -34,6 +34,37 @@ RSpec.describe Quaack::Protocol::CandidateKinds do
     end
   end
 
+  # Task 20261018-31: a label candidate-runs skipped says so with skipped,
+  # and that's only ever true or false.
+  it "accepts a label's skipped only as true or false" do
+    labels = ->(skipped) { { "labels" => [{ "label" => "rewrite_1:shared:1", **skipped }] } }
+    [{}, { "skipped" => true }, { "skipped" => false }, { skipped: true }].each do |skipped|
+      expect(described_class.labels?(labels.call(skipped))).to be(true), skipped.inspect
+    end
+    [{ "skipped" => "SELECT secret" }, { "skipped" => nil }, { "skipped" => 1 },
+     { skipped: "secret" }].each do |planted|
+      expect(described_class.labels?(labels.call(planted))).to be(false), planted.inspect
+    end
+  end
+
+  # Only a rewrite's shared pairing can be skipped, and a skipped one neither
+  # timed out nor has measurements.
+  it "accepts skipped as true only on a rewrite's shared pairing that didn't time out and has no measurements" do
+    labels = ->(entry) { { "labels" => [entry] } }
+    skipped = { "label" => "rewrite_1:shared:1", "skipped" => true, "timed_out" => false, "measurements" => nil }
+    expect(described_class.labels?(labels.call(skipped))).to be(true)
+    expect(described_class.labels?(labels.call({ label: "rewrite_2:shared:3", skipped: true }))).to be(true)
+    %w[original:none original:shared:1 original:top:1 rewrite_1:none rewrite_1:top:1 rewrite_1:combination
+       rewrite_1:set_aside:1].each do |label|
+      expect(described_class.labels?(labels.call(skipped.merge("label" => label)))).to be(false), label
+      expect(described_class.labels?(labels.call(skipped.merge("label" => label, "skipped" => false)))).to be(true)
+    end
+    [{ "timed_out" => true }, { timed_out: true }, { "measurements" => { "slow" => { "timed_out" => true } } },
+     { measurements: {} }].each do |planted|
+      expect(described_class.labels?(labels.call(skipped.merge(planted)))).to be(false), planted.inspect
+    end
+  end
+
   it "takes a report's ranking only when its top carries listed kinds and every label is QUAACK's own" do
     good = { "top" => [{ "label" => "rewrite_1:shared:1", "kind" => "rewrite_new_indexes" }],
              "labels" => [{ "label" => "original:shared:2" }], "excluded" => { "original:none" => "not_better" } }

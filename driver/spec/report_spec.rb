@@ -417,6 +417,15 @@ RSpec.describe Quaack::Driver::Report do
       expect(out).to include("&#9888; No new index beat the original query")
     end
 
+    # Task 20261018-31: a shared pairing candidate-runs skipped wasn't measured.
+    it "doesn't count a skipped shared pairing among what QUAACK measured of its kind" do
+      skipped = { "label" => "rewrite_1:shared:1", "search" => "rewrite_1", "indexes" => ["quaack_a"],
+                  "timed_out" => false, "skipped" => true, "measurements" => nil, "verdicts" => nil }
+      out = verdict(render(negative_payload.merge("labels" => negative_payload["labels"] + [skipped])))
+      expect(out).to include("title=\"QUAACK measured 1 candidate of this kind, and none made the ranking. The " \
+                             "ranking section says why.\"><span class=\"warn\">&#9888; No rewrite with new indices")
+    end
+
     it "says no index was found or no rewrite survived when nothing of that kind was measured" do
       payload["top"].shift(2)
       payload["labels"].select! { it["label"] == "rewrite_1:top:1" }
@@ -618,6 +627,19 @@ RSpec.describe Quaack::Driver::Report do
         escaped = section(render(caveat_payload), "timeouts")
         expect(escaped).to include("&lt;script&gt;")
         expect(escaped).not_to include("<script>")
+      end
+
+      # Task 20261018-31.
+      it "lists each shared pairing QUAACK skipped because its rewrite timed out with no new indices" do
+        skipped = { "label" => "rewrite_1:shared:1", "search" => "rewrite_1", "indexes" => ["quaack_a"],
+                    "timed_out" => false, "skipped" => true, "measurements" => nil, "verdicts" => nil }
+        sec = section(render(caveat_payload.merge("labels" => caveat_payload["labels"] + [skipped])), "timeouts")
+        expect(sec.scan("<li>").size).to eq(2)
+        expect(sec).to include("QUAACK didn&#39;t measure these pairings with another candidate&#39;s indices, " \
+                               "since their rewrite timed out with no new indices:")
+        expect(sec[%r{<ul id="skipped-runs">.*?</ul>}m].scan("<li>").size).to eq(1)
+        expect(sec[%r{<ul id="skipped-runs">.*?</ul>}m]).to include("<li>Rewrite Vivid Cove with a new index on ")
+        expect(section(out, "timeouts")).not_to include("skipped-runs")
       end
 
       it "leaves the section out when nothing timed out" do
@@ -2827,6 +2849,14 @@ RSpec.describe Quaack::Driver::Report do
         it "doesn't count an index whose only label timed out and was never judged" do
           payload["labels"][2].merge!("timed_out" => true, "measurements" => nil, "verdicts" => nil)
           expect(built(nil)).to eq(%w[2 0 1])
+        end
+
+        # Task 20261018-31: a skipped shared pairing never ran with it.
+        it "counts an index whose every label was not better, less a shared pairing QUAACK skipped" do
+          skipped = payload["labels"][2].merge("label" => "rewrite_1:shared:1", "timed_out" => false,
+                                               "skipped" => true, "measurements" => nil, "verdicts" => nil)
+          payload["labels"] << skipped
+          expect(built("not_better")).to eq(%w[2 1 1])
         end
 
         it "doesn't count an index with mixed labels: one not better, one that beat the query" do

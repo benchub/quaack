@@ -21,6 +21,9 @@ module Quaack
       #                       that didn't time out
       #   "timed_out"       the dropped runs, as "rewrite_<n>:none" or the
       #                     combination key
+      #   "skipped"         the shared pairings (index-share) of each rewrite
+      #                     whose "none" run timed out, which it didn't run
+      #                     (task 20261018-31), by combination key
       #   "timed_out_count" how many were dropped, for the report
       #   "measurement_runs" how many runs it took (Measurement.runs), the
       #                     dropped ones' included, for the burndown
@@ -45,24 +48,38 @@ module Quaack
 
         def entry(store, connection)
           timed_out = []
+          skipped = []
           counted = [0]
-          candidates = candidates(store).to_h { [it, runs(store, connection, it, timed_out, counted)] }
+          candidates = candidates(store).to_h { [it, runs(store, connection, it, [timed_out, skipped], counted)] }
           { "candidates" => candidates.reject { |_, runs| runs.empty? }, "timed_out" => timed_out,
-            "timed_out_count" => timed_out.size, "measurement_runs" => counted.first }
+            "skipped" => skipped, "timed_out_count" => timed_out.size, "measurement_runs" => counted.first }
         end
 
         # search's runs that didn't time out, by "none" or combination key.
         # Adds the label of each that did to timed_out, and how many runs
-        # each took to counted's one element.
-        def runs(store, connection, search, timed_out, counted)
-          timeout_ms = store.read("baseline").fetch("timeout_ms")
-          sql = RewriteEntry.run_sql(store.read(search))
+        # each took to counted's one element. Once search's "none" run
+        # times out, its shared pairings (index-share) aren't run: each
+        # goes on skipped instead (task 20261018-31).
+        def runs(store, connection, search, (timed_out, skipped), counted)
+          measure = measurer(store, connection, search, counted)
           combinations(store, search).each_with_object({}) do |key, out|
-            sets = Measurement.measure(connection:, store:, sql:, combination: key, timeout_ms:)
-            counted[0] += Measurement.runs(sets)
+            next skipped << key if shared?(search, key) && timed_out.include?("#{search}:none")
+
+            sets = measure.call(key)
             next timed_out << (key || "#{search}:none") if sets.values.any? { it["timed_out"] }
 
             out[key || "none"] = sets
+          end
+        end
+
+        # A lambda that measures search under a combination key (nil for
+        # none), adding how many runs it took to counted's one element.
+        def measurer(store, connection, search, counted)
+          timeout_ms = store.read("baseline").fetch("timeout_ms")
+          sql = RewriteEntry.run_sql(store.read(search))
+          lambda do |key|
+            Measurement.measure(connection:, store:, sql:, combination: key, timeout_ms:)
+                       .tap { counted[0] += Measurement.runs(it) }
           end
         end
 
@@ -70,6 +87,8 @@ module Quaack
         def combinations(store, search)
           [nil, *store.read("index_build")["combinations"].keys.select { it.start_with?("#{search}:") }]
         end
+
+        def shared?(search, key) = key&.start_with?("#{search}:shared:")
 
         def candidates(store)
           (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.map { "rewrite_#{it}" }

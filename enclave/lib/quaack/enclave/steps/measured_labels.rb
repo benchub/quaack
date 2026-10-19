@@ -10,8 +10,10 @@ module Quaack
       # field (DESIGN.md's report): the original under each of its index
       # combinations (index_baseline), then each rewrite's runs
       # (candidate_runs), then the rewrite runs candidate-runs dropped for
-      # timing out. Ranked or not, each one goes out, so the report can say
-      # what any label was and how many blocks it read.
+      # timing out, then the shared pairings it skipped because their
+      # rewrite timed out with no new indexes (task 20261018-31). Ranked or
+      # not, each one goes out, so the report can say what any label was
+      # and how many blocks it read.
       #
       #   MeasuredLabels.call(store)
       #   # => [{ "label" => "rewrite_1:top:1", "search" => "rewrite_1",
@@ -22,7 +24,9 @@ module Quaack
       #
       # indexes is the built names of the indexes it ran with (none for
       # <search>:none). measurements is nil for a rewrite run that timed
-      # out, which candidate-runs doesn't keep. A set that timed out is
+      # out, which candidate-runs doesn't keep, and for one it skipped,
+      # which also carries "skipped" => true (no other label carries
+      # skipped) and "timed_out" => false. A set that timed out is
       # { "timed_out" => true }. hit and read are the run with the most
       # blocks. verdicts is minimax's, nil for a label minimax never judged
       # (one that timed out).
@@ -39,11 +43,18 @@ module Quaack
         def call(store)
           build = store.read("index_build")["combinations"]
           verdicts = store.read("minimax")["verdicts"]
+          skipped = skipped(store)
           measured(store).select { |label, _| LABEL.match?(label) }.map do |label, sets|
             { "label" => label, "search" => label.split(":").first, "indexes" => build.fetch(label, []),
-              **blocks(sets), "verdicts" => verdicts[label] }
+              **(skipped.include?(label) ? SKIPPED : blocks(sets)), "verdicts" => verdicts[label] }
           end
         end
+
+        SKIPPED = { "timed_out" => false, "skipped" => true, "measurements" => nil }.freeze
+
+        # The shared pairings candidate-runs didn't run (task 20261018-31);
+        # none for a run from before it kept them.
+        def skipped(store) = store.read("candidate_runs").fetch("skipped", [])
 
         # selection's excluded labels, each a label LABEL matches, with its
         # reason if it's one of Enclave::Selection::REASONS, or else nil.
@@ -65,7 +76,8 @@ module Quaack
           rewrites = runs["candidates"].flat_map do |search, by_key|
             by_key.map { |key, sets| [key == "none" ? "#{search}:none" : key, sets] }
           end
-          store.read("index_baseline")["combinations"].to_a + rewrites + runs["timed_out"].map { [it, nil] }
+          store.read("index_baseline")["combinations"].to_a + rewrites +
+            (runs["timed_out"] + skipped(store)).map { [it, nil] }
         end
 
         def summary(measurement)

@@ -259,6 +259,12 @@
 <% timed_out_runs.each do |what| %><li><%= h what %> timed out.</li>
 <% end %></ul>
 <% end %>
+<% unless skipped_runs.empty? %>
+<p>QUAACK didn&#39;t measure these pairings with another candidate&#39;s indices, since their rewrite timed out with no new indices:</p>
+<ul id="skipped-runs">
+<% skipped_runs.each do |what| %><li><%= h what %>.</li>
+<% end %></ul>
+<% end %>
 <% end %>
 <% unless infinite_sets.empty? %>
 <h3>The original query</h3>

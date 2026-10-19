@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261018-29
 - 20261018-30
+- 20261018-31
 
 ## How this file works.
 

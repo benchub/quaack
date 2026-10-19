@@ -80,7 +80,7 @@ module Quaack
         end
 
         def missing_row(kind)
-          tried = labels.select { kind_of(it) == kind }
+          tried = labels.select { kind_of(it) == kind && !it["skipped"] }
           reason, hover = tried.empty? ? nothing_tried(kind) : nothing_won(kind, tried)
           { plan: PLANS.fetch(kind), warn: reason, hover:, delta: "n/a", improvement: "n/a" }
         end
@@ -120,6 +120,11 @@ module Quaack
         # others: a label that was measured and timed out in some set has
         # measurements, and minimax set it aside.
         def timed_out_runs = labels.select { it["timed_out"] && it["measurements"].nil? }.map { describe(it["label"]) }
+
+        # The timeouts section's other rows: what each shared pairing was
+        # that candidate-runs skipped, since its rewrite timed out with no
+        # new indexes (task 20261018-31).
+        def skipped_runs = labels.select { it["skipped"] == true }.map { describe(it["label"]) }
 
         # Short caveats, as [sentence, link target].
         def caveats

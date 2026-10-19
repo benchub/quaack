@@ -277,6 +277,27 @@ RSpec.describe "quaacks report-payload" do
                                              "measurements" => nil, "verdicts" => nil, "plan" => nil)
     end
 
+    # Task 20261018-31.
+    context "when candidate-runs skipped a rewrite's shared pairings" do
+      let(:outcome) do
+        payload_of do |store|
+          build = store.read("index_build")
+          build["combinations"]["rewrite_1:shared:1"] = ["quaack_a"]
+          store.write("index_build", build)
+          runs = store.read("candidate_runs")
+          store.write("candidate_runs", runs.merge("skipped" => ["rewrite_1:shared:1", REPORT_WORD_SENTINEL]))
+        end
+      end
+
+      it "lists each one last, as skipped, with its indexes and no measurements, and nothing else it held" do
+        expect(report["labels"].last).to eq("label" => "rewrite_1:shared:1", "search" => "rewrite_1",
+                                            "indexes" => ["quaack_a"], "timed_out" => false, "skipped" => true,
+                                            "measurements" => nil, "verdicts" => nil, "plan" => nil)
+        expect(report["labels"].count { it.key?("skipped") }).to eq(1)
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
     context "with measured plans, as measurement keeps one per set" do
       let(:outcome) do
         payload_of do |store|
@@ -1745,6 +1766,24 @@ RSpec.describe "quaacks report-payload" do
         expect(report["index_sources"]).to eq(
           "generator_one" => counts(1, 0, 1), "generator_two" => counts(1, 0, 0), "llm" => counts(3, 1, 1)
         )
+      end
+    end
+
+    # Task 20261018-31: a shared pairing candidate-runs skipped never ran,
+    # so it doesn't keep its index from counting as not better.
+    context "when candidate-runs skipped a shared pairing with a not-better index" do
+      let(:outcome) do
+        payload_of do |store|
+          sourced(store)
+          build = store.read("index_build")
+          build["combinations"]["rewrite_1:shared:1"] = ["quaack_c"]
+          store.write("index_build", build)
+          store.write("candidate_runs", store.read("candidate_runs").merge("skipped" => ["rewrite_1:shared:1"]))
+        end
+      end
+
+      it "counts the index as not better all the same" do
+        expect(report["index_sources"]["llm"]).to eq(counts(3, 1, 1))
       end
     end
 
