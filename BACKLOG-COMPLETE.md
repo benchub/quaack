@@ -12475,3 +12475,19 @@ In run 20261019T011100Z-fe1f9d46, rewrite "Snowy Crown" timed out with no new in
 - **Design:** index-share, measurement.
 - **Landed:** 2026-10-18 (task/20261018-31; enclave, protocol, driver). candidate-runs measures a rewrite's `:none` first; once it times out, its `:shared:<k>` pairings are skipped and listed in `skipped`. Report labels carry `skipped: true`, which `Protocol::CandidateKinds.labels?` accepts only on `rewrite_<n>:shared:<k>` with no timeout and no measurements. The "Runs that timed out" section lists them; measured and not-better counts leave them out. The step_counts progress line doesn't count them. No VERSION bump; on the Unreleased list.
 - **Status:** done
+
+### 20261019-1. Report polish: TOC border, generated-on line, left margin, burndown text.
+
+From the user, 2026-10-19:
+1. The floating table of contents gets a border.
+2. Under the "QUAACK report <id>" title, a line in smaller text: "Generated on <date and time>", in the reader's locale. Render it in the browser from an ISO timestamp (`Intl`/`toLocaleString`), with the UTC time as the no-script fallback.
+3. The left margin is too wide, and it grows as the window widens, so a wider window doesn't show more of the plan tables in "Why the winner reads fewer blocks". Keep the margin narrow (room for the TOC), and let the content use the extra width.
+4. Burndown: drop the leftover "Sankey diagram" wording (from an older visualization). Add one sentence below the diagrams that explains the difference between index ideas and index sets, and between rewrites and candidates.
+
+Driver only; no enclave change.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-19.
+- **Design:** report.
+- **Landed:** 2026-10-19 (task/20261019-1; driver). TOC has a 1px `--rule` border; "Generated on" line under the title, UTC text upgraded by the report's one inline script to the reader's locale (`Report.render(generated_at:)`); on screens at least 64rem wide the TOC sits fixed in a 13rem column, the body loses its 62rem cap (prose, lists and diagrams keep it); burndown's "Sankey diagram" wording is gone and a note after the diagrams defines index ideas, index sets, rewrites and candidates. The breakpoint narrows the content between 64 and ~79rem; see 20261019-2.
+- **Status:** done
