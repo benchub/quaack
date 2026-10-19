@@ -705,6 +705,24 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** index-build, index-share.
 - **Status:** todo
 
+### 20261019-1. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite.
+
+Writing your own rewrite means swapping every literal for the run's `$N` by hand. Add `quaacks redact-rewrite --run <run ID>`, which reads one SQL statement from stdin (or `--file <path>`) and writes it to stdout (or `--out <path>`) with each literal replaced by the placeholder the run's original query has in the same place. Add `quaack redact-rewrite --run <run ID>` on the driver, which sends the statement over ssh and prints what comes back.
+
+Decisions (the user, 2026-10-19):
+
+- The enclave command runs where the placeholder map is, since the laptop never holds real literals. The driver wrapper reads stdin only: no `--file` and no argument that takes the statement, so it never writes the real-literal query to disk. Its output (stdout, so the user can redirect it to a file) holds only placeholders. The driver must not log or echo the input, put it on a command line, or keep it in the run record. Test this with a sentinel literal.
+- Match by position: walk the user's parse tree and the run's `redacted_query` side by side (pg_query) and take the placeholder from the same spot. Where the two trees diverge (a rewrite that moved or restructured the query), a literal that has no counterpart is refused with a clean error that names the literal's position and never echoes its value, exit as the other usage errors do. A literal with no placeholder is never minted, kept as written, or guessed by value. If matching by position can't work for rewrites that restructure the query, stop and report back before building a fallback.
+- The output is checked: it parses, holds no literal the run's `placeholder_map` has, and the real literals appear in no output, error, or log line. The enclave never connects to production for this.
+- The sensitive data is production query literals, which can hold student data (FERPA, and Security's rules on production data on laptops). Say in DESIGN.md that the literals pass through the user's terminal and the ssh pipe, and that `--rewrites` files hold only placeholders.
+- Enclave and driver change. The enclave part goes on "Unreleased enclave changes" when it lands, and nothing bumps a `VERSION`.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-19.
+- **Design:** Operator rewrites (`--rewrites`), redact.
+- **Open questions:** None.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
