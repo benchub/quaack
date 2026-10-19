@@ -27,6 +27,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-27. Rule minors from the builds and reviews of 20261018-10, -12, and -13.
 - 20261018-22. Removing a nested DISTINCT or join can change the input order of an order-sensitive aggregate above it.
 - 20261018-28. fixture-compare: GROUP BY keys and min or max over equal values that print differently.
+- 20261017-4. run-server check: say which planner setting doesn't match production.
 
 ## How this file works.
 
@@ -715,15 +716,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Depends on:** None.
 - **Came from:** Build of 20261016-14, 2026-10-16.
 - **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261017-4. run-server check: say which planner setting doesn't match production.
-
-`quaack setup` failing with `run_server_guc_mismatch` says only that "a planner setting" differs, and lists the kinds it might be, so the operator has to diff every planner setting by hand. The enclave already knows the setting's name (`RunServerCheck` raises `run_server_guc_mismatch: <name>`), but ErrorFilter sends only the rule. A setting's name is not production data; only its value is. Send the name, checked strictly as a GUC name (such as `/\A[A-Za-z_][A-Za-z0-9_.]*\z/`, or one of the names `PLANNER_SQL` returns), never the value, and have the driver say which setting to change, e.g. "The run server's random_page_cost isn't production's." Consider listing every mismatched setting, not just the first, so the operator fixes them all in one go. The same applies to `run_server_locale_mismatch` (its field name) and the other run-server rules whose Error names what failed. Test with a sentinel value that the value never crosses.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-17.
-- **Design:** run-server check, trust boundary.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

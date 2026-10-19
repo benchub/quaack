@@ -12425,3 +12425,13 @@ From 20261018-26, reproduced on PG 18. `SELECT n FROM t GROUP BY n` over numeric
 - **Design:** report, sankey.
 - **Landed:** 2026-10-18 (task/20261017-12; driver, DESIGN.md, and the replay spec). The replay spec checks the rewrites' index burndown strictly; DESIGN.md says a rewrite the LLM wasn't asked about passes its ideas through unchanged; NOT_ASKED says so too. The non-strict branch of burndown_joins? is now unused.
 - **Status:** done
+
+### 20261017-4. run-server check: say which planner setting doesn't match production.
+
+`quaack setup` failing with `run_server_guc_mismatch` says only that "a planner setting" differs, and lists the kinds it might be, so the operator has to diff every planner setting by hand. The enclave already knows the setting's name (`RunServerCheck` raises `run_server_guc_mismatch: <name>`), but ErrorFilter sends only the rule. A setting's name is not production data; only its value is. Send the name, checked strictly as a GUC name (such as `/\A[A-Za-z_][A-Za-z0-9_.]*\z/`, or one of the names `PLANNER_SQL` returns), never the value, and have the driver say which setting to change, e.g. "The run server's random_page_cost isn't production's." Consider listing every mismatched setting, not just the first, so the operator fixes them all in one go. The same applies to `run_server_locale_mismatch` (its field name) and the other run-server rules whose Error names what failed. Test with a sentinel value that the value never crosses.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-17.
+- **Design:** run-server check, trust boundary.
+- **Landed:** 2026-10-18 (task/20261017-4; enclave, protocol, and driver). run_server_guc_mismatch, _locale_mismatch, and _preload_mismatch send a `settings` field of names only (every mismatch for GUCs and locale), checked in ErrorFilter and the driver against a strict name pattern, 1 to 64 entries; the preload name comes only from QUAACK's fixed PLANNER_LIBRARIES. The driver names them. Minor, open: preload names only the first library; locale reports pg_database fields before default_text_search_config; a stale header comment in run_server_check.rb; extension_missing/_version could send names too.
+- **Status:** done
