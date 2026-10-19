@@ -30,7 +30,8 @@ module Quaack
           sources, sinks = state == :unknown ? [[], []] : sankey_flows(record, stage, sentence)
           SankeyParts::Stage.new(id: "n#{index}", kind: :stage, name:, state:, inn:, out:, sources:, sinks:,
                                  color: StageStyle::COLORS.fetch(stage, StageStyle::BLUE), keys: [stage],
-                                 sentences: [sentence, *StageStyle.went_on_notes(record, stage)].compact)
+                                 sentences: [sentence, *StageStyle.went_on_notes(record, stage),
+                                             (sankey_each_rewrite if stage == "index-rank" && of_rewrite)].compact)
         end
 
         # Whether the run counted all, only what came in, or none of the stage.

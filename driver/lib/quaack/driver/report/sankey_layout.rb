@@ -23,7 +23,7 @@ module Quaack
       # lanes on the left (see SankeyLanes), or, for the diagram's first layer, from
       # bars spread across the whole picture; what carried on enters after them.
       # Each method here works out several x and y ends at once.
-      # rubocop:disable-next Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+      # rubocop:disable-next Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity
       class SankeyLayout
         include SankeyParts
         include SankeyLanes
@@ -39,13 +39,15 @@ module Quaack
         MIN_GAP = 28
         HELD_GAP = 40
         PAD = 6
+        # The room for the dashed line where the unit changes, with a label above it and one below.
+        DIVIDER = 2 * SLOT
 
         attr_reader :layers, :steps
 
         def initialize(layers:, steps:)
           @layers = layers
           @steps = steps
-          @into = steps.to_h { [it.into, it] }
+          @into = steps.to_h { [it.into, it] }.compare_by_identity
           peak = [*layers.map { it.total.to_i }, *steps.map { step_through(it) },
                   *layers.flat_map { |layer| layer.sources.map(&:amount) }].max.to_i
           @scale = peak.zero? ? 0.0 : SPINE_MAX / peak
@@ -58,6 +60,8 @@ module Quaack
         def place
           y = TOP
           @layers.each do |layer|
+            # The line where the unit changes goes under the step's words and drops, in room of its own.
+            layer.divider_y = y + below_room(@into[layer]) + (DIVIDER / 2) if layer.divider && @into[layer]
             y += lead(layer)
             layer.y = y
             layer.x = layer.role == :held ? HELD_X : LEFT
@@ -86,10 +90,14 @@ module Quaack
           step = @into[layer]
           return (layer.spread && layer.sources.any? ? spread_block + PAD : 0) unless step
 
-          words = step.line ? SLOT : 0
-          below = words + rows(step.drops)
           above = layer.role == :merge ? block(layer.sources) : 0
-          [MIN_GAP, (below.zero? ? 0 : below + (2 * PAD)) + (above.zero? ? 0 : above + PAD)].max
+          [MIN_GAP, below_room(step) + (layer.divider ? DIVIDER : 0) + (above.zero? ? 0 : above + PAD)].max
+        end
+
+        # The room under a layer for its step's words and drops.
+        def below_room(step)
+          below = (step.line ? SLOT : 0) + rows(step.drops)
+          below.zero? ? 0 : below + (2 * PAD)
         end
 
         def width_of(layer)

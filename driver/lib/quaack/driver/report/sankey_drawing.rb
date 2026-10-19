@@ -38,7 +38,7 @@ module Quaack
 
         def svg
           height = @layout.place
-          drawn = [*carry_ribbons, *source_ribbons, *sink_ribbons, *aside_ribbons, *bars, *words]
+          drawn = [*carry_ribbons, *source_ribbons, *sink_ribbons, *aside_ribbons, *bars, *dividers, *words]
           %(<svg id="#{@id}" class="sankey" role="img" aria-labelledby="#{@id}-title" ) +
             %(viewBox="0 0 #{VIEW_WIDTH} #{height}"><title id="#{@id}-title">#{text(@title)}</title>#{drawn.join}</svg>)
         end
