@@ -12456,4 +12456,12 @@ Run 20261019T011100Z-fe1f9d46 built and shared both `submissions (id, assignment
 - **Landed:** 2026-10-18 (task/20261018-30; enclave). `IndexBuild.definitions` reads each built index's `pg_get_indexdef` without its name; `IndexShare.pool` keeps the first of equal definitions and drops any equal to one in the candidate's own combinations. Matching indices are still built twice; see 20261018-32. No VERSION bump; on the Unreleased list.
 - **Status:** done
 
+### 20261018-15. One Sankey per table, with a labeled divider where the unit changes.
 
+- **Depends on:** None.
+- **Design:** report (the Sankey paragraph: "Widths in one diagram always mean one unit, so a table is cut into one diagram per unit").
+- **Status:** done.
+- **What:** Draw each table's Sankey as one diagram instead of one per unit: the original query's index ideas and index sets, the rewrites and candidates, and the rewrites' index ideas and index sets. Where the unit changes, draw a dashed horizontal line across the full width of the diagram. Right above it, at the right edge, put the label `Above the line: ideas` (or `rewrites`); right below it, `Below the line: sets` (or `candidates`). Drop the per-diagram `Unit: ...` captions and the hand-off between diagrams (the last layer that says it went on to the diagram below, and the next diagram's first layer saying what it was sent): the last layer above the line flows straight down into the first layer below it. Keep a visible widening at the seam, so the reader sees where 8 ideas become 21 sets rather than a band that jumps in width (decided by the user, 2026-10-18). The index-rank greedy-search explanation and the per-rewrite counts that now live in the unit captions move to the tooltips and to a note under the diagram, so no text sits inside the flow. Update DESIGN.md's Sankey paragraph to match. Mockup: https://claude.ai/artifact/9XxEZKPDfoXGnAfzxq89JF (option 2).
+- **Answers (from the user, 2026-10-18):**
+  - The widening is the existing merge layer's combinations input (a named input of sets with its own ribbon). No separate trapezoid node.
+  - One width scale for the whole diagram, above and below the line.

@@ -57,7 +57,7 @@ RSpec.describe Quaack::Driver::Report do
     burndown = html[%r{<section id="burndown">.*?</section>}m]
     table = burndown[%r{<table id="burndown-rewrite">.*?</table>}m]
     expect(table).to include("<td>not tested in time, so checked only on the LLM's test data and the real data: 1")
-    sankey = burndown[%r{<svg id="sankey-rewrite-1".*?</svg>}m]
+    sankey = burndown[%r{<svg id="sankey-rewrite".*?</svg>}m]
     expect(sankey).to include("1 not tested in time on made-up data went on, checked only on the LLM's test " \
                               "data and the real data.")
   end

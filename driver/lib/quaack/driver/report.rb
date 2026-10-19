@@ -42,7 +42,7 @@ module Quaack
     #   nothing beat the original (negative-result).
     # - The built indexes (Indexes).
     # - Who proposed what (Accountability).
-    # - The burndown (burndown, Stages), each table under its Sankey diagrams
+    # - The burndown (burndown, Stages), each table under its Sankey diagram
     #   (Sankey), with llm_calls, the driver's own Burndown#llm_calls.
     # - Which LLM provider did what (Providers), from llm: the driver's own
     #   provenance record and its calls by provider, never the enclave's.

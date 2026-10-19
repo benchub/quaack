@@ -186,7 +186,7 @@ Create `~/.quaack/driver.json`:
 
 The driver runs every call as `ssh -T -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 -o ConnectTimeout=30 -- <host> quaacks ...`. BatchMode means ssh never prompts: if your login has expired, the call fails instead of waiting for a password. The keepalives end a session whose network went away after about two minutes, and ConnectTimeout gives up on a host that doesn't answer after 30 seconds. Everything else comes from your `~/.ssh/config`. If you use `ControlMaster`, a master connection can go stale during a long quiet call, such as a 20-minute `rewrite-test`, and the next call through its socket then fails at once. A plain `ssh <host>` goes through that same socket, so it fails the same way, and the keepalive options above don't reach a master that's already running. If calls start failing with `ssh_failed`, close the master with `ssh -O exit <host>`, test without it with `ssh -o ControlMaster=no -o ControlPath=none <host> true`, or set `ControlPersist` to a shorter time.
 
-The driver kills any enclave call that runs longer than an hour. A big schema can need longer, mostly for `index-build`. To raise the limit, set `enclave_timeout_seconds` in `~/.quaack/driver.json` to a positive number of seconds, such as `"enclave_timeout_seconds": 14400` for four hours. `quaack start`, `quaack setup`, and `quaack run` use it. For one run, `quaack run --enclave-timeout-seconds <n>` overrides it, with a plain number of seconds such as `5400` or `90.5`. A call that hits the limit fails with `timeout: the enclave call timed out after 1h00m00s; raise enclave_timeout_seconds ...`. `quaack deploy` keeps its own limits.
+The driver kills any enclave call that runs longer than an hour. To raise the limit, set `enclave_timeout_seconds`, or pass `quaack run --enclave-timeout-seconds <n>` for one run. See [Configuration](docs/configuration.md#enclave_timeout_seconds).
 
 ### 3. Give the driver access to an LLM.
 
@@ -198,51 +198,7 @@ The driver makes every LLM call from your laptop. By default it asks Claude, and
 
 If you're already logged in with `ant`, there's nothing to do. With none of them, `quaack run` fails with `llm_auth` before it touches the jump server. So does an empty `ANTHROPIC_API_KEY`. An empty `ANTHROPIC_AUTH_TOKEN` fails too when `ANTHROPIC_API_KEY` is unset. The first of the two that's set hides everything after it, even when it's empty. Unset the empty one instead.
 
-To change the model, the provider, or where the key comes from, add an `llm` block to `~/.quaack/driver.json`. Every key is optional:
-
-```json
-{
-  "jump_command": "echo jump1.prod.example.com",
-  "llm": {
-    "provider": "anthropic",
-    "model": "claude-opus-5-5",
-    "base_url": "https://llm-gateway.example.com",
-    "api_key_env": "QUAACK_ANTHROPIC_KEY"
-  }
-}
-```
-
-| Key | What it does | Default |
-| --- | --- | --- |
-| `provider` | Which API to call: `anthropic`, `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API, `bedrock` for Claude on AWS Bedrock, or `copilot_cli` for a local Copilot CLI command. | `anthropic` |
-| `model` | The model to ask. Required for `openai_compatible` and `bedrock`. | `claude-opus-5-5` for `anthropic`; `claude-opus-5.5` for `copilot_cli` |
-| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. Not for `copilot_cli`. | The provider's own, or `ANTHROPIC_BASE_URL` for `anthropic`, or `ANTHROPIC_BEDROCK_BASE_URL` for `bedrock`. `openai_compatible` ignores `OPENAI_BASE_URL`. |
-| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. Only for `anthropic` and `openai_compatible`. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
-| `aws_region` | For `bedrock` only: the AWS region to call, such as `us-east-1`. | `AWS_REGION`, `AMAZON_REGION`, `AWS_DEFAULT_REGION`, or your AWS profile's region |
-| `aws_profile` | For `bedrock` only: the AWS profile, in `~/.aws`, whose credentials to use. | The AWS SDK's usual lookup |
-| `command_template` | For `copilot_cli` only: an argv array, run without a shell, with `{prompt_file}` and `{model}` placeholders. `{prompt_dir}` is also available. | A locked-down `copilot` prompt-mode command |
-| `timeout_seconds` | For `copilot_cli` only: a positive number of seconds for each command run. | `600` |
-| `token_limit_param` | For `openai_compatible` only: the name the token limit goes under, `max_completion_tokens` or `max_tokens`. Set `max_tokens` for Ollama. | `max_completion_tokens` |
-
-Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. When `QUAACK_LLM_PROVIDER` switches to a provider other than the file's, the driver ignores the whole `llm` block for that run, though it still checks each value, and still refuses a key that doesn't apply to the file's own provider. A `base_url` or `api_key_env` there is meant for the file's provider, and the new provider's key must never go to it. The model and base URL then come only from `QUAACK_MODEL` and `QUAACK_LLM_BASE_URL`, or the new provider's defaults. So `anthropic` gets `claude-opus-5-5` at the Anthropic API, `copilot_cli` gets `claude-opus-5.5`, and `openai_compatible` and `bedrock` need `QUAACK_MODEL`, or the run exits with 64. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
-
-If `driver.json` itself is bad, `quaack start` and `quaack run` say which file and why, such as `bad_driver_config: /Users/me/.quaack/driver.json: no jump_command` or `bad_driver_config: /Users/me/.quaack/driver.json: not valid JSON (line 3, column 5)`.
-
-#### OpenAI-compatible providers.
-
-With `"provider": "openai_compatible"`, the driver talks to OpenAI's Chat Completions API, through the official `openai` gem, at `base_url`. It sends the key from the variable `api_key_env` names, or from `OPENAI_API_KEY` when it names none, as a bearer token. If that variable is unset or empty, `quaack run` fails with `llm_auth` before it makes any call. Give a `model` too: there's no default.
-
-These were checked against each provider's docs on October 7, 2026, but providers change their models often, so check yours.
-
-| Provider | `base_url` | `api_key_env` | `model`, for example |
-| --- | --- | --- | --- |
-| OpenAI | leave it out | leave it out (`OPENAI_API_KEY`) | `gpt-4.1` |
-| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-3.8-flash` |
-| OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4.1` |
-| Ollama, on your laptop | `http://localhost:11434/v1` | `OLLAMA_API_KEY` | `qwen2.5-coder:32b` |
-
-For example, for Groq:
+To change the model or the provider, add an `llm` block to `~/.quaack/driver.json`. For example, for Groq:
 
 ```json
 {
@@ -256,74 +212,30 @@ For example, for Groq:
 }
 ```
 
-then `export GROQ_API_KEY=...` before `quaack run`. Give the API root as `base_url`, not the full endpoint: the driver adds `/chat/completions` itself, so a `base_url` that ends in it is a usage error. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`. The driver sends its token limit as `max_completion_tokens`, which Ollama ignores, so for Ollama add `"token_limit_param": "max_tokens"` to the block. Without it, a reply from Ollama has no token limit.
+then `export GROQ_API_KEY=...` before `quaack run`. Never put a key itself in the file.
 
-The models are examples. Use one your account can call, and **make it a strong model**: QUAACK asks for careful SQL work, and a small model is mostly a waste of time and tokens.
-
-**Reasoning models need headroom.** A reasoning model, such as OpenAI's `gpt-5` or `o3`, or Gemini's thinking models, spends its token limit on thinking as well as on the reply. QUAACK asks for at most 4000 or 8000 tokens a reply, so a long think can use them all up and leave no reply, and the run stops with `llm_bad_response: the reply stopped for length`. That's why the table's OpenAI example is `gpt-4.1`, which doesn't reason. If you use a reasoning model and see that error, pick a model that reasons less, or not at all.
-
-**Structured output.** At several steps, QUAACK asks for JSON in a fixed shape, and checks every reply. A reply in the wrong shape gets one more try. If the model gets it wrong twice, the run stops with `llm_bad_response`. Strong models rarely do.
-
-> **Your other OpenAI settings stay with OpenAI.** The `openai` gem reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`. The driver sends what they hold only when `base_url` is OpenAI's own (`api.openai.com`), never to Groq, Gemini, or any other provider. It ignores `OPENAI_BASE_URL`: only `base_url`, or `QUAACK_LLM_BASE_URL`, says where requests go.
-
-#### AWS Bedrock.
-
-With `"provider": "bedrock"`, the driver asks Claude on AWS Bedrock, through the `anthropic` gem's Bedrock client, which calls Bedrock's InvokeModel API and signs each request with your AWS credentials. QUAACK stores no credentials. It finds them the way the AWS CLI and SDKs do:
-
-1. A Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`, if it's set. It's sent as a bearer token, and nothing below is looked at.
-2. The profile `aws_profile` names, from `~/.aws/config` and `~/.aws/credentials`: static keys, SSO (run `aws sso login` first), an assumed role, or a `credential_process`.
-3. Otherwise the AWS SDK's own chain: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (with `AWS_SESSION_TOKEN` for temporary ones), the profile `AWS_PROFILE` names or the default one, then a container or EC2 instance role.
-
-Finding none, a profile that can't be loaded, or an empty `AWS_BEARER_TOKEN_BEDROCK` makes `quaack run` fail with `llm_auth` before it touches the jump server. So does a Bedrock API key with `aws_profile` set, since they name different credentials: it's a usage error, exit 64. The credentials are read once, when the run starts, so an SSO session that expires partway through fails that run with `llm_auth`. Log in again, and start a new run.
-
-Give a `model`, since there's no default: Bedrock's model IDs vary by region and by inference profile. Use the ID the Bedrock console shows for your region, such as `anthropic.claude-opus-5-5`, or a cross-region inference profile such as `us.anthropic.claude-opus-5-5`. With no region anywhere, `quaack run` exits with 64. So does an `AWS_REGION`, `AMAZON_REGION`, or `AWS_DEFAULT_REGION` that isn't a region, when there's no `aws_region`. The driver checks the first of them that's set, in that order, since that's the one the AWS SDK uses. If that one is empty, the AWS SDK skips the others, and so does the driver. `base_url` is for a private endpoint, and a Bedrock API key needs no region when there's a `base_url`. With no `base_url` or `QUAACK_LLM_BASE_URL`, the `anthropic` gem sends to `ANTHROPIC_BEDROCK_BASE_URL` when that's set. The driver doesn't check that variable, and still needs a region with it.
+To use several providers in one run, put an `llms` list in place of the `llm` block. Each entry takes the same keys, plus a `name`. `llm_routing` says how steps share them:
 
 ```json
 {
   "jump_command": "echo jump1.prod.example.com",
-  "llm": {
-    "provider": "bedrock",
-    "model": "us.anthropic.claude-opus-5-5",
-    "aws_region": "us-east-1",
-    "aws_profile": "bedrock"
+  "llms": [
+    { "name": "opus", "provider": "anthropic" },
+    { "name": "groq", "provider": "openai_compatible",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEY", "model": "llama-3.3-70b-versatile" }
+  ],
+  "llm_routing": {
+    "mode": "round_robin",
+    "counterexample_pairing": "prefer_different",
+    "steps": { "llm-rewrites": { "fan_out": true } }
   }
 }
 ```
 
-Your AWS identity needs `bedrock:InvokeModel` on the model, and your account needs access to the model in that region. If AWS refuses either, the run fails with `llm_auth`.
+With this, units take turns between `opus` and `groq`, llm-rewrites asks both, and llm-counterexamples prefers the provider that didn't write the rewrite. `QUAACK_LLM=groq` keeps only `groq` for one run.
 
-#### GitHub Copilot CLI.
-
-With `"provider": "copilot_cli"`, the driver runs a local command once for each LLM ask and reads the answer from stdout. The default command runs `copilot` from `PATH` in prompt mode with `--model`, `-p`, and `-s`, and writes the QUAACK prompt to a private 0600 file in an otherwise empty temporary current directory. That directory is removed after the ask.
-
-The default command locks Copilot down with `--disable-builtin-mcps`, `--no-ask-user`, `--no-custom-instructions`, `--disallow-temp-dir`, `--available-tools=view`, `--allow-tool=read({prompt_dir})`, and denials for shell, write, and URL tools. The prompt file is inside `{prompt_dir}`, which is also the command's current directory, so Copilot can still read that file through the explicit `read({prompt_dir})` allowance. The child process also unsets `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`.
-
-> **Danger: global Copilot instructions can break QUAACK replies.** QUAACK often needs bare JSON. Global custom instructions can change the reply's format, such as pushing prose or code fences around the JSON. That will usually end the run with `llm_bad_response`, and could be worse if it changes the model's behavior in a subtler way. The default command passes `--no-custom-instructions`, and the Copilot CLI command reference says that flag disables `AGENTS.md` and related files and always takes priority. The docs do **not** explicitly say whether it covers user-level `~/.copilot/copilot-instructions.md` and `~/.copilot/instructions/**`, so the flag may or may not be enough. Keep global instructions out of the way for QUAACK, or run a canary that proves they don't reach this provider before relying on it for production runs.
-
-```json
-{
-  "jump_command": "echo jump1.prod.example.com",
-  "llm": {
-    "provider": "copilot_cli",
-    "timeout_seconds": 900
-  }
-}
-```
-
-To use another wrapper, set `command_template` as an argv array. It must include `{prompt_file}` and `{model}`:
-
-```json
-{
-  "llm": {
-    "provider": "copilot_cli",
-    "command_template": ["/usr/local/bin/copilot", "--model={model}", "-s", "-p", "Please follow my prompt in {prompt_file}"],
-    "timeout_seconds": 600
-  }
-}
-```
-
-The CLI cannot enforce JSON schemas itself, so QUAACK includes the schema in the prompt file and checks the answer. A missing command, timeout, or non-zero exit is `llm_unavailable`; a distinctive not-logged-in message is `llm_auth`; empty stdout is `llm_bad_response`.
-
+[Configuration](docs/configuration.md) describes every key of `driver.json`: each provider's options, environment overrides, routing, fan-out, adversarial pairing, and credentials. It also covers OpenAI-compatible providers, AWS Bedrock, and the GitHub Copilot CLI in detail.
 
 ### 4. Install the enclave script on the jump server.
 
@@ -373,15 +285,7 @@ Re-run `quaack deploy` whenever you update your checkout. `quaack start`, `quaac
 }
 ```
 
-| Key | What it does | Without it |
-| --- | --- | --- |
-| `memory_command` | Prints production's instance memory, such as `64GB`. `{host}` is production's host. | Memory is recorded as unknown. |
-| `run_server_command` | Builds or finds the run server, and prints `{"host": ..., "port": ..., "racetrack_db": ..., "arena_db": ...}`. `{server}` is the production server name and `{run}` the run ID. It gets an hour. | You pass the run server as flags to `quaack setup` or `quaack run`. |
-| `destroy_command` | Destroys the run server at the end of a run. It must succeed if the server is already gone. | QUAACK reminds you to destroy it yourself. |
-| `pii_columns` | `schema.table.column` patterns for columns that hold personal data. `*` matches within one part. Case is ignored. | Only the automatic rule applies: any text column with 50 or more distinct values counts as personal data. |
-| `cardinality_threshold` | Moves that line of 50. | 50. |
-
-Personal-data columns never have their common values or how often those values appear sent to the LLM. Only columns with fewer distinct values than the threshold, like `status` or `country`, ever have their values sent.
+See [Configuration](docs/configuration.md#configjson-on-the-jump-server) for every key, including `extra_dump_schemas` and `baseline_cap_seconds`.
 
 ## Tuning a query: a walkthrough.
 
