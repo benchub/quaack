@@ -31,7 +31,7 @@ module Quaack
     # built names index_build already holds.
     module IndexShare
       PER_CANDIDATE = 3
-      TOTAL = 12
+      TOTAL = 42
       RANKED = /\A(?<search>[^:]+):(?:top:[1-9]\d*|combination)\z/
 
       module_function
