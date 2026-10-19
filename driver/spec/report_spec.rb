@@ -225,7 +225,8 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       let(:style) { html[%r{<style>(.*?)</style>}m, 1] }
-      let(:wide) { style[/@media screen and \(min-width: 64rem\) \{(.*?)\n  \}\n/m, 1].to_s }
+      let(:breakpoint) { style[/@media screen and \(min-width: ([\d.]+rem)\) \{/, 1].to_s }
+      let(:wide) { style[/@media screen and \(min-width: [\d.]+rem\) \{(.*?)\n  \}\n/m, 1].to_s }
 
       # A rule's declarations in css, as {property => value}.
       def rule(css, selector)
@@ -243,7 +244,7 @@ RSpec.describe Quaack::Driver::Report do
 
       # Review of 20261019-1: printed in landscape, the page kept the wide margin for the hidden contents.
       it "keeps the wide layout to the screen, so print gets no margin for the hidden contents" do
-        expect(style).to include("@media screen and (min-width: 64rem) {")
+        expect(style).to match(/@media screen and \(min-width: [\d.]+rem\) \{/)
         expect(style).not_to match(/@media \(min-width/)
       end
 
@@ -260,6 +261,15 @@ RSpec.describe Quaack::Driver::Report do
         expect(rem(toc["width"])).to be_between(10, 16)
         expect(rem(body["margin-left"])).to be > rem(toc["left"]) + rem(toc["width"])
         expect(rem(body["margin-left"])).to be <= rem(toc["left"]) + rem(toc["width"]) + 2
+      end
+
+      # Task 20261019-2: just above a 64rem breakpoint, the margin left the prose narrower than the centered layout.
+      it "switches to the margin only once the window fits the margin, the padding, and the full readable width" do
+        padding = rule(style, "body")["padding"].to_s.split.map { |v| v == "0" ? 0.0 : rem(v) }
+        horizontal = padding.size == 1 ? padding[0] * 2 : padding[1] + padding.fetch(3, padding[1])
+        readable = rem(rule(wide, "p, ul, svg.sankey")["max-width"].to_s)
+        fits = rem(rule(wide, "body")["margin-left"].to_s) + horizontal + readable
+        expect(rem(breakpoint)).to be_between(fits, fits + 2)
       end
 
       it "keeps the prose and the diagrams to a readable width, but not the tables or the SQL" do
