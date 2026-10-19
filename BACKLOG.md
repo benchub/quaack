@@ -705,15 +705,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** index-build, index-share.
 - **Status:** todo
 
-### 20261019-2. Report: the fixed-TOC layout starts too early.
-
-Since 20261019-1, `@media screen and (min-width: 64rem)` puts the TOC in a fixed 15rem left margin. Just above 64rem, that drops the content from about 61rem wide to about 46rem, narrower than the centered layout below the breakpoint. Raise the breakpoint to where the margin plus the 62rem readable width fit (about 80rem; the old one was 88rem), keeping the fixed 15rem margin and the screen-only query.
-
-- **Depends on:** None.
-- **Came from:** The second review of 20261019-1, 2026-10-19.
-- **Design:** report.
-- **Status:** todo
-
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:

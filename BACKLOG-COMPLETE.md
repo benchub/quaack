@@ -12491,3 +12491,13 @@ Driver only; no enclave change.
 - **Design:** report.
 - **Landed:** 2026-10-19 (task/20261019-1; driver). TOC has a 1px `--rule` border; "Generated on" line under the title, UTC text upgraded by the report's one inline script to the reader's locale (`Report.render(generated_at:)`); on screens at least 64rem wide the TOC sits fixed in a 13rem column, the body loses its 62rem cap (prose, lists and diagrams keep it); burndown's "Sankey diagram" wording is gone and a note after the diagrams defines index ideas, index sets, rewrites and candidates. The breakpoint narrows the content between 64 and ~79rem; see 20261019-2.
 - **Status:** done
+
+### 20261019-2. Report: the fixed-TOC layout starts too early.
+
+Since 20261019-1, `@media screen and (min-width: 64rem)` puts the TOC in a fixed 15rem left margin. Just above 64rem, that drops the content from about 61rem wide to about 46rem, narrower than the centered layout below the breakpoint. Raise the breakpoint to where the margin plus the 62rem readable width fit (about 80rem; the old one was 88rem), keeping the fixed 15rem margin and the screen-only query.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261019-1, 2026-10-19.
+- **Design:** report.
+- **Landed:** 2026-10-19 (task/20261019-2; driver). The breakpoint is 80rem (15rem margin + 1.5rem padding each side + 62rem); a spec derives that sum from the CSS.
+- **Status:** done
