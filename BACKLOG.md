@@ -710,31 +710,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 
 ### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite. Done, see BACKLOG-COMPLETE.md.
 
-### 20261019-4. redact-rewrite: LIMIT, OFFSET, and EXISTS (SELECT 1) literals, and CTE columns.
-
-From the review of 20261019-3 (minor), made urgent by the user's real run on 2026-10-20: `redact_rewrite_no_match` at the `1` of `EXISTS (SELECT 1 FROM ... )`. The run's original has it as a placeholder (redact numbers it, which is why `$15` is missing from the user's sample), so the rewrite's `SELECT 1` has to take it, but the matcher finds no column comparison for it and refuses. The same holds for a `LIMIT` or `OFFSET` literal.
-
-Decisions (the user, 2026-10-20: "I don't want to replace those constants by hand"): a literal that has no comparison to a column gets a structural key instead: the clause it sits in (an EXISTS or other SubLink's target list, a LIMIT count, an OFFSET), with the same path rules as now, and it matches the original's placeholder with the same key. The key never reads values; the value tie-break of 20261020-1 still applies among candidates with the same key (two EXISTS that both say `SELECT 1` hold equal values, so the lowest-numbered pick binds the same value). Where the structure doesn't pin one placeholder (several EXISTS with different values and no value match), refuse as ambiguous with candidates. Other constants with no column and no such clause (a target-list constant of the top SELECT, a function argument with no column) stay refused for now; say so in DESIGN.md.
-
-Also, if cheap: a column reached through a CTE's name (`WITH x AS (SELECT * FROM orders ...) ... WHERE x.user_id = 5`) resolves to a table `x` and finds no match; resolve a CTE that selects `*` from one table to that table. If it isn't cheap, split it into a new task.
-
-Test with a synthetic copy of the user's query (the EXISTS shape, with an original where redact numbered the `1`) and with a LIMIT/OFFSET ORM query. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261019-3, 20261020-1.
-- **Came from:** The review of 20261019-3, and the user's run, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Open questions:** None.
-- **Status:** todo
-
-### 20261020-2. redact-rewrite: resolve a column reached through a CTE's name.
-
-Split from 20261019-4. In `WITH x AS (SELECT * FROM orders ...) ... WHERE x.user_id = 5`, the column resolves to a table `x` and matches no original comparison on `orders`. Resolve a CTE that selects `*` from one table to that table. Not built in 20261019-4: scopes come from the SELECTs above the literal, and the CTE's WITH clause sits on an outer SELECT, so it needs its own name map and tests.
-
-- **Depends on:** 20261019-4.
-- **Came from:** 20261019-4, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Status:** todo
-
 ### 20261019-5. redact-rewrite: better errors for unparseable and multi-statement input, and tests for surviving mutations.
 
 From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds two statements, comes back as `internal_error`; give it a rule that says so (and a `parse_error` or one-statement rule), without echoing the statement. Also add tests for mutations that survive: `reverse_each` changed to `each` in alias scope lookup (alias shadowing across scopes), removing `BoolExpr` from `BOUNDARIES`, the byte-to-character position conversion (a multibyte statement), and `input.keys == ["sql"]` loosened to `true` (an extra key is refused as `bad_input`). Enclave change; it goes on "Unreleased enclave changes".
