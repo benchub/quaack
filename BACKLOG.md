@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261020-1
+
 
 ## How this file works.
 
@@ -739,7 +741,7 @@ Test with a synthetic copy of the user's query (same shape, made-up numbers): th
 - **Came from:** The user, 2026-10-20.
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Open questions:** None.
-- **Status:** todo
+- **Status:** in review. Built on its branch: the value tie-break, candidates on an ambiguous refusal, and an IN list of another length refused as `redact_rewrite_no_match`.
 
 ## New transform rules (2026-10-18).
 

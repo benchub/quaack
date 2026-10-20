@@ -48,6 +48,10 @@ module Quaack
         # A redact-rewrite refusal's position (DESIGN.md's redact-rewrite): the
         # 1-based character position of the operator's literal, never its value.
         POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous].freeze
+        # A redact_rewrite_ambiguous refusal's candidates (20261020-1): the
+        # $n numbers the literal could take, 2 to 64 ascending positive Integers.
+        CANDIDATES_RULE = "redact_rewrite_ambiguous"
+        CANDIDATES_SIZES = (2..64)
         TABLES_SIZES = (1..64)
         # One part of a table's name, as the catalog's quote_ident writes it:
         # a bare lowercase name, or a quoted one of printable characters (no
@@ -62,7 +66,8 @@ module Quaack
           rule = shaped(error["rule"], RULE) || "unexpected_output"
           { rule:, step: shaped(error["step"], STEP), sqlstate: shaped(error["sqlstate"], SQLSTATE),
             reason: reason(rule, error["reason"]), function: shaped(error["function"], FUNCTION),
-            position: position(rule, error["position"]), **named(rule, error) }
+            position: position(rule, error["position"]),
+            candidates: (candidates(error["candidates"]) if rule == CANDIDATES_RULE), **named(rule, error) }
         end
 
         # The fields only one rule's error line has.
@@ -76,6 +81,12 @@ module Quaack
 
         def position(rule, value)
           value if POSITION_RULES.include?(rule) && value.instance_of?(Integer) && value.positive?
+        end
+
+        def candidates(value)
+          return unless value.instance_of?(Array) && CANDIDATES_SIZES.cover?(value.size)
+
+          value if value.all? { it.instance_of?(Integer) && it.positive? } && value.each_cons(2).all? { |a, b| a < b }
         end
 
         def reason(rule, reason) = (reason if REASON_RULES.include?(rule) && REASONS.include?(reason))

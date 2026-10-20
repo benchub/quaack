@@ -15,7 +15,9 @@ module Quaack
     # enclave call's stdin: never on a command line, to a file, into the run
     # record, or into any message. It takes no --file or other argument
     # that could hold it. A failure prints only the enclave's rule, and for
-    # a literal it can't place, the literal's position. It needs
+    # a literal it can't place, the literal's position and, when it's
+    # ambiguous, the candidate $n numbers. A failure prints nothing on
+    # stdout, so a redirect's file is left empty. It needs
     # CLI::RUN_FILES loaded.
     class RedactRewriteCommand
       # Far past any one statement, and within what the enclave reads.

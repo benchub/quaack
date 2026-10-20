@@ -72,7 +72,8 @@ module Quaack
                           "run_server_locale_mismatch" => "The racetrack database's" }.freeze
 
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major settings position].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients tables parser_major settings position
+                       candidates].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
@@ -85,13 +86,13 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, tables: nil, parser_major: nil, settings: nil, position: nil,
+                     clients: nil, tables: nil, parser_major: nil, settings: nil, position: nil, candidates: nil,
                      exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
         @timeout_seconds = timeout_seconds
         @rule = rule
         @line = { step:, sqlstate:, reason:, function:, column:, clients:, tables:, parser_major:, settings:,
-                  position: }.freeze
+                  position:, candidates: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -198,7 +199,17 @@ module Quaack
       def facts
         return reason_message(reason) if Protocol::UnreadableReasons::RULES.include?(rule) && reason
 
-        named_schema || function || named_run_server || ("The literal at character #{position}" if position)
+        named_schema || function || named_run_server || (literal if position)
+      end
+
+      # The literal a redact-rewrite refusal named, with the placeholders
+      # it could take when it's ambiguous.
+      def literal
+        return "The literal at character #{position}" unless candidates
+
+        names = candidates.map { "$#{it}" }
+        "The literal at character #{position} could take #{names[0..-2].join(", ")}#{"," if names.size > 2} " \
+          "or #{names.last}"
       end
 
       # The other clients, or what doesn't match production, that a
@@ -246,7 +257,7 @@ module Quaack
       def named_details
         [("column #{described_column}" if column), ("clients #{described_clients}" if clients),
          ("tables #{described_tables}" if tables), ("settings #{settings.join(", ")}" if settings),
-         ("position #{position}" if position)]
+         ("position #{position}" if position), ("candidates #{candidates.join(", ")}" if candidates)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]

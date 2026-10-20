@@ -163,6 +163,36 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
     end
   end
 
+  describe "a redact-rewrite refusal's candidates (20261020-1)" do
+    def candidates_line(rule, candidates)
+      error = Class.new(StandardError) do
+        define_method(:rule) { rule }
+        define_method(:position) { 7 }
+        define_method(:candidates) { candidates }
+      end.new
+      described_class.to_egress(error, step: "redact-rewrite")
+    end
+
+    it "sends ascending placeholder numbers on an ambiguous refusal" do
+      expect(candidates_line("redact_rewrite_ambiguous", [1, 2, 36]))
+        .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_ambiguous", position: 7, candidates: [1, 2, 36]))
+    end
+
+    it "drops candidates on any other rule" do
+      expect(candidates_line("redact_rewrite_no_match", [1, 2]))
+        .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_no_match", position: 7))
+    end
+
+    [["a planted value", [1, "SENTINEL-candidate-77"]], ["one number", [3]], ["out of order", [2, 1]],
+     ["repeated", [2, 2]], ["zero", [0, 1]], ["too many", (1..65).to_a], ["not an Array", "1, 2"]].each do |what, value|
+      it "drops candidates that are #{what}" do
+        out = candidates_line("redact_rewrite_ambiguous", value)
+        expect(out).to eq(line(step: "redact-rewrite", rule: "redact_rewrite_ambiguous", position: 7))
+        expect(out).not_to include("SENTINEL")
+      end
+    end
+  end
+
   let(:filter) { described_class }
   # ERROR_SENTINEL is fixed, since the fakes above are built before any
   # example runs, and it's there to scan for alongside the made ones.

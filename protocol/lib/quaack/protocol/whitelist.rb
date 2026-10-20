@@ -57,8 +57,11 @@ module Quaack
       # redact_rewrite_no_match or redact_rewrite_ambiguous refusal: the
       # 1-based character position of the operator's literal that has no
       # placeholder, or more than one, a positive Integer, never the
-      # literal.
-      error: %i[step rule sqlstate reason function clients column tables parser_major settings position].freeze,
+      # literal. candidates is only on a redact_rewrite_ambiguous refusal:
+      # the $n numbers the literal could take, 2 to 64 ascending positive
+      # Integers. They're placeholders, never values.
+      error: %i[step rule sqlstate reason function clients column tables parser_major settings position
+                candidates].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

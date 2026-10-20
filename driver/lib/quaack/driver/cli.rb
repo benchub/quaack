@@ -14,7 +14,9 @@ module Quaack
               "[--captured-at <time>]\n       quaack deploy --host <jump server>\n       " \
               "quaack setup --run <ID> #{SetupCommand::USAGE}\n       " \
               "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] [--enclave-timeout-seconds <n>] " \
-              "#{SetupCommand::USAGE}\n       quaack redact-rewrite --run <ID> < rewrite.sql\n".freeze
+              "#{SetupCommand::USAGE}\n       " \
+              "quaack redact-rewrite --run <ID> < rewrite.sql > placeholders.sql\n         " \
+              "(a failed run leaves the redirect's file empty)\n".freeze
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
       START_OPTIONAL = %w[--port --database --captured-at].freeze

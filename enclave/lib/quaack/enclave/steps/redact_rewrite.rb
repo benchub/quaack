@@ -13,20 +13,23 @@ module Quaack
       #
       # stdin is one JSON object, {"sql": "<one SQL statement>"}, which the
       # driver sends over ssh. Any other shape is refused as bad_input. It
-      # reads the run's redacted_query, never the placeholder map's values,
-      # writes nothing to the store, and connects to no database.
+      # reads the run's redacted_query, and its placeholder map only to break
+      # a tie by value (RewriteRedaction.tied). It writes nothing to the
+      # store and connects to no database.
       #
       # It sends one redacted_rewrite with the SQL, which holds only
       # placeholders. A literal with no match, or more than one, is refused
-      # as usage (Refused), with its rule and position and never its value.
+      # as usage (Refused), with its rule and position and never its value,
+      # and for more than one, the candidates' $n numbers.
       module RedactRewrite
         # RewriteRedaction::Refusal as the CLI's usage refusal, so it exits as
         # the other usage errors do. ErrorFilter sends its position.
         class Refused < CLI::Refused
-          attr_reader :position
+          attr_reader :position, :candidates
 
-          def initialize(rule, position)
+          def initialize(rule, position, candidates)
             @position = position
+            @candidates = candidates
             super(rule)
           end
         end
@@ -37,9 +40,10 @@ module Quaack
           sql = input["sql"] if input.keys == ["sql"]
           raise CLI::Refused, "bad_input" unless sql.is_a?(String)
 
-          [{ type: :redacted_rewrite, sql: RewriteRedaction.redact(sql, store.read("redacted_query")) }]
+          [{ type: :redacted_rewrite, sql: RewriteRedaction.redact(sql, store.read("redacted_query"),
+                                                                   Redaction.placeholder_map(store)) }]
         rescue RewriteRedaction::Refusal => e
-          raise Refused.new(e.rule, e.position), cause: nil
+          raise Refused.new(e.rule, e.position, e.candidates), cause: nil
         end
       end
     end
