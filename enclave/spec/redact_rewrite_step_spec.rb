@@ -48,6 +48,35 @@ RSpec.describe "quaacks redact-rewrite" do
     expect([outcome.stdout, outcome.stderr].join).not_to include(sentinel)
   end
 
+  context "with two placeholders in equal comparisons (20261020-1)" do
+    let(:store) do
+      Quaack::Enclave::Store.create(base: quaacks.store_base).tap do |store|
+        store.write("redacted_query", "SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id " \
+                                      "AND o.note <> $1 WHERE o.note <> $2")
+        store.write("placeholder_map", "$1" => { "value" => "other-#{sentinel}", "type" => "unknown" },
+                                       "$2" => { "value" => sentinel, "type" => "unknown" })
+      end
+    end
+
+    it "takes the one whose value the rewrite's literal has, and never sends a value" do
+      outcome = redact_rewrite("SELECT o.id FROM orders o WHERE o.note != '#{sentinel}'")
+      expect(lines(outcome).first).to eq("type" => "redacted_rewrite",
+                                         "sql" => "SELECT o.id FROM orders o WHERE o.note <> $2")
+      expect([outcome.stdout, outcome.stderr].join).not_to include(sentinel)
+    end
+
+    it "refuses a value neither holds, naming the candidates and never a value" do
+      sql = "SELECT o.id FROM orders o WHERE o.note <> 'changed-#{sentinel}'"
+      outcome = redact_rewrite(sql)
+      expect(outcome.status.exitstatus).to eq(64)
+      expect(lines(outcome)).to eq([{ "type" => "error", "step" => "redact-rewrite",
+                                      "rule" => "redact_rewrite_ambiguous", "position" => sql.index("'") + 1,
+                                      "candidates" => [1, 2] }])
+      expect([outcome.stdout, outcome.stderr].join).not_to include(sentinel)
+      expect(entries).to eq(%w[placeholder_map.json redacted_query.json store_format.json])
+    end
+  end
+
   it "refuses input that isn't one {\"sql\": String} object" do
     outcome = quaacks.run("redact-rewrite", "--run", store.run_id, stdin: JSON.generate("sql" => 1))
     expect([outcome.status.exitstatus, lines(outcome)])

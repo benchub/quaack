@@ -172,6 +172,15 @@ module Quaack
       # Raises Error as query does.
       def numbers(parse) = Query.new(parse).numbers
 
+      # Each constant numbers gives, by location, as the placeholder map's
+      # entry for it would be: {"value", "type"}. Value-class, so it's for
+      # use inside the enclave only (DESIGN.md's redact-rewrite).
+      def literals(parse)
+        query = Query.new(parse)
+        entries = query.placeholders.to_h { [it.number, { "value" => it.value, "type" => it.type }] }
+        query.numbers.transform_values { entries.fetch(it) }
+      end
+
       # explain is the parsed JSON of EXPLAIN (FORMAT JSON), with or without
       # ANALYZE. placeholder_map is RedactedQuery#placeholder_map, or what
       # the store gives back.

@@ -29,27 +29,35 @@ module Quaack
     # matching the same column of any table.
     #
     # A rewrite's literal takes the placeholder whose comparisons alone
-    # match its key. It's refused (Refusal) when none does,
-    # redact_rewrite_no_match, as for a literal with no column context such
-    # as a LIMIT or EXISTS's SELECT 1, or when more than one placeholder
-    # does, redact_rewrite_ambiguous. The constants Redaction keeps as
-    # written, such as a positional ORDER BY, stay as written. Values are
-    # never looked at, and no placeholder is ever made up.
+    # match its key. When several do, the run's placeholder map breaks the
+    # tie (20261020-1): the lowest of those whose original literal has the
+    # rewrite's text and type, since each binds the same value. It's
+    # refused (Refusal) when none matches, redact_rewrite_no_match, as for
+    # a literal with no column context such as a LIMIT or EXISTS's SELECT
+    # 1, or when the values don't break the tie, redact_rewrite_ambiguous,
+    # with the candidates' numbers. An IN list member matches only in a
+    # list of the same length (Comparison::Key#size). The constants
+    # Redaction keeps as written, such as a positional ORDER BY, stay as
+    # written. Values are compared only in the enclave and never go out,
+    # and no placeholder is ever made up.
     #
     # The result is checked: it parses, and Redaction finds no literal left
     # in it, so none of the run's literals can be there.
     #
     # Trust boundary: the rewrite holds real literals. A Refusal names its
-    # rule and the literal's 1-based character position, never the SQL or a
-    # value, and has no cause.
+    # rule, the literal's 1-based character position, and for an ambiguous
+    # one the candidate $n numbers, never the SQL or a value, and has no cause.
     module RewriteRedaction
       class Refusal < StandardError
-        attr_reader :rule, :position
+        attr_reader :rule, :position, :candidates
 
-        def initialize(rule, position)
+        # candidates: the $n numbers an ambiguous literal could take, or nil.
+        def initialize(rule, position, candidates = nil)
           @rule = rule
           @position = position
-          super("#{rule} at character #{position}")
+          @candidates = candidates
+          super(["#{rule} at character #{position}", candidates&.map { "$#{it}" }&.join(", ")]
+            .compact.join(", candidates "))
         end
       end
 
@@ -60,12 +68,19 @@ module Quaack
 
       module_function
 
-      def redact(sql, redacted_query)
+      # placeholder_map is the run's (Redaction.placeholder_map), read only
+      # to break a tie between placeholders whose comparisons all match.
+      def redact(sql, redacted_query, placeholder_map = {})
         parse = PgQuery.parse(sql)
+        values = Redaction.literals(parse)
         originals = slots(PgQuery.parse(redacted_query).tree, &:param_ref)
-        literals(parse).each { |slot| slot.node.param_ref = PgQuery::ParamRef.new(number: number(slot, originals, sql)) }
+        literals(parse).each { place(it, number(it, originals, sql, values.fetch(location(it)), placeholder_map)) }
         checked(Deparse.faithfully(parse.tree))
       end
+
+      def location(slot) = slot.node.a_const.location
+
+      def place(slot, number) = slot.node.param_ref = PgQuery::ParamRef.new(number:)
 
       # The rewrite's constants that Redaction would replace, as Slots.
       def literals(parse)
@@ -74,14 +89,22 @@ module Quaack
       end
 
       # The placeholder number for slot, or raises Refusal.
-      def number(slot, originals, sql)
+      def number(slot, originals, sql, value, placeholder_map)
         numbers = matching(slot, originals)
         return numbers.first if numbers.size == 1
 
         at = position(sql, slot.node.a_const.location)
         raise Refusal.new("redact_rewrite_no_match", at), cause: nil if numbers.empty?
 
-        raise Refusal.new("redact_rewrite_ambiguous", at), cause: nil
+        tied(numbers, value, placeholder_map) or
+          raise Refusal.new("redact_rewrite_ambiguous", at, numbers.sort), cause: nil
+      end
+
+      # Of several matching numbers, the lowest whose original literal is
+      # value (the same text and type), or nil for none. Each such number
+      # binds the same value, so which one is taken doesn't change the result.
+      def tied(numbers, value, placeholder_map)
+        numbers.select { placeholder_map["$#{it}"] == value }.min
       end
 
       # The numbers of the originals' placeholders whose comparisons match slot's.

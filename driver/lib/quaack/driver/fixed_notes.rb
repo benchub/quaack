@@ -39,10 +39,12 @@ module Quaack
 
         # redact-rewrite: an operator's rewrite with real literals.
         "redact_rewrite_no_match" => "It has no comparison in the original query to take a placeholder from: " \
-                                     "the same column, operator, side, and IN-list slot. Write its $n by " \
+                                     "the same column, operator, side, and IN-list slot, in an IN list " \
+                                     "of the same length. Write its $n by " \
                                      "hand, or write the comparison as the original does, then {next}.",
         "redact_rewrite_ambiguous" => "It sits in a comparison that more than one of the original query's " \
-                                      "placeholders sits in, so QUAACK can't tell which it is. Write its $n " \
+                                      "placeholders sits in, and none of them holds its value, so QUAACK " \
+                                      "can't tell which it is. Write its $n " \
                                       "by hand, then {next}.",
 
         # intake: quaack start's flags and files.

@@ -9,7 +9,10 @@ module Quaack
       # there): the innermost A_Expr or FuncCall above it, within one SELECT
       # and outside AND, OR, and NOT, whose other operands name a column.
       module Comparison
-        Key = Data.define(:operator, :operand, :path, :columns)
+        # size is the length of the list the literal's operand is, for an IN
+        # list or ARRAY[...], or nil: a list of another length doesn't match,
+        # since matching by slot would bind the wrong members.
+        Key = Data.define(:operator, :operand, :path, :columns, :size)
 
         # Where the search for a literal's comparison stops.
         BOUNDARIES = [PgQuery::SelectStmt, PgQuery::BoolExpr, PgQuery::SubLink].freeze
@@ -29,7 +32,7 @@ module Quaack
 
         def match?(mine, theirs)
           mine && theirs && mine.operator == theirs.operator && mine.operand == theirs.operand &&
-            mine.path == theirs.path && columns?(mine.columns, theirs.columns)
+            mine.path == theirs.path && mine.size == theirs.size && columns?(mine.columns, theirs.columns)
         end
 
         # The same columns, in order, a column with no table matching any table's.
@@ -59,7 +62,13 @@ module Quaack
           return unless operator
 
           columns = columns(others, scopes(above))
-          Key.new(operator:, operand:, path:, columns:) unless columns.empty?
+          Key.new(operator:, operand:, path:, columns:, size: size(message, *operand)) unless columns.empty?
+        end
+
+        # The length of the list at message's field, or nil if it isn't one.
+        def size(message, field, index)
+          node = field == "args" ? message.args[index] : message.public_send(field)
+          (node.list&.items || node.a_array_expr&.elements)&.size
         end
 
         # [operator, the other operands], or nil when message isn't an

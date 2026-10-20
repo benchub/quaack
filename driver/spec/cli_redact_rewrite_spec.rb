@@ -84,6 +84,24 @@ RSpec.describe "quaack redact-rewrite" do
     end
   end
 
+  context "when the enclave finds a literal ambiguous (20261020-1)" do
+    let(:failure) do
+      Quaack::Driver::EnclaveError.new(subcommand: "redact-rewrite", rule: "redact_rewrite_ambiguous",
+                                       step: "redact-rewrite", position: 42, candidates: [1, 2, 36], exit_status: 64)
+    end
+
+    it "names the candidate placeholders, and never the literal" do
+      expect(cli.run(["redact-rewrite", "--run", run_id])).to eq(1)
+      expect(stderr.string).to include("The literal at character 42 could take $1, $2, or $36")
+      expect(stderr.string).not_to include(sentinel)
+    end
+  end
+
+  it "says in its usage that a failed run leaves the redirect's file empty" do
+    expect(cli.run(["redact-rewrite"])).to eq(64)
+    expect(stderr.string).to include("a failed run leaves the redirect's file empty")
+  end
+
   it "takes no --file or other argument that could hold the statement" do
     expect(cli.run(["redact-rewrite", "--run", run_id, "--file", "x.sql"])).to eq(64)
     expect(transport.calls).to eq([])
@@ -110,5 +128,13 @@ RSpec.describe "Transport::ErrorFields for redact-rewrite" do
     expect(fields("rule" => "redact_rewrite_ambiguous", "position" => 7)[:position]).to eq(7)
     expect(fields("rule" => "redact_rewrite_no_match", "position" => "7")[:position]).to be_nil
     expect(fields("rule" => "bad_input", "position" => 7)[:position]).to be_nil
+  end
+
+  it "keeps ascending positive Integer candidates only on an ambiguous refusal" do
+    expect(fields("rule" => "redact_rewrite_ambiguous", "candidates" => [1, 36])[:candidates]).to eq([1, 36])
+    expect(fields("rule" => "redact_rewrite_no_match", "candidates" => [1, 36])[:candidates]).to be_nil
+    [[1, "SENTINEL-x"], [3], [2, 1], [0, 1], "1, 2", (1..65).to_a].each do |bad|
+      expect(fields("rule" => "redact_rewrite_ambiguous", "candidates" => bad)[:candidates]).to be_nil
+    end
   end
 end
