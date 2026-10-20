@@ -45,6 +45,10 @@ These cases are unsupported in v1:
 
 A `DISTINCT` or `GROUP BY` makes Postgres plan the subquery on its own and remove its duplicates first, which often means reading all of its rows. Without it, Postgres can merge the subquery into the outer query as a semi-join. A semi-join stops at the first match for each outer row, and it can find matches through an index. Postgres can still remove the duplicates first when that's cheaper, so it only gains plans to choose from. An `ORDER BY` in such a subquery sorts rows that no reader reads in order, and it also keeps Postgres from merging the subquery into the outer query. A `UNION` already removes duplicates, so a `DISTINCT` in one of its arms removes some of them twice.
 
+## Why Postgres doesn't do this itself.
+
+The planner plans a `DISTINCT`, a `GROUP BY`, or an `ORDER BY` in a subquery as written. It doesn't check whether the query that reads the subquery cares about duplicates or order. A subquery with those clauses can't be merged into the query around it, so the planner can't flatten the `IN` into a plain semi-join over the table. Removing the clauses needs proof that the reader compares values the same way the `DISTINCT` does, which this rule takes from the catalog.
+
 ## What it rests on.
 
 The rule makes no assumption. Its output returns the same rows as its input, on any data that the schema allows. It reads each column's type and collation from the catalog.

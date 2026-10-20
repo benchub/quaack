@@ -20,6 +20,10 @@ The rule refuses an `IN` under `OR` or `NOT`, in a select list, or in a `HAVING`
 
 The subquery reads the same table the outer query already reads, only to filter it and hand back its key. Postgres then has to scan that table twice and match the two copies up. Because the key is unique, each outer row matches at most one inner row, and that row is the outer row itself. So the inner copy's filters can move straight onto the outer table, and the second scan goes away. Whatever the subquery checked in other tables stays as an `EXISTS`, which Postgres can stop at the first match.
 
+## Why Postgres doesn't do this itself.
+
+Postgres 17 turns the `IN` into a semi-join between the two reads of the table, but it keeps both reads. It doesn't see that the semi-join on a unique, not-null key matches each outer row only with itself. Postgres 18 removes some self-joins on a unique key (`enable_self_join_elimination`), so it plans the plainest form, `t.id IN (SELECT t2.id FROM t t2 WHERE P)`, as the rewrite does, and plan-pruning drops the rewrite there. It doesn't handle every case this rule does, such as the subqueries of `UNION ALL` arms.
+
 ## What it rests on.
 
 The rule needs `k` to be unique and not null. The rule applies only when it can prove this. It states the catalog facts that it relies on as assumptions. assumption-check checks these assumptions again, as it checks all other assumptions.

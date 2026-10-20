@@ -51,6 +51,10 @@ These cases are unsupported in v1:
 
 Postgres can't merge a subquery that has an `ORDER BY` into the query that reads it. So it plans the subquery on its own, reads every column that the `ORDER BY` needs, and sorts all of the subquery's rows before the reader sees any of them. When the reader only counts the rows, or sorts them again, that sort is wasted work, and a big sort can spill to disk. Without the `ORDER BY`, Postgres can merge the subquery into the reader. Then it can count the rows straight from an index, for example, without reading the table at all. A CTE that the query reads twice is still computed once, but it no longer sorts its rows.
 
+## Why Postgres doesn't do this itself.
+
+The planner keeps a subquery's `ORDER BY` on purpose. Apps rely on it to order the input of an aggregate such as `array_agg`, or the rows a query returns, even though SQL doesn't promise either. So Postgres sorts as written and won't merge such a subquery into its reader. Dropping the sort safely needs the analysis this rule makes, that every reader sets its own order or gives results that don't depend on it.
+
 ## What it rests on.
 
 The rule makes no assumption. SQL never promises a subquery's order to the query that reads it. Each reader that the rule accepts either sets the order of its own rows, or gives results that don't depend on the order of its input. So the output returns the same rows as the input, on any data that the schema allows. Rows that tie on the reader's own `ORDER BY` can come back in another order, and a `LIMIT` can keep other rows of a tie, which SQL allows too. The rule reads the types of the reader's values from Postgres.

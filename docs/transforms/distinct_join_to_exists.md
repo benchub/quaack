@@ -29,6 +29,10 @@ When a call names a schema, the rule matches the function or operator by that sc
 
 A join can match one row to many. If a user has five enrollments in the course, the join produces that user five times, and `DISTINCT` then has to sort or hash every row to throw the extra copies away. `EXISTS` asks a simpler question: does at least one match exist? Postgres can stop looking at the first match, and it never builds the duplicates, so there's nothing to clean up. The key in the select list is what guarantees the two forms give the same rows, since each kept-table row appears exactly once either way.
 
+## Why Postgres doesn't do this itself.
+
+The planner doesn't remove a `DISTINCT` because the select list holds a unique key, and it doesn't turn an inner join into a semi-join. It only makes semi-joins from `EXISTS` and `IN` as written. Rewriting the join needs both steps together: proof that the kept table's rows can't repeat, and proof that nothing outside the `EXISTS` reads the other tables.
+
 ## What it rests on.
 
 The select list holds every column of a unique key of the kept table, and each of these columns is not null. The key can have several columns. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

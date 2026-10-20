@@ -46,6 +46,10 @@ The rule gives one rewrite for each `SELECT` that it can take, each one made fro
 
 `DISTINCT` makes Postgres sort or hash every row the query produces, just to find duplicates. When the rows can't repeat, that work removes nothing. A big sort can run out of `work_mem` and spill to temporary files on disk, which costs reads and writes of its own. Without the `DISTINCT`, Postgres returns the rows as the join makes them. With an `ORDER BY` and a `LIMIT`, it can also stop as soon as it has enough rows, without sorting by every selected column.
 
+## Why Postgres doesn't do this itself.
+
+The planner uses a primary key to accept a `GROUP BY` that leaves out columns it determines, and it drops `GROUP BY` columns that a primary key makes redundant, or, from Postgres 18, any unique index. It doesn't do the same for `DISTINCT`. It plans the sort or hash that `DISTINCT` asks for even when a unique, not-null key in the select list and key-matched joins mean no row can repeat.
+
 ## What it rests on.
 
 The select list holds every column of a unique key of the first table, and each of these columns is not null. Each joined table has a unique key that its join pairs. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

@@ -37,6 +37,10 @@ The rule does not change these:
 
 `NOT IN` has awkward rules for `NULL`: if the subquery returns even one `NULL`, `NOT IN` can't say "not in" for anything. Postgres has to honor that, so it often runs `NOT IN` by checking each outer row against the whole subquery result, which gets slow as the result grows. `NOT EXISTS` doesn't have that quirk, so Postgres can run it as an anti-join: a join that keeps only the rows with no match, using an index or a hash table. When neither side can be `NULL`, the two forms mean the same thing, and the anti-join is usually much faster.
 
+## Why Postgres doesn't do this itself.
+
+`NOT IN` gives `NULL` instead of true when either side has a `NULL`. Without proof that neither side can be `NULL`, an anti-join could return rows that `NOT IN` doesn't. Postgres 17 and 18 don't look for that proof. They turn `NOT EXISTS` into an anti-join, but leave `NOT IN` as a subplan, hashed when the result fits in `work_mem`. Postgres 19 converts a `NOT IN` to an anti-join when `NOT NULL` constraints prove that neither side can be `NULL`, so on a 19 server the planner may already do much of what this rule does.
+
 ## What it rests on.
 
 The rule rests on these conditions: `x` and `y` are not null, and neither table is on the nullable side of an outer join.

@@ -30,6 +30,10 @@ These cases are unsupported in v1:
 
 An index on a column holds the column's values, not the values of an expression over it. So Postgres can't use an index on `score` to find rows where `COALESCE(score, 0) = 0`, and it reads every row of the table instead. In the split form, Postgres knows `$d` and `$v` once the query runs, so it works out `COALESCE($d, t.c) = $v` ahead of time, since a `COALESCE` that starts with a known value is that value. What's left is `t.c = $v`, or `t.c = $v OR t.c IS NULL`. An index serves both, and Postgres can combine two index scans for the `OR`.
 
+## Why Postgres doesn't do this itself.
+
+The planner only uses an index for a condition of the form `column operator value`, or for an expression that an index was built on. It treats `COALESCE(t.c, $d)` as an opaque expression and has no step that splits it by cases. It also plans a prepared query before it knows `$d` and `$v` in a generic plan, so it can't count on folding the `COALESCE` away. The split writes the cases out, which leaves a plain column comparison that an index can serve.
+
 ## What it rests on.
 
 Nothing. The split returns the same rows for any data and any values, so the rule states no assumption.

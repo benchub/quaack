@@ -41,6 +41,10 @@ These cases are unsupported in v1:
 
 A join costs work even when the query never uses the joined table's columns: Postgres still has to look up the matching row for every row of the other table. An inner join could, in general, remove rows that have no match, so Postgres keeps it to be safe. A validated foreign key on a not-null column promises that every row has exactly one match. With that promise, the join can't drop or repeat rows, so it does nothing but cost time, and removing it gives the same result with less work.
 
+## Why Postgres doesn't do this itself.
+
+The planner removes a `LEFT JOIN` to a unique key that the query doesn't read, since that join can neither drop nor repeat rows. It never removes an inner join. A patch to remove one by its foreign key was proposed to Postgres and not committed. One reason is timing: Postgres checks a foreign key with triggers that run at the end of a statement, so during a statement a row can lack its match for a while, and the inner join would drop it. QUAACK accepts that risk, since it rewrites plain `SELECT` queries and checks the key's facts again with assumption-check.
+
 ## What it rests on.
 
 The rule needs a foreign key from the joining columns to the joined columns. Each joining column must also be not null. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

@@ -27,6 +27,10 @@ The rule does not change these:
 
 Postgres runs a correlated subquery once for each outer row that reaches it. Each run finds that row's group and computes its aggregate again, so a group of 50 rows is read 50 times when 50 outer rows share it. The derived table reads the table once, groups it with a hash or a sort, and computes each group's aggregate once. Postgres then joins it to the outer rows with a hash join, or another join that fits.
 
+## Why Postgres doesn't do this itself.
+
+The planner turns `EXISTS` and `IN` subqueries into joins, but it leaves a scalar subquery used as a value, such as `(SELECT avg(...) ...)`, as a subplan that runs once for each outer row. Turning it into a join needs reasoning the planner doesn't do: that the aggregate gives `NULL` over no rows, that the comparison sits where a `NULL` drops the row just as a missing join partner does, and that computing every group can't raise on a group the original never reads.
+
 ## What it rests on.
 
 Nothing. These aggregates give `NULL` over no rows by definition, and a `GROUP BY` gives one row per key, so the rule needs no fact from the catalog, and it states no assumptions.

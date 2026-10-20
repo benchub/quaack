@@ -45,6 +45,10 @@ The rule gives one rewrite for each set operation that it can take, each one mad
 
 `UNION` must remove duplicate rows, so Postgres sorts or hashes every row that the arms return. A big sort or hash can run out of `work_mem` and spill to temporary files on disk. When no two rows can be equal, that work removes nothing. `UNION ALL` returns the arms' rows as they come. Postgres can also merge a `UNION ALL` of plain arms into the query around it, which it can't do with a `UNION`. A filter on the outer query then reaches each table's indexes. With an `ORDER BY` and a `LIMIT`, Postgres can read each table's index in order and stop after the first rows, instead of reading every row of each table.
 
+## Why Postgres doesn't do this itself.
+
+The planner doesn't reason about whether a `UNION`'s rows can repeat. It removes duplicates whenever the query says `UNION`. Proving there are none takes the facts this rule gathers: a unique, not-null key in each arm, and a tag in each arm that no other arm's tag can equal.
+
 ## What it rests on.
 
 Each arm's key is unique, and each of its columns is not null. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

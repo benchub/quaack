@@ -38,6 +38,10 @@ These cases are unsupported in v1:
 
 Postgres runs `count(DISTINCT e)` inside the aggregate. It sorts each group's values and counts the distinct ones, and it can't hash them. When the values don't fit in `work_mem`, that sort spills to temporary files on disk. A `SELECT DISTINCT` can use a hash aggregate instead, which holds one entry for each distinct pair. When there are many repeated pairs, as in an events table with many events for each user, the hash stays small, and the outer count reads far fewer rows. Postgres still picks a sort when that is cheaper, so it only gains plans to choose from.
 
+## Why Postgres doesn't do this itself.
+
+The planner runs every `count(DISTINCT ...)` inside the aggregate node, which sorts each group's values. It has no plan that hashes them, and no step that rewrites the aggregate into a `SELECT DISTINCT` under a plain `count`. So it never gets to compare the hash plan's cost with the sort's.
+
 ## What it rests on.
 
 The rule makes no assumption. Its output returns the same rows as its input, on any data that the schema allows. The subquery keeps one row for each distinct pair of group and value, so every group still has at least one row. Counting the values of those rows counts the group's distinct values. Both forms compare `e` with its type's equality and its collation, and both skip a `NULL` `e`. So a group whose values are all `NULL` still counts 0.

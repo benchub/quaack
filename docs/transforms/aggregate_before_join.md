@@ -42,6 +42,10 @@ These cases are unsupported in v1:
 
 Postgres runs the join first. Each order row comes out of the join with the user columns that the query needs, and the aggregate then groups all of those rows. When there are many orders for each user, the join's output is large, and the aggregate's hash table holds the wider user columns. If it doesn't fit in `work_mem`, it spills to temporary files on disk. Aggregating first groups only the order table's join column and aggregates. That hash table is smaller, and the join then matches one row for each user instead of every order. Postgres doesn't move an aggregate below a join on its own, so it can't find this plan without the rewrite.
 
+## Why Postgres doesn't do this itself.
+
+The planner builds the join tree first and adds the aggregate on top of it. It has no step that pushes a `GROUP BY` below a join, so it never costs the aggregate-first plan. Doing so safely needs the proof this rule makes: the grouped columns are a unique, not-null key, the join's `=` agrees with the grouping's, and no moved condition can raise on rows the join would drop. Postgres 17 and 18 have no such step. Postgres 19 adds eager aggregation, which can run part of an aggregate below a join (`enable_eager_aggregate`, on by default). On a 19 server the planner may find a similar plan itself, and plan-pruning drops the rewrite when it plans as the original does.
+
 ## What it rests on.
 
 The rule rests on the grouped table's key being unique and each of its columns being not null. So each group of the original is one row of the grouped table. Every aggregate reads only the other table, so a group's aggregates read just the rows of the other table that join that row. Those rows are one group of the derived table, since the grouping and the join's `=` agree on which values are equal. So each row of the grouped table joins at most one row of the derived table, and that row holds its aggregates. A row with nothing to join is dropped by both forms.

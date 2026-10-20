@@ -37,6 +37,10 @@ The rule does not change these:
 
 A btree index on `ts` holds the column's values in order. Postgres can use it for a range like `ts >= d AND ts < d + 1`, and read only that day's rows. It can't use it for `ts::date = d`, because the index holds `ts`, not `ts::date`. Postgres reads every row instead and casts each one. An index on the expression `(ts::date)` would help, but Postgres can't build one on a `timestamptz` column, since that cast depends on the session's `TimeZone`. The range needs only a plain index on the column.
 
+## Why Postgres doesn't do this itself.
+
+The planner only uses a btree index for a condition that compares the indexed column, or an indexed expression, with a value. A cast is a function call to it, and it doesn't know that a cast to `date` keeps the order of the timestamps it reads. Some built-in functions and operators, such as `LIKE` with a fixed prefix, have support code that derives an index range, but the cast to `date` has none.
+
 ## What it rests on.
 
 Nothing. The rewrite holds by what a cast to `date` means, so the rule needs no fact from the catalog, and it states no assumptions.

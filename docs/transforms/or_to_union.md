@@ -66,6 +66,10 @@ It leaves a `*` alone when a table has a column of a type `UNION` can't compare,
 
 An index helps Postgres find rows that meet one condition. When a `WHERE` says "this condition OR that one", and the two conditions live in different tables or subqueries, no single index can answer both. Postgres often falls back to reading every row and testing both conditions on each. Splitting the `OR` into a `UNION` gives each half its own query, so each half can use the index that suits it. The `UNION` then merges the two results and removes rows that both halves found, which is why the rule needs a key to tell rows apart.
 
+## Why Postgres doesn't do this itself.
+
+The planner can combine index scans for an `OR` with a bitmap OR, but only when every arm is a condition on one table. It has no step that splits an `OR` across tables into a `UNION`. Doing so safely needs a key of every table to drop the rows both arms find, and proof that no arm raises an error on rows the original would skip, since the original stops at the first true arm.
+
 ## What it rests on.
 
 The rule needs a unique key of every `FROM` table, of one or more columns, each of which is not null. With this key, `UNION` removes exactly the rows that both arms return. The rule applies only when it can prove this. It states the catalog facts that it relies on as assumptions. assumption-check checks these assumptions again, as it checks all other assumptions.

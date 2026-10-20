@@ -32,6 +32,10 @@ The rule does not change these:
 
 To count, Postgres has to find every matching row, even though the first one already settles the question. If a user has 200 submissions, the count reads all 200 just to compare the total with 0. `EXISTS` asks only whether one exists, so Postgres stops at the first match. In a `WHERE`, Postgres can also run `EXISTS` as a semi-join, a join that keeps each outer row once if it has any match, using an index or a hash table, instead of running the subquery once for each outer row.
 
+## Why Postgres doesn't do this itself.
+
+The planner treats an aggregate as a function whose value it doesn't know until it has read every row. It doesn't know that a `count` is never below 0, so it can't see that comparing it with 0 only asks whether a row exists. It also can't read the constant in a generic plan. QUAACK's literal oracle supplies that fact, and the rule supplies what `count` means.
+
 ## What it rests on.
 
 Nothing. A count is never NULL and never below 0 by definition, so the rule needs no fact from the catalog, and it states no assumptions.

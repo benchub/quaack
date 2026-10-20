@@ -29,6 +29,10 @@ Literals are compared only inside Postgres. Placeholders are bound as parameters
 
 If a column must equal one value, every other condition on that same column is either always true or makes the query return nothing. Here, the extra conditions are always true. Postgres still checks them on every row, and worse, it may count them as extra filters when it estimates how many rows will match. That can make it think a result is much smaller than it is, and pick a plan suited to a tiny result. Dropping the redundant conditions saves the per-row checks and gives the planner a more accurate row estimate.
 
+## Why Postgres doesn't do this itself.
+
+The planner merges equalities into equivalence classes, so it knows `col = c`, and it drops an exact duplicate of a condition. It doesn't use that equality to drop a range, an `IN` list, or a `<>` that it proves. Postgres has code that proves one condition from another, but it uses it for partial indexes, constraint exclusion, and partition pruning, not to remove conditions from a query. The planner also can't compare the constants in a generic plan, where it doesn't know them yet.
+
 ## What it rests on.
 
 The rule needs no assumption. Its output returns the same rows as its input on any data that the schema allows.

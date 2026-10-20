@@ -39,6 +39,10 @@ These cases are unsupported in v1:
 
 A `LEFT JOIN` limits the plans Postgres can choose. It has to return every row of the left side, even one with no match, so it can't start from the joined table and stop early. So for `ORDER BY users.name LIMIT 20`, it joins every one of the course's enrollments to its user, sorts them all by name, and keeps 20. An inner join can be read in either order. Postgres can walk an index on `users.name` in order, look up each user's rows, and stop once it has 20. Postgres already makes a `LEFT JOIN` inner when the `WHERE` throws away the rows that it fills with `NULL`, but it doesn't use a foreign key to do so.
 
+## Why Postgres doesn't do this itself.
+
+The planner makes a `LEFT JOIN` inner when the `WHERE` rejects the rows that the join fills with `NULL`. It uses foreign keys only to estimate how many rows a join returns, not to change the join. One reason is timing: Postgres checks a foreign key with triggers that run at the end of a statement, so during a statement a row can lack its match for a while. A plan built on the key could then return different rows than the query asks for. QUAACK accepts that risk, since it rewrites plain `SELECT` queries and checks the key's facts again with assumption-check.
+
 ## What it rests on.
 
 The rule needs a foreign key from the joining columns to the joined columns. Each joining column must also be not null. The rule fires only when it can prove this. It states the catalog facts that it relies on as assumptions. As with any other assumption, assumption-check checks them again.

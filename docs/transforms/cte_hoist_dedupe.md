@@ -31,6 +31,10 @@ The rule refuses a copy in a `RECURSIVE` `WITH`. It refuses the whole query when
 
 ORMs and view layers often paste the same small subquery into several places. Postgres treats each copy as a separate piece of work, so it may run the same lookup two or three times. With one shared CTE, Postgres has the option to compute the result once, keep it, and hand it to every place that needs it. That isn't always a win, since a stored result can't use the indexes of the table it came from, so QUAACK measures both versions before it picks one.
 
+## Why Postgres doesn't do this itself.
+
+The planner plans each subquery and CTE on its own. It doesn't look for two that compute the same thing, so it has no chance to compute the result once and share it. Merging them needs the checks this rule makes, such as that each copy is uncorrelated and reads no outer CTE, so that it means the same thing wherever it's read.
+
 ## What it rests on.
 
 No assumption. Its output returns the same rows as its input on any data the schema allows.

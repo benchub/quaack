@@ -60,6 +60,10 @@ An aggregate or a window call doesn't count. It runs on the rows of its own quer
 
 A CTE that Postgres stores acts as a fence. Postgres runs the body by itself, keeps every row it makes, and only then lets the rest of the query filter them. If the body reads a large table and the reader wants only a few rows, such as one customer's orders, Postgres still reads and stores the whole result first. `NOT MATERIALIZED` takes the fence away. Postgres treats the body like a subquery, so it can move the reader's filter into the body and use an index on the table to find just the rows that the reader wants. The cost is that a CTE that the query reads more than once now runs once for each read, so QUAACK measures the rewrite rather than assuming it helps.
 
+## Why Postgres doesn't do this itself.
+
+Since Postgres 12, the planner inlines a plain CTE that the query reads once, but it stores one the query reads more than once. Inlining such a CTE can run its body once for each read, so Postgres doesn't risk it, and it doesn't cost both plans to choose. It always honors `AS MATERIALIZED`, since that's how a query asks for the fence. Inlining also isn't always safe, as the sections above show, and the planner doesn't make those checks. QUAACK makes them, and then measures both forms.
+
 ## What it rests on.
 
 No assumption. Its output returns the same rows as its input on any data the schema allows.

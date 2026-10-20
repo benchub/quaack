@@ -49,6 +49,10 @@ Each qualifying `IN` gives its own rewrite. The rule does not yet do the same fl
 
 A query with `LIMIT 1` only needs to find one row that qualifies. How fast it finds one depends on where Postgres starts looking. If the outer table is large and the `IN` subquery picks out only a few rows, starting from the outer table means scanning many rows that never match. Flipping the query lets Postgres start from the small, selective side and check the other side by key for each candidate, which often finds the answer after a handful of lookups. Postgres's planner can guess wrong about which side to start from under `LIMIT 1`, so offering the flipped form gives it a second option to measure.
 
+## Why Postgres doesn't do this itself.
+
+The planner can already plan an `IN` as a semi-join from either side, including making the subquery's rows unique and driving from them. The trouble is `LIMIT 1`. The planner assumes that matching rows are spread evenly through the table, so it expects a scan of the large side to find one soon. When the matches are rare or clustered, that guess is wrong, and the plan reads far more rows than expected. The flipped query is a second form that QUAACK can measure instead of trusting that estimate.
+
 ## What it rests on.
 
 The rule rests on no assumption. Its output returns the same rows as its input on any data that the schema permits.

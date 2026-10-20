@@ -23,6 +23,10 @@ If the column has foreign keys, each foreign key must reference `<x>s` or `<x>es
 
 The query filters the parent table, then joins to the child. Postgres has to find the matching parents first and then look up each one's children, and it may scan many child rows along the way. The child table already holds its own copy of the id, often with an index on it. Adding a filter on that copy lets Postgres go straight to the right child rows through that index. The filter adds no new meaning as long as the copy is accurate, which is why QUAACK checks the data before it trusts the rewrite.
 
+## Why Postgres doesn't do this itself.
+
+The planner uses only facts the schema declares, such as constraints and indexes. The rule rests on a fact that no constraint can state: the child's copy of the id agrees with the parent's polymorphic columns. Only the data can show that, so the planner can't add the filter, and QUAACK checks the data before it trusts the rewrite.
+
 ## What it rests on.
 
 It is a heuristic rule. It rests on a `denormalized_equal` assumption, which the schema cannot state. The assumption is that the child's copy equals the parent's polymorphic id wherever the parent's type column names that class. assumption-check checks the assumption against the data before the rewrite continues. Thus the rewrite is only as good as the data was at that time. The report says so, and names the columns.

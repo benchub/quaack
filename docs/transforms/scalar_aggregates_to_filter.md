@@ -34,6 +34,10 @@ A condition can't raise when it's a comparison, an `IN` list, or an `IS NULL` of
 
 Postgres runs each uncorrelated scalar subquery as its own plan, so three counts of one table scan it three times. The rewrite scans it once, and each aggregate only counts the rows that pass its `FILTER`. When the subqueries share a condition, such as a date range, that condition becomes the derived table's `WHERE`, so one index scan can serve all of them.
 
+## Why Postgres doesn't do this itself.
+
+The planner plans each uncorrelated subquery in the select list as its own init plan, which runs once. It doesn't compare subqueries to find ones that read the same table, so it never merges them into one scan. Merging needs the checks this rule makes, since a shared condition then runs on rows that some subqueries never read.
+
 ## What it rests on.
 
 The rule makes no assumption. Its output returns the same rows as its input, on any data that the schema allows. The derived table has no `GROUP BY`, so it always has exactly one row, and a comma join with one row changes no row count. Each aggregate reads exactly the rows its subquery read, so it gives the same value, also over no rows: `count` gives 0 and the others give `NULL`, both ways. Postgres checks a `FILTER` before it computes an aggregate's arguments, so an argument only runs on the rows its subquery read.
