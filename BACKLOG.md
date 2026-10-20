@@ -725,6 +725,16 @@ From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds tw
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
+### 20261020-1. redact-rewrite: name the candidate placeholders when a literal is ambiguous, and tell apart the same column in different SELECTs.
+
+From the user's first real run of `quaack redact-rewrite` (2026-10-20): `redact_rewrite_ambiguous` at one literal, with no way to tell which placeholders it couldn't choose between, and a `> file` redirect left an empty file. Placeholders aren't literals, so the refusal can name the candidate `$n`s (an enclave and driver change; keep the position, never the value). Then find out, from a realistic ambiguous case (the user will say which comparison it was), whether the key should also carry the SELECT nesting or the table's alias scope, so the same column of the same table compared the same way in two subqueries of the original doesn't make every rewrite literal there ambiguous. Also say in DESIGN.md and the driver's usage text that a failed run leaves the redirect's file empty, so the user should check the exit status. Came from 20261019-3.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Open questions:** Which comparison was ambiguous in the user's query.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
