@@ -65,15 +65,22 @@ module Quaack
         LIMITS = %w[limit_count limit_offset].freeze
 
         # The structural key for a literal below ancestors, or nil: the
-        # clause of its innermost SELECT and the path down from it. It never
-        # reads a value.
+        # clause of its innermost SELECT, the nesting above it, and the path
+        # down from it. It never reads a value.
         def structural(ancestors)
           at = ancestors.rindex { |message, _, _| message.is_a?(PgQuery::SelectStmt) } or return
           _, field, index = ancestors[at]
           return unless LIMITS.include?(field) || (field == "target_list" && exists?(ancestors, at))
 
-          Key.new(operator: :clause, operand: [field, index], path: path_below(ancestors, at), columns: [], size: nil)
+          path = [nesting(ancestors[0...at]), path_below(ancestors, at)]
+          Key.new(operator: :clause, operand: [field, index], path:, columns: [], size: nil)
         end
+
+        NESTS = [PgQuery::SelectStmt, PgQuery::SubLink, PgQuery::RangeSubselect, PgQuery::CommonTableExpr].freeze
+
+        # The SELECTs, SubLinks, FROM subqueries, and CTEs above, from the
+        # top, each [class, field], so a clause matches only at the same depth.
+        def nesting(above) = above.filter_map { |node, field, _| [node.class, field] if NESTS.include?(node.class) }
 
         # Whether the SELECT at ancestors[at] is an EXISTS SubLink's subselect.
         def exists?(ancestors, at)

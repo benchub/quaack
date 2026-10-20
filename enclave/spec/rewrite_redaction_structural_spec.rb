@@ -65,6 +65,39 @@ RSpec.describe Quaack::Enclave::RewriteRedaction, "structural keys" do
     expect([error.rule, error.candidates]).to eq(["redact_rewrite_ambiguous", [1, 2]])
   end
 
+  it "refuses a LIMIT the rewrite adds inside a LATERAL subquery, not taking the top LIMIT's" do
+    original = "SELECT o.id FROM orders o WHERE o.s = 'a' LIMIT 50"
+    rewrite = "SELECT o.id, l.v FROM orders o CROSS JOIN LATERAL (SELECT i.v FROM items i WHERE i.oid = o.id " \
+              "ORDER BY i.v LIMIT 1) l WHERE o.s = 'a' LIMIT 50"
+    error = refusal(rewrite, original)
+    expect([error.rule, error.position]).to eq(["redact_rewrite_no_match", rewrite.index("1)") + 1])
+  end
+
+  it "matches a nested LIMIT only to the original's LIMIT at the same nesting" do
+    original = "SELECT o.id, l.v FROM orders o CROSS JOIN LATERAL (SELECT i.v FROM items i WHERE i.oid = o.id " \
+               "ORDER BY i.v LIMIT 1) l WHERE o.s = 'a' LIMIT 50"
+    rewrite = "SELECT o.id, l.v FROM orders o CROSS JOIN LATERAL (SELECT i.v FROM items i WHERE i.oid = o.id " \
+              "ORDER BY i.v DESC LIMIT 1) l WHERE o.s = 'a' LIMIT 50"
+    out = redact(rewrite, original)
+    expect(out).to include("DESC LIMIT $1)").and end_with("LIMIT $3")
+  end
+
+  it "tells a CTE's LIMIT from a top-level one with an equal value" do
+    original = "WITH r AS (SELECT o.id FROM orders o LIMIT 10) SELECT r.id FROM r LIMIT 10"
+    out = redact("WITH r AS (SELECT o.id FROM orders o ORDER BY o.id LIMIT 10) SELECT r.id FROM r LIMIT 10", original)
+    expect(out).to include("o.id LIMIT $1)").and end_with("LIMIT $2")
+    cte_only = "WITH r AS (SELECT o.id FROM orders o LIMIT 10) SELECT r.id FROM r"
+    error = refusal("SELECT o.id FROM orders o LIMIT 10", cte_only)
+    expect(error.rule).to eq("redact_rewrite_no_match")
+  end
+
+  it "refuses an EXISTS's SELECT 1 nested one level deeper than the original's" do
+    original = "SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = o.user_id)"
+    rewrite = "SELECT o.id FROM orders o WHERE o.id IN (SELECT i.oid FROM items i " \
+              "WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = i.uid))"
+    expect(refusal(rewrite, original).rule).to eq("redact_rewrite_no_match")
+  end
+
   it "keeps a sentinel out of a refusal for a LIMIT the original lacks" do
     sql = "SELECT o.id FROM orders o WHERE o.status = '#{sentinel}' LIMIT 4242"
     error = refusal(sql, "SELECT o.id FROM orders o WHERE o.status = '#{sentinel}'")
