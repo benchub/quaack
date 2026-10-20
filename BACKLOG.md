@@ -727,22 +727,6 @@ From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds tw
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
-### 20261020-1. redact-rewrite: break ties between equal comparisons by value, and name candidates in a refusal.
-
-From the user's first real run of `quaack redact-rewrite` (2026-10-20): `redact_rewrite_ambiguous` at the first `'deleted'`, the one in `ON "submissions"."workflow_state" <> 'deleted'`. The query also has `"submissions"."workflow_state" != 'deleted'` in its WHERE, and Postgres parses `<>` and `!=` as the same operator, so both comparisons have one key (table, column, operator, side). If the run's original gave them different placeholders, the matcher can't choose. That is a hypothesis: the real original was never seen, and `rewrites.sql` in the repo isn't it.
-
-Decisions (the user, 2026-10-20): try a value tie-break. Comparison matching stays the primary rule. Only when more than one original placeholder matches a literal's key, read the run's `placeholder_map` and keep the candidates whose original literal equals the rewrite's literal (same text and shape). One left: use it. Several left and they all hold the same literal: use the lowest-numbered one, since each binds the same value. None left, or the candidates' values differ in a way that doesn't pick one: refuse as before. Values are read only inside the enclave and never appear in output, errors, logs, or the store. Never mint a placeholder, and never match by value across comparisons that don't match by key. This changes the earlier decision of 20261019-3 that value is never used; update DESIGN.md's text for redact-rewrite to say where value is used and why it's safe. A constant the user changed on purpose binds the original's value, as for any placeholder; say so in DESIGN.md.
-
-Also: a remaining `redact_rewrite_ambiguous` names the candidate `$n`s (placeholders aren't literals; keep the position, never a value), in the enclave error and the driver's message. Say in the driver's usage text and DESIGN.md that a failed run leaves the redirect's file empty.
-
-Test with a synthetic copy of the user's query (same shape, made-up numbers): the original has distinct placeholders for the three `<>`/`!=` comparisons of `submissions.workflow_state` and for the `IN` lists; a 21-literal `context_id IN (...)` list and a 12-literal `assignments.id IN (...)` list, whose original lists may be shorter or longer than the rewrite's (decide the right behavior and say what it is). Use sentinel values to prove they never leave the enclave. Enclave and driver change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261019-3.
-- **Came from:** The user, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Open questions:** None.
-- **Status:** in review. Built on its branch: the value tie-break, candidates on an ambiguous refusal, and an IN list of another length refused as `redact_rewrite_no_match`.
-
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
