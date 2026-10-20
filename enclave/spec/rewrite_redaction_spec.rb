@@ -67,11 +67,9 @@ RSpec.describe Quaack::Enclave::RewriteRedaction do
     expect(error.inspect).not_to include(sentinel)
   end
 
-  it "refuses a literal with no column context, such as EXISTS's SELECT 1 or a LIMIT" do
-    sql = "SELECT o.id FROM orders o WHERE o.status = 'x' LIMIT 10"
-    expect([refusal(sql).rule, refusal(sql).position]).to eq(["redact_rewrite_no_match", sql.index("10") + 1])
-    exists = "SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM users u WHERE u.region = 'y')"
-    expect(refusal(exists).position).to eq(exists.index("1 FROM") + 1)
+  it "refuses a constant with no column and no structural clause, such as the top SELECT's target list" do
+    sql = "SELECT 7, o.id FROM orders o WHERE o.status = 'x'"
+    expect([refusal(sql).rule, refusal(sql).position]).to eq(["redact_rewrite_no_match", sql.index("7") + 1])
   end
 
   it "refuses a literal that more than one original comparison matches" do
