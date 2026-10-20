@@ -6,7 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261019-3 (`quaacks redact-rewrite`, the `redacted_rewrite` message, and the error line's `position`).
 
 ## How this file works.
 
