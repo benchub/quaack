@@ -709,13 +709,20 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 
 ### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite. Done, see BACKLOG-COMPLETE.md.
 
-### 20261019-4. redact-rewrite: LIMIT, EXISTS (SELECT 1), and CTE-column loose ends.
+### 20261019-4. redact-rewrite: LIMIT, OFFSET, and EXISTS (SELECT 1) literals, and CTE columns.
 
-From the review of 20261019-3 (minor). The comparison matcher refuses three common ORM shapes cleanly. (1) `LIMIT 10` in a rewrite whose original's LIMIT was redacted to `$n`: match a LIMIT or OFFSET literal to the original's one. (2) `EXISTS (SELECT 1 ...)`: the redactor replaces the `1`, so the user has to write `SELECT *`; either keep `SELECT 1` as written when it's an EXISTS target list, or say the workaround in DESIGN.md and the refusal's note. (3) A column reached through a CTE's name (`WITH x AS (SELECT * FROM orders ...) ... WHERE x.user_id = 5`) resolves to a table `x` and finds no match; resolve a CTE that selects `*` from one table to that table. Each stays a clean refusal for anything it can't resolve.
+From the review of 20261019-3 (minor), made urgent by the user's real run on 2026-10-20: `redact_rewrite_no_match` at the `1` of `EXISTS (SELECT 1 FROM ... )`. The run's original has it as a placeholder (redact numbers it, which is why `$15` is missing from the user's sample), so the rewrite's `SELECT 1` has to take it, but the matcher finds no column comparison for it and refuses. The same holds for a `LIMIT` or `OFFSET` literal.
 
-- **Depends on:** 20261019-3.
-- **Came from:** The review of 20261019-3, 2026-10-19.
+Decisions (the user, 2026-10-20: "I don't want to replace those constants by hand"): a literal that has no comparison to a column gets a structural key instead: the clause it sits in (an EXISTS or other SubLink's target list, a LIMIT count, an OFFSET), with the same path rules as now, and it matches the original's placeholder with the same key. The key never reads values; the value tie-break of 20261020-1 still applies among candidates with the same key (two EXISTS that both say `SELECT 1` hold equal values, so the lowest-numbered pick binds the same value). Where the structure doesn't pin one placeholder (several EXISTS with different values and no value match), refuse as ambiguous with candidates. Other constants with no column and no such clause (a target-list constant of the top SELECT, a function argument with no column) stay refused for now; say so in DESIGN.md.
+
+Also, if cheap: a column reached through a CTE's name (`WITH x AS (SELECT * FROM orders ...) ... WHERE x.user_id = 5`) resolves to a table `x` and finds no match; resolve a CTE that selects `*` from one table to that table. If it isn't cheap, split it into a new task.
+
+Test with a synthetic copy of the user's query (the EXISTS shape, with an original where redact numbered the `1`) and with a LIMIT/OFFSET ORM query. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261019-3, 20261020-1.
+- **Came from:** The review of 20261019-3, and the user's run, 2026-10-20.
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Open questions:** None.
 - **Status:** todo
 
 ### 20261019-5. redact-rewrite: better errors for unparseable and multi-statement input, and tests for surviving mutations.
