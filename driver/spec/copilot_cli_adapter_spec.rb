@@ -296,6 +296,16 @@ RSpec.describe "the copilot_cli adapter" do
     expect_recorded_cwd_removed
   end
 
+  it "returns a schemaless reply with non-ASCII text as UTF-8, not binary" do
+    command = File.join(@dir, "fake-copilot")
+    script(command, "$stdout.write(\"caf\\u00e9 \\u2014 ok\")\n")
+    reply = client(template: [command, "{prompt_file}", "{model}"])
+            .ask(step: "winner-summary", system: "s", messages:, max_tokens: 100)
+
+    expect(reply).to eq("café — ok")
+    expect(reply.encoding).to eq(Encoding::UTF_8)
+  end
+
   it "maps empty stdout to llm_bad_response" do
     command = File.join(@dir, "fake-copilot")
     record_cwd_script(command, "exit 0")

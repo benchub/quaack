@@ -96,7 +96,7 @@ module Quaack
         def run(argv, dir)
           result = spawn_and_capture(argv, dir)
           raise result.error if result.error
-          return result.stdout unless result.stdout.empty?
+          return result.stdout.force_encoding(Encoding::UTF_8).scrub unless result.stdout.empty?
 
           raise Error.new("llm_bad_response", "the copilot_cli command printed no reply")
         end
