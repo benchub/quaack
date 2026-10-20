@@ -48,10 +48,44 @@ module Quaack
             message, field, index = ancestors[i]
             break if BOUNDARIES.any? { message.is_a?(it) }
 
-            found = at(message, [field, index], ancestors[(i + 1)..].map { |_, name, n| [name, n] }, ancestors[0...i])
+            found = at(message, [field, index], path_below(ancestors, i), ancestors[0...i])
             return found if found
           end
-          nil
+          structural(ancestors)
+        end
+
+        def path_below(ancestors, at) = ancestors[(at + 1)..].map { |_, name, n| [name, n] }
+
+        # The clauses whose literal, with no column comparison, is keyed by
+        # where it sits (20261019-4): a LIMIT count, an OFFSET, or the
+        # target list of an EXISTS's SELECT. Only EXISTS: its target list's
+        # value never changes the result, while another SubLink's (a scalar
+        # subquery's, an IN's) does, so a structural match there could bind
+        # the wrong value. Those stay refused.
+        LIMITS = %w[limit_count limit_offset].freeze
+
+        # The structural key for a literal below ancestors, or nil: the
+        # clause of its innermost SELECT, the nesting above it, and the path
+        # down from it. It never reads a value.
+        def structural(ancestors)
+          at = ancestors.rindex { |message, _, _| message.is_a?(PgQuery::SelectStmt) } or return
+          _, field, index = ancestors[at]
+          return unless LIMITS.include?(field) || (field == "target_list" && exists?(ancestors, at))
+
+          path = [nesting(ancestors[0...at]), path_below(ancestors, at)]
+          Key.new(operator: :clause, operand: [field, index], path:, columns: [], size: nil)
+        end
+
+        NESTS = [PgQuery::SelectStmt, PgQuery::SubLink, PgQuery::RangeSubselect, PgQuery::CommonTableExpr].freeze
+
+        # The SELECTs, SubLinks, FROM subqueries, and CTEs above, from the
+        # top, each [class, field], so a clause matches only at the same depth.
+        def nesting(above) = above.filter_map { |node, field, _| [node.class, field] if NESTS.include?(node.class) }
+
+        # Whether the SELECT at ancestors[at] is an EXISTS SubLink's subselect.
+        def exists?(ancestors, at)
+          link, field, = ancestors[at - 2] if at >= 2
+          link.is_a?(PgQuery::SubLink) && field == "subselect" && link.sub_link_type == :EXISTS_SUBLINK
         end
 
         # The key if message is the literal's comparison, or nil. operand

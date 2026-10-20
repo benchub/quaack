@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261020-1
+- 20261019-4
 
 
 ## How this file works.
@@ -723,6 +724,15 @@ Test with a synthetic copy of the user's query (the EXISTS shape, with an origin
 - **Came from:** The review of 20261019-3, and the user's run, 2026-10-20.
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Open questions:** None.
+- **Status:** todo
+
+### 20261020-2. redact-rewrite: resolve a column reached through a CTE's name.
+
+Split from 20261019-4. In `WITH x AS (SELECT * FROM orders ...) ... WHERE x.user_id = 5`, the column resolves to a table `x` and matches no original comparison on `orders`. Resolve a CTE that selects `*` from one table to that table. Not built in 20261019-4: scopes come from the SELECTs above the literal, and the CTE's WITH clause sits on an outer SELECT, so it needs its own name map and tests.
+
+- **Depends on:** 20261019-4.
+- **Came from:** 20261019-4, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
 ### 20261019-5. redact-rewrite: better errors for unparseable and multi-statement input, and tests for surviving mutations.

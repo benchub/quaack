@@ -31,10 +31,11 @@ module Quaack
     # A rewrite's literal takes the placeholder whose comparisons alone
     # match its key. When several do, the run's placeholder map breaks the
     # tie (20261020-1): the lowest of those whose original literal has the
-    # rewrite's text and type, since each binds the same value. It's
-    # refused (Refusal) when none matches, redact_rewrite_no_match, as for
-    # a literal with no column context such as a LIMIT or EXISTS's SELECT
-    # 1, or when the values don't break the tie, redact_rewrite_ambiguous,
+    # rewrite's text and type, since each binds the same value. A literal
+    # with no column comparison in a LIMIT, an OFFSET, or an EXISTS's
+    # target list gets a structural key (Comparison.structural). It's
+    # refused (Refusal) when none matches, redact_rewrite_no_match, or
+    # when the values don't break the tie, redact_rewrite_ambiguous,
     # with the candidates' numbers. An IN list member matches only in a
     # list of the same length (Comparison::Key#size). The constants
     # Redaction keeps as written, such as a positional ORDER BY, stay as
