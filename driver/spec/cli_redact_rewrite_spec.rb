@@ -97,6 +97,37 @@ RSpec.describe "quaack redact-rewrite" do
     end
   end
 
+  context "when the rewrite doesn't parse (20261019-5)" do
+    let(:failure) do
+      Quaack::Driver::EnclaveError.new(subcommand: "redact-rewrite", rule: "redact_rewrite_unparsable",
+                                       step: "redact-rewrite", position: 17, exit_status: 64)
+    end
+
+    it "says so, with where it stopped, and never the SQL" do
+      expect(cli.run(["redact-rewrite", "--run", run_id])).to eq(1)
+      expect(stderr.string).to include("redact_rewrite_unparsable")
+        .and include("The statement stops parsing at character 17. It isn't SQL that Postgres parses")
+      expect(stderr.string).not_to include(sentinel)
+    end
+  end
+
+  { "redact_rewrite_not_one_statement" => "more than one SQL statement",
+    "redact_rewrite_empty" => "no SQL statement",
+    "redact_rewrite_literal_left" => "a bug in QUAACK" }.each do |rule, words|
+    context "when the enclave refuses as #{rule} (20261019-5)" do
+      let(:failure) do
+        Quaack::Driver::EnclaveError.new(subcommand: "redact-rewrite", rule:, step: "redact-rewrite",
+                                         exit_status: 64)
+      end
+
+      it "gives the rule its own words, not internal_error's" do
+        expect(cli.run(["redact-rewrite", "--run", run_id])).to eq(1)
+        expect(stderr.string).to include(rule).and include(words)
+        expect(stderr.string).not_to include("internal error")
+      end
+    end
+  end
+
   it "says in its usage that a failed run leaves the redirect's file empty" do
     expect(cli.run(["redact-rewrite"])).to eq(64)
     expect(stderr.string).to include("a failed run leaves the redirect's file empty")
@@ -127,6 +158,7 @@ RSpec.describe "Transport::ErrorFields for redact-rewrite" do
   it "keeps a positive Integer position only on a redact-rewrite refusal" do
     expect(fields("rule" => "redact_rewrite_ambiguous", "position" => 7)[:position]).to eq(7)
     expect(fields("rule" => "redact_rewrite_no_match", "position" => "7")[:position]).to be_nil
+    expect(fields("rule" => "redact_rewrite_unparsable", "position" => 7)[:position]).to eq(7)
     expect(fields("rule" => "bad_input", "position" => 7)[:position]).to be_nil
   end
 

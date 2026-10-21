@@ -110,6 +110,61 @@ RSpec.describe Quaack::Enclave::RewriteRedaction do
     expect([refusal(sql).rule, refusal(sql).position]).to eq(["redact_rewrite_no_match", sql.index("99") + 1])
   end
 
+  # 20261019-5: input mistakes get their own rules, never internal_error.
+  # pg_query's message quotes the SQL, so the sentinel sits in the bad part.
+  it "refuses a statement that doesn't parse, naming pg_query's position and never the SQL" do
+    sql = "SELECT o.id FROM orders o WHERE o.note = 'é' AND o.status = = '#{sentinel}'"
+    error = refusal(sql)
+    expect([error.rule, error.position]).to eq(["redact_rewrite_unparsable", sql.index("= =") + 3])
+    expect([error.message, error.inspect, error.cause.inspect].join).not_to include(sentinel)
+  end
+
+  it "refuses an unterminated string, which pg_query quotes in its message" do
+    sql = "SELECT o.id FROM orders o WHERE o.status = '#{sentinel}"
+    error = refusal(sql)
+    expect(error.rule).to eq("redact_rewrite_unparsable")
+    expect(error.position).to be_nil.or be_between(1, sql.length + 1)
+    expect([error.message, error.inspect].join).not_to include(sentinel)
+  end
+
+  it "refuses more than one statement" do
+    error = refusal("SELECT o.id FROM orders o WHERE o.status = 'a'; SELECT '#{sentinel}'")
+    expect([error.rule, error.position]).to eq(["redact_rewrite_not_one_statement", nil])
+    expect(error.message).not_to include(sentinel)
+  end
+
+  it "refuses an empty statement, such as only a comment or a semicolon" do
+    ["", " ; ", "-- #{sentinel}\n"].each do |sql|
+      error = refusal(sql)
+      expect([error.rule, error.position, error.message.include?(sentinel)])
+        .to eq(["redact_rewrite_empty", nil, false])
+    end
+  end
+
+  it "refuses a statement that isn't a SELECT the way rewrite-check does, as unsupported_construct" do
+    expect { redact("DELETE FROM orders o WHERE o.status = 'a'") }
+      .to raise_error(Quaack::Enclave::SupportedSql::Error) { expect(it.rule).to eq("unsupported_construct") }
+  end
+
+  it "gives a multibyte statement's position in characters, not bytes" do
+    sql = "SELECT o.id FROM orders o WHERE o.status = 'ééé' AND o.total < '#{sentinel}'"
+    expect(refusal(sql).position).to eq(sql.rindex("'#{sentinel}") + 1)
+  end
+
+  it "resolves an alias through the innermost SELECT first, when an inner one shadows an outer one" do
+    from = "SELECT o.id FROM public.orders o WHERE o.status = $1 AND " \
+           "EXISTS (SELECT o.id FROM public.users o WHERE o.status = $2)"
+    sql = "SELECT o.id FROM orders o WHERE o.status = 'a' AND EXISTS (SELECT u.id FROM users u WHERE u.status = 'b')"
+    expect(redact(sql, from:))
+      .to eq("SELECT o.id FROM orders o WHERE o.status = $1 AND EXISTS (SELECT u.id FROM users u WHERE u.status = $2)")
+  end
+
+  it "doesn't look for a comparison past an AND, OR, or NOT" do
+    from = "SELECT o.id FROM public.orders o WHERE o.flag = ($1 > $2 AND o.open)"
+    expect(refusal("SELECT o.id FROM orders o WHERE o.flag = (1 > 2 AND o.open)", from:).rule)
+      .to eq("redact_rewrite_no_match")
+  end
+
   it "refuses a statement that already has placeholders of its own" do
     expect { redact("SELECT o.id FROM orders o WHERE o.status = $1") }
       .to raise_error(Quaack::Enclave::Redaction::Error, "query_has_parameters")
@@ -119,7 +174,9 @@ end
 RSpec.describe Quaack::Enclave::RewriteRedaction, ".checked" do
   it "refuses output that still holds a literal, and passes one that holds only placeholders" do
     expect { described_class.checked("SELECT o.id FROM orders o WHERE o.status = 'SENTINEL-7f3a'") }
-      .to raise_error(described_class::Error) { expect(it.message).not_to include("SENTINEL") }
+      .to raise_error(described_class::Error) do |error|
+        expect([error.rule, error.message.include?("SENTINEL")]).to eq(["redact_rewrite_literal_left", false])
+      end
     expect(described_class.checked("SELECT o.id FROM orders o WHERE o.status = $1 ORDER BY 1"))
       .to eq("SELECT o.id FROM orders o WHERE o.status = $1 ORDER BY 1")
   end

@@ -205,6 +205,7 @@ module Quaack
       # The literal a redact-rewrite refusal named, with the placeholders
       # it could take when it's ambiguous.
       def literal
+        return "The statement stops parsing at character #{position}" if rule == "redact_rewrite_unparsable"
         return "The literal at character #{position}" unless candidates
 
         names = candidates.map { "$#{it}" }

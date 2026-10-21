@@ -47,6 +47,17 @@ module Quaack
                                       "can't tell which it is. Write its $n " \
                                       "by hand, then {next}.",
 
+        # 20261019-5: the rewrite on stdin isn't one SQL statement QUAACK can read.
+        "redact_rewrite_unparsable" => "It isn't SQL that Postgres parses. Check what you piped in, such " \
+                                       "as a clipboard holding more or less than the statement, then {next}.",
+        "redact_rewrite_not_one_statement" => "The input holds more than one SQL statement. Send one statement, " \
+                                              "then {next}.",
+        "redact_rewrite_empty" => "The input holds no SQL statement, only blanks, comments, or semicolons. " \
+                                  "Send one statement, then {next}.",
+        "redact_rewrite_literal_left" => "QUAACK's check found a literal left in its redacted rewrite, so it " \
+                                         "sent nothing. This is a bug in QUAACK: report it. Write the " \
+                                         "rewrite's $n by hand.",
+
         # intake: quaack start's flags and files.
         "bad_server" => "--server must be a host name or a service name: letters, digits, dots, hyphens, and " \
                         "underscores, starting with a letter or digit, at most 253 characters. #{GO_ON}",

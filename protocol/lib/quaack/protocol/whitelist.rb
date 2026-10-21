@@ -57,7 +57,9 @@ module Quaack
       # redact_rewrite_no_match or redact_rewrite_ambiguous refusal: the
       # 1-based character position of the operator's literal that has no
       # placeholder, or more than one, a positive Integer, never the
-      # literal. candidates is only on a redact_rewrite_ambiguous refusal:
+      # literal; or on a redact_rewrite_unparsable refusal, the 1-based
+      # character position where pg_query stopped, never its message.
+      # candidates is only on a redact_rewrite_ambiguous refusal:
       # the $n numbers the literal could take, 2 to 64 ascending positive
       # Integers. They're placeholders, never values.
       error: %i[step rule sqlstate reason function clients column tables parser_major settings position

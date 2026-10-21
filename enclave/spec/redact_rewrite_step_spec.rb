@@ -83,6 +83,34 @@ RSpec.describe "quaacks redact-rewrite" do
       .to eq([64, [{ "type" => "error", "step" => "redact-rewrite", "rule" => "bad_input" }]])
   end
 
+  it "refuses input with a key besides sql as bad_input" do
+    outcome = quaacks.run("redact-rewrite", "--run", store.run_id,
+                          stdin: JSON.generate("sql" => "SELECT o.id FROM orders o", "extra" => 1))
+    expect([outcome.status.exitstatus, lines(outcome)])
+      .to eq([64, [{ "type" => "error", "step" => "redact-rewrite", "rule" => "bad_input" }]])
+  end
+
+  # 20261019-5: pg_query's message quotes the bad SQL, so the sentinel sits
+  # right where the parse fails.
+  it "refuses a statement that doesn't parse as usage, with its position and never the SQL" do
+    sql = "SELECT o.id FROM orders o WHERE o.note = = '#{sentinel}'"
+    outcome = redact_rewrite(sql)
+    expect([outcome.status.exitstatus, lines(outcome)])
+      .to eq([64, [{ "type" => "error", "step" => "redact-rewrite", "rule" => "redact_rewrite_unparsable",
+                     "position" => sql.index("= =") + 3 }]])
+    expect([outcome.stdout, outcome.stderr].join).not_to include(sentinel)
+  end
+
+  { "redact_rewrite_not_one_statement" => "SELECT 1; SELECT '%s'",
+    "redact_rewrite_empty" => "-- %s\n" }.each do |rule, template|
+    it "refuses as #{rule}, never sending the SQL" do
+      outcome = redact_rewrite(format(template, sentinel))
+      expect([outcome.status.exitstatus, lines(outcome)])
+        .to eq([64, [{ "type" => "error", "step" => "redact-rewrite", "rule" => rule }]])
+      expect([outcome.stdout, outcome.stderr].join).not_to include(sentinel)
+    end
+  end
+
   # The positive control: the checks above would see the sentinel if it were
   # there, since the same scan finds it in what was sent.
   it "would see the sentinel in its input" do
