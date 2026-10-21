@@ -762,16 +762,6 @@ From the review of 20261019-5 (minor). `parse_position`'s range check (`location
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
-### 20261021-1. Rewrite check: refuse `untyped_literal` only when the error is an untyped literal.
-
-From the user's run on 2026-10-21 (`quaack run --run <id> --rewrites rewrited.sql`). operator-rewrites refused the user's rewrite `untyped_literal` ("had a string constant whose type Postgres can't work out"), but the rewrite holds no string constant: only `$n` placeholders and an EXISTS's `SELECT 1`. `RegTypes.typed` returns nil, and `check!` raises `untyped_literal`, for any error from preparing the candidate, not just SQLSTATE 42P18 (indeterminate datatype), so some other prepare error is reported under the wrong rule. Reproduce it with a synthetic copy of the user's query and rewrite (the `assignments` and `submissions` join of 20261020-3, with the rewrite's placeholders reused from the original, and some of the original's `$n` left unused), write a test that fails today, and classify a non-42P18 prepare error by its own rule (or an existing one that fits, such as the candidate not preparing), never as `untyped_literal`. Also find out why this rewrite fails to prepare at all, and fix that if it's a QUAACK bug. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-21.
-- **Design:** Operator rewrites (`--rewrites`), rewrite-check.
-- **Open questions:** None.
-- **Status:** todo
-
 ### 20261021-2. Report: list your own refused rewrites in the Queries section.
 
 From the user, 2026-10-21. A `--rewrites` rewrite that operator-rewrites refuses shows up only as a count in the burndown, so the operator can't tell which rewrite was dropped or why. The Queries section lists only stored rewrites. List each of the operator's own rewrites there, kept or not; for a refused one, show its text (it holds only placeholders) and the reason in the report's words. Update DESIGN.md's report section to match.
@@ -781,6 +771,24 @@ From the user, 2026-10-21. A `--rewrites` rewrite that operator-rewrites refuses
 - **Design:** Report, Operator rewrites (`--rewrites`).
 - **Decisions:** The refused rewrite's text and reason come from the run record: the enclave keeps them (the text holds only placeholders), so a later `quaack report` still shows them (the user, 2026-10-21).
 - **Open questions:** None.
+- **Status:** todo
+
+### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`.
+
+From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_to_plan` back to `untyped_literal`, but only the RULES-list spec guards it. Add a spec where an index probe fails to prepare with a non-42P18 error and assert `untyped_literal`; show dropping the remap turns it red.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-1, 2026-10-21.
+- **Design:** index-ddl-check.
+- **Status:** todo
+
+### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky.
+
+From the review of 20261021-1. The example renders the report twice and compares, and the "Generated on" stamps differed by one second (17:58:51Z against 17:58:52Z), failing the per-commit check once; it passes on rerun. Freeze the clock in the example or compare with the stamp masked.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-1, 2026-10-21.
+- **Design:** report.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

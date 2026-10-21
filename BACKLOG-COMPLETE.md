@@ -12574,3 +12574,14 @@ The user's real run (2026-10-20): the original query has no EXISTS (it's an `IN 
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Landed:** 2026-10-20 (task/20261020-7; enclave). The user's EXISTS rewrite of their UNION ALL original redacts whole in a store-driven spec. A `SELECT 1` in a set-operation arm inside an EXISTS is still refused (review minor; not filed).
 - **Status:** done
+
+### 20261021-1. Rewrite check: refuse `untyped_literal` only when the error is an untyped literal.
+
+From the user's run on 2026-10-21 (`quaack run --run <id> --rewrites rewrited.sql`). operator-rewrites refused the user's rewrite `untyped_literal` ("had a string constant whose type Postgres can't work out"), but the rewrite holds no string constant: only `$n` placeholders and an EXISTS's `SELECT 1`. `RegTypes.typed` returns nil, and `check!` raises `untyped_literal`, for any error from preparing the candidate, not just SQLSTATE 42P18 (indeterminate datatype), so some other prepare error is reported under the wrong rule. Reproduce it with a synthetic copy of the user's query and rewrite (the `assignments` and `submissions` join of 20261020-3, with the rewrite's placeholders reused from the original, and some of the original's `$n` left unused), write a test that fails today, and classify a non-42P18 prepare error by its own rule (or an existing one that fits, such as the candidate not preparing), never as `untyped_literal`. Also find out why this rewrite fails to prepare at all, and fix that if it's a QUAACK bug. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-21.
+- **Design:** Operator rewrites (`--rewrites`), rewrite-check.
+- **Open questions:** None.
+- **Landed:** 2026-10-21 (task/20261021-1; enclave, protocol rules, driver notes). Only a 42P18 naming a literal's `$n` stays `untyped_literal`; any other prepare error is `failed_to_plan`. Unused placeholders were not the cause: `RegTypes.declared` declares them as text. The user's own prepare failure is not yet explained; likely `$n` numbering that doesn't match the run's redacted query (inferred).
+- **Status:** done
