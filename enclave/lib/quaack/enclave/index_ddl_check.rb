@@ -236,6 +236,12 @@ module Quaack
       def reg_values!(stmt, connection)
         RewriteCandidateCheck::RegTypes.check_index!(probe(stmt), stmt.relation, connection)
       rescue RewriteCandidateCheck::Error => e
+        # A probe that doesn't prepare stays untyped_literal here (20261021-1).
+        if e.rule == "failed_to_plan"
+          raise Error.new("untyped_literal", RewriteCandidateCheck::RegTypes::UNTYPED),
+                cause: nil
+        end
+
         raise Error.from(e), cause: nil
       end
 

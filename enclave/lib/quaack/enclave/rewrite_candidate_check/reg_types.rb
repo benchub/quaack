@@ -44,12 +44,16 @@ module Quaack
 
         module_function
 
+        # A candidate that doesn't prepare for a reason other than an
+        # untyped $n (42P18), such as an unknown column or a $n used against
+        # another type than the original's, is refused as
+        # failed_to_plan (20261021-1). IndexDdlCheck keeps untyped_literal
+        # for both.
         def check!(parse, original, connection)
           tree, count = literals_as_params(parse.tree, original.placeholders)
           return if count.zero?
 
           types = typed(connection, PgQuery.deparse(tree), declared(parse.tree, original, count), original.placeholders)
-          raise Error.new("untyped_literal", UNTYPED) unless types
           raise Error.new("unsupported_reg_literal", RegValues::REG_DETAIL) if reg?(connection, types.last(count))
         end
 
@@ -80,7 +84,8 @@ module Quaack
           own + Array.new(count, 0)
         end
 
-        # The parameter types, or nil if it doesn't prepare. A literal whose
+        # The parameter types, or raises failed_to_plan or untyped_literal
+        # if it doesn't prepare (see check!). A literal whose
         # $n Postgres can't type, as in an "any" argument such as
         # concat('a', name), where the literal itself reads as text, is
         # declared text and tried again. The original's $n are never
@@ -91,20 +96,22 @@ module Quaack
             found = prepare(connection, sql, types)
             return found unless found.is_a?(PG::Error)
 
-            number = untyped_number(found)
-            return nil unless number&.between?(own + 1, types.size)
-
-            types[number - 1] = TEXT_OID
+            types[untyped_number(found, own, types.size) - 1] = TEXT_OID
           end
-          nil
+          raise Error.new("untyped_literal", UNTYPED)
         end
 
-        # The $n a "could not determine data type" error names, or nil for
-        # any other error.
-        def untyped_number(error)
-          return nil unless error.result&.error_field(PG::PG_DIAG_SQLSTATE) == INDETERMINATE
+        # The literal's $n a "could not determine data type" error names.
+        # Raises failed_to_plan for any other error, and untyped_literal if
+        # it names none of the literals' $n.
+        def untyped_number(error, own, size)
+          raise Error.new("failed_to_plan", "the candidate doesn't prepare") unless
+            error.result&.error_field(PG::PG_DIAG_SQLSTATE) == INDETERMINATE
 
-          error.message[/\$(\d+)/, 1]&.then { Integer(it, 10) }
+          number = error.message[/\$(\d+)/, 1]&.then { Integer(it, 10) }
+          raise Error.new("untyped_literal", UNTYPED) unless number&.between?(own + 1, size)
+
+          number
         end
 
         # The parameter types, or the PG::Error if it doesn't prepare. Inside
