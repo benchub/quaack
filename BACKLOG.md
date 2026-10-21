@@ -778,7 +778,8 @@ From the user, 2026-10-21. A `--rewrites` rewrite that operator-rewrites refuses
 - **Depends on:** None.
 - **Came from:** The user, 2026-10-21.
 - **Design:** Report, Operator rewrites (`--rewrites`).
-- **Open questions:** Whether the refused rewrite's text comes from the run record (the enclave would have to keep it) or from the `--rewrites` file the current invocation was given (missing on a later `quaack report`).
+- **Decisions:** The refused rewrite's text and reason come from the run record: the enclave keeps them (the text holds only placeholders), so a later `quaack report` still shows them (the user, 2026-10-21).
+- **Open questions:** None.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).
