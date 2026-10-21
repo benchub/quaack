@@ -10,6 +10,7 @@ require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
+require "quaack/protocol/own_rewrites"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
 require "quaack/protocol/unchanged_atoms"
@@ -193,6 +194,14 @@ module Quaack
         check_hidden_statistics(fields)
         check_tablespace_moves(fields)
         check_winner_timing(fields)
+        check_own_rewrites(fields)
+      end
+
+      # own_rewrites, when sent, must pass Protocol::OwnRewrites.valid? (task 20261021-2).
+      def check_own_rewrites(fields)
+        return if Protocol::OwnRewrites.valid?(fields["own_rewrites"])
+
+        raise Error, "a value in this report message has own rewrites that aren't QUAACK's own fields"
       end
 
       def check_winner_timing(fields)

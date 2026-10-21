@@ -367,6 +367,27 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "output_mismatch"))
     end
 
+    # Task 20261021-2: the report lists each of your own rewrites, kept or not.
+    it "keeps each operator rewrite's text, outcome, and rule in own_rewrites, and no LLM-inferred field" do
+      ready
+
+      rewrite_check(rewrites(rewrite("SELECT o.note FROM public.orders o"), rewrite(same), inferred: true))
+
+      expect(stored.read("own_rewrites")).to eq(
+        [{ "index" => 1, "sql" => "SELECT o.note FROM public.orders o", "outcome" => "rejected",
+           "rule" => "output_mismatch", "rewrite" => nil },
+         { "index" => 2, "sql" => same, "outcome" => "accepted", "rule" => nil, "rewrite" => "rewrite_1" }]
+      )
+    end
+
+    it "keeps no own_rewrites for llm-rewrites' rewrites" do
+      ready
+
+      rewrite_check(rewrites(rewrite(same)))
+
+      expect(stored.entry?("own_rewrites")).to be(false)
+    end
+
     it "records that operator-rewrites ran for an inferred call, and llm-rewrites only for a stated one" do
       ready
 

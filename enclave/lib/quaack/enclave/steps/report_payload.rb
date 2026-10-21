@@ -16,6 +16,7 @@ require_relative "hidden_statistics"
 require_relative "index_sources"
 require_relative "measured_labels"
 require_relative "negative_result"
+require_relative "own_rewrites"
 require_relative "redundant_indexes"
 require_relative "rewrite_fate"
 require_relative "rewrite_source"
@@ -131,9 +132,14 @@ module Quaack
       #                    when run-server recorded them. Table names are
       #                    schema; no tablespace's name goes out, and egress
       #                    checks the shape (Protocol::TablespaceMoves)
+      #   own_rewrites     only when rewrite-check kept them (operator-rewrites):
+      #                    [{ "index", "sql", "outcome", "rule", "rewrite" }], each of
+      #                    the operator's own rewrites, kept or refused (OwnRewrites;
+      #                    sql is nil when it holds a literal the redacted query
+      #                    doesn't), which egress checks (Protocol::OwnRewrites)
       #
       # A rewrite the enclave refused on arrival isn't stored, so nothing is
-      # sent for it. The burndown counts those.
+      # sent for it but, for an operator's, its own_rewrites entry. The burndown counts those.
       #
       # Trust boundary. original_sql is the anchored query with the clock-anchor
       # functions put back (the redacted query, literals as $n). A
@@ -179,7 +185,12 @@ module Quaack
           { excluded: MeasuredLabels.excluded(selection["excluded"]),
             negative: NegativeResult.call(store), rule_bugs: RuleBugs.call(store),
             burndown: Burndown.read(store), hidden_statistics: HiddenStatistics.call(store),
-            **tablespace_moves(store) }
+            **tablespace_moves(store), **own_rewrites(store) }
+        end
+
+        # rewrite-check's own_rewrites, when it kept them (OwnRewrites).
+        def own_rewrites(store)
+          { own_rewrites: OwnRewrites.call(store) }
         end
 
         # run-server's tablespace_moves, when it recorded them.

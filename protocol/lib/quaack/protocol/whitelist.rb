@@ -240,10 +240,10 @@ module Quaack
       # ReportPayload step is where they're reviewed. Sources, rule names, fates, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
       # one only if it's on their own lists, never what a store entry holds
-      # as it is.
+      # as it is. own_rewrites goes out only if Protocol::OwnRewrites.valid? passes.
       report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
                  indexes timed_out_count negative rule_bugs burndown index_sources hidden_statistics
-                 tablespace_moves winner_timing].freeze,
+                 tablespace_moves winner_timing own_rewrites].freeze,
       # One line of index-build's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's

@@ -11,6 +11,7 @@ require_relative "suggested_drops"
 require_relative "kinds"
 require_relative "verdict"
 require_relative "rewrites"
+require_relative "own_rewrite_list"
 require_relative "rule_links"
 require_relative "indexes"
 require_relative "accountability"
@@ -41,6 +42,7 @@ module Quaack
         include Kinds
         include Verdict
         include Rewrites
+        include OwnRewriteList
         include RuleLinks
         include Indexes
         include Accountability

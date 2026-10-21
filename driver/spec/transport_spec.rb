@@ -969,6 +969,26 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261021-2. Egress sends own_rewrites only if
+    # Protocol::OwnRewrites.valid? passes, so the driver checks the same.
+    it "reads a report whose own_rewrites Protocol::OwnRewrites.valid? passes, and refuses one it doesn't" do
+      report = lambda do |own|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [],
+                        "index_sources" => index_sources, "own_rewrites" => own })
+      end
+      own = [{ "index" => 1, "outcome" => "rejected", "rewrite" => nil, "rule" => "failed_to_plan",
+               "sql" => "SELECT $1" }]
+      result = raw("print #{"#{report.call(own)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.map { it["own_rewrites"] }).to eq([own])
+      [[own.first.merge("rule" => "x #{sentinel}")], [own.first.merge(sentinel => 1)], sentinel].each do |planted|
+        error = refusal(report.call(planted))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{planted}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     # Task 20261016-14. Egress sends winner_timing only if
     # Protocol::WinnerTiming.valid? passes, so the driver checks the same.
     it "reads a report whose winner_timing is nil or one of QUAACK's words, and refuses any other" do
