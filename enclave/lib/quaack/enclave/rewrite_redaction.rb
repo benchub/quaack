@@ -37,7 +37,9 @@ module Quaack
     # refused (Refusal) when none matches, redact_rewrite_no_match, or
     # when the values don't break the tie, redact_rewrite_ambiguous,
     # with the candidates' numbers. An IN list member matches only in a
-    # list of the same length (Comparison::Key#size). The constants
+    # list of the same length (Comparison::Key#size). An integer 1 in an
+    # EXISTS's target list that no placeholder matches stays as written
+    # (20261020-7); any other constant there is refused. The constants
     # Redaction keeps as written, such as a positional ORDER BY, stay as
     # written. Values are compared only in the enclave and never go out,
     # and no placeholder is ever made up.
@@ -79,7 +81,10 @@ module Quaack
         parse = parsed(sql)
         values = Redaction.literals(parse)
         originals = slots(PgQuery.parse(redacted_query).tree, &:param_ref)
-        literals(parse).each { place(it, number(it, originals, sql, values.fetch(location(it)), placeholder_map)) }
+        literals(parse).each do |slot|
+          found = number(slot, originals, sql, values.fetch(location(slot)), placeholder_map)
+          place(slot, found) if found
+        end
         checked(Deparse.faithfully(parse.tree))
       end
 
@@ -117,17 +122,30 @@ module Quaack
         slots(parse.tree) { (constant = it.a_const) && locations.include?(constant.location) }
       end
 
-      # The placeholder number for slot, or raises Refusal.
+      # The placeholder number for slot, nil to keep it as written, or raises Refusal.
       def number(slot, originals, sql, value, placeholder_map)
         numbers = matching(slot, originals)
         return numbers.first if numbers.size == 1
+        return unmatched(slot, sql, value) if numbers.empty?
 
-        at = position(sql, slot.node.a_const.location)
-        raise Refusal.new("redact_rewrite_no_match", at), cause: nil if numbers.empty?
+        at = position(sql, location(slot))
 
         tied(numbers, value, placeholder_map) or
           raise Refusal.new("redact_rewrite_ambiguous", at, numbers.sort), cause: nil
       end
+
+      # nil for a kept 1, or raises Refusal redact_rewrite_no_match.
+      def unmatched(slot, sql, value)
+        raise Refusal.new("redact_rewrite_no_match", position(sql, location(slot))), cause: nil unless
+          kept?(slot, value)
+      end
+
+      # An EXISTS's target list never changes its result, so an integer 1
+      # there isn't data (20261020-7). Only that one value is kept; any
+      # other constant there is refused, so no real value leaves this way.
+      ONE = { "value" => "1", "type" => "integer" }.freeze
+
+      def kept?(slot, value) = value == ONE && Comparison.exists_target?(slot.key)
 
       # Of several matching numbers, the lowest whose original literal is
       # value (the same text and type), or nil for none. Each such number
@@ -161,18 +179,23 @@ module Quaack
 
       def picked?(message, pick) = message.is_a?(PgQuery::Node) && pick.call(message)
 
-      # sql, once it parses and Redaction finds no literal left in it. Each
-      # placeholder is swapped for a column first, since Redaction refuses
-      # placeholders.
+      # sql, once it parses and Redaction finds no literal left in it but
+      # an EXISTS's kept 1. Each placeholder is swapped for a column first,
+      # since Redaction refuses placeholders.
       def checked(sql)
         parse = PgQuery.parse(sql)
         slots(parse.tree, &:param_ref).each do |slot|
           slot.node.column_ref = PgQuery::ColumnRef.new(fields: [PgQuery::Node.from_string("quaack_placeholder")])
         end
-        left = Redaction.numbers(PgQuery.parse(parse.deparse))
-        raise Error, "the redacted rewrite still holds a literal" unless left.empty?
+        raise Error, "the redacted rewrite still holds a literal" unless left(PgQuery.parse(parse.deparse)).empty?
 
         sql
+      end
+
+      # The literals Redaction finds in parse, but an EXISTS's kept 1.
+      def left(parse)
+        values = Redaction.literals(parse)
+        literals(parse).reject { kept?(it, values.fetch(location(it))) }
       end
     end
   end

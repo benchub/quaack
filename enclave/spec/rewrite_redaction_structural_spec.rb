@@ -91,10 +91,10 @@ RSpec.describe Quaack::Enclave::RewriteRedaction, "structural keys" do
     expect(error.rule).to eq("redact_rewrite_no_match")
   end
 
-  it "refuses an EXISTS's SELECT 1 nested one level deeper than the original's" do
-    original = "SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = o.user_id)"
+  it "refuses an EXISTS's SELECT 2 nested one level deeper than the original's" do
+    original = "SELECT o.id FROM orders o WHERE EXISTS (SELECT 2 FROM users u WHERE u.id = o.user_id)"
     rewrite = "SELECT o.id FROM orders o WHERE o.id IN (SELECT i.oid FROM items i " \
-              "WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = i.uid))"
+              "WHERE EXISTS (SELECT 2 FROM users u WHERE u.id = i.uid))"
     expect(refusal(rewrite, original).rule).to eq("redact_rewrite_no_match")
   end
 
@@ -109,5 +109,60 @@ RSpec.describe Quaack::Enclave::RewriteRedaction, "structural keys" do
   it "has a sentinel check that catches a planted sentinel" do
     expect { described_class.checked("SELECT o.id FROM orders o LIMIT 5 OFFSET '#{sentinel}'") }
       .to raise_error(described_class::Error) { expect(it.message).not_to include(sentinel) }
+  end
+  # 20261020-7: the user's rewrite turns an IN over a UNION ALL into an
+  # EXISTS (SELECT 1 ...), and the original has no 1 to take.
+  describe "an EXISTS's SELECT 1 the original has no placeholder for" do
+    let(:union) do
+      "SELECT o.id FROM orders o WHERE o.status = '#{sentinel}' AND o.id IN " \
+        "((SELECT i.oid FROM items i WHERE i.kind = 'a') UNION ALL (SELECT i.oid FROM items i WHERE i.kind = 'b'))"
+    end
+
+    def exists(target)
+      "SELECT o.id FROM orders o WHERE o.status = '#{sentinel}' AND EXISTS " \
+        "(SELECT #{target} FROM items i WHERE i.oid = o.id AND i.kind = 'a')"
+    end
+
+    it "keeps the integer 1 as written" do
+      out = redact(exists("1"), union)
+      expect(out).to eq("SELECT o.id FROM orders o WHERE o.status = $1 AND EXISTS " \
+                        "(SELECT 1 FROM items i WHERE i.oid = o.id AND i.kind = $2)")
+      expect(out).not_to include(sentinel)
+    end
+
+    it "still refuses any other constant there" do
+      ["2", "'x'", "1.0", "'1'", "-1"].each do |target|
+        sql = exists(target)
+        error = refusal(sql, union)
+        expect([target, error.rule, error.position])
+          .to eq([target, "redact_rewrite_no_match", sql.index("SELECT #{target}") + 8])
+      end
+    end
+
+    it "refuses a 1 in a scalar subquery's or the top SELECT's target list" do
+      scalar = "SELECT o.id, (SELECT 1 FROM items i WHERE i.oid = o.id) FROM orders o WHERE o.status = 'a'"
+      expect(refusal(scalar, union).rule).to eq("redact_rewrite_no_match")
+      expect(refusal("SELECT 1 FROM orders o WHERE o.status = 'a'", union).rule).to eq("redact_rewrite_no_match")
+    end
+
+    it "keeps a sentinel in that position out of the output and the refusal" do
+      sql = exists("'#{sentinel}'")
+      error = refusal(sql, union)
+      expect(error.rule).to eq("redact_rewrite_no_match")
+      expect(error.message).not_to include(sentinel)
+    end
+
+    it "still takes the original's placeholder when one matches" do
+      original = "SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM items i WHERE i.oid = o.id)"
+      expect(redact("SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM items i WHERE i.oid = o.id)", original))
+        .to include("SELECT $1 FROM items")
+    end
+
+    it "has an output check that still catches a 1 left anywhere else" do
+      expect { described_class.checked("SELECT o.id FROM orders o WHERE o.n = 1") }
+        .to raise_error(described_class::Error)
+      expect(described_class.checked("SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM items i)"))
+        .to eq("SELECT o.id FROM orders o WHERE EXISTS (SELECT 1 FROM items i)")
+    end
   end
 end

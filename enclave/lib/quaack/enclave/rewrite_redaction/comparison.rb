@@ -76,6 +76,9 @@ module Quaack
           Key.new(operator: :clause, operand: [field, index], path:, columns: [], size: nil)
         end
 
+        # Whether key is a structural key in an EXISTS's target list.
+        def exists_target?(key) = key&.operator == :clause && key.operand.first == "target_list"
+
         NESTS = [PgQuery::SelectStmt, PgQuery::SubLink, PgQuery::RangeSubselect, PgQuery::CommonTableExpr].freeze
 
         # The SELECTs, SubLinks, FROM subqueries, and CTEs above, from the
