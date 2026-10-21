@@ -763,17 +763,6 @@ From the review of 20261019-5 (minor). `parse_position`'s range check (`location
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
-### 20261021-2. Report: list your own refused rewrites in the Queries section.
-
-From the user, 2026-10-21. A `--rewrites` rewrite that operator-rewrites refuses shows up only as a count in the burndown, so the operator can't tell which rewrite was dropped or why. The Queries section lists only stored rewrites. List each of the operator's own rewrites there, kept or not; for a refused one, show its text (it holds only placeholders) and the reason in the report's words. Update DESIGN.md's report section to match.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-21.
-- **Design:** Report, Operator rewrites (`--rewrites`).
-- **Decisions:** The refused rewrite's text and reason come from the run record: the enclave keeps them (the text holds only placeholders), so a later `quaack report` still shows them (the user, 2026-10-21).
-- **Open questions:** None.
-- **Status:** todo
-
 ### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`.
 
 From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_to_plan` back to `untyped_literal`, but only the RULES-list spec guards it. Add a spec where an index probe fails to prepare with a non-42P18 error and assert `untyped_literal`; show dropping the remap turns it red.
@@ -790,6 +779,15 @@ From the review of 20261021-1. The example renders the report twice and compares
 - **Depends on:** None.
 - **Came from:** The review of 20261021-1, 2026-10-21.
 - **Design:** report.
+- **Status:** todo
+
+### 20261021-5. Own rewrites in the report: send the deparsed text, not the raw `--rewrites` text.
+
+From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text as given, and `RewritePayload.sendable?` only checks A_Const nodes, so a comment or a quoted identifier (`/* ... */`, `-- ...`, `AS "..."`) passes through to the report as written. It came from the operator's own file and goes back only to their report, but send the deparse of the operator's SQL instead (as redact-rewrite already does), so nothing but parsed SQL leaves. Also consider moving `OwnRewriteRecord` into its own file to drop the `Metrics/ModuleLength` disable in `steps/rewrite_check.rb`. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-2, 2026-10-21.
+- **Design:** Report, Operator rewrites (`--rewrites`).
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

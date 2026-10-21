@@ -12585,3 +12585,15 @@ From the user's run on 2026-10-21 (`quaack run --run <id> --rewrites rewrited.sq
 - **Open questions:** None.
 - **Landed:** 2026-10-21 (task/20261021-1; enclave, protocol rules, driver notes). Only a 42P18 naming a literal's `$n` stays `untyped_literal`; any other prepare error is `failed_to_plan`. Unused placeholders were not the cause: `RegTypes.declared` declares them as text. The user's own prepare failure is not yet explained; likely `$n` numbering that doesn't match the run's redacted query (inferred).
 - **Status:** done
+
+### 20261021-2. Report: list your own refused rewrites in the Queries section.
+
+From the user, 2026-10-21. A `--rewrites` rewrite that operator-rewrites refuses shows up only as a count in the burndown, so the operator can't tell which rewrite was dropped or why. The Queries section lists only stored rewrites. List each of the operator's own rewrites there, kept or not; for a refused one, show its text (it holds only placeholders) and the reason in the report's words. Update DESIGN.md's report section to match.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-21.
+- **Design:** Report, Operator rewrites (`--rewrites`).
+- **Decisions:** The refused rewrite's text and reason come from the run record: the enclave keeps them (the text holds only placeholders), so a later `quaack report` still shows them (the user, 2026-10-21).
+- **Open questions:** None.
+- **Landed:** 2026-10-21 (task/20261021-2; enclave, protocol, driver). An `own_rewrites` store entry, sent in report-payload with each field checked; kept rewrites link to their entry and refused ones show text (or a held-back note) and the reason. Review minor is 20261021-5.
+- **Status:** done
