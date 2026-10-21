@@ -761,6 +761,26 @@ From the review of 20261019-5 (minor). `parse_position`'s range check (`location
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
+### 20261021-1. Rewrite check: refuse `untyped_literal` only when the error is an untyped literal.
+
+From the user's run on 2026-10-21 (`quaack run --run <id> --rewrites rewrited.sql`). operator-rewrites refused the user's rewrite `untyped_literal` ("had a string constant whose type Postgres can't work out"), but the rewrite holds no string constant: only `$n` placeholders and an EXISTS's `SELECT 1`. `RegTypes.typed` returns nil, and `check!` raises `untyped_literal`, for any error from preparing the candidate, not just SQLSTATE 42P18 (indeterminate datatype), so some other prepare error is reported under the wrong rule. Reproduce it with a synthetic copy of the user's query and rewrite (the `assignments` and `submissions` join of 20261020-3, with the rewrite's placeholders reused from the original, and some of the original's `$n` left unused), write a test that fails today, and classify a non-42P18 prepare error by its own rule (or an existing one that fits, such as the candidate not preparing), never as `untyped_literal`. Also find out why this rewrite fails to prepare at all, and fix that if it's a QUAACK bug. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-21.
+- **Design:** Operator rewrites (`--rewrites`), rewrite-check.
+- **Open questions:** None.
+- **Status:** todo
+
+### 20261021-2. Report: list your own refused rewrites in the Queries section.
+
+From the user, 2026-10-21. A `--rewrites` rewrite that operator-rewrites refuses shows up only as a count in the burndown, so the operator can't tell which rewrite was dropped or why. The Queries section lists only stored rewrites. List each of the operator's own rewrites there, kept or not; for a refused one, show its text (it holds only placeholders) and the reason in the report's words. Update DESIGN.md's report section to match.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-21.
+- **Design:** Report, Operator rewrites (`--rewrites`).
+- **Open questions:** Whether the refused rewrite's text comes from the run record (the enclave would have to keep it) or from the `--rewrites` file the current invocation was given (missing on a later `quaack report`).
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
