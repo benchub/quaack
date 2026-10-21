@@ -7,6 +7,7 @@ require "quaack/protocol/plan_nodes"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/candidate_kinds"
 require "quaack/protocol/hidden_statistics"
+require "quaack/protocol/own_rewrites"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/fuzz_result"
@@ -55,7 +56,7 @@ module Quaack
       # So a line that starts like a message, with {, and holds a comment or
       # an unknown escape is refused, as is one with a Float that isn't
       # finite, on either version.
-      module Reply
+      module Reply # rubocop:disable Metrics/ModuleLength
         # The deepest a message may nest: the default of the JSON.generate
         # that the enclave's egress function writes each line with, so the
         # driver reads anything egress can send.
@@ -202,7 +203,7 @@ module Quaack
         def typed?(line)
           case line["type"]
           when "burndown" then Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
-          when "report" then report_plans?(line) && report_counts?(line) && hidden_statistics?(line)
+          when "report" then report_plans?(line) && report_counts?(line) && report_findings?(line)
           when "rewrite_test" then Protocol::RewriteBudget.rule?(line["rule"]) && Protocol::FuzzResult.rewrite_test?(line)
           else true
           end
@@ -219,6 +220,9 @@ module Quaack
         # A report's indexes, if it has them, must pass
         # Protocol::IndexSources.entries_valid?, as egress checks.
         def indexes?(line) = !line.key?("indexes") || Protocol::IndexSources.entries_valid?(line["indexes"])
+
+        # A report's hidden_statistics and own_rewrites, as egress checks.
+        def report_findings?(line) = hidden_statistics?(line) && Protocol::OwnRewrites.valid?(line["own_rewrites"])
 
         # A report's hidden_statistics, if it has one, must pass
         # Protocol::HiddenStatistics.valid?, as egress checks.

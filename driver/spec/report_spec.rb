@@ -3690,6 +3690,47 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
+  # Task 20261021-2: each of your own rewrites appears in the queries
+  # section, kept or not; a refused one with its text and the reason.
+  describe "your own rewrites in the queries section" do
+    def own(index, rule, sql: "SELECT #{index}", outcome: "rejected", rewrite: nil)
+      { "index" => index, "sql" => sql, "outcome" => outcome, "rule" => rule, "rewrite" => rewrite }
+    end
+
+    let(:queries) do
+      own_rewrites = [own(1, "output_mismatch"), own(2, "unknown_name", sql: nil),
+                      own(3, "a_rule_without_words"), own(4, nil, outcome: "accepted", rewrite: "rewrite_1")]
+      section(render(payload.merge("own_rewrites" => own_rewrites)), "queries")
+    end
+
+    def article(index) = queries[%r{<article class="rewrite own-rewrite" id="own-rewrite-#{index}">.*?</article>}m]
+
+    it "lists a refused one with its text and the reason in the report's words" do
+      expect(article(1)).to include("<h3>Your own rewrite 1</h3>",
+                                    "What became of it: QUAACK dropped it before testing it: it returned " \
+                                    "different columns.", %(<pre class="sql"><code>SELECT 1</code></pre>))
+    end
+
+    it "gives a rule's fixed note when it has one, and says when its text was held back" do
+      expect(article(2)).to include("A rewrite uses a function, type, collation, or operator",
+                                    "QUAACK held back its text")
+      expect(article(2)).not_to include(%(<pre class="sql">))
+    end
+
+    it "falls back to the inbound check's words for a rule without its own" do
+      expect(article(3)).to include("it failed the checks on what goes in.")
+    end
+
+    it "lists a kept one as the stored rewrite it became, and no refused article for it" do
+      expect(article(4)).to be_nil
+      expect(queries).to include("Your own rewrite 4 is <a href=\"#rewrite-1\">")
+    end
+
+    it "lists none for a payload without own_rewrites" do
+      expect(section(render(payload), "queries")).not_to include("own-rewrite")
+    end
+  end
+
   describe "the burndown Sankey diagrams" do
     sankey_module = Quaack::Driver::Report::Sankey
     layout_module = Quaack::Driver::Report::SankeyLayout

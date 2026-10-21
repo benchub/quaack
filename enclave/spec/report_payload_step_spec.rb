@@ -1941,4 +1941,48 @@ RSpec.describe "quaacks report-payload" do
       expect(Quaack::Enclave::Steps::IndexSources::NAMES.values).to eq(Quaack::Protocol::IndexSources::SOURCES)
     end
   end
+
+  # Task 20261021-2: each of the operator's own rewrites, kept or not, from
+  # rewrite-check's own_rewrites, with its text only when it holds no literal.
+  describe "your own rewrites" do
+    let(:own) do
+      [{ "index" => 1, "sql" => "SELECT id FROM public.orders WHERE note = $2", "outcome" => "rejected",
+         "rule" => "output_mismatch", "rewrite" => nil },
+       { "index" => 2, "sql" => "SELECT id FROM public.orders WHERE note = '#{sentinel}'", "outcome" => "rejected",
+         "rule" => "failed_to_plan", "rewrite" => nil },
+       { "index" => 3, "sql" => "SELECT id FROM public.orders WHERE EXISTS (SELECT 1) AND note = $2",
+         "outcome" => "accepted", "rule" => nil, "rewrite" => "rewrite_1" }]
+    end
+    let(:outcome) { payload_of { it.write("own_rewrites", own) } }
+
+    it "sends each one's text, outcome, rule, and stored name" do
+      expect(report["own_rewrites"].values_at(0, 2)).to eq(own.values_at(0, 2))
+    end
+
+    it "sends no text for one that holds a literal the original query doesn't, and leaks nothing" do
+      expect(report["own_rewrites"][1]).to eq(own[1].merge("sql" => nil))
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    context "when a stored field isn't QUAACK's own" do
+      let(:own) do
+        [{ "index" => sentinel, "sql" => 7, "outcome" => sentinel, "rule" => "Not A Word #{sentinel}",
+           "rewrite" => sentinel }]
+      end
+
+      it "sends nil in its place" do
+        expect(report["own_rewrites"])
+          .to eq([{ "index" => nil, "sql" => nil, "outcome" => nil, "rule" => nil, "rewrite" => nil }])
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    context "when the run has no own_rewrites entry" do
+      let(:outcome) { payload_of { nil } }
+
+      it "sends none" do
+        expect(report["own_rewrites"]).to be_nil
+      end
+    end
+  end
 end

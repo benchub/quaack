@@ -207,6 +207,19 @@ for (const time of document.querySelectorAll("time.local")) {
 <% end %>
 </details></article>
 <% end %>
+<% kept_own.each do |o| %>
+<p class="own-rewrite-kept"><%= h own_called(o) %> is <%= rewrite_link(o["rewrite"]) %>, above.</p>
+<% end %>
+<% refused_own.each do |o| %>
+<article class="rewrite own-rewrite" id="<%= h own_anchor(o) %>"><details class="fold query">
+<summary><h3><%= h own_called(o) %></h3> <span class="source">Where it came from: your own rewrite.</span> <span class="fate">What became of it: <%= h own_reason(o) %></span></summary>
+<% if o["sql"] %>
+<%= sql(o["sql"]) %>
+<% else %>
+<p class="note"><%= h OwnRewriteList::HELD_BACK %></p>
+<% end %>
+</details></article>
+<% end %>
 </section>
 <section id="ranking"><h2>Ranking</h2>
 <% if tablespace_moves_note %><div id="tablespace-moves" class="note"><h3>Tables that sit elsewhere on the run server</h3><p><%= h tablespace_moves_note %></p></div>

@@ -61,11 +61,12 @@ module Quaack
       # A call records its counts in the burndown (RewriteBurndown.record_check), unless an earlier
       # call that died before its marker recorded them. A call with llm-rewrites' rewrites (not inferred) also writes
       # the rewrites_generated marker, so a resumed run skips llm-rewrites. A call
-      # with operator-rewrites' (inferred) writes operator_rewrites_checked instead.
+      # with operator-rewrites' (inferred) writes operator_rewrites_checked instead, and
+      # own_rewrites: [{ "index", "sql" (as given), "outcome", "rule", "rewrite" }], one per rewrite.
       #
       # It sends one rewrite_outcome per rewrite: index, outcome (accepted
       # or rejected), rule, rewrite (the entry name, or nil), and warnings.
-      module RewriteCheck
+      module RewriteCheck # rubocop:disable Metrics/ModuleLength
         MAX = 5
         FIELDS = %w[assumptions sql transformation].freeze
         DATA_KINDS = %w[denormalized_equal].freeze
@@ -79,6 +80,7 @@ module Quaack
         def call(store:, input:, **)
           rewrites, inferred = rewrites(input)
           outcomes = check(store, source: inferred ? "operator" : "llm") { rewrites }
+          store.write("own_rewrites", OwnRewriteRecord.call(rewrites, outcomes)) if inferred
           store.write(inferred ? "operator_rewrites_checked" : "rewrites_generated", {})
           outcomes
         end
@@ -219,6 +221,21 @@ module Quaack
           store = context[:store]
           ClockAnchoring.anchor(sql, context[:settings], placeholder_map: store.read("placeholder_map"),
                                                          statistics: store.read("statistics")).sql
+        end
+      end
+
+      # own_rewrites (task 20261021-2): each operator rewrite as it was
+      # given, with its outcome, so the report lists it kept or not. Its
+      # SQL holds the operator's placeholders only; its LLM-inferred
+      # transformation and assumptions aren't kept here.
+      module OwnRewriteRecord
+        module_function
+
+        def call(rewrites, outcomes)
+          rewrites.zip(outcomes).map do |rewrite, outcome|
+            { "index" => outcome[:index], "sql" => rewrite["sql"], "outcome" => outcome[:outcome].to_s,
+              "rule" => outcome[:rule], "rewrite" => outcome[:rewrite] }
+          end
         end
       end
 

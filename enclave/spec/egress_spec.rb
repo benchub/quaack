@@ -577,6 +577,31 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261021-2: own_rewrites is each of the operator's own rewrites,
+    # in QUAACK's own fields (Protocol::OwnRewrites.valid?).
+    describe "own_rewrites" do
+      def report_with(own_rewrites)
+        { type: :report, original_sql: "SELECT 1", original_plan: [plan_node], rewrites:, labels:, index_sources:,
+          own_rewrites: }
+      end
+
+      it "sends entries of QUAACK's own fields as they are" do
+        own = [{ "index" => 1, "outcome" => "rejected", "rewrite" => nil, "rule" => "failed_to_plan",
+                 "sql" => "SELECT $1" }]
+        expect(JSON.parse(egress.serialize(report_with(own)))["own_rewrites"]).to eq(own)
+      end
+
+      it "refuses one with a value in place of a rule, without quoting it" do
+        own = [{ "index" => 1, "outcome" => "rejected", "rewrite" => nil, "rule" => "x #{EGRESS_SENTINEL}",
+                 "sql" => nil }]
+        expect { egress.serialize(report_with(own)) }
+          .to(raise_error(described_class::Error,
+                          "a value in this report message has own rewrites that aren't QUAACK's own fields") do |e|
+                expect(e.message).not_to include(EGRESS_SENTINEL)
+              end)
+      end
+    end
+
     # Task 20261010-17: tablespace_moves is the query's tables that sit in
     # another tablespace on the run server, as schema.name names, never a
     # tablespace's name (Protocol::TablespaceMoves.valid?). An older
