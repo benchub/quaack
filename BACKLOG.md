@@ -761,15 +761,6 @@ From the review of 20261019-5 (minor). `parse_position`'s range check (`location
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
-### 20261020-7. redact-rewrite: keep an EXISTS's `SELECT 1` as written when the original has none.
-
-The user's real run (2026-10-20): the original query has no EXISTS (it's an `IN ((SELECT ...) UNION ALL (SELECT ...))`), and the rewrite turns it into `EXISTS (SELECT 1 FROM ... )`. The rewrite's `1` has no placeholder anywhere in the original, so redact-rewrite refuses `redact_rewrite_no_match` at it. An EXISTS's target list never changes the result, and the integer `1` there isn't data. Decision (main session, 2026-10-20, for the user's stated goal of no hand edits): when a literal sits in an EXISTS's target list, is the integer constant `1`, and no original placeholder matches it, keep it as written. Any other constant there (another number, a string) is still refused, so a real value can't leave by this path. If the original has a matching placeholder (20261019-4's structural key), that still wins. Test with a synthetic copy of both the user's original (the `IN (... UNION ALL ...)` form, run through the real `quaacks redact` as `enclave/spec/redact_rewrite_pipeline_postgres_spec.rb` does) and the user's rewrite (the EXISTS form), and assert the whole output. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261019-4.
-- **Came from:** The user, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Status:** todo
-
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:

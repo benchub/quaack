@@ -12564,3 +12564,13 @@ From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds tw
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Landed:** 2026-10-20 (task/20261019-5; enclave, protocol rules, and driver). Rules `redact_rewrite_unparsable` (with a position), `redact_rewrite_empty`, `redact_rewrite_not_one_statement`, and `redact_rewrite_literal_left`, and tests for the four surviving mutations. A non-SELECT keeps `unsupported_construct`. The clamp test is 20261020-6.
 - **Status:** done
+
+### 20261020-7. redact-rewrite: keep an EXISTS's `SELECT 1` as written when the original has none.
+
+The user's real run (2026-10-20): the original query has no EXISTS (it's an `IN ((SELECT ...) UNION ALL (SELECT ...))`), and the rewrite turns it into `EXISTS (SELECT 1 FROM ... )`. The rewrite's `1` has no placeholder anywhere in the original, so redact-rewrite refuses `redact_rewrite_no_match` at it. An EXISTS's target list never changes the result, and the integer `1` there isn't data. Decision (main session, 2026-10-20, for the user's stated goal of no hand edits): when a literal sits in an EXISTS's target list, is the integer constant `1`, and no original placeholder matches it, keep it as written. Any other constant there (another number, a string) is still refused, so a real value can't leave by this path. If the original has a matching placeholder (20261019-4's structural key), that still wins. Test with a synthetic copy of both the user's original (the `IN (... UNION ALL ...)` form, run through the real `quaacks redact` as `enclave/spec/redact_rewrite_pipeline_postgres_spec.rb` does) and the user's rewrite (the EXISTS form), and assert the whole output. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261019-4.
+- **Came from:** The user, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Landed:** 2026-10-20 (task/20261020-7; enclave). The user's EXISTS rewrite of their UNION ALL original redacts whole in a store-driven spec. A `SELECT 1` in a set-operation arm inside an EXISTS is still refused (review minor; not filed).
+- **Status:** done
