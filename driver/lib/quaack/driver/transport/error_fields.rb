@@ -46,8 +46,9 @@ module Quaack
         # (quoted where the catalog quotes them), for the operator.
         TABLES_RULE = "dump_object_unreadable"
         # A redact-rewrite refusal's position (DESIGN.md's redact-rewrite): the
-        # 1-based character position of the operator's literal, never its value.
-        POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous].freeze
+        # 1-based character position of the operator's literal, never its value,
+        # or for redact_rewrite_unparsable, where pg_query stopped parsing.
+        POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous redact_rewrite_unparsable].freeze
         # A redact_rewrite_ambiguous refusal's candidates (20261020-1): the
         # $n numbers the literal could take, 2 to 64 ascending positive Integers.
         CANDIDATES_RULE = "redact_rewrite_ambiguous"

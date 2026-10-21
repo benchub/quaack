@@ -4,6 +4,7 @@ require "json"
 require "stringio"
 require "tmpdir"
 require "quaack/enclave/error_filter"
+require "quaack/enclave/rewrite_redaction"
 require "quaack/protocol/unreadable_reasons"
 
 # Stands in for a real production value. It must never show up in anything
@@ -148,6 +149,17 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       expect(position_line("redact_rewrite_ambiguous", described_class::MAX_POSITION))
         .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_ambiguous",
                     position: described_class::MAX_POSITION))
+    end
+
+    it "sends a parse failure's position (20261019-5)" do
+      expect(position_line("redact_rewrite_unparsable", 12))
+        .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_unparsable", position: 12))
+    end
+
+    it "sends a literal left in the output as its own rule, never its message (20261019-5)" do
+      error = Quaack::Enclave::RewriteRedaction::Error.new("SENTINEL-left-5c1e")
+      expect(described_class.to_egress(error, step: "redact-rewrite"))
+        .to eq(line(step: "redact-rewrite", rule: "redact_rewrite_literal_left"))
     end
 
     it "drops a position on any other rule" do

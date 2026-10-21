@@ -102,7 +102,7 @@ module Quaack
       SETTING = /\A[A-Za-z_][A-Za-z0-9_.]{0,62}\z/
       MAX_SETTINGS = 64
       COLUMN_RULES = %w[unsupported_type domain_check].freeze
-      POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous].freeze
+      POSITION_RULES = %w[redact_rewrite_no_match redact_rewrite_ambiguous redact_rewrite_unparsable].freeze
       CANDIDATES_RULE = "redact_rewrite_ambiguous"
       MAX_CANDIDATES = 64
       # Past any statement Input takes.

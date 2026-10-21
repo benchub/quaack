@@ -43,7 +43,8 @@ module Quaack
     # and no placeholder is ever made up.
     #
     # The result is checked: it parses, and Redaction finds no literal left
-    # in it, so none of the run's literals can be there.
+    # in it, so none of the run's literals can be there (Error,
+    # redact_rewrite_literal_left).
     #
     # Trust boundary: the rewrite holds real literals. A Refusal names its
     # rule, the literal's 1-based character position, and for an ambiguous
@@ -57,13 +58,16 @@ module Quaack
           @rule = rule
           @position = position
           @candidates = candidates
-          super(["#{rule} at character #{position}", candidates&.map { "$#{it}" }&.join(", ")]
-            .compact.join(", candidates "))
+          super([[rule, ("at character #{position}" if position)].compact.join(" "),
+                 candidates&.map { "$#{it}" }&.join(", ")].compact.join(", candidates "))
         end
       end
 
-      # The internal error for output that still holds a literal.
-      class Error < StandardError; end
+      # The error for output that still holds a literal: a QUAACK bug, not
+      # the operator's, so it isn't a Refusal (usage), but it has its own rule.
+      class Error < StandardError
+        def rule = "redact_rewrite_literal_left"
+      end
 
       Slot = Data.define(:node, :key)
 
@@ -72,11 +76,35 @@ module Quaack
       # placeholder_map is the run's (Redaction.placeholder_map), read only
       # to break a tie between placeholders whose comparisons all match.
       def redact(sql, redacted_query, placeholder_map = {})
-        parse = PgQuery.parse(sql)
+        parse = parsed(sql)
         values = Redaction.literals(parse)
         originals = slots(PgQuery.parse(redacted_query).tree, &:param_ref)
         literals(parse).each { place(it, number(it, originals, sql, values.fetch(location(it)), placeholder_map)) }
         checked(Deparse.faithfully(parse.tree))
+      end
+
+      # sql's parse, if it's one statement. Otherwise it raises Refusal:
+      # redact_rewrite_unparsable, with pg_query's position when it gives one,
+      # and never its message, which quotes the SQL; redact_rewrite_empty; or
+      # redact_rewrite_not_one_statement. Redaction refuses one that isn't a
+      # SELECT as unsupported_construct, as rewrite-check does.
+      def parsed(sql)
+        parse = begin
+          PgQuery.parse(sql)
+        rescue PgQuery::ParseError => e
+          raise Refusal.new("redact_rewrite_unparsable", parse_position(sql, e.location)), cause: nil
+        end
+        count = parse.tree.stmts.size
+        raise Refusal.new("redact_rewrite_empty", nil), cause: nil if count.zero?
+        raise Refusal.new("redact_rewrite_not_one_statement", nil), cause: nil if count > 1
+
+        parse
+      end
+
+      # pg_query's error location is Postgres's cursor position: already a
+      # 1-based character position, not a byte offset. Kept only in range.
+      def parse_position(sql, location)
+        location if location.instance_of?(Integer) && location.between?(1, sql.length + 1)
       end
 
       def location(slot) = slot.node.a_const.location
