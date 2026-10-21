@@ -12554,3 +12554,13 @@ Test with a synthetic copy of the user's query (the EXISTS shape, with an origin
 - **Open questions:** None.
 - **Landed:** 2026-10-20 (task/20261019-4; enclave). Structural keys for an EXISTS's `SELECT 1`, `LIMIT`, and `OFFSET`, each carrying its nesting. Scalar and IN subqueries stay refused. The CTE-column part is 20261020-2.
 - **Status:** done
+
+### 20261019-5. redact-rewrite: better errors for unparseable and multi-statement input, and tests for surviving mutations.
+
+From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds two statements, comes back as `internal_error`; give it a rule that says so (and a `parse_error` or one-statement rule), without echoing the statement. Also add tests for mutations that survive: `reverse_each` changed to `each` in alias scope lookup (alias shadowing across scopes), removing `BoolExpr` from `BOUNDARIES`, the byte-to-character position conversion (a multibyte statement), and `input.keys == ["sql"]` loosened to `true` (an extra key is refused as `bad_input`). Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261019-3.
+- **Came from:** The review of 20261019-3, 2026-10-19.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Landed:** 2026-10-20 (task/20261019-5; enclave, protocol rules, and driver). Rules `redact_rewrite_unparsable` (with a position), `redact_rewrite_empty`, `redact_rewrite_not_one_statement`, and `redact_rewrite_literal_left`, and tests for the four surviving mutations. A non-SELECT keeps `unsupported_construct`. The clamp test is 20261020-6.
+- **Status:** done

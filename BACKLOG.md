@@ -711,15 +711,6 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 
 ### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite. Done, see BACKLOG-COMPLETE.md.
 
-### 20261019-5. redact-rewrite: better errors for unparseable and multi-statement input, and tests for surviving mutations.
-
-From the review of 20261019-3 (minor). A rewrite that doesn't parse, or holds two statements, comes back as `internal_error`; give it a rule that says so (and a `parse_error` or one-statement rule), without echoing the statement. Also add tests for mutations that survive: `reverse_each` changed to `each` in alias scope lookup (alias shadowing across scopes), removing `BoolExpr` from `BOUNDARIES`, the byte-to-character position conversion (a multibyte statement), and `input.keys == ["sql"]` loosened to `true` (an extra key is refused as `bad_input`). Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261019-3.
-- **Came from:** The review of 20261019-3, 2026-10-19.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Status:** todo
-
 ### 20261020-2. redact-rewrite: resolve a column reached through a CTE's name.
 
 Split from 20261019-4. A rewrite that moves a predicate into a CTE and filters it from outside (`WITH x AS (SELECT * FROM orders WHERE status = 'a') SELECT * FROM x WHERE x.user_id = 5`) names the column through the CTE, `x.user_id`. The matcher resolves `x` as a table called `x`, so it finds no comparison in the original (`orders.user_id`) and refuses `redact_rewrite_no_match`. Take a CTE name map from the enclosing WITH clauses, and resolve a CTE that selects `*` or the column straight from one table to that table. Anything it can't resolve stays a clean refusal. Enclave change; it goes on "Unreleased enclave changes".
@@ -758,6 +749,15 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 - **Came from:** The builder of 20261020-3, 2026-10-20.
 - **Design:** Error filter.
 - **Open questions:** Whether the file lives per run (in the run's store) or once per store base.
+- **Status:** todo
+
+### 20261020-6. redact-rewrite: test the parse-position range clamp.
+
+From the review of 20261019-5 (minor). `parse_position`'s range check (`location.between?(1, sql.length + 1)`) has no test: widening its upper bound leaves every spec green. Stub `PgQuery.parse` to raise a ParseError whose `location` is `sql.length + 5` (and one below 1) and expect the refusal to carry no `position`; show widening the bound turns it red. Enclave spec only.
+
+- **Depends on:** 20261019-5.
+- **Came from:** The review of 20261019-5, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).
