@@ -146,6 +146,8 @@ module Quaack
                                   "to_regclass, and the query doesn't make the same call. QUAACK dropped it.",
         "unknown_name" => "A rewrite uses a function, type, collation, or operator that's neither the " \
                           "query's nor a built-in one. QUAACK dropped it.",
+        "failed_to_plan" => "A rewrite doesn't prepare against the original's tables and parameter types. " \
+                            "QUAACK dropped it.",
         "untyped_literal" => "A rewrite has a string constant whose type Postgres can't work out without its " \
                              "value. QUAACK dropped it.",
         "clock_literal" => "The query has 'now', 'today', 'tomorrow', or 'yesterday' in a string Postgres " \

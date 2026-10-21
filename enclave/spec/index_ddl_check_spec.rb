@@ -412,7 +412,8 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     names = %w[index_ddl_check supported_sql volatility_check deparse
                rewrite_candidate_check/reg_values rewrite_candidate_check/reg_types]
     files = names.to_h { [it, File.read("#{lib}/#{it}.rb")] }
-    unreachable = ["parse_error"]
+    # failed_to_plan: reg_values! raises untyped_literal for RegTypes' one.
+    unreachable = %w[parse_error failed_to_plan]
     scan = lambda do |source|
       source.scan(/Error\.new\(\s*"([a-z_]+)"/).flatten + source.scan(/@rule = "([a-z_]+)"/).flatten
     end

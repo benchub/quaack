@@ -510,11 +510,19 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       end
     end
 
-    it "refuses a string literal that doesn't prepare the same way whatever it holds" do
+    # 20261021-1: only an untyped literal is untyped_literal. Any other
+    # prepare error, here an unknown column, is failed_to_plan, the same way
+    # whatever the literal holds.
+    it "refuses a candidate with a string literal that doesn't prepare for another reason as failed_to_plan" do
       expect(same_outcome("SELECT id FROM orders WHERE nosuch_sentinel = 'X'")).to eq(
-        ["untyped_literal", "untyped_literal: the candidate doesn't prepare with its string literals as parameters",
-         nil]
+        ["failed_to_plan", "failed_to_plan: the candidate doesn't prepare", nil]
       )
+    end
+
+    it "refuses a $n used against another type than the original's as failed_to_plan, not untyped_literal" do
+      original = described_class::Original.new(relations:, placeholders: 1, param_types: [20])
+      expect { check("SELECT id FROM orders WHERE status = $1 AND note = 'x'", original:) }
+        .to rejected("failed_to_plan")
     end
 
     # 20261008-39: a literal in an "any" argument has no type as a $n, but

@@ -88,13 +88,14 @@ module Quaack
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
     #    arena's transaction or change the session.
-    # 8. unsupported_reg_literal or untyped_literal (see RegTypes): with
+    # 8. unsupported_reg_literal, untyped_literal, or failed_to_plan (see RegTypes): with
     #    each string literal a $n of no type, the candidate is prepared,
     #    which evaluates nothing, and a literal Postgres would read as a
     #    reg type from where it is, such as to_tsvector('english', body),
     #    is refused. One Postgres can't type, as in concat('a', name),
     #    is bound as text, and one that still doesn't prepare is refused
-    #    as untyped_literal.
+    #    as untyped_literal. A candidate that fails to prepare with any
+    #    other error is refused as failed_to_plan.
     #
     # What it doesn't catch, tracked in 20260923-35: a STABLE function
     # that reads tables outside the original's set, such as the

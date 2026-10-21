@@ -21,7 +21,7 @@ module Quaack
                  counterexample_round_unknown_search counterexample_round_untested database_qualified_function
                  deparse_mismatch destroy_command_bad_output destroy_command_failed destroy_command_not_run
                  destroy_command_timed_out domain_check dump_exclusions_too_long dump_object_unreadable
-                 execute_failed explain_failed
+                 execute_failed explain_failed failed_to_plan
                  fixture_load_failed fk_cycle forbidden_in_index foreign_relation hypopg_failed in_transaction
                  baseline_original_exceeded_cap literals_already_used
                  index_build_bad_index index_build_hidden_index_used index_build_orphan_cancel_denied
