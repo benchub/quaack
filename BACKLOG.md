@@ -729,6 +729,16 @@ Split from 20261019-4. A rewrite that moves a predicate into a CTE and filters i
 - **Open questions:** None.
 - **Status:** todo
 
+### 20261020-3. redact-rewrite: `internal_error` on the user's real run.
+
+From the user's run on 2026-10-20, after redeploying with 20261019-4 on the jump server: `quaack redact-rewrite failed: internal_error (step redact-rewrite)`. The same synthetic query (the user's query, with made-up numbers) goes through `RewriteRedaction.redact` in a unit test with an original from `Redaction.query` and gives the right placeholders, so the failure comes from something the real run's store holds that the unit tests don't: what `quaacks redact`, `clock-anchor`, and `literals` leave in `redacted_query` and `placeholder_map` (clock-anchored date range, placeholders shared between expressions, a `placeholder_map` with entries a unit test doesn't build), or from the whole step path (the dispatcher, the egress whitelist, the driver call). Reproduce it end to end: run the real steps in order (`redact`, then whatever the pipeline runs before rewrites, through the installed `quaacks`, outside Bundler as the other step specs do) on a synthetic copy of the user's query (an `assignments` and `submissions` join with `workflow_state <> 'deleted'` in the ON and `!= 'deleted'` in the WHERE, a date range `cached_due_date BETWEEN '2026-03-16 00:00:00' AND '2036-09-16 07:00:00'`, a 21-literal `IN` list, an `EXISTS (SELECT 1 ...)`, and an `OR assignments.id IN (...)` of 12), then `quaacks redact-rewrite` with the same text. Find the exception, fix it test first (a test that fails with that exception today), and make the failure diagnosable: an exception the step can't classify should still end as `internal_error`, but a bug like this one must not hide behind it. If the enclave keeps a local log of internal errors on the jump server (check the store and ErrorFilter), say where, so the user can read the cause; if it doesn't, propose the smallest safe way (the exception class name and the file and line of the raise, never a message that could hold a value) as a new task rather than building it. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261019-4.
+- **Came from:** The user, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Open questions:** None.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
