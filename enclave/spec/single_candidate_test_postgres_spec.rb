@@ -337,6 +337,34 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(report.results.last.used?).to be(true)
   end
 
+  # Task 20261110-5: HypoPG accepts an index over Postgres's 32-column limit,
+  # which a real CREATE INDEX refuses, so the run refuses it before HypoPG.
+  context "with a candidate over Postgres's 32-column limit" do
+    before do
+      conn.exec("CREATE TABLE w (#{(1..40).map { "c#{it} int" }.join(", ")})")
+      conn.exec("INSERT INTO w (c1) SELECT i FROM generate_series(1, 10000) AS i")
+      conn.exec("ANALYZE w")
+    end
+
+    let(:w) { Quaack::Enclave::TableName.new(schema: "public", name: "w") }
+
+    def wide(columns, sources)
+      Quaack::Enclave::IndexCandidate.new(table: w, key: ["c1"], include: (2..columns).map { "c#{it}" }, sources:)
+    end
+
+    %i[llm operator].each do |source|
+      it "tests one of exactly 32 columns from the #{source}, and refuses one of 33" do
+        report = described_class.run(conn, query: "SELECT * FROM w WHERE c1 = $1", literal_sets: { slow: ["5"] },
+                                           candidates: [wide(32, [source]), wide(33, [source])])
+
+        expect(report.results.map(&:refusal))
+          .to eq([nil, described_class::Refusal.new(rule: :too_many_columns, sqlstate: nil)])
+        expect(report.results.first.used?).to be(true)
+        expect(report.results.last).to have_attributes(size: nil, plans: {})
+      end
+    end
+  end
+
   # HypoPG reports a column that doesn't exist as an internal error, XX000.
   it "records a candidate on a column that doesn't exist as refused" do
     report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["nope"])])

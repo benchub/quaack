@@ -186,9 +186,17 @@ module Quaack
         def pretty_print(pp) = pp.text(inspect)
       end
 
-      # A candidate HypoPG wouldn't create, rule :hypopg_refused, or one whose
-      # DDL can't be rendered, rule :unrenderable with a nil sqlstate.
+      # A candidate HypoPG wouldn't create, rule :hypopg_refused, one whose
+      # DDL can't be rendered, rule :unrenderable with a nil sqlstate, or one
+      # over Postgres's index column limit, rule :too_many_columns with a nil
+      # sqlstate.
       Refusal = Data.define(:rule, :sqlstate)
+
+      # Postgres's INDEX_MAX_KEYS: an index has at most 32 columns, key and
+      # INCLUDE together. HypoPG doesn't check it, so a real CREATE INDEX of a
+      # candidate it measured could fail with 54011. The run refuses one
+      # over it before HypoPG sees it.
+      MAX_COLUMNS = 32
 
       # The name of the prepared statement and of the savepoint around each
       # hypopg_create_index.
@@ -297,11 +305,12 @@ module Quaack
         false
       end
 
-      # The refused Measurement if any candidate is unrenderable, or nil.
+      # The refused Measurement if any candidate is unrenderable or over
+      # MAX_COLUMNS, or nil.
       def unrenderable(candidates)
-        return if candidates.all? { renderable?(it) }
-
-        Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :unrenderable, sqlstate: nil))
+        rule = :too_many_columns if candidates.any? { it.key.size + it.include.size > MAX_COLUMNS }
+        rule ||= :unrenderable unless candidates.all? { renderable?(it) }
+        rule && Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule:, sqlstate: nil))
       end
 
       # EXECUTE of the prepared statement with these values. With no

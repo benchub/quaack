@@ -12,7 +12,9 @@ module Quaack
       # them proposed. When nothing is ranked, none is.
       module Indexes
         DECLINED = { "unused" => "The planner never chose it.",
-                     "unrenderable" => "QUAACK couldn't write its definition." }.freeze
+                     "unrenderable" => "QUAACK couldn't write its definition.",
+                     "too_many_columns" => "It has more than 32 columns, key and INCLUDE together, which is over " \
+                                           "Postgres's limit for an index." }.freeze
         HYPOPG = "HypoPG, which QUAACK uses to try an index without building it, couldn't create it"
 
         # The built indexes a ranked candidate ran with, by name.

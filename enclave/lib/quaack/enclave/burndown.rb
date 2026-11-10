@@ -155,7 +155,8 @@ module Quaack
       # none, so they don't count. set_aside is the unused candidates held
       # for index-build to build for real (IndexSearch's "set_aside"), which count
       # as set aside rather than never_used. A candidate whose DDL couldn't be
-      # rendered is dropped as unrenderable, apart from what HypoPG refused.
+      # rendered is dropped as unrenderable, and one over Postgres's 32-column
+      # limit as too_many_columns, apart from what HypoPG refused.
       #
       # index-test tests the search's Dedupe's proposals, so report must test
       # exactly them, each once, in any order (IndexCandidate's equality
@@ -281,7 +282,8 @@ module Quaack
         end
 
         # SingleCandidateTest's refusal rules, each its own drop reason.
-        REFUSALS = { hypopg_refused: :hypopg_refused, unrenderable: :unrenderable }.freeze
+        REFUSALS = { hypopg_refused: :hypopg_refused, unrenderable: :unrenderable,
+                     too_many_columns: :too_many_columns }.freeze
 
         def tested_counts(report, set_aside = [])
           results = report.results
@@ -296,7 +298,7 @@ module Quaack
         # itself.
         def refusals(results)
           results.filter_map(&:refusal).map do |refusal|
-            REFUSALS.fetch(refusal.rule) { raise Error, "an index-test refusal must be hypopg_refused or unrenderable" }
+            REFUSALS.fetch(refusal.rule) { raise Error, "an index-test refusal must be one of REFUSALS" }
           end.tally
         end
 

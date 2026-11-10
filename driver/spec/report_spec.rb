@@ -2649,6 +2649,15 @@ RSpec.describe Quaack::Driver::Report do
                                    "<td>QUAACK couldn't write its definition.</td></tr>"))
     end
 
+    # Task 20261110-5.
+    it "says an index over Postgres's column limit is over it" do
+      negative["declined"] << { "ddl" => "CREATE INDEX ON public.t USING btree (e)", "reason" => "too_many_columns",
+                                "sqlstate" => nil, "searches" => ["original"] }
+      expect(why).to include(esc("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (e)")}</td>" \
+                                 "<td>It has more than 32 columns, key and INCLUDE together, which is over " \
+                                 "Postgres's limit for an index.</td></tr>"))
+    end
+
     it "leaves out an error code the payload doesn't have, with no empty brackets" do
       negative["declined"][1]["sqlstate"] = nil
       expect(why).to include(esc("without building it, couldn't create it.</td>"))
@@ -2850,8 +2859,9 @@ RSpec.describe Quaack::Driver::Report do
       it "says under the table that an index it couldn't try never reached the planner" do
         expect(section(html, "accountability")).to include(
           "<p class=\"note\">Planner ignored or couldn't try also counts the ideas QUAACK couldn't try, because " \
-          "HypoPG, which it uses to try an index without building it, couldn't create them, or because it couldn't " \
-          "write their definition. The planner was never " \
+          "HypoPG, which it uses to try an index without building it, couldn't create them, because it couldn't " \
+          "write their definition, or because they were over Postgres's limit of 32 columns for an index. " \
+          "The planner was never " \
           "asked about those.</p>"
         )
       end
@@ -3016,6 +3026,14 @@ RSpec.describe Quaack::Driver::Report do
           counted = rows(accountable, "indexes")
           expect(counted["The LLM"][2]).to eq("4")
           expect(counted["All sources together"][2]).to eq("9")
+        end
+
+        # Task 20261110-5.
+        it "counts an idea over Postgres's 32-column limit as one it couldn't try" do
+          # The before block's 7, plus these 2.
+          stages["index-test"]["original"] = rec(5, 2, dropped: { "never_used" => 1, "hypopg_refused" => 1,
+                                                                  "too_many_columns" => 2 })
+          expect(rows(accountable, "indexes")["All sources together"][2]).to eq("9")
         end
 
         it "says under the table what each column counts" do

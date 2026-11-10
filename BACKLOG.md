@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261110-5
 
 
 ## How this file works.
@@ -813,16 +814,7 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261110-5. Index candidates: refuse an index over 32 columns before HypoPG.
-
-Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and a real `CREATE INDEX` over that fails with 54011. HypoPG doesn't check the limit (confirmed on the test Postgres 18: hypothetical indexes up to 60 columns succeed), so QUAACK can measure, rank, and propose an index the operator can't build. A Canvas run proposed one with 46 columns.
-
-Refuse any index candidate (LLM or operator `--rewrites`) with more than 32 columns before it reaches HypoPG, as a new pre-HypoPG refusal beside `:unrenderable` in `SingleCandidateTest`, carried through `burndown.rb` REFUSALS, `negative_result.rb` REASONS, and the driver's `report/indexes.rb` and `report/words.rb`. The report says the index is over Postgres's 32-column limit. The reason carries no data values. The Canvas XX000 from HypoPG on the same index isn't the column limit, and the user decided (2026-11-10) not to chase it. Enclave change.
-
-- **Depends on:** None.
-- **Came from:** Operator run on Canvas, 2026-11-10.
-- **Design:** index candidates, Report.
-- **Status:** todo
+### 20261110-5. Index candidates: refuse an index over 32 columns before HypoPG. Done, see BACKLOG-COMPLETE.md.
 
 ## New transform rules (2026-10-18).
 

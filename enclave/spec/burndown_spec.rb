@@ -519,6 +519,16 @@ RSpec.describe Quaack::Enclave::Burndown do
         .to eq("unrenderable" => 1, "hypopg_refused" => 1)
     end
 
+    it "counts a candidate over the 32-column limit as its own drop" do
+      dedupe.filter([candidate(["id"]), candidate(["status"])])
+      id, status = dedupe.proposals
+      wide = sct::Refusal.new(rule: :too_many_columns, sqlstate: nil)
+      described_class.record_single_candidate_test(store, report(result(id, used: true), result(status, refusal: wide)),
+                                                   search: :original, dedupe:)
+
+      expect(stored.dig("stages", "index-test", "original", "dropped")).to eq("too_many_columns" => 1)
+    end
+
     it "refuses a refusal rule that isn't one of SingleCandidateTest's" do
       dedupe.filter([candidate(["id"])])
       refused = sct::Refusal.new(rule: BURNDOWN_SENTINEL.to_sym, sqlstate: nil)

@@ -108,6 +108,7 @@ module Quaack
                    "partial_not_low_cardinality" => "partial indices on a column with too many values",
                    "never_used" => "never used by the planner", "hypopg_refused" => "HypoPG couldn't create",
                    "unrenderable" => "QUAACK couldn't write its definition",
+                   "too_many_columns" => "over Postgres's limit of 32 columns for an index",
                    "over_cap" => "made by two rules in a row, over the limit of ten",
                    "failed_checks" => "failed QUAACK's checks",
                    "inbound_check" => "failed the checks on what goes in",

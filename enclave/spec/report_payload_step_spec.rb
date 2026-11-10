@@ -1641,6 +1641,23 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    context "with an index over the 32-column limit" do
+      let(:outcome) do
+        payload_of do |store|
+          populate_negative(store)
+          search = store.read("index_search_rewrite_1")
+          gone = result("btree (id)", used: false, refusal: { "rule" => "too_many_columns", "sqlstate" => nil })
+          store.write("index_search_rewrite_1", search.merge("llm_results" => [*search["llm_results"], gone]))
+        end
+      end
+
+      it "sends it with the reason too_many_columns" do
+        lines = report["negative"]["declined"].select { it["reason"] == "too_many_columns" }
+        expect(lines).to eq([{ "ddl" => "CREATE INDEX ON public.orders USING btree (id)",
+                               "reason" => "too_many_columns", "sqlstate" => nil, "searches" => ["rewrite_1"] }])
+      end
+    end
+
     it "sends each proposed index that already existed once, with the existing index's name, size, and definition" do
       by = { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960,
              "definition" => "CREATE INDEX ON public.orders USING btree (created_at, id)" }

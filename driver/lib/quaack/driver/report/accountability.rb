@@ -49,7 +49,7 @@ module Quaack
         LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
         # The index-test drops planner ignored or couldn't try counts.
-        COULDNT_TRY = %w[never_used hypopg_refused unrenderable].freeze
+        COULDNT_TRY = %w[never_used hypopg_refused unrenderable too_many_columns].freeze
 
         # index_sources' outcomes, in the table's order.
         BY_SOURCE = %w[built not_better ranked].freeze
