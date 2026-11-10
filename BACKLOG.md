@@ -813,14 +813,11 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261110-5. Index candidates: don't propose an index over 32 columns, and say why when one fails.
+### 20261110-5. Index candidates: refuse an index over 32 columns before HypoPG.
 
-Found in a real run on Canvas `users`. The report showed `HypoPG ... couldn't create it (Postgres error code XX000)` for `CREATE INDEX ON users USING btree (sortable_name COLLATE public."und-u-kn-true") INCLUDE (...45 columns...)`. Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and HypoPG reports that as the generic XX000. The same index without the INCLUDE worked, so the COLLATE isn't the cause.
+Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and a real `CREATE INDEX` over that fails with 54011. HypoPG doesn't check the limit (confirmed on the test Postgres 18: hypothetical indexes up to 60 columns succeed), so QUAACK can measure, rank, and propose an index the operator can't build. A Canvas run proposed one with 46 columns.
 
-1. Never test a candidate over 32 columns. Where an index candidate is built or accepted (LLM or operator `--rewrites`), trim INCLUDE columns down to the limit or drop the candidate, and record why.
-2. When a candidate is dropped or HypoPG fails on it for this reason, the report says it's over Postgres's 32-column limit instead of the generic HypoPG text (`driver/lib/quaack/driver/report/indexes.rb`).
-
-Check first that the 32-column cause reproduces against the test Postgres. Enclave change.
+Refuse any index candidate (LLM or operator `--rewrites`) with more than 32 columns before it reaches HypoPG, as a new pre-HypoPG refusal beside `:unrenderable` in `SingleCandidateTest`, carried through `burndown.rb` REFUSALS, `negative_result.rb` REASONS, and the driver's `report/indexes.rb` and `report/words.rb`. The report says the index is over Postgres's 32-column limit. The reason carries no data values. The Canvas XX000 from HypoPG on the same index isn't the column limit, and the user decided (2026-11-10) not to chase it. Enclave change.
 
 - **Depends on:** None.
 - **Came from:** Operator run on Canvas, 2026-11-10.
