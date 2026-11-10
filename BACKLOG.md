@@ -6,13 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261110-1
-- 20261021-2
-- 20261020-1
-- 20261019-4
-- 20261019-5
-- 20261020-7
-- 20261021-1
 
 
 ## How this file works.
