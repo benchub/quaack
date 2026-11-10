@@ -793,6 +793,33 @@ From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text 
 
 ### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties. Done, see BACKLOG-COMPLETE.md.
 
+### 20261110-2. Total-order gate: refuse a set-returning function in the original's target list.
+
+From the review of 20261110-1 (minor). `TotalOrder.gate` returns `:total` for `SELECT id, unnest(tags) FROM t ORDER BY id`, though its rows tie on `id`. Under a nondeterministic collation that can fail a good rewrite whose order inside the tie differs. Refuse `:total` when the target list holds a set-returning function, and list the case in DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-1, 2026-11-10.
+- **Design:** result-comparison, fixture-compare (`unsupported_order`).
+- **Status:** todo
+
+### 20261110-3. Result-comparison: check a candidate's own DISTINCT or GROUP BY picks under a total original.
+
+From the review of 20261110-1 (minor). In `ProductionComparison`, when the original's order is total, a candidate that adds DISTINCT or GROUP BY over a nondeterministic-collation key is compared row for row and can pass if Postgres happens to pick the same values on this run. Fixture-compare's `Picks` covers this; check whether result-comparison needs the same, and refuse if so.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-1, 2026-11-10.
+- **Design:** result-comparison (Picks).
+- **Status:** todo
+
+### 20261110-4. Result-comparison specs: cover the total-order refusals.
+
+From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` tests only the pass, reorder-fail, and join cases of the total-order gate. Add the DISTINCT, GROUP BY, set-operation, and key-collation refusals, so a refactor that splits the two paths keeps the coverage.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-1, 2026-11-10.
+- **Design:** result-comparison.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
