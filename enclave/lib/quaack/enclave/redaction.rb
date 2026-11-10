@@ -149,12 +149,18 @@ module Quaack
 
       module_function
 
-      def redact(parse, explain)
+      # printed, if given, is called with the placeholder map and gives the
+      # texts Postgres prints values as (see Printed and Redaction.printed).
+      def redact(parse, explain, printed: nil)
         query = query(parse)
-        plan = Plan.new(explain, Matcher.new(query.placeholder_map))
+        plan = Plan.new(explain, Matcher.new(query.placeholder_map, printed&.call(query.placeholder_map) || {}))
         Redacted.new(query:, plan: redacted_plan(plan), placeholder_map: query.placeholder_map,
                      placeholder_shapes: annotated(query.placeholders, plan.consumers))
       end
+
+      # The texts map's date and time values print as in a plan (see
+      # Printed), by placeholder number. Value-class: for Matcher only.
+      def printed(map, settings:, connect:, read_only:) = Printed.of(map, settings:, connect:, read_only:)
 
       # Each placeholder's shape, with its row counts.
       def annotated(placeholders, consumers)
@@ -222,3 +228,4 @@ require_relative "redaction/matcher"
 require_relative "redaction/plan"
 require_relative "redaction/rows"
 require_relative "redaction/binding"
+require_relative "redaction/printed"
