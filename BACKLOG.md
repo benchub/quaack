@@ -186,21 +186,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261008-50. Orphan index-build notes: advice that's moot after teardown. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-53. redact: the rest of 20260924-25.
-
-Split from 20260924-25, with that task's review findings:
-
-1. **Equal but differently written expressions.** Postgres treats some as the same, but each gets its own placeholder, so they fail closed as `prepare_failed`.
-2. **Dates in row annotations.** Normalize dates and timestamps for row annotations through the racetrack.
-3. **Numbering.** PredicateAtoms should use redact's numbering.
-4. **Binding.** SingleCandidateTest and ArenaRunner should adopt Binding, so their types are declared through PREPARE.
-5. **Racetrack plan depth.** Racetrack plans, such as a rewrite's slow plan in index-search, aren't depth-checked. A plan deeper than 48 levels fails at egress with a generic error. Check depth there, or map egress's nesting error to `plan_too_deep`.
-6. **`Cast#type`.** It returns `""` rather than `nil` when a `::` is followed by no word parts. Match the comment.
-
-- **Depends on:** 20260924-25.
-- **Came from:** The build and review of 20260924-25, 2026-10-08.
-- **Design:** redact.
-- **Status:** todo. Done: items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil), 2026-10-10; item 3 (db5f1bc0, under 20261004-61); item 4's SingleCandidateTest half (3fd31697); item 1, 2026-11-10 (user decision: constants of the same text, kind, and cast in a key and its matching clause share one placeholder; ones equal in value but written differently still fail closed). item 2, 2026-11-10 (redact asks production how each string placeholder prints as each date and time type, and the matcher matches that text). Open: only item 4's ArenaRunner half (user decision: the full Binding refactor; the arena today inlines each literal as an untyped string, see `Counterexamples.bind`).
+### 20261008-53. redact: the rest of 20260924-25. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 
@@ -848,6 +834,39 @@ From the second review of 20261008-53 item 2 (minor). No spec has an interval pl
 - **Depends on:** 20261008-53 item 2.
 - **Came from:** The second review of 20261008-53 item 2, 2026-11-10.
 - **Design:** redact.
+- **Status:** todo
+
+### 20261110-12. Arena Binding, stage 1: analyses read constants through a value lookup.
+
+Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, in stages, each with its own loop). Today the arena never sees `$n`: `Counterexamples.bind`/`literal` paste each literal back as an untyped quoted string, so `o.total * 1.5 > 3` on an integer column fails every world and rewrite-test reports the untested rewrite as passed (`no_world`). A red spec for that sits on WIP commit 3f6b48c9 (`enclave/spec/counterexample_steps_postgres_spec.rb`, "a numeric literal against an integer column").
+
+Fuzz (`Fuzz::Facts`, `Fuzz::Tree`, `Fuzz::Reach#constant?`, `Fuzz::Combination.number`, and through them Thresholds, Domains, Dictionary, WorldValues) and ResultComparison (the LIMIT constant, `pick_checks.rb` ORDER BY positions, LimitSum) read literal constants from the query's parse tree. Give them one value lookup that answers for a literal or a `$n` with its Binding, so the same analysis on the `$n` form gives the same result as on the literal form. No behavior change for today's literal SQL; specs pin that each analysis agrees across both forms.
+
+- **Depends on:** None.
+- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
+- **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
+- **Status:** todo
+
+### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`.
+
+Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, in stages, each with its own loop). Today the arena never sees `$n`: `Counterexamples.bind`/`literal` paste each literal back as an untyped quoted string, so `o.total * 1.5 > 3` on an integer column fails every world and rewrite-test reports the untested rewrite as passed (`no_world`). A red spec for that sits on WIP commit 3f6b48c9 (`enclave/spec/counterexample_steps_postgres_spec.rb`, "a numeric literal against an integer column").
+
+Every query ResultComparison derives (probe, without_limit, with_tiebreaker, through_window, total-order shapes), Exercised's loosened queries, load orders, and the original rerun keep the `$n` placeholders and carry the Binding along, instead of working on pasted-literal text.
+
+- **Depends on:** 20261110-12.
+- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
+- **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
+- **Status:** todo
+
+### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types.
+
+Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, in stages, each with its own loop). Today the arena never sees `$n`: `Counterexamples.bind`/`literal` paste each literal back as an untyped quoted string, so `o.total * 1.5 > 3` on an integer column fails every world and rewrite-test reports the untested rewrite as passed (`no_world`). A red spec for that sits on WIP commit 3f6b48c9 (`enclave/spec/counterexample_steps_postgres_spec.rb`, "a numeric literal against an integer column").
+
+Move `ArenaRunner::Transaction#query` onto Binding's prepare path (declared types, the 42P18 retry), and make the counterexample and fuzz paths (Session, Differ, Lift) hand it `$n` SQL with its Binding instead of `Counterexamples.bind`'s text. The red spec on 3f6b48c9 goes green. Values stay in the enclave; anything leaving carries only `$n` and shapes.
+
+- **Depends on:** 20261110-13.
+- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
+- **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

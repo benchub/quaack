@@ -12644,3 +12644,19 @@ From the review of 20261110-7 (minor). `single_candidate_test_postgres_spec.rb` 
 - **Came from:** The review of 20261110-7, 2026-11-10.
 - **Design:** index-test.
 - **Status:** done
+
+### 20261008-53. redact: the rest of 20260924-25.
+
+Split from 20260924-25, with that task's review findings:
+
+1. **Equal but differently written expressions.** Postgres treats some as the same, but each gets its own placeholder, so they fail closed as `prepare_failed`.
+2. **Dates in row annotations.** Normalize dates and timestamps for row annotations through the racetrack.
+3. **Numbering.** PredicateAtoms should use redact's numbering.
+4. **Binding.** SingleCandidateTest and ArenaRunner should adopt Binding, so their types are declared through PREPARE.
+5. **Racetrack plan depth.** Racetrack plans, such as a rewrite's slow plan in index-search, aren't depth-checked. A plan deeper than 48 levels fails at egress with a generic error. Check depth there, or map egress's nesting error to `plan_too_deep`.
+6. **`Cast#type`.** It returns `""` rather than `nil` when a `::` is followed by no word parts. Match the comment.
+
+- **Depends on:** 20260924-25.
+- **Came from:** The build and review of 20260924-25, 2026-10-08.
+- **Design:** redact.
+- **Status:** done. Item 4's ArenaRunner half was split out on 2026-11-10 into 20261110-12, -13 and -14 (the user chose the full refactor, in stages). Done: items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil), 2026-10-10; item 3 (db5f1bc0, under 20261004-61); item 4's SingleCandidateTest half (3fd31697); item 1, 2026-11-10 (user decision: constants of the same text, kind, and cast in a key and its matching clause share one placeholder; ones equal in value but written differently still fail closed). item 2, 2026-11-10 (redact asks production how each string placeholder prints as each date and time type, and the matcher matches that text). Open: only item 4's ArenaRunner half (user decision: the full Binding refactor; the arena today inlines each literal as an untyped string, see `Counterexamples.bind`).
