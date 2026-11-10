@@ -81,7 +81,7 @@ RSpec.describe Quaack::Driver::Report do
       ["measurement_timed_out", nil] => ["#{lead}, but every measurement run of it timed out.",
                                          "It passed every correctness test, but every measurement run"],
       ["not_better", nil] => ["#{lead}, but when measured it performed too poorly to be ranked.",
-                              "It passed every correctness test, but when measured against real data"],
+                              "It passed every correctness test, but when measured against common values"],
       %w[unfinished rewrite-test] => ["#{short}, and the run ended before going further.",
                                       "It passed the tests on made-up data, and the run ended"],
       %w[unfinished counterexamples] => ["#{short}, it passed the LLM's test data, and the run ended before " \
