@@ -333,11 +333,30 @@ RSpec.describe Quaack::Enclave::Redaction do
       end
     end
 
-    # Postgres takes these as the same expression, but they're written
-    # differently, so they don't share, and the prepare fails closed.
-    it "fails closed on matching expressions written differently" do
-      ["SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY status || '-x'",
-       "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY o.status || '-x'::text"].each do |query|
+    # Postgres takes these as the same expression, though they're written
+    # differently around the constants. Constants of the same text and type
+    # in a key and its matching clauses share, so they bind.
+    [
+      "SELECT date_trunc('day', o.created_at), count(*) FROM public.orders o " \
+      "GROUP BY date_trunc('day', created_at) ORDER BY date_trunc('day', o.created_at)",
+      "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY status || '-x'",
+      "SELECT coalesce(o.status, 'none'), count(*) FROM public.orders o GROUP BY COALESCE(status, 'none')"
+    ].each do |query|
+      it "shares equal constants of matching expressions written differently: #{query[0, 60]}" do
+        result = redact(query)
+        expect(result.placeholder_map.size).to eq(1)
+        expect(result.placeholder_shapes.keys).to eq(["$1"])
+        expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(rows(query))
+      end
+    end
+
+    # Constants equal in value but written differently don't share, so the
+    # prepare fails closed.
+    it "fails closed on matching expressions whose constants are written differently" do
+      ["SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY o.status || '-x'::text",
+       "SELECT o.id + 5, count(*) FROM public.orders o GROUP BY o.id + '5'::integer",
+       "SELECT o.created_at < '2026-01-01'::timestamp, count(*) FROM public.orders o " \
+       "GROUP BY o.created_at < '2026-01-01 00:00'::timestamp"].each do |query|
         result = redact(query)
         bound = described_class.binding(result.query.sql, result.placeholder_map)
         expect { bound.prepare(test_database.connection, "quaack_differ") }.to raise_error(described_class::Error) { |e|

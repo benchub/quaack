@@ -26,8 +26,10 @@ module Quaack
       #
       # Two expressions are the same when their parse trees match with the
       # locations cleared, so their constants are equal too, in the same
-      # places. Each such pair's constants are joined, in order. Nothing
-      # else shares, even two equal expressions in the select list.
+      # places. Each such pair's constants are joined, in order. Then each
+      # key's constants are joined with the other clause's written the same
+      # way (see alike). Nothing else shares, even two equal expressions in
+      # the select list.
       class Sharing
         # found maps each constant's location to what the query walk
         # recorded for it, and says which constants are placeholders.
@@ -86,6 +88,34 @@ module Quaack
           regions.compact.each do |region|
             sized(region) { |node, size| by_form[form(node)]&.each { join(it, node) } if sizes.include?(size) }
           end
+          alike(keys, regions)
+        end
+
+        # Joins each constant under the regions with the keys' constants
+        # written the same way: the same text, of the same kind, under the
+        # same cast. Postgres can take two expressions written differently
+        # around their constants as the same, such as o.status || '-x' and
+        # status || '-x', and their trees don't match, so this shares their
+        # constants anyway. Constants equal in value but written
+        # differently, such as 5 and '5'::integer, don't share. Like the
+        # search for matching trees, it doesn't go into subqueries.
+        def alike(keys, regions)
+          by_text = keys.flat_map { outer_constants(it) }.group_by { written(it) }
+          regions.compact.each do |region|
+            outer_constants(region).each { |location| by_text[written(location)]&.each { union(it, location) } }
+          end
+        end
+
+        # The placeholders under a node, but not in its subqueries.
+        def outer_constants(node) = [].tap { |f| sized(node) { |n, _| f << n.a_const.location if placeholder?(n) } }
+
+        def placeholder?(node) = node.a_const && @found.key?(node.a_const.location)
+
+        def written(location) = @found.fetch(location).then { |k, t| [k.val, Literal.of(k).first, t && cast_form(t)] }
+
+        def cast_form(cast)
+          type = cast.class
+          type.encode(type.decode(type.encode(cast)).tap { Deparse.clear_locations(it) })
         end
 
         # Yields every Node under this one, and it, with the number of nodes

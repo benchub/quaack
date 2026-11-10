@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261008-53
 
 
 ## How this file works.
@@ -199,7 +200,7 @@ Split from 20260924-25, with that task's review findings:
 - **Depends on:** 20260924-25.
 - **Came from:** The build and review of 20260924-25, 2026-10-08.
 - **Design:** redact.
-- **Status:** todo. Items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil) landed 2026-10-10. Items 1 to 4 are open; 1 and 2 need design decisions, 3 and 4 are refactors to split.
+- **Status:** todo. Done: items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil), 2026-10-10; item 3 (db5f1bc0, under 20261004-61); item 4's SingleCandidateTest half (3fd31697); item 1, 2026-11-10 (user decision: constants of the same text, kind, and cast in a key and its matching clause share one placeholder; ones equal in value but written differently still fail closed). Open: item 2 (user decision: normalize date and time placeholders by asking Postgres to print each value in the plan's format, then match), and item 4's ArenaRunner half (user decision: the full Binding refactor; the arena today inlines each literal as an untyped string, see `Counterexamples.bind`).
 
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 
