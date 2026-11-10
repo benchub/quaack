@@ -813,6 +813,20 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
+### 20261110-5. Index candidates: don't propose an index over 32 columns, and say why when one fails.
+
+Found in a real run on Canvas `users`. The report showed `HypoPG ... couldn't create it (Postgres error code XX000)` for `CREATE INDEX ON users USING btree (sortable_name COLLATE public."und-u-kn-true") INCLUDE (...45 columns...)`. Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and HypoPG reports that as the generic XX000. The same index without the INCLUDE worked, so the COLLATE isn't the cause.
+
+1. Never test a candidate over 32 columns. Where an index candidate is built or accepted (LLM or operator `--rewrites`), trim INCLUDE columns down to the limit or drop the candidate, and record why.
+2. When a candidate is dropped or HypoPG fails on it for this reason, the report says it's over Postgres's 32-column limit instead of the generic HypoPG text (`driver/lib/quaack/driver/report/indexes.rb`).
+
+Check first that the 32-column cause reproduces against the test Postgres. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** Operator run on Canvas, 2026-11-10.
+- **Design:** index candidates, Report.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
