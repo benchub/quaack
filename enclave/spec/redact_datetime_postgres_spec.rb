@@ -9,6 +9,12 @@ require_relative "support/production_server"
 # production to print each string placeholder the way a plan would, so the
 # plan's literal gets its $n and the placeholder its row counts.
 RSpec.describe "quaacks redact, with dates and timestamps" do
+  let(:events) { <<~SQL }
+    CREATE TABLE public.events (id int, created_at timestamp, seen_at timestamptz, day date, note text);
+    INSERT INTO public.events SELECT g, '2025-12-01'::timestamp + g * interval '1 day',
+      '2025-12-01'::timestamptz + g * interval '1 day', '2025-12-01'::date + g, 'n' || g
+      FROM generate_series(1, 100) g;
+  SQL
   let(:quaacks) { LeakCheck::Quaacks.new }
   let(:sentinels) { ProductionServer.sentinels }
   let!(:production) { ProductionServer.create(sentinels) }
@@ -30,14 +36,10 @@ RSpec.describe "quaacks redact, with dates and timestamps" do
     production.drop
   end
 
-  def explain
+  def explain(settings = {})
     conn = production.connect
-    conn.exec(<<~SQL)
-      CREATE TABLE public.events (id int, created_at timestamp, seen_at timestamptz, day date, note text);
-      INSERT INTO public.events SELECT g, '2025-12-01'::timestamp + g * interval '1 day',
-        '2025-12-01'::timestamptz + g * interval '1 day', '2025-12-01'::date + g, 'n' || g
-        FROM generate_series(1, 100) g;
-    SQL
+    settings.each { conn.exec_params("SELECT pg_catalog.set_config($1, $2, false)", it) }
+    @made ||= conn.exec(events)
     JSON.parse(conn.exec("EXPLAIN (ANALYZE, FORMAT JSON) #{query}").getvalue(0, 0))
   ensure
     conn&.close
@@ -59,6 +61,21 @@ RSpec.describe "quaacks redact, with dates and timestamps" do
     rows = stored.read("placeholder_shapes").values_at("$1", "$2", "$3").map { it["rows"] }
     expect(rows.map { [it["status"], it["estimated_rows"].class, it["actual_rows"].is_a?(Numeric)] })
       .to eq([["found", Integer, true]] * 3)
+  end
+
+  it "prints the values under inventory's TimeZone and DateStyle, as the input EXPLAIN did" do
+    settings = { "TimeZone" => "America/New_York", "DateStyle" => "SQL, DMY" }
+    store.write("inventory", { "settings" => settings })
+    store.write("plan", explain(settings))
+
+    outcome = redact
+
+    expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
+    plan = stored.read("redacted_plan")
+    expect(plan["explain"][0]["Plan"]["Filter"]).to include("$2::timestamp with time zone")
+    expect(plan["masked"]).to eq(0)
+    rows = stored.read("placeholder_shapes")["$2"]["rows"]
+    expect([rows["status"], rows["estimated_rows"].class]).to eq(["found", Integer])
   end
 
   it "keeps the printed values out of all it sends or shares, and the check would catch them" do
