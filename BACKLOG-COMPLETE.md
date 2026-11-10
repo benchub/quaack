@@ -12623,3 +12623,12 @@ Refuse any index candidate (LLM or operator `--rewrites`) with more than 32 colu
 - **Came from:** Operator run on Canvas, 2026-11-10.
 - **Design:** index candidates, Report.
 - **Status:** done
+
+### 20261110-6. 32-column refusal: test an overflow in the key columns.
+
+From the review of 20261110-5 (minor). `single_candidate_test_postgres_spec.rb` only overflows the limit through INCLUDE (`key: ["c1"]`). Add a case where the key columns alone, including expression and COLLATE keys, push the total past 32, so a regression that stops counting `key.size` goes red.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-5, 2026-11-10.
+- **Design:** index-test.
+- **Status:** done

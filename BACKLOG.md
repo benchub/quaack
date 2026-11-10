@@ -814,17 +814,6 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261110-5. Index candidates: refuse an index over 32 columns before HypoPG. Done, see BACKLOG-COMPLETE.md.
-
-### 20261110-6. 32-column refusal: test an overflow in the key columns.
-
-From the review of 20261110-5 (minor). `single_candidate_test_postgres_spec.rb` only overflows the limit through INCLUDE (`key: ["c1"]`). Add a case where the key columns alone, including expression and COLLATE keys, push the total past 32, so a regression that stops counting `key.size` goes red.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261110-5, 2026-11-10.
-- **Design:** index-test.
-- **Status:** todo
-
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
