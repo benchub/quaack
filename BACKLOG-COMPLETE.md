@@ -12612,3 +12612,13 @@ Applies to both fixture-compare (`ResultComparison`) and result-comparison (`Pro
 - **Answers (the user, 2026-11-10):** An `IN (subquery)` semijoin counts as reading the table once. Only the original's order needs to be total; a candidate is then compared row for row even if its order could tie.
 - **Open questions (answered):** Does the original's `IN (subquery)` semijoin count as reading `users` once? It should, since a semijoin never repeats outer rows. Should the narrowed check also cover a candidate that has ties when the original has none? A candidate that ties can mismatch on one run, which only ever loses a good rewrite.
 - **Status:** done
+
+### 20261110-5. Report: the not_better fate says "common values", not "real data".
+
+The not_better fate read "It passed every correctness test, but when measured against real data performed too poorly to be ranked." On run 20261110T184953Z-c9204e83, a rewrite read 5,070 blocks against the original's 68,636 on the slow values, but 412,410 against 418 on the worst-case values (the top MCV), and the user couldn't tell from the fate that other values sank it. The user decided (2026-11-10) on "It passed every correctness test, but when measured against common values performed too poorly to be ranked." Driver only.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-11-10.
+- **Design:** report.
+- **Landed:** 2026-11-10 (task/20261110-5; driver only). `Report::Rewrites::FATES["not_better"]` and its `went_on` pair now say "common values". README.md and DESIGN.md quote the new sentence.
+- **Status:** done

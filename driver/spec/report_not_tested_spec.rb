@@ -86,7 +86,7 @@ RSpec.describe Quaack::Driver::Report do
       ["below_top_three", nil] => ["#{lead}, and it beat the original query, but three others",
                                    "It passed every correctness test and beat the original query, but three"],
       ["not_better", nil] => ["#{lead}, but when measured it performed too poorly to be ranked.",
-                              "It passed every correctness test, but when measured against real data"],
+                              "It passed every correctness test, but when measured against common values"],
       %w[unfinished rewrite-test] => ["#{short}, and the run ended before going further.",
                                       "It passed the tests on made-up data, and the run ended"],
       %w[unfinished counterexamples] => ["#{short}, it passed the LLM's test data, and the run ended before " \
