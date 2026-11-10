@@ -64,7 +64,9 @@ module Quaack
     # numbered where its first constant sits. The search for a key's copies
     # covers the whole of the other clause, aggregate arguments and FILTER
     # included, so it can share more than Postgres needs, but only
-    # constants that hold equal values.
+    # constants that hold equal values. Where a key's copy is written
+    # differently around its constants, such as status against o.status,
+    # constants written the same way (text, kind, and cast) share too.
     #
     # == Row counts
     #
