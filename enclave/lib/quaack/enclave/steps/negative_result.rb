@@ -27,8 +27,8 @@ module Quaack
       # is the same, and the DDL sent is the first one's. A declined index
       # that was declined for two different reasons is sent once for each.
       #
-      # Trust boundary. Search names, the reasons unused, hypopg_refused, and
-      # unrenderable (REASONS; any other stored rule goes out as nil),
+      # Trust boundary. Search names, the reasons unused, hypopg_refused,
+      # unrenderable, and too_many_columns (REASONS; any other stored rule goes out as nil),
       # SQLSTATEs, existing index names (schema) and sizes
       # (ExistingIndexes), and DDL, each existing index's definition
       # included, through CandidateDdlRedaction. Never a
@@ -44,7 +44,7 @@ module Quaack
 
         # Why index-test declined a candidate: the planner never used it, or the
         # refusal rule SingleCandidateTest stores.
-        REASONS = %w[unused hypopg_refused unrenderable].freeze
+        REASONS = %w[unused hypopg_refused unrenderable too_many_columns].freeze
 
         module_function
 

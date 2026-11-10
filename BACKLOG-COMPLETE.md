@@ -12612,3 +12612,14 @@ Applies to both fixture-compare (`ResultComparison`) and result-comparison (`Pro
 - **Answers (the user, 2026-11-10):** An `IN (subquery)` semijoin counts as reading the table once. Only the original's order needs to be total; a candidate is then compared row for row even if its order could tie.
 - **Open questions (answered):** Does the original's `IN (subquery)` semijoin count as reading `users` once? It should, since a semijoin never repeats outer rows. Should the narrowed check also cover a candidate that has ties when the original has none? A candidate that ties can mismatch on one run, which only ever loses a good rewrite.
 - **Status:** done
+
+### 20261110-5. Index candidates: refuse an index over 32 columns before HypoPG.
+
+Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and a real `CREATE INDEX` over that fails with 54011. HypoPG doesn't check the limit (confirmed on the test Postgres 18: hypothetical indexes up to 60 columns succeed), so QUAACK can measure, rank, and propose an index the operator can't build. A Canvas run proposed one with 46 columns.
+
+Refuse any index candidate (LLM or operator `--rewrites`) with more than 32 columns before it reaches HypoPG, as a new pre-HypoPG refusal beside `:unrenderable` in `SingleCandidateTest`, carried through `burndown.rb` REFUSALS, `negative_result.rb` REASONS, and the driver's `report/indexes.rb` and `report/words.rb`. The report says the index is over Postgres's 32-column limit. The reason carries no data values. The Canvas XX000 from HypoPG on the same index isn't the column limit, and the user decided (2026-11-10) not to chase it. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** Operator run on Canvas, 2026-11-10.
+- **Design:** index candidates, Report.
+- **Status:** done

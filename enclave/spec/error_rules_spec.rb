@@ -26,6 +26,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "search_failed" => "a rewrite the search couldn't test, stored as passed (steps/rewrite_fuzz.rb)",
     "hypopg_refused" => "a SingleCandidateTest refusal, stored in the candidate's result",
     "unrenderable" => "a SingleCandidateTest refusal, stored in the candidate's result",
+    "too_many_columns" => "a SingleCandidateTest refusal, stored in the candidate's result",
     "too_many" => "rewrite-check's Rejected, rescued into the rewrite's outcome",
     "bad_assumption" => "rewrite-check's Rejected, rescued into the rewrite's outcome",
     "unmet_assumption" => "rewrite-check's Rejected, rescued into the rewrite's outcome"
