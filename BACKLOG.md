@@ -814,6 +814,15 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
+### 20261110-8. redact sharing: don't join a same-text constant used against another type.
+
+From the review of 20261008-53 item 1 (minor, a regression). `Sharing#alike` (`enclave/lib/quaack/enclave/redaction/sharing.rb`, around lines 91 and 102-106) runs on every key and joins any same-text constant in the matching clauses, even one the tree match already covered and that only happens to share the text. `SELECT coalesce(o.status, '5'), count(*) FROM orders o GROUP BY coalesce(o.status, '5') HAVING max(o.id) > '5'` used to bind; it now shares `$1` with the text key and fails closed as `prepare_failed` (42883). Only join a constant that sits in an expression shaped like the key, or skip `alike` where the tree match already joined the copies.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261008-53 item 1, 2026-11-10.
+- **Design:** redact.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
