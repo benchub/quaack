@@ -823,6 +823,24 @@ From the review of 20261008-53 item 1 (minor, a regression). `Sharing#alike` (`e
 - **Design:** redact.
 - **Status:** todo
 
+### 20261110-9. redact: a failure printing date/time values masks them instead of failing the step.
+
+From the review of 20261008-53 item 2 (minor). `Redaction::Printed.of` connects to production whenever a string placeholder holds a digit, so a query with `'SKU-9'` and no dates now fails `quaacks redact` with `production_connection_failed` or on a statement timeout, where it used to succeed. Rescue `Production::Error` and `PG::Error` there and return no printed forms, so those literals are masked as before. Also fix the stale "It doesn't touch production" header in `steps/redact.rb`.
+
+- **Depends on:** 20261008-53 item 2.
+- **Came from:** The review of 20261008-53 item 2, 2026-11-10.
+- **Design:** redact.
+- **Status:** todo
+
+### 20261110-10. redact: printed date/time forms that collide with another literal.
+
+From the review of 20261008-53 item 2 (minor). Printed texts share the matcher's text lookup with raw values (`matcher.rb` around 108-110). `'2026-01-01'` printed as a timestamp equals a second literal `'2026-01-01 00:00:00'`, and `'5'` prints as the interval `00:00:05`. Write a spec with two literals that collide this way and confirm the plan literal is masked rather than given the wrong `$n`; fix if not. Also note in DESIGN.md that an input EXPLAIN captured under client settings other than production's leaves these literals masked.
+
+- **Depends on:** 20261008-53 item 2.
+- **Came from:** The review of 20261008-53 item 2, 2026-11-10.
+- **Design:** redact.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
