@@ -841,6 +841,15 @@ From the review of 20261008-53 item 2 (minor). Printed texts share the matcher's
 - **Design:** redact.
 - **Status:** todo
 
+### 20261110-11. redact printed forms: spec IntervalStyle, and $1 and $3 under non-default settings.
+
+From the second review of 20261008-53 item 2 (minor). No spec has an interval placeholder under a non-default IntervalStyle, so dropping it from `Printed::SETTINGS` stays green. The session-settings example in `redact_datetime_postgres_spec.rb` asserts only `$2` (timestamptz); also assert `$1` (timestamp) and `$3` (date), which depend on DateStyle.
+
+- **Depends on:** 20261008-53 item 2.
+- **Came from:** The second review of 20261008-53 item 2, 2026-11-10.
+- **Design:** redact.
+- **Status:** todo
+
 ## New transform rules (2026-10-18).
 
 The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
