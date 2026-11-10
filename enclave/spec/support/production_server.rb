@@ -43,6 +43,16 @@ class ProductionServer
   # port: can be another way in to the same server, such as PgBouncer's.
   def connect(port: self.port) = PG.connect(host:, port:, dbname: name, user:, password:)
 
+  # The environment for a quaacks child whose home is home that connects
+  # here as an operator would: a .pgpass in home, and libpq's variables set
+  # to this database and no others.
+  def quaacks_env(home)
+    path = File.join(home, ".pgpass")
+    File.write(path, "*:*:*:#{user}:#{password}\n")
+    File.chmod(0o600, path)
+    ENV.keys.grep(/\APG/).to_h { [it, nil] }.merge("PGPORT" => port.to_s, "PGUSER" => user, "PGDATABASE" => name)
+  end
+
   def create
     server.admin.exec(%(CREATE DATABASE "#{name}" TEMPLATE template0 LOCALE_PROVIDER builtin \
                         BUILTIN_LOCALE 'C.UTF-8' LOCALE 'C' ENCODING 'UTF8'))

@@ -200,7 +200,7 @@ Split from 20260924-25, with that task's review findings:
 - **Depends on:** 20260924-25.
 - **Came from:** The build and review of 20260924-25, 2026-10-08.
 - **Design:** redact.
-- **Status:** todo. Done: items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil), 2026-10-10; item 3 (db5f1bc0, under 20261004-61); item 4's SingleCandidateTest half (3fd31697); item 1, 2026-11-10 (user decision: constants of the same text, kind, and cast in a key and its matching clause share one placeholder; ones equal in value but written differently still fail closed). Open: item 2 (user decision: normalize date and time placeholders by asking Postgres to print each value in the plan's format, then match), and item 4's ArenaRunner half (user decision: the full Binding refactor; the arena today inlines each literal as an untyped string, see `Counterexamples.bind`).
+- **Status:** todo. Done: items 5 (plan depth: `Egress::TooDeep`, rule `plan_too_deep`) and 6 (`Cast#type` nil), 2026-10-10; item 3 (db5f1bc0, under 20261004-61); item 4's SingleCandidateTest half (3fd31697); item 1, 2026-11-10 (user decision: constants of the same text, kind, and cast in a key and its matching clause share one placeholder; ones equal in value but written differently still fail closed). item 2, 2026-11-10 (redact asks production how each string placeholder prints as each date and time type, and the matcher matches that text). Open: only item 4's ArenaRunner half (user decision: the full Binding refactor; the arena today inlines each literal as an untyped string, see `Counterexamples.bind`).
 
 ### 20261008-55. Foreign cancels: minors from 20260929-29. Done, see BACKLOG-COMPLETE.md.
 

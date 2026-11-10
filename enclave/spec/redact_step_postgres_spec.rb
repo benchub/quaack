@@ -7,7 +7,8 @@ require_relative "support/production_server"
 # `quaacks redact --run <run ID>` (DESIGN.md's redact) the way the jump server runs
 # it: the installed quaacks in its own process, outside Bundler. It reads the
 # run's qualified_query and plan entries, here a real EXPLAIN ANALYZE of a
-# query whose literals are sentinels, and needs no production connection.
+# query whose literals are sentinels. It connects to production only to ask how
+# its string placeholders print as dates or times.
 RSpec.describe "quaacks redact" do
   let(:quaacks) { LeakCheck::Quaacks.new }
   let(:sentinels) { ProductionServer.sentinels }
@@ -17,6 +18,7 @@ RSpec.describe "quaacks redact" do
   end
   let(:store) do
     Quaack::Enclave::Store.create(base: quaacks.store_base).tap do |store|
+      store.write("server", production.host)
       store.write("qualified_query", query)
       store.write("plan", explain)
     end
@@ -35,8 +37,9 @@ RSpec.describe "quaacks redact" do
     conn&.close
   end
 
-  def no_libpq_env = ENV.keys.grep(/\APG/).to_h { [it, nil] }
-  def redact(run_id = store.run_id) = quaacks.run("redact", "--run", run_id, env: no_libpq_env)
+  def production_env = production.quaacks_env(quaacks.home)
+
+  def redact(run_id = store.run_id) = quaacks.run("redact", "--run", run_id, env: production_env)
   def stored = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base)
   def entries = %w[placeholder_map placeholder_shapes redacted_query redacted_plan]
 

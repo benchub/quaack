@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "../redaction"
+require_relative "../inventory/production"
 
 module Quaack
   module Enclave
@@ -25,13 +26,26 @@ module Quaack
 
         def call(store:, **)
           query = store.read("qualified_query")
-          result = Redaction.redact(PgQuery.parse(query), store.read("plan"))
+          result = Redaction.redact(PgQuery.parse(query), store.read("plan"), printed: printed(store))
           plan = result.plan
           result.store(store)
           store.write("redacted_query", result.query.sql)
           store.write("redacted_plan", { "explain" => plan.explain, "masked" => plan.masked,
                                          "dropped" => plan.dropped })
           []
+        end
+
+        # How Postgres prints the string placeholders that read as dates or
+        # times, asked of production in one read-only query, with
+        # inventory's DateStyle, IntervalStyle, and TimeZone when the run
+        # has them.
+        def printed(store)
+          production = Enclave::Inventory::Production
+          settings = store.read("inventory")["settings"] if store.entry?("inventory")
+          lambda do |map|
+            Redaction.printed(map, settings:, connect: -> { production.connect(production.params(store)) },
+                                   read_only: production.method(:read_only))
+          end
         end
       end
     end
