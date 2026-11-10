@@ -51,8 +51,8 @@ module Quaack
                                "its kind did better.",
           "footprint_tie" => "It passed every correctness test and beat the original query, but tied with a " \
                              "candidate whose new indices take no more disk space.",
-          "not_better" => "It passed every correctness test, but when measured against real data performed too " \
-                          "poorly to be ranked.",
+          "not_better" => "It passed every correctness test, but when measured against common values performed " \
+                          "too poorly to be ranked.",
           "measurement_timed_out" => "It passed every correctness test, but every measurement run of it timed out."
         }.freeze
 
@@ -96,7 +96,7 @@ module Quaack
            ["It passed the tests on made-up data, but QUAACK", "#{lead}, but QUAACK"],
            ["It passed the tests on made-up data, but", "#{lead}, and it"],
            ["It passed every correctness test and beat", "#{lead}, and it beat"],
-           ["It passed every correctness test, but when measured against real data",
+           ["It passed every correctness test, but when measured against common values",
             "#{lead}, but when measured it"],
            ["It passed every correctness test,", "#{lead},"]]
         end

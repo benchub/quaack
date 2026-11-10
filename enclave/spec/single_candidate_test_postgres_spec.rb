@@ -337,7 +337,7 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(report.results.last.used?).to be(true)
   end
 
-  # Task 20261110-5: HypoPG accepts an index over Postgres's 32-column limit,
+  # Task 20261110-7: HypoPG accepts an index over Postgres's 32-column limit,
   # which a real CREATE INDEX refuses, so the run refuses it before HypoPG.
   context "with a candidate over Postgres's 32-column limit" do
     before do
@@ -364,7 +364,7 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
       end
     end
 
-    # Task 20261110-6: the key columns count too, expression and COLLATE keys
+    # Task 20261110-6 (from 20261110-7): the key columns count too, expression and COLLATE keys
     # among them, so a key-heavy candidate overflows with no INCLUDE at all.
     def key_heavy(keys, includes)
       key = ["c1", Quaack::Enclave::IndexCandidate::KeyColumn.new(expression: "(c2 + 1)"),

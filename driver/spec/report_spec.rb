@@ -1379,7 +1379,7 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says how a rewrite that passed every test lost" do
-        expect(fate("not_better")).to eq("It passed every correctness test, but when measured against real data " \
+        expect(fate("not_better")).to eq("It passed every correctness test, but when measured against common values " \
                                          "performed too poorly to be ranked.")
         expect(fate("footprint_tie")).to include("tied with a candidate whose new indices take no more disk space")
         expect(fate("below_top_three")).to include("three others of its kind did better")
@@ -1391,7 +1391,7 @@ RSpec.describe Quaack::Driver::Report do
                                "timed_out" => false, "measurements" => {},
                                "verdicts" => { "slow" => "no_worse", "typical" => "no_worse" } }
         payload["excluded"]["rewrite_2:none"] = "not_better"
-        sentence = "It passed every correctness test, but when measured against real data performed too poorly " \
+        sentence = "It passed every correctness test, but when measured against common values performed too poorly " \
                    "to be ranked."
         expect(fate("not_better")).to eq(sentence)
         payload["labels"].last["verdicts"] = { "slow" => "better", "typical" => "worse" }
@@ -2649,7 +2649,7 @@ RSpec.describe Quaack::Driver::Report do
                                    "<td>QUAACK couldn't write its definition.</td></tr>"))
     end
 
-    # Task 20261110-5.
+    # Task 20261110-7.
     it "says an index over Postgres's column limit is over it" do
       negative["declined"] << { "ddl" => "CREATE INDEX ON public.t USING btree (e)", "reason" => "too_many_columns",
                                 "sqlstate" => nil, "searches" => ["original"] }
@@ -3028,7 +3028,7 @@ RSpec.describe Quaack::Driver::Report do
           expect(counted["All sources together"][2]).to eq("9")
         end
 
-        # Task 20261110-5.
+        # Task 20261110-7.
         it "counts an idea over Postgres's 32-column limit as one it couldn't try" do
           # The before block's 7, plus these 2.
           stages["index-test"]["original"] = rec(5, 2, dropped: { "never_used" => 1, "hypopg_refused" => 1,

@@ -12613,7 +12613,19 @@ Applies to both fixture-compare (`ResultComparison`) and result-comparison (`Pro
 - **Open questions (answered):** Does the original's `IN (subquery)` semijoin count as reading `users` once? It should, since a semijoin never repeats outer rows. Should the narrowed check also cover a candidate that has ties when the original has none? A candidate that ties can mismatch on one run, which only ever loses a good rewrite.
 - **Status:** done
 
-### 20261110-5. Index candidates: refuse an index over 32 columns before HypoPG.
+### 20261110-5. Report: the not_better fate says "common values", not "real data".
+
+The not_better fate read "It passed every correctness test, but when measured against real data performed too poorly to be ranked." On run 20261110T184953Z-c9204e83, a rewrite read 5,070 blocks against the original's 68,636 on the slow values, but 412,410 against 418 on the worst-case values (the top MCV), and the user couldn't tell from the fate that other values sank it. The user decided (2026-11-10) on "It passed every correctness test, but when measured against common values performed too poorly to be ranked." Driver only.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-11-10.
+- **Design:** report.
+- **Landed:** 2026-11-10 (task/20261110-5; driver only). `Report::Rewrites::FATES["not_better"]` and its `went_on` pair now say "common values". README.md and DESIGN.md quote the new sentence.
+- **Status:** done
+
+### 20261110-7. Index candidates: refuse an index over 32 columns before HypoPG.
+
+First filed as 20261110-5, which another session also used; renumbered to 20261110-7 on 2026-11-10. Commits before the rename say 20261110-5.
 
 Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and a real `CREATE INDEX` over that fails with 54011. HypoPG doesn't check the limit (confirmed on the test Postgres 18: hypothetical indexes up to 60 columns succeed), so QUAACK can measure, rank, and propose an index the operator can't build. A Canvas run proposed one with 46 columns.
 
@@ -12626,9 +12638,9 @@ Refuse any index candidate (LLM or operator `--rewrites`) with more than 32 colu
 
 ### 20261110-6. 32-column refusal: test an overflow in the key columns.
 
-From the review of 20261110-5 (minor). `single_candidate_test_postgres_spec.rb` only overflows the limit through INCLUDE (`key: ["c1"]`). Add a case where the key columns alone, including expression and COLLATE keys, push the total past 32, so a regression that stops counting `key.size` goes red.
+From the review of 20261110-7 (minor). `single_candidate_test_postgres_spec.rb` only overflows the limit through INCLUDE (`key: ["c1"]`). Add a case where the key columns alone, including expression and COLLATE keys, push the total past 32, so a regression that stops counting `key.size` goes red.
 
 - **Depends on:** None.
-- **Came from:** The review of 20261110-5, 2026-11-10.
+- **Came from:** The review of 20261110-7, 2026-11-10.
 - **Design:** index-test.
 - **Status:** done
