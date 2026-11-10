@@ -429,6 +429,47 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     conn.exec("DROP SEQUENCE IF EXISTS read_only_probe")
   end
 
+  describe "a nondeterministic collation when the original's order is total" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE COLLATION nd_kn (provider = icu, locale = 'und-u-kn-true', deterministic = false);
+        CREATE TABLE nd_users (id integer PRIMARY KEY, name text);
+        CREATE TABLE nd_enrollments (user_id integer);
+        INSERT INTO nd_users VALUES (1, 'b2'), (2, 'B10'), (3, 'a'), (4, 'a'), (5, 'c');
+        INSERT INTO nd_enrollments VALUES (1), (2), (3), (4), (5), (5)
+      SQL
+    end
+
+    after { conn.exec("DROP TABLE nd_users, nd_enrollments; DROP COLLATION nd_kn") }
+
+    let(:original) do
+      <<~SQL
+        SELECT nd_users.*, name COLLATE public.nd_kn FROM nd_users
+        WHERE nd_users.id IN (SELECT user_id FROM nd_enrollments)
+        ORDER BY name COLLATE public.nd_kn, nd_users.id LIMIT $1 OFFSET $2
+      SQL
+    end
+
+    it "passes a candidate with the same rows in the same order" do
+      candidate = original.sub("nd_users.id IN (SELECT user_id FROM nd_enrollments)",
+                               "EXISTS (SELECT FROM nd_enrollments e WHERE e.user_id = nd_users.id)")
+
+      expect(verdict(original, candidate, params: %w[3 1])).to eq(["pass", nil])
+    end
+
+    it "fails a candidate whose rows come back in another order" do
+      candidate = original.sub("nd_users.id LIMIT", "nd_users.id DESC LIMIT")
+
+      expect(verdict(original, candidate, params: %w[3 1])).to eq(%w[fail value])
+    end
+
+    it "still refuses when the original joins and can repeat the keyed rows" do
+      joined = original.sub("FROM nd_users\n", "FROM nd_users JOIN nd_enrollments e ON e.user_id = nd_users.id\n")
+
+      expect(verdict(joined, joined, params: %w[3 1])).to eq(%w[fail unsupported_order])
+    end
+  end
+
   it "keeps row values out of the verdict" do
     result = compare("SELECT 'SENTINEL_ROW_VALUE'", "SELECT 'OTHER_SENTINEL_VALUE'")
     expect(result.to_h).to eq(result: "fail", rule: "multiset")

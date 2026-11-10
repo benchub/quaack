@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261110-1
 - 20261021-2
 - 20261020-1
 - 20261019-4
@@ -790,19 +791,7 @@ From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text 
 - **Design:** Report, Operator rewrites (`--rewrites`).
 - **Status:** todo
 
-### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties.
-
-Found in a real run (20261110T152131Z-08c10b3f, Canvas `users`). The original was `SELECT users.*, sortable_name COLLATE public."und-u-kn-true" FROM users WHERE users.id IN (SELECT ...) AND ... ORDER BY sortable_name COLLATE public."und-u-kn-true", users.id LIMIT $3 OFFSET $4`. Canvas defines 37 ICU `*-u-kn-true` collations, all nondeterministic, so `Tiebreaker.nondeterministic_collation?` made every comparison `unsupported_order`. Counterexample round 1 and result-comparison then dropped all 5 LLM rewrites without comparing anything, and the report said QUAACK found nothing. Any database that has such a collation anywhere hits this, even when the query never names it.
-
-The refusal exists because values a nondeterministic collation calls equal (`a` and `A`) can tie in the sort and print differently, so the tiebreaker can't split them. That can't happen when the original's ORDER BY already gives a total order. For example, its keys end in every column of a not-null unique key of a table the query reads once, and nothing at the top level (a join that can repeat that table's rows, GROUP BY, DISTINCT, or a set operation) can make two output rows share that key. In that case the order is fixed by the data, and the existing row-for-row ordered compare is exact whatever collation the sort uses. Narrow the refusal to apply only when the original's order can tie. `InnerCuts` already recognises a "deterministic cut" (one table, plain columns covering a not-null unique key), so reuse that check where it fits. Keep refusing for a DISTINCT, GROUP BY, or set operation whose keys use a nondeterministic collation, since Postgres picks which of the equal values to show (Picks). The unique key's own columns must have deterministic collations.
-
-Applies to both fixture-compare (`ResultComparison`) and result-comparison (`ProductionComparison`). Update DESIGN.md's unsupported list (around line 1304). Enclave change.
-
-- **Depends on:** None.
-- **Came from:** Operator run on Canvas, 2026-11-10.
-- **Design:** result-comparison, fixture-compare (`unsupported_order`).
-- **Open questions:** Does the original's `IN (subquery)` semijoin count as reading `users` once? It should, since a semijoin never repeats outer rows. Should the narrowed check also cover a candidate that has ties when the original has none? A candidate that ties can mismatch on one run, which only ever loses a good rewrite.
-- **Status:** todo
+### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties. Done, see BACKLOG-COMPLETE.md.
 
 ## New transform rules (2026-10-18).
 

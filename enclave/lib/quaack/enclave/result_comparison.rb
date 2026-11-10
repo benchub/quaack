@@ -9,6 +9,7 @@ require_relative "result_comparison/load_orders"
 require_relative "result_comparison/cut_ties"
 require_relative "result_comparison/regrouped"
 require_relative "result_comparison/inner_cuts"
+require_relative "result_comparison/total_order"
 require_relative "result_comparison/picks"
 require_relative "result_comparison/limit_sum"
 
@@ -413,6 +414,7 @@ module Quaack
         return shape if shape
 
         positions = checked_positions(transaction, original_shape, candidate_shape, original_probe.types)
+        return TotalOrder.compare(transaction, original_shape, candidate_shape) if positions == :total
         return refused unless positions
 
         originals = both_ways(transaction, original_shape, positions)
@@ -456,7 +458,8 @@ module Quaack
       # column left out of the tiebreaker in a query with a cut.
       def checked_positions(transaction, original_shape, candidate_shape, types)
         shapes = [original_shape, candidate_shape]
-        return if Tiebreaker.nondeterministic_collation?(transaction, shapes.flat_map(&:collation_names))
+        gate = TotalOrder.gate(transaction, shapes)
+        return gate unless gate == :none
 
         positions = Tiebreaker.positions(types, Tiebreaker.catalog_orderable(transaction, types))
         positions if positions.size == types.size || shapes.all? { !it.cut? || it.limit_cut_only? }
