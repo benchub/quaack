@@ -160,25 +160,34 @@ module Quaack
         return fail(rule) if rule
 
         positions = positions(run, original_shape, candidate_shape, expected.types)
+        return total_ordered(run, original_shape, candidate_shape) if positions == :total
+
         originals = positions && tiebreaker_runs(run, original_shape, positions)
-        return fail("unsupported_order") if originals.nil? || originals.first.hidden
+        return fail("unsupported_order") unless originals
 
         HashedRuns.new(run, positions).verdict([original_shape, candidate_shape], originals)
       end
 
       def tiebreaker_runs(run, shape, positions)
-        [false, true].map { run.digest(shape.with_tiebreaker(positions, descending: it), positions) }
+        runs = [false, true].map { run.digest(shape.with_tiebreaker(positions, descending: it), positions) }
+        runs unless runs.first.hidden
       end
 
       def positions(run, original_shape, candidate_shape, types)
         catalog = Catalog.new(run.connection)
         shapes = [original_shape, candidate_shape]
+        gate = ResultComparison::TotalOrder.gate(catalog, shapes)
+        return gate unless gate == :none
+
         tiebreaker = ResultComparison::Tiebreaker
-        return if tiebreaker.nondeterministic_collation?(catalog, shapes.flat_map(&:collation_names))
 
         positions = tiebreaker.positions(types, tiebreaker.catalog_orderable(catalog, types))
         positions if positions.size == types.size || shapes.none?(&:cut?)
       end
+
+      # The original's order is total (ResultComparison::TotalOrder), so
+      # the two runs compare by ordered digest.
+      def total_ordered(run, *shapes) = ordered_rule(*shapes.map { run.digest(it.sql) }).then { it ? fail(it) : pass }
 
       # The rule for a candidate's run that doesn't match the original's
       # in order, or nil.

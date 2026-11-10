@@ -931,6 +931,92 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
       end
 
+      describe "when the original's order is total" do
+        let(:users) { Quaack::Enclave::TableName.new(schema: "public", name: "users") }
+
+        before do
+          conn.exec(<<~SQL)
+            CREATE COLLATION "und-u-kn-true" (provider = icu, locale = 'und-u-kn-true', deterministic = false);
+            CREATE TABLE users (id integer PRIMARY KEY, name text, workflow text);
+            CREATE TABLE enrollments (user_id integer)
+          SQL
+        end
+
+        let(:rows) do
+          users_rows = [[1, "b2"], [2, "B10"], [3, "a"], [4, "a"], [5, "c"]].map do |id, name|
+            Quaack::Enclave::ArenaRunner::FixtureRow.new(table: users, columns: %w[id name workflow],
+                                                         values: [id.to_s, name, "active"])
+          end
+          enrollments = Quaack::Enclave::TableName.new(schema: "public", name: "enrollments")
+          users_rows + [1, 2, 3, 4, 5, 5].map do |id|
+            Quaack::Enclave::ArenaRunner::FixtureRow.new(table: enrollments, columns: %w[user_id], values: [id.to_s])
+          end
+        end
+
+        let(:original) do
+          <<~SQL
+            SELECT users.*, name COLLATE public."und-u-kn-true" FROM users
+            WHERE users.id IN (SELECT user_id FROM enrollments) AND workflow <> 'deleted'
+            ORDER BY name COLLATE public."und-u-kn-true", users.id LIMIT 3 OFFSET 1
+          SQL
+        end
+
+        it "compares row for row and passes a candidate with the same rows in the same order" do
+          candidate = <<~SQL
+            SELECT users.*, name COLLATE public."und-u-kn-true" FROM users
+            WHERE EXISTS (SELECT FROM enrollments e WHERE e.user_id = users.id) AND workflow <> 'deleted'
+            ORDER BY name COLLATE public."und-u-kn-true", users.id LIMIT 3 OFFSET 1
+          SQL
+
+          expect(fields(compare(original, candidate, rows:))).to include(match: true)
+        end
+
+        it "fails a candidate whose rows come back in another order" do
+          candidate = original.sub("users.id LIMIT", "users.id DESC LIMIT")
+
+          expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+        end
+
+        it "still refuses when the original joins and can repeat the keyed rows" do
+          joined = original.sub("FROM users\n", "FROM users JOIN enrollments e ON e.user_id = users.id\n")
+
+          expect(fields(compare(joined, joined, rows:))).to include(rule: :unsupported_order)
+        end
+
+        it "still refuses a DISTINCT" do
+          distinct = original.sub("SELECT users.*", "SELECT DISTINCT users.*")
+
+          expect(fields(compare(distinct, distinct, rows:))).to include(rule: :unsupported_order)
+        end
+
+        it "still refuses a GROUP BY" do
+          grouped = <<~SQL
+            SELECT id, name COLLATE public."und-u-kn-true" FROM users GROUP BY id, name
+            ORDER BY name COLLATE public."und-u-kn-true", id LIMIT 3
+          SQL
+
+          expect(fields(compare(grouped, grouped, rows:))).to include(rule: :unsupported_order)
+        end
+
+        it "still refuses a set operation" do
+          union = <<~SQL
+            SELECT id, name COLLATE public."und-u-kn-true" AS n FROM users
+            UNION SELECT id, name FROM users ORDER BY n, id LIMIT 3
+          SQL
+
+          expect(fields(compare(union, union, rows:))).to include(rule: :unsupported_order)
+        end
+
+        it "still refuses when the key's own column uses one" do
+          conn.exec(<<~SQL)
+            CREATE TABLE tags (name text COLLATE "und-u-kn-true" PRIMARY KEY)
+          SQL
+          sql = "SELECT name FROM tags ORDER BY name LIMIT 3"
+
+          expect(fields(compare(sql, sql, rows: []))).to include(rule: :unsupported_order)
+        end
+      end
+
       it "doesn't refuse when one only exists" do
         conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
         sql = "SELECT id, w FROM words ORDER BY grp, id"

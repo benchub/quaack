@@ -80,14 +80,15 @@ module Quaack
         end
 
         # ctes are the query's CTE names. An unqualified name among them may
-        # be a CTE, not the table, so it has no keys.
-        def deterministic?(transaction, select, ctes)
+        # be a CTE, not the table, so it has no keys. extra is SQL that
+        # narrows KEYS_SQL's keys further.
+        def deterministic?(transaction, select, ctes, extra = "")
           table = sole_table(select)
           return false unless table
           return false if !table[:schemaname] && ctes.include?(table[:relname])
 
           sorted = sorted_columns(select, table)
-          keys(transaction, table).any? { |key| (key - sorted).empty? }
+          keys(transaction, table, extra).any? { |key| (key - sorted).empty? }
         end
 
         def sole_table(select)
@@ -130,9 +131,9 @@ module Quaack
           end
         end
 
-        def keys(transaction, table)
+        def keys(transaction, table, extra = "")
           name = [table[:schemaname], table[:relname]].compact.map { %("#{it.gsub('"', '""')}") }.join(".")
-          sql = format(KEYS_SQL, table: name.gsub("'", "''"))
+          sql = format(KEYS_SQL, table: name.gsub("'", "''")) + extra
           transaction.query(sql).rows.group_by(&:first).values.map { |rows| rows.map(&:last) }
         end
       end
