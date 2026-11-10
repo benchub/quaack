@@ -341,7 +341,7 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
   # which a real CREATE INDEX refuses, so the run refuses it before HypoPG.
   context "with a candidate over Postgres's 32-column limit" do
     before do
-      conn.exec("CREATE TABLE w (#{(1..40).map { "c#{it} int" }.join(", ")})")
+      conn.exec("CREATE TABLE w (#{(1..40).map { "c#{it} int" }.join(", ")}, s text)")
       conn.exec("INSERT INTO w (c1) SELECT i FROM generate_series(1, 10000) AS i")
       conn.exec("ANALYZE w")
     end
@@ -362,6 +362,26 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
         expect(report.results.first.used?).to be(true)
         expect(report.results.last).to have_attributes(size: nil, plans: {})
       end
+    end
+
+    # Task 20261110-6: the key columns count too, expression and COLLATE keys
+    # among them, so a key-heavy candidate overflows with no INCLUDE at all.
+    def key_heavy(keys, includes)
+      key = ["c1", Quaack::Enclave::IndexCandidate::KeyColumn.new(expression: "(c2 + 1)"),
+             Quaack::Enclave::IndexCandidate::KeyColumn.new(name: "s", collation: "C"),
+             *(3..(keys - 1)).map { "c#{it}" }]
+      Quaack::Enclave::IndexCandidate.new(table: w, key:, include: ((41 - includes)..40).map { "c#{it}" },
+                                          sources: [:llm])
+    end
+
+    it "tests a key-heavy candidate of exactly 32 columns, and refuses one whose keys alone make 33" do
+      report = described_class.run(conn, query: "SELECT * FROM w WHERE c1 = $1", literal_sets: { slow: ["5"] },
+                                         candidates: [key_heavy(31, 1), key_heavy(33, 0)])
+
+      expect(report.results.map(&:refusal))
+        .to eq([nil, described_class::Refusal.new(rule: :too_many_columns, sqlstate: nil)])
+      expect(report.results.first.used?).to be(true)
+      expect(report.results.last).to have_attributes(size: nil, plans: {})
     end
   end
 
