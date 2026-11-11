@@ -882,6 +882,8 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261111-185500-1. Don't blame a LIMIT or OFFSET that isn't there. Done, see BACKLOG-COMPLETE.md.
 
+### 20261111-191130-1. Keep each counterexample round's inserts for replay. Done, see BACKLOG-COMPLETE.md.
+
 ### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary.
 
 - **Depends on:** None.
