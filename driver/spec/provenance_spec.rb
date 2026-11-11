@@ -122,6 +122,72 @@ RSpec.describe Quaack::Driver::Provenance do
                                                                                         rewrite_4])
   end
 
+  # Task 20261111-191130-1: each round's inserts and feedback, so a round
+  # can be replayed by hand.
+  describe "counterexample rounds" do
+    let(:feedback) { "insert 1 was refused (insert_select)\nThe accepted inserts gave both queries the same results." }
+
+    def rounds(provenance, rewrite, *inserts)
+      inserts.each.with_index(1) do |sql, round|
+        provenance.counterexample_round!(rewrite, round, inserts: [sql], entry: "groq")
+        provenance.counterexample_round!(rewrite, round, feedback: "#{feedback} #{round}")
+      end
+      provenance
+    end
+
+    it "records each round's inserts as written, its entry, and its feedback, by rewrite and round" do
+      rounds(provenance, "rewrite_3", "INSERT INTO public.t (a) VALUES ($1)", "INSERT 2").save
+
+      expect(saved["counterexample_rounds"]).to eq(
+        "rewrite_3" => [{ "1" => { "entry" => "groq", "inserts" => ["INSERT INTO public.t (a) VALUES ($1)"],
+                                   "feedback" => "#{feedback} 1" },
+                          "2" => { "entry" => "groq", "inserts" => ["INSERT 2"], "feedback" => "#{feedback} 2" } }]
+      )
+    end
+
+    it "keeps a round's inserts without feedback or an entry, as when compare failed or the entry isn't one" do
+      provenance.counterexample_round!("rewrite_3", 1, inserts: ["INSERT 1"], entry: nil).save
+
+      expect(saved["counterexample_rounds"]).to eq("rewrite_3" => [{ "1" => { "inserts" => ["INSERT 1"] } }])
+    end
+
+    it "keeps each earlier try's rounds as first recorded across a resume, and adds a rerun's as a try of its own" do
+      rounds(provenance, "rewrite_3", "INSERT 1", "INSERT 2").save
+      resumed = described_class.open(@home, run_id)
+      rounds(resumed, "rewrite_3", "INSERT 3").save
+      rounds(resumed, "rewrite_4", "INSERT 4").save
+
+      expect(saved["counterexample_rounds"]["rewrite_3"].map { |try| try.transform_values { it["inserts"] } })
+        .to eq([{ "1" => ["INSERT 1"], "2" => ["INSERT 2"] }, { "1" => ["INSERT 3"] }])
+      expect(saved["counterexample_rounds"]["rewrite_4"].size).to eq(1)
+    end
+
+    it "reads back only rounds of the shape it writes" do
+      good = { "entry" => "groq", "inserts" => ["INSERT 1"], "feedback" => feedback }
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.generate("counterexample_rounds" => {
+                                       "rewrite_1" => [{ "1" => good, "4" => good, "0" => good,
+                                                         "2" => good.merge("payload" => "SELECT 1"),
+                                                         "3" => good.merge("inserts" => [1]) },
+                                                       { "1" => good.merge("entry" => "Bad Name") },
+                                                       { "2" => good.merge("feedback" => ["x"]) },
+                                                       { "1" => good.except("entry", "feedback") },
+                                                       "not an object"],
+                                       "rewrite_2" => { "1" => good }, "SELECT 1" => [{ "1" => good }]
+                                     }))
+
+      expect(provenance.record["counterexample_rounds"])
+        .to eq("rewrite_1" => [{ "1" => good }, { "1" => { "inserts" => ["INSERT 1"] } }])
+    end
+
+    it "keeps them out of what the report reads" do
+      rounds(provenance, "rewrite_3", "INSERT 1")
+
+      expect(described_class.for_report(provenance, nil)["record"]).not_to have_key("counterexample_rounds")
+      expect(provenance.record).to have_key("counterexample_rounds")
+    end
+  end
+
   it "counts each index round's statements and outcomes by entry, and each skipped replacement round" do
     provenance.index_round!("original", "first", "groq", 3,
                             [outcome(1, "accepted"), outcome(2, "dropped", "duplicate"), outcome(3, "set_aside")])

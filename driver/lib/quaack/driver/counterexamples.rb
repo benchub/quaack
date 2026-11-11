@@ -38,7 +38,7 @@ module Quaack
     # Trust boundary. The prompt carries only the payload, which is shape
     # data, the LLM's own inserts, and the driver's feedback on them. A
     # fresh start sends nothing else, and no provider's name or model.
-    class Counterexamples
+    class Counterexamples # rubocop:disable Metrics/ClassLength -- the rounds, their prompts, and their feedback
       STEP = "llm-counterexamples"
       MAX_TOKENS = 4000
       # What progress hears each round's ask is for.
@@ -105,8 +105,16 @@ module Quaack
       # each unit, in order, how many rounds it asked, for a fresh start,
       # after, the rule that ended the unit before it, and the pairing's
       # outcome.
-      def run(payload, compare:)
+      #
+      # keep is told each round's inserts, as the LLM wrote them, and the
+      # entry that wrote them, before compare loads them, as keep.(round,
+      # inserts:, entry:), and then the feedback on them, as keep.(round,
+      # feedback:), for the provenance record (Provenance#counterexample_round!).
+      # A round that found a mismatch has no feedback, since no ask hears
+      # about it.
+      def run(payload, compare:, keep: ->(*, **) {})
         rounds = []
+        compare = kept(compare, keep, rounds)
         failed = {}
         unit = [@client.session(pairing: @pairing), [payload_message(payload)]]
         until over?(rounds)
@@ -118,6 +126,17 @@ module Quaack
       def ask(payload) = ask_with([payload_message(payload)])
 
       private
+
+      # compare, telling keep the next round's inserts and the entry that
+      # wrote them (by), and then the feedback on its outcome.
+      def kept(compare, keep, rounds)
+        lambda do |inserts, by:|
+          keep.call(rounds.size + 1, inserts:, entry: by.first)
+          compare.call(inserts, by:).tap do |outcome|
+            keep.call(rounds.size + 1, feedback: feedback_lines(outcome)) unless outcome["match"] == false
+          end
+        end
+      end
 
       def over?(rounds) = rounds.size == ROUNDS || rounds.last&.outcome&.fetch("match") == false
 

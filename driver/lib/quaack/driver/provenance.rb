@@ -9,6 +9,7 @@ require_relative "provenance/calls"
 require_relative "provenance/entries"
 require_relative "provenance/saving"
 require_relative "provenance/shape"
+require_relative "provenance/rounds"
 require_relative "provenance/summary_shape"
 
 module Quaack
@@ -38,6 +39,13 @@ module Quaack
     #   not_met, not_applicable (the pairing is any), or unchecked (no
     #   author was recorded, which for a rule-made or operator rewrite the
     #   report reads as not applicable, since those have no author).
+    # - counterexample_rounds: each rewrite's tries at its counterexample
+    #   rounds, each by round number ("1" to "3"): the inserts as the LLM
+    #   wrote them, with $n placeholders, the entry that wrote them, and the
+    #   feedback the driver gave the LLM on them (Counterexamples), for
+    #   replaying a round by hand. A resumed run that reruns a rewrite's
+    #   rounds adds a try, keeping the earlier ones as first recorded. The
+    #   report never reads them (for_report leaves them out).
     # - index_ideas: by search, then round (first, replacement, refinement),
     #   then entry, how many statements it wrote and its index_outcomes'
     #   counts by outcome and by rule; and skipped, each replacement round
@@ -56,8 +64,14 @@ module Quaack
     #   if one did, and, for a failed ask, the rule. Never the summary's text.
     #
     # Trust boundary. It holds names (from the operator's own config),
-    # models, store names, rules, and counts only: never SQL, DDL, a prompt,
-    # or a reply. Each writer takes only those, and a record read back keeps
+    # models, store names, rules, and counts, and counterexample_rounds:
+    # never other SQL, DDL, a prompt, or a reply. counterexample_rounds'
+    # inserts are the LLM's own text, written from shape-only payloads, so
+    # they hold no production value, and its feedback is the driver's own
+    # words, built only from counterexample_round's refused indexes and
+    # rules, its rule, load_failed, and covered (redacted atom shapes):
+    # shape data, already sent to an LLM. Nothing else from the enclave
+    # goes in. Each writer takes only those, and a record read back keeps
     # only the parts that have exactly those shapes, so the report reads
     # nothing else from it. Nothing in it goes to the enclave or an LLM.
     class Provenance # rubocop:disable Metrics/ClassLength
@@ -72,6 +86,7 @@ module Quaack
 
       include Calls
       include Entries
+      include Rounds
       include Saving
 
       # A record callable for a run with no provenance record: it does
@@ -109,7 +124,8 @@ module Quaack
       def self.for_report(provenance, client)
         sum = burndown(provenance, client)
         names = client ? client.entries.map { it["name"] } : []
-        { "record" => provenance&.record || {}, "calls" => names.to_h { [it, sum.llm_calls_by_provider.fetch(it, {})] },
+        record = provenance&.record&.except("counterexample_rounds") || {}
+        { "record" => record, "calls" => names.to_h { [it, sum.llm_calls_by_provider.fetch(it, {})] },
           "usage" => sum.llm_usage.slice(*names).transform_values(&:to_h) }
       end
 

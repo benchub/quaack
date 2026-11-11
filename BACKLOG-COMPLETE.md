@@ -12828,3 +12828,13 @@ On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without c
   1. In `enclave/lib/quaack/enclave/result_comparison/cut_ties.rb`, `unstable?` and its comment sit between `needed?`'s comment and its `def`, so `needed?` reads as uncommented and `unstable?`'s comment opens with `needed?`'s text. Move `unstable?` above `needed?`'s comment block.
   2. DESIGN.md's `unstable_original` bullet doesn't say that on the racetrack, hashed rows can still refuse `unstable_original` from float noise at a rounding boundary (see 20261111-192302-1). Add that.
 - **Landed:** 2026-11-11 (tidy-20261111-195140-1). `unstable?` and its comment now sit above `needed?`'s comment. DESIGN.md's `unstable_original` bullet says the racetrack's rounded row hashes can still refuse it from float noise at a rounding boundary (20261111-192302-1).
+
+### 20261111-191130-1. Keep each counterexample round's inserts for replay.
+
+- **Depends on:** None.
+- **Design:** DESIGN.md, counterexamples.
+- **Status:** done.
+- **Why:** 20261111-185500-1 couldn't be reproduced because nothing keeps the inserts an LLM wrote for a counterexample round. The driver's `~/.quaack/runs/<run>.llm.json` holds only counts, and the enclave's `rewrite_round_<n>` holds only the rule and reason, even with `--keep`.
+- **Do:** Keep each round's LLM-written inserts on the driver side, since the LLM wrote them and they hold no production values. Key them by rewrite and round, so a refusal or mismatch can be replayed against the same schema.
+- **Answers (user, 2026-11-11):** Keep them in the existing `~/.quaack/runs/<run>.llm.json` (Provenance), by rewrite and round, with the feedback QUAACK sent back. Never pruned, like the rest of that file. No replay command; replaying stays manual.
+- **Landed:** 2026-11-11 (keep-inserts-20261111-191130-1). The provenance record gains `counterexample_rounds`: for each rewrite, each try at its rounds, by round number, the LLM's inserts as written, the entry that wrote them, and the feedback the driver gave the LLM on them (none for a round that found a mismatch). `Counterexamples#run` hands each round to a `keep` callable before compare loads it and after, and the pipeline saves the record each time, so a round that fails the run keeps its inserts. Round 1 starts a new try, so a resumed rerun keeps the earlier tries as first recorded. A record read back keeps only well-formed rounds (`Provenance::Rounds.check`), and `Provenance.for_report` leaves them out of what the report reads. DESIGN.md's Provenance section lists the part and why it holds no production value.

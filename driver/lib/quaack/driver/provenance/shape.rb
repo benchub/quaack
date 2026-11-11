@@ -35,9 +35,10 @@ module Quaack
             "own_rewrites" => (raw["own_rewrites"] if count?(raw["own_rewrites"])) }.compact
         end
 
-        # The counterexample rounds, index rounds, and failed branches.
+        # The counterexample units and rounds, index rounds, and failed branches.
         def parts(raw)
           { "counterexamples" => counterexamples(raw["counterexamples"]),
+            "counterexample_rounds" => Rounds.check(raw["counterexample_rounds"]),
             "index_ideas" => index_ideas(raw["index_ideas"]),
             "failed_branches" => list(raw["failed_branches"]) { branch(it) },
             "llm_calls" => llm_calls(raw["llm_calls"]), "llm_usage" => llm_usage(raw["llm_usage"]) }
