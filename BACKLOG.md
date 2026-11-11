@@ -845,6 +845,15 @@ From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its
 - **Design:** fuzz.
 - **Status:** todo
 
+### 20261110-17. ArenaRunner::Typed: don't cache a failed type lookup.
+
+From the second review of 20261110-14 (minor). `Typed#oids` (`arena_runner/typed.rb` around line 50) caches its OID-0 fallback per SQL text. If the type read-back fails once (an aborted transaction or a brief connection error), every later world that runs the same SQL runs it untyped, which brings back the `total * 1.5` 22P02 failure silently. Cache the fallback only when the PREPARE itself failed cleanly, or not at all. Check first whether the runner ever sends a new `$n` query after one failed in the same transaction. Also: inside a transaction `read` runs outside the savepoint (around line 58), and `declared` (around line 69) doesn't rescue `PgQuery::ParseError`.
+
+- **Depends on:** 20261110-14.
+- **Came from:** The second review of 20261110-14, 2026-11-10.
+- **Design:** counterexamples, fuzz.
+- **Status:** todo
+
 ### 20261110-12. Arena Binding, stage 1: analyses read constants through a value lookup. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`. Done, see BACKLOG-COMPLETE.md.
