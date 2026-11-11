@@ -3,6 +3,7 @@
 require "pg"
 require "pg_query"
 require_relative "arena_fixture"
+require_relative "arena_runner/typed"
 
 module Quaack
   module Enclave
@@ -99,13 +100,18 @@ module Quaack
       NO_INDEX_SCANS = %w[enable_indexscan enable_indexonlyscan enable_bitmapscan]
                        .map { |name| "SET LOCAL #{name} = off" }.freeze
 
-      def initialize(connection, statement_timeout_ms: DEFAULT_STATEMENT_TIMEOUT_MS)
+      # binding, a Redaction::Binding or nil, is what the $n in its queries
+      # stand for: each query runs with the values as parameters, typed as
+      # Typed declares them (task 20261110-14). With none, a query runs
+      # with no parameters.
+      def initialize(connection, statement_timeout_ms: DEFAULT_STATEMENT_TIMEOUT_MS, binding: nil)
         unless statement_timeout_ms.is_a?(Integer) && statement_timeout_ms.positive?
           raise ArgumentError, "statement_timeout_ms must be a positive Integer"
         end
 
         @connection = connection
         @statement_timeout_ms = statement_timeout_ms
+        @typed = Typed.new(binding)
         @loads = 0
         @self_references = {}
       end
@@ -143,7 +149,8 @@ module Quaack
         refuse_unless_idle
         without_notices do
           database(:begin_failed, :begin) { @connection.exec("BEGIN") }
-          in_transaction(Transaction.new(method(:run_query)), rows, inserts, index_scans ? [] : NO_INDEX_SCANS, &)
+          in_transaction(Transaction.new(method(:run_query), @typed.binding), rows, inserts,
+                         index_scans ? [] : NO_INDEX_SCANS, &)
         end
       end
 
@@ -203,7 +210,7 @@ module Quaack
 
       def run_query(sql, index)
         StatementCheck.check(sql, :query, index)
-        statement(sql, [], step: :query, rule: :query_failed, index:)
+        statement(sql, @typed.params(@connection, sql), step: :query, rule: :query_failed, index:)
       end
 
       # Runs one statement, and checks that the transaction is open both

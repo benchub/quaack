@@ -149,13 +149,19 @@ module Quaack
       # The handle a with_fixture block gets. It runs queries inside the
       # transaction and stops working once the transaction is rolled back.
       class Transaction
-        def initialize(run)
+        # The Redaction::Binding the queries' $n stand for, or nil, which
+        # ResultComparison.compare reads for their Shapes.
+        attr_reader :binding
+
+        def initialize(run, binding = nil)
           @run = run
+          @binding = binding
           @queries = 0
           @open = true
         end
 
-        # Runs one SELECT, with no parameters, and returns its Result.
+        # Runs one SELECT, with the binding's values as its parameters, if
+        # any, and returns its Result.
         def query(sql)
           raise Error.new(:transaction_closed, step: :query), cause: nil unless @open
           raise ArgumentError, "a query must be a String" unless sql.is_a?(String)

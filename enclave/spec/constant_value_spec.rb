@@ -6,7 +6,6 @@ require "quaack/enclave/fuzz/tree"
 require "quaack/enclave/fuzz/facts"
 require "quaack/enclave/fuzz/reach"
 require "quaack/enclave/result_comparison"
-require "quaack/enclave/result_comparison/pick_checks"
 
 # Task 20261110-12: each analysis that reads constants from a parse tree
 # answers the same on the $n form, with its Binding, as on the literal
@@ -101,23 +100,6 @@ RSpec.describe Quaack::Enclave::ConstantValue do
 
     it "still reads a $n with no binding as not a constant" do
       expect(Quaack::Enclave::ResultComparison.offset_value(offset("SELECT 1 OFFSET $1"))).to be_nil
-    end
-  end
-
-  describe "ResultComparison::PickChecks.resolved" do
-    def select(sql) = tree(sql)[:stmts].first[:stmt][:select_stmt]
-
-    it "resolves an ORDER BY position written as a $n to the same output column" do
-      literal, placeholders, binding = forms("SELECT o.note, o.total FROM public.orders o ORDER BY 2",
-                                             "SELECT o.note, o.total FROM public.orders o ORDER BY $1",
-                                             [%w[2 integer]])
-      checks = Quaack::Enclave::ResultComparison::PickChecks
-      resolved = lambda { |sql, *rest|
-        checks.resolved(select(sql), select(sql)[:sort_clause].first[:sort_by][:node], *rest)
-      }
-
-      expect(resolved.call(placeholders, binding)).to eq(resolved.call(literal))
-      expect(resolved.call(literal).dig(:column_ref, :fields).last.dig(:string, :sval)).to eq("total")
     end
   end
 

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "pg_query"
-require_relative "../constant_value"
 
 module Quaack
   module Enclave
@@ -114,18 +113,19 @@ module Quaack
 
         # The expression an ORDER BY or DISTINCT ON item names: an output
         # column's, by its position or its name, or else its own. Raises
-        # Picks::Unforceable for a position past the end or a *. A position
-        # written as a $n reads from binding (ConstantValue).
-        def resolved(select, node, binding = nil)
-          target = named_target(Array(select[:target_list]).map { it[:res_target] }, node, binding)
+        # Picks::Unforceable for a position past the end or a *. A $n there
+        # is a constant sort key, never a position: redact leaves positions
+        # as they're written.
+        def resolved(select, node)
+          target = named_target(Array(select[:target_list]).map { it[:res_target] }, node)
           value = target ? target[:val] : node
           raise Picks::Unforceable if value.dig(:column_ref, :fields)&.last&.key?(:a_star)
 
           copy(value)
         end
 
-        def named_target(targets, node, binding)
-          if (position = ConstantValue.from_hash(node, binding)&.dig(:ival))
+        def named_target(targets, node)
+          if (position = node.dig(:a_const, :ival))
             targets.fetch(position.fetch(:ival, 0) - 1) { raise Picks::Unforceable }
           elsif (field = bare_name(node))
             targets.find { (it[:name] || implicit_name(it[:val])) == field }

@@ -62,16 +62,18 @@ module Quaack
           search.delete_prefix("rewrite_")
         end
 
-        # The original and the candidate, each with its $n bound.
         # Refuses (<prefix>_no_arena_setup) a run whose arena hasn't been set up by arena-setup.
         def arena!(store, prefix)
           raise Error, "#{prefix}_no_arena_setup" unless store.entry?("arena_setup")
         end
 
-        def queries(store, search)
-          map = Redaction.placeholder_map(store)
-          [store.read("anchored_query"), RewriteEntry.run_sql(store.read(search))].map { Enclave::Counterexamples.bind(it, map) }
-        end
+        # Both still hold their $n: the arena runs them with binding's values
+        # as parameters, typed as their literals were (task 20261110-14).
+        def queries(store, search) = [store.read("anchored_query"), RewriteEntry.run_sql(store.read(search))]
+
+        # What the queries' $n stand for: the placeholder map's values and
+        # types (Redaction::Binding).
+        def binding(store) = Redaction.binding(store.read("anchored_query"), Redaction.placeholder_map(store))
 
         # The rewrite's own denormalized_equal assumptions, from a rewrite-rules rule,
         # that the arena's fixtures honour (DenormalizedFixture).
@@ -205,7 +207,8 @@ module Quaack
           def run(store, search, number, inserts)
             connection = Enclave::RunServer.connect(store, :arena)
             prepared = prepare(connection, store, inserts, Counterexamples.queries(store, search))
-            runner = DenormalizedFixture::Runner.new(connection, Counterexamples.honour(store, search))
+            runner = DenormalizedFixture::Runner.new(connection, Counterexamples.honour(store, search),
+                                                     binding: Counterexamples.binding(store))
             round = compare(runner, connection, prepared, store, search, number)
             [outcome(round, prepared.refused), runner.loads]
           rescue Scenarios::Error => e

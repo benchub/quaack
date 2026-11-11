@@ -29,27 +29,31 @@ module Quaack
 
         module_function
 
-        def differing(conn, original, sqls)
+        # typed (an ArenaRunner::Typed) gives each statement's parameters,
+        # for the $n the queries hold (task 20261110-14).
+        def differing(conn, original, sqls, typed = ArenaRunner::Typed.new(nil))
           return [] if sqls.empty?
 
-          flagged = saved(conn) { multisets(conn, original, sqls) } || sqls.each_index.to_a
-          flagged.select { |index| saved(conn) { official?(conn, original, sqls[index]) } }
+          flagged = saved(conn) { multisets(conn, original, sqls, typed) } || sqls.each_index.to_a
+          flagged.select { |index| saved(conn) { official?(conn, original, sqls[index], typed) } }
         end
 
         # The indexes whose rows differ from the original's as multisets, or
         # nil when the statement fails.
-        def multisets(conn, original, sqls)
+        def multisets(conn, original, sqls, typed)
           checks = sqls.map do |sql|
             "EXISTS ((#{sql}) EXCEPT ALL (SELECT * FROM #{ORIGINAL})) OR " \
               "EXISTS ((SELECT * FROM #{ORIGINAL}) EXCEPT ALL (#{sql}))"
           end
-          row = conn.exec("WITH #{ORIGINAL} AS MATERIALIZED (#{original}) SELECT #{checks.join(", ")}").values.first
+          sql = "WITH #{ORIGINAL} AS MATERIALIZED (#{original}) SELECT #{checks.join(", ")}"
+          row = conn.exec_params(sql, typed.params(conn, sql)).values.first
           row.each_index.select { row[it] == "t" }
         end
 
-        def official?(conn, original, sql)
-          run = ->(query, _index) { result(conn.exec(query)) }
-          verdict = ResultComparison.compare(ArenaRunner::Transaction.new(run), original:, candidate: sql)
+        def official?(conn, original, sql, typed)
+          run = ->(query, _index) { result(conn.exec_params(query, typed.params(conn, query))) }
+          verdict = ResultComparison.compare(ArenaRunner::Transaction.new(run, typed.binding), original:,
+                                                                                               candidate: sql)
           !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
         end
 

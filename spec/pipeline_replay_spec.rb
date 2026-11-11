@@ -258,9 +258,13 @@ RSpec.describe PipelineReplay do
         described_class.cached(TestPostgres.server, query, variant, fuzz:)
       end
 
+      # Since the arena runs each $n typed as its literal (task
+      # 20261110-14), fuzz disproves the wrong rewrite before counterexamples
+      # asks for llm-counterexamples-4, so it's replayed with fuzz off, as
+      # orm_join's is.
       it "read a prose-wrapped llm-rewrites reply, and counterexamples disproves its wrong rewrite with the replayed " \
-         "llm-counterexamples-4" do
-        outcome = run("group_having")
+         "llm-counterexamples-4 (fuzz off)" do
+        outcome = run("group_having", fuzz: false)
         expect(outcome.log).to include("llm-rewrites-1: replayed", "llm-counterexamples-4: replayed",
                                        "rewrite-llm-index-ideas-1: replayed",
                                        "llm-counterexamples-1: empty answer (no reply)",
@@ -298,6 +302,13 @@ RSpec.describe PipelineReplay do
       # fuzz disproves the wrong rewrite before counterexamples asks for
       # llm-counterexamples-4 (task 20261012-2), so the reply that loads
       # with OVERRIDING SYSTEM VALUE is replayed with fuzz off.
+      it "disprove group_having's wrong rewrite at fuzz, before the LLM's counterexamples" do
+        outcome = run("group_having")
+        expect(outcome.wrong).to eq([2])
+        expect(outcome.report["rewrites"].find { it["rewrite"] == "rewrite_2" })
+          .to include("fate" => "fuzz_disproved", "rule" => be_a(String))
+      end
+
       it "disprove orm_join's wrong rewrite at fuzz, before the LLM's counterexamples" do
         outcome = run("orm_join")
         expect(outcome.log).to include("llm-rewrites-1: replayed")
