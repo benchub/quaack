@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261011-12
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -304,15 +306,7 @@ From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the s
 - **Design:** rewrite-rules, report.
 - **Status:** todo
 
-### 20261011-12. Keyword operators in candidates: refuse an ambiguous one the original doesn't use (and document the original's behavior).
-
-From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyword operators (IN, BETWEEN, NOT BETWEEN, LIKE, ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, USING, NATURAL) stay bare and resolve through the stored `search_path`, which every racetrack and arena connection sets, so they behave on the run server as in production given the same dump. A rewrite candidate (LLM or rule) could add a keyword form the original doesn't use whose operator resolves differently on the path (more than one usable schema on the path defines the operator, such as citext or hstore next to pg_catalog). Fix in the candidate name lockdown: refuse a candidate whose keyword operator is ambiguous on the path unless the original uses the same keyword form (mirror `unmade_lookup`'s exemption); reuse an existing rule code if one fits (a new rule code needs the protocol `ErrorRules` and driver text). Add a DESIGN.md paragraph saying how keyword operators resolve and what is refused. Postgres-backed tests with a user schema defining a same-signature `=`/`~~`/`LIKE`-family operator placed ahead of or beside pg_catalog on the path (red first, mutate), and one that shows an ordinary query with IN, BETWEEN and LIKE and no ambiguity still passes. Enclave change; trust boundary (Opus builder and reviewer).
-
-- **Depends on:** 20261008-41 (landed), 20261007-21 (landed).
-- **Came from:** The builder of 20261008-44, 2026-10-11.
-- **Design:** qualify, rewrite-check.
-- **Built, not merged:** branch `task/20261011-12` (head `6270cc2a`), two Opus reviews clean (the first found the refusal too coarse for citext and hstore in `public`; the fix narrows it to operators with a reachable argument type, `rewrite_candidate_check/keyword_reach.rb`). Held until after the 0.1.33 bump so `main` stays deployable; merge it as the first change of the next batch and put `20261011-12` on the unreleased list. Minors: a relation's row type (`pg_class.reltype`) isn't among the seen types, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through (add `reltype`, or refuse whole-row operands of keyword forms); the example at `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it; one earlier full run had a single unidentified failure in `rewrite_candidate_check_spec.rb` that didn't recur: watch for it.
-- **Status:** todo
+### 20261011-12. Keyword operators in candidates: refuse an ambiguous one the original doesn't use (and document the original's behavior). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal. Done, see BACKLOG-COMPLETE.md.
 
@@ -877,3 +871,20 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261018-14. Rule `aggregate_before_join`. Done, see BACKLOG-COMPLETE.md.
 
+### 20261111-200042-1. Keyword operators: a whole-row operand reaches a user operator on the row type.
+
+From the review of 20261011-12. A relation's row type (`pg_class.reltype`) isn't among the seen types in `rewrite_candidate_check/keyword_reach.rb`, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through. Add `reltype` to the seen types, or refuse whole-row operands of keyword forms. Test first against real Postgres. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** 20261011-12.
+- **Design:** qualify, rewrite-check.
+- **Status:** todo
+
+### 20261111-200042-2. rewrite_candidate_check_spec: split the three-rule example, and watch for a flake.
+
+From the review of 20261011-12. The example near `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it into one example per rule. One earlier full run had a single unidentified failure in this spec that didn't recur; if it shows again, capture the output and file it.
+
+- **Depends on:** None.
+- **Came from:** 20261011-12.
+- **Design:** none.
+- **Status:** todo
