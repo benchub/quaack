@@ -385,7 +385,7 @@ module Quaack
       # Runs the original and the candidate in transaction, an
       # ArenaRunner::Transaction, and returns a ResultComparator::Verdict.
       # binding is what a $n in either stands for (Shape.parse).
-      def compare(transaction, original:, candidate:, binding: nil)
+      def compare(transaction, original:, candidate:, binding: transaction.binding)
         shapes = [Shape.parse(original, :original, binding:), Shape.parse(candidate, :candidate, binding:)]
         mode = shapes.first.mode
         return ResultComparator::Verdict.for(mode, :unsupported_order) if InnerCuts.refused?(transaction, shapes)

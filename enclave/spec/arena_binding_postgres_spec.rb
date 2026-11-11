@@ -151,7 +151,9 @@ RSpec.describe "the arena's queries on the $n form" do
       expect(Quaack::Enclave::Fuzz).to have_received(:unjudged?).with(sql, sql, bound)
       expect(shape_class).to have_received(:parse).with(sql, :candidate, binding: bound).at_least(:twice)
       expect(result_comparison::Picks).to have_received(:any?).with(sql, sql, binding: bound)
-      expect(result_comparison).to have_received(:compare).with(anything, original: sql, candidate: sql, binding: bound)
+      expect(result_comparison).to have_received(:compare).with(satisfy { |tx|
+        tx.binding == bound
+      }, original: sql, candidate: sql)
                                                           .at_least(:once)
       expect(Quaack::Enclave::Fuzz::Domains).to have_received(:new).with(conn, anything, [sql, sql], binding: bound)
       expect(Quaack::Enclave::Fuzz::Reach).to have_received(:worst_case?).with(sql, bound)
@@ -223,6 +225,164 @@ RSpec.describe "the arena's queries on the $n form" do
 
       expect(pools.call(sql, bound)).to eq(literal)
       expect(literal.values.map { it[:satisfying] }).to all(be_any)
+    end
+
+    # 20261110-15's review: a $n in a list, a negative cast one, and NULL.
+    it "reads a $n in an IN list, a negative one under a cast, and a NULL as the literals" do
+      pools = lambda do |sql, binding = nil|
+        parse = PgQuery.parse(sql)
+        schema = Quaack::Enclave::Fuzz::Catalog.new(conn, Quaack::Enclave::Fuzz.send(:footprint, [sql])).schema
+        atoms = Quaack::Enclave::PredicateAtoms.extract(parse, column_names: schema.column_names)
+        Quaack::Enclave::ValuePools.build(conn, parse, atoms, schema, binding:).transform_values(&:to_h)
+      end
+      sql = "SELECT i.id FROM fx.items i WHERE i.id IN ($1, $2) AND i.points > $3::numeric " \
+            "AND i.name IS DISTINCT FROM $4"
+      bound = binding_for(sql, [%w[4 integer], %w[9 integer], %w[-2.5 unknown], [nil, "unknown"]])
+      literal = pools.call("SELECT i.id FROM fx.items i WHERE i.id IN (4, 9) AND i.points > '-2.5'::numeric " \
+                           "AND i.name IS DISTINCT FROM NULL")
+
+      expect(pools.call(sql, bound)).to eq(literal)
+      expect(literal.values.first[:satisfying]).to include("4", "9")
+    end
+
+    # 20261110-13's review: Domains' Dictionary reads a $n's constant too,
+    # for a column the queries read but don't compare.
+    it "gives a read column the $n's constant through the Dictionary" do
+      literal = "SELECT i.name FROM fx.items i WHERE i.points >= 7.5"
+      sql = "SELECT i.name FROM fx.items i WHERE i.points >= $1"
+      bound = binding_for(sql, [%w[7.5 numeric]])
+
+      expect(values(literal, "name")).to include("7.5")
+      expect(values(sql, "name", bound)).to include("7.5")
+    end
+  end
+
+  # Task 20261110-14: the arena runs $n SQL with the Binding's values as
+  # parameters, each typed as its literal was.
+  describe "ArenaRunner::Typed" do
+    let(:conn) { racetrack_and_arena.arena.connection }
+    let(:typed_class) { Quaack::Enclave::ArenaRunner::Typed }
+
+    it "types a numeric $n numeric, an unused integer integer, and an untyped one nothing types text" do
+      sql = "SELECT concat($3, 'x'), 2 * $1"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: %w[numeric integer unknown unknown],
+                                                      values: %w[1.5 7 a z])
+      params = typed_class.new(bound).params(conn, sql)
+
+      expect(params).to eq([{ value: "1.5", type: 1700 }, { value: "7", type: 23 }, { value: "a", type: 25 },
+                            { value: "z", type: 25 }])
+      expect(conn.exec_params(sql, params).values).to eq([%w[ax 3.0]])
+    end
+
+    it "keeps an open transaction usable when a try fails, and leaves no prepared statement" do
+      sql = "SELECT concat($1, 'x')"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["unknown"], values: ["a"])
+      conn.exec("BEGIN")
+      typed_class.new(bound).params(conn, sql)
+
+      expect(conn.exec("SELECT count(*) FROM pg_prepared_statements").getvalue(0, 0)).to eq("0")
+    ensure
+      conn.exec("ROLLBACK")
+    end
+
+    it "runs an ArenaRunner's queries with the binding, which its Transaction hands to compare" do
+      sql = "SELECT 2 * $1 AS n"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+      runner = Quaack::Enclave::ArenaRunner.new(conn, binding: bound)
+
+      rows, handed = runner.with_fixture([]) { |tx| [tx.query(sql).rows, tx.binding] }
+
+      expect([rows, handed]).to eq([[["3.0"]], bound])
+    end
+
+    it "gives no parameters with no binding" do
+      expect(typed_class.new(nil).params(conn, "SELECT 1")).to eq([])
+    end
+
+    it "keeps the values out of inspect" do
+      bound = Quaack::Enclave::Redaction::Binding.new(sql: "SELECT $1", types: ["unknown"], values: ["s3cret"])
+
+      expect(typed_class.new(bound).inspect).not_to include("s3cret")
+    end
+  end
+
+  describe "the fuzz search's other queries on the $n form" do
+    let(:conn) { racetrack_and_arena.arena.connection }
+
+    before { conn.exec("CREATE SCHEMA fx; CREATE TABLE fx.items (id int PRIMARY KEY, qty int)") }
+    after { conn.exec("DROP SCHEMA IF EXISTS fx CASCADE") }
+
+    it "Differ finds the same loosened query differing as on the literal form" do
+      differing = lambda do |original, loosened, typed|
+        conn.exec("BEGIN; INSERT INTO fx.items VALUES (1, 1), (2, 3)")
+        Quaack::Enclave::Fuzz::Differ.differing(conn, original, [loosened], *typed)
+      ensure
+        conn.exec("ROLLBACK")
+      end
+      sql = "SELECT i.id FROM fx.items i WHERE i.qty * $1 > $2"
+      typed = Quaack::Enclave::ArenaRunner::Typed.new(binding_for(sql, [%w[1.5 numeric], %w[3 integer]]))
+
+      expect(differing.call("SELECT i.id FROM fx.items i WHERE i.qty * 1.5 > 3",
+                            "SELECT i.id FROM fx.items i WHERE true", [])).to eq([0])
+      expect(differing.call(sql, "SELECT i.id FROM fx.items i WHERE true", [typed])).to eq([0])
+    end
+
+    it "Differ's one-statement multiset check runs on the $n form, and Session hands it the binding" do
+      sql = "SELECT i.id FROM fx.items i WHERE i.qty * $1 > $2"
+      bound = binding_for(sql, [%w[1.5 numeric], %w[3 integer]])
+      typed = Quaack::Enclave::ArenaRunner::Typed.new(bound)
+      catalog = Quaack::Enclave::Fuzz::Catalog.new(conn, Quaack::Enclave::Fuzz.send(:footprint, [sql]))
+      session = Quaack::Enclave::Fuzz::Session.new(conn, catalog, [sql, sql], honour: [], statement_timeout_ms: 10_000,
+                                                                              binding: bound)
+      allow(Quaack::Enclave::Fuzz::Differ).to receive(:differing).and_call_original
+      conn.exec("BEGIN; INSERT INTO fx.items VALUES (1, 1), (2, 3)")
+
+      expect(Quaack::Enclave::Fuzz::Differ.multisets(conn, sql, ["SELECT i.id FROM fx.items i"], typed)).to eq([0])
+      expect(session.differing(sql, ["SELECT i.id FROM fx.items i"])).to eq([0])
+      expect(Quaack::Enclave::Fuzz::Differ).to have_received(:differing).with(conn, sql, anything, satisfy { |typed|
+        typed.binding == bound
+      })
+    ensure
+      conn.exec("ROLLBACK")
+    end
+
+    it "Session's Shapes and Lift's runner get the binding" do
+      sql = "SELECT i.id FROM fx.items i WHERE i.qty * $1 > $2"
+      bound = binding_for(sql, [%w[1.5 numeric], %w[3 integer]])
+      allow(shape_class).to receive(:parse).and_call_original
+      allow(Quaack::Enclave::DenormalizedFixture::Runner).to receive(:new).and_call_original
+      catalog = Quaack::Enclave::Fuzz::Catalog.new(conn, Quaack::Enclave::Fuzz.send(:footprint, [sql]))
+
+      Quaack::Enclave::Fuzz::Session.new(conn, catalog, [sql, sql], honour: [], statement_timeout_ms: 10_000,
+                                                                    binding: bound)
+      expect(shape_class).to have_received(:parse).with(sql, :original, binding: bound).twice
+
+      Quaack::Enclave::Fuzz::Lift.new(conn, catalog, nil, honour: [], statement_timeout_ms: 10_000, binding: bound)
+      expect(Quaack::Enclave::DenormalizedFixture::Runner).to have_received(:new)
+        .with(conn, [], statement_timeout_ms: 10_000, binding: bound)
+    end
+
+    it "the fuzz search passes an equivalent rewrite of a numeric $n on an integer column" do
+      sql = "SELECT i.id FROM fx.items i WHERE i.qty * $1 > $2"
+      bound = binding_for(sql, [%w[1.5 numeric], %w[3 integer]])
+      candidate = "SELECT i.id FROM fx.items i WHERE $1 * i.qty > $2"
+
+      result = Quaack::Enclave::Fuzz.run(conn, sql, candidate, stop: Quaack::Enclave::Fuzz::StopRule.trials(50),
+                                                               binding: bound)
+
+      expect(result).to have_attributes(verdict: :passed)
+      expect(result.trials).to be_positive
+    end
+
+    it "the fuzz search disproves a wrong one" do
+      sql = "SELECT i.id FROM fx.items i WHERE i.qty * $1 > $2"
+      bound = binding_for(sql, [%w[1.5 numeric], %w[3 integer]])
+      candidate = "SELECT i.id FROM fx.items i WHERE i.qty > $2"
+
+      result = Quaack::Enclave::Fuzz.run(conn, sql, candidate, stop: Quaack::Enclave::Fuzz::StopRule.trials(500),
+                                                               binding: bound)
+
+      expect(result).to have_attributes(verdict: :disproved)
     end
   end
 end

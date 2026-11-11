@@ -361,6 +361,25 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       end
     end
 
+    # Task 20261008-53 item 4: the arena runs each $n declared as its
+    # literal was typed, so 1.5 against an integer column stays numeric.
+    # Pasted back as the untyped '1.5', it resolved to integer and failed.
+    describe "a numeric literal against an integer column" do
+      let(:query) do
+        "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
+          "AND o.total * 1.5 > 3"
+      end
+
+      it "passes an equivalent rewrite" do
+        ready("SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1 AND o.total * $3 > $4")
+
+        outcome = searched
+
+        expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+        expect(lines(outcome).first).to include("passed" => true, "rule" => nil)
+      end
+    end
+
     # Task 20261009-40: which untested atoms the rewrite left unchanged, by
     # position, as a subset of the shapes already stored under untested.
     describe "untested_unchanged" do

@@ -54,6 +54,7 @@ module Quaack
           @conn = conn
           @queries = queries
           @binding = binding
+          @typed = ArenaRunner::Typed.new(binding)
           @loader = Loader.new(conn, catalog, honour)
           @timeout = statement_timeout_ms
           @mode = ResultComparison::Shape.parse(queries.first, :original, binding:).mode
@@ -92,7 +93,7 @@ module Quaack
         # The indexes of sqls, loosened originals (Coverage), that give a
         # result on the arena's current data, the last trial's world, that
         # the official comparison calls a mismatch with original's (Differ).
-        def differing(original, sqls) = Differ.differing(@conn, original, sqls)
+        def differing(original, sqls) = Differ.differing(@conn, original, sqls, @typed)
 
         private
 
@@ -105,11 +106,27 @@ module Quaack
         # a plan nil for a query that failed, results nil unless both ran,
         # and failed the candidate's kill (candidate_failed).
         def queries
-          original, candidate = @queries
-          runs = Session.batch(@conn, [EXPLAIN + original, EXPLAIN + candidate, original, candidate])
+          runs = batch(@queries.map { [EXPLAIN + it, it] } + @queries.map { [it, it] })
           plans = runs.first(2).map { |result, ok| ok ? result.getvalue(0, 0) : nil }
           plans[1] = nil unless runs[0].last
           [plans, runs.all?(&:last) ? runs.last(2).map(&:first) : nil, candidate_failed(runs)]
+        end
+
+        # Session.batch's one round trip with no binding. With one, each
+        # statement runs on its own with the binding's values, typed for
+        # its query, and those after the first that fails don't run, as in
+        # the batch.
+        def batch(statements)
+          return Session.batch(@conn, statements.map(&:first)) unless @binding
+
+          runs = []
+          statements.each do |sql, query|
+            runs << [@conn.exec_params(sql, @typed.params(@conn, query)), true]
+          rescue PG::Error => e
+            runs << [e.result, false]
+            break
+          end
+          runs.fill([nil, false], runs.size...statements.size)
         end
 
         # :query_failed when the original ran and the candidate failed on
@@ -140,8 +157,8 @@ module Quaack
 
         def official(candidate = @queries.last)
           original = @queries.first
-          verdict = ResultComparison.compare(ArenaRunner::Transaction.new(method(:run_query)), original:, candidate:,
-                                                                                               binding: @binding)
+          transaction = ArenaRunner::Transaction.new(method(:run_query), @binding)
+          verdict = ResultComparison.compare(transaction, original:, candidate:)
           verdict.rule if !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
         end
 
@@ -160,7 +177,7 @@ module Quaack
         def sorted(rows) = rows.sort_by { |row| row.map { it.nil? ? [0, ""] : [1, it] } }
 
         def run_query(sql, _index)
-          result = @conn.exec(sql)
+          result = @conn.exec_params(sql, @typed.params(@conn, sql))
           ArenaRunner::Result.new(columns: result.fields, types: Array.new(result.nfields) { result.ftype(it) },
                                   rows: result.values)
         end

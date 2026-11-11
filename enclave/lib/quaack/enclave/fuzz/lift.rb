@@ -42,10 +42,10 @@ module Quaack
           def initialize(message = "the counterexample's parent rows can't be built") = super
         end
 
-        def initialize(conn, catalog, domains, honour:, statement_timeout_ms:)
+        def initialize(conn, catalog, domains, honour:, statement_timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
           @catalog = catalog
           @domains = domains
-          @runner = DenormalizedFixture::Runner.new(conn, honour, statement_timeout_ms:)
+          @runner = DenormalizedFixture::Runner.new(conn, honour, statement_timeout_ms:, binding:)
           @fresh = FRESH
         end
 

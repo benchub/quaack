@@ -86,7 +86,8 @@ module Quaack
         end
 
         def options(store, search)
-          { enumerate: Fuzz::Enumerate::Limit.from_env(ENV), honour: Counterexamples.honour(store, search) }
+          { enumerate: Fuzz::Enumerate::Limit.from_env(ENV), honour: Counterexamples.honour(store, search),
+            binding: Counterexamples.binding(store) }
         end
 
         # Records results' burndown.

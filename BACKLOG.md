@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261008-53
+- 20261110-14
 
 
 ## How this file works.
@@ -834,25 +835,6 @@ From the second review of 20261008-53 item 2 (minor). No spec has an interval pl
 - **Depends on:** 20261008-53 item 2.
 - **Came from:** The second review of 20261008-53 item 2, 2026-11-10.
 - **Design:** redact.
-- **Status:** todo
-
-### 20261110-12. Arena Binding, stage 1: analyses read constants through a value lookup. Done, see BACKLOG-COMPLETE.md.
-
-### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`. Done, see BACKLOG-COMPLETE.md.
-
-### 20261110-15. Arena Binding, stage 2b: ValuePools on the `$n` form. Done, see BACKLOG-COMPLETE.md.
-
-### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types.
-
-Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, in stages, each with its own loop). Today the arena never sees `$n`: `Counterexamples.bind`/`literal` paste each literal back as an untyped quoted string, so `o.total * 1.5 > 3` on an integer column fails every world and rewrite-test reports the untested rewrite as passed (`no_world`). A red spec for that sits on WIP commit 3f6b48c9 (`enclave/spec/counterexample_steps_postgres_spec.rb`, "a numeric literal against an integer column").
-
-Move `ArenaRunner::Transaction#query` onto Binding's prepare path (declared types, the 42P18 retry), and make the counterexample and fuzz paths (Session, Differ, Lift) hand it `$n` SQL with its Binding instead of `Counterexamples.bind`'s text. The red spec on 3f6b48c9 goes green. Values stay in the enclave; anything leaving carries only `$n` and shapes.
-
-- **Notes from 20261110-13's review (minor; mutation-run 2026-11-10):** two hand-offs have no spec. Passing nil for Session's `Shape.parse(queries.first, :original, binding:)` (`fuzz/session.rb:59`) and dropping the binding from Domains' `Tree.constants(it, binding: @binding)` Dictionary input (`fuzz/domains.rb:171`) both stay green; add specs for them here. Wire `Fuzz::Differ`'s and `Lift`'s compare calls with the binding too. Also drop `PickChecks.resolved`'s binding reader from stage 1 and its spec: redact never makes an ORDER BY or GROUP BY position a `$n`, so reading one as a position would be wrong.
-- **Notes from 20261110-15's review (minor; mutation-run 2026-11-10):** skipping substitution in `ValuePools` `replace_params`' RepeatedField branch stays green, because no spec has a `$n` inside a list. Add a ValuePools spec with `id IN ($1, $2)` and a `$3::numeric` holding a negative value, plus a NULL. A `$n` with no slot in the binding stays a ParamRef and Domains drops that statement's pools; that's a clean refusal, so just note it.
-- **Depends on:** 20261110-15.
-- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
-- **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

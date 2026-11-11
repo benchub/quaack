@@ -179,7 +179,7 @@ module Quaack
           @domains = Domains.new(conn, @catalog, queries, binding:)
           @generator = Generator.new(@catalog, @domains)
           @session = Session.new(conn, @catalog, queries, honour:, statement_timeout_ms:, binding:)
-          @lift = Lift.new(conn, @catalog, @domains, honour:, statement_timeout_ms:)
+          @lift = Lift.new(conn, @catalog, @domains, honour:, statement_timeout_ms:, binding:)
           @coverage = Coverage.new(PredicateAtoms.extract(PgQuery.parse(queries.first),
                                                           column_names: @catalog.schema.column_names),
                                    queries.first, binding)
