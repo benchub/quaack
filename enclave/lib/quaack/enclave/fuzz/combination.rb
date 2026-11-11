@@ -22,24 +22,26 @@ module Quaack
         # column and a number joined by + - * or /, and compared is a
         # number. The block gives the table for the column's qualifier,
         # its fields before the name, such as ["a"] for a.points.
-        def self.of(node, compared, &table)
+        def self.of(node, compared, binding = nil, &table)
           arithmetic = node.is_a?(Hash) && node[:a_expr]
           return unless compared && arithmetic && arithmetic[:kind] == :AEXPR_OP
 
           operator = arithmetic[:name].last.dig(:string, :sval)
-          paired(operator, *arithmetic.values_at(:lexpr, :rexpr), compared, table) if ARITHMETIC.include?(operator)
+          return unless ARITHMETIC.include?(operator)
+
+          paired(operator, *arithmetic.values_at(:lexpr, :rexpr), compared, table, binding)
         end
 
-        def self.paired(operator, left, right, compared, table)
-          column, constant, column_first = if column(left) && number(right)
+        def self.paired(operator, left, right, compared, table, binding) # rubocop:disable Metrics/ParameterLists
+          column, constant, column_first = if column(left) && number(right, binding)
                                              [left, right, true]
-                                           elsif number(left) && column(right)
+                                           elsif number(left, binding) && column(right)
                                              [right, left, false]
                                            end
           return unless column
 
           fields = fields(column)
-          new(column(column), operator, number(constant), column_first, compared,
+          new(column(column), operator, number(constant, binding), column_first, compared,
               table&.call(fields[0...-1].map { it.dig(:string, :sval) }))
         end
 
@@ -54,8 +56,9 @@ module Quaack
           node.dig(:column_ref, :fields)
         end
 
-        # node's value as text if it's a number constant, else nil.
-        def self.number(node) = node.is_a?(Hash) && node[:a_const] ? Tree.value(node[:a_const]) : nil
+        # node's value as text if it's a constant, a $n's from binding
+        # (ConstantValue), else nil.
+        def self.number(node, binding = nil) = ConstantValue.from_hash(node, binding)&.then { Tree.value(it) }
       end
     end
   end

@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "../value_pools"
+require_relative "../constant_value"
 
 module Quaack
   module Enclave
@@ -25,7 +26,7 @@ module Quaack
 
         module_function
 
-        def worst_case?(sql) = volatile?(sql) || threshold_bound?(sql)
+        def worst_case?(sql, binding = nil) = volatile?(sql) || threshold_bound?(sql, binding)
 
         def volatile?(sql) = PgQuery.parse(sql).functions.intersect?(VOLATILE)
 
@@ -36,9 +37,10 @@ module Quaack
         # can carry the aggregate out a layer or more (t.k > 2 over a GROUP
         # BY's count(*) AS k). It doesn't trace which column is which, so it
         # fails closed: any such comparison counts.
-        def threshold_bound?(sql)
+        def threshold_bound?(sql, binding = nil)
           all = nodes(PgQuery.parse(sql).tree)
-          all.any? { threshold?(it) } || (all.any? { fed_layer?(it) } && all.any? { column_compared?(it) })
+          all.any? { threshold?(it, binding) } ||
+            (all.any? { fed_layer?(it) } && all.any? { column_compared?(it, binding) })
         end
 
         # A derived table's or CTE's SELECT whose select list holds an
@@ -52,14 +54,14 @@ module Quaack
 
         # A constant, or a list of them (IN, BETWEEN), compared with a
         # column, either side.
-        def column_compared?(node)
+        def column_compared?(node, binding)
           return false unless node.is_a?(PgQuery::A_Expr) && node.lexpr && node.rexpr
 
           sides = [node.lexpr, node.rexpr]
-          sides.any?(&:column_ref) && sides.any? { constant?(it) || constants?(it) }
+          sides.any?(&:column_ref) && sides.any? { constant?(it, binding) || constants?(it, binding) }
         end
 
-        def constants?(node) = !!node.list && node.list.items.any? { constant?(it) }
+        def constants?(node, binding) = !!node.list && node.list.items.any? { constant?(it, binding) }
 
         def nodes(node, found = [])
           found << node
@@ -67,14 +69,18 @@ module Quaack
           found
         end
 
-        def threshold?(node)
+        def threshold?(node, binding)
           return false unless node.is_a?(PgQuery::A_Expr) && node.lexpr && node.rexpr
 
           sides = [node.lexpr, node.rexpr]
-          sides.any? { constant?(it) } && sides.any? { aggregate?(it) }
+          sides.any? { constant?(it, binding) } && sides.any? { aggregate?(it) }
         end
 
-        def constant?(node) = !!(node.a_const || node.type_cast&.arg&.a_const)
+        # A constant: a literal, or a $n binding holds (ConstantValue), bare
+        # or under a cast.
+        def constant?(node, binding)
+          !!(ConstantValue.from_node(node, binding) || ConstantValue.from_node(node.type_cast&.arg, binding))
+        end
 
         def aggregate?(node)
           node = node.type_cast.arg if node.type_cast

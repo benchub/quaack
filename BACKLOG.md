@@ -836,16 +836,7 @@ From the second review of 20261008-53 item 2 (minor). No spec has an interval pl
 - **Design:** redact.
 - **Status:** todo
 
-### 20261110-12. Arena Binding, stage 1: analyses read constants through a value lookup.
-
-Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, in stages, each with its own loop). Today the arena never sees `$n`: `Counterexamples.bind`/`literal` paste each literal back as an untyped quoted string, so `o.total * 1.5 > 3` on an integer column fails every world and rewrite-test reports the untested rewrite as passed (`no_world`). A red spec for that sits on WIP commit 3f6b48c9 (`enclave/spec/counterexample_steps_postgres_spec.rb`, "a numeric literal against an integer column").
-
-Fuzz (`Fuzz::Facts`, `Fuzz::Tree`, `Fuzz::Reach#constant?`, `Fuzz::Combination.number`, and through them Thresholds, Domains, Dictionary, WorldValues) and ResultComparison (the LIMIT constant, `pick_checks.rb` ORDER BY positions, LimitSum) read literal constants from the query's parse tree. Give them one value lookup that answers for a literal or a `$n` with its Binding, so the same analysis on the `$n` form gives the same result as on the literal form. No behavior change for today's literal SQL; specs pin that each analysis agrees across both forms.
-
-- **Depends on:** None.
-- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
-- **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
-- **Status:** todo
+### 20261110-12. Arena Binding, stage 1: analyses read constants through a value lookup. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`.
 
