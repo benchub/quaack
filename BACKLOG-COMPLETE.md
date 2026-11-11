@@ -12874,3 +12874,13 @@ From the review of 20261019-5 (minor). `parse_position`'s range check (`location
 - **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261020-6`. Two examples in `rewrite_redaction_spec.rb`: locations past the end or below 1 give no position; 1 and `sql.length + 1` keep theirs. Four bound mutations each turned the matching example red. The clamp already worked, so the specs had no red-first step. Spec-only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`.
+
+From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_to_plan` back to `untyped_literal`, but only the RULES-list spec guards it. Add a spec where an index probe fails to prepare with a non-42P18 error and assert `untyped_literal`; show dropping the remap turns it red.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-1, 2026-10-21.
+- **Design:** index-ddl-check.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261021-3`. Two real-Postgres examples (42883 and 42804) in `index_ddl_check_spec.rb`; dropping the `failed_to_plan` remap turned both red. The clean per-commit check wasn't seen: the driver suite failed once in the parallel run (cause not captured) and passed twice standalone, 2209 examples each. Filed as 20261111-240000-1. Spec-only; I read the diff and started no reviewer. Not on the unreleased list.

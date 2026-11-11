@@ -647,14 +647,7 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 
 ### 20261020-6. redact-rewrite: test the parse-position range clamp. Done, see BACKLOG-COMPLETE.md.
 
-### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`.
-
-From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_to_plan` back to `untyped_literal`, but only the RULES-list spec guards it. Add a spec where an index probe fails to prepare with a non-42P18 error and assert `untyped_literal`; show dropping the remap turns it red.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261021-1, 2026-10-21.
-- **Design:** index-ddl-check.
-- **Status:** todo
+### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky. Done, see BACKLOG-COMPLETE.md.
 
@@ -872,4 +865,13 @@ From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclav
 - **Depends on:** 20261012-7 (landed).
 - **Came from:** 20261012-7.
 - **Design:** llm-counterexamples.
+- **Status:** todo
+
+### 20261111-240000-1. Driver suite: an unexplained failure in the parallel per-commit run.
+
+From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundle exec rake` (the line read "Spec suites failed: driver/spec (exit 1)") while the other three passed; the builder kept only the last 40 lines, so the failing example isn't known. `bundle exec rspec` in `driver/` passed twice on its own (2209 examples, 0 failures). The change under test was an enclave spec only, so it's a flake that shows under the load of the parallel run. 20261016-17 and 20261012-20 are similar flakes in other suites. If it shows again, capture the whole driver block of the rake output (the suite's output is printed whole under its header) and file the failing example here. Candidates to check: examples that read the clock or a port.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261021-3.
+- **Design:** none.
 - **Status:** todo
