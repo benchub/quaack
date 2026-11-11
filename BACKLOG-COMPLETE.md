@@ -12818,3 +12818,13 @@ On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without c
   2. Add a new refusal reason for an original with no top-level LIMIT or OFFSET whose two tiebreaker runs still disagree, worded as the original returning different rows on two runs. It's a protocol change, so it goes on the Unreleased list.
   3. Keeping round inserts is task 20261111-191130-1.
 - **Landed:** 2026-11-11 (fix-20261111-185500-1). `ResultComparator.unpartnered_row` now looks in every bucket for a row with no partner left in its own, so floats within tolerance across a `%.7e` boundary match (a Postgres spec with random last-bit noise reproduced the `cut_tie` refusal). An original with no top-level LIMIT or OFFSET (and no DISTINCT ON) whose two tiebreaker runs keep different rows now refuses `unstable_original` (`CutTies.unstable?`), in fixture-compare and on the racetrack. `cut_tie`'s words now say "a LIMIT, OFFSET, or DISTINCT ON". The racetrack's hashed rows keep the bucket edge case: 20261111-192302-1.
+
+### 20261111-195140-1. Tidy-ups from the review of 20261111-185500-1.
+
+- **Depends on:** None.
+- **Design:** DESIGN.md, result-comparison.
+- **Status:** done.
+- **Do:**
+  1. In `enclave/lib/quaack/enclave/result_comparison/cut_ties.rb`, `unstable?` and its comment sit between `needed?`'s comment and its `def`, so `needed?` reads as uncommented and `unstable?`'s comment opens with `needed?`'s text. Move `unstable?` above `needed?`'s comment block.
+  2. DESIGN.md's `unstable_original` bullet doesn't say that on the racetrack, hashed rows can still refuse `unstable_original` from float noise at a rounding boundary (see 20261111-192302-1). Add that.
+- **Landed:** 2026-11-11 (tidy-20261111-195140-1). `unstable?` and its comment now sit above `needed?`'s comment. DESIGN.md's `unstable_original` bullet says the racetrack's rounded row hashes can still refuse it from float noise at a rounding boundary (20261111-192302-1).
