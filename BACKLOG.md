@@ -841,6 +841,15 @@ From the review of 20261010-18 (minor). For copilot_cli, a non-array template, a
 - **Design:** LLM client.
 - **Status:** todo
 
+### 20261110-21. Winner summary: qualifier style, and the every-query guard's edges.
+
+From the second review of 20261010-41 (minor). (1) A condition written `orders.state` in the original and `o.state` in the winner (or bare in one and qualified in the other) still gets two shapes, so the winner's count reads 0; resolve aliases to their table before comparing, or document it. (2) The guard now refuses plain descriptions: "Every query will be compared against the original.", "All queries could run under the time limit.", "Every query that would have timed out finished.", "We put the same limit on every query." (3) It still accepts advice: "Rewrite every query this way.", "Every query ought to use UNION."; add rewrite, split and replace to the imperative words, and ought to the modals. Add each sentence as a spec.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261010-41, 2026-11-10.
+- **Design:** report.
+- **Status:** todo
+
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
 
 ## New transform rules (2026-10-18).
