@@ -86,6 +86,37 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       .map { picks.any?(it, "SELECT n FROM items") }).to eq([true, true, false])
   end
 
+  context "with floats, whose 0 and -0 are equal and print differently (task 20261110-8)" do
+    let(:scores) { Quaack::Enclave::TableName.new(schema: "public", name: "s") }
+
+    before do
+      conn.exec("CREATE TABLE s (id integer PRIMARY KEY, a integer, score float8, r real, created timestamp)")
+    end
+
+    def scored(*values)
+      values.map do |id, a, score|
+        Quaack::Enclave::ArenaRunner::FixtureRow.new(
+          table: scores, columns: %w[id a score r created],
+          values: [id.to_s, a.to_s, score, score, "2026-01-01 00:00:00"]
+        )
+      end
+    end
+
+    let(:zeros) { scored([1, 1, "0"], [2, 1, "-0"], [3, 2, "1"]) }
+
+    it "matches a max over 0 and -0 in one group, as float noise" do
+      expect(verdict("SELECT a AS id, max(score) AS max, count(*) AS count FROM s GROUP BY a ORDER BY min(created)",
+                     "SELECT x.a AS id, max(x.score) AS max, count(*) AS count FROM s x GROUP BY x.a " \
+                     "ORDER BY min(x.created)", data: zeros)).to eq(matched)
+      expect(verdict("SELECT a, min(r) FROM s GROUP BY a", data: zeros)).to eq(matched)
+    end
+
+    it "matches a float8 or float4 GROUP BY key over 0 and -0" do
+      expect(verdict("SELECT score, count(*) FROM s GROUP BY score", data: zeros)).to eq(matched)
+      expect(verdict("SELECT r, count(*) FROM s GROUP BY r", data: zeros)).to eq(matched)
+    end
+  end
+
   it "still fails a candidate whose answer differs" do
     expect(verdict("SELECT grp, max(n) FROM items GROUP BY grp", "SELECT grp, min(n) FROM items GROUP BY grp",
                    data: rows([1, 1, "10"], [2, 1, "11"])))
