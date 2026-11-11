@@ -229,17 +229,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34. Dropped, see BACKLOG-COMPLETE.md.
 
-### 20261010-44. Burndown: minors from 20261010-20.
-
-1. **index-rank's added count is combinations, not ideas.** The funnel this item was about is gone (20261012-6). The Sankey draws index-rank in its own unit, sets, with a note on why it tries that many combinations (`sankey.rb` `COMBINATIONS`), and the table says "combinations tried". Check that the Sankey's index-rank layer can't be read as more ideas going on than came in. If it can't, drop this item.
-2. **The rewrites' index searches join only loosely.** The replay check (`spec/pipeline_replay_spec.rb`, `burndown_joins?` with `strict: false`) requires only `in < running` on the summed "Index ideas for the rewrites" rows, which can hide a real under-carry. Check each `rewrite_N` search strictly, one at a time, and show why a narrowing happens (a rewrite dropped after its index search keeps its index-test out but has no LLM round).
-3. No focused enclave unit spec for `RewriteBurndown#carried` (nearest earlier stage, falling back past a missing stage); it is covered only through the replay and rewrite step specs.
-
-- **Depends on:** 20261010-20 (landed).
-- **Came from:** The reviews of 20261010-20, 2026-10-10.
-- **Design:** report, burndown.
-- **Status:** todo
-
 ### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`). Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals through per-trial cost.

@@ -12749,3 +12749,14 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Came from:** The reviews of 20261010-37, 2026-10-10.
 - **Design:** report.
 - **Status:** done. Landed 2026-11-10 (driver only): a repeated condition keeps its table qualifier when the SQL reads more than one table (a subquery alias is still cut); specs cover a duplicate within one OR arm and an original SQL Input drops; the every-query guard refuses only advice (should, must, needs, gains, benefits, helps); the three rule preconditions now match their code (implied_predicate_removal also drops exact copies, cte_hoist_dedupe also needs no RECURSIVE and no data-modifying CTE, unused_join_removal names the key direction); the not_in example says when the rewrite gains little.
+
+### 20261010-44. Burndown: minors from 20261010-20.
+
+1. **index-rank's added count is combinations, not ideas.** The funnel this item was about is gone (20261012-6). The Sankey draws index-rank in its own unit, sets, with a note on why it tries that many combinations (`sankey.rb` `COMBINATIONS`), and the table says "combinations tried". Check that the Sankey's index-rank layer can't be read as more ideas going on than came in. If it can't, drop this item.
+2. **The rewrites' index searches join only loosely.** The replay check (`spec/pipeline_replay_spec.rb`, `burndown_joins?` with `strict: false`) requires only `in < running` on the summed "Index ideas for the rewrites" rows, which can hide a real under-carry. Check each `rewrite_N` search strictly, one at a time, and show why a narrowing happens (a rewrite dropped after its index search keeps its index-test out but has no LLM round).
+3. No focused enclave unit spec for `RewriteBurndown#carried` (nearest earlier stage, falling back past a missing stage); it is covered only through the replay and rewrite step specs.
+
+- **Depends on:** 20261010-20 (landed).
+- **Came from:** The reviews of 20261010-20, 2026-10-10.
+- **Design:** report, burndown.
+- **Status:** done. Landed 2026-11-10 (spec only): item 1 dropped, since the Sankey labels the index-rank layer "Index sets to try", puts a dashed unit divider (ideas above, sets below) before it, and notes why that many combinations are tried, so it cannot read as more ideas going on; item 2 was stale, since 20261017-12 already checks the rewrites index table strictly (`strict: true`) over recorded runs; item 3 added `enclave/spec/rewrite_burndown_carried_spec.rb`.
