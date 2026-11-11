@@ -847,6 +847,7 @@ Every query ResultComparison derives (probe, without_limit, with_tiebreaker, thr
 - **Depends on:** 20261110-12.
 - **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
 - **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
+- **Notes from 20261110-12's review:** `ConstantValue` maps a Binding type outside the five `Literal.of` produces to text; comment that. Add specs for a negative number and a `$n` past the end of the binding. Thresholds, Domains, Dictionary and WorldValues constructors don't take a binding yet; pass it.
 - **Status:** todo
 
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types.
