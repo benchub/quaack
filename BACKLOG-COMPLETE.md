@@ -12822,3 +12822,13 @@ From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, 
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261010-52`. The rule counts only the SELECT's own copies; the docs list the undetected spellings. Reviewed with no blocking findings. Minor: set-operation arms aren't wrapped in a Node, so `own_links` descends into them when a NOT IN sits in the top set-op SELECT (rare; over-cautious refusal only). Filed as 20261111-210000-1.
+
+### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale.
+
+Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized `html` and `ranking` lets make a second `whos` call after mutating the payload return the stale render. The existing example "says not recorded for the indexes of a run that recorded no sources" calls `whos` twice and likely has this weakness in its second half (it may pass whatever the code does). Render fresh for each call (build the report in a helper, not a memoized let), then mutate the code under test to confirm that example goes red. Check the other examples that call a render helper twice.
+
+- **Depends on:** 20261010-10 (landed).
+- **Came from:** The build of 20261010-10, 2026-10-11.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261011-8`. `whos` renders afresh each call; mutation of `index_proposers.rb` turns the named example red. Reviewed with no findings. Spec-only, so it isn't on the unreleased list.

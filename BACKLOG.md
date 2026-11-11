@@ -271,14 +271,7 @@ Reworded 2026-10-14 after 20261012-4: the vacuity guard and its S1 reach became 
 - **Design:** rewrite-test (coverage).
 - **Status:** todo
 
-### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale.
-
-Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized `html` and `ranking` lets make a second `whos` call after mutating the payload return the stale render. The existing example "says not recorded for the indexes of a run that recorded no sources" calls `whos` twice and likely has this weakness in its second half (it may pass whatever the code does). Render fresh for each call (build the report in a helper, not a memoized let), then mutate the code under test to confirm that example goes red. Check the other examples that call a render helper twice.
-
-- **Depends on:** 20261010-10 (landed).
-- **Came from:** The build of 20261010-10, 2026-10-11.
-- **Design:** report.
-- **Status:** todo
+### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261011-10. Rewrite budget: minors from 20261010-53.
 
