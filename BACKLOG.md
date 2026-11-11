@@ -227,15 +227,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Trimmed 2026-10-14 after 20261012-4:** 20261012-4 removed ScenarioTests, the vacuity guard and that diagnostic (`s1_load_rule`, `s1_rows`, `VacuityDiagnostic`), so the vacuity guard can't be the cause any more, and "a run with the diagnostic" can't happen. What's left: once the user runs 0.1.35 on the real schema, check whether its ranked rewrites still show every atom untested under fuzz's coverage (`Fuzz::Coverage`). `Fuzz::Reach`'s worst case (a count threshold or a volatile function) or a cut copy that won't deparse (`Fuzz::Uncut`) would do that. If they do, find the cause and fix it, as in steps 1 to 4 above, with coverage in place of the vacuity guard.
 - **Status:** todo (waits on the user's next real-schema run)
 
-### 20261010-18. LLM adapter for the Claude Code CLI.
-
-The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI does (`claude -p`, with a model flag and no tools). Add a provider type, for example `claude_cli`, beside `copilot_cli`, modeled on `driver/lib/quaack/driver/llm/copilot_cli_adapter.rb`: a local command run once per ask without a shell, the prompt passed by file or stdin, a `command_template` with `{prompt_file}` and `{model}` placeholders, `timeout_seconds`, and the same error handling and reply shape checks as the other adapters. Check the CLI's current flags and output format (a JSON output mode, how to turn tools and session saving off, how it reports usage) before building. Keep it driver-only: the enclave must never see the adapter, and the prompt carries only what the other adapters already send. Update the provider list, the `llm` block rules and the example config in DESIGN.md and the README, and add the type to the boundary specs' provider coverage if they list providers.
-
-- **Depends on:** none.
-- **Came from:** the user, 2026-10-10.
-- **Design:** LLM client.
-- **Status:** todo
-
 ### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261010-41. Winner summary: minors from 20261010-37.

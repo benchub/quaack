@@ -17,12 +17,13 @@ module Quaack
     # `providers` for the llms list that may replace the block. The
     # providers are anthropic (the Anthropic API), openai_compatible (any
     # OpenAI-compatible Chat Completions API), bedrock (Anthropic models on
-    # AWS Bedrock), and copilot_cli (a local `copilot` command).
+    # AWS Bedrock), copilot_cli (a local `copilot` command), and claude_cli
+    # (a local Claude Code `claude` command).
     #
     # The driver never holds a production value, so a prompt only ever
     # carries shapes. Client doesn't check that. The callers that build the
     # prompts own it.
-    module LLM
+    module LLM # rubocop:disable Metrics/ModuleLength
       DEFAULT_MODEL = "claude-opus-5-5"
       COPILOT_CLI_DEFAULT_MODEL = "claude-opus-5.5"
 
@@ -33,12 +34,14 @@ module Quaack
 
       # Every provider the llm block may name, and the default model of each
       # that has one. Any other needs a model.
-      PROVIDERS = %w[anthropic openai_compatible bedrock copilot_cli].freeze
-      DEFAULT_MODELS = { "anthropic" => DEFAULT_MODEL, "copilot_cli" => COPILOT_CLI_DEFAULT_MODEL }.freeze
+      PROVIDERS = %w[anthropic openai_compatible bedrock copilot_cli claude_cli].freeze
+      DEFAULT_MODELS = { "anthropic" => DEFAULT_MODEL, "copilot_cli" => COPILOT_CLI_DEFAULT_MODEL,
+                         "claude_cli" => DEFAULT_MODEL }.freeze
 
       # The adapter class for each provider, by constant name under LLM.
       ADAPTERS = { "anthropic" => :AnthropicAdapter, "openai_compatible" => :OpenAICompatibleAdapter,
-                   "bedrock" => :BedrockAdapter, "copilot_cli" => :CopilotCLIAdapter }.freeze
+                   "bedrock" => :BedrockAdapter, "copilot_cli" => :CopilotCLIAdapter,
+                   "claude_cli" => :ClaudeCLIAdapter }.freeze
 
       # Each SDK takes about half a second to load, so an adapter that needs
       # one loads, and loads its SDK, only when `adapter` first names it.
@@ -97,7 +100,7 @@ module Quaack
         "aws_region" => [->(v) { v.is_a?(String) && REGION.match?(v) }, "must be an AWS region, such as us-east-1"],
         "aws_profile" => [->(v) { v.is_a?(String) && LINE.match?(v) }, "must be the name of an AWS profile"],
         "command_template" => [->(v) { command_template?(v) },
-                               "must be an argv array with {prompt_file} and {model} placeholders"],
+                               "must be an argv array with a {model} placeholder"],
         "timeout_seconds" => [->(v) { v.is_a?(Numeric) && v.positive? && v.finite? }, "must be a positive number"],
         "max_retries" => [->(v) { v.is_a?(Integer) && v.between?(0, 10) }, "must be a whole number from 0 to 10"],
         "token_limit_param" => [->(v) { TOKEN_LIMIT_PARAMS.include?(v) }, "must be #{TOKEN_LIMIT_PARAMS.join(" or ")}"]
@@ -105,12 +108,14 @@ module Quaack
       KEYS = CHECKS.keys.freeze
 
       # The keys that apply only to some providers, and which. bedrock's
-      # credentials come from AWS, so it has no api_key_env. copilot_cli runs
-      # a command and retries nothing, so it has no max_retries.
+      # credentials come from AWS, so it has no api_key_env. copilot_cli and
+      # claude_cli run a command and retry nothing, so they have no
+      # max_retries.
       ONLY = { "base_url" => %w[anthropic openai_compatible bedrock],
                "api_key_env" => %w[anthropic openai_compatible], "aws_region" => %w[bedrock],
-               "aws_profile" => %w[bedrock], "command_template" => %w[copilot_cli],
-               "timeout_seconds" => %w[copilot_cli], "max_retries" => %w[anthropic openai_compatible bedrock],
+               "aws_profile" => %w[bedrock], "command_template" => %w[copilot_cli claude_cli],
+               "timeout_seconds" => %w[copilot_cli claude_cli],
+               "max_retries" => %w[anthropic openai_compatible bedrock],
                "token_limit_param" => %w[openai_compatible] }.freeze
 
       # The variable that overrides each key that has one.
@@ -166,6 +171,7 @@ module Quaack
       def self.for_provider(block, env, at)
         own = block.fetch("provider", "anthropic")
         check_applies(block, own, at)
+        check_prompt_file(block, own, at)
         provider = pick(env, block, "provider") || "anthropic"
         [provider == own ? block : {}, provider, provider != own]
       end
@@ -183,6 +189,16 @@ module Quaack
 
           raise ConfigError, "#{labels.fetch(name, key(name, at))} doesn't apply to provider #{provider}"
         end
+      end
+
+      # copilot_cli reads its prompt from a file its argv names, so its
+      # template needs {prompt_file}. claude_cli reads it from stdin.
+      def self.check_prompt_file(block, provider, at)
+        template = block["command_template"]
+        return unless provider == "copilot_cli" && template&.none? { it.include?("{prompt_file}") }
+
+        raise ConfigError, "#{key("command_template", at)} must be an argv array with {prompt_file} and {model} " \
+                           "placeholders"
       end
 
       def self.applies?(name, provider) = ONLY.fetch(name, [provider]).include?(provider)
@@ -209,13 +225,13 @@ module Quaack
       def self.key(name, at) = "#{at}.#{name} in #{FILE}"
 
       def self.command_template?(value)
-        return false unless value.is_a?(Array) && value.any? && value.all? { it.is_a?(String) && !it.empty? }
+        return false unless value.is_a?(Array) && value.any? && value.all?(String) && !value.first.empty?
 
-        value.any? { it.include?("{prompt_file}") } && value.any? { it.include?("{model}") }
+        value.any? { it.include?("{model}") }
       end
 
       private_class_method :check_block, :for_provider, :no_model, :check_applies, :applies?, :pick, :from_env?,
-                           :check, :key, :command_template?
+                           :check, :key, :command_template?, :check_prompt_file
     end
   end
 end
@@ -225,3 +241,4 @@ require_relative "llm/client"
 require_relative "llm/providers"
 require_relative "llm/router"
 require_relative "llm/copilot_cli_adapter"
+require_relative "llm/claude_cli_adapter"

@@ -70,6 +70,18 @@ module Quaack
 
         private
 
+        # The provider's name, for messages.
+        def label = "copilot_cli"
+
+        # What the command's stdin reads: nothing, since the prompt file
+        # carries the prompt.
+        def stdin(_prompt_file) = File::NULL
+
+        def spawn_env = { CUSTOM_INSTRUCTIONS_ENV => nil, TASK_WAIT_ENV => @timeout.ceil.to_s }
+
+        # The pattern a failure's stderr tail hides as [token].
+        def token_pattern = TOKEN
+
         def write_prompt(path, prompt)
           File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
             file.write(prompt)
@@ -94,25 +106,25 @@ module Quaack
         end
 
         def run(argv, dir)
-          result = spawn_and_capture(argv, dir)
+          result = spawn_and_capture(argv, dir, stdin(File.join(dir, PROMPT_FILE)))
           raise result.error if result.error
           return result.stdout.force_encoding(Encoding::UTF_8).scrub unless result.stdout.empty?
 
-          raise Error.new("llm_bad_response", "the copilot_cli command printed no reply")
+          raise Error.new("llm_bad_response", "the #{label} command printed no reply")
         end
 
         Result = Data.define(:stdout, :stderr, :status, :error)
 
-        def spawn_and_capture(argv, dir)
+        def spawn_and_capture(argv, dir, input)
           with_pipes do |out_r, out_w, err_r, err_w|
-            pid = spawn_process(argv, dir, out_w, err_w)
+            pid = spawn_process(argv, dir, input, out_w, err_w)
             out_w.close
             err_w.close
             capture(pid, out_r, err_r, @timeout)
           end
         rescue Errno::ENOENT
           Result.new(stdout: "", stderr: "", status: nil,
-                     error: Error.new("llm_unavailable", "the copilot_cli command couldn't be found"))
+                     error: Error.new("llm_unavailable", "the #{label} command couldn't be found"))
         end
 
         def with_pipes
@@ -153,9 +165,8 @@ module Quaack
           Result.new(stdout:, stderr:, status:, error: error_for(status, stderr))
         end
 
-        def spawn_process(argv, dir, out_w, err_w)
-          env = { CUSTOM_INSTRUCTIONS_ENV => nil, TASK_WAIT_ENV => @timeout.ceil.to_s }
-          Process.spawn(env, *argv, chdir: dir, in: File::NULL, out: out_w, err: err_w, pgroup: true)
+        def spawn_process(argv, dir, input, out_w, err_w)
+          Process.spawn(spawn_env, *argv, chdir: dir, in: input, out: out_w, err: err_w, pgroup: true)
         end
 
         def poll_status(pid)
@@ -211,15 +222,15 @@ module Quaack
         end
 
         def error_for(status, stderr)
-          return Error.new("llm_unavailable", "the copilot_cli command timed out") if status.respond_to?(:timed_out?)
+          return Error.new("llm_unavailable", "the #{label} command timed out") if status.respond_to?(:timed_out?)
           return if status.success?
 
           if login_failure?(stderr)
-            return Error.new("llm_auth", "the copilot_cli command exited with status #{status.exitstatus} " \
+            return Error.new("llm_auth", "the #{label} command exited with status #{status.exitstatus} " \
                                          "and says it isn't logged in")
           end
 
-          Error.new("llm_unavailable", "copilot_cli exited with status #{status.exitstatus}#{stderr_tail(stderr)}")
+          Error.new("llm_unavailable", "#{label} exited with status #{status.exitstatus}#{stderr_tail(stderr)}")
         end
 
         def login_failure?(stderr)
@@ -229,7 +240,7 @@ module Quaack
         def stderr_tail(stderr)
           return "" if stderr.empty?
 
-          tail = stderr.lines.last(STDERR_TAIL_LINES).join.strip.gsub(TOKEN, "[token]")
+          tail = stderr.lines.last(STDERR_TAIL_LINES).join.strip.gsub(token_pattern, "[token]")
           tail.empty? ? "" : ": #{tail}"
         end
 
