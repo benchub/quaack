@@ -837,6 +837,15 @@ From the second review of 20261110-14 (minor). `Typed#oids` (`arena_runner/typed
 - **Design:** counterexamples, fuzz.
 - **Status:** todo
 
+### 20261110-18. Literals USERS guard: don't skip a step silently.
+
+From the review of 20261010-7 (minor). `enclave/spec/literals_users_spec.rb` matches writes only when the receiver is named `store`, and picks steps with one regex (`LiteralSet.load`, `Measurement.measure`, `IndexShare.`). A step that renames its store variable or loads the sets another way is skipped without failing; only the five steps the spec names are checked by name. Make the scan fail on a step that loads the sets but yields no writes it can read, and handle `case` and `||` names, or give them a clearer failure. Two steps writing the same name also get duplicate example descriptions.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261010-7, 2026-11-10.
+- **Design:** literals.
+- **Status:** todo
+
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
 
 ## New transform rules (2026-10-18).
