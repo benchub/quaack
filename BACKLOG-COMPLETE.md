@@ -12854,3 +12854,13 @@ From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` pri
 - **Design:** llm-counterexamples.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261012-7`. `AEXPR_OP_ALL` is in `Checks::KINDS`; DESIGN.md names NOT IN; specs for NOT IN through ParentRows, a NULL in an IN list, and a one-element IN list. Reviewed with no blocking findings. Minors are in 20261111-230000-1.
+
+### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky.
+
+From the review of 20261021-1. The example renders the report twice and compares, and the "Generated on" stamps differed by one second (17:58:51Z against 17:58:52Z), failing the per-commit check once; it passes on rerun. Freeze the clock in the example or compare with the stamp masked.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-1, 2026-10-21.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261021-4`. The example passes one fixed `generated_at` to the write and the render, and runs under a clock that ticks a second per read, so it failed every time before the fix. Mutating `Report.write` turns it red. Spec-only; I read the diff myself and started no reviewer. Not on the unreleased list.

@@ -663,14 +663,7 @@ From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_
 - **Design:** index-ddl-check.
 - **Status:** todo
 
-### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky.
-
-From the review of 20261021-1. The example renders the report twice and compares, and the "Generated on" stamps differed by one second (17:58:51Z against 17:58:52Z), failing the per-commit check once; it passes on rerun. Freeze the clock in the example or compare with the stamp masked.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261021-1, 2026-10-21.
-- **Design:** report.
-- **Status:** todo
+### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261021-5. Own rewrites in the report: send the deparsed text, not the raw `--rewrites` text.
 
