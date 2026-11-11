@@ -12652,3 +12652,14 @@ The user asked (2026-10-18) for at least ten more transform rules, each with its
 - Each rule gets its page in `docs/transforms/`, in the style of the others, with an intro, "What it does.", "Why it can be faster.", "What it rests on.", and "Example." made by the rule on Postgres 18 from the shared schema. Use Oxford commas in lists. It also gets a row at the end of DESIGN.md's rewrite-rules table, a line at the end of `RULES`, and a `RuleConstantsFixtures::LITERALS` entry.
 - e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
 - Opus builder and reviewer for each rule.
+
+### 20261110-7. Report: name the check behind an `unsupported_order` refusal.
+
+On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without comparing results, because the order of the original query's rows can't be checked", for a refusal that came from the original's `min`/`max` pick check on a fixture with `0` and `-0` (see 20261110-8), nothing to do with order. Several different checks end in `unsupported_order`: the collation gate, a left-out column or hidden tie, an inner cut (`InnerCuts`), `FETCH ... WITH TIES`, a pick check (`Picks`, `PickChecks`), a pick that can't be forced, a failed forced or checked run, a volatile sort key, a cut tie (`CutTies`), and, in `ProductionComparison`, a timed-out or too-large run. Give the verdict a `reason` from a fixed enum of those, set where each is raised, store it in the round and tested entries (`rewrite_round_N.json`, `rewrite_tested_N.json`), carry it through the protocol, and have the report's sentence for the fate name it, in plain words with no values. A reason is a constant, never text from Postgres or the query. Test first with one planted refusal per check, and check with sentinel values that none reaches the report. Update DESIGN.md and the report docs. Enclave, protocol, and driver change; the enclave and protocol parts go on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison, report.
+- **Answers (the user, 2026-11-10):** Name the check in the report sentence, from a fixed enum, with no values.
+- **Landed:** 2026-11-11 (task/20261110-7). Twelve fixed refusal reasons (`protocol/lib/quaack/protocol/refusal_reasons.rb`) set at each `unsupported_order` site, stored in `rewrite_round_N` and the verdicts, filtered in report-payload, checked at egress, and named in the report sentence. Old stores fall back to a neutral sentence. Reviewed with no blocking findings; its minor findings are in 20261111-1.
+- **Status:** done

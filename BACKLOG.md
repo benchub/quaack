@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261110-6 (result comparison: a nondeterministic collation doesn't refuse when no output column can hold text).
 - 20261110-8 (`0` and `-0` don't make a `min`/`max` pick refuse).
+- 20261110-7 (the report names the check behind an `unsupported_order` refusal).
 
 
 ## How this file works.
@@ -815,14 +816,15 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261110-7. Report: name the check behind an `unsupported_order` refusal.
+### 20261110-7. Report: name the check behind an `unsupported_order` refusal. Done, see BACKLOG-COMPLETE.md.
 
-On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without comparing results, because the order of the original query's rows can't be checked", for a refusal that came from the original's `min`/`max` pick check on a fixture with `0` and `-0` (see 20261110-8), nothing to do with order. Several different checks end in `unsupported_order`: the collation gate, a left-out column or hidden tie, an inner cut (`InnerCuts`), `FETCH ... WITH TIES`, a pick check (`Picks`, `PickChecks`), a pick that can't be forced, a failed forced or checked run, a volatile sort key, a cut tie (`CutTies`), and, in `ProductionComparison`, a timed-out or too-large run. Give the verdict a `reason` from a fixed enum of those, set where each is raised, store it in the round and tested entries (`rewrite_round_N.json`, `rewrite_tested_N.json`), carry it through the protocol, and have the report's sentence for the fate name it, in plain words with no values. A reason is a constant, never text from Postgres or the query. Test first with one planted refusal per check, and check with sentinel values that none reaches the report. Update DESIGN.md and the report docs. Enclave, protocol, and driver change; the enclave and protocol parts go on "Unreleased enclave changes".
+### 20261111-1. Refusal-reason phrases: tighten three that are loose, and tell a user's own division by zero from a pick check.
 
-- **Depends on:** None.
-- **Came from:** The user's run, 2026-11-10.
+From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` don't mention UNION, INTERSECT or EXCEPT without ALL, which Picks also checks. (b) `inner_cut` says "inside a subquery" but also fires for a CTE or a set-operation arm. (c) `unforceable_pick` says "reads a subquery" but also fires for an unaliased function in FROM, or a `*` as a DISTINCT ON key or ORDER BY item. (d) Picks reads SQLSTATE 22012 as "the check fired", so a division by zero from the query's own expression in a forced or checked run would be labelled a pick refusal, not `pick_run_failed`; unlikely, since both queries run as written first. Fix the phrases in the enum and docs; for (d) test first, or say it in DESIGN.md. Enclave, protocol and driver change.
+
+- **Depends on:** 20261110-7.
+- **Came from:** The review of 20261110-7, 2026-11-11.
 - **Design:** result-comparison, report.
-- **Answers (the user, 2026-11-10):** Name the check in the report sentence, from a fixed enum, with no values.
 - **Status:** todo
 
 ### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse. Done, see BACKLOG-COMPLETE.md.
