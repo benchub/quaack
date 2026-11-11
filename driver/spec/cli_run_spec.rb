@@ -1171,13 +1171,14 @@ RSpec.describe "quaack run" do
 
       expect([run_with, stdout.string, errors])
         .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
-                        "bedrock, or copilot_cli\n"])
+                        "bedrock, copilot_cli, or claude_cli\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
     it "fails with a usage error for a bad override" do
       expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), errors])
-        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, bedrock, or copilot_cli\n"])
+        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, bedrock, copilot_cli, " \
+                    "or claude_cli\n"])
       expect(hosts).to eq([])
     end
 

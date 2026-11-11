@@ -128,10 +128,10 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                                               "timeout_seconds, max_retries, or token_limit_param"],
       "an unknown provider" => [{ "provider" => "SENTINEL-VALUE" },
                                 "llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
-                                "bedrock, or copilot_cli"],
+                                "bedrock, copilot_cli, or claude_cli"],
       "a provider that isn't a string" => [{ "provider" => ["SENTINEL-VALUE"] },
                                            "llm.provider in ~/.quaack/driver.json must be anthropic, " \
-                                           "openai_compatible, bedrock, or copilot_cli"],
+                                           "openai_compatible, bedrock, copilot_cli, or claude_cli"],
       "an empty model" => [{ "model" => "" }, "llm.model in ~/.quaack/driver.json must be a non-empty string"],
       "a model that isn't a string" => [{ "model" => 5 }, "llm.model in ~/.quaack/driver.json must be a " \
                                                           "non-empty string"],
@@ -179,11 +179,11 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                              "profile"],
       "a command_template that isn't an array" => [{ "provider" => "copilot_cli", "command_template" => "copilot" },
                                                    "llm.command_template in ~/.quaack/driver.json must be an argv " \
-                                                   "array with {prompt_file} and {model} placeholders"],
+                                                   "array with a {model} placeholder"],
       "a command_template with a bad arg" => [{ "provider" => "copilot_cli",
                                                 "command_template" => ["copilot", 1, "{prompt_file}", "{model}"] },
                                               "llm.command_template in ~/.quaack/driver.json must be an argv array " \
-                                              "with {prompt_file} and {model} placeholders"],
+                                              "with a {model} placeholder"],
       "a command_template without the prompt placeholder" => [
         { "provider" => "copilot_cli", "command_template" => ["copilot", "{model}"] },
         "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
@@ -191,8 +191,15 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       ],
       "a command_template without the model placeholder" => [
         { "provider" => "copilot_cli", "command_template" => ["copilot", "{prompt_file}"] },
-        "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
-        "placeholders"
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with a {model} placeholder"
+      ],
+      "a claude_cli command_template without the model placeholder" => [
+        { "provider" => "claude_cli", "command_template" => ["claude", "-p"] },
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with a {model} placeholder"
+      ],
+      "a command_template whose command is empty" => [
+        { "provider" => "claude_cli", "command_template" => ["", "{model}"] },
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with a {model} placeholder"
       ],
       "a non-positive timeout" => [{ "provider" => "copilot_cli", "timeout_seconds" => 0 },
                                    "llm.timeout_seconds in ~/.quaack/driver.json must be a positive number"],
@@ -210,7 +217,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     it "fails on a bad QUAACK_LLM_PROVIDER, naming the variable and not its value" do
       e = config_error(nil, env: { "QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE" })
 
-      expect(e.message).to eq("QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, bedrock, or copilot_cli")
+      expect(e.message).to eq("QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, bedrock, copilot_cli, " \
+                              "or claude_cli")
     end
 
     it "fails on a bad QUAACK_LLM_BASE_URL, naming the variable and not its value" do
@@ -265,7 +273,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
     it "has an adapter for every provider it takes" do
       expect(Quaack::Driver::LLM::PROVIDERS.map { Quaack::Driver::LLM.adapter(it).name.split("::").last })
-        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter BedrockAdapter CopilotCLIAdapter])
+        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter BedrockAdapter CopilotCLIAdapter ClaudeCLIAdapter])
     end
   end
 

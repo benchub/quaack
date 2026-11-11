@@ -12726,3 +12726,12 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
 - **Design:** result comparison, literals.
 - **Status:** done (2026-11-10). Item 1: `enclave/spec/literals_users_spec.rb` reads every step that loads the literal sets and fails when an entry it writes neither matches `Literals::USERS` nor is listed there as compared by nothing across sets. Item 2: a full run past the row cap now fails with its own rule, `too_many_rows` (fate `production_not_compared`), which the report words as the original query returning too many rows to check.
+
+### 20261010-18. LLM adapter for the Claude Code CLI.
+
+The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI does (`claude -p`, with a model flag and no tools). Add a provider type, for example `claude_cli`, beside `copilot_cli`, modeled on `driver/lib/quaack/driver/llm/copilot_cli_adapter.rb`: a local command run once per ask without a shell, the prompt passed by file or stdin, a `command_template` with `{prompt_file}` and `{model}` placeholders, `timeout_seconds`, and the same error handling and reply shape checks as the other adapters. Check the CLI's current flags and output format (a JSON output mode, how to turn tools and session saving off, how it reports usage) before building. Keep it driver-only: the enclave must never see the adapter, and the prompt carries only what the other adapters already send. Update the provider list, the `llm` block rules and the example config in DESIGN.md and the README, and add the type to the boundary specs' provider coverage if they list providers.
+
+- **Depends on:** none.
+- **Came from:** the user, 2026-10-10.
+- **Design:** LLM client.
+- **Status:** done (2026-11-10). Added the `claude_cli` provider in `driver/lib/quaack/driver/llm/claude_cli_adapter.rb`, a subclass of the copilot_cli adapter that reuses its process handling. Its default command is `claude -p --output-format json --model {model} --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt-file {system_file}`, with the prompt on stdin and tokens read from the JSON result's usage. A `command_template` now needs only `{model}`; `copilot_cli`'s still needs `{prompt_file}`. The boundary specs list only SDK providers, and this one loads no SDK, so they needed no change.

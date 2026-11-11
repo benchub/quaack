@@ -56,15 +56,15 @@ Never put a key itself in the file. Put it in an environment variable, and name 
 
 | Key | Type | Providers | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `provider` | string | all | `anthropic` | Which API to call: `anthropic`, `openai_compatible`, `bedrock`, or `copilot_cli`. `openai_compatible` covers OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API. `bedrock` is Claude on AWS Bedrock. `copilot_cli` runs a local Copilot CLI command. |
-| `model` | string | all | `claude-opus-5-5` for `anthropic`, and `claude-opus-5.5` for `copilot_cli` | The model to ask. Required for `openai_compatible` and `bedrock`. |
+| `provider` | string | all | `anthropic` | Which API to call: `anthropic`, `openai_compatible`, `bedrock`, `copilot_cli`, or `claude_cli`. `openai_compatible` covers OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API. `bedrock` is Claude on AWS Bedrock. `copilot_cli` runs a local Copilot CLI command, and `claude_cli` a local Claude Code `claude` command. |
+| `model` | string | all | `claude-opus-5-5` for `anthropic` and `claude_cli`, and `claude-opus-5.5` for `copilot_cli` | The model to ask. Required for `openai_compatible` and `bedrock`. |
 | `base_url` | string | `anthropic`, `openai_compatible`, and `bedrock` | the provider's own | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. Give the API root, not a URL that ends in `/chat/completions`. Without it, `anthropic` uses `ANTHROPIC_BASE_URL` if set, and `bedrock` uses `ANTHROPIC_BEDROCK_BASE_URL` if set. `openai_compatible` ignores `OPENAI_BASE_URL`. |
 | `api_key_env` | string | `anthropic` and `openai_compatible` | the provider's usual lookup | The name of the environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. Without it, `anthropic` looks up `ANTHROPIC_API_KEY`, then `ANTHROPIC_AUTH_TOKEN`, then an `ant` profile, and `openai_compatible` uses `OPENAI_API_KEY`. |
 | `max_retries` | whole number, 0 to 10 | `anthropic`, `openai_compatible`, and `bedrock` | the gem's default, 2 | How many times the provider's gem retries a 408, 409, 429, or 5xx after the first attempt. 0 turns retries off. |
 | `aws_region` | string | `bedrock` | `AWS_REGION`, `AMAZON_REGION`, `AWS_DEFAULT_REGION`, or your AWS profile's region | The AWS region to call, such as `us-east-1`. |
 | `aws_profile` | string | `bedrock` | the AWS SDK's usual lookup | The AWS profile, in `~/.aws`, whose credentials to use. |
-| `command_template` | array of strings | `copilot_cli` | a locked-down `copilot` prompt-mode command | The command to run for each ask, as an argv array, run without a shell. It must hold `{prompt_file}` and `{model}`. `{prompt_dir}` is also available. |
-| `timeout_seconds` | positive number | `copilot_cli` | `600` | How long each command run may take, in seconds. |
+| `command_template` | array of strings | `copilot_cli` and `claude_cli` | a locked-down prompt-mode command | The command to run for each ask, as an argv array, run without a shell. It must hold `{model}`, and for `copilot_cli` also `{prompt_file}`. `{prompt_dir}` is also available, and for `claude_cli`, `{system_file}`. |
+| `timeout_seconds` | positive number | `copilot_cli` and `claude_cli` | `600` | How long each command run may take, in seconds. |
 | `token_limit_param` | string | `openai_compatible` | `max_completion_tokens` | The name the token limit goes under: `max_completion_tokens` or `max_tokens`. Set `max_tokens` for Ollama. |
 
 A key that doesn't apply to the block's provider is a usage error. So is an unknown key, or a value of the wrong type. `quaack run` then exits with 64, and the message names the key, never its value, such as `llm.model in ~/.quaack/driver.json is required unless the provider is anthropic`.
@@ -203,6 +203,7 @@ The driver never stores a key, and a key never goes in `driver.json`. Each provi
 - `openai_compatible` uses the variable `api_key_env` names, or `OPENAI_API_KEY`.
 - `bedrock` uses your AWS credentials. See [AWS Bedrock](#aws-bedrock).
 - `copilot_cli` uses the Copilot CLI's own login.
+- `claude_cli` uses the `claude` command's own login, or `ANTHROPIC_API_KEY` if you set it.
 
 With no credentials, `quaack run` fails with `llm_auth` before it touches the jump server. So does an empty variable. For Anthropic, the first of `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` that's set hides everything after it, even when it's empty, so unset an empty one.
 
@@ -301,6 +302,28 @@ To use another wrapper, set `command_template` as an argv array. It must include
 ```
 
 The CLI cannot enforce JSON schemas itself, so QUAACK includes the schema in the prompt file and checks the answer. A missing command, timeout, or non-zero exit is `llm_unavailable`; a distinctive not-logged-in message is `llm_auth`; empty stdout is `llm_bad_response`.
+
+### Claude Code CLI.
+
+With `"provider": "claude_cli"`, the driver runs the Claude Code `claude` command from `PATH` once for each LLM ask, with the default model `claude-opus-5-5`. The default command is:
+
+```
+claude -p --output-format json --model {model} --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt-file {system_file}
+```
+
+That's print mode with one JSON result, no built-in tools, no MCP servers, no skills or slash commands, and no session saved to disk. The step's system prompt replaces Claude Code's own coding prompt. QUAACK writes the system prompt and the rest of its prompt to two private 0600 files in an otherwise empty temporary directory, which is the command's current directory and is removed after the ask, and gives the command the prompt file on stdin, so no prompt text goes on the command line. The reply comes from the JSON result's `result`, and the token counts from its `usage`, so the report's LLM table shows them.
+
+```json
+{
+  "llm": {
+    "provider": "claude_cli",
+    "model": "claude-sonnet-5-5",
+    "timeout_seconds": 900
+  }
+}
+```
+
+A `command_template` must include `{model}`. It may also use `{prompt_file}`, `{prompt_dir}`, and `{system_file}`. The prompt still arrives on stdin. Like the Copilot CLI, the command doesn't enforce JSON schemas, so QUAACK includes the schema in the prompt and checks the answer. A missing command, timeout, or non-zero exit with no JSON result is `llm_unavailable`, quoting stderr's last lines with Anthropic keys and bearer tokens hidden. A result marked as an error is `llm_auth` when it reads as a login failure, otherwise `llm_unavailable` naming only its subtype. Output that isn't a JSON result is `llm_bad_response`.
 
 
 ## config.json on the jump server.

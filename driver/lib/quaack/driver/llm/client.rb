@@ -190,7 +190,7 @@ module Quaack
         def reask(error) = format(REASK, error.message.delete_prefix("#{error.rule}: "))
 
         def refuse_real_client_in_specs(settings)
-          return if settings.provider == "copilot_cli"
+          return if %w[copilot_cli claude_cli].include?(settings.provider)
           return unless defined?(::RSpec) || ENV[SPECS_ENV] == "1"
           return if ENV[ALLOW_REAL_ENV] == "1"
 

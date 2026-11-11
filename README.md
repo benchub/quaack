@@ -235,7 +235,7 @@ To use several providers in one run, put an `llms` list in place of the `llm` bl
 
 With this, units take turns between `opus` and `groq`, llm-rewrites asks both, and llm-counterexamples prefers the provider that didn't write the rewrite. `QUAACK_LLM=groq` keeps only `groq` for one run.
 
-[Configuration](docs/configuration.md) describes every key of `driver.json`: each provider's options, environment overrides, routing, fan-out, adversarial pairing, and credentials. It also covers OpenAI-compatible providers, AWS Bedrock, and the GitHub Copilot CLI in detail.
+[Configuration](docs/configuration.md) describes every key of `driver.json`: each provider's options, environment overrides, routing, fan-out, adversarial pairing, and credentials. It also covers OpenAI-compatible providers, AWS Bedrock, the GitHub Copilot CLI, and the Claude Code CLI in detail.
 
 ### 4. Install the enclave script on the jump server.
 
