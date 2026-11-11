@@ -889,7 +889,7 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Status:** todo.
 - **Why:** 20261111-185500-1 couldn't be reproduced because nothing keeps the inserts an LLM wrote for a counterexample round. The driver's `~/.quaack/runs/<run>.llm.json` holds only counts, and the enclave's `rewrite_round_<n>` holds only the rule and reason, even with `--keep`.
 - **Do:** Keep each round's LLM-written inserts on the driver side, since the LLM wrote them and they hold no production values. Key them by rewrite and round, so a refusal or mismatch can be replayed against the same schema.
-- **Open questions:** How long should they be kept, and should anything prune them?
+- **Answers (user, 2026-11-11):** Keep them in the existing `~/.quaack/runs/<run>.llm.json` (Provenance), by rewrite and round, with the feedback QUAACK sent back. Never pruned, like the rest of that file. No replay command; replaying stays manual.
 
 ### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary.
 
@@ -899,6 +899,7 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Status:** todo.
 - **What's wrong:** `ProductionComparison` hashes each row from `ResultComparator::Values.key`, which rounds floats with `%.7e`. Two runs of the original whose float column differs only in the last bit (such as an `avg` that met its rows in another order) can hash differently when the two values sit on either side of a rounding boundary. 20261111-185500-1 fixed this for fixture-compare, whose comparator now looks for a partner in other buckets, but the racetrack only keeps hashes. There, the original's tiebreaker runs then disagree, and with no LIMIT or OFFSET it refuses `unstable_original`; with one, the cut-tie check may refuse `cut_tie`, and a candidate run can fail `value` or `multiset`. Rare, and it always errs toward refusal or mismatch, never a false pass.
 - **Do:** Decide whether it's worth fixing on hashed rows, or list it in DESIGN.md as a known way to discard a good candidate.
+- **Answers (user, 2026-11-11):** Stay strict: never fall back to fixture-compare. But when production comparison fails or refuses a rewrite whose result has float columns, and the difference may be only minor float noise, the report must say the rewrite failed because of minor mismatches in float values, and that writing the query to deal with them (for example, rounding the float outputs) might let the rewrite through. Add a docs page explaining what that means, with examples, and link to it from that report message, the way `report/rule_links.rb` links to `docs/transforms/`. List the edge case in DESIGN.md.
 
 ### 20261111-195140-1. Tidy-ups from the review of 20261111-185500-1.
 
