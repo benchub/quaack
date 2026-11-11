@@ -6,14 +6,6 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
-- 20261110-6 (result comparison: a nondeterministic collation doesn't refuse when no output column can hold text).
-- 20261110-8 (`0` and `-0` don't make a `min`/`max` pick refuse).
-- 20261110-7 (the report names the check behind an `unsupported_order` refusal).
-- 20261008-53
-- 20261110-14
-- 20261010-7
-
-
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
