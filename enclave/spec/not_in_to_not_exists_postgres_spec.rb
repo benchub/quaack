@@ -1070,6 +1070,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     expect(same_rows(sql, rewritten(sql))).to eq([["1"], ["4"]])
   end
 
+  # 20261010-52: only the SELECT's own copies count. A copy in a CTE or a
+  # nested subquery is another scope, so Postgres doesn't need it to match.
+  it "rewrites a NOT IN that a GROUP BY holds once and a CTE or subquery holds again" do
+    copy = "u.id NOT IN (SELECT m.user_id FROM public.memberships m)"
+    sql = "WITH x AS (SELECT #{copy} AS b FROM public.users u) " \
+          "SELECT count(*), (SELECT count(*) FROM public.users u WHERE #{copy}) FROM public.users u GROUP BY #{copy}"
+    rewrites = rewritten(sql)
+    expect(rewrites.size).to eq(3)
+    expect(same_rows(sql, rewrites)).to eq([%w[1 1], %w[4 1]])
+  end
+
   it "still rewrites each copy of a NOT IN that no GROUP BY, DISTINCT ON, or ORDER BY holds" do
     sql = "SELECT u.id, u.id NOT IN (SELECT m.user_id FROM public.memberships m) FROM public.users u " \
           "WHERE u.id NOT IN (SELECT m.user_id FROM public.memberships m)"

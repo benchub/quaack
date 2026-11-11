@@ -22,7 +22,7 @@ The rule does not change these:
 
 - A `<> ALL` of a row, any other `ALL` operator, and `ANY`.
 - A `NOT IN` in a SELECT with `GROUP BY ROLLUP`, `CUBE`, or `GROUPING SETS`. These fill a grouped column with NULL in the rows that total it.
-- A `NOT IN` that occurs again, identical, in the same SELECT, when a copy is in the `GROUP BY`, `DISTINCT ON`, or `ORDER BY`. Postgres needs those copies to match: the copy in the select list must match the copy in the `GROUP BY`, and `DISTINCT ON` must match the start of `ORDER BY`. Thus a rewrite of one copy would fail to plan. The rule gives one rewrite for each copy, and does not rewrite the copies together (20261010-12).
+- A `NOT IN` that occurs again, identical, in the same SELECT, when a copy is in the `GROUP BY`, `DISTINCT ON`, or `ORDER BY`. Postgres needs those copies to match: the copy in the select list must match the copy in the `GROUP BY`, and `DISTINCT ON` must match the start of `ORDER BY`. Thus a rewrite of one copy would fail to plan. The rule gives one rewrite for each copy, and does not rewrite the copies together (20261010-12). Only copies in the SELECT itself count: a copy in one of its CTEs or subqueries doesn't need to match, so it doesn't stop the rewrite. The rule spots only identical copies. A copy written another way, such as with another alias or an added cast, isn't caught, so its rewrite fails to plan and the candidate is wasted, safely (20261010-52).
 - A tested column that is not a column of a table in the `FROM` of the SELECT that holds the `NOT IN`, such as a column of an enclosing query.
 - A row whose columns are not all `name.column`.
 - A subquery, or a `UNION` branch, that selects a different number of columns.

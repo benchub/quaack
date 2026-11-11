@@ -158,12 +158,25 @@ module Quaack
         # Whether the SELECT holds another copy of the NOT IN and one copy
         # is in its GROUP BY, DISTINCT ON, or ORDER BY, where Postgres needs
         # the copies to match: rewriting one would make the query fail to plan.
+        # Only the SELECT's own copies count, not those in its CTEs or
+        # subqueries. A copy written differently isn't caught and fails to plan.
         def repeated?(found)
           select = found.owner
           link = unlocated(found.link)
-          copies = ->(node) { Tree.find_all(node, PgQuery::SubLink).count { unlocated(it) == link } }
+          copies = ->(node) { own_links(node).count { unlocated(it) == link } }
           clauses = [select.group_clause, select.distinct_clause, select.sort_clause]
           copies.call(select) > 1 && clauses.any? { copies.call(it).positive? }
+        end
+
+        # The SubLinks in node outside any SELECT nested in it.
+        def own_links(node, found = [])
+          case node
+          when Google::Protobuf::RepeatedField then node.each { own_links(it, found) }
+          when PgQuery::Node then own_links(node.inner, found) unless node.node == :select_stmt
+          when PgQuery::SubLink then found << node
+          when Google::Protobuf::MessageExts then node.class.descriptor.each { own_links(it.get(node), found) }
+          end
+          found
         end
 
         # A copy of node with every location cleared, to compare.
