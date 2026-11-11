@@ -1713,7 +1713,11 @@ RSpec.describe Quaack::Driver::Report do
         )
       end
 
-      def whos = rows.map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
+      # Renders afresh each call, so a call after the payload changes sees the change (task 20261011-8).
+      def whos
+        rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
+          .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
+      end
 
       # Task 20261004-89 item 2.
       it "names the rewrite's source, then, after 'indices:', the sources of the new indices it ran with" do
@@ -1760,7 +1764,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(whos).to eq(["Made by transform rule key_in_self_join; indices: not recorded", "not recorded"])
       end
 
-      # Task 20261010-10. `html` is memoized, so each case renders afresh.
+      # Task 20261010-10.
       it "says others are not recorded when only some of a label's indices have recorded sources" do
         payload["excluded"]["original:top:1"] = "footprint_tie"
         payload["top"].pop
@@ -1768,8 +1772,7 @@ RSpec.describe Quaack::Driver::Report do
         fresh = lambda do |sources|
           entry = payload["indexes"]["quaack_a"]
           sources ? entry["sources"] = sources : entry.delete("sources")
-          rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
-            .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] }
+          whos
         end
         rule = "Made by transform rule key_in_self_join; indices: from the query&#39;s plan"
         expect(fresh.call(nil)).to eq(["#{rule} and others not recorded", "not recorded"])
@@ -1784,9 +1787,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(whos).to eq(["Made by transform rule key_in_self_join; indices: from another candidate, " \
                             "which had them from the query&#39;s plan"])
         payload["indexes"].each_value { it.delete("sources") }
-        expect(rows(section(render(payload), "ranking")[%r{<table id="not-ranked">.*?</table>}m])
-          .map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] })
-          .to eq(["Made by transform rule key_in_self_join; indices: from another candidate"])
+        expect(whos).to eq(["Made by transform rule key_in_self_join; indices: from another candidate"])
         expect(section(render(payload), "ranking")).to include(
           "A pairing QUAACK tried with indices another candidate's search proposed says \"from another " \
           "candidate\", then where that candidate had them from."
