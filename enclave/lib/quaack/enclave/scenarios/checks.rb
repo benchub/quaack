@@ -9,16 +9,16 @@ module Quaack
       # The fixture tables' CHECK constraints, as conditions on one column
       # each. A CHECK is simple when it's an AND of tests of one column
       # (or a cast of it) against expressions with no column: a comparison,
-      # = ANY (ARRAY[...]) (how Postgres prints IN), an IN list, BETWEEN,
-      # or IS [NOT] NULL. Anything else, such as lo < hi, an OR, or a
-      # function of the column, raises Error(:complex_check), so the query
+      # = ANY (ARRAY[...]) (how Postgres prints IN), <> ALL (how it prints NOT
+      # IN), an IN list, BETWEEN, or IS [NOT] NULL. Anything else, such as
+      # lo < hi, an OR, or a function of the column, raises Error(:complex_check), so the query
       # is refused, as does a CHECK whose operator the catalog says is
       # another schema's and no extension's (Constraints#foreign_operator),
       # however it prints. Postgres evaluates each condition, as for the
       # pools.
       class Checks
         OPERATORS = %w[= <> < <= > >=].freeze
-        KINDS = %i[AEXPR_OP AEXPR_OP_ANY AEXPR_IN AEXPR_BETWEEN AEXPR_NOT_BETWEEN].freeze
+        KINDS = %i[AEXPR_OP AEXPR_OP_ANY AEXPR_OP_ALL AEXPR_IN AEXPR_BETWEEN AEXPR_NOT_BETWEEN].freeze
 
         def initialize(conn, schema)
           @conn = conn

@@ -51,6 +51,42 @@ RSpec.describe Quaack::Enclave::ValuePools do
     end
   end
 
+  describe "other simple CHECKs on a varchar column" do
+    let(:t) { Quaack::Enclave::TableName.new(schema: "fx", name: "other") }
+    let(:schema) { Quaack::Enclave::ArenaSchema.load_closure(conn, [t]) }
+    let(:checks) { Quaack::Enclave::Scenarios::Checks.new(conn, schema) }
+
+    def with_check(check)
+      conn.exec("CREATE TABLE fx.other (id integer PRIMARY KEY, g varchar NOT NULL CHECK (#{check}))")
+      schema.column(t, "g")
+    end
+
+    def definition
+      conn.exec("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'fx.other'::regclass " \
+                "AND contype = 'c'").getvalue(0, 0)
+    end
+
+    it "reads NOT IN, which prints as <> ALL, and allows only values outside the list" do
+      col = with_check("g NOT IN ('bad', 'worse')")
+      expect(definition).to include("<> ALL")
+      expect(%w[bad worse ok].map { checks.allows?(t, col, it) }).to eq([false, false, true])
+      expect(%w[bad worse]).not_to include(checks.satisfying(t, col, ["bad"]))
+    end
+
+    it "gives an IN list holding NULL its other values, and like Postgres rejects nothing" do
+      col = with_check("g IN ('p', NULL)")
+      expect(checks.values(t, col)).to eq(["p"])
+      expect(checks.allows?(t, col, "q")).to be(true)
+    end
+
+    it "reads a one-element IN list, which prints as =" do
+      col = with_check("g IN ('only')")
+      expect(definition).to include("= 'only'")
+      expect(checks.values(t, col)).to eq(["only"])
+      expect(%w[only q].map { checks.allows?(t, col, it) }).to eq([true, false])
+    end
+  end
+
   it "pools each element of a query's = ANY over an ARRAY cast to text[]" do
     p = pool("s.kind = ANY (ARRAY['open', 'shut']::text[])")
     expect(p.satisfying).to eq(%w[open shut])
