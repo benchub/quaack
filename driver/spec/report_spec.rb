@@ -1415,6 +1415,45 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("production_not_compared")).to include(esc("on the real data, so QUAACK dropped it."))
       end
 
+      # Task 20261111-192302-1: a production failure that matched with
+      # float columns rounded says so, and links to the page on it.
+      describe "a production failure that's only float noise" do
+        let(:float_link) do
+          %(<a href="https://github.com/benchub/quaack/blob/main/docs/float-values.md" target="_blank" ) +
+            %(rel="noopener">minor mismatches in float values</a>)
+        end
+        let(:said) do
+          esc("It passed the tests on made-up data, but QUAACK dropped it because of #{float_link}: on the real " \
+              "data, its results and the original query's matched only with float values rounded to five " \
+              "significant digits. Writing the query to deal with them, for example by rounding its float " \
+              "outputs, might let the rewrite through.")
+        end
+
+        it "says the rewrite failed on minor float mismatches, and links to what to do" do
+          expect(fate("production_mismatch", rule: "value", float_noise: true)).to eq(said)
+          expect(fate("production_not_compared", rule: "unsupported_order", reason: "unstable_original",
+                                                 float_noise: true)).to eq(said)
+        end
+
+        it "links it in the list of rewrites that didn't make it too" do
+          rewrites = [fated(2, "production_mismatch", rule: "multiset", float_noise: true)]
+          list = section(render(negative_payload.merge("rewrites" => rewrites)), "negative-result")
+          expect(list[%r{<ul id="negative-rewrites">.*?</ul>}m]).to include(float_link)
+        end
+
+        it "keeps the old words without the flag, or with one that isn't true" do
+          [nil, false, "true"].each do |flag|
+            expect(fate("production_mismatch", rule: "multiset", float_noise: flag))
+              .to eq(esc("It passed the tests on made-up data, but returned different results from the original " \
+                         "query on the real data, so it's wrong."))
+          end
+        end
+
+        it "says nothing of float values for another fate" do
+          expect(fate("production_timed_out", float_noise: true)).not_to include("float")
+        end
+      end
+
       it "says how a rewrite that passed every test lost" do
         expect(fate("not_better")).to eq("It passed every correctness test, but when measured against common values " \
                                          "performed too poorly to be ranked.")

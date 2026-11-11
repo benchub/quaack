@@ -191,7 +191,7 @@ for (const time of document.querySelectorAll("time.local")) {
 </details>
 <% rewrites.each do |r| %>
 <article class="rewrite"><details class="fold query" id="<%= h anchor(r["rewrite"]) %>">
-<summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= source_html(r) %>.</span> <span class="fate">What became of it: <%= h fate(r) %></span><% if (warn = warning(r)) %> <span class="warn"><%= h warn %></span><% end %></summary>
+<summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= source_html(r) %>.</span> <span class="fate">What became of it: <%= fate_html(r) %></span><% if (warn = warning(r)) %> <span class="warn"><%= h warn %></span><% end %></summary>
 <% if (warn = warning(r, body: true)) %>
 <p class="warn body-warn"><%= h warn %></p>
 <% end %>
@@ -350,7 +350,7 @@ for (const time of document.querySelectorAll("time.local")) {
 <% if rewrites.empty? %>
 <p>QUAACK kept no rewrite to test.</p>
 <% else %>
-<ul id="negative-rewrites"><% rewrites.each do |r| %><li><%= h fate_line(r) %></li><% end %></ul>
+<ul id="negative-rewrites"><% rewrites.each do |r| %><li><%= fate_line_html(r) %></li><% end %></ul>
 <% end %>
 </details>
 <% end %>

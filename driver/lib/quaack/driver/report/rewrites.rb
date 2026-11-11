@@ -56,6 +56,16 @@ module Quaack
           "measurement_timed_out" => "It passed every correctness test, but every measurement run of it timed out."
         }.freeze
 
+        # A production failure that matched with float columns rounded to
+        # five significant digits (float_noise, task 20261111-192302-1).
+        # FloatValues links FLOAT_PHRASE to docs/float-values.md.
+        FLOAT_PHRASE = "minor mismatches in float values"
+        FLOAT_NOISE = "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, its results and " \
+                      "the original query's matched only with float values rounded to five significant digits. " \
+                      "Writing the query to deal with them, for example by rounding its float outputs, might let " \
+                      "the rewrite through.".freeze
+        FLOAT_NOISE_FATES = %w[production_mismatch production_not_compared].freeze
+
         # fuzz_disproved by query_failed: the rewrite failed where the
         # original ran (task 20261012-2).
         FUZZ_FAILED = "It failed on a random small database built around its own values%<fuzz>s, where the " \
@@ -190,9 +200,13 @@ module Quaack
 
         def fate_text(entry)
           return SEARCH_FAILED[entry["fate"]] if SEARCH_FAILED.key?(entry["fate"]) && entry["rule"] == "query_failed"
+          return FLOAT_NOISE if float_noise?(entry)
 
           FATES[entry["fate"]]
         end
+
+        # Whether the payload says a production failure was only float noise.
+        def float_noise?(entry) = entry["float_noise"] == true && FLOAT_NOISE_FATES.include?(entry["fate"])
 
         # An fk_cycle refusal's tables, in the order their foreign keys
         # point, or nil.
