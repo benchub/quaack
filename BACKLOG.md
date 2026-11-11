@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261110-6 (result comparison: a nondeterministic collation doesn't refuse when no output column can hold text).
+- 20261110-8 (`0` and `-0` don't make a `min`/`max` pick refuse).
 
 
 ## How this file works.
@@ -824,24 +825,7 @@ On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without c
 - **Answers (the user, 2026-11-10):** Name the check in the report sentence, from a fixed enum, with no values.
 - **Status:** todo
 
-### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse.
-
-`Picks` checks the original's `min` and `max` (EXTREMES) and GROUP BY keys for values Postgres calls equal that print differently, and refuses when one has a choice. For `double precision`, `0` and `-0` are equal and print differently, so a fixture with both in one group makes `max(score)` refuse the original with `unsupported_order`. Reproduced: `SELECT a, max(score) FROM s GROUP BY a` over scores `0` and `-0` refuses; `1` and `2`, or `0` and `0`, match. On run 20261110T232744Z-74d8049f this probably dropped Sleepy Pike (round 2's fixture isn't kept, so it's not proven). The user decided (2026-11-10): treat `0` and `-0` as the same for the pick check, as float noise, which DESIGN.md already calls unsupported. Do it in `PickChecks` (and the comparator if it prints `-0` differently), for float4 and float8 only. Don't loosen the check for numeric (`10` vs `10.0`), jsonb, or text. Test first with the repro, and a `10` vs `10.0` numeric case that must still refuse. Check ProductionComparison too. Update DESIGN.md. Enclave change.
-
-- **Depends on:** None.
-- **Came from:** The user's run, 2026-11-10.
-- **Design:** result-comparison (Picks).
-- **Answers (the user, 2026-11-10):** Treat `0` and `-0` as the same for the pick check.
-- **Status:** todo
-
-## New transform rules (2026-10-18).
-
-The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
-
-- Each rule is an enclave change. It goes on the "Unreleased enclave changes" list when it lands, and nothing bumps a `VERSION` (the user, 2026-10-18: another session's work joins the same batch, and the user will ask for the bump).
-- Each rule gets its page in `docs/transforms/`, in the style of the others, with an intro, "What it does.", "Why it can be faster.", "What it rests on.", and "Example." made by the rule on Postgres 18 from the shared schema. Use Oxford commas in lists. It also gets a row at the end of DESIGN.md's rewrite-rules table, a line at the end of `RULES`, and a `RuleConstantsFixtures::LITERALS` entry.
-- e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
-- Opus builder and reviewer for each rule.
+### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-1. Rule generator: never cap a one-rule rewrite. Done, see BACKLOG-COMPLETE.md.
 
