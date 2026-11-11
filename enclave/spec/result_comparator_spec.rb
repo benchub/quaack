@@ -108,6 +108,41 @@ RSpec.describe Quaack::Enclave::ResultComparator do
     it "matches empty results" do
       expect(compare(result([int4], []), result([int4], [])).match?).to be(true)
     end
+
+    # 20261111-185500-1: the two floats are adjacent doubles, so within
+    # tolerance, but they print to eight significant digits as 1.0000000
+    # and 1.0000001, so they sit in different buckets.
+    describe "floats within tolerance on either side of a bucket boundary" do
+      let(:below) { "1.000000050000002" }
+      let(:above) { "1.0000000500000021" }
+
+      it "matches them" do
+        verdict = compare(result([int4, float8], [["7", below], %w[8 2]]),
+                          result([int4, float8], [%w[8 2], ["7", above]]))
+
+        expect(verdict_fields(verdict)).to eq(match: true, mode: :multiset, rule: nil,
+                                              expected_rows: 2, actual_rows: 2, row: nil, column: nil)
+      end
+
+      it "matches them in subset mode too" do
+        verdict = compare(result([float8], [[below], ["2"]]), result([float8], [[above]]),
+                          mode: :subset, expected_count: 1)
+
+        expect(verdict.match?).to be(true)
+      end
+
+      it "still gives each row a partner of its own" do
+        verdict = compare(result([float8], [[below], ["5"]]), result([float8], [[above], [above]]))
+
+        expect(verdict_fields(verdict)).to include(match: false, rule: :multiset, row: 1)
+      end
+
+      it "still doesn't match a float in another bucket that's outside tolerance" do
+        verdict = compare(result([float8], [["1.0000001"]]), result([float8], [[below]]))
+
+        expect(verdict_fields(verdict)).to include(match: false, rule: :multiset, row: 0)
+      end
+    end
   end
 
   describe "ordered mode" do

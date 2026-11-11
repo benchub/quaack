@@ -78,7 +78,10 @@ module Quaack
     #   query's ties break.
     #   It refuses DISTINCT ON in either query, an OFFSET it can't place,
     #   and a candidate whose own tie at the cut could keep a row the
-    #   original's group doesn't hold.
+    #   original's group doesn't hold. An original whose T and T' runs keep
+    #   different rows with no LIMIT or OFFSET has no cut to blame, so the
+    #   query itself gave other rows on another run, and that's refused
+    #   before CutTies runs, unstable_original (CutTies.unstable?).
     #
     #   The principle. A column goes in the tiebreaker only if values btree
     #   calls equal are always equal to the comparator too (see Tiebreaker::UNFAITHFUL).
@@ -252,7 +255,10 @@ module Quaack
         # Whether the top level keeps only some of its rows: a LIMIT, an
         # OFFSET, DISTINCT or DISTINCT ON, or a UNION, INTERSECT, or EXCEPT
         # without ALL. Each can keep either of two rows btree calls equal.
-        def cut? = kept(:cut?) { dedup? || select_stmt(parse).then { !!(it.limit_count || it.limit_offset) } }
+        def cut? = kept(:cut?) { dedup? || limited? }
+
+        # Whether the top level has a LIMIT or an OFFSET.
+        def limited? = kept(:limited?) { select_stmt(parse).then { !!(it.limit_count || it.limit_offset) } }
 
         # Whether the top level's only cut, if any, is a LIMIT or an OFFSET:
         # no DISTINCT, DISTINCT ON, or set operation that drops duplicates.
@@ -435,8 +441,11 @@ module Quaack
 
       # The verdict from the original's tiebreaker runs: the candidate's
       # match row for row or group by group (tiebroken), unless either query's LIMIT or OFFSET may cut a
-      # tie group, and then CutTies' check decides.
+      # tie group, and then CutTies' check decides. An original whose runs
+      # keep other rows with nothing to cut refuses (CutTies.unstable?).
       def tiebroken_verdict(transaction, originals, shapes, positions)
+        return refused(:unstable_original) if CutTies.unstable?(shapes.first, uncut: ties_uncut?(*originals))
+
         if cut_tie?(transaction, shapes.first, originals, positions)
           return cut_tie(transaction, originals, shapes, positions)
         end

@@ -59,7 +59,9 @@ module Quaack
                                 "it keeps",
           "pick_run_failed" => "a version of a query with its arbitrary picks pinned down failed to run",
           "unsteady_order" => "the rewrite's tied rows didn't come back in a consistent order",
-          "cut_tie" => "a LIMIT or OFFSET cuts through tied rows in a way QUAACK can't check",
+          "cut_tie" => "a LIMIT, OFFSET, or DISTINCT ON keeps only some of a group of tied rows, in a way QUAACK " \
+                       "can't check",
+          "unstable_original" => "the original query returned different rows on two runs over the same data",
           "full_run_timed_out" => format(FULL_RUN, "timed out"),
           "full_run_too_many_rows" => format(FULL_RUN, "returned more rows than QUAACK can hold")
         }.freeze

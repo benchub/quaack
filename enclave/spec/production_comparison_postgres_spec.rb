@@ -107,6 +107,21 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
           .to eq(%w[fail unsupported_order unsteady_order])
       end
 
+      # 20261111-185500-1: random() gives each of the original's runs
+      # other rows. With no LIMIT or OFFSET, that's no cut's doing.
+      it "refuses an original whose runs keep other rows as unstable_original, or cut_tie under a LIMIT" do
+        rows = "SELECT i % 3 AS a, random() AS r FROM generate_series(1, 30) i ORDER BY a"
+        expect([verdict(rows, rows), verdict("#{rows} LIMIT 3", "#{rows} LIMIT 3")])
+          .to eq([%w[fail unsupported_order unstable_original], %w[fail unsupported_order cut_tie]])
+      end
+
+      # The tiebreaker picks the DISTINCT ON's row: the least i one way, the
+      # greatest the other. That's the pick's doing, not the query's.
+      it "refuses a DISTINCT ON original whose runs pick other rows as cut_tie, with no LIMIT" do
+        rows = "SELECT DISTINCT ON (a) i % 3 AS a, i FROM generate_series(1, 9) i ORDER BY a"
+        expect(verdict(rows, rows)).to eq(%w[fail unsupported_order cut_tie])
+      end
+
       it "fails a row moved to another group with the value rule" do
         expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY CASE WHEN i = 3 THEN 1 ELSE i % 3 END, i"))
           .to eq(%w[fail value])
