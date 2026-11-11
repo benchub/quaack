@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../constant_value"
+
 module Quaack
   module Enclave
     module Fuzz
@@ -35,15 +37,16 @@ module Quaack
           found
         end
 
-        # The string and number constants in node, as text.
-        def constants(node, found = [])
+        # The string and number constants in node, as text, a $n's from
+        # binding (ConstantValue).
+        def constants(node, found = [], binding: nil)
           case node
           when Hash
-            constant = node[:a_const]
+            constant = ConstantValue.from_hash(node, binding)
             value = constant && !constant[:isnull] && value(constant)
             found << value if value
-            node.each_value { constants(it, found) }
-          when Array then node.each { constants(it, found) }
+            node.each_value { constants(it, found, binding:) }
+          when Array then node.each { constants(it, found, binding:) }
           end
           found
         end

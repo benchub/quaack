@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "constant_value"
 require_relative "deparse"
 require_relative "result_comparator"
 require_relative "supported_sql"
@@ -364,13 +365,15 @@ module Quaack
       module_function
 
       # An OFFSET node's value when it's an integer constant, 0 for no
-      # node or a NULL constant, and nil otherwise.
-      def offset_value(node)
+      # node or a NULL constant, and nil otherwise. A $n reads as its
+      # literal from binding (ConstantValue), and as nil without one.
+      def offset_value(node, binding = nil)
         return 0 unless node
-        return unless node.node == :a_const
-        return 0 if node.a_const.isnull
 
-        node.a_const.ival.ival if node.a_const.val == :ival
+        constant = ConstantValue.from_node(node, binding) or return
+        return 0 if constant.isnull
+
+        constant.ival.ival if constant.val == :ival
       end
 
       # Adds a SelectStmt's OFFSET to its LIMIT, and drops the OFFSET (LimitSum).

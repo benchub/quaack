@@ -21,6 +21,9 @@ module Quaack
       #   facts.integers     # => [5, 2025]
       #   facts.separators   # => ["@"]
       #
+      # With binding, a $n reads as its literal (ConstantValue), so the $n
+      # form gives the same facts as the literal form.
+      #
       # Trust boundary: these are the queries' constants, so they stay in
       # the enclave.
       class Facts
@@ -35,17 +38,22 @@ module Quaack
         attr_reader :strings, :integers, :numbers, :separators, :like_patterns, :json_keys, :json_leaves,
                     :divided, :int_casts, :grouped, :combinations
 
-        def initialize(trees)
+        def initialize(trees, binding: nil)
+          @binding = binding
           @strings, @numbers, @separators, @like_patterns, @json_keys, @json_leaves, @combinations = Array.new(7) { [] }
           @divided, @int_casts, @grouped = Array.new(3) { Set.new }
           @tables = RangeTables.new
           trees.each { walk(it) }
+          finish
+        end
+
+        private
+
+        def finish
           @integers = @numbers.filter_map { Integer(it, exception: false) }.uniq
           json_constants
           [@strings, @numbers, @separators, @like_patterns, @json_keys, @json_leaves].each(&:uniq!)
         end
-
-        private
 
         def walk(node)
           case node
@@ -62,6 +70,7 @@ module Quaack
 
         def visit(node)
           VISITS.each { |key, visit| send(visit, node[key]) if node[key] }
+          (bound = node[:param_ref] && ConstantValue.from_hash(node, @binding)) && constant(bound)
           %i[group_clause partition_clause].each { @grouped.merge(Tree.column_refs(node[it])) if node[it] }
         end
 
@@ -95,7 +104,7 @@ module Quaack
         end
 
         def combined(node, other)
-          combination = Combination.of(node, Combination.number(other)) { @tables.table(it) }
+          combination = Combination.of(node, Combination.number(other, @binding), @binding) { @tables.table(it) }
           @combinations << combination if combination
         end
 
@@ -117,7 +126,7 @@ module Quaack
           @int_casts << bits if bits && !cast.dig(:type_name, :array_bounds)
         end
 
-        def string(node) = node.is_a?(Hash) ? node.dig(:a_const, :sval, :sval) : nil
+        def string(node) = ConstantValue.from_hash(node, @binding)&.dig(:sval, :sval)
 
         # The keys and leaf values of each string constant that's a JSON
         # object or array.
