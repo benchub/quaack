@@ -360,9 +360,16 @@ module Quaack
           progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
           payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
           rounds = numbered(progress, compare(transport, args), client)
-          result = counterexamples(client, args, record).run(payload, compare: rounds)
+          result = counterexamples(client, args, record).run(payload, compare: rounds, keep: kept(record, args))
           record.call { it.counterexamples!(args[:search], result.units) }
           !result.disproved
+        end
+
+        # What Counterexamples#run tells keep of each round, its inserts,
+        # their entry, and its feedback, in the provenance record, saved as
+        # it comes, so a round whose load fails the run keeps its inserts.
+        def kept(record, args)
+          ->(round, **fields) { record.call { it.counterexample_round!(args[:search], round, **fields) } }
         end
 
         # call, noted under counterexamples with whose rows it loads, by:,

@@ -44,8 +44,9 @@ RSpec.describe "The pipeline's provenance record" do
   end
 
   # The sentinels that must never reach the record: what the enclave sent
-  # for the LLM, and what the LLM wrote.
-  let(:secret) { %w[SENTINEL_PAYLOAD SENTINEL_DDL SENTINEL_REWRITE_SQL SENTINEL_INSERT SENTINEL_REASON] }
+  # for the LLM, and what the LLM wrote, but for its counterexample
+  # inserts, which the record keeps (task 20261111-191130-1).
+  let(:secret) { %w[SENTINEL_PAYLOAD SENTINEL_DDL SENTINEL_REWRITE_SQL SENTINEL_REASON] }
 
   let(:initial) do
     { "index_search_original" => false, "index_generated_original" => false, "index_ranking_original" => false,
@@ -81,7 +82,8 @@ RSpec.describe "The pipeline's provenance record" do
       "rewrite-test" => [{ "type" => "rewrite_test", "passed" => true }],
       "counterexample-payload" => [{ "type" => "counterexample_payload", "original" => "SELECT SENTINEL_PAYLOAD" }],
       "counterexample-round" => [{ "type" => "counterexample_round", "match" => true, "rule" => nil,
-                                   "covered" => [], "refused" => [{ "index" => 0, "rule" => "SENTINEL_REASON" }] }],
+                                   "covered" => [], "refused" => [{ "index" => 0, "rule" => "unparsable" }],
+                                   "reason" => "SENTINEL_REASON" }],
       "report-payload" => [report]
     }
     Class.new do
@@ -133,6 +135,9 @@ RSpec.describe "The pipeline's provenance record" do
   # Every prompt sent to an LLM, as text: the system prompts and messages.
   def prompts = JSON.generate(fakes.values.flat_map(&:asks).map { [it.body[:system], it.body[:messages]] })
 
+  # What the driver told the LLM about each round of the counterexample-round reply.
+  let(:same) { "insert 1 was refused (unparsable)\nThe accepted inserts gave both queries the same results." }
+
   it "records, as it goes, which provider and model produced each idea, rewrite, and counterexample round" do
     script
     run
@@ -161,7 +166,13 @@ RSpec.describe "The pipeline's provenance record" do
                                         names[1] => { "llm-counterexamples" => 2, "llm-rewrites" => 1 } } },
       "counterexamples" => { "rewrite_1" => [{ "entry" => names[0], "rounds" => 1, "pairing" => "not_applicable" },
                                              { "entry" => names[1], "rounds" => 2, "after" => "llm_rate_limited",
-                                               "pairing" => "not_applicable" }] }
+                                               "pairing" => "not_applicable" }] },
+      "counterexample_rounds" => { "rewrite_1" => [{
+        "1" => { "entry" => names[0], "inserts" => ["INSERT INTO public.t (a) VALUES ('SENTINEL_INSERT')"],
+                 "feedback" => same },
+        "2" => { "entry" => names[1], "inserts" => ["INSERT INTO public.t (a) VALUES (1)"], "feedback" => same },
+        "3" => { "entry" => names[1], "inserts" => ["INSERT INTO public.t (a) VALUES (1)"], "feedback" => same }
+      }] }
     )
     expect(File.stat(path).mode & 0o777).to eq(0o600)
   end
@@ -207,12 +218,15 @@ RSpec.describe "The pipeline's provenance record" do
     end
   end
 
-  it "keeps SQL, DDL, payloads, replies, and the enclave's words out of the record" do
+  it "keeps SQL, DDL, payloads, replies, and the enclave's words out of the record, but for each round's inserts" do
     script
     run
+    record = JSON.parse(File.read(path))
 
     expect(found(File.read(path), secret)).to eq([])
     expect(found(prompts, secret)).not_to be_empty
+    expect(found(JSON.generate(record.except("counterexample_rounds")), ["SENTINEL_INSERT"])).to eq([])
+    expect(found(JSON.generate(record["counterexample_rounds"]), ["SENTINEL_INSERT"])).to eq(["SENTINEL_INSERT"])
   end
 
   it "sends nothing new to the enclave or into a prompt: no provider's name or model" do

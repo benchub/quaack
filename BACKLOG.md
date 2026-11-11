@@ -882,15 +882,6 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261111-185500-1. Don't blame a LIMIT or OFFSET that isn't there. Done, see BACKLOG-COMPLETE.md.
 
-### 20261111-191130-1. Keep each counterexample round's inserts for replay.
-
-- **Depends on:** None.
-- **Design:** DESIGN.md, counterexamples.
-- **Status:** todo.
-- **Why:** 20261111-185500-1 couldn't be reproduced because nothing keeps the inserts an LLM wrote for a counterexample round. The driver's `~/.quaack/runs/<run>.llm.json` holds only counts, and the enclave's `rewrite_round_<n>` holds only the rule and reason, even with `--keep`.
-- **Do:** Keep each round's LLM-written inserts on the driver side, since the LLM wrote them and they hold no production values. Key them by rewrite and round, so a refusal or mismatch can be replayed against the same schema.
-- **Answers (user, 2026-11-11):** Keep them in the existing `~/.quaack/runs/<run>.llm.json` (Provenance), by rewrite and round, with the feedback QUAACK sent back. Never pruned, like the rest of that file. No replay command; replaying stays manual.
-
 ### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary.
 
 - **Depends on:** None.

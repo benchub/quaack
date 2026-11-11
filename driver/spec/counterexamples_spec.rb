@@ -118,6 +118,27 @@ RSpec.describe Quaack::Driver::Counterexamples do
       expect(whose).to eq([["groq"]])
     end
 
+    # Task 20261111-191130-1: each round's inserts, kept for the provenance
+    # record before compare loads them, and the feedback on them after.
+    it "hands keep each round's inserts and entry before compare, then its feedback, but none for a mismatch" do
+      2.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
+      outcomes.push(clean(refused: [{ "index" => 0, "rule" => "insert_select" }], covered: ["o.status = $1"]),
+                    { "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
+      kept = []
+      comparing = lambda do |inserts, **|
+        kept << :compare
+        compare.call(inserts)
+      end
+      described_class.new(client: router_over({ "groq" => fake }))
+                     .run(payload, compare: comparing, keep: ->(round, **fields) { kept << [round, fields] })
+
+      feedback = "insert 1 was refused (insert_select)\nThe accepted inserts gave both queries the same results.\n" \
+                 "They exercised: o.status = $1."
+      expect(kept).to eq([[1, { inserts: ["INSERT 0"], entry: "groq" }], :compare, [1, { feedback: }],
+                          [2, { inserts: ["INSERT 1"], entry: "groq" }], :compare])
+      expect(fake.asks[1].body[:messages][2][:content]).to start_with(feedback)
+    end
+
     it "stops once a round disproves the candidate" do
       2.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
       outcomes.push(clean, { "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
@@ -166,7 +187,12 @@ RSpec.describe Quaack::Driver::Counterexamples do
         client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { seen << it } }
       end
 
-      def run = described_class.new(client:, label: "Rewrite Silver Fox").run(payload, compare:)
+      let(:kept) { [] }
+
+      def run
+        described_class.new(client:, label: "Rewrite Silver Fox")
+                       .run(payload, compare:, keep: ->(round, **fields) { kept << [round, fields] })
+      end
 
       def inserts(*sql) = { "inserts" => sql }
 
@@ -196,6 +222,8 @@ RSpec.describe Quaack::Driver::Counterexamples do
         expect(second.map { it[:role] }).to eq(%i[user assistant user])
         expect(fakes["b"].asks.map { it.body[:system] }).to all(eq(fake.asks.first.body[:system]))
         expect(fakes["c"].asks).to eq([])
+        expect(kept.map { [it.first, it.last[:entry]] }).to eq([[1, "a"], [1, nil], [2, "b"], [2, nil], [3, "b"],
+                                                                [3, nil]])
         expect(notes).to include("a is rate limited (the API answered 429: fake rate_limit_error), so the rest of " \
                                  "this run skips it; asking b for the remaining rounds, starting fresh " \
                                  "(llm-counterexamples, Rewrite Silver Fox)")
