@@ -12812,3 +12812,13 @@ From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyw
 - **Built, not merged:** branch `task/20261011-12` (head `6270cc2a`), two Opus reviews clean (the first found the refusal too coarse for citext and hstore in `public`; the fix narrows it to operators with a reachable argument type, `rewrite_candidate_check/keyword_reach.rb`). Held until after the 0.1.33 bump so `main` stays deployable; merge it as the first change of the next batch and put `20261011-12` on the unreleased list. Minors: a relation's row type (`pg_class.reltype`) isn't among the seen types, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through (add `reltype`, or refuse whole-row operands of keyword forms); the example at `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it; one earlier full run had a single unidentified failure in `rewrite_candidate_check_spec.rb` that didn't recur: watch for it.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261011-12`. Minor findings are in 20261111-200042-1 and 20261111-200042-2.
+
+### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling.
+
+From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, ...)`, which probably also counts copies in nested subqueries and CTEs of the same SELECT, so a copy in another scope plus one in GROUP BY or ORDER BY refuses a rewrite that would have worked (untested). Copies written differently (another alias, an added cast) aren't detected and fall back to `failed_to_plan`, which is safe but wastes a candidate; list that in docs/transforms/not_in_to_not_exists.md. Test the nested-scope case and either count only this SELECT's own copies or document the extra refusal.
+
+- **Depends on:** 20261010-12 (landed).
+- **Came from:** The review of 20261010-12, 2026-10-10.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261010-52`. The rule counts only the SELECT's own copies; the docs list the undetected spellings. Reviewed with no blocking findings. Minor: set-operation arms aren't wrapped in a Node, so `own_links` descends into them when a NOT IN sits in the top set-op SELECT (rare; over-cautious refusal only). Filed as 20261111-210000-1.

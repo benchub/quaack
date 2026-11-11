@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261011-12
+- 20261010-52
 
 ## How this file works.
 
@@ -242,14 +243,7 @@ Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `
 
 ### 20261010-48. Untested conditions: a correlated count threshold, built without leaking the threshold. Dropped, see BACKLOG-COMPLETE.md.
 
-### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling.
-
-From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, ...)`, which probably also counts copies in nested subqueries and CTEs of the same SELECT, so a copy in another scope plus one in GROUP BY or ORDER BY refuses a rewrite that would have worked (untested). Copies written differently (another alias, an added cast) aren't detected and fall back to `failed_to_plan`, which is safe but wastes a candidate; list that in docs/transforms/not_in_to_not_exists.md. Test the nested-scope case and either count only this SELECT's own copies or document the extra refusal.
-
-- **Depends on:** 20261010-12 (landed).
-- **Came from:** The review of 20261010-12, 2026-10-10.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261011-5. Denormalized fixture: a UNIQUE or CHECK on the copy column (minors from 20261010-2).
 
@@ -887,4 +881,13 @@ From the review of 20261011-12. The example near `rewrite_candidate_check_spec.r
 - **Depends on:** None.
 - **Came from:** 20261011-12.
 - **Design:** none.
+- **Status:** todo
+
+### 20261111-210000-1. not_in_to_not_exists: `own_links` descends into set-operation arms.
+
+From the review of 20261010-52 (minor). A set-operation SelectStmt keeps its `larg` and `rarg` arms as bare SelectStmt messages, not wrapped in a Node, so `own_links` walks into them when a NOT IN's owner is the top set-op SELECT (for example a NOT IN in the ORDER BY of a UNION). The result is an over-cautious refusal or a candidate that fails to plan, never a wrong result. Skip `larg` and `rarg` in `own_links`, with a test first. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261010-52 (landed).
+- **Came from:** 20261010-52.
+- **Design:** rewrite-rules.
 - **Status:** todo
