@@ -229,20 +229,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 
 ### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34. Dropped, see BACKLOG-COMPLETE.md.
 
-### 20261010-41. Winner summary: minors from 20261010-37.
-
-1. A repeated condition's column cut merges columns of different tables (`a.x = $1` and `b.x = $3` both read `x = $`), which can overstate how often a condition repeats; keep the qualifier when the query reads more than one table.
-2. No spec covers a duplicate condition inside one OR arm (`a = $1 AND a = $2`): removing the `.uniq` on each arm's conjuncts stays green and would report a repeat that isn't one. Add the spec.
-3. The `(all|every) quer(y|ies)` guard refuses a plain description such as "Every query in the run read fewer blocks"; narrow it to advice use.
-4. No spec covers `Repeats.of` getting nil from a rejected `sql()` string (over 20000 characters or a NUL).
-5. The three rule preconditions not checked in depth (implied_predicate_removal, cte_hoist_dedupe, unused_join_removal): verify against the code.
-6. The not_in "when it wouldn't help" sentence says only when the rewrite doesn't apply, not when it doesn't pay off.
-
-- **Depends on:** 20261010-37 (landed).
-- **Came from:** The reviews of 20261010-37, 2026-10-10.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261010-44. Burndown: minors from 20261010-20.
 
 1. **index-rank's added count is combinations, not ideas.** The funnel this item was about is gone (20261012-6). The Sankey draws index-rank in its own unit, sets, with a note on why it tries that many combinations (`sankey.rb` `COMBINATIONS`), and the table says "combinations tried". Check that the Sankey's index-rank layer can't be read as more ideas going on than came in. If it can't, drop this item.

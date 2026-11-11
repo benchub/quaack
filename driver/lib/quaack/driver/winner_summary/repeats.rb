@@ -17,7 +17,10 @@ module Quaack
       #   #       "in_original" => 2, "in_winner" => 1 }]
       #
       # A condition is a shape: pg_query's deparse of it with each column
-      # reference cut to its column name, so o.state and state match. One
+      # reference cut to its column name, so o.state and state match. When
+      # the SQL reads more than one table, a qualifier that names one of them
+      # stays, so a.x and b.x don't count as one condition; one that names a
+      # subquery is still cut (20261010-41). One
       # that holds a literal is left out, so no value goes in. Either SQL
       # not parsing, or missing, gives an empty list.
       module Repeats
@@ -30,10 +33,10 @@ module Quaack
         def of(original, winner)
           return [] unless original.is_a?(String) && winner.is_a?(String)
 
-          original_tree = PgQuery.parse(original)
-          winner_counts = tally(PgQuery.parse(winner))
-          original_counts = tally(original_tree)
-          repeated(original_tree).first(MOST).map do |shape, across|
+          original_tree, keep = parsed(original)
+          winner_counts = tally(*parsed(winner))
+          original_counts = tally(original_tree, keep)
+          repeated(original_tree, keep).first(MOST).map do |shape, across|
             { "condition" => shape, "repeated_across" => across, "in_original" => original_counts[shape],
               "in_winner" => winner_counts[shape] }
           end
@@ -41,12 +44,14 @@ module Quaack
           []
         end
 
+        def parsed(sql) = PgQuery.parse(sql).then { [it, tables(it)] }
+
         # Each shape that two or more places of one group hold, with the
         # group's kind, in the order first found.
-        def repeated(tree)
+        def repeated(tree, keep)
           found = {}
           groups(tree).each do |across, places|
-            places.flat_map { |conjuncts| conjuncts.filter_map { shape(it) }.uniq }.tally.each do |shape, n|
+            places.flat_map { |conjuncts| conjuncts.filter_map { shape(it, keep) }.uniq }.tally.each do |shape, n|
               found[shape] ||= across if n > 1
             end
           end
@@ -91,17 +96,27 @@ module Quaack
         end
 
         # How many times each shape appears as a condition anywhere in tree.
-        def tally(tree)
+        def tally(tree, keep)
           shapes = []
-          tree.walk! { |_p, _f, node, _l| shapes << shape(node) if node.is_a?(PgQuery::Node) }
+          tree.walk! { |_p, _f, node, _l| shapes << shape(node, keep) if node.is_a?(PgQuery::Node) }
           shapes.compact.tally.tap { it.default = 0 }
         end
 
-        def shape(node)
+        # The names a column qualifier keeps: each table's alias, or its name
+        # when it has none, but only when tree reads more than one table.
+        def tables(tree)
+          names = []
+          tree.walk! { |_p, _f, node, _l| names << table_name(node) if node.is_a?(PgQuery::RangeVar) }
+          names.uniq.size > 1 ? names.uniq : []
+        end
+
+        def table_name(range_var) = range_var.alias&.aliasname.to_s.then { it.empty? ? range_var.relname : it }
+
+        def shape(node, keep = [])
           return unless CONDITIONS.include?(node.node)
 
           copy = PgQuery::Node.decode(PgQuery::Node.encode(node))
-          return unless strip(copy, cut: !columns_equal?(copy))
+          return unless strip(copy, cut: !columns_equal?(copy), keep:)
 
           text = PgQuery.deparse_expr(copy).gsub(/\$1(?!\d)/, "$")
           text if text.size <= LONGEST
@@ -120,21 +135,23 @@ module Quaack
         # shapes may hold different values), cuts each column reference to its
         # column name unless cut is false, and says whether message holds no
         # literal.
-        def strip(message, cut: true)
+        def strip(message, cut: true, keep: [])
           return false if message.is_a?(PgQuery::A_Const)
 
-          normalize(message, cut)
+          normalize(message, cut, keep)
           message.class.descriptor.all? do |field|
             value = message[field.name]
             values = field.label == :repeated ? value.to_a : [value]
-            values.all? { !it.class.respond_to?(:descriptor) || strip(it, cut:) }
+            values.all? { !it.class.respond_to?(:descriptor) || strip(it, cut:, keep:) }
           end
         end
 
-        def normalize(message, cut)
+        def normalize(message, cut, keep)
           message.number = 1 if message.is_a?(PgQuery::ParamRef)
-          cut(message) if cut && message.is_a?(PgQuery::ColumnRef)
+          cut(message) if cut && message.is_a?(PgQuery::ColumnRef) && !keep.include?(qualifier(message))
         end
+
+        def qualifier(column_ref) = column_ref.fields.to_a.then { it[-2]&.string&.sval if it.size > 1 }
 
         def cut(column_ref)
           last = column_ref.fields.last
