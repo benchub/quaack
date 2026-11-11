@@ -27,6 +27,18 @@ module Quaack
 
         module_function
 
+        # Whether the original's T and T' runs keep different rows (uncut is
+        # false) though shape, the original's, has no LIMIT or OFFSET to
+        # cut a tie group with. Then the query itself gave other rows on
+        # another run over the same data, and the comparison refuses,
+        # unstable_original. A DISTINCT or a set operation without ALL
+        # counts too: the tiebreaker holds every column of one (or the
+        # comparison refused, hidden_tie), so the rows it drops as
+        # duplicates are equal and can't make the runs differ. A DISTINCT
+        # ON can, by picking another row of a tie group each way, so it's
+        # left to check, which refuses it, cut_tie.
+        def unstable?(shape, uncut:) = !uncut && !shape.limited? && !shape.distinct_on?
+
         # Whether the precise check must run instead of matching the
         # candidate's T and T' runs row for row, or by Regrouped: when the
         # original's T and T' runs keep different rows (uncut is false), or
@@ -43,18 +55,6 @@ module Quaack
         # or by Regrouped, since its own tie groups can hide in its window
         # the same way.
         # The match is sound when neither's are.
-        # Whether the original's T and T' runs keep different rows (uncut is
-        # false) though shape, the original's, has no LIMIT or OFFSET to
-        # cut a tie group with. Then the query itself gave other rows on
-        # another run over the same data, and the comparison refuses,
-        # unstable_original. A DISTINCT or a set operation without ALL
-        # counts too: the tiebreaker holds every column of one (or the
-        # comparison refused, hidden_tie), so the rows it drops as
-        # duplicates are equal and can't make the runs differ. A DISTINCT
-        # ON can, by picking another row of a tie group each way, so it's
-        # left to check, which refuses it, cut_tie.
-        def unstable?(shape, uncut:) = !uncut && !shape.limited? && !shape.distinct_on?
-
         def needed?(shape, uncut:, kept_rows:)
           return true unless uncut
           return false unless shape.cut_both_ends? && kept_rows
