@@ -59,7 +59,7 @@ module Quaack
     # name. Row values live only as hashes inside one compare.
     module ProductionComparison
       RESULTS = %w[pass fail partial].freeze
-      RULES = [*ResultComparator::RULES.map(&:to_s), "timed_out", "subset_timed_out"].freeze
+      RULES = [*ResultComparator::RULES.map(&:to_s), "timed_out", "subset_timed_out", "too_many_rows"].freeze
 
       Verdict = Data.define(:result, :rule) do
         def initialize(result:, rule:)
@@ -211,9 +211,11 @@ module Quaack
         # The most rows one of the cut-tie check's runs without a LIMIT may
         # hold hashes for (32 bytes each, plus Ruby's overhead). Four such
         # runs are held at once, so a result past it refuses, as a timeout
-        # does, with unsupported_order. The rows still coming are discarded by
-        # the ROLLBACK that ends the run.
+        # does, but with its own rule, too_many_rows, so the report can tell
+        # the two apart (task 20261010-7). The rows still coming are
+        # discarded by the ROLLBACK that ends the run.
         FULL_RUN_ROW_CAP = 2_000_000
+        TOO_MANY_ROWS = [:too_many_rows, {}.freeze].freeze
 
         def initialize(run, positions)
           @run = run
@@ -233,10 +235,10 @@ module Quaack
           [false, true].map do |descending|
             sql = shape.with_tiebreaker(@positions, descending:, limited:)
             @run.digest(sql, nil, max_rows: (FULL_RUN_ROW_CAP unless limited)).hashes
-          rescue TimedOut, TooManyRows
+          rescue TimedOut, TooManyRows => e
             raise if limited
 
-            throw :full_timed_out, ResultComparison::CutTies::REFUSED
+            throw :full_timed_out, e.is_a?(TooManyRows) ? TOO_MANY_ROWS : ResultComparison::CutTies::REFUSED
           end
         end
 

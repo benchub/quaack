@@ -732,10 +732,12 @@ RSpec.describe "quaacks report-payload" do
         measured(store, 8, "none" => "result_mismatch")
         measured(store, 9, "none" => "result_timed_out", "rewrite_9:top:1" => "not_better")
         measured(store, 10, "none" => "result_not_compared")
+        measured(store, 35, "none" => "result_not_compared")
         compared(store, 8 => { "slow" => "timed_out", "typical" => "multiset" },
                         9 => { "slow" => "timed_out", "typical" => nil },
                         10 => { "slow" => "unsupported_order", "typical" => "unsupported_order" },
-                        11 => { "slow" => nil, "typical" => nil })
+                        11 => { "slow" => nil, "typical" => nil },
+                        35 => { "slow" => "too_many_rows", "typical" => nil })
         measured(store, 11, "none" => "not_better", "rewrite_11:top:1" => "not_better")
         measured(store, 12, "none" => "not_better", "rewrite_12:top:1" => "footprint_tie")
         measured(store, 13, "none" => "footprint_tie", "rewrite_13:top:1" => "below_top_three",
@@ -812,7 +814,8 @@ RSpec.describe "quaacks report-payload" do
       31 => { "fate" => "rewrite_test_untested", "rule" => "exclusion_constraint" },
       32 => { "fate" => "rewrite_test_failed", "rule" => "transaction_closed" },
       33 => { "fate" => "counterexamples_failed", "round" => 2, "rule" => "transaction_closed" },
-      34 => { "fate" => "rewrite_test_failed", "rule" => "original_failed" }
+      34 => { "fate" => "rewrite_test_failed", "rule" => "original_failed" },
+      35 => { "fate" => "production_not_compared", "rule" => "too_many_rows" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
