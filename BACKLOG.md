@@ -193,15 +193,6 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20261008-57. Running the rules: leftovers from 20261002-2. Done, see BACKLOG-COMPLETE.md.
 
-### 20261008-72. `spec/pipeline_replay_spec.rb` takes about 24 minutes alone.
-
-Carried from 20261003-3. It sets the per-commit check's wall time. See whether replays can share setup (one Postgres load per schema, say) or run less.
-
-- **Depends on:** none.
-- **Came from:** 20261003-3, 2026-10-08.
-- **Design:** none (CLAUDE.md Development).
-- **Status:** todo
-
 ### 20261009-1. Upgrade pg_query to a Postgres 18 parser, and drop the parser note.
 
 Carried from 20260927-28. As of 2026-10-08 the lockfile has pg_query 6.2.3 and the newest release is 6.2.5, both on the Postgres 17 grammar. When a release ships a Postgres 18 parser, upgrade it, drop the parser note (20260923-1), and update `parser_version_spec.rb`'s literal 17.
