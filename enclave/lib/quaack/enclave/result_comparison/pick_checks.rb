@@ -71,7 +71,7 @@ module Quaack
         def tied_text(call, arg, order)
           filter = call[:agg_filter] ? "quaack_arg IS NOT NULL AND (quaack_filter)" : "quaack_arg IS NOT NULL"
           template("(pg_catalog.array_agg(quaack_text ORDER BY quaack_arg #{order}) FILTER (WHERE #{filter}))[1]",
-                   text: c_text(copy(arg)), arg: copy(arg), filter: copy(call[:agg_filter]))
+                   text: printed(copy(arg)), arg: copy(arg), filter: copy(call[:agg_filter]))
         end
 
         # The check, for a HAVING, that each of select's GROUP BY keys
@@ -79,7 +79,7 @@ module Quaack
         # sets are unsupported in v1, so SupportedSql refuses them first.)
         def grouped(select)
           checks = Array(select[:group_clause]).map do |key|
-            text = c_text(resolved(select, key))
+            text = printed(resolved(select, key))
             template(CHECKS[:group], min: aggregate_of("min", text), max: aggregate_of("max", copy(text)))
           end
           checks.reduce { |all, check| both(all, check) }
@@ -172,7 +172,19 @@ module Quaack
           name.delete_prefix("quaack_").to_sym if name&.start_with?("quaack_")
         end
 
-        def c_text(node) = { collate_clause: { arg: Picks.text(node), collname: [Picks.name("C")] } }
+        # node's text, as c_text, but with a float4 or float8 -0 printed as
+        # 0, which it equals, so a min, max, or GROUP BY key that could keep
+        # either has no choice worth refusing: float noise (task
+        # 20261110-8). Other types keep their text, such as numeric's 10.0.
+        def printed(node)
+          c_text_of(template("CASE WHEN pg_catalog.pg_typeof(quaack_arg) IN " \
+                             "('pg_catalog.float4'::pg_catalog.regtype, 'pg_catalog.float8'::pg_catalog.regtype) " \
+                             "AND quaack_text = '-0' THEN '0' ELSE quaack_text END",
+                             arg: node, text: Picks.text(copy(node))))
+        end
+
+        def c_text_of(text) = { collate_clause: { arg: text, collname: [Picks.name("C")] } }
+        def c_text(node) = c_text_of(Picks.text(node))
         def copy(node) = Marshal.load(Marshal.dump(node))
       end
     end
