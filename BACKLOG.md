@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261011-12
 - 20261010-52
+- 20261012-7
 
 ## How this file works.
 
@@ -296,14 +297,7 @@ From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the s
 
 ### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`.
-
-From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` prints as `((g)::text <> ALL ((ARRAY['bad'::character varying, 'worse'::character varying])::text[]))`. `Scenarios::Checks::KINDS` (`enclave/lib/quaack/enclave/scenarios/checks.rb:21`) doesn't hold `AEXPR_OP_ALL`, so `Checks.new` raises `complex_check`. fuzz doesn't use `Checks`, but llm-counterexamples' `Counterexamples::ParentRows` does (`counterexamples/parent_rows.rb`, ~line 44), so when a counterexample round's accepted inserts need a parent row, and any table in their foreign-key closure (`ArenaSchema.load_closure`) has such a CHECK, the round fails with `complex_check` instead of testing the LLM's rows. That hits every rewrite's rounds on a schema that uses NOT IN CHECKs on varchar columns near the queries' tables. `Sides.sides` already reads `<> ALL` over a cast ARRAY since 20261012-1, so accepting it should be small. DESIGN.md doesn't list NOT IN as simple today, so update its simple-CHECK sentence. Also add the specs the review found missing, for behaviour it checked by hand: a CHECK IN list holding NULL (`IN ('p', NULL)` gives values `["p"]` and, as in Postgres, rejects nothing), and a one-element IN list (which prints as `= 'only'`). Reworded 2026-10-14 after 20261012-4 for the ParentRows path (kept by the user, 2026-10-14).
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-1, 2026-10-12 (minor).
-- **Design:** llm-counterexamples.
-- **Status:** todo
+### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-8. Value pools: an array literal under `= ANY` isn't split, and a bare `ARRAY[...]` compared with an array column is.
 
@@ -883,4 +877,13 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Depends on:** None.
 - **Came from:** 20261011-10.
 - **Design:** counterexamples.
+- **Status:** todo
+
+### 20261111-230000-1. NOT IN CHECK: sharpen the ParentRows spec, and fix the simple-CHECK wording.
+
+From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclave/spec/counterexamples_postgres_spec.rb` stays green if `Checks#add` treats `<> ALL` like `= ANY`, because ParentRows tries the column's typical value first and that value already sits outside the list. Plant a CHECK that also excludes the typical value, so the spec tells NOT IN from IN; mutate to confirm it goes red. (2) DESIGN.md and the `checks.rb` comment define a simple CHECK as a comparison, IN/NOT IN, BETWEEN, or IS [NOT] NULL, but the code also takes any `op ANY` or `op ALL` over a non-column array (`= ALL`, `> ALL`, a function result such as `string_to_array`). Postgres evaluates every value, so a wrong answer can't come out; say the extra shapes are accepted and checked by Postgres, or narrow the code. Enclave change if the code is narrowed; spec-only otherwise.
+
+- **Depends on:** 20261012-7 (landed).
+- **Came from:** 20261012-7.
+- **Design:** llm-counterexamples.
 - **Status:** todo

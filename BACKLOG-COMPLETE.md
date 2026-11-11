@@ -12844,3 +12844,13 @@ Trimmed 2026-10-14 after 20261012-4: removed (2), the burndown losing an out-of-
 - **Design:** rewrite-test, counterexamples.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261011-10`. DESIGN.md only. Item 1: a statement running at the deadline can overrun it by up to 10 s. Item 3, decided by the user: document that a counterexample round has no time budget of its own, bounded only by the CLI input caps and the LLM reply size, and that a huge reply is unsupported in v1. A real per-round cap is filed as 20261111-220000-1. Docs only, so not on the unreleased list.
+
+### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`.
+
+From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` prints as `((g)::text <> ALL ((ARRAY['bad'::character varying, 'worse'::character varying])::text[]))`. `Scenarios::Checks::KINDS` (`enclave/lib/quaack/enclave/scenarios/checks.rb:21`) doesn't hold `AEXPR_OP_ALL`, so `Checks.new` raises `complex_check`. fuzz doesn't use `Checks`, but llm-counterexamples' `Counterexamples::ParentRows` does (`counterexamples/parent_rows.rb`, ~line 44), so when a counterexample round's accepted inserts need a parent row, and any table in their foreign-key closure (`ArenaSchema.load_closure`) has such a CHECK, the round fails with `complex_check` instead of testing the LLM's rows. That hits every rewrite's rounds on a schema that uses NOT IN CHECKs on varchar columns near the queries' tables. `Sides.sides` already reads `<> ALL` over a cast ARRAY since 20261012-1, so accepting it should be small. DESIGN.md doesn't list NOT IN as simple today, so update its simple-CHECK sentence. Also add the specs the review found missing, for behaviour it checked by hand: a CHECK IN list holding NULL (`IN ('p', NULL)` gives values `["p"]` and, as in Postgres, rejects nothing), and a one-element IN list (which prints as `= 'only'`). Reworded 2026-10-14 after 20261012-4 for the ParentRows path (kept by the user, 2026-10-14).
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-1, 2026-10-12 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261012-7`. `AEXPR_OP_ALL` is in `Checks::KINDS`; DESIGN.md names NOT IN; specs for NOT IN through ParentRows, a NULL in an IN list, and a one-element IN list. Reviewed with no blocking findings. Minors are in 20261111-230000-1.
