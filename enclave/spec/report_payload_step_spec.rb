@@ -669,7 +669,8 @@ RSpec.describe "quaacks report-payload" do
         expect(report["rewrites"].map { it["rewrite"] }).to eq(%w[rewrite_1 rewrite_2])
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished",
-                                 "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
+                                 "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "reason" => nil,
+                                 "plan" => nil,
                                  "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
                                  "evidence" => nil, "out_of_time" => nil, "not_tested" => nil,
                                  "trials" => nil, "fuzz_stop" => nil, "worlds" => nil, "bound" => nil,
@@ -717,7 +718,7 @@ RSpec.describe "quaacks report-payload" do
       store.write("result_comparison", Quaack::Enclave::Steps::ResultComparison.entry(verdicts))
     end
 
-    def fate(number) = rewrite(number).slice("fate", "rule", "round", "after").compact
+    def fate(number) = rewrite(number).slice("fate", "rule", "round", "after", "reason").compact
 
     let(:outcome) do
       payload_of do |store|
@@ -856,6 +857,47 @@ RSpec.describe "quaacks report-payload" do
            { "fate" => "counterexamples_disproved", "rule" => "multiset" }, { "fate" => "production_not_compared" },
            { "fate" => "not_better" }]
         )
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    # Task 20261110-7: a refusal names the check that refused, a reason from
+    # Protocol::RefusalReasons, and only for unsupported_order.
+    context "when a round or a production verdict refused, with its reason" do
+      let(:outcome) do
+        payload_of do |store|
+          { 2 => "original_pick", 3 => REPORT_WORD_SENTINEL, 4 => nil }.each do |number, reason|
+            stored(store, number, tested: tested(true), survived: false,
+                                  round: { "round" => 2, "evidence" => true, "rule" => "unsupported_order",
+                                           "reason" => reason }.compact)
+          end
+          stored(store, 5, tested: tested(true), survived: false,
+                           round: { "round" => 1, "evidence" => true, "rule" => "statement_timeout",
+                                    "reason" => "cut_tie" })
+          (6..9).each { measured(store, it, "none" => "result_not_compared") }
+          verdict = ->(reason) { { "result" => "fail", "rule" => "unsupported_order", "reason" => reason } }
+          store.write("result_comparison", Quaack::Enclave::Steps::ResultComparison.entry(
+                                             "rewrite_6" => { "slow" => { "result" => "pass", "rule" => nil },
+                                                              "typical" => verdict.call("full_run_timed_out") },
+                                             "rewrite_7" => { "slow" => verdict.call(REPORT_WORD_SENTINEL) },
+                                             "rewrite_8" => { "slow" => { "result" => "fail",
+                                                                          "rule" => "unsupported_order" } },
+                                             "rewrite_9" => { "slow" => verdict.call(REPORT_WORD_SENTINEL),
+                                                              "typical" => verdict.call("hidden_tie") }
+                                           ))
+        end
+      end
+
+      it "sends the reason with the round's or result-comparison's unsupported_order, and none of the values" do
+        failed = { "fate" => "counterexamples_failed", "round" => 2, "rule" => "unsupported_order" }
+        not_compared = { "fate" => "production_not_compared", "rule" => "unsupported_order" }
+        expect((2..9).map { fate(it) }).to eq(
+          [failed.merge("reason" => "original_pick"), failed, failed,
+           { "fate" => "counterexamples_failed", "round" => 1, "rule" => "statement_timeout" },
+           not_compared.merge("reason" => "full_run_timed_out"), not_compared, not_compared,
+           not_compared.merge("reason" => "hidden_tie")]
+        )
+        expect(rewrite(4)).to include("reason" => nil)
         expect_no_leaks(sentinels, outcome)
       end
     end

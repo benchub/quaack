@@ -176,7 +176,7 @@ module Quaack
     # construct the enclave doesn't support is refused by its node type.
     # Errors from running a query are ArenaRunner::Errors, which keep no
     # Postgres text.
-    module ResultComparison
+    module ResultComparison # rubocop:disable Metrics/ModuleLength -- one refusal per check
       class Error < StandardError
         # query is :original or :candidate.
         attr_reader :rule, :query
@@ -381,18 +381,20 @@ module Quaack
       def compare(transaction, original:, candidate:)
         shapes = [Shape.parse(original, :original), Shape.parse(candidate, :candidate)]
         mode = shapes.first.mode
-        return ResultComparator::Verdict.for(mode, :unsupported_order) if InnerCuts.refused?(transaction, shapes)
+        return refusal(mode, :with_ties) if mode == :with_ties
+        return refusal(mode, :inner_cut) if InnerCuts.refused?(transaction, shapes)
 
         Picks.verdict(*shapes, ->(sql) { transaction.query(sql) }) { compared(transaction, shapes.first, it) }
       rescue Picks::Unforceable
-        ResultComparator::Verdict.for(mode, :unsupported_order)
+        refusal(mode, :unforceable_pick)
       end
+
+      def refusal(mode, reason) = ResultComparator::Verdict.for(mode, :unsupported_order, reason:)
 
       def compared(transaction, original, candidate)
         mode = original.mode
         return run(transaction, original.sql, candidate.sql, mode) if mode == :multiset
         return subset(transaction, original, candidate.sql) if mode == :subset
-        return ResultComparator::Verdict.for(mode, :unsupported_order) if mode == :with_ties
         return ResultComparator::Verdict.for(mode, :candidate_unordered) unless candidate.ordered?
 
         ordered(transaction, original, candidate)
@@ -415,11 +417,11 @@ module Quaack
 
         positions = checked_positions(transaction, original_shape, candidate_shape, original_probe.types)
         return TotalOrder.compare(transaction, original_shape, candidate_shape) if positions == :total
-        return refused unless positions
+        return positions if positions.is_a?(ResultComparator::Verdict)
 
         originals = both_ways(transaction, original_shape, positions)
         shapes = [original_shape, candidate_shape]
-        return refused unless ties_faithful?(transaction, shapes, originals.first, positions)
+        return refused(:hidden_tie) unless ties_faithful?(transaction, shapes, originals.first, positions)
 
         tiebroken_verdict(transaction, originals, shapes, positions)
       end
@@ -451,18 +453,21 @@ module Quaack
         [false, true].map { |descending| transaction.query(shape.with_tiebreaker(positions, descending:, limited:)) }
       end
 
-      def refused = ResultComparator::Verdict.for(:ordered, :unsupported_order)
+      def refused(reason) = refusal(:ordered, reason)
 
-      # The tiebreaker positions, or nil when the comparison must refuse
-      # before running anything more: a nondeterministic collation, or a
-      # column left out of the tiebreaker in a query with a cut.
+      # The tiebreaker positions, :total, or the refusal when the comparison
+      # must refuse before running anything more: a nondeterministic
+      # collation, or a column left out of the tiebreaker in a query with a
+      # cut.
       def checked_positions(transaction, original_shape, candidate_shape, types)
         shapes = [original_shape, candidate_shape]
         gate = TotalOrder.gate(transaction, shapes, types)
-        return gate unless gate == :none
+        return gate || refused(:nondeterministic_collation) unless gate == :none
 
         positions = Tiebreaker.positions(types, Tiebreaker.catalog_orderable(transaction, types))
-        positions if positions.size == types.size || shapes.all? { !it.cut? || it.limit_cut_only? }
+        return positions if positions.size == types.size || shapes.all? { !it.cut? || it.limit_cut_only? }
+
+        refused(:hidden_tie)
       end
 
       # Whether rows the tiebreaker leaves tied are equal in every column,
@@ -485,7 +490,7 @@ module Quaack
       def cut_tie(transaction, originals, shapes, positions)
         # CutTies needs every column in the tiebreaker. Fixture-compare lets a LIMIT
         # or OFFSET through with some left out, and refuses them here.
-        return refused unless positions.size == originals.first.types.size
+        return refused(:hidden_tie) unless positions.size == originals.first.types.size
 
         rule, fields = CutTies.check(shapes, originals.map(&:rows),
                                      FixtureRuns.new(transaction, positions, originals.first.types))
@@ -530,7 +535,7 @@ module Quaack
         count = originals.first.rows.size
         case found
         when :match then ResultComparator::Verdict.for(:ordered, expected_rows: count, actual_rows: count)
-        when :unsupported_order then refused
+        when :unsupported_order then refused(:unsteady_order)
         else found
         end
       end

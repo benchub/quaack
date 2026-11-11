@@ -10,6 +10,7 @@ require "quaack/protocol/hidden_statistics"
 require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
+require "quaack/protocol/refusal_reasons"
 require "quaack/protocol/own_rewrites"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
@@ -183,11 +184,16 @@ module Quaack
 
         check_ranking(fields)
         check_labels(fields)
-        check_untested_atoms(fields["rewrites"])
-        check_not_tested(fields["rewrites"])
+        check_rewrites(fields["rewrites"])
         check_suggested_drops(fields["labels"])
         check_fuzz(fields)
         check_findings(fields)
+      end
+
+      def check_rewrites(rewrites)
+        check_untested_atoms(rewrites)
+        check_not_tested(rewrites)
+        check_refusal_reasons(rewrites)
       end
 
       def check_findings(fields)
@@ -254,6 +260,16 @@ module Quaack
         return if reasons.all? { Protocol::FuzzResult.not_tested?(it) }
 
         raise Error, "a value in this report message has a not_tested reason that isn't one of QUAACK's"
+      end
+
+      # Each rewrite's reason, why a comparison refused (task 20261110-7),
+      # must be nil or a word from Protocol::RefusalReasons, under either
+      # kind of key.
+      def check_refusal_reasons(rewrites)
+        reasons = rewrites.flat_map { |rewrite| ["reason", :reason].map { rewrite[it] } }
+        return if reasons.all? { it.nil? || Protocol::RefusalReasons.valid?(it) }
+
+        raise Error, "a value in this report message has a refusal reason that isn't one of QUAACK's"
       end
 
       # Each label's suggested_drops, if it has one, must pass

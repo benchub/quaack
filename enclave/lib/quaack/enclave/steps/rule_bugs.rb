@@ -33,8 +33,8 @@ module Quaack
       # result_comparison is a result mismatch, a rule in RewriteFate::MISMATCHES. result-comparison
       # drops a candidate for any failing verdict, but two of its rules
       # compare nothing: timed_out (the rewrite, run with no index shown,
-      # ran past the timeout) and unsupported_order (the original's order
-      # can't be checked, so every candidate fails). Neither says the
+      # ran past the timeout) and unsupported_order (a check, named by the
+      # verdict's reason, couldn't be done, so every candidate fails). Neither says the
       # rewrite is wrong. RewriteFate::MISMATCHES (ResultComparator's) lists the rules that do,
       # so a rule result-comparison gains later isn't called a bug until it's added there:
       #   column_count, column_types  the output columns differ

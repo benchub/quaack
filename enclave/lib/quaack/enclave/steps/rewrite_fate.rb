@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/refusal_reasons"
 require "quaack/protocol/rewrite_budget"
 require_relative "../arena_fixture"
 require_relative "../result_comparator"
@@ -14,7 +15,8 @@ module Quaack
       #
       #   context = RewriteFate.context(store)
       #   RewriteFate.call(store, "rewrite_2", context)
-      #   # => { "fate" => "fuzz_disproved", "rule" => "multiset", "round" => nil, "after" => nil, "cycle" => nil }
+      #   # => { "fate" => "fuzz_disproved", "rule" => "multiset", "round" => nil, "after" => nil, "cycle" => nil,
+      #   #      "reason" => nil }
       #
       # A rewrite has several measured labels and one fate. The first of
       # these that holds is its fate:
@@ -40,8 +42,8 @@ module Quaack
       #                            cycle's tables
       #   rewrite_test_failed      a rewrite-test that didn't pass ended
       #                            without comparing results (before task
-      #                            20261012-4, a scenario whose original's
-      #                            order can't be checked, or whose statement
+      #                            20261012-4, a scenario whose results
+      #                            couldn't be checked, or whose statement
       #                            failed in arena); with the rule
       #   rewrite_test_out_of_time before task 20261011-15: rewrite-test ran
       #                            past its budget per rewrite (rule
@@ -58,14 +60,16 @@ module Quaack
       #   counterexamples_disproved         a counterexample-compare round got different results; with
       #                            the round and the rule
       #   counterexamples_failed            a counterexample-compare round ended without comparing
-      #                            results; with the round and the rule
+      #                            results; with the round and the rule, and
+      #                            for unsupported_order the reason
       #   production_mismatch      result-comparison got different results on production
       #                            data; with the first rule of MISMATCHES
       #                            among its failing verdicts
       #   production_timed_out     result-comparison dropped it for a timeout, and no
       #                            literal set's results differed
       #   production_not_compared  result-comparison dropped it without comparing (rule
-      #                            unsupported_order)
+      #                            unsupported_order), with the reason of the
+      #                            first of its verdicts that has one
       #   below_top_three          a label beat the original and fell
       #                            outside selection's top three
       #   footprint_tie            a label beat the original and lost
@@ -84,14 +88,19 @@ module Quaack
       # measured. Among the measured ones, result-comparison's come first: result-comparison drops the whole rewrite,
       # so none of its labels counts.
       #
+      # A reason is the check an unsupported_order refusal came from
+      # (Protocol::RefusalReasons, task 20261110-7), and nil for any other
+      # rule, or a store written before rounds and verdicts kept theirs.
+      #
       # Trust boundary. Everything this returns is one of this module's own
       # constants: a fate from FATES, a rule from MISMATCHES, FAILURES,
-      # REFUSALS, or PRODUCTION_FAILURES, a round from ROUNDS, and an after from AFTER. A stored value that
+      # REFUSALS, or PRODUCTION_FAILURES, a round from ROUNDS, an after from AFTER, and a
+      # reason from Protocol::RefusalReasons::NAMES. A stored value that
       # isn't on its list goes out as nil, never as it is. The one
       # exception is an fk_cycle's cycle: table names, which are schema,
       # each the schema_subset entry's own (the catalog's relations). A
       # cycle with any other value goes out as nil.
-      module RewriteFate
+      module RewriteFate # rubocop:disable Metrics/ModuleLength -- one fate per stage
         FATES = %w[ranked same_plans fuzz_disproved enumerate_disproved rewrite_test_disproved rewrite_test_untested
                    rewrite_test_failed rewrite_test_out_of_time counterexamples_disproved counterexamples_failed
                    production_mismatch production_timed_out production_not_compared below_top_three footprint_tie
@@ -130,7 +139,9 @@ module Quaack
         # selection's reasons for a label that result-comparison didn't drop, strongest first.
         EXCLUDED = %w[below_top_three footprint_tie not_better].freeze
 
-        BLANK = { "fate" => nil, "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil }.freeze
+        BLANK = { "fate" => nil, "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "reason" => nil }.freeze
+
+        REFUSED = "unsupported_order"
 
         # What every rewrite's fate reads from candidate-runs on, read once.
         # tables is the schema subset's relations (schema-dump), as "schema.name".
@@ -216,8 +227,12 @@ module Quaack
           mismatch = known(MISMATCHES, round["rule"])
           return fate("counterexamples_disproved", round: number, rule: mismatch) if mismatch
 
-          fate("counterexamples_failed", round: number, rule: known(FAILURES, round["rule"]))
+          rule = known(FAILURES, round["rule"])
+          fate("counterexamples_failed", round: number, rule:, reason: reason(rule, round["reason"]))
         end
+
+        # A refusal's reason, from the list, or nil for another rule.
+        def reason(rule, value) = (known(Protocol::RefusalReasons::NAMES, value) if rule == REFUSED)
 
         # result-comparison's fates, from the rewrite's failing verdicts.
         def production(rewrite, context)
@@ -227,13 +242,20 @@ module Quaack
           return fate("production_timed_out") if failing.include?("timed_out")
           return if failing.empty?
 
-          fate("production_not_compared", rule: PRODUCTION_FAILURES.find { failing.include?(it) })
+          rule = PRODUCTION_FAILURES.find { failing.include?(it) }
+          fate("production_not_compared", rule:, reason: production_reason(rule, context.verdicts[rewrite]))
         end
 
-        def failing_rules(verdicts)
+        def failing_rules(verdicts) = failing(verdicts).filter_map { it["rule"] }
+
+        def failing(verdicts)
           return [] unless verdicts.is_a?(Hash)
 
-          verdicts.values.filter_map { it["rule"] if it.is_a?(Hash) && it["result"] == "fail" }
+          verdicts.values.select { it.is_a?(Hash) && it["result"] == "fail" }
+        end
+
+        def production_reason(rule, verdicts)
+          failing(verdicts).lazy.filter_map { reason(rule, it["reason"]) if it["rule"] == rule }.first
         end
 
         # selection's reasons for the rewrite's excluded labels.

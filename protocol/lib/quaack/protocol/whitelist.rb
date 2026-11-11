@@ -236,7 +236,8 @@ module Quaack
       # Protocol::IndexSources.valid?, and, if it has indexes, only if they pass
       # Protocol::IndexSources.entries_valid? (each entry's sources are names
       # from the fixed list), and only if each rewrite's
-      # untested_unchanged passes Protocol::UnchangedAtoms.valid?. The rest go out unchecked, so the enclave's
+      # untested_unchanged passes Protocol::UnchangedAtoms.valid?, and only if each rewrite's
+      # reason is nil or passes Protocol::RefusalReasons.valid?. The rest go out unchecked, so the enclave's
       # ReportPayload step is where they're reviewed. Sources, rule names, fates, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
       # one only if it's on their own lists, never what a store entry holds

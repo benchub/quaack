@@ -27,9 +27,9 @@ RSpec.describe "quaacks result-comparison, against a real server" do
       .to eq([counts_then_done(compared: 2, discarded: 1, partial: 0), "", 0])
     expect_no_leaks(sentinels, outcome)
     entry = stored.read("result_comparison")
-    pass = { "result" => "pass", "rule" => nil }
+    pass = { "result" => "pass", "rule" => nil, "reason" => nil }
     expect(entry["verdicts"]["rewrite_1"]).to eq(%w[slow worst_case typical].to_h { [it, pass] })
-    expect(entry["verdicts"]["rewrite_2"]["slow"]).to eq("result" => "fail", "rule" => "row_count")
+    expect(entry["verdicts"]["rewrite_2"]["slow"]).to eq("result" => "fail", "rule" => "row_count", "reason" => nil)
     expect(entry["verdicts"].keys).to eq(%w[rewrite_1 rewrite_2])
     expect(entry["discarded"]).to eq(["rewrite_2"])
     expect(entry["partial_count"]).to eq(0)

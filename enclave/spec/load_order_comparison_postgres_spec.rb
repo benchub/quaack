@@ -47,7 +47,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     runner.with_fixture(rows) { |tx| described_class.compare(tx, original:, candidate:) }
   end
 
-  def fields(verdict) = verdict.to_h.slice(:match, :mode, :rule, :load_order)
+  def fields(verdict) = verdict.to_h.slice(:match, :mode, :rule, :load_order, *(:reason if verdict.reason))
 
   describe "the reverse load" do
     let(:scan_order) { "SELECT array_to_string(ARRAY(SELECT id FROM items), ',')" }
@@ -288,7 +288,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
         .to eq([["24:00:00"]])
 
       expect(fields(both(original, candidate))).to eq(match: false, mode: :multiset, rule: :unsupported_order,
-                                                      load_order: :forward)
+                                                      load_order: :forward, reason: :rewrite_pick)
     end
 
     # Forced too: the forced DISTINCT keeps the first and the last by text.
@@ -349,7 +349,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
       original = "SELECT DISTINCT ON (grp) grp, id FROM items ORDER BY grp"
 
       expect(fields(both(original, original))).to eq(match: false, mode: :ordered, rule: :unsupported_order,
-                                                     load_order: :forward)
+                                                     load_order: :forward, reason: :original_pick)
     end
   end
 

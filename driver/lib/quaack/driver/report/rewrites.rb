@@ -208,12 +208,18 @@ module Quaack
         # tables too.
         def because(entry)
           rule = entry["rule"]
-          { why: why(rule), refusal: refusal(rule) + bracket(cycle(entry)) }
+          { why: why(rule, entry["reason"]), refusal: refusal(rule) + bracket(cycle(entry)) }
         end
 
         def bracket(text) = text ? " (#{text})" : ""
 
-        def why(rule) = rule ? ", because #{Words::FAILURES.fetch(rule, Words::FAILED)}" : ""
+        # An unsupported_order refusal names its check, by its reason.
+        def why(rule, reason)
+          return "" unless rule
+
+          words = Words::REFUSAL_REASONS[reason] if rule == "unsupported_order"
+          ", because #{words || Words::FAILURES.fetch(rule, Words::FAILED)}"
+        end
 
         # Why rewrite-test couldn't make up test data, by its rule.
         def refusal(rule) = rule ? ", because #{Words::REFUSALS.fetch(rule) { Words.plain(rule) }}" : ""

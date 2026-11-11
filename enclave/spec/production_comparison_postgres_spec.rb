@@ -13,7 +13,8 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     described_class.compare(connection: conn, original:, candidate:, params:, timeout_ms:)
   end
 
-  def verdict(original, candidate, **) = compare(original, candidate, **).then { [it.result, it.rule] }
+  # A refusal's reason too (task 20261110-7), after its rule.
+  def verdict(original, candidate, **) = compare(original, candidate, **).then { [it.result, it.rule, *it.reason] }
 
   it "passes the same rows in another order" do
     expect(verdict("SELECT i FROM generate_series(1, 50) i",
@@ -97,6 +98,15 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY a, b")).to eq(["pass", nil])
       end
 
+      # random() gives each run other keys, so the runs fit the original's
+      # groups but don't come back reversed (ten rows a group, so chance
+      # can't reverse them).
+      it "refuses a candidate whose runs fit but don't show its ties" do
+        rows = "SELECT i % 3 AS a, i FROM generate_series(1, 30) i"
+        expect(verdict("#{rows} ORDER BY a", "#{rows} ORDER BY a, random()"))
+          .to eq(%w[fail unsupported_order unsteady_order])
+      end
+
       it "fails a row moved to another group with the value rule" do
         expect(verdict("#{series} ORDER BY a", "#{series} ORDER BY CASE WHEN i = 3 THEN 1 ELSE i % 3 END, i"))
           .to eq(%w[fail value])
@@ -156,9 +166,9 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         stub_const("Quaack::Enclave::ProductionComparison::HashedRuns::FULL_RUN_ROW_CAP", 9)
         passed = run.call.then { [it.result, it.rule] }
         stub_const("Quaack::Enclave::ProductionComparison::HashedRuns::FULL_RUN_ROW_CAP", 8)
-        refused = run.call.then { [it.result, it.rule] }
+        refused = run.call.then { [it.result, it.rule, it.reason] }
 
-        expect([passed, refused]).to eq([["pass", nil], %w[fail unsupported_order]])
+        expect([passed, refused]).to eq([["pass", nil], %w[fail unsupported_order full_run_too_many_rows]])
         expect([conn.transaction_status, conn.exec("SELECT 1").getvalue(0, 0)]).to eq([PG::PQTRANS_IDLE, "1"])
       end
 
@@ -182,7 +192,7 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       it "refuses a candidate whose own tie at the cut could keep a row the original's can't" do
         expect(verdict("SELECT i FROM generate_series(1, 3) i ORDER BY i = 2 LIMIT 1",
                        "SELECT i FROM generate_series(1, 3) i ORDER BY i * 0 LIMIT 1"))
-          .to eq(%w[fail unsupported_order])
+          .to eq(%w[fail unsupported_order cut_tie])
       end
 
       # The original keeps two of 2, 3, 4, and 5, and 3 and 4 both ways
@@ -190,12 +200,12 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       it "refuses a candidate that matches a tie cut on both sides of the rows kept" do
         expect(verdict("SELECT i FROM generate_series(1, 6) i ORDER BY i IN (1, 6) OFFSET 1 LIMIT 2",
                        "SELECT i FROM generate_series(1, 6) i ORDER BY i * 0 OFFSET 2 LIMIT 2"))
-          .to eq(%w[fail unsupported_order])
+          .to eq(%w[fail unsupported_order cut_tie])
       end
 
       it "refuses a candidate with DISTINCT ON" do
         expect(verdict(original, "SELECT DISTINCT ON (a, i) i % 2 AS a, i FROM generate_series(1, 9) i " \
-                                 "ORDER BY a, i LIMIT 3")).to eq(%w[fail unsupported_order])
+                                 "ORDER BY a, i LIMIT 3")).to eq(%w[fail unsupported_order cut_tie])
       end
 
       # The runs without a LIMIT are made to outlast the timeout here, as
@@ -204,7 +214,8 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         slow = SentSql::Slow.new(conn)
         candidate = "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a LIMIT 3"
         result = described_class.compare(connection: slow, original:, candidate:, timeout_ms: 300, params: [])
-        expect([result.result, result.rule, slow.slowed]).to eq(["fail", "unsupported_order", true])
+        expect([result.result, result.rule, result.reason, slow.slowed])
+          .to eq(["fail", "unsupported_order", "full_run_timed_out", true])
       end
 
       it "still fails timed_out when the candidate's own runs time out" do
@@ -252,7 +263,7 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     # here, or the comparison refuses before it.
     it "refuses a LIMIT over a column the tiebreaker can't order, before any cut-tie check" do
       sql = "SELECT i / 2 AS a, i, '{\"k\":1}'::json AS doc FROM generate_series(1, 9) i ORDER BY a LIMIT 3"
-      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order])
+      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order hidden_tie])
     end
 
     # 20261004-94: the edge query adds the OFFSET to the LIMIT. It mustn't overflow bigint, and a
@@ -318,7 +329,7 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         products = "(VALUES ('a', 10), ('b', 10), ('b', 10), ('c', 10), ('d', 5)) p(category, price)"
         expect(verdict("SELECT category, price FROM #{products} ORDER BY price DESC, category LIMIT 2 OFFSET 1",
                        "SELECT category, price FROM #{products} ORDER BY price DESC LIMIT 2 OFFSET 1"))
-          .to eq(%w[fail unsupported_order])
+          .to eq(%w[fail unsupported_order cut_tie])
       end
 
       # The original always keeps 3. The candidate ties all five, and its
@@ -326,23 +337,23 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       it "refuses a candidate that keeps one row from the middle of its own tie" do
         expect(verdict("SELECT i FROM generate_series(1, 5) i ORDER BY i OFFSET 2 LIMIT 1",
                        "SELECT i FROM generate_series(1, 5) i ORDER BY i * 0 OFFSET 2 LIMIT 1"))
-          .to eq(%w[fail unsupported_order])
+          .to eq(%w[fail unsupported_order cut_tie])
       end
     end
 
     it "refuses WITH TIES" do
       expect(verdict("SELECT 1 ORDER BY 1 FETCH FIRST 1 ROWS WITH TIES", "SELECT 1 ORDER BY 1"))
-        .to eq(%w[fail unsupported_order])
+        .to eq(%w[fail unsupported_order with_ties])
     end
 
     it "refuses a cut when a column is left out of the tiebreaker" do
       sql = "SELECT i AS a, '{}'::json AS v FROM generate_series(1, 5) i ORDER BY a LIMIT 2"
-      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order])
+      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order hidden_tie])
     end
 
     it "refuses tied rows that differ in a column left out of the tiebreaker" do
       sql = "SELECT 1 AS a, v FROM (VALUES ('{\"x\":1}'::json), ('{\"x\":2}'::json)) t(v) ORDER BY a"
-      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order])
+      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order hidden_tie])
     end
   end
 
@@ -466,12 +477,27 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     it "still refuses when the original joins and can repeat the keyed rows" do
       joined = original.sub("FROM nd_users\n", "FROM nd_users JOIN nd_enrollments e ON e.user_id = nd_users.id\n")
 
-      expect(verdict(joined, joined, params: %w[3 1])).to eq(%w[fail unsupported_order])
+      expect(verdict(joined, joined, params: %w[3 1])).to eq(%w[fail unsupported_order nondeterministic_collation])
     end
   end
 
   it "keeps row values out of the verdict" do
     result = compare("SELECT 'SENTINEL_ROW_VALUE'", "SELECT 'OTHER_SENTINEL_VALUE'")
-    expect(result.to_h).to eq(result: "fail", rule: "multiset")
+    expect(result.to_h).to eq(result: "fail", rule: "multiset", reason: nil)
+  end
+
+  # Task 20261110-7: a refusal's reason is one of Protocol::RefusalReasons,
+  # on an unsupported_order verdict only, and never a value.
+  it "refuses a verdict whose reason isn't one of QUAACK's own, or doesn't go with its rule" do
+    sentinel = "SENTINEL_ROW_VALUE"
+    [{ rule: "unsupported_order", reason: sentinel }, { rule: "unsupported_order", reason: nil },
+     { rule: "unsupported_order", reason: :cut_tie }, { rule: "value", reason: "cut_tie" },
+     { rule: nil, reason: "cut_tie" }].each do |fields|
+      expect { described_class::Verdict.new(result: "fail", **fields) }
+        .to raise_error(ArgumentError) { |e| expect(e.message).not_to include(sentinel) }
+    end
+    expect(described_class::Verdict.new(result: "fail", rule: "unsupported_order", reason: "cut_tie").reason)
+      .to eq("cut_tie")
+    expect(described_class::Verdict.new(result: "pass", rule: nil).reason).to be_nil
   end
 end
