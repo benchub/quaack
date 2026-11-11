@@ -198,7 +198,7 @@ module Quaack
           reads(parse.tree.to_h)
           atoms = PredicateAtoms.extract(parse, column_names: @catalog.schema.column_names)
           atoms.select { it.kind == :join }.each { join(it) }
-          ValuePools.build(@conn, parse, atoms, @catalog.schema).each_value { pooled(it) }
+          ValuePools.build(@conn, parse, atoms, @catalog.schema, binding: @binding).each_value { pooled(it) }
         rescue PredicateAtoms::Error, KeyError, PG::Error
           nil
         end

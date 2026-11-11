@@ -840,14 +840,7 @@ From the second review of 20261008-53 item 2 (minor). No spec has an interval pl
 
 ### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261110-15. Arena Binding, stage 2b: ValuePools on the `$n` form.
-
-Split from 20261110-13 on 2026-11-10. `ValuePools` runs query pieces on the arena connection: `Sides.literals` evaluates each non-column side of an atom with `SELECT CAST(q.v AS type) ... FROM (SELECT <side>)`, and `Probe` already uses `$1` for the candidate column value. On the `$n` form both hit a Postgres error, rescue it, and quietly lose their literal-based candidates. Make `Sides.literals` take a `$n` side's value from the Binding (through `ConstantValue`, cast to the column's type) instead of running it, and make `Probe` either renumber the query's `$n`s past its own `$1` and bind them with declared types, or substitute each `$n` with its ConstantValue. A spec shows the pools match on both forms.
-
-- **Depends on:** 20261110-13.
-- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
-- **Design:** counterexamples, fuzz.
-- **Status:** todo
+### 20261110-15. Arena Binding, stage 2b: ValuePools on the `$n` form. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types.
 
