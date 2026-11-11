@@ -12801,3 +12801,20 @@ On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without c
 - **Answers (the user, 2026-11-10):** Name the check in the report sentence, from a fixed enum, with no values.
 - **Landed:** 2026-11-11 (task/20261110-7). Twelve fixed refusal reasons (`protocol/lib/quaack/protocol/refusal_reasons.rb`) set at each `unsupported_order` site, stored in `rewrite_round_N` and the verdicts, filtered in report-payload, checked at egress, and named in the report sentence. Old stores fall back to a neutral sentence. Reviewed with no blocking findings; its minor findings are in 20261111-1.
 - **Status:** done
+
+### 20261111-185500-1. Don't blame a LIMIT or OFFSET that isn't there.
+
+- **Depends on:** None.
+- **Design:** DESIGN.md, ordered comparison and the `unsupported_order` verdict.
+- **Status:** done
+- **What's wrong:** Kind Magpie's report (`quaack-20261111T174014Z-8f3f1c44.html`) says "a LIMIT or OFFSET cuts through tied rows in a way QUAACK can't check", but neither the original nor the rewrite has a LIMIT or OFFSET. `CutTies.needed?` (enclave/lib/quaack/enclave/result_comparison/cut_ties.rb) returns true whenever the original's ascending and descending tiebreaker runs don't match as multisets (`uncut` false), without looking for a LIMIT or OFFSET. Then `CutTies.check` can't lay out tie groups and returns `REFUSED` with `reason: :cut_tie`, and `report/words.rb:62` words that as a LIMIT or OFFSET.
+- **Do:**
+  1. Reproduce first with a Postgres spec: a grouped query with `avg` and `percentile_cont` over a float column, `ORDER BY min(created_at)` with tied minimums, no LIMIT, compared against an equivalent rewrite. Find out why the two tiebreaker runs differ (float summation order, a column left out of the tiebreaker, or something else).
+  2. Fix the cause if it's a real bug. If the runs really can differ without a LIMIT, refuse with a new reason (for example `unstable_original`) that says the original returned different rows on two runs of the same query.
+  3. Reword `cut_tie` in `driver/lib/quaack/driver/report/words.rb` so it only claims a LIMIT or OFFSET when the query has one.
+- **Leads:** The round-3 inserts are gone. The driver's `~/.quaack/runs/<run>.llm.json` keeps only counts. The jump server's run store is torn down unless `--keep`, and even then `rewrite_round_<n>` keeps only the rule and reason. One candidate cause is `ResultComparator.unpartnered_row`'s float buckets: if the two tiebreaker runs feed `avg(score)` its rows in different orders (a different plan, or parallel aggregation), a last-bit difference that crosses a `%.7e` rounding boundary lands the rows in different buckets, so `ties_uncut?` says no although the rows are equal within tolerance. The comparator's comment already names this edge case.
+- **Answers (user, 2026-11-11):**
+  1. Fix the bucket edge case comparator-wide: when a row finds no partner in its own bucket, search the remaining expected rows for one within tolerance. A match still needs every row to find its own partner.
+  2. Add a new refusal reason for an original with no top-level LIMIT or OFFSET whose two tiebreaker runs still disagree, worded as the original returning different rows on two runs. It's a protocol change, so it goes on the Unreleased list.
+  3. Keeping round inserts is task 20261111-191130-1.
+- **Landed:** 2026-11-11 (fix-20261111-185500-1). `ResultComparator.unpartnered_row` now looks in every bucket for a row with no partner left in its own, so floats within tolerance across a `%.7e` boundary match (a Postgres spec with random last-bit noise reproduced the `cut_tie` refusal). An original with no top-level LIMIT or OFFSET (and no DISTINCT ON) whose two tiebreaker runs keep different rows now refuses `unstable_original` (`CutTies.unstable?`), in fixture-compare and on the racetrack. `cut_tie`'s words now say "a LIMIT, OFFSET, or DISTINCT ON". The racetrack's hashed rows keep the bucket edge case: 20261111-192302-1.

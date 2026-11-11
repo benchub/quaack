@@ -41,7 +41,11 @@ module Quaack
     #   row hashes must hold each of the original's tie groups at its place,
     #   in any order (ResultComparison::Regrouped), and so must the sorted digests
     #   of its own runs through its window, when it has a LIMIT and an
-    #   OFFSET. Otherwise a LIMIT or OFFSET may cut a tie group, and
+    #   OFFSET. When the original's T and T' sorted digests differ with no
+    #   LIMIT or OFFSET (and no DISTINCT ON), it refuses, unsupported_order
+    #   with reason unstable_original (CutTies.unstable?). Since row hashes
+    #   round floats, a last-bit difference across a rounding boundary does
+    #   that too. Otherwise a LIMIT or OFFSET may cut a tie group, and
     #   ResultComparison::CutTies checks the candidate
     #   on row hashes, from both queries' runs with and without their LIMIT
     #   and OFFSET, as fixture-compare does (HashedRuns). A run without a
@@ -232,6 +236,9 @@ module Quaack
         end
 
         def verdict(shapes, originals)
+          if ResultComparison::CutTies.unstable?(shapes.first, uncut: uncut?(originals))
+            return ProductionComparison.refused("unstable_original")
+          end
           return check(shapes, originals) if cut?(shapes.first, originals)
 
           verdict = tiebroken(shapes.last, originals)
@@ -290,11 +297,14 @@ module Quaack
         # original's tiebreaker runs. Called for the original's shape first,
         # then for a candidate's once it has matched those runs (tiebroken).
         def cut?(shape, originals)
-          uncut = originals.map(&:sorted).uniq.one?
-          ResultComparison::CutTies.needed?(shape, uncut:, kept_rows: originals.first.hashes.any?) do
+          ResultComparison::CutTies.needed?(shape, uncut: uncut?(originals), kept_rows: originals.first.hashes.any?) do
             [false, true].map { @run.digest(shape.through_window(@positions, descending: it)).sorted }.uniq.one?
           end
         end
+
+        # Whether the original's T and T' runs hold the same rows, by
+        # sorted digest.
+        def uncut?(originals) = originals.map(&:sorted).uniq.one?
       end
 
       # Runs queries for one compare.

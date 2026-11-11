@@ -51,13 +51,15 @@ module Quaack
     # key that rounds floats (to eight significant digits, and to zero below
     # 1e-12) and is exact for every other type. Each candidate row, in order,
     # takes the first row left in its bucket that it equals within
-    # tolerance. A match is claimed only when every candidate row found its
-    # own partner this way, so a match is always real. The edge case goes
-    # the other way: two floats within tolerance of each other but on
-    # either side of a rounding boundary land in different buckets, and
-    # the comparison says mismatch. So does a greedy pick in a bucket that
-    # leaves a later row without the one partner it had. With no float
-    # columns the key is exact, and neither can happen.
+    # tolerance. Two floats within tolerance of each other can sit on
+    # either side of a rounding boundary, and so in different buckets, so
+    # a row with no partner left in its own bucket takes the first one left
+    # in any bucket that it equals within tolerance. A match is claimed
+    # only when every candidate row found its own partner this way, so a
+    # match is always real. The edge case goes the other way: a greedy
+    # pick can leave a later row without the one partner it had, and the
+    # comparison says mismatch. With no float columns the key is exact,
+    # and that can't happen.
     #
     # Trust boundary. A Verdict holds only a boolean, symbols, counts, and
     # positions, never a row value, and it checks that on creation. Errors
@@ -202,8 +204,22 @@ module Quaack
         actual_rows.each_with_index.find do |row, _|
           bucket = buckets.fetch(Values.key(types, row), [])
           partner = bucket.index { |candidate| Values.row_equal?(types, candidate, row) }
+          bucket, partner = partner_elsewhere(types, buckets, row) if partner.nil?
           partner.nil? || !bucket.delete_at(partner)
         end&.last
+      end
+
+      # The bucket and index of an expected row left in any bucket that
+      # equals row within tolerance, or nil. Only rows with a float column
+      # can equal one in another bucket.
+      def partner_elsewhere(types, buckets, row)
+        return unless types.any? { FLOAT_TYPES.include?(it) }
+
+        buckets.each_value do |bucket|
+          partner = bucket.index { |candidate| Values.row_equal?(types, candidate, row) }
+          return [bucket, partner] if partner
+        end
+        nil
       end
 
       # Equality and bucket keys for single values, by column type.

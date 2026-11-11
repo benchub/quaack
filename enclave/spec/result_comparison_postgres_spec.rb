@@ -296,6 +296,48 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
+    # 20261111-185500-1: with no LIMIT or OFFSET, nothing cuts a tie, so
+    # the original's two tiebreaker runs can only keep different rows when
+    # the query itself gives other rows on another run.
+    describe "an original with no LIMIT or OFFSET whose two tiebreaker runs differ" do
+      # Twenty groups of one row each.
+      let(:twenty) { rows_of(%w[id grp], *(1..20).map { [it, it] }) }
+
+      # Each run gives every row a value within a 1e-12 of the point where
+      # the comparator's float buckets split, as an avg can come out a last
+      # bit apart when its rows reach it in another order. Each is within
+      # tolerance of every other, so the original returns the same rows.
+      it "matches when the runs differ only within the float tolerance, across a bucket boundary" do
+        query = "SELECT grp, '1.000000050000002'::float8 + (random() - 0.5) * 1e-12 AS v FROM items ORDER BY grp"
+
+        expect(fields(compare(query, query, rows: twenty)))
+          .to eq(match: true, mode: :ordered, rule: nil, row: nil, column: nil)
+      end
+
+      # Each run draws other keys from the sequence. With a LIMIT, the
+      # refusal stays cut_tie.
+      it "refuses as unstable_original, not cut_tie, and only without a LIMIT or OFFSET" do
+        conn.exec("CREATE SEQUENCE quaack_keys")
+        query = "SELECT grp, nextval('quaack_keys') AS k FROM items ORDER BY grp"
+        refusal = { match: false, mode: :ordered, rule: :unsupported_order, row: nil, column: nil }
+
+        expect([fields(compare(query, query, rows: twenty)), fields(compare("#{query} LIMIT 3", "#{query} LIMIT 3",
+                                                                            rows: twenty))])
+          .to eq([{ **refusal, reason: :unstable_original }, { **refusal, reason: :cut_tie }])
+      end
+
+      # DISTINCT keeps the rows the same both ways: every column is in the
+      # tiebreaker, so rows it calls duplicates are equal.
+      it "refuses a DISTINCT original as unstable_original too" do
+        conn.exec("CREATE SEQUENCE quaack_keys")
+        query = "SELECT DISTINCT grp, nextval('quaack_keys') AS k FROM items ORDER BY grp"
+
+        expect(fields(compare(query, query, rows: twenty)))
+          .to eq(match: false, mode: :ordered, rule: :unsupported_order, reason: :unstable_original, row: nil,
+                 column: nil)
+      end
+    end
+
     # The original's rows depend on how a tie at a LIMIT or OFFSET cut
     # breaks. The rows before the tie must match, in order, and the rest
     # must come from the tie (CutTies), whichever way each query's ties
