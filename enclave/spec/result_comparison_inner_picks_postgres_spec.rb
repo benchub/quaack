@@ -51,7 +51,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     runner.with_fixture(rows) { |tx| queries.map { |sql| tx.query(sql).rows } }
   end
 
-  def fields(verdict) = verdict.to_h.slice(:match, :rule)
+  def fields(verdict) = verdict.to_h.slice(:match, :rule, *(:reason if verdict.reason))
 
   def subquery(inner) = "SELECT grp, label FROM (#{inner}) s"
   def cte(inner) = "WITH s AS (#{inner}) SELECT grp, label FROM s"
@@ -73,8 +73,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       original = subquery(loose)
       candidate = subquery("SELECT DISTINCT ON (grp) grp, label FROM items ORDER BY grp, id DESC")
 
-      expect(fields(compare(original, candidate))).to eq(match: false, rule: :unsupported_order)
-      expect(fields(in_load_orders(original, candidate))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare(original, candidate))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+      expect(fields(in_load_orders(original,
+                                   candidate))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
     it "matches when the original's pick doesn't matter on the data" do
@@ -128,7 +129,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     it "refuses a * over a FROM item with no name" do
       sql = "SELECT grp, label FROM (SELECT DISTINCT ON (grp) * FROM (SELECT grp, label FROM items)) s"
 
-      expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order, reason: :unforceable_pick)
     end
   end
 
@@ -164,8 +165,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       original = subquery(grouped("any_value(label)"))
       candidate = subquery(grouped("min(label)"))
 
-      expect(fields(compare(original, candidate))).to eq(match: false, rule: :unsupported_order)
-      expect(fields(in_load_orders(original, candidate))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare(original, candidate))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+      expect(fields(in_load_orders(original,
+                                   candidate))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
     it "matches when no group holds two values, and leaves DISTINCT and window aggregates alone" do
@@ -193,8 +195,10 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       candidate = format(both, 1, 1)
       expect(raw(candidate)).to eq([[["t"]]])
 
-      expect(fields(compare("SELECT true", candidate))).to eq(match: false, rule: :unsupported_order)
-      expect(fields(compare(candidate, "SELECT true"))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare("SELECT true",
+                            candidate))).to eq(match: false, rule: :unsupported_order, reason: :rewrite_pick)
+      expect(fields(compare(candidate,
+                            "SELECT true"))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
     it "refuses a candidate whose one pick can go different ways in two groups" do
@@ -205,14 +209,16 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       candidate = "SELECT count(DISTINCT v) FROM (SELECT grp, any_value(label) AS v FROM items GROUP BY grp) s"
       expect(raw(candidate, rows:)).to eq([[["1"]]])
 
-      expect(fields(compare("SELECT 1::bigint", candidate, rows:))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare("SELECT 1::bigint", candidate,
+                            rows:))).to eq(match: false, rule: :unsupported_order, reason: :rewrite_pick)
     end
 
     it "refuses a candidate whose pick between the first and the last gives another answer" do
       candidate = "SELECT any_value(label) = 'b' FROM items WHERE grp = 1"
       expect(raw(candidate)).to eq([[["f"]]])
 
-      expect(fields(compare("SELECT false", candidate))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare("SELECT false",
+                            candidate))).to eq(match: false, rule: :unsupported_order, reason: :rewrite_pick)
     end
 
     it "refuses a pick between values a nondeterministic collation calls equal" do
@@ -224,7 +230,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       sql = "SELECT any_value(label) FROM items"
       expect(raw(sql, rows:)).to eq([[["a"]]])
 
-      expect(fields(compare(sql, sql, rows:))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql, rows:))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
     it "matches when each pick has no choice on the data" do
@@ -243,7 +249,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
        "SELECT m::text FROM (SELECT 'a' EXCEPT SELECT m FROM moods) s (m)"].each do |sql|
         expect(raw(sql)).to eq([[["a"]]])
 
-        expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order)
+        expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order, reason: :pick_run_failed)
       end
     end
 
@@ -251,7 +257,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       sql = subquery("SELECT DISTINCT ON (grp) grp, label FROM items")
 
       expect(compare(sql, sql, rows: fixture.values_at(0, 3)).match?).to be(true)
-      expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
   end
 
@@ -265,7 +271,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
        "SELECT DISTINCT jb FROM items"].each do |sql|
         expect(raw(sql, rows: equal_jsonb)).to eq([[['{"a": 1.0}']]])
 
-        expect(fields(compare(sql, sql, rows: equal_jsonb))).to eq(match: false, rule: :unsupported_order)
+        expect(fields(compare(sql, sql,
+                              rows: equal_jsonb))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
       end
     end
 

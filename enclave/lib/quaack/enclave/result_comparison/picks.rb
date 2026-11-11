@@ -96,23 +96,37 @@ module Quaack
         # data fails as it would with no picks.
         def verdict(original, candidate, run, &compare)
           verdict = compare.call(candidate)
-          guarded(original) do
-            run.call(checked(original)) if checks?(original)
-            next verdict unless verdict.match? && checks?(candidate)
+          original_refusal(original, run) || candidate_verdict(original, candidate, verdict, run, &compare)
+        end
 
-            (picks?(candidate) && forced_runs(candidate, &compare).find { !it.match? }) ||
+        # unsupported_order when the original's checked run fails, or nil.
+        def original_refusal(original, run)
+          guarded(original, :original_pick) do
+            run.call(checked(original)) if checks?(original)
+            nil
+          end
+        end
+
+        def candidate_verdict(original, candidate, verdict, run, &)
+          return verdict unless verdict.match? && checks?(candidate)
+
+          guarded(original, :rewrite_pick) do
+            (picks?(candidate) && forced_runs(candidate, &).find { !it.match? }) ||
               (run.call(checked(candidate)) && verdict)
           end
         end
 
-        # The block's value, or unsupported_order when a run in it fails. A
-        # cancel QUAACK didn't send goes up.
-        def guarded(original)
+        # The block's value, or unsupported_order when a run in it fails: a
+        # checked run's check failing (PickChecks' division by zero) refuses
+        # for pick, the side whose pick had a choice, and any other failure
+        # for pick_run_failed. A cancel QUAACK didn't send goes up.
+        def guarded(original, pick)
           yield
         rescue ArenaRunner::Error => e
           raise if ArenaRunner::Cancel.foreign?(e)
 
-          ResultComparator::Verdict.for(original.mode, :unsupported_order)
+          reason = e.sqlstate == PickChecks::FAILED ? pick : :pick_run_failed
+          ResultComparator::Verdict.for(original.mode, :unsupported_order, reason:)
         end
 
         # Lazily, compare's verdict for shape forced each way.

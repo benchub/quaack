@@ -6,6 +6,9 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261110-6 (result comparison: a nondeterministic collation doesn't refuse when no output column can hold text).
+- 20261110-8 (`0` and `-0` don't make a `min`/`max` pick refuse).
+- 20261110-7 (the report names the check behind an `unsupported_order` refusal).
 - 20261008-53
 - 20261110-14
 - 20261010-7
@@ -749,9 +752,9 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261110-8. redact sharing: don't join a same-text constant used against another type.
+### 20261111-4. redact sharing: don't join a same-text constant used against another type.
 
-From the review of 20261008-53 item 1 (minor, a regression). `Sharing#alike` (`enclave/lib/quaack/enclave/redaction/sharing.rb`, around lines 91 and 102-106) runs on every key and joins any same-text constant in the matching clauses, even one the tree match already covered and that only happens to share the text. `SELECT coalesce(o.status, '5'), count(*) FROM orders o GROUP BY coalesce(o.status, '5') HAVING max(o.id) > '5'` used to bind; it now shares `$1` with the text key and fails closed as `prepare_failed` (42883). Only join a constant that sits in an expression shaped like the key, or skip `alike` where the tree match already joined the copies.
+First filed as 20261110-8, renumbered on 2026-11-11 since another session used it. From the review of 20261008-53 item 1 (minor, a regression). `Sharing#alike` (`enclave/lib/quaack/enclave/redaction/sharing.rb`, around lines 91 and 102-106) runs on every key and joins any same-text constant in the matching clauses, even one the tree match already covered and that only happens to share the text. `SELECT coalesce(o.status, '5'), count(*) FROM orders o GROUP BY coalesce(o.status, '5') HAVING max(o.id) > '5'` used to bind; it now shares `$1` with the text key and fails closed as `prepare_failed` (42883). Only join a constant that sits in an expression shaped like the key, or skip `alike` where the tree match already joined the copies.
 
 - **Depends on:** None.
 - **Came from:** The review of 20261008-53 item 1, 2026-11-10.
@@ -841,14 +844,18 @@ From the second review of 20261010-41 (minor). (1) A condition written `orders.s
 
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
 
-## New transform rules (2026-10-18).
+### 20261110-7. Report: name the check behind an `unsupported_order` refusal. Done, see BACKLOG-COMPLETE.md.
 
-The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
+### 20261111-1. Refusal-reason phrases: tighten three that are loose, and tell a user's own division by zero from a pick check.
 
-- Each rule is an enclave change. It goes on the "Unreleased enclave changes" list when it lands, and nothing bumps a `VERSION` (the user, 2026-10-18: another session's work joins the same batch, and the user will ask for the bump).
-- Each rule gets its page in `docs/transforms/`, in the style of the others, with an intro, "What it does.", "Why it can be faster.", "What it rests on.", and "Example." made by the rule on Postgres 18 from the shared schema. Use Oxford commas in lists. It also gets a row at the end of DESIGN.md's rewrite-rules table, a line at the end of `RULES`, and a `RuleConstantsFixtures::LITERALS` entry.
-- e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
-- Opus builder and reviewer for each rule.
+From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` don't mention UNION, INTERSECT or EXCEPT without ALL, which Picks also checks. (b) `inner_cut` says "inside a subquery" but also fires for a CTE or a set-operation arm. (c) `unforceable_pick` says "reads a subquery" but also fires for an unaliased function in FROM, or a `*` as a DISTINCT ON key or ORDER BY item. (d) Picks reads SQLSTATE 22012 as "the check fired", so a division by zero from the query's own expression in a forced or checked run would be labelled a pick refusal, not `pick_run_failed`; unlikely, since both queries run as written first. Fix the phrases in the enum and docs; for (d) test first, or say it in DESIGN.md. Enclave, protocol and driver change.
+
+- **Depends on:** 20261110-7.
+- **Came from:** The review of 20261110-7, 2026-11-11.
+- **Design:** result-comparison, report.
+- **Status:** todo
+
+### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261018-1. Rule generator: never cap a one-rule rewrite. Done, see BACKLOG-COMPLETE.md.
 

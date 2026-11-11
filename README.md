@@ -545,7 +545,7 @@ Next to each rewrite's name, on the line you click, are two lines:
   - "Postgres plans it exactly as it plans the original query, so it can't run any differently. QUAACK didn't test it further."
   - "It returned different results from the original query on made-up test data (NULLs), so it's wrong." The brackets name the kind of test data: empty tables, rows that just match and just miss, NULLs, duplicate join keys, rows with no join partner, extreme values, or groups of one, many, and none.
   - "It returned different results from the original query on test data the LLM wrote to break it (round 2), so it's wrong."
-  - "A test on made-up data (empty tables) ended without comparing results, because the order of the original query's rows can't be checked, so QUAACK dropped it. That says nothing about whether it's right."
+  - "A test on data the LLM wrote to break it (round 1) ended without comparing results, because a DISTINCT, DISTINCT ON, GROUP BY, min, max, or order-following aggregate in the original query could keep any of several values that print differently, so QUAACK dropped it. That says nothing about whether it's right." When a test can't compare results, the sentence names the check that stopped it, such as tied rows a LIMIT cuts through, a nondeterministic collation, or a run of the query without its LIMIT that timed out, never a value.
   - "It passed the tests on made-up data, but returned different results from the original query on the real data, so it's wrong."
   - "It passed every correctness test, but when measured against common values performed too poorly to be ranked." A rewrite is tested for correctness before it is measured, so one that wasn't ranked got the same tests as one that was.
 

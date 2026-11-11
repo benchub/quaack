@@ -23,12 +23,22 @@ module Quaack
               AND a.attnum OPERATOR(pg_catalog.=) ANY (i.indkey::pg_catalog.int2[]) AND NOT co.collisdeterministic)
         SQL
 
+        # Output types that carry no collation, so a nondeterministic one
+        # can't make two rows print differently while the tiebreaker calls
+        # them equal: bool, int2, int4, int8, oid, float4, float8, numeric,
+        # date, time, timetz, timestamp, timestamptz, interval, uuid.
+        COLLATION_FREE_OIDS = [
+          16, 20, 21, 23, 26, 700, 701, 1082, 1083, 1114, 1184, 1186, 1266, 1700, 2950
+        ].to_set.freeze
+
         module_function
 
-        # :none when neither shape meets a nondeterministic collation,
-        # :total when one does but the original's order is total, and nil,
-        # to refuse, otherwise.
-        def gate(transaction, shapes)
+        # :none when neither shape meets a nondeterministic collation, or
+        # when no output column (types are their OIDs) can hold text and no
+        # COLLATE clause names one, :total when one does but the original's
+        # order is total, and nil, to refuse, otherwise.
+        def gate(transaction, shapes, types)
+          return :none if shapes.all? { it.collation_names.empty? } && types.all?(COLLATION_FREE_OIDS)
           return :none unless Tiebreaker.nondeterministic_collation?(transaction, shapes.flat_map(&:collation_names))
 
           tree = shapes.first.tree

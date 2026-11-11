@@ -18,7 +18,9 @@ module Quaack
       # indexes are visible, so none are shown or hidden. It writes
       # result_comparison:
       #   "verdicts"      { "rewrite_<n>" => { set name => { "result" =>
-      #                   "pass" | "fail" | "partial", "rule" => name or nil } } }
+      #                   "pass" | "fail" | "partial", "rule" => name or nil,
+      #                   "reason" => the check an unsupported_order
+      #                   refusal came from, or nil } } }
       #   "discarded"     the candidates with any failing verdict: a real
       #                   divergence on production data, which selection drops
       #                   and the report shows prominently

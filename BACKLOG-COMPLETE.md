@@ -12623,9 +12623,9 @@ The not_better fate read "It passed every correctness test, but when measured ag
 - **Landed:** 2026-11-10 (task/20261110-5; driver only). `Report::Rewrites::FATES["not_better"]` and its `went_on` pair now say "common values". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
 
-### 20261110-7. Index candidates: refuse an index over 32 columns before HypoPG.
+### 20261111-3. Index candidates: refuse an index over 32 columns before HypoPG.
 
-First filed as 20261110-5, which another session also used; renumbered to 20261110-7 on 2026-11-10. Commits before the rename say 20261110-5.
+First filed as 20261110-5, then renumbered to 20261110-7, and on 2026-11-11 to 20261111-3, since another session used both. Commits before the renames say 20261110-5 or 20261110-7.
 
 Postgres caps an index at 32 columns, key and INCLUDE together (`INDEX_MAX_KEYS`), and a real `CREATE INDEX` over that fails with 54011. HypoPG doesn't check the limit (confirmed on the test Postgres 18: hypothetical indexes up to 60 columns succeed), so QUAACK can measure, rank, and propose an index the operator can't build. A Canvas run proposed one with 46 columns.
 
@@ -12636,12 +12636,12 @@ Refuse any index candidate (LLM or operator `--rewrites`) with more than 32 colu
 - **Design:** index candidates, Report.
 - **Status:** done
 
-### 20261110-6. 32-column refusal: test an overflow in the key columns.
+### 20261111-2. 32-column refusal: test an overflow in the key columns.
 
-From the review of 20261110-7 (minor). `single_candidate_test_postgres_spec.rb` only overflows the limit through INCLUDE (`key: ["c1"]`). Add a case where the key columns alone, including expression and COLLATE keys, push the total past 32, so a regression that stops counting `key.size` goes red.
+First filed as 20261110-6, renumbered on 2026-11-11 since another session used it. From the review of 20261111-3 (minor). `single_candidate_test_postgres_spec.rb` only overflows the limit through INCLUDE (`key: ["c1"]`). Add a case where the key columns alone, including expression and COLLATE keys, push the total past 32, so a regression that stops counting `key.size` goes red.
 
 - **Depends on:** None.
-- **Came from:** The review of 20261110-7, 2026-11-10.
+- **Came from:** The review of 20261111-3, 2026-11-10.
 - **Design:** index-test.
 - **Status:** done
 
@@ -12725,7 +12725,7 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Depends on:** 20261004-92, 20261004-94.
 - **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
 - **Design:** result comparison, literals.
-- **Status:** done (2026-11-10). Item 1: `enclave/spec/literals_users_spec.rb` reads every step that loads the literal sets and fails when an entry it writes neither matches `Literals::USERS` nor is listed there as compared by nothing across sets. Item 2: a full run past the row cap now fails with its own rule, `too_many_rows` (fate `production_not_compared`), which the report words as the original query returning too many rows to check.
+- **Status:** done (2026-11-10). Item 1: `enclave/spec/literals_users_spec.rb` reads every step that loads the literal sets and fails when an entry it writes neither matches `Literals::USERS` nor is listed there as compared by nothing across sets. Item 2 was superseded on 2026-11-11 by upstream's 20261110-7, which gives the refusal the reason `full_run_too_many_rows` under `unsupported_order`; the merge dropped the separate rule. As first landed, item 2 had a full run past the row cap fail with its own rule, `too_many_rows` (fate `production_not_compared`), which the report words as the original query returning too many rows to check.
 
 ### 20261010-18. LLM adapter for the Claude Code CLI.
 
@@ -12760,3 +12760,44 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Came from:** The reviews of 20261010-20, 2026-10-10.
 - **Design:** report, burndown.
 - **Status:** done. Landed 2026-11-10 (spec only): item 1 dropped, since the Sankey labels the index-rank layer "Index sets to try", puts a dashed unit divider (ideas above, sets below) before it, and notes why that many combinations are tried, so it cannot read as more ideas going on; item 2 was stale, since 20261017-12 already checks the rewrites index table strictly (`strict: true`) over recorded runs; item 3 added `enclave/spec/rewrite_burndown_carried_spec.rb`.
+
+### 20261110-6. Result comparison: a nondeterministic collation doesn't refuse when no output column can hold text.
+
+On run 20261110T203510Z-42b9a494 every rewrite of a Canvas query (`GROUP BY assignment_id ... ORDER BY min(created_at)`) was dropped as `unsupported_order`, because the database has a nondeterministic collation and the original's order isn't total. Its output columns are all numbers, so the collation can't change what the comparison sees. `TotalOrder.gate` now takes the result's column type OIDs and returns `:none` when every one is collation-free (bool, int2, int4, int8, oid, float4, float8, numeric, date, time, timetz, timestamp, timestamptz, interval, uuid) and no `COLLATE` clause names a nondeterministic collation. Enclave change.
+
+- **Depends on:** 20261110-1.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison, fixture-compare (`unsupported_order`).
+- **Landed:** 2026-11-10 (committed straight to `main` at the user's say-so, with no builder/reviewer loop). `ResultComparison::TotalOrder.gate(transaction, shapes, types)`; both `ResultComparison` and `ProductionComparison` pass the types. DESIGN.md's unsupported list says so. `result_comparison_postgres_spec.rb` has the new cases, and `fuzz_differ_postgres_spec.rb`'s refusal case now uses a text column. Not mutation-tested and not reviewed.
+- **Status:** done
+
+### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse.
+
+`Picks` checks the original's `min` and `max` (EXTREMES) and GROUP BY keys for values Postgres calls equal that print differently, and refuses when one has a choice. For `double precision`, `0` and `-0` are equal and print differently, so a fixture with both in one group makes `max(score)` refuse the original with `unsupported_order`. Reproduced: `SELECT a, max(score) FROM s GROUP BY a` over scores `0` and `-0` refuses; `1` and `2`, or `0` and `0`, match. On run 20261110T232744Z-74d8049f this probably dropped Sleepy Pike (round 2's fixture isn't kept, so it's not proven). The user decided (2026-11-10): treat `0` and `-0` as the same for the pick check, as float noise, which DESIGN.md already calls unsupported. Do it in `PickChecks` (and the comparator if it prints `-0` differently), for float4 and float8 only. Don't loosen the check for numeric (`10` vs `10.0`), jsonb, or text. Test first with the repro, and a `10` vs `10.0` numeric case that must still refuse. Check ProductionComparison too. Update DESIGN.md. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison (Picks).
+- **Answers (the user, 2026-11-10):** Treat `0` and `-0` as the same for the pick check.
+- **Landed:** 2026-11-10 (task/20261110-8). `PickChecks` reads a float4 or float8 `-0` as `0` in the min/max and GROUP BY checks. The comparator and ProductionComparison already treat them as equal. A domain over float8, `float8[]` and composites still refuse. Reviewed with no blocking findings.
+- **Status:** done
+
+## New transform rules (2026-10-18).
+
+The user asked (2026-10-18) for at least ten more transform rules, each with its docs page, code, and tests, built five at a time. They chose all thirteen below, plus 20261018-1 for the cap. Decisions that hold for every task in this section:
+
+- Each rule is an enclave change. It goes on the "Unreleased enclave changes" list when it lands, and nothing bumps a `VERSION` (the user, 2026-10-18: another session's work joins the same batch, and the user will ask for the bump).
+- Each rule gets its page in `docs/transforms/`, in the style of the others, with an intro, "What it does.", "Why it can be faster.", "What it rests on.", and "Example." made by the rule on Postgres 18 from the shared schema. Use Oxford commas in lists. It also gets a row at the end of DESIGN.md's rewrite-rules table, a line at the end of `RULES`, and a `RuleConstantsFixtures::LITERALS` entry.
+- e2e corpus (the user, 2026-10-18): a rule that no case in `e2e/cases/` covers gets a new case, proved with `ruby e2e/verify.rb <case number>` (not the full run). A rule that an existing case covers only checks that the rule makes that case's rewrite, or one as good, and says so in the case's README. If no realistic data set lets the rule's rewrite win on blocks, stop and say so before writing a case.
+- Opus builder and reviewer for each rule.
+
+### 20261110-7. Report: name the check behind an `unsupported_order` refusal.
+
+On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without comparing results, because the order of the original query's rows can't be checked", for a refusal that came from the original's `min`/`max` pick check on a fixture with `0` and `-0` (see 20261110-8), nothing to do with order. Several different checks end in `unsupported_order`: the collation gate, a left-out column or hidden tie, an inner cut (`InnerCuts`), `FETCH ... WITH TIES`, a pick check (`Picks`, `PickChecks`), a pick that can't be forced, a failed forced or checked run, a volatile sort key, a cut tie (`CutTies`), and, in `ProductionComparison`, a timed-out or too-large run. Give the verdict a `reason` from a fixed enum of those, set where each is raised, store it in the round and tested entries (`rewrite_round_N.json`, `rewrite_tested_N.json`), carry it through the protocol, and have the report's sentence for the fate name it, in plain words with no values. A reason is a constant, never text from Postgres or the query. Test first with one planted refusal per check, and check with sentinel values that none reaches the report. Update DESIGN.md and the report docs. Enclave, protocol, and driver change; the enclave and protocol parts go on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison, report.
+- **Answers (the user, 2026-11-10):** Name the check in the report sentence, from a fixed enum, with no values.
+- **Landed:** 2026-11-11 (task/20261110-7). Twelve fixed refusal reasons (`protocol/lib/quaack/protocol/refusal_reasons.rb`) set at each `unsupported_order` site, stored in `rewrite_round_N` and the verdicts, filtered in report-payload, checked at egress, and named in the report sentence. Old stores fall back to a neutral sentence. Reviewed with no blocking findings; its minor findings are in 20261111-1.
+- **Status:** done

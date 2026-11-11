@@ -76,9 +76,11 @@ module Quaack
       #                    (the denormalized_equal assumptions it rests
       #                    on) (RewriteSource),
       #                    "fate" and its "scenario", "rule", "round",
-      #                    "after", and "cycle" (RewriteFate; cycle is an
+      #                    "after", "cycle", and "reason" (RewriteFate; cycle is an
       #                    fk_cycle refusal's tables, "schema.name" in
-      #                    foreign key order), "plan" (its node shapes on
+      #                    foreign key order, and reason the check an
+      #                    unsupported_order refusal came from, one of
+      #                    Protocol::RefusalReasons), "plan" (its node shapes on
       #                    the slow literal set, or nil; a hypothetical
       #                    EXPLAIN, so its block counts are nil), "untested_atoms"
       #                    (rewrite-test's redacted shapes, or nil if it

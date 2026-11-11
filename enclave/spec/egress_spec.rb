@@ -678,6 +678,35 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261110-7: why a comparison refused, the fate's reason, is a
+    # fixed word from Protocol::RefusalReasons, or nil.
+    describe "a rewrite's refusal reason" do
+      def report_with(entry)
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil }.merge(entry)
+        { type: :report, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
+      end
+
+      it "sends a reason from the list, or nil, or none" do
+        expect(parsed(report_with("reason" => "original_pick"))["rewrites"].first)
+          .to include("reason" => "original_pick")
+        expect(parsed(report_with("reason" => nil))["rewrites"].first).to include("reason" => nil)
+        expect(parsed(report_with({}))["rewrites"].first).not_to have_key("reason")
+      end
+
+      [["a reason off the list", { "reason" => EGRESS_SENTINEL }],
+       ["an error message", { "reason" => "PG::Error: #{EGRESS_SENTINEL}" }],
+       ["a reason under a Symbol key", { reason: EGRESS_SENTINEL }],
+       ["a listed reason as a Symbol", { "reason" => :original_pick }]].each do |what, planted|
+        it "refuses #{what}, without quoting it" do
+          refusal = "a value in this report message has a refusal reason that isn't one of QUAACK's"
+          expect { egress.serialize(report_with(planted)) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
+      end
+    end
+
     # Task 20261012-2: a fuzz disproof's sizes are [schema, table, rows],
     # each table one the report's queries name, and trials a count
     # (Protocol::FuzzResult, FuzzSizes).

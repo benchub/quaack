@@ -89,7 +89,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     runner.with_fixture(rows) { |tx| queries.map { |sql| tx.query(sql).rows } }
   end
 
-  def fields(verdict) = verdict.to_h.slice(:match, :mode, :rule, :row, :column)
+  # A refusal's reason too (task 20261110-7), so an eq on a refusal names it.
+  def fields(verdict) = verdict.to_h.slice(:match, :mode, :rule, :row, :column, *(:reason if verdict.reason))
 
   # Scans items in reverse id order, so tied rows reach the sort reversed.
   let(:reversed) { "(SELECT * FROM items ORDER BY id DESC OFFSET 0) items" }
@@ -291,7 +292,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         candidate = "SELECT id, grp FROM #{forward} ORDER BY grp, nextval('quaack_keys') % 4"
 
         expect(fields(compare("SELECT id, grp FROM items ORDER BY grp", candidate, rows: tied)))
-          .to eq(match: false, mode: :ordered, rule: :unsupported_order, row: nil, column: nil)
+          .to eq(match: false, mode: :ordered, rule: :unsupported_order, reason: :unsteady_order, row: nil, column: nil)
       end
     end
 
@@ -303,9 +304,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       # Reads items with the given id first, then by id.
       def moved(id) = "(SELECT * FROM items ORDER BY id = #{id} DESC, id OFFSET 0) s"
 
-      def expect_refused(original, candidate, rows)
+      def expect_refused(original, candidate, rows, reason: :cut_tie)
         expect(fields(compare(original, candidate, rows:)))
-          .to eq(match: false, mode: :ordered, rule: :unsupported_order, row: nil, column: nil)
+          .to eq(match: false, mode: :ordered, rule: :unsupported_order, reason:, row: nil, column: nil)
       end
 
       def expect_matched(original, candidate, rows)
@@ -341,7 +342,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         sql = "SELECT grp, id, doc FROM items ORDER BY grp LIMIT 2"
         expect(raw(sql, sql, rows:).first.size).to eq(2)
 
-        expect_refused(sql, sql, rows)
+        expect_refused(sql, sql, rows, reason: :hidden_tie)
       end
 
       # 20261004-94: the sum of the LIMIT and the OFFSET, which the edge query runs, mustn't
@@ -520,7 +521,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         rows = rows_of(%w[id grp price], [1, 1, 1], [2, 1, 2], [3, 1, 1])
 
         expect_refused("SELECT DISTINCT ON (grp) grp, id FROM items ORDER BY grp, price",
-                       "SELECT DISTINCT ON (grp) grp, id FROM #{moved(2)} ORDER BY grp, LEAST(price, 1)", rows)
+                       "SELECT DISTINCT ON (grp) grp, id FROM #{moved(2)} ORDER BY grp, LEAST(price, 1)", rows,
+                       reason: :original_pick)
       end
 
       it "refuses a candidate with DISTINCT ON when the original's LIMIT cuts a tie" do
@@ -666,7 +668,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         forward_rows, reversed_rows = raw(candidate, "SELECT jb FROM #{reversed} ORDER BY grp", rows:)
         expect([forward_rows == raw(original, rows:).first, forward_rows == reversed_rows]).to eq([true, false])
 
-        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :unsupported_order)
+        expect(fields(compare(original, candidate,
+                              rows:))).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
       end
 
       it "refuses a jsonb column under a LIMIT" do
@@ -675,7 +678,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         verdict = compare("SELECT jb FROM items ORDER BY grp, id LIMIT 1",
                           "SELECT jb FROM #{forward} ORDER BY grp LIMIT 1", rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
       end
 
       it "refuses a jsonb column when only the original has a LIMIT" do
@@ -684,7 +687,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         verdict = compare("SELECT jb FROM items ORDER BY grp LIMIT 1",
                           "SELECT jb FROM items WHERE id = 1 ORDER BY grp", rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
       end
 
       # The odd value sits after a repeat, and then between repeats, so
@@ -699,7 +702,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
           verdict = compare("SELECT jb FROM items ORDER BY grp, id", "SELECT jb FROM #{forward} ORDER BY grp", rows:)
 
-          expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+          expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
       end
 
@@ -714,7 +717,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
           verdict = compare(original, "SELECT #{column} FROM #{forward} ORDER BY grp", rows:)
 
-          expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+          expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
       end
 
@@ -724,7 +727,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         verdict = compare("SELECT jb FROM items WHERE id = 1 ORDER BY grp",
                           "SELECT jb FROM #{forward} ORDER BY grp LIMIT 1", rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
       end
 
       it "still compares a jsonb column when no tie holds different values" do
@@ -759,7 +762,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         it "refuses a tie that straddles the LIMIT and hides a different jsonb value" do
           original = "SELECT grp, jb FROM items ORDER BY grp LIMIT 1"
 
-          expect(fields(compare(original, original, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(original, original,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
 
         it "compares a LIMIT that a tie with a different jsonb value doesn't reach" do
@@ -773,7 +777,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           verdict = compare("SELECT grp, jb FROM items WHERE id = 1 ORDER BY grp",
                             "SELECT grp, jb FROM items ORDER BY grp LIMIT 1", rows: docs)
 
-          expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+          expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
 
         it "still catches a candidate that drops a sort key" do
@@ -788,7 +792,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         it "still refuses DISTINCT over a jsonb column" do
           sql = "SELECT DISTINCT id, jb FROM items ORDER BY id"
 
-          expect(fields(compare(sql, sql, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(sql, sql,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
 
         it "refuses a hidden tie that straddles a LIMIT inside a subquery or a CTE" do
@@ -796,8 +801,10 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           subquery = "SELECT grp, jb FROM (#{inner}) s ORDER BY grp"
           cte = "WITH s AS (#{inner}) SELECT grp, jb FROM s ORDER BY grp"
 
-          expect(fields(compare(subquery, subquery, rows: docs))).to include(match: false, rule: :unsupported_order)
-          expect(fields(compare(cte, cte, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(subquery, subquery,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
+          expect(fields(compare(cte, cte,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
         end
 
         # Sorted by grp, the rows are 1, 1, 2, 3, and the two grp 1 rows
@@ -806,14 +813,16 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           reaches = "SELECT grp, jb FROM items ORDER BY grp OFFSET 1 LIMIT 1"
           misses = "SELECT grp, jb FROM items ORDER BY grp OFFSET 2 LIMIT 1"
 
-          expect(fields(compare(reaches, reaches, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(reaches, reaches,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
           expect(compare(misses, misses, rows: docs).match?).to be(true)
         end
 
         it "refuses an OFFSET that isn't a constant, even where a constant one would compare" do
           sql = "SELECT grp, jb FROM items ORDER BY grp OFFSET (SELECT 2) LIMIT 1"
 
-          expect(fields(compare(sql, sql, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(sql, sql,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
 
         # Sorted by -grp, the rows are 3, 2, 1, 1.
@@ -824,7 +833,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           candidate = "SELECT grp, jb FROM #{reversed} ORDER BY -grp LIMIT 2"
 
           expect(compare(misses, candidate, rows: docs).match?).to be(true)
-          expect(fields(compare(reaches, reaches, rows: docs))).to include(match: false, rule: :unsupported_order)
+          expect(fields(compare(reaches, reaches,
+                                rows: docs))).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
         end
       end
 
@@ -833,7 +843,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
         verdict = compare("SELECT na FROM items ORDER BY grp, id", "SELECT na FROM #{forward} ORDER BY grp", rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
       end
 
       it "refuses a numrange in a tie, since [1.0,2) and [1.00,2) are equal" do
@@ -843,7 +853,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
         verdict = compare(original, "SELECT numrange(amount, 2) AS r FROM #{forward} ORDER BY grp", rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :hidden_tie)
       end
 
       it "matches bpchar values that differ only in trailing spaces, whichever way the tie comes back" do
@@ -883,7 +893,33 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
         verdict = compare("SELECT w FROM words ORDER BY grp, id LIMIT 1", candidate, rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order, reason: :nondeterministic_collation)
+      end
+
+      describe "when no output column is text-like" do
+        let(:original) { "SELECT grp, count(*) AS n FROM words GROUP BY grp ORDER BY min(id)" }
+
+        before { conn.exec("CREATE TABLE words (id integer, grp integer, w text COLLATE loose)") }
+
+        it "compares as usual, though the original's order has ties" do
+          rows = [[1, 1, "a"], [2, 2, "A"], [3, 3, "b"]].map do |id, grp, w|
+            Quaack::Enclave::ArenaRunner::FixtureRow.new(table: words, columns: %w[id grp w],
+                                                         values: [id.to_s, grp.to_s, w])
+          end
+          candidate = "SELECT grp, count(*) AS n FROM words GROUP BY grp ORDER BY min(id) / 2"
+
+          expect(fields(compare(original, original, rows:))).to include(match: true)
+          expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+        end
+
+        it "still refuses when the query names one" do
+          rows = word_rows("w")
+          candidate = "SELECT grp, count(*) AS n FROM words WHERE w COLLATE loose IS NOT NULL " \
+                      "GROUP BY grp ORDER BY min(id)"
+
+          expect(fields(compare(original, candidate,
+                                rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+        end
       end
 
       it "refuses when the query names one" do
@@ -891,7 +927,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         original = "SELECT w COLLATE loose AS w FROM words ORDER BY grp, id LIMIT 1"
         candidate = "SELECT w COLLATE loose AS w FROM words ORDER BY grp LIMIT 1"
 
-        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+        expect(fields(compare(original, candidate,
+                              rows: word_rows("w")))).to include(rule: :unsupported_order,
+                                                                 reason: :nondeterministic_collation)
       end
 
       it "refuses when only the candidate names one" do
@@ -899,7 +937,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         original = "SELECT w FROM words ORDER BY grp, id LIMIT 1"
         candidate = "SELECT w COLLATE loose AS w FROM words ORDER BY grp LIMIT 1"
 
-        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+        expect(fields(compare(original, candidate,
+                              rows: word_rows("w")))).to include(rule: :unsupported_order,
+                                                                 reason: :nondeterministic_collation)
       end
 
       it "refuses when a domain uses one" do
@@ -908,7 +948,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         original = "SELECT w::loose_text AS w FROM words ORDER BY grp, id LIMIT 1"
         candidate = "SELECT w::loose_text AS w FROM words ORDER BY grp LIMIT 1"
 
-        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+        expect(fields(compare(original, candidate,
+                              rows: word_rows("w")))).to include(rule: :unsupported_order,
+                                                                 reason: :nondeterministic_collation)
       end
 
       it "refuses when the query names one whose name needs quoting" do
@@ -919,7 +961,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         original = %(SELECT w COLLATE "it's loose" AS w FROM words ORDER BY grp, id LIMIT 1)
         candidate = %(SELECT w COLLATE "it's loose" AS w FROM words ORDER BY grp LIMIT 1)
 
-        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+        expect(fields(compare(original, candidate,
+                              rows: word_rows("w")))).to include(rule: :unsupported_order,
+                                                                 reason: :nondeterministic_collation)
       end
 
       it "refuses when a range type uses one" do
@@ -928,7 +972,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         original = "SELECT loose_range(w, w, '[]') AS r FROM words ORDER BY grp, id LIMIT 1"
         candidate = "SELECT loose_range(w, w, '[]') AS r FROM words ORDER BY grp LIMIT 1"
 
-        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+        expect(fields(compare(original, candidate,
+                              rows: word_rows("w")))).to include(rule: :unsupported_order,
+                                                                 reason: :nondeterministic_collation)
       end
 
       describe "when the original's order is total" do
@@ -980,13 +1026,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         it "still refuses when the original joins and can repeat the keyed rows" do
           joined = original.sub("FROM users\n", "FROM users JOIN enrollments e ON e.user_id = users.id\n")
 
-          expect(fields(compare(joined, joined, rows:))).to include(rule: :unsupported_order)
+          expect(fields(compare(joined, joined,
+                                rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
         end
 
         it "still refuses a DISTINCT" do
           distinct = original.sub("SELECT users.*", "SELECT DISTINCT users.*")
 
-          expect(fields(compare(distinct, distinct, rows:))).to include(rule: :unsupported_order)
+          expect(fields(compare(distinct, distinct,
+                                rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
         end
 
         it "still refuses a GROUP BY" do
@@ -995,7 +1043,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
             ORDER BY name COLLATE public."und-u-kn-true", id LIMIT 3
           SQL
 
-          expect(fields(compare(grouped, grouped, rows:))).to include(rule: :unsupported_order)
+          expect(fields(compare(grouped, grouped,
+                                rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
         end
 
         it "still refuses a set operation" do
@@ -1004,7 +1053,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
             UNION SELECT id, name FROM users ORDER BY n, id LIMIT 3
           SQL
 
-          expect(fields(compare(union, union, rows:))).to include(rule: :unsupported_order)
+          expect(fields(compare(union, union,
+                                rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
         end
 
         it "still refuses when the key's own column uses one" do
@@ -1013,7 +1063,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           SQL
           sql = "SELECT name FROM tags ORDER BY name LIMIT 3"
 
-          expect(fields(compare(sql, sql, rows: []))).to include(rule: :unsupported_order)
+          expect(fields(compare(sql, sql,
+                                rows: []))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
         end
       end
 
@@ -1088,8 +1139,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                   "ORDER BY id DESC"
       verdicts = [original, reordered, "SELECT broken FROM nowhere ORDER BY 1"].map { |c| compare(original, c) }
 
-      expect(verdicts.map { |v| v.to_h.slice(:match, :mode, :rule, :expected_rows, :actual_rows) }.uniq)
-        .to eq([{ match: false, mode: :with_ties, rule: :unsupported_order, expected_rows: nil, actual_rows: nil }])
+      expect(verdicts.map { |v| v.to_h.slice(:match, :mode, :rule, :expected_rows, :actual_rows, :reason) }.uniq)
+        .to eq([{ match: false, mode: :with_ties, rule: :unsupported_order, expected_rows: nil, actual_rows: nil,
+                  reason: :with_ties }])
     end
   end
 
@@ -1253,8 +1305,10 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
       originals.zip(candidates).each do |original, candidate|
         expect(raw(original, candidate)).to eq([[%w[1 a]], [%w[1 a]]])
-        expect(fields(compare(original, candidate))).to include(match: false, rule: :unsupported_order)
-        expect(fields(compare(candidate, original))).to include(match: false, rule: :unsupported_order)
+        expect(fields(compare(original,
+                              candidate))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
+        expect(fields(compare(candidate,
+                              original))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
       end
     end
 
@@ -1272,7 +1326,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     it "refuses an inner ORDER BY whose key name is an output alias for another column" do
       sql = both_forms("SELECT grp, label, grp AS id FROM items ORDER BY id LIMIT 1").first
 
-      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
     end
 
     it "refuses an inner cut over a CTE that shares a keyed table's name" do
@@ -1280,7 +1334,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       sql = "WITH items AS (SELECT grp AS id, grp, label FROM public.items) " \
             "SELECT grp, label FROM (#{inner}) s ORDER BY grp, label"
 
-      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
     end
 
     it "refuses a set operation's arm cut without a key, in a subquery, a CTE, and at the top level" do
@@ -1291,7 +1345,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                  "WITH s AS (#{union}) SELECT grp, label FROM s ORDER BY grp, label",
                  "#{arm} UNION ALL #{keyed} ORDER BY grp, label LIMIT 5"]
 
-      queries.each { |sql| expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order) }
+      queries.each do |sql|
+        expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
+      end
       keyed_union = "SELECT grp, label FROM (#{keyed} UNION ALL #{keyed}) s ORDER BY grp, label"
       expect(compare(keyed_union, keyed_union).match?).to be(true)
     end
@@ -1301,21 +1357,21 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       sql = both_forms("SELECT * FROM items ORDER BY label LIMIT 1").first
       keyed = both_forms("SELECT * FROM items ORDER BY id LIMIT 1").first
 
-      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
       expect(compare(keyed, keyed).match?).to be(true)
     end
 
     it "refuses an inner cut in a query with no ORDER BY at its top level" do
       sql = both_forms("SELECT * FROM items ORDER BY grp LIMIT 1", outer_order: "").last
 
-      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
     end
 
     it "refuses an inner cut over a join, even when it sorts by one table's key" do
       inner = "SELECT a.grp, b.label FROM items a JOIN items b ON b.grp = a.grp ORDER BY a.id LIMIT 1"
       sql = both_forms(inner).first
 
-      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order)
+      expect(fields(compare(sql, sql))).to include(match: false, rule: :unsupported_order, reason: :inner_cut)
     end
   end
 end

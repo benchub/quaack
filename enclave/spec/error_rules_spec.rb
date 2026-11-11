@@ -22,6 +22,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
   never_sent = {
     "discarded" => "rewrite-test's stored result for a pruned rewrite (steps/counterexamples.rb)",
     "subset_timed_out" => "a ProductionComparison verdict",
+    "unsupported_order" => "a ProductionComparison verdict that refused, with its reason (its refused)",
     "out_of_time" => "a rewrite the search didn't test in time, stored as passed (steps/rewrite_fuzz.rb)",
     "search_failed" => "a rewrite the search couldn't test, stored as passed (steps/rewrite_fuzz.rb)",
     "hypopg_refused" => "a SingleCandidateTest refusal, stored in the candidate's result",
@@ -46,7 +47,7 @@ RSpec.describe Quaack::Protocol::ErrorRules do
     "relation_qualifier.rb" => [1, "a message for an Error whose rule is fixed"],
     "relations.rb" => [2, "its rule locals, and KINDS and OTHER, read below"],
     "result_comparison/load_orders.rb" => [1, "LOAD_FAILED, read below"],
-    "result_comparison/picks.rb" => [1, "a foreign cancel's ArenaRunner::Error, raised again as it came"],
+    "result_comparison/picks.rb" => [2, "guarded's calls, whose first argument is the original query, not a rule"],
     "run_server_check.rb" => [1, "fail!'s callers"],
     "scenarios/values.rb" => [1, "its rule local"],
     "single_candidate_test.rb" => [1, "guarded's and hypopg's callers"],
