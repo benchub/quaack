@@ -401,6 +401,26 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
   end
 
+  # Task 20261021-3: RegTypes raises failed_to_plan for a probe that fails to
+  # prepare with any SQLSTATE but 42P18, and reg_values! keeps that
+  # untyped_literal for an index. RegTypes prepares only a probe with a
+  # string literal, so each has one; they fail with 42883 and 42804.
+  describe "an index probe that fails to prepare with an error other than 42P18" do
+    {
+      "an undefined operator" => ["CREATE INDEX ON public.orders (id) WHERE id = 'x' AND status = 1", "42883"],
+      "a mistyped predicate" => ["CREATE INDEX ON public.orders (id) WHERE status = 'x' AND id", "42804"]
+    }.each do |what, (sql, sqlstate)|
+      it "is refused as untyped_literal for #{what} (#{sqlstate})" do
+        # The probe as RegTypes prepares it: the string literal as an untyped $1.
+        predicate = sql[/WHERE (.*)/, 1].sub("'x'", "$1")
+        expect { conn.exec("PREPARE p20261021_3 AS SELECT FROM public.orders WHERE #{predicate}") }
+          .to raise_error(PG::Error) { |e| expect(e.result.error_field(PG::PG_DIAG_SQLSTATE)).to eq(sqlstate) }
+
+        expect { check(sql) }.to rejected("untyped_literal", "untyped_literal: #{Quaack::Enclave::RewriteCandidateCheck::RegTypes::UNTYPED}")
+      end
+    end
+  end
+
   # Task 20261004-81: a rule added to one of the four files without a RULES
   # entry fails here, whatever the samples above say. The scan reads the rule
   # names each file raises with: Error.new("rule", ...) calls, and the fixed
