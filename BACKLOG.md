@@ -855,6 +855,7 @@ Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, 
 
 Move `ArenaRunner::Transaction#query` onto Binding's prepare path (declared types, the 42P18 retry), and make the counterexample and fuzz paths (Session, Differ, Lift) hand it `$n` SQL with its Binding instead of `Counterexamples.bind`'s text. The red spec on 3f6b48c9 goes green. Values stay in the enclave; anything leaving carries only `$n` and shapes.
 
+- **Notes from 20261110-13's review (minor; mutation-run 2026-11-10):** two hand-offs have no spec. Passing nil for Session's `Shape.parse(queries.first, :original, binding:)` (`fuzz/session.rb:59`) and dropping the binding from Domains' `Tree.constants(it, binding: @binding)` Dictionary input (`fuzz/domains.rb:171`) both stay green; add specs for them here. Wire `Fuzz::Differ`'s and `Lift`'s compare calls with the binding too. Also drop `PickChecks.resolved`'s binding reader from stage 1 and its spec: redact never makes an ORDER BY or GROUP BY position a `$n`, so reading one as a position would be wrong.
 - **Depends on:** 20261110-15.
 - **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
 - **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
