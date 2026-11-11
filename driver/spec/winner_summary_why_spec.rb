@@ -383,7 +383,8 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     it "refuses an answer that gives a rule for every query" do
       ["Always split an OR into a UNION.", "You should never write an OR across tables.",
        "All queries should use UNION, not OR.", "Every query with an OR gains from this.",
-       "All queries benefit from a UNION.",
+       "All queries benefit from a UNION.", "Use this index for every query.", "Apply this to all queries.",
+       "Every query can use a UNION.", "All queries would be faster with it.",
        "Never use an OR across tables.", "Developers should always prefer UNION.",
        "Always, an OR across tables is slower.", "You must never forget the UNION form."].each do |text|
         expect(run(text, base)).to have_attributes(outcome: "rejected"), text

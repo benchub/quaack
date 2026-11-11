@@ -94,7 +94,9 @@ module Quaack
       # scans a table, is fine: only advice phrasings are refused.
       UNIVERSAL = /\b(?:always|never)\s+(?:use|write|split|prefer|avoid|add|put|rewrite|replace|turn|create|do)\b|
                    \b(?:should|must|you)\s+(?:always|never)\b|(?:\A|[.;!]\s+)(?:always|never)\b|
-                   \b(?:all|every)\s+quer(?:y|ies)\b[^.;!]*?\b(?:should|must|needs?|gains?|benefits?|helps?)\b/ix
+                   \b(?:all|every)\s+quer(?:y|ies)\b[^.;!]*?
+                   \b(?:should|must|needs?|gains?|benefits?|helps?|can|could|will|would)\b|
+                   \b(?:use|apply|add|create|put|write|prefer)\b[^.;!]*?\b(?:all|every)\s+quer(?:y|ies)\b/ix
       REFUSED = [
         %r{<\s*[A-Za-z/!?]}, /&#?\w+;/, /https?:|www\.|\w+\.(?:com|org|net|io|dev)\b/i,
         /\b(?:javascript|vbscript)\s*:/i, /\b(?:data|mailto|file|ftp|about)\s*:(?=\S)/i, /\w@\w/,

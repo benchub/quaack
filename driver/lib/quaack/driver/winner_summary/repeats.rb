@@ -33,9 +33,9 @@ module Quaack
         def of(original, winner)
           return [] unless original.is_a?(String) && winner.is_a?(String)
 
-          original_tree, keep = parsed(original)
-          winner_counts = tally(*parsed(winner))
-          original_counts = tally(original_tree, keep)
+          original_tree, winner_tree = [original, winner].map { PgQuery.parse(it) }
+          keep = tables(original_tree, winner_tree)
+          original_counts, winner_counts = [original_tree, winner_tree].map { tally(it, keep) }
           repeated(original_tree, keep).first(MOST).map do |shape, across|
             { "condition" => shape, "repeated_across" => across, "in_original" => original_counts[shape],
               "in_winner" => winner_counts[shape] }
@@ -43,8 +43,6 @@ module Quaack
         rescue PgQuery::ParseError
           []
         end
-
-        def parsed(sql) = PgQuery.parse(sql).then { [it, tables(it)] }
 
         # Each shape that two or more places of one group hold, with the
         # group's kind, in the order first found.
@@ -103,10 +101,14 @@ module Quaack
         end
 
         # The names a column qualifier keeps: each table's alias, or its name
-        # when it has none, but only when tree reads more than one table.
-        def tables(tree)
+        # when it has none, but only when the queries read more than one.
+        # Both queries count together, so a rewrite that adds or drops a
+        # table still gives a condition one shape in each. "More than one
+        # table" counts every RangeVar anywhere in either: subquery tables,
+        # and a CTE's name where the query reads it, included.
+        def tables(*trees)
           names = []
-          tree.walk! { |_p, _f, node, _l| names << table_name(node) if node.is_a?(PgQuery::RangeVar) }
+          trees.each { it.walk! { |_p, _f, node, _l| names << table_name(node) if node.is_a?(PgQuery::RangeVar) } }
           names.uniq.size > 1 ? names.uniq : []
         end
 
