@@ -48,7 +48,8 @@ module WinnerSummaryWhy # rubocop:disable Metrics/ModuleLength
             "Rewrite Quiet Heron wrote it as NOT EXISTS, which means the same thing here and let the database " \
             "match the two tables in one pass with a Hash Join. The winner read 300 blocks against 9,000 on the " \
             "slow values. When you exclude rows found in another table on columns that can't be null, reach " \
-            "for NOT EXISTS; if a column can be null, the two forms give different answers.",
+            "for NOT EXISTS; if a column can be null, the two forms give different answers, and if the " \
+            "subquery's rows fit in memory, Postgres already hashes the NOT IN and the change gains little.",
       bad: "Rewrite Quiet Heron used NOT EXISTS, so the planner chose a Merge Join. It read 300 blocks."
     },
     "existence_in_flip" => {
@@ -288,13 +289,13 @@ RSpec.describe Quaack::Driver::WinnerSummary do
                         "SELECT o.id FROM public.orders o WHERE o.tenant_id = $1 AND o.state = $2 UNION " \
                         "SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id " \
                         "WHERE o.tenant_id = $3 AND u.region = $4",
-                        { "condition" => "tenant_id = $", "repeated_across" => "OR arms", "in_original" => 2,
+                        { "condition" => "o.tenant_id = $", "repeated_across" => "OR arms", "in_original" => 2,
                           "in_winner" => 2 }],
       "existence_in_flip" => ["SELECT 1 FROM public.orders WHERE user_id IN (SELECT id FROM public.users u " \
                               "WHERE (u.region = $1 AND u.active) OR (u.region = $2 AND u.vip)) LIMIT $3",
                               "SELECT 1 FROM public.users u WHERE u.region = $1 AND (u.active OR u.vip) AND " \
                               "EXISTS (SELECT 1 FROM public.orders o WHERE o.user_id = u.id) LIMIT 1",
-                              { "condition" => "region = $", "repeated_across" => "OR arms", "in_original" => 2,
+                              { "condition" => "u.region = $", "repeated_across" => "OR arms", "in_original" => 2,
                                 "in_winner" => 1 }],
       "union_outer_filter_removal" => ["SELECT id FROM (SELECT id, state FROM public.orders WHERE state = $1 " \
                                        "UNION SELECT id, state FROM public.archived WHERE state = $2) s " \
@@ -314,6 +315,16 @@ RSpec.describe Quaack::Driver::WinnerSummary do
 
         sent = JSON.parse(fake.asks.fetch(0).body[:messages][0][:content][/```json\n(.*)\n```/m, 1])
         expect(sent["repeated_conditions"]).to eq([fact])
+      end
+    end
+
+    it "carries none when the original SQL is too long or holds a NUL, which Input drops" do
+      repeat = "(o.tenant_id = $1 AND o.state = $2) OR (o.tenant_id = $3 AND o.kind = $4)"
+      long = "SELECT o.id FROM public.orders o WHERE #{repeat} AND #{(["o.id > 0"] * 3_000).join(" AND ")}"
+      ["SELECT o.id FROM public.orders o WHERE #{repeat}\u0000", long].each do |original|
+        payload = family_payload("not_in_to_not_exists")
+        payload["original_sql"] = original
+        expect(described_class::Input.build(payload)["repeated_conditions"]).to eq([])
       end
     end
 
@@ -372,12 +383,15 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     it "refuses an answer that gives a rule for every query" do
       ["Always split an OR into a UNION.", "You should never write an OR across tables.",
        "All queries should use UNION, not OR.", "Every query with an OR gains from this.",
+       "All queries benefit from a UNION.", "Use this index for every query.", "Apply this to all queries.",
+       "Every query can use a UNION.", "All queries would be faster with it.",
        "Never use an OR across tables.", "Developers should always prefer UNION.",
        "Always, an OR across tables is slower.", "You must never forget the UNION form."].each do |text|
         expect(run(text, base)).to have_attributes(outcome: "rejected"), text
       end
       ["The winner never scans public.orders whole and reads 40 blocks.",
-       "The original always read 9,000 blocks on the slow values."].each do |text|
+       "The original always read 9,000 blocks on the slow values.",
+       "Every query in the run read fewer blocks than the original."].each do |text|
         expect(run(text, base)).to have_attributes(outcome: "used"), text
       end
       expect(run("The original OR read two tables, so a UNION let each arm use an Index Scan.", base))

@@ -12735,3 +12735,17 @@ The `claude` CLI can run a single prompt and exit, the way the `copilot` CLI doe
 - **Came from:** the user, 2026-10-10.
 - **Design:** LLM client.
 - **Status:** done (2026-11-10). Added the `claude_cli` provider in `driver/lib/quaack/driver/llm/claude_cli_adapter.rb`, a subclass of the copilot_cli adapter that reuses its process handling. Its default command is `claude -p --output-format json --model {model} --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt-file {system_file}`, with the prompt on stdin and tokens read from the JSON result's usage. A `command_template` now needs only `{model}`; `copilot_cli`'s still needs `{prompt_file}`. The boundary specs list only SDK providers, and this one loads no SDK, so they needed no change.
+
+### 20261010-41. Winner summary: minors from 20261010-37.
+
+1. A repeated condition's column cut merges columns of different tables (`a.x = $1` and `b.x = $3` both read `x = $`), which can overstate how often a condition repeats; keep the qualifier when the query reads more than one table.
+2. No spec covers a duplicate condition inside one OR arm (`a = $1 AND a = $2`): removing the `.uniq` on each arm's conjuncts stays green and would report a repeat that isn't one. Add the spec.
+3. The `(all|every) quer(y|ies)` guard refuses a plain description such as "Every query in the run read fewer blocks"; narrow it to advice use.
+4. No spec covers `Repeats.of` getting nil from a rejected `sql()` string (over 20000 characters or a NUL).
+5. The three rule preconditions not checked in depth (implied_predicate_removal, cte_hoist_dedupe, unused_join_removal): verify against the code.
+6. The not_in "when it wouldn't help" sentence says only when the rewrite doesn't apply, not when it doesn't pay off.
+
+- **Depends on:** 20261010-37 (landed).
+- **Came from:** The reviews of 20261010-37, 2026-10-10.
+- **Design:** report.
+- **Status:** done. Landed 2026-11-10 (driver only): a repeated condition keeps its table qualifier when the SQL reads more than one table (a subquery alias is still cut); specs cover a duplicate within one OR arm and an original SQL Input drops; the every-query guard refuses only advice (should, must, needs, gains, benefits, helps); the three rule preconditions now match their code (implied_predicate_removal also drops exact copies, cte_hoist_dedupe also needs no RECURSIVE and no data-modifying CTE, unused_join_removal names the key direction); the not_in example says when the rewrite gains little.

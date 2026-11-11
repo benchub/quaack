@@ -42,7 +42,7 @@ RSpec.describe Quaack::Driver::WinnerSummary::Repeats do
     winner = "SELECT 1 FROM public.users u WHERE u.region = $1 AND (u.active OR u.vip) AND EXISTS " \
              "(SELECT 1 FROM public.orders o WHERE o.user_id = u.id) LIMIT 1"
     expect(of(original, winner).map { it.values_at("condition", "in_original", "in_winner") })
-      .to eq([["region = $", 2, 1]])
+      .to eq([["u.region = $", 2, 1]])
   end
 
   it "reports nothing when no condition repeats" do
@@ -64,6 +64,31 @@ RSpec.describe Quaack::Driver::WinnerSummary::Repeats do
   it "leaves out a condition that holds a literal, so no value goes in" do
     original = "SELECT 1 FROM t WHERE (a = 'secret-sentinel' AND b) OR (a = 'secret-sentinel' AND c)"
     expect(of(original, "SELECT 1 FROM t")).to eq([])
+  end
+
+  it "keeps the qualifier when the query reads more than one table, so two tables' columns stay apart" do
+    original = "SELECT 1 FROM public.a a JOIN public.b b ON a.id = b.a_id WHERE (a.x = $1 AND a.y) OR " \
+               "(b.x = $2 AND b.z)"
+    expect(of(original, original)).to eq([])
+  end
+
+  it "gives a condition one shape in both queries when the winner drops a join" do
+    arms = "(o.state = $1 AND o.a) OR (o.state = $2 AND o.b)"
+    original = "SELECT o.id FROM public.orders o JOIN public.users u ON o.user_id = u.id WHERE #{arms}"
+    expect(of(original, "SELECT o.id FROM public.orders o WHERE #{arms}"))
+      .to eq([{ "condition" => "o.state = $", "repeated_across" => "OR arms", "in_original" => 2, "in_winner" => 2 }])
+  end
+
+  it "gives a condition one shape in both queries when the winner adds a table" do
+    arms = "(o.state = $1 AND o.a) OR (o.state = $2 AND o.b)"
+    winner = "SELECT o.id FROM public.orders o WHERE (#{arms}) AND " \
+             "EXISTS (SELECT 1 FROM public.users u WHERE u.id = o.user_id)"
+    expect(of("SELECT o.id FROM public.orders o WHERE #{arms}", winner)
+      .map { it.values_at("in_original", "in_winner") }).to eq([[2, 2]])
+  end
+
+  it "doesn't count a condition twice within one OR arm" do
+    expect(of("SELECT 1 FROM t WHERE (a = $1 AND a = $2) OR b = $3", "SELECT 1 FROM t")).to eq([])
   end
 
   it "keeps the list short" do

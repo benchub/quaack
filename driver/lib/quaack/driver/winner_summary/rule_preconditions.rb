@@ -12,8 +12,9 @@ module Quaack
         RULE_PRECONDITIONS = {
           "implied_predicate_removal" => "The same SELECT has an equality on a column, col = c, in the top-level AND " \
                                          "of its WHERE or an inner join's ON, beside another condition on that " \
-                                         "column, such as an IN list, a range, or a duplicate, that the equality " \
-                                         "already proves.",
+                                         "column, such as an IN list or a range, that the equality already " \
+                                         "proves, or a condition there is an exact copy of another, with the same " \
+                                         "values.",
           "transitive_predicate_copy" => "Two columns are equal in the top-level AND of a WHERE or inner-join ON, " \
                                          "and one of them has a filter, an IN list or a range against constants, " \
                                          "that the other side doesn't have yet.",
@@ -32,13 +33,14 @@ module Quaack
           "distinct_join_to_exists" => "A SELECT DISTINCT over inner joins selects only one table's columns, " \
                                        "including every column of a unique key of that table that are all not " \
                                        "null, so the join can only repeat rows that DISTINCT then removes.",
-          "cte_hoist_dedupe" => "The query has two or more CTEs with the same body, column names, and " \
-                                "materialization option, none correlated or volatile.",
+          "cte_hoist_dedupe" => "The query has two or more CTEs, at any depth, with the same body, column " \
+                                "names, and materialization option, none correlated, volatile, or recursive, " \
+                                "and no CTE in it modifies data.",
           "union_outer_filter_removal" => "A filter on a UNION subquery's output columns is one every arm's WHERE " \
                                           "already applies to the column it outputs.",
           "unused_join_removal" => "An inner join is to a table the query reads nowhere else, on a validated, " \
-                                   "enforced foreign key whose joining columns are not null, so the join can " \
-                                   "neither drop nor repeat a row.",
+                                   "enforced foreign key from the other table's columns to the joined table's " \
+                                   "key, whose columns are not null, so the join can neither drop nor repeat a row.",
           "polymorphic_key_copy" => "A child table joins a parent filtered to one Rails polymorphic type and id, " \
                                     "and the child has its own column for that type's id, which QUAACK checked " \
                                     "holds the same id in the data.",
