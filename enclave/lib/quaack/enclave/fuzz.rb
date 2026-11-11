@@ -99,16 +99,19 @@ module Quaack
       # Enumerate::Limit, enumerate in the same session, as Results. An
       # error in enumerate makes it untested and leaves fuzz's outcome as it
       # was; a cancel QUAACK didn't send is raised, from either.
+      #
+      # binding is what a $n in either query stands for (task 20261110-13),
+      # for the analyses that read constants.
       def search(conn, original, candidate, stop:, enumerate:, honour: [], seed: nil, # rubocop:disable Metrics/ParameterLists
-                 statement_timeout_ms: ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS)
+                 statement_timeout_ms: ArenaRunner::DEFAULT_STATEMENT_TIMEOUT_MS, binding: nil)
         queries = [original, candidate]
         queries.each_with_index { |sql, i| ArenaRunner::StatementCheck.check(sql, :query, i) }
         footprint = footprint(queries)
         return unsearched(:no_tables) if footprint.empty?
-        return unsearched(:not_comparable) if unjudged?(*queries)
+        return unsearched(:not_comparable) if unjudged?(*queries, binding)
 
         quietly(conn) do
-          Search.new(conn, footprint, queries, honour:, statement_timeout_ms:)
+          Search.new(conn, footprint, queries, honour:, statement_timeout_ms:, binding:)
                 .call(stop, Random.new(seed || seed(*queries)), enumerate)
         end
       end
@@ -156,9 +159,9 @@ module Quaack
         end
       end
 
-      def unjudged?(original, candidate)
-        ResultComparison::Shape.parse(candidate, :candidate)
-        ResultComparison::Shape.parse(original, :original).mode == :with_ties
+      def unjudged?(original, candidate, binding = nil)
+        ResultComparison::Shape.parse(candidate, :candidate, binding:)
+        ResultComparison::Shape.parse(original, :original, binding:).mode == :with_ties
       rescue *UNJUDGED
         true
       end
@@ -170,17 +173,17 @@ module Quaack
 
       # One search's state.
       class Search # rubocop:disable Metrics/ClassLength -- one search's state, the atoms' coverage included
-        def initialize(conn, footprint, queries, honour:, statement_timeout_ms:)
+        def initialize(conn, footprint, queries, honour:, statement_timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
           @queries = %i[original candidate].zip(queries).to_h
           @catalog = Catalog.new(conn, footprint)
-          @domains = Domains.new(conn, @catalog, queries)
+          @domains = Domains.new(conn, @catalog, queries, binding:)
           @generator = Generator.new(@catalog, @domains)
-          @session = Session.new(conn, @catalog, queries, honour:, statement_timeout_ms:)
+          @session = Session.new(conn, @catalog, queries, honour:, statement_timeout_ms:, binding:)
           @lift = Lift.new(conn, @catalog, @domains, honour:, statement_timeout_ms:)
           @coverage = Coverage.new(PredicateAtoms.extract(PgQuery.parse(queries.first),
-                                                          column_names: @catalog.schema.column_names), queries.first)
-          @compared = 0
-          @lifts = 0
+                                                          column_names: @catalog.schema.column_names),
+                                   queries.first, binding)
+          @compared = @lifts = 0
         end
 
         def call(stop, rng, limit)

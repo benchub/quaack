@@ -50,13 +50,14 @@ module Quaack
         RESTART = 500
         ILLEGAL = :illegal
 
-        def initialize(conn, catalog, queries, honour:, statement_timeout_ms:)
+        def initialize(conn, catalog, queries, honour:, statement_timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
           @conn = conn
           @queries = queries
+          @binding = binding
           @loader = Loader.new(conn, catalog, honour)
           @timeout = statement_timeout_ms
-          @mode = ResultComparison::Shape.parse(queries.first, :original).mode
-          @picks = ResultComparison::Picks.any?(*queries)
+          @mode = ResultComparison::Shape.parse(queries.first, :original, binding:).mode
+          @picks = ResultComparison::Picks.any?(*queries, binding:)
           @open = false
         end
 
@@ -139,7 +140,8 @@ module Quaack
 
         def official(candidate = @queries.last)
           original = @queries.first
-          verdict = ResultComparison.compare(ArenaRunner::Transaction.new(method(:run_query)), original:, candidate:)
+          verdict = ResultComparison.compare(ArenaRunner::Transaction.new(method(:run_query)), original:, candidate:,
+                                                                                               binding: @binding)
           verdict.rule if !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
         end
 

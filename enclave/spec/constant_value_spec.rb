@@ -120,4 +120,28 @@ RSpec.describe Quaack::Enclave::ConstantValue do
       expect(resolved.call(literal).dig(:column_ref, :fields).last.dig(:string, :sval)).to eq("total")
     end
   end
+
+  # 20261110-12's review: a negative number, and a $n past the binding's end.
+  describe "edge values" do
+    it "reads a negative integer and a negative numeric as the literals do" do
+      literal, placeholders, binding = forms("SELECT 1 FROM public.orders o WHERE o.total * -1.5 > -3",
+                                             "SELECT 1 FROM public.orders o WHERE o.total * $1 > $2",
+                                             [%w[-1.5 numeric], %w[-3 integer]])
+      facts = ->(sql, **opts) { Quaack::Enclave::Fuzz::Facts.new([tree(sql)], **opts) }
+
+      expect(Quaack::Enclave::Fuzz::Tree.constants(tree(placeholders), binding:)).to eq(%w[1 -1.5 -3])
+      expect(facts.call(placeholders, binding:).combinations).to eq(facts.call(literal).combinations)
+      expect(facts.call(placeholders, binding:).integers).to eq([1, -3])
+    end
+
+    it "reads a $n past the binding's end as no constant" do
+      binding = Quaack::Enclave::Redaction::Binding.new(sql: "SELECT 1", types: ["integer"], values: ["7"])
+      node = ->(sql) { PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt.limit_offset }
+
+      expect(described_class.from_hash(tree("SELECT 1 OFFSET $2")[:stmts].first[:stmt][:select_stmt][:limit_offset],
+                                       binding)).to be_nil
+      expect(described_class.from_node(node.call("SELECT 1 OFFSET $2"), binding)).to be_nil
+      expect(described_class.from_node(node.call("SELECT 1 OFFSET $1"), binding).ival.ival).to eq(7)
+    end
+  end
 end

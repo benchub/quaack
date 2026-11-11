@@ -41,6 +41,9 @@ module Quaack
         built(binding.values[number - 1], binding.types[number - 1])
       end
 
+      # Literal.of gives five types besides unknown. Any other type, such
+      # as the text Binding declares for an unused or untypable $n, reads
+      # as a string constant, as an untyped literal would.
       def built(value, type)
         return PgQuery::A_Const.new(isnull: true) if value.nil?
 

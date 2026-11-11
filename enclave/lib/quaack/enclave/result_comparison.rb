@@ -202,7 +202,7 @@ module Quaack
       # deparsing them is costly, so parse keeps each Shape it makes, and a
       # Shape keeps each answer and query it builds. Only answers are kept:
       # one that raises runs again the next time it's asked for.
-      class Shape
+      class Shape # rubocop:disable Metrics/ClassLength -- one query's answers and the queries it builds
         # How many Shapes parse keeps. A new one past this makes it forget
         # them all, so a long run can't grow it without bound.
         KEPT = 64
@@ -211,23 +211,26 @@ module Quaack
 
         private_class_method :new
 
-        def self.parse(sql, query)
+        # binding (a Redaction::Binding or nil) is what sql's $n stand for,
+        # for offset. Each query a Shape builds keeps the $n (20261110-13).
+        def self.parse(sql, query, binding: nil)
           sql = sql.dup.freeze unless sql.frozen?
-          @kept.fetch([sql, query]) do |key|
+          @kept.fetch([sql, query, binding]) do |key|
             @kept.clear if @kept.size >= KEPT
-            @kept[key] = new(sql, query)
+            @kept[key] = new(sql, query, binding)
           end
         end
 
         # Drops every Shape parse kept.
         def self.forget = @kept.clear
 
-        # The SQL, and :original or :candidate.
-        attr_reader :sql, :query
+        # The SQL, :original or :candidate, and the Binding, if any.
+        attr_reader :sql, :query, :binding
 
-        def initialize(sql, query)
+        def initialize(sql, query, binding)
           @sql = sql
           @query = query
+          @binding = binding
           @answers = {}
           parsed = parse
           select_stmt(parsed)
@@ -270,7 +273,7 @@ module Quaack
 
         # The top level's OFFSET when it's an integer constant, 0 when
         # there's none, and nil otherwise, such as for a parameter.
-        def offset = kept(:offset) { ResultComparison.offset_value(select_stmt(parse).limit_offset) }
+        def offset = kept(:offset) { ResultComparison.offset_value(select_stmt(parse).limit_offset, @binding) }
 
         # Whether the top level has a LIMIT and an OFFSET that might not be
         # 0, so the rows it keeps can sit inside a tie group with rows of
@@ -381,8 +384,9 @@ module Quaack
 
       # Runs the original and the candidate in transaction, an
       # ArenaRunner::Transaction, and returns a ResultComparator::Verdict.
-      def compare(transaction, original:, candidate:)
-        shapes = [Shape.parse(original, :original), Shape.parse(candidate, :candidate)]
+      # binding is what a $n in either stands for (Shape.parse).
+      def compare(transaction, original:, candidate:, binding: nil)
+        shapes = [Shape.parse(original, :original, binding:), Shape.parse(candidate, :candidate, binding:)]
         mode = shapes.first.mode
         return ResultComparator::Verdict.for(mode, :unsupported_order) if InnerCuts.refused?(transaction, shapes)
 
