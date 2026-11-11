@@ -64,10 +64,11 @@ RSpec.describe Quaack::Enclave::Fuzz::Differ do
     conn.exec(<<~SQL)
       CREATE COLLATION d.loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
       CREATE TABLE d.named (id integer PRIMARY KEY, name text COLLATE d.loose);
+      INSERT INTO d.named VALUES (1, 'a'), (2, 'B');
     SQL
-    original = "SELECT d.t.id FROM d.t WHERE d.t.g = 1 ORDER BY d.t.id"
+    original = "SELECT d.named.name FROM d.named WHERE d.named.id = 1 ORDER BY d.named.name"
 
-    expect(differing(original, ["SELECT d.t.id FROM d.t WHERE true ORDER BY d.t.id"])).to eq([])
+    expect(differing(original, ["SELECT d.named.name FROM d.named WHERE true ORDER BY d.named.name"])).to eq([])
   end
 
   it "doesn't count a query that fails, and still judges the rest" do

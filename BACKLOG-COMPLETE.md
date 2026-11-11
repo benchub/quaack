@@ -12622,3 +12622,13 @@ The not_better fate read "It passed every correctness test, but when measured ag
 - **Design:** report.
 - **Landed:** 2026-11-10 (task/20261110-5; driver only). `Report::Rewrites::FATES["not_better"]` and its `went_on` pair now say "common values". README.md and DESIGN.md quote the new sentence.
 - **Status:** done
+
+### 20261110-6. Result comparison: a nondeterministic collation doesn't refuse when no output column can hold text.
+
+On run 20261110T203510Z-42b9a494 every rewrite of a Canvas query (`GROUP BY assignment_id ... ORDER BY min(created_at)`) was dropped as `unsupported_order`, because the database has a nondeterministic collation and the original's order isn't total. Its output columns are all numbers, so the collation can't change what the comparison sees. `TotalOrder.gate` now takes the result's column type OIDs and returns `:none` when every one is collation-free (bool, int2, int4, int8, oid, float4, float8, numeric, date, time, timetz, timestamp, timestamptz, interval, uuid) and no `COLLATE` clause names a nondeterministic collation. Enclave change.
+
+- **Depends on:** 20261110-1.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison, fixture-compare (`unsupported_order`).
+- **Landed:** 2026-11-10 (committed straight to `main` at the user's say-so, with no builder/reviewer loop). `ResultComparison::TotalOrder.gate(transaction, shapes, types)`; both `ResultComparison` and `ProductionComparison` pass the types. DESIGN.md's unsupported list says so. `result_comparison_postgres_spec.rb` has the new cases, and `fuzz_differ_postgres_spec.rb`'s refusal case now uses a text column. Not mutation-tested and not reviewed.
+- **Status:** done

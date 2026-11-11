@@ -886,6 +886,31 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
       end
 
+      describe "when no output column is text-like" do
+        let(:original) { "SELECT grp, count(*) AS n FROM words GROUP BY grp ORDER BY min(id)" }
+
+        before { conn.exec("CREATE TABLE words (id integer, grp integer, w text COLLATE loose)") }
+
+        it "compares as usual, though the original's order has ties" do
+          rows = [[1, 1, "a"], [2, 2, "A"], [3, 3, "b"]].map do |id, grp, w|
+            Quaack::Enclave::ArenaRunner::FixtureRow.new(table: words, columns: %w[id grp w],
+                                                         values: [id.to_s, grp.to_s, w])
+          end
+          candidate = "SELECT grp, count(*) AS n FROM words GROUP BY grp ORDER BY min(id) / 2"
+
+          expect(fields(compare(original, original, rows:))).to include(match: true)
+          expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+        end
+
+        it "still refuses when the query names one" do
+          rows = word_rows("w")
+          candidate = "SELECT grp, count(*) AS n FROM words WHERE w COLLATE loose IS NOT NULL " \
+                      "GROUP BY grp ORDER BY min(id)"
+
+          expect(fields(compare(original, candidate, rows:))).to include(rule: :unsupported_order)
+        end
+      end
+
       it "refuses when the query names one" do
         conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
         original = "SELECT w COLLATE loose AS w FROM words ORDER BY grp, id LIMIT 1"

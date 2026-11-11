@@ -176,7 +176,7 @@ module Quaack
       def positions(run, original_shape, candidate_shape, types)
         catalog = Catalog.new(run.connection)
         shapes = [original_shape, candidate_shape]
-        gate = ResultComparison::TotalOrder.gate(catalog, shapes)
+        gate = ResultComparison::TotalOrder.gate(catalog, shapes, types)
         return gate unless gate == :none
 
         tiebreaker = ResultComparison::Tiebreaker

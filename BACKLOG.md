@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261110-6 (result comparison: a nondeterministic collation doesn't refuse when no output column can hold text).
 
 
 ## How this file works.
@@ -811,6 +812,26 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Depends on:** None.
 - **Came from:** The review of 20261110-1, 2026-11-10.
 - **Design:** result-comparison.
+- **Status:** todo
+
+### 20261110-7. Report: name the check behind an `unsupported_order` refusal.
+
+On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without comparing results, because the order of the original query's rows can't be checked", for a refusal that came from the original's `min`/`max` pick check on a fixture with `0` and `-0` (see 20261110-8), nothing to do with order. Several different checks end in `unsupported_order`: the collation gate, a left-out column or hidden tie, an inner cut (`InnerCuts`), `FETCH ... WITH TIES`, a pick check (`Picks`, `PickChecks`), a pick that can't be forced, a failed forced or checked run, a volatile sort key, a cut tie (`CutTies`), and, in `ProductionComparison`, a timed-out or too-large run. Give the verdict a `reason` from a fixed enum of those, set where each is raised, store it in the round and tested entries (`rewrite_round_N.json`, `rewrite_tested_N.json`), carry it through the protocol, and have the report's sentence for the fate name it, in plain words with no values. A reason is a constant, never text from Postgres or the query. Test first with one planted refusal per check, and check with sentinel values that none reaches the report. Update DESIGN.md and the report docs. Enclave, protocol, and driver change; the enclave and protocol parts go on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison, report.
+- **Answers (the user, 2026-11-10):** Name the check in the report sentence, from a fixed enum, with no values.
+- **Status:** todo
+
+### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse.
+
+`Picks` checks the original's `min` and `max` (EXTREMES) and GROUP BY keys for values Postgres calls equal that print differently, and refuses when one has a choice. For `double precision`, `0` and `-0` are equal and print differently, so a fixture with both in one group makes `max(score)` refuse the original with `unsupported_order`. Reproduced: `SELECT a, max(score) FROM s GROUP BY a` over scores `0` and `-0` refuses; `1` and `2`, or `0` and `0`, match. On run 20261110T232744Z-74d8049f this probably dropped Sleepy Pike (round 2's fixture isn't kept, so it's not proven). The user decided (2026-11-10): treat `0` and `-0` as the same for the pick check, as float noise, which DESIGN.md already calls unsupported. Do it in `PickChecks` (and the comparator if it prints `-0` differently), for float4 and float8 only. Don't loosen the check for numeric (`10` vs `10.0`), jsonb, or text. Test first with the repro, and a `10` vs `10.0` numeric case that must still refuse. Check ProductionComparison too. Update DESIGN.md. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** The user's run, 2026-11-10.
+- **Design:** result-comparison (Picks).
+- **Answers (the user, 2026-11-10):** Treat `0` and `-0` as the same for the pick check.
 - **Status:** todo
 
 ## New transform rules (2026-10-18).

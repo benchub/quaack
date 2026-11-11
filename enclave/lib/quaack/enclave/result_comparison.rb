@@ -458,7 +458,7 @@ module Quaack
       # column left out of the tiebreaker in a query with a cut.
       def checked_positions(transaction, original_shape, candidate_shape, types)
         shapes = [original_shape, candidate_shape]
-        gate = TotalOrder.gate(transaction, shapes)
+        gate = TotalOrder.gate(transaction, shapes, types)
         return gate unless gate == :none
 
         positions = Tiebreaker.positions(types, Tiebreaker.catalog_orderable(transaction, types))
