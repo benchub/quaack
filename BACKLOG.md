@@ -837,6 +837,24 @@ From the review of 20261010-7 (minor). `enclave/spec/literals_users_spec.rb` mat
 - **Design:** literals.
 - **Status:** todo
 
+### 20261110-19. claude_cli: keep user-level Claude Code settings out of each ask.
+
+From the review of 20261010-18 (minor). The command runs in a private temp dir, so project settings and CLAUDE.md stay out, but user-level ones still apply: `~/.claude` settings hooks run (a UserPromptSubmit hook receives the prompt), user plugins load, and `~/.claude/CLAUDE.md` and auto-memory reach the model as context even with `--system-prompt-file`. Prompts carry only shapes, so this isn't a boundary leak, but it can steer replies or run the operator's code on every ask. Check whether `--setting-sources ""` (or similar) also stops user CLAUDE.md and memory, and add it to the default command; otherwise document `--bare` with an API key. Verify with a real `claude` run the user approves.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261010-18, 2026-11-10.
+- **Design:** LLM client.
+- **Status:** todo
+
+### 20261110-20. LLM settings: small regressions from the claude_cli refactor.
+
+From the review of 20261010-18 (minor). For copilot_cli, a non-array template, a non-string element, or a missing `{model}` now says "must be an argv array with a {model} placeholder" instead of naming both placeholders. `command_template?` now rejects an empty string only in the first element, so `["copilot", "", "{prompt_file}", "{model}"]` is accepted where it used to fail; no spec covers it. No spec covers a `QUAACK_LLM_PROVIDER=copilot_cli` override on a claude_cli block's template.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261010-18, 2026-11-10.
+- **Design:** LLM client.
+- **Status:** todo
+
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
 
 ## New transform rules (2026-10-18).
