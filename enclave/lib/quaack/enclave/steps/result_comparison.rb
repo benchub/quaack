@@ -20,7 +20,9 @@ module Quaack
       #   "verdicts"      { "rewrite_<n>" => { set name => { "result" =>
       #                   "pass" | "fail" | "partial", "rule" => name or nil,
       #                   "reason" => the check an unsupported_order
-      #                   refusal came from, or nil } } }
+      #                   refusal came from, or nil, "float_noise" => true
+      #                   when a failure matched with float columns
+      #                   rounded to five significant digits, else false } } }
       #   "discarded"     the candidates with any failing verdict: a real
       #                   divergence on production data, which selection drops
       #                   and the report shows prominently

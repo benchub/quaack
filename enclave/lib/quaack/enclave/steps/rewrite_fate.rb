@@ -70,6 +70,10 @@ module Quaack
       #   production_not_compared  result-comparison dropped it without comparing (rule
       #                            unsupported_order), with the reason of the
       #                            first of its verdicts that has one
+      #   A production_mismatch or production_not_compared fate has
+      #   float_noise true when every failing verdict has float_noise true
+      #   (ProductionComparison: it matched with float columns rounded to
+      #   five significant digits), and nil otherwise.
       #   below_top_three          a label beat the original and fell
       #                            outside selection's top three
       #   footprint_tie            a label beat the original and lost
@@ -95,7 +99,8 @@ module Quaack
       # Trust boundary. Everything this returns is one of this module's own
       # constants: a fate from FATES, a rule from MISMATCHES, FAILURES,
       # REFUSALS, or PRODUCTION_FAILURES, a round from ROUNDS, an after from AFTER, and a
-      # reason from Protocol::RefusalReasons::NAMES. A stored value that
+      # reason from Protocol::RefusalReasons::NAMES, and float_noise true or
+      # nil, never the stored value. A stored value that
       # isn't on its list goes out as nil, never as it is. The one
       # exception is an fk_cycle's cycle: table names, which are schema,
       # each the schema_subset entry's own (the catalog's relations). A
@@ -139,7 +144,8 @@ module Quaack
         # selection's reasons for a label that result-comparison didn't drop, strongest first.
         EXCLUDED = %w[below_top_three footprint_tie not_better].freeze
 
-        BLANK = { "fate" => nil, "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "reason" => nil }.freeze
+        BLANK = { "fate" => nil, "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "reason" => nil,
+                  "float_noise" => nil }.freeze
 
         REFUSED = "unsupported_order"
 
@@ -236,15 +242,21 @@ module Quaack
 
         # result-comparison's fates, from the rewrite's failing verdicts.
         def production(rewrite, context)
-          failing = failing_rules(context.verdicts[rewrite])
+          verdicts = context.verdicts[rewrite]
+          failing = failing_rules(verdicts)
           mismatch = MISMATCHES.find { failing.include?(it) }
-          return fate("production_mismatch", rule: mismatch) if mismatch
+          return fate("production_mismatch", rule: mismatch, float_noise: float_noise(verdicts)) if mismatch
           return fate("production_timed_out") if failing.include?("timed_out")
           return if failing.empty?
 
           rule = PRODUCTION_FAILURES.find { failing.include?(it) }
-          fate("production_not_compared", rule:, reason: production_reason(rule, context.verdicts[rewrite]))
+          fate("production_not_compared", rule:, reason: production_reason(rule, verdicts),
+                                          float_noise: float_noise(verdicts))
         end
+
+        # true when every failing verdict matched with float columns rounded
+        # (ProductionComparison's float_noise), else nil.
+        def float_noise(verdicts) = (true if failing(verdicts).all? { it["float_noise"] == true })
 
         def failing_rules(verdicts) = failing(verdicts).filter_map { it["rule"] }
 

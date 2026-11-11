@@ -707,6 +707,34 @@ RSpec.describe Quaack::Enclave::Egress do
       end
     end
 
+    # Task 20261111-192302-1: float_noise, whether a production failure
+    # matched with float columns rounded, is true, false, or nil.
+    describe "a rewrite's float_noise" do
+      def report_with(entry)
+        rewrite = { "rewrite" => "rewrite_1", "plan" => nil }.merge(entry)
+        { type: :report, original_plan: [plan_node], rewrites: [rewrite], labels:, index_sources: }
+      end
+
+      it "sends true, false, or nil, or none" do
+        [true, false, nil].each do |value|
+          expect(parsed(report_with("float_noise" => value))["rewrites"].first).to include("float_noise" => value)
+        end
+        expect(parsed(report_with({}))["rewrites"].first).not_to have_key("float_noise")
+      end
+
+      [["a value", { "float_noise" => EGRESS_SENTINEL }],
+       ["a value under a Symbol key", { float_noise: EGRESS_SENTINEL }],
+       ["the word true", { "float_noise" => "true" }], ["a number", { "float_noise" => 1 }]].each do |what, planted|
+        it "refuses #{what}, without quoting it" do
+          refusal = "a value in this report message has a float_noise that isn't true, false, or nil"
+          expect { egress.serialize(report_with(planted)) }.to raise_error(described_class::Error, refusal) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+        end
+      end
+    end
+
     # Task 20261012-2: a fuzz disproof's sizes are [schema, table, rows],
     # each table one the report's queries name, and trials a count
     # (Protocol::FuzzResult, FuzzSizes).
