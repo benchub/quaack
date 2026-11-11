@@ -127,6 +127,28 @@ RSpec.describe Quaack::Enclave::RewriteRedaction do
     expect([error.message, error.inspect].join).not_to include(sentinel)
   end
 
+  # 20261020-6: pg_query's location is kept only in 1..sql.length + 1. The
+  # stubbed PgQuery.parse is an edge; it raises with the location under test.
+  describe "the parse position's range" do
+    let(:sql) { "SELECT o.id FROM orders o WHERE o.status = = '#{sentinel}'" }
+
+    def position_for(location)
+      allow(PgQuery).to receive(:parse).and_raise(PgQuery::ParseError.new("bad #{sentinel}", "f.c", 1, location))
+      error = refusal(sql)
+      expect(error.rule).to eq("redact_rewrite_unparsable")
+      error.position
+    end
+
+    it "drops a location past the end or before the start" do
+      expect([position_for(sql.length + 5), position_for(sql.length + 2), position_for(0), position_for(-3)])
+        .to eq([nil, nil, nil, nil])
+    end
+
+    it "keeps the boundary locations 1 and sql.length + 1" do
+      expect([position_for(1), position_for(sql.length + 1)]).to eq([1, sql.length + 1])
+    end
+  end
+
   it "refuses more than one statement" do
     error = refusal("SELECT o.id FROM orders o WHERE o.status = 'a'; SELECT '#{sentinel}'")
     expect([error.rule, error.position]).to eq(["redact_rewrite_not_one_statement", nil])
