@@ -1376,6 +1376,8 @@ RSpec.describe Quaack::Driver::Report do
                           "because " \
                           "the order of the original query's rows can't be checked, so"))
         expect(fate("production_not_compared")).to include(esc("on the real data, so QUAACK dropped it."))
+        expect(fate("production_not_compared", rule: "too_many_rows"))
+          .to include(esc("on the real data, because the original query returned too many rows to check, so"))
       end
 
       it "says how a rewrite that passed every test lost" do

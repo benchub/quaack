@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261008-53
 - 20261110-14
+- 20261010-7
 
 
 ## How this file works.
@@ -225,16 +226,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 - **Landed so far:** 2026-10-09 (task/20261009-33): a diagnostic (`s1_load_rule` and `s1_rows` on each tested rewrite's `rewrite_test` message) to tell whether S1 failed to load or loaded and returned nothing. The caution's scope is 20261009-40. Minor finding: 20261009-46.
 - **Trimmed 2026-10-14 after 20261012-4:** 20261012-4 removed ScenarioTests, the vacuity guard and that diagnostic (`s1_load_rule`, `s1_rows`, `VacuityDiagnostic`), so the vacuity guard can't be the cause any more, and "a run with the diagnostic" can't happen. What's left: once the user runs 0.1.35 on the real schema, check whether its ranked rewrites still show every atom untested under fuzz's coverage (`Fuzz::Coverage`). `Fuzz::Reach`'s worst case (a count threshold or a volatile function) or a cut copy that won't deparse (`Fuzz::Uncut`) would do that. If they do, find the cause and fix it, as in steps 1 to 4 above, with coverage in place of the vacuity guard.
 - **Status:** todo (waits on the user's next real-schema run)
-
-### 20261010-7. Result comparison and literals: two small gaps from the review of 20261004-92 and -94.
-
-- The `literals_already_used` pattern (`USERS`) lists the steps that store entries comparing literal sets by name, but `rewrite_prune`, `rewrite_check`, `index_test` and `index_rank` also load `literal_sets` and aren't in it. Harmless today (they write no entries compared across sets); add a spec that fails when a step that writes such an entry isn't listed, or list them.
-- A full-run row-cap refusal is reported with the same rule as a timeout (`unsupported_order`), so the operator can't tell the two apart. Give the report a way to say which (a field or a separate note), if it matters to them.
-
-- **Depends on:** 20261004-92, 20261004-94.
-- **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
-- **Design:** result comparison, literals.
-- **Status:** todo
 
 ### 20261010-18. LLM adapter for the Claude Code CLI.
 

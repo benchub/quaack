@@ -122,7 +122,7 @@ module Quaack
         UNTESTED = [*FAILURES, *REFUSALS, Protocol::RewriteBudget::RULE].freeze
 
         # result-comparison's failing rules that compare nothing.
-        PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
+        PRODUCTION_FAILURES = %w[timed_out unsupported_order too_many_rows].freeze
 
         ROUNDS = [1, 2, 3].freeze
         AFTER = %w[rewrite-test counterexamples measurement].freeze

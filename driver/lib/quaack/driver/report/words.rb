@@ -32,6 +32,7 @@ module Quaack
         # Why a test ended without comparing results. Any other rule is a
         # statement that failed on the test database.
         FAILURES = { "unsupported_order" => "the order of the original query's rows can't be checked",
+                     "too_many_rows" => "the original query returned too many rows to check",
                      "statement_timeout" => "a statement timed out",
                      "statement_canceled" => "a statement was canceled",
                      "original_failed" => "the original query failed on the test data",

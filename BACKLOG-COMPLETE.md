@@ -12716,3 +12716,13 @@ Carried from 20261003-3. It sets the per-commit check's wall time. See whether r
 - **Came from:** 20261003-3, 2026-10-08.
 - **Design:** none (CLAUDE.md Development).
 - **Status:** dropped (the user, 2026-11-10): stale. The root spec suite now takes about 11 minutes; the enclave suite, about 20, sets the per-commit check's wall time.
+
+### 20261010-7. Result comparison and literals: two small gaps from the review of 20261004-92 and -94.
+
+- The `literals_already_used` pattern (`USERS`) lists the steps that store entries comparing literal sets by name, but `rewrite_prune`, `rewrite_check`, `index_test` and `index_rank` also load `literal_sets` and aren't in it. Harmless today (they write no entries compared across sets); add a spec that fails when a step that writes such an entry isn't listed, or list them.
+- A full-run row-cap refusal is reported with the same rule as a timeout (`unsupported_order`), so the operator can't tell the two apart. Give the report a way to say which (a field or a separate note), if it matters to them.
+
+- **Depends on:** 20261004-92, 20261004-94.
+- **Came from:** The review of 20261004-92 and -94, 2026-10-10 (minor).
+- **Design:** result comparison, literals.
+- **Status:** done (2026-11-10). Item 1: `enclave/spec/literals_users_spec.rb` reads every step that loads the literal sets and fails when an entry it writes neither matches `Literals::USERS` nor is listed there as compared by nothing across sets. Item 2: a full run past the row cap now fails with its own rule, `too_many_rows` (fate `production_not_compared`), which the report words as the original query returning too many rows to check.

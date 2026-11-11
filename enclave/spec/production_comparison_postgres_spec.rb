@@ -149,6 +149,7 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
 
       # 20261004-94: the runs without a LIMIT hold a hash for every row, bounded by the timeout
       # and not by memory, so a row cap refuses a result that's too big.
+      # 20261010-7: with its own rule, so the report can tell it from a timeout.
       it "refuses, rather than hold the rows of a run without a LIMIT past the row cap" do
         candidate = "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a LIMIT 3"
         run = -> { described_class.compare(connection: conn, original:, candidate:, params: [], timeout_ms: 5_000) }
@@ -158,7 +159,7 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         stub_const("Quaack::Enclave::ProductionComparison::HashedRuns::FULL_RUN_ROW_CAP", 8)
         refused = run.call.then { [it.result, it.rule] }
 
-        expect([passed, refused]).to eq([["pass", nil], %w[fail unsupported_order]])
+        expect([passed, refused]).to eq([["pass", nil], %w[fail too_many_rows]])
         expect([conn.transaction_status, conn.exec("SELECT 1").getvalue(0, 0)]).to eq([PG::PQTRANS_IDLE, "1"])
       end
 
