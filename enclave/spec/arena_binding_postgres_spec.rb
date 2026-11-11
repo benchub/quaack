@@ -295,6 +295,66 @@ RSpec.describe "the arena's queries on the $n form" do
       expect([rows, handed]).to eq([[["3.0"]], bound])
     end
 
+    it "leaves the types to Postgres when the PREPARE fails, raising nothing" do
+      bound = Quaack::Enclave::Redaction::Binding.new(sql: "SELECT $1", types: ["integer"], values: ["7"])
+
+      expect(typed_class.new(bound).params(conn, "SELECT no_such_column, $1")).to eq([{ value: "7", type: 0 }])
+    end
+
+    it "declares an unused untyped $n text up front, so one PREPARE does" do
+      sql = "SELECT 1 + $1"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: %w[integer unknown], values: %w[1 z])
+      prepares = []
+      allow(conn).to(receive(:exec).and_wrap_original do |m, q|
+        prepares << q if q.start_with?("PREPARE")
+        m.call(q)
+      end)
+
+      expect(typed_class.new(bound).params(conn, sql)).to eq([{ value: "1", type: 23 }, { value: "z", type: 25 }])
+      expect(prepares.size).to eq(1)
+    end
+
+    it "fails a query in an aborted transaction with an ArenaRunner::Error that carries only its SQLSTATE" do
+      sql = "SELECT 2 * $1 AS n"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+      runner = Quaack::Enclave::ArenaRunner.new(conn, binding: bound)
+
+      error = runner.with_fixture([]) do |tx|
+        expect { tx.query("SELECT 1 / 0") }.to raise_error(Quaack::Enclave::ArenaRunner::Error)
+        tx.query(sql)
+      rescue Quaack::Enclave::ArenaRunner::Error => e
+        e
+      end
+
+      expect(error).to have_attributes(rule: :query_failed, sqlstate: "25P02", index: 1)
+      expect(error.cause).to be_nil
+    end
+
+    # A Postgres error reading the types back, such as a lost connection's,
+    # forced here at the connection, mustn't leave raw: the query runs
+    # with its types left to Postgres, and fails through the runner's own
+    # handling.
+    it "fails the query through the runner, with only its SQLSTATE, when reading the types back fails" do
+      sql = "SELECT 2 * $1 AS n"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+      allow(conn).to receive(:exec_params).and_wrap_original do |m, q, *rest|
+        raise PG::ConnectionBad, "gone" if q == typed_class::TYPES_SQL
+
+        m.call(q, *rest)
+      end
+
+      runner = Quaack::Enclave::ArenaRunner.new(conn, binding: bound)
+
+      # Untyped, 2 * $1 takes the integer's type, and 1.5 fails it.
+      expect do
+        runner.with_fixture([]) do |tx|
+          tx.query(sql)
+        end
+      end.to raise_error(Quaack::Enclave::ArenaRunner::Error) { |e|
+               expect([e.rule, e.sqlstate, e.cause]).to eq([:query_failed, "22P02", nil])
+             }
+    end
+
     it "gives no parameters with no binding" do
       expect(typed_class.new(nil).params(conn, "SELECT 1")).to eq([])
     end

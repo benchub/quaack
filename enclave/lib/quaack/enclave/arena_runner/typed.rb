@@ -20,8 +20,11 @@ module Quaack
       # Each query's types are worked out once, by a PREPARE whose types are
       # read back from pg_prepared_statements as OIDs, then deallocated, and
       # kept by the query's text. Inside a transaction Binding#prepare runs
-      # in a savepoint. When the PREPARE fails, the query's types are left
-      # to Postgres (OID 0), so the query itself fails where it would.
+      # in a savepoint. When the PREPARE or the read fails, as in an aborted
+      # transaction or on a lost connection, the query's types are left to
+      # Postgres (OID 0) and nothing is raised, so the query itself fails
+      # where it would, through the caller's own error handling (an
+      # ArenaRunner::Error with only its SQLSTATE).
       #
       # Trust boundary: the values are the literals, sent only as
       # parameters, never in the SQL's text, and kept in the enclave.
@@ -53,7 +56,7 @@ module Quaack
         def oids(conn, sql)
           declared(sql).then { Redaction::Binding.new(sql:, types: it, values: []).prepare(conn, NAME) }
           read(conn)
-        rescue Redaction::Error
+        rescue Redaction::Error, PG::Error
           Array.new(@binding.values.size, 0)
         ensure
           deallocate(conn)
