@@ -12832,3 +12832,15 @@ Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized 
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261011-8`. `whos` renders afresh each call; mutation of `index_proposers.rb` turns the named example red. Reviewed with no findings. Spec-only, so it isn't on the unreleased list.
+
+### 20261011-10. Rewrite budget: minors from 20261010-53.
+
+(1) DESIGN.md's budget paragraph (rewrite-test, ~line 1149) doesn't say a running statement can overrun the deadline by up to its 10 s `statement_timeout`: add one clause. (3) Counterexample rounds have no overall budget (only the 10 s per statement). DESIGN.md says they "load only the LLM's inserts and have no such budget", but not why that's fine; add that, or add a budget if rounds can pile up.
+
+Trimmed 2026-10-14 after 20261012-4: removed (2), the burndown losing an out-of-time rewrite-test's fixture loads and retries. rewrite-test no longer loads scenarios, and an out-of-time rewrite records fuzz's record with `not_tested_in_time` 1 (`RewriteBurndown#record_fuzz`).
+
+- **Depends on:** 20261010-53 (landed).
+- **Came from:** The review of 20261010-53, 2026-10-11 (minor).
+- **Design:** rewrite-test, counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261011-10`. DESIGN.md only. Item 1: a statement running at the deadline can overrun it by up to 10 s. Item 3, decided by the user: document that a counterexample round has no time budget of its own, bounded only by the CLI input caps and the LLM reply size, and that a huge reply is unsupported in v1. A real per-round cap is filed as 20261111-220000-1. Docs only, so not on the unreleased list.

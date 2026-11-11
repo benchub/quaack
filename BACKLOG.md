@@ -273,16 +273,7 @@ Reworded 2026-10-14 after 20261012-4: the vacuity guard and its S1 reach became 
 
 ### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale. Done, see BACKLOG-COMPLETE.md.
 
-### 20261011-10. Rewrite budget: minors from 20261010-53.
-
-(1) DESIGN.md's budget paragraph (rewrite-test, ~line 1149) doesn't say a running statement can overrun the deadline by up to its 10 s `statement_timeout`: add one clause. (3) Counterexample rounds have no overall budget (only the 10 s per statement). DESIGN.md says they "load only the LLM's inserts and have no such budget", but not why that's fine; add that, or add a budget if rounds can pile up.
-
-Trimmed 2026-10-14 after 20261012-4: removed (2), the burndown losing an out-of-time rewrite-test's fixture loads and retries. rewrite-test no longer loads scenarios, and an out-of-time rewrite records fuzz's record with `not_tested_in_time` 1 (`RewriteBurndown#record_fuzz`).
-
-- **Depends on:** 20261010-53 (landed).
-- **Came from:** The review of 20261010-53, 2026-10-11 (minor).
-- **Design:** rewrite-test, counterexamples.
-- **Status:** todo
+### 20261011-10. Rewrite budget: minors from 20261010-53. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261011-11. Rewrite dedupe: normalize the stated assumptions, and say what happens to the same SQL with different assumptions.
 
@@ -883,4 +874,13 @@ From the review of 20261010-52 (minor). A set-operation SelectStmt keeps its `la
 - **Depends on:** 20261010-52 (landed).
 - **Came from:** 20261010-52.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261111-220000-1. Counterexample rounds: cap the work in a round.
+
+From 20261011-10 item 3. A counterexample round has no time budget of its own. A rewrite gets at most 3 rounds and each arena statement has a 10 s `statement_timeout`, but nothing caps how many inserts a round takes, and each insert loads in every load order and again for each untested atom (`Counterexamples.compare`, `ResultComparison.compare_in_load_orders`). The value evaluation of each insert has no timeout of its own (DESIGN.md, value evaluation). DESIGN.md now calls an unusually large LLM reply unsupported in v1. After v1, add a cap: either on inserts per round (a clean refusal past it) or a wall-clock budget per round like `Protocol::RewriteBudget`, and a timeout on the value evaluation. Test with real Postgres, red first. Enclave change; it goes on "Unreleased enclave changes". Not for v1 (the user chose to document the limit, 2026-11-11).
+
+- **Depends on:** None.
+- **Came from:** 20261011-10.
+- **Design:** counterexamples.
 - **Status:** todo
