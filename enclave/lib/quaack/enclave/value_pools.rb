@@ -4,6 +4,7 @@ require "pg"
 require "pg_query"
 require_relative "arena_schema"
 require_relative "predicate_atoms"
+require_relative "constant_value"
 require_relative "value_pools/category"
 require_relative "value_pools/pooled"
 
@@ -61,11 +62,15 @@ module Quaack
       module_function
 
       # probes, by atom index, are the probes to sort with (see probes).
-      def build(conn, parse, atoms, schema, probes = {})
+      # binding (a Redaction::Binding, or nil) is what parse's $n stand
+      # for: each $n in an atom reads as its literal (ConstantValue), so
+      # the pools are the literal form's, and Probe's own $1 is the only
+      # parameter (task 20261110-15).
+      def build(conn, parse, atoms, schema, probes = {}, binding: nil) # rubocop:disable Metrics/ParameterLists
         atoms.each_with_index.filter_map do |atom, i|
           next unless pooled?(atom)
 
-          [i, pool(conn, parse, atom, schema, probes[i])]
+          [i, pool(conn, parse, atom, schema, probes[i], binding)]
         end.to_h
       end
 
@@ -89,8 +94,8 @@ module Quaack
       # for a row comparison, its leading elements' comparison with the tie
       # made NULL. (a, b) <= (x, y) reads NULLIF(a, x) <= x: true when
       # a < x, false when a > x, and NULL when a = x, where b decides.
-      def node(parse, atom)
-        node = PredicateAtoms.node(parse, atom)
+      def node(parse, atom, binding = nil)
+        node = Sides.bound(PredicateAtoms.node(parse, atom), binding)
         atom.kind == :row_comparison ? lead(node.a_expr) : node
       end
 
@@ -118,10 +123,10 @@ module Quaack
         BOUNDARIES.find { |pattern, _| pattern.match?(type.delete_prefix("pg_catalog.")) }&.last || []
       end
 
-      def pool(conn, parse, atom, schema, probe = nil)
+      def pool(conn, parse, atom, schema, probe = nil, binding = nil) # rubocop:disable Metrics/ParameterLists
         column = atom.columns[0]
         col = schema.column(column.table, column.name)
-        node = node(parse, atom)
+        node = node(parse, atom, binding)
         sorted(conn, node, col, probe || Probe.new(conn, node, col)) => { satisfying:, failing:, boundaries: }
         Pool.new(column:, type: col.type, oid: col.oid, nullable: col.nullable, satisfying:, failing:, boundaries:)
       end
@@ -235,6 +240,35 @@ module Quaack
         end
 
         def param = PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: 1))
+
+        # A copy of node with each $n binding holds replaced by its
+        # constant (ConstantValue), or node itself with no binding. The
+        # values are the literals, which stay in the enclave, as the
+        # literal form's do.
+        def bound(node, binding)
+          return node unless binding
+
+          copy = copy(node)
+          replace_params(copy, binding)
+          copy
+        end
+
+        def replace_params(node, binding)
+          case node
+          when Google::Protobuf::RepeatedField
+            node.each_with_index { |c, i| (k = constant(c, binding)) ? node[i] = k : replace_params(c, binding) }
+          when Google::Protobuf::MessageExts
+            node.class.descriptor.each do |field|
+              value = field.get(node)
+              (k = constant(value, binding)) ? field.set(node, k) : replace_params(value, binding)
+            end
+          end
+        end
+
+        def constant(node, binding)
+          const = node.is_a?(PgQuery::Node) && node.param_ref && ConstantValue.from_node(node, binding)
+          const && PgQuery::Node.new(a_const: const)
+        end
 
         def column_node?(value) = value.is_a?(PgQuery::Node) && value.column_ref
 

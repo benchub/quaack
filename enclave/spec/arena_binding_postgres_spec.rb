@@ -183,4 +183,46 @@ RSpec.describe "the arena's queries on the $n form" do
       expect(values(sql)).not_to include("33.3333333333333333")
     end
   end
+
+  # Task 20261110-15: ValuePools reads a $n side of a pooled atom through
+  # the binding, so a column's pool, and its literal's neighbours, are the
+  # same on both forms.
+  describe "ValuePools on the $n form" do
+    let(:conn) { racetrack_and_arena.arena.connection }
+
+    before { conn.exec("CREATE SCHEMA fx; CREATE TABLE fx.items (id int PRIMARY KEY, points numeric, name text)") }
+    after { conn.exec("DROP SCHEMA IF EXISTS fx CASCADE") }
+
+    def values(sql, column, binding = nil)
+      footprint = Quaack::Enclave::Fuzz.send(:footprint, [sql])
+      catalog = Quaack::Enclave::Fuzz::Catalog.new(conn, footprint)
+      Quaack::Enclave::Fuzz::Domains.new(conn, catalog, [sql], binding:).values(footprint.first, column)
+    end
+
+    it "gives a compared column the same values as the literal form" do
+      literal = "SELECT i.id FROM fx.items i WHERE i.points >= 7.5 AND i.name LIKE 'ab%'"
+      sql = "SELECT i.id FROM fx.items i WHERE i.points >= $1 AND i.name LIKE $2"
+      bound = binding_for(sql, [%w[7.5 numeric], %w[ab% unknown]])
+
+      expect(values(sql, "points", bound)).to eq(values(literal, "points"))
+      expect(values(sql, "name", bound)).to eq(values(literal, "name"))
+      expect(values(sql, "points", bound)).to include("7.5", "6.5", "8.5")
+      expect(values(sql, "name", bound)).to include("AB%", "ab")
+    end
+
+    it "sorts each pool's values the same way, the probe's $1 apart from the query's" do
+      pools = lambda do |sql, binding = nil|
+        parse = PgQuery.parse(sql)
+        schema = Quaack::Enclave::Fuzz::Catalog.new(conn, Quaack::Enclave::Fuzz.send(:footprint, [sql])).schema
+        atoms = Quaack::Enclave::PredicateAtoms.extract(parse, column_names: schema.column_names)
+        Quaack::Enclave::ValuePools.build(conn, parse, atoms, schema, binding:).transform_values(&:to_h)
+      end
+      sql = "SELECT i.id FROM fx.items i WHERE i.points * $1 >= $2 AND i.name = $3"
+      bound = binding_for(sql, [%w[2 integer], %w[7.5 numeric], %w[ab unknown]])
+      literal = pools.call("SELECT i.id FROM fx.items i WHERE i.points * 2 >= 7.5 AND i.name = 'ab'")
+
+      expect(pools.call(sql, bound)).to eq(literal)
+      expect(literal.values.map { it[:satisfying] }).to all(be_any)
+    end
+  end
 end
