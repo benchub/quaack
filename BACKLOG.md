@@ -899,3 +899,12 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Status:** todo.
 - **What's wrong:** `ProductionComparison` hashes each row from `ResultComparator::Values.key`, which rounds floats with `%.7e`. Two runs of the original whose float column differs only in the last bit (such as an `avg` that met its rows in another order) can hash differently when the two values sit on either side of a rounding boundary. 20261111-185500-1 fixed this for fixture-compare, whose comparator now looks for a partner in other buckets, but the racetrack only keeps hashes. There, the original's tiebreaker runs then disagree, and with no LIMIT or OFFSET it refuses `unstable_original`; with one, the cut-tie check may refuse `cut_tie`, and a candidate run can fail `value` or `multiset`. Rare, and it always errs toward refusal or mismatch, never a false pass.
 - **Do:** Decide whether it's worth fixing on hashed rows, or list it in DESIGN.md as a known way to discard a good candidate.
+
+### 20261111-195140-1. Tidy-ups from the review of 20261111-185500-1.
+
+- **Depends on:** None.
+- **Design:** DESIGN.md, result-comparison.
+- **Status:** todo.
+- **Do:**
+  1. In `enclave/lib/quaack/enclave/result_comparison/cut_ties.rb`, `unstable?` and its comment sit between `needed?`'s comment and its `def`, so `needed?` reads as uncommented and `unstable?`'s comment opens with `needed?`'s text. Move `unstable?` above `needed?`'s comment block.
+  2. DESIGN.md's `unstable_original` bullet doesn't say that on the racetrack, hashed rows can still refuse `unstable_original` from float noise at a rounding boundary (see 20261111-192302-1). Add that.
