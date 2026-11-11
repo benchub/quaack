@@ -4599,10 +4599,15 @@ RSpec.describe Quaack::Driver::Report do
   end
 
   it "writes the report to a file" do
+    # A clock that moves a second on every read, so the example can't pass
+    # by luck if the two renders it compares ever read the clock again.
+    tick = Time.utc(2026, 10, 21, 17, 58, 51)
+    allow(Time).to receive(:now) { tick += 1 }
     Dir.mktmpdir do |dir|
       path = File.join(dir, "r.html")
-      expect(described_class.write(payload, run_id: "RUN-1", path:)).to eq(path)
-      expect(File.read(path)).to eq(html)
+      at = Time.utc(2026, 10, 21, 17, 58, 51)
+      expect(described_class.write(payload, run_id: "RUN-1", path:, generated_at: at)).to eq(path)
+      expect(File.read(path)).to eq(render(payload, generated_at: at))
     end
   end
 end
