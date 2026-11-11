@@ -1161,7 +1161,27 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       # The round's rule is stored, so the report can tell a mismatch from
       # a candidate that failed to run (20261001-17).
       expect(stored.read("rewrite_round_1"))
-        .to eq("round" => 1, "evidence" => true, "rule" => "row_count", "covered" => [], "fixture_loads" => 4)
+        .to eq("round" => 1, "evidence" => true, "rule" => "row_count", "reason" => nil, "covered" => [],
+               "fixture_loads" => 4)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # Task 20261110-7: a round that ends without comparing stores which
+    # check refused, one of Protocol::RefusalReasons, for the report. Here
+    # the rewrite's any_value could keep either status, though its answer
+    # doesn't turn on which.
+    it "stores the reason a round refused, and sends only the rule" do
+      ready("SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1 " \
+            "AND (SELECT any_value(x.status) FROM public.orders x WHERE x.note = o.note) IS NOT NULL")
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, "INSERT INTO public.orders (id, note, status) VALUES (1, $1, $2), (2, $1, 'shut')")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => false, "rule" => "unsupported_order")
+      expect(lines(outcome).first).not_to have_key("reason")
+      expect(stored.read("rewrite_round_1")).to include("rule" => "unsupported_order", "reason" => "rewrite_pick")
+      expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
       expect_no_leaks(sentinels, outcome)
     end
 
@@ -1249,7 +1269,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(1, note_row)).first).to include("match" => true)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
       expect(stored.read("rewrite_round_1"))
-        .to eq("round" => 1, "evidence" => true, "rule" => nil, "covered" => [], "fixture_loads" => 4)
+        .to eq("round" => 1, "evidence" => true, "rule" => nil, "reason" => nil, "covered" => [], "fixture_loads" => 4)
       round(2, dup_rows)
       round(3, dup_rows)
       expect(stored.read("rewrite_survived_1")).to eq("survived" => true, "evidence" => true)

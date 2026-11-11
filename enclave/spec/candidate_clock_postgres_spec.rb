@@ -34,7 +34,7 @@ RSpec.describe "clock anchoring in rewrite candidates, against a real server" do
     stored.read("result_comparison")["verdicts"]["rewrite_1"]
   end
 
-  pass = %w[slow worst_case typical].to_h { [it, { "result" => "pass", "rule" => nil }] }
+  pass = %w[slow worst_case typical].to_h { [it, { "result" => "pass", "rule" => nil, "reason" => nil }] }
 
   context "with now()" do
     let(:query) do

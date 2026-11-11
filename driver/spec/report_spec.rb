@@ -1241,8 +1241,8 @@ RSpec.describe Quaack::Driver::Report do
 
       it "says why a test compared nothing" do
         expect(fate("rewrite_test_failed", scenario: "s0", rule: "unsupported_order"))
-          .to eq(esc("A test on made-up data ended without comparing results, because the order " \
-                     "of the original query's rows can't be checked, so QUAACK dropped it. That says nothing about " \
+          .to eq(esc("A test on made-up data ended without comparing results, because QUAACK can't yet check " \
+                     "every query's results, so QUAACK dropped it. That says nothing about " \
                      "whether it's right."))
         expect(fate("counterexamples_failed", round: 1, rule: "statement_timeout"))
           .to include("(round 1) ended without comparing results, because a statement timed out, so")
@@ -1251,6 +1251,43 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("rewrite_test_failed", rule: "original_failed"))
           .to eq(esc("A test on made-up data ended without comparing results, because the original query failed " \
                      "on the test data, so QUAACK dropped it. That says nothing about whether it's right."))
+      end
+
+      # Task 20261110-7: an unsupported_order refusal names the check it
+      # came from, by its reason, and never the reason's own name.
+      it "names the check that kept a test from comparing results" do
+        expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason: "original_pick"))
+          .to eq(esc("A test on data the LLM wrote to break it (round 1) ended without comparing results, because " \
+                     "a DISTINCT, DISTINCT ON, GROUP BY, min, max, or order-following aggregate in the original " \
+                     "query could keep any of several values that print differently, so QUAACK dropped it. That " \
+                     "says nothing about whether it's right."))
+        expect(fate("production_not_compared", rule: "unsupported_order", reason: "full_run_timed_out"))
+          .to include(esc("on the real data, because running a query without its LIMIT, to check the rows tied at " \
+                          "the LIMIT, timed out, so QUAACK dropped it."))
+      end
+
+      it "has words for every refusal reason, and prints none of their names" do
+        expect(Quaack::Driver::Report::Words::REFUSAL_REASONS.keys).to eq(Quaack::Protocol::RefusalReasons::NAMES)
+        Quaack::Protocol::RefusalReasons::NAMES.each do |reason|
+          text = fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason:)
+          expect(text).to include(esc(", because #{Quaack::Driver::Report::Words::REFUSAL_REASONS.fetch(reason)}, " \
+                                      "so QUAACK dropped it"))
+          expect(text).not_to include(reason)
+        end
+      end
+
+      it "falls back to the plain refusal for a reason it doesn't know, or one on another rule" do
+        fallback = "because QUAACK can't yet check every query's results, so"
+        expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason: "SENTINEL_REASON_7"))
+          .to include(esc(fallback))
+        expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason: "SENTINEL_REASON_7"))
+          .not_to include("SENTINEL_REASON_7")
+        expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order",
+                                              reason: nil)).to include(esc(fallback))
+        expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason: ["hidden_tie"]))
+          .to include(esc(fallback))
+        expect(fate("counterexamples_failed", round: 1, rule: "statement_timeout", reason: "hidden_tie"))
+          .to include("because a statement timed out, so")
       end
 
       it "says a rewrite whose test ran past its budget was left out, not that it's wrong (20261010-53)" do
@@ -1374,7 +1411,7 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("production_not_compared", rule: "unsupported_order"))
           .to include(esc("but QUAACK couldn't compare its results with the original query's on the real data, " \
                           "because " \
-                          "the order of the original query's rows can't be checked, so"))
+                          "QUAACK can't yet check every query's results, so"))
         expect(fate("production_not_compared")).to include(esc("on the real data, so QUAACK dropped it."))
       end
 

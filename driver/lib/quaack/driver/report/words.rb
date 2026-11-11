@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/protocol/fuzz_result"
+require "quaack/protocol/refusal_reasons"
 require "quaack/protocol/rewrite_budget"
 
 require_relative "../rewrite_names"
@@ -31,13 +32,37 @@ module Quaack
 
         # Why a test ended without comparing results. Any other rule is a
         # statement that failed on the test database.
-        FAILURES = { "unsupported_order" => "the order of the original query's rows can't be checked",
+        FAILURES = { "unsupported_order" => "QUAACK can't yet check every query's results",
                      "statement_timeout" => "a statement timed out",
                      "statement_canceled" => "a statement was canceled",
                      "original_failed" => "the original query failed on the test data",
                      Protocol::RewriteBudget::RULE => "its test didn't finish within " \
                                                       "#{Protocol::RewriteBudget.minutes} minutes" }.freeze
         FAILED = "a statement failed on the test database"
+
+        PICK = "a DISTINCT, DISTINCT ON, GROUP BY, min, max, or order-following aggregate in the %s could keep " \
+               "any of several values that print differently"
+        FULL_RUN = "running a query without its LIMIT, to check the rows tied at the LIMIT, %s"
+
+        # Which check kept an unsupported_order test from comparing results,
+        # by its reason (Protocol::RefusalReasons, task 20261110-7). A
+        # reason not here, or none, says FAILURES' unsupported_order instead.
+        REFUSAL_REASONS = {
+          "nondeterministic_collation" => "a nondeterministic collation can call values that print differently " \
+                                          "equal, so QUAACK can't tell tied rows apart",
+          "hidden_tie" => "rows tied in the query's ORDER BY can differ in a column QUAACK can't sort them by",
+          "inner_cut" => "a LIMIT or OFFSET inside a subquery can keep any of several tied rows",
+          "with_ties" => "QUAACK can't check FETCH FIRST ... WITH TIES row for row",
+          "original_pick" => format(PICK, "original query"),
+          "rewrite_pick" => format(PICK, "rewrite"),
+          "unforceable_pick" => "a DISTINCT ON reads a subquery QUAACK can't name, so it can't check which rows " \
+                                "it keeps",
+          "pick_run_failed" => "a version of a query with its arbitrary picks pinned down failed to run",
+          "unsteady_order" => "the rewrite's tied rows didn't come back in a consistent order",
+          "cut_tie" => "a LIMIT or OFFSET cuts through tied rows in a way QUAACK can't check",
+          "full_run_timed_out" => format(FULL_RUN, "timed out"),
+          "full_run_too_many_rows" => format(FULL_RUN, "returned more rows than QUAACK can hold")
+        }.freeze
 
         # Why rewrite-test couldn't make up test data for the query, by its rule.
         REFUSALS = { "fk_cycle" => "its tables' foreign keys form a cycle QUAACK can't load",

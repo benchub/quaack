@@ -27,15 +27,19 @@ RSpec.describe Quaack::Enclave::ResultComparison do
   let(:plain_numerics) { rows([1, 1, "10"], [2, 1, "10"], [3, 2, "5"], [4, 2, nil], [5, 3, nil]) }
 
   def verdict(original, candidate = original, data: equal_numerics)
-    runner.with_fixture(data) { |tx| described_class.compare(tx, original:, candidate:) }.to_h.slice(:match, :rule)
+    fields(runner.with_fixture(data) { |tx| described_class.compare(tx, original:, candidate:) })
   end
 
   def in_load_orders(original, data: equal_numerics)
-    described_class.compare_in_load_orders(runner, data, original:, candidate: original).to_h.slice(:match, :rule)
+    fields(described_class.compare_in_load_orders(runner, data, original:, candidate: original))
   end
 
-  let(:refused) { { match: false, rule: :unsupported_order } }
-  let(:matched) { { match: true, rule: nil } }
+  def fields(verdict) = verdict.to_h.slice(:match, :rule, :reason)
+
+  # Task 20261110-7: the refusal names the original's pick as the check
+  # that refused.
+  let(:refused) { { match: false, rule: :unsupported_order, reason: :original_pick } }
+  let(:matched) { { match: true, rule: nil, reason: nil } }
 
   it "refuses a GROUP BY key whose group prints two ways, named by expression, position, and alias" do
     ["SELECT n FROM items GROUP BY n", "SELECT n FROM items GROUP BY 1", "SELECT n AS m FROM items GROUP BY m",
@@ -120,6 +124,6 @@ RSpec.describe Quaack::Enclave::ResultComparison do
   it "still fails a candidate whose answer differs" do
     expect(verdict("SELECT grp, max(n) FROM items GROUP BY grp", "SELECT grp, min(n) FROM items GROUP BY grp",
                    data: rows([1, 1, "10"], [2, 1, "11"])))
-      .to eq(match: false, rule: :multiset)
+      .to eq(match: false, rule: :multiset, reason: nil)
   end
 end

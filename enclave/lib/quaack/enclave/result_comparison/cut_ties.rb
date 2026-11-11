@@ -84,7 +84,7 @@ module Quaack
           layout(full: source.fetch(shape, limited: false), cut:, offset: shape.offset, key: source.method(:key))
         end
 
-        REFUSED = [:unsupported_order, {}.freeze].freeze
+        REFUSED = [:unsupported_order, { reason: :cut_tie }.freeze].freeze
 
         # A row_count or value mismatch for the candidate's cut runs, or nil.
         def cut_mismatch(original, cut, source)

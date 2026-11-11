@@ -216,7 +216,7 @@ module Quaack
 
           def outcome(round, refused)
             { match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
-              refused:, load_failed: round.load_failed }
+              refused:, load_failed: round.load_failed, reason: round.reason&.to_s }
           end
 
           def prepare(connection, store, inserts, queries)
@@ -262,14 +262,16 @@ module Quaack
           # failed, or original_failed when the round's rows made the
           # original fail (Enclave::Counterexamples.compare), which decides
           # nothing. RewriteFate reads it to tell a disproof from a
-          # candidate that failed to run. "fixture_loads" counts the
+          # candidate that failed to run. "reason" is the check that
+          # refused, one of Protocol::RefusalReasons, when the rule is
+          # unsupported_order, and nil otherwise; the report names it. "fixture_loads" counts the
           # fixtures the rounds so far loaded, for the burndown, which is
           # recorded once survival is decided, before rewrite_survived_<n>
           # (RewriteBurndown.record_round).
           def finish(store, number, round, outcome, loads)
             last = round == "1" ? { "evidence" => false, "covered" => [] } : store.read("rewrite_round_#{number}")
             entry = { "round" => Integer(round), "evidence" => !outcome[:match].nil? || last["evidence"],
-                      "rule" => outcome[:rule], "covered" => covered(last, outcome),
+                      "rule" => outcome[:rule], "reason" => outcome[:reason], "covered" => covered(last, outcome),
                       "fixture_loads" => last.fetch("fixture_loads", 0) + loads }
             store.write("rewrite_round_#{number}", entry)
             decide(store, number, entry, outcome[:match] != false)

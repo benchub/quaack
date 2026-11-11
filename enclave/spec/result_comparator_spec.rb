@@ -140,9 +140,42 @@ RSpec.describe Quaack::Enclave::ResultComparator do
     end
 
     it "is a mode a verdict can name, never as a match" do
-      verdict = described_class::Verdict.for(:with_ties, :unsupported_order)
+      verdict = described_class::Verdict.for(:with_ties, :unsupported_order, reason: :with_ties)
 
       expect(verdict_fields(verdict)).to include(match: false, mode: :with_ties, rule: :unsupported_order)
+    end
+  end
+
+  # Task 20261110-7: a refusal names the check that refused, from
+  # Protocol::RefusalReasons, so the report can say which.
+  describe "a refusal's reason" do
+    it "is kept on an unsupported_order verdict, through with" do
+      verdict = described_class::Verdict.for(:ordered, :unsupported_order, reason: :cut_tie)
+
+      expect([verdict.reason, verdict.with(load_order: :reverse).reason]).to eq(%i[cut_tie cut_tie])
+    end
+
+    it "is nil on a match or a mismatch" do
+      expect([described_class::Verdict.for(:multiset).reason, described_class::Verdict.for(:multiset, :value).reason])
+        .to eq([nil, nil])
+    end
+
+    it "is required on an unsupported_order verdict, and refused on any other" do
+      expect { described_class::Verdict.for(:ordered, :unsupported_order) }
+        .to raise_error(ArgumentError, /reason/)
+      expect { described_class::Verdict.for(:ordered, :value, reason: :cut_tie) }
+        .to raise_error(ArgumentError, /reason/)
+      expect { described_class::Verdict.for(:ordered, reason: :cut_tie) }.to raise_error(ArgumentError, /reason/)
+    end
+
+    it "is refused unless it's one of Protocol::RefusalReasons, as a Symbol, without naming it" do
+      ["cut_tie", sentinel.to_sym, :unsupported_order].each do |reason|
+        expect { described_class::Verdict.for(:ordered, :unsupported_order, reason:) }
+          .to raise_error(ArgumentError) { |e| expect(e.message).not_to include(sentinel) }
+      end
+      expect(Quaack::Protocol::RefusalReasons::NAMES.map do |name|
+        described_class::Verdict.for(:ordered, :unsupported_order, reason: name.to_sym).reason
+      end).to eq(Quaack::Protocol::RefusalReasons::NAMES.map(&:to_sym))
     end
   end
 

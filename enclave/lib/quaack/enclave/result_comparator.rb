@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/refusal_reasons"
 require_relative "arena_fixture"
 require_relative "result_comparator/interval_text"
 
@@ -74,9 +75,9 @@ module Quaack
       #   the candidate's result, with no partner.
       # - candidate_unordered: the original has an ORDER BY and the
       #   candidate has none. ResultComparison decides this one.
-      # - unsupported_order: the original's order is one the comparison
-      #   can't check, so it never says match. ResultComparison decides
-      #   this one too.
+      # - unsupported_order: one of ResultComparison's checks can't vouch
+      #   for the comparison, so it never says match. ResultComparison
+      #   decides this one too, and its reason names the check (REASONS).
       RULES = %i[column_count column_types row_count value multiset subset candidate_unordered
                  unsupported_order].freeze
 
@@ -86,6 +87,10 @@ module Quaack
       # never calls a rewrite disproved for a rule that compared nothing.
       # (Steps::RuleBugs keeps its own copy until 20261002-5.)
       MISMATCHES = %i[column_count column_types row_count value multiset subset candidate_unordered].freeze
+
+      # Why an unsupported_order verdict refused: Protocol::RefusalReasons,
+      # as Symbols.
+      REASONS = Protocol::RefusalReasons::NAMES.map(&:to_sym).freeze
 
       FLOAT_TYPES = [700, 701].freeze
       NUMERIC_TYPE = 1700
@@ -101,10 +106,13 @@ module Quaack
       # by ResultComparison.compare_in_load_orders, on a mismatch: :forward,
       # :reverse, or :rotated, for the fixture load that disproved the
       # candidate. It's
-      # nil otherwise, and by default.
-      Verdict = Data.define(:match, :mode, :rule, :expected_rows, :actual_rows, :row, :column, :load_order) do
-        def initialize(load_order: nil, **fields)
+      # nil otherwise, and by default. reason is set on, and only on, an
+      # unsupported_order verdict: the check that refused, one of REASONS.
+      Verdict = Data.define(:match, :mode, :rule, :expected_rows, :actual_rows, :row, :column, :load_order,
+                            :reason) do
+        def initialize(load_order: nil, reason: nil, **fields)
           fields[:load_order] = load_order
+          fields[:reason] = reason
           problem, = VERDICT_CHECKS.find { |_, ok| !ok.call(fields) }
           raise ArgumentError, problem if problem
 
@@ -133,7 +141,9 @@ module Quaack
            .all? { |n| n.nil? || (n.is_a?(Integer) && !n.negative?) }
         end,
         "a verdict's load_order must be :forward, :reverse, :rotated, or nil" =>
-          ->(f) { [nil, :forward, :reverse, :rotated].include?(f[:load_order]) }
+          ->(f) { [nil, :forward, :reverse, :rotated].include?(f[:load_order]) },
+        "a verdict's reason must be one of REASONS on an unsupported_order verdict, and nil on any other" =>
+          ->(f) { f[:rule] == :unsupported_order ? REASONS.include?(f[:reason]) : f[:reason].nil? }
       }.freeze
 
       module_function

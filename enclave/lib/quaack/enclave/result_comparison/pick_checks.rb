@@ -25,6 +25,9 @@ module Quaack
       # every run of a subquery, and a check over a pick downstream of
       # another reads the values the first one could only have kept.
       module PickChecks # rubocop:disable Metrics/ModuleLength -- one check per kind of pick
+        # The SQLSTATE a check fails with, division_by_zero.
+        FAILED = "22012"
+
         CHECKS = {
           aggregate: "CASE WHEN quaack_first = quaack_last THEN quaack_value " \
                      "WHEN 1 / (0 * length(quaack_first)) = 0 THEN quaack_value END",

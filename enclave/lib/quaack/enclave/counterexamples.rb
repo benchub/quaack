@@ -87,7 +87,11 @@ module Quaack
       # verdict's rule and load order when it didn't, and the shapes of
       # the untested atoms this round's fixture exercised. load_failed is
       # true when the fixture itself failed to load, and then match is nil.
-      Round = Data.define(:match, :rule, :load_order, :covered, :load_failed)
+      # reason is the verdict's reason, the check that refused, for rule
+      # unsupported_order, and nil otherwise (ResultComparator::Verdict).
+      Round = Data.define(:match, :rule, :load_order, :covered, :load_failed, :reason) do
+        def initialize(reason: nil, **) = super
+      end
 
       # The runner rules that mean the fixture, not the candidate, failed.
       LOAD_RULES = %i[fixture_load_failed reverse_load_failed rotated_load_failed insert_failed].freeze
@@ -120,7 +124,8 @@ module Quaack
         verdict = ResultComparison.compare_in_load_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)
         Round.new(match: verdict.match?, rule: verdict.rule, load_order: verdict.load_order,
-                  covered: covered(runner, prepared, original, atoms, untested), load_failed: false)
+                  covered: covered(runner, prepared, original, atoms, untested), load_failed: false,
+                  reason: verdict.reason)
       rescue ArenaRunner::Error => e
         raise if ArenaRunner::Cancel.foreign?(e)
 

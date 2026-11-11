@@ -17,7 +17,8 @@ module Quaack
     # with params bound, and its rows stream in single-row mode.
     #
     #   ProductionComparison.compare(connection:, original:, candidate:, params:, timeout_ms:)
-    #   # => Verdict(result: "pass" | "fail" | "partial", rule: nil | String)
+    #   # => Verdict(result: "pass" | "fail" | "partial", rule: nil | String,
+    #   #            reason: nil | String)
     #
     # Each row is hashed (SHA-256) from ResultComparator::Values.key, which
     # rounds float columns to eight significant digits (and to zero below
@@ -55,16 +56,22 @@ module Quaack
     #
     # Any other timeout fails, rule timed_out.
     #
-    # Trust boundary. A Verdict holds only a fixed result word and a rule
-    # name. Row values live only as hashes inside one compare.
-    module ProductionComparison
+    # Trust boundary. A Verdict holds only a fixed result word, a rule
+    # name, and for unsupported_order the check that refused, one of
+    # Protocol::RefusalReasons. Row values live only as hashes inside one
+    # compare.
+    module ProductionComparison # rubocop:disable Metrics/ModuleLength -- one refusal per check
       RESULTS = %w[pass fail partial].freeze
       RULES = [*ResultComparator::RULES.map(&:to_s), "timed_out", "subset_timed_out"].freeze
 
-      Verdict = Data.define(:result, :rule) do
-        def initialize(result:, rule:)
+      Verdict = Data.define(:result, :rule, :reason) do
+        def initialize(result:, rule:, reason: nil)
           raise ArgumentError, "a verdict's result must be one of RESULTS" unless RESULTS.include?(result)
           raise ArgumentError, "a verdict's rule must be one of RULES, or nil" unless rule.nil? || RULES.include?(rule)
+          unless rule == "unsupported_order" ? Protocol::RefusalReasons.valid?(reason) : reason.nil?
+            raise ArgumentError, "a verdict's reason must be one of Protocol::RefusalReasons on an " \
+                                 "unsupported_order verdict, and nil on any other"
+          end
 
           super
         end
@@ -102,7 +109,7 @@ module Quaack
         case original_shape.mode
         when :multiset then multiset(run, original, candidate)
         when :subset then subset(run, original_shape, original, candidate)
-        when :with_ties then fail("unsupported_order")
+        when :with_ties then refused("with_ties")
         else
           candidate_shape.ordered? ? ordered(run, original_shape, candidate_shape) : fail("candidate_unordered")
         end
@@ -110,6 +117,7 @@ module Quaack
 
       def pass = Verdict.new(result: "pass", rule: nil)
       def fail(rule) = Verdict.new(result: "fail", rule:)
+      def refused(reason) = Verdict.new(result: "fail", rule: "unsupported_order", reason:)
 
       def shape_rule(expected, actual)
         return "column_count" if expected.types.size != actual.types.size
@@ -161,9 +169,10 @@ module Quaack
 
         positions = positions(run, original_shape, candidate_shape, expected.types)
         return total_ordered(run, original_shape, candidate_shape) if positions == :total
+        return positions if positions.is_a?(Verdict)
 
-        originals = positions && tiebreaker_runs(run, original_shape, positions)
-        return fail("unsupported_order") unless originals
+        originals = tiebreaker_runs(run, original_shape, positions)
+        return refused("hidden_tie") unless originals
 
         HashedRuns.new(run, positions).verdict([original_shape, candidate_shape], originals)
       end
@@ -177,12 +186,12 @@ module Quaack
         catalog = Catalog.new(run.connection)
         shapes = [original_shape, candidate_shape]
         gate = ResultComparison::TotalOrder.gate(catalog, shapes, types)
-        return gate unless gate == :none
+        return gate || refused("nondeterministic_collation") unless gate == :none
 
         tiebreaker = ResultComparison::Tiebreaker
 
         positions = tiebreaker.positions(types, tiebreaker.catalog_orderable(catalog, types))
-        positions if positions.size == types.size || shapes.none?(&:cut?)
+        positions.size == types.size || shapes.none?(&:cut?) ? positions : refused("hidden_tie")
       end
 
       # The original's order is total (ResultComparison::TotalOrder), so
@@ -215,6 +224,8 @@ module Quaack
         # the ROLLBACK that ends the run.
         FULL_RUN_ROW_CAP = 2_000_000
 
+        FULL_RUN_REASONS = { TimedOut => :full_run_timed_out, TooManyRows => :full_run_too_many_rows }.freeze
+
         def initialize(run, positions)
           @run = run
           @positions = positions
@@ -233,10 +244,10 @@ module Quaack
           [false, true].map do |descending|
             sql = shape.with_tiebreaker(@positions, descending:, limited:)
             @run.digest(sql, nil, max_rows: (FULL_RUN_ROW_CAP unless limited)).hashes
-          rescue TimedOut, TooManyRows
+          rescue TimedOut, TooManyRows => e
             raise if limited
 
-            throw :full_timed_out, ResultComparison::CutTies::REFUSED
+            throw :full_timed_out, [:unsupported_order, { reason: FULL_RUN_REASONS.fetch(e.class) }]
           end
         end
 
@@ -256,14 +267,23 @@ module Quaack
         def tiebroken(shape, originals)
           @candidate = shape
           found = ResultComparison::Regrouped.tiebroken(originals, self)
-          found == :match ? ProductionComparison.pass : ProductionComparison.fail(found.to_s)
+          case found
+          when :match then ProductionComparison.pass
+          when :unsupported_order then ProductionComparison.refused("unsteady_order")
+          else ProductionComparison.fail(found.to_s)
+          end
         end
 
         def check(shapes, originals)
           # ProductionComparison.positions gives a cut query every column, so
           # CutTies' tiebreaker covers them all.
-          rule, = catch(:full_timed_out) { ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self) }
-          rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
+          rule, fields = catch(:full_timed_out) do
+            ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self)
+          end
+          return ProductionComparison.pass unless rule
+          return ProductionComparison.refused(fields[:reason].to_s) if rule == :unsupported_order
+
+          ProductionComparison.fail(rule.to_s)
         end
 
         # Whether shape's LIMIT or OFFSET may cut a tie group, judged by the
