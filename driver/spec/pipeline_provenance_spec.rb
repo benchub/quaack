@@ -45,8 +45,9 @@ RSpec.describe "The pipeline's provenance record" do
 
   # The sentinels that must never reach the record: what the enclave sent
   # for the LLM, and what the LLM wrote, but for its counterexample
-  # inserts, which the record keeps (task 20261111-191130-1).
-  let(:secret) { %w[SENTINEL_PAYLOAD SENTINEL_DDL SENTINEL_REWRITE_SQL SENTINEL_REASON] }
+  # inserts and the driver's feedback on them, which the record keeps
+  # (task 20261111-191130-1).
+  let(:secret) { %w[SENTINEL_PAYLOAD SENTINEL_DDL SENTINEL_REWRITE_SQL] }
 
   let(:initial) do
     { "index_search_original" => false, "index_generated_original" => false, "index_ranking_original" => false,
@@ -82,8 +83,7 @@ RSpec.describe "The pipeline's provenance record" do
       "rewrite-test" => [{ "type" => "rewrite_test", "passed" => true }],
       "counterexample-payload" => [{ "type" => "counterexample_payload", "original" => "SELECT SENTINEL_PAYLOAD" }],
       "counterexample-round" => [{ "type" => "counterexample_round", "match" => true, "rule" => nil,
-                                   "covered" => [], "refused" => [{ "index" => 0, "rule" => "unparsable" }],
-                                   "reason" => "SENTINEL_REASON" }],
+                                   "covered" => [], "refused" => [{ "index" => 0, "rule" => "SENTINEL_REASON" }] }],
       "report-payload" => [report]
     }
     Class.new do
@@ -136,7 +136,7 @@ RSpec.describe "The pipeline's provenance record" do
   def prompts = JSON.generate(fakes.values.flat_map(&:asks).map { [it.body[:system], it.body[:messages]] })
 
   # What the driver told the LLM about each round of the counterexample-round reply.
-  let(:same) { "insert 1 was refused (unparsable)\nThe accepted inserts gave both queries the same results." }
+  let(:same) { "insert 1 was refused (SENTINEL_REASON)\nThe accepted inserts gave both queries the same results." }
 
   it "records, as it goes, which provider and model produced each idea, rewrite, and counterexample round" do
     script
@@ -225,8 +225,30 @@ RSpec.describe "The pipeline's provenance record" do
 
     expect(found(File.read(path), secret)).to eq([])
     expect(found(prompts, secret)).not_to be_empty
-    expect(found(JSON.generate(record.except("counterexample_rounds")), ["SENTINEL_INSERT"])).to eq([])
-    expect(found(JSON.generate(record["counterexample_rounds"]), ["SENTINEL_INSERT"])).to eq(["SENTINEL_INSERT"])
+    rounds = record["counterexample_rounds"]["rewrite_1"].flat_map(&:values)
+    words = %w[SENTINEL_INSERT SENTINEL_REASON]
+    expect(found(JSON.generate(record.except("counterexample_rounds")), words)).to eq([])
+    expect(found(JSON.generate(rounds.map { it["inserts"] }), words)).to eq(["SENTINEL_INSERT"])
+    expect(found(JSON.generate(rounds.map { it["feedback"] }), words)).to eq(["SENTINEL_REASON"])
+    expect(found(JSON.generate(rounds.map { it.except("inserts", "feedback") }), words)).to eq([])
+  end
+
+  # DESIGN.md, "Several LLM providers" (Provenance): a round's inserts
+  # are saved before the enclave loads them, so a run the enclave fails
+  # mid-round still keeps them.
+  it "keeps a round's inserts and entry when the enclave fails that round" do
+    script
+    call = transport.method(:call)
+    transport.define_singleton_method(:call) do |subcommand, **options|
+      raise Quaack::Driver::EnclaveError.new(subcommand:, rule: "arena_failed") if subcommand == "counterexample-round"
+
+      call.call(subcommand, **options)
+    end
+
+    expect { run }.to raise_error(Quaack::Driver::EnclaveError, /arena_failed/)
+    expect(JSON.parse(File.read(path))["counterexample_rounds"])
+      .to eq("rewrite_1" => [{ "1" => { "entry" => names[0],
+                                        "inserts" => ["INSERT INTO public.t (a) VALUES ('SENTINEL_INSERT')"] } }])
   end
 
   it "sends nothing new to the enclave or into a prompt: no provider's name or model" do
