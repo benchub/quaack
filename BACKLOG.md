@@ -844,10 +844,21 @@ Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, 
 
 Every query ResultComparison derives (probe, without_limit, with_tiebreaker, through_window, total-order shapes), Exercised's loosened queries, load orders, and the original rerun keep the `$n` placeholders and carry the Binding along, instead of working on pasted-literal text.
 
+Narrowed on 2026-11-10 after the builder found ValuePools runs query pieces itself (now 20261110-15). Scope: `Shape.parse(sql, query, binding:)` carries the binding to `#offset`, `Picks.forced`/`checks?`, and `PickChecks.resolved`; `ResultComparison.compare` and `ProductionComparison` take it; `Fuzz.search`/`run` pass it to Search, Domains, Coverage (Reach), Session's Shape, and `unjudged?`. Dictionary, WorldValues and Thresholds take already-resolved values and need no binding (say so in a comment). Specs show Exercised's loosened queries and load orders, derived from the `$n` form, match the literal form once bound. No behavior change until stage 3.
+
 - **Depends on:** 20261110-12.
 - **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
 - **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
 - **Notes from 20261110-12's review:** `ConstantValue` maps a Binding type outside the five `Literal.of` produces to text; comment that. Add specs for a negative number and a `$n` past the end of the binding. Thresholds, Domains, Dictionary and WorldValues constructors don't take a binding yet; pass it.
+- **Status:** todo
+
+### 20261110-15. Arena Binding, stage 2b: ValuePools on the `$n` form.
+
+Split from 20261110-13 on 2026-11-10. `ValuePools` runs query pieces on the arena connection: `Sides.literals` evaluates each non-column side of an atom with `SELECT CAST(q.v AS type) ... FROM (SELECT <side>)`, and `Probe` already uses `$1` for the candidate column value. On the `$n` form both hit a Postgres error, rescue it, and quietly lose their literal-based candidates. Make `Sides.literals` take a `$n` side's value from the Binding (through `ConstantValue`, cast to the column's type) instead of running it, and make `Probe` either renumber the query's `$n`s past its own `$1` and bind them with declared types, or substitute each `$n` with its ConstantValue. A spec shows the pools match on both forms.
+
+- **Depends on:** 20261110-13.
+- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
+- **Design:** counterexamples, fuzz.
 - **Status:** todo
 
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types.
@@ -856,7 +867,7 @@ Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, 
 
 Move `ArenaRunner::Transaction#query` onto Binding's prepare path (declared types, the 42P18 retry), and make the counterexample and fuzz paths (Session, Differ, Lift) hand it `$n` SQL with its Binding instead of `Counterexamples.bind`'s text. The red spec on 3f6b48c9 goes green. Values stay in the enclave; anything leaving carries only `$n` and shapes.
 
-- **Depends on:** 20261110-13.
+- **Depends on:** 20261110-15.
 - **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
 - **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
 - **Status:** todo
