@@ -148,15 +148,15 @@ module Quaack
         # Whether the original or the candidate SQL has a pick, or one
         # compare can't parse or force, so that equal results aren't yet a
         # match.
-        def any?(original, candidate)
-          checks?(Shape.parse(original, :original)) || checks?(Shape.parse(candidate, :candidate))
+        def any?(original, candidate, binding: nil)
+          checks?(Shape.parse(original, :original, binding:)) || checks?(Shape.parse(candidate, :candidate, binding:))
         rescue Unforceable, Error
           true
         end
 
         # The Shape of shape's query with its picks forced (force). Raises
         # Error deparse_mismatch when it doesn't round-trip.
-        def forced(shape, descending) = Shape.parse(forced_sql(shape, descending:), shape.query)
+        def forced(shape, descending) = Shape.parse(forced_sql(shape, descending:), shape.query, binding: shape.binding)
 
         # The SQL of shape's query with its picks forced first and checked
         # (force), which fails on the data when a pick has a choice.

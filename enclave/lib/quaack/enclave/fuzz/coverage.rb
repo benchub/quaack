@@ -51,9 +51,9 @@ module Quaack
         # original's parse, for AtomPosition.
         Result = Data.define(:atoms, :untested_atoms, :untested_shapes, :untested_paths)
 
-        def initialize(atoms, original)
+        def initialize(atoms, original, binding = nil)
           @atoms = atoms
-          @pending = Reach.worst_case?(original) ? {} : pending(original)
+          @pending = Reach.worst_case?(original, binding) ? {} : pending(original)
           @seen = Hash.new { |h, k| h[k] = Set.new }
           @observed = 0
         end

@@ -90,15 +90,15 @@ module Quaack
 
       module_function
 
-      def compare(connection:, original:, candidate:, params:, timeout_ms:)
-        by_mode(Run.new(connection, params, timeout_ms), original, candidate)
+      def compare(connection:, original:, candidate:, params:, timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
+        by_mode(Run.new(connection, params, timeout_ms), original, candidate, binding)
       rescue TimedOut
         fail("timed_out")
       end
 
-      def by_mode(run, original, candidate)
-        original_shape = ResultComparison::Shape.parse(original, :original)
-        candidate_shape = ResultComparison::Shape.parse(candidate, :candidate)
+      def by_mode(run, original, candidate, binding)
+        original_shape = ResultComparison::Shape.parse(original, :original, binding:)
+        candidate_shape = ResultComparison::Shape.parse(candidate, :candidate, binding:)
         case original_shape.mode
         when :multiset then multiset(run, original, candidate)
         when :subset then subset(run, original_shape, original, candidate)

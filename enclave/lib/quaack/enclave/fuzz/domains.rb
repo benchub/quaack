@@ -45,8 +45,11 @@ module Quaack
         KEYS = 40
         CHECK_CONSTANTS = 4
 
-        def initialize(conn, catalog, sqls)
+        # binding is what a $n in sqls stands for (task 20261110-13), which
+        # Tree and Facts read.
+        def initialize(conn, catalog, sqls, binding: nil)
           @conn = conn
+          @binding = binding
           @catalog = catalog
           @values = Hash.new { |h, k| h[k] = [] }
           @classes = KeyClasses.new
@@ -162,8 +165,11 @@ module Quaack
         end
 
         def knowledge(trees)
-          @dictionary = Dictionary.new(@conn, trees.flat_map { Tree.constants(it) }.uniq)
-          facts = Facts.new(trees)
+          # Dictionary, WorldValues and Thresholds take values Tree and
+          # Facts have already read, a $n's from the binding, so they need
+          # no binding of their own.
+          @dictionary = Dictionary.new(@conn, trees.flat_map { Tree.constants(it, binding: @binding) }.uniq)
+          facts = Facts.new(trees, binding: @binding)
           @world = WorldValues.new(@conn, facts)
           @thresholds = Thresholds.new(@conn, facts)
         end

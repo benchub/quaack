@@ -838,19 +838,7 @@ From the second review of 20261008-53 item 2 (minor). No spec has an interval pl
 
 ### 20261110-12. Arena Binding, stage 1: analyses read constants through a value lookup. Done, see BACKLOG-COMPLETE.md.
 
-### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`.
-
-Part of the arena Binding refactor the user chose on 2026-11-10 (full refactor, in stages, each with its own loop). Today the arena never sees `$n`: `Counterexamples.bind`/`literal` paste each literal back as an untyped quoted string, so `o.total * 1.5 > 3` on an integer column fails every world and rewrite-test reports the untested rewrite as passed (`no_world`). A red spec for that sits on WIP commit 3f6b48c9 (`enclave/spec/counterexample_steps_postgres_spec.rb`, "a numeric literal against an integer column").
-
-Every query ResultComparison derives (probe, without_limit, with_tiebreaker, through_window, total-order shapes), Exercised's loosened queries, load orders, and the original rerun keep the `$n` placeholders and carry the Binding along, instead of working on pasted-literal text.
-
-Narrowed on 2026-11-10 after the builder found ValuePools runs query pieces itself (now 20261110-15). Scope: `Shape.parse(sql, query, binding:)` carries the binding to `#offset`, `Picks.forced`/`checks?`, and `PickChecks.resolved`; `ResultComparison.compare` and `ProductionComparison` take it; `Fuzz.search`/`run` pass it to Search, Domains, Coverage (Reach), Session's Shape, and `unjudged?`. Dictionary, WorldValues and Thresholds take already-resolved values and need no binding (say so in a comment). Specs show Exercised's loosened queries and load orders, derived from the `$n` form, match the literal form once bound. No behavior change until stage 3.
-
-- **Depends on:** 20261110-12.
-- **Came from:** 20261008-53 item 4 (ArenaRunner half), split 2026-11-10.
-- **Design:** redact (Binding), counterexamples, fuzz, result-comparison.
-- **Notes from 20261110-12's review:** `ConstantValue` maps a Binding type outside the five `Literal.of` produces to text; comment that. Add specs for a negative number and a `$n` past the end of the binding. Thresholds, Domains, Dictionary and WorldValues constructors don't take a binding yet; pass it.
-- **Status:** todo
+### 20261110-13. Arena Binding, stage 2: derived queries keep `$n`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-15. Arena Binding, stage 2b: ValuePools on the `$n` form.
 

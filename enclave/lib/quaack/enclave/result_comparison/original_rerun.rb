@@ -22,10 +22,10 @@ module Quaack
         # fails ends the search with false: the comparison that failed couldn't have got past it either, so the
         # original ran everywhere that comparison reached. It counts as LOAD_ORDERS.size loads, as
         # compare_in_load_orders does.
-        def fails?(runner, rows, original, inserts: [])
+        def fails?(runner, rows, original, inserts: [], binding: nil)
           runner.counted_as(LOAD_ORDERS.size) do
             ResultComparison.distinct_loads(rows, runner).map(&:last).each do |positions|
-              ran = rerun(runner, positions.map { rows[it] }, inserts, original)
+              ran = rerun(runner, positions.map { rows[it] }, inserts, original, binding)
               return ran == :query_failed unless ran == :ran
             end
             false
@@ -35,9 +35,9 @@ module Quaack
         # How the original's comparison against itself went on one load of rows: :ran, :query_failed, or
         # :not_loaded when a runner error came at any other step. A cancel QUAACK didn't send goes up, and ends
         # the step.
-        def rerun(runner, rows, inserts, original)
+        def rerun(runner, rows, inserts, original, binding)
           runner.with_fixture(rows, inserts:, index_scans: false) do |tx|
-            ResultComparison.compare(tx, original:, candidate: original)
+            ResultComparison.compare(tx, original:, candidate: original, binding:)
           end
           :ran
         rescue ArenaRunner::Error => e

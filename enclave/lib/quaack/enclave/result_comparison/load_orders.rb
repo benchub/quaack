@@ -65,15 +65,15 @@ module Quaack
       # many it ran: which orders it skips follows how many rows each table
       # run holds, and through them the query's literals (a LIMIT's value),
       # which mustn't reach the burndown's fixture loads (20261010-47).
-      def compare_in_load_orders(runner, rows, original:, candidate:, inserts: [])
-        runner.counted_as(LOAD_ORDERS.size) { load_order_runs(runner, rows, original:, candidate:, inserts:) }
+      def compare_in_load_orders(runner, rows, original:, candidate:, inserts: [], binding: nil) # rubocop:disable Metrics/ParameterLists
+        runner.counted_as(LOAD_ORDERS.size) { load_order_runs(runner, rows, original:, candidate:, inserts:, binding:) }
       end
 
-      def load_order_runs(runner, rows, original:, candidate:, inserts:)
+      def load_order_runs(runner, rows, original:, candidate:, inserts:, binding:) # rubocop:disable Metrics/ParameterLists
         verdict = nil
         distinct_loads(rows, runner).each do |load_order, positions|
           verdict = load_order_run(runner, positions.map { rows[it] }, inserts, load_order, positions) do |tx|
-            compare(tx, original:, candidate:)
+            compare(tx, original:, candidate:, binding:)
           end
           return verdict.with(load_order:) unless verdict.match?
         end
