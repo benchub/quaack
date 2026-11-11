@@ -645,14 +645,7 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 - **Open questions:** Whether the file lives per run (in the run's store) or once per store base.
 - **Status:** todo
 
-### 20261020-6. redact-rewrite: test the parse-position range clamp.
-
-From the review of 20261019-5 (minor). `parse_position`'s range check (`location.between?(1, sql.length + 1)`) has no test: widening its upper bound leaves every spec green. Stub `PgQuery.parse` to raise a ParseError whose `location` is `sql.length + 5` (and one below 1) and expect the refusal to carry no `position`; show widening the bound turns it red. Enclave spec only.
-
-- **Depends on:** 20261019-5.
-- **Came from:** The review of 20261019-5, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Status:** todo
+### 20261020-6. redact-rewrite: test the parse-position range clamp. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`.
 

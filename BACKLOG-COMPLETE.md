@@ -12864,3 +12864,13 @@ From the review of 20261021-1. The example renders the report twice and compares
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261021-4`. The example passes one fixed `generated_at` to the write and the render, and runs under a clock that ticks a second per read, so it failed every time before the fix. Mutating `Report.write` turns it red. Spec-only; I read the diff myself and started no reviewer. Not on the unreleased list.
+
+### 20261020-6. redact-rewrite: test the parse-position range clamp.
+
+From the review of 20261019-5 (minor). `parse_position`'s range check (`location.between?(1, sql.length + 1)`) has no test: widening its upper bound leaves every spec green. Stub `PgQuery.parse` to raise a ParseError whose `location` is `sql.length + 5` (and one below 1) and expect the refusal to carry no `position`; show widening the bound turns it red. Enclave spec only.
+
+- **Depends on:** 20261019-5.
+- **Came from:** The review of 20261019-5, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261020-6`. Two examples in `rewrite_redaction_spec.rb`: locations past the end or below 1 give no position; 1 and `sql.length + 1` keep theirs. Four bound mutations each turned the matching example red. The clamp already worked, so the specs had no red-first step. Spec-only; I read the diff and started no reviewer. Not on the unreleased list.
