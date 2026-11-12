@@ -85,7 +85,23 @@ module Quaack
 
         def target_calls(sql)
           targets = PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt.target_list
-          FunctionCalls.of(targets).select { %i[function operator].include?(it.kind) }.uniq
+          found = []
+          own_level_calls(targets, found)
+          found.select { %i[function operator].include?(it.kind) }.uniq
+        end
+
+        # FunctionCalls' walk, but it stops at a subquery: a SubLink gives
+        # one value a row however many its own SELECT reads, so only the
+        # left side of an IN or ANY counts.
+        def own_level_calls(node, found)
+          case node
+          when Google::Protobuf::RepeatedField then node.each { own_level_calls(it, found) }
+          when PgQuery::SubLink then own_level_calls(node.testexpr, found)
+          when Google::Protobuf::MessageExts
+            handler = FunctionCalls::HANDLERS[node.class]
+            found.concat(FunctionCalls.send(handler, node)) if handler
+            node.class.descriptor.each { own_level_calls(it.get(node), found) }
+          end
         end
 
         # The texts as an array literal's elements, inside a string literal.

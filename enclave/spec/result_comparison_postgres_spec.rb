@@ -1140,6 +1140,17 @@ RSpec.describe Quaack::Enclave::ResultComparison do
             end
           end
 
+          {
+            "a scalar subquery" => "(SELECT pg_catalog.count(*) FROM unnest(tags)) AS n",
+            "an ARRAY subquery" => "ARRAY(SELECT unnest(tags)) AS a"
+          }.each do |label, column|
+            it "keeps a total order for one inside #{label}, which gives one value a row" do
+              sql = "SELECT id, #{first}, #{column} FROM posts ORDER BY id"
+
+              expect(fields(compare(sql, sql, rows: post_rows))).to include(match: true)
+            end
+          end
+
           it "keeps a total order for the array itself" do
             sql = "SELECT id, #{first}, tags FROM posts ORDER BY id"
 
