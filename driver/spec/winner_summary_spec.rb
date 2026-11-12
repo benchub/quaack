@@ -446,14 +446,19 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     end
 
     it "changes nothing else in the section, or the report, and without a summary reads as it did" do
-      with = render(summary:)
-      without = render
+      # A clock that moves a second on every read, so the example can't pass
+      # by luck if the renders it compares ever read the clock again.
+      tick = Time.utc(2026, 11, 11, 5, 44, 43)
+      allow(Time).to receive(:now) { tick += 1 }
+      at = Time.utc(2026, 11, 11, 5, 44, 43)
+      with = render(summary:, generated_at: at)
+      without = render(generated_at: at)
 
       expect(without).not_to include(%(<div class="llm-summary"))
       expect(without).not_to include("Summary written by")
       expect(with.sub(%r{<div class="llm-summary".*?</div>\n}m, "")).to eq(without)
-      expect(render(summary: nil)).to eq(without)
-      expect(render(summary: { "text" => "  " })).to eq(without)
+      expect(render(summary: nil, generated_at: at)).to eq(without)
+      expect(render(summary: { "text" => "  " }, generated_at: at)).to eq(without)
     end
 
     it "escapes the text, the name, and the model" do
