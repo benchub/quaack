@@ -15,9 +15,10 @@ module Quaack
       # or a function's result like string_to_array; Postgres checks each
       # candidate value against it, so no wrong value gets through.
       # Anything else, such as lo < hi, an OR, or a function of the
-      # column, raises Error(:complex_check), so the query is refused, as does a CHECK whose operator the catalog says is
-      # another schema's and no extension's (Constraints#foreign_operator),
-      # however it prints. Postgres evaluates each condition, as for the
+      # column, raises Error(:complex_check), so the query is refused,
+      # as does a CHECK whose operator the catalog says is another
+      # schema's and no extension's (Constraints#foreign_operator), however
+      # it prints. Postgres evaluates each condition, as for the
       # pools.
       class Checks
         OPERATORS = %w[= <> < <= > >=].freeze
