@@ -706,6 +706,7 @@ From the second review of 20261010-41 (minor). (1) A condition written `orders.s
 - **Depends on:** None.
 - **Came from:** The second review of 20261010-41, 2026-11-10.
 - **Design:** report.
+- **Split (2026-11-12):** part (1), the alias resolution, passed two reviews and lands on its own as `task/20261110-21-aliases`. Parts (2) and (3), the every-query guard, didn't land: the branch `task/20261110-21` (head `b36079f5`) adds rewrite/split/replace and ought, and the four plain descriptions pass, but its second review found a blocking regression: the passive exception (can/could/will/would + be + participle) lets through advice main refused, such as "Every query can be rewritten with UNION.", and the run exception lets "Every query will run faster with UNION." through. Fix in a fresh loop: apply the passive exception only after will or would (or drop "can be + participle"), and make `run` count only as "could run" or "would run" of a plain description; add both sentences as must-refuse. Also from that review (minor): the `finish`, `complete` and `time` exceptions have no test (removing each keeps every spec green), and "We use UNION in every query." now passes with no test either way. Reuse the branch's specs.
 - **Status:** todo
 
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
