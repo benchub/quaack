@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261112-150000-1
 - 20261111-4
 - 20261112-160000-1
+- 20261112-170000-1
 
 ## How this file works.
 
@@ -781,13 +782,4 @@ From the review of 20261110-21 (minor, pre-existing on main). The guard against 
 - **Depends on:** 20261110-21.
 - **Came from:** 20261110-21.
 - **Design:** report.
-- **Status:** todo
-
-### 20261112-170000-1. redact sharing: `aggregate` leaves `@relations` reset.
-
-From the review of 20261112-160000-1 (minor). In `redaction/sharing.rb`, `aggregate` sets `@relations = {}` and nothing restores it, so whatever runs after it sees an empty relation map. That only loosens matching (refs then match any relation), so it's safe today, but it depends on `select` always resetting before it pairs and would break quietly if the code is reordered. Pass the relation map as an argument or a local instead of an instance variable, with a spec that pairs a key after an aggregate note in the same query (a GROUP BY key plus `string_agg(DISTINCT ...)`) and shows different-table refs stay apart there too. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261112-160000-1 (landed).
-- **Came from:** 20261112-160000-1.
-- **Design:** redact.
 - **Status:** todo

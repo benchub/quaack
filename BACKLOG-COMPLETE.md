@@ -13259,3 +13259,13 @@ From the review of 20261111-4 (minor, not a regression). The tree match in `reda
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-160000-1`. Sharing joins a matching pair only when each pair of column refs resolves to the same relation (a new `Relations` map from the SELECT's FROM list; unqualified refs, qualifiers outside the FROM list and aggregate-note refs match any, schema ignored), so `coalesce(o.status,'5')` and `coalesce(t.status,'5')` on different tables get separate placeholders and a self-join still shares. The reviewer ran 13 ordinary shapes main binds (schema-qualified vs bare, alias vs bare, GROUP BY 1, subquery and CTE keys, EXISTS) and all still bind with equal rows; three mutations went red. The per-commit check passed with rake's own exit 0. The minor is 20261112-170000-1.
+
+### 20261112-170000-1. redact sharing: `aggregate` leaves `@relations` reset.
+
+From the review of 20261112-160000-1 (minor). In `redaction/sharing.rb`, `aggregate` sets `@relations = {}` and nothing restores it, so whatever runs after it sees an empty relation map. That only loosens matching (refs then match any relation), so it's safe today, but it depends on `select` always resetting before it pairs and would break quietly if the code is reordered. Pass the relation map as an argument or a local instead of an instance variable, with a spec that pairs a key after an aggregate note in the same query (a GROUP BY key plus `string_agg(DISTINCT ...)`) and shows different-table refs stay apart there too. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261112-160000-1 (landed).
+- **Came from:** 20261112-160000-1.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-170000-1`. `@relations` is gone: `select` builds a local map from its FROM list and passes it to `pair` and `distinct`, `aggregate` passes `{}` explicitly, and `same_relations?` takes the map. Behavior is unchanged: the old reset could never reach a pairing, so the new spec (a DISTINCT aggregate next to different-table keys) is characterization only, as the builder showed. Emptying the SELECT's map turns it and an existing example red. The per-commit check passed with rake's own exit 0. I read the diff and started no reviewer.
