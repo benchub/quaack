@@ -494,6 +494,40 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
 
       expect(verdict(joined, joined, params: %w[3 1])).to eq(%w[fail unsupported_order nondeterministic_collation])
     end
+
+    # Task 20261110-4: the gate's other refusals, on this path too.
+    it "still refuses a DISTINCT" do
+      distinct = original.sub("SELECT nd_users.*", "SELECT DISTINCT nd_users.*")
+
+      expect(verdict(distinct, distinct, params: %w[3 1])).to eq(%w[fail unsupported_order nondeterministic_collation])
+    end
+
+    it "still refuses a GROUP BY" do
+      grouped = <<~SQL
+        SELECT id, name COLLATE public.nd_kn FROM nd_users GROUP BY id, name
+        ORDER BY name COLLATE public.nd_kn, id LIMIT 3
+      SQL
+
+      expect(verdict(grouped, grouped)).to eq(%w[fail unsupported_order nondeterministic_collation])
+    end
+
+    it "still refuses a set operation" do
+      union = <<~SQL
+        SELECT id, name COLLATE public.nd_kn AS n FROM nd_users
+        UNION SELECT id, name FROM nd_users ORDER BY n, id LIMIT 3
+      SQL
+
+      expect(verdict(union, union)).to eq(%w[fail unsupported_order nondeterministic_collation])
+    end
+
+    it "still refuses when the key's own column uses one" do
+      conn.exec("CREATE TABLE nd_tags (name text COLLATE public.nd_kn PRIMARY KEY)")
+      sql = "SELECT name FROM nd_tags ORDER BY name LIMIT 3"
+
+      expect(verdict(sql, sql)).to eq(%w[fail unsupported_order nondeterministic_collation])
+    ensure
+      conn.exec("DROP TABLE IF EXISTS nd_tags")
+    end
   end
 
   # Task 20261111-192302-1: row hashes round floats to eight significant
