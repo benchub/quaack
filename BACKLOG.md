@@ -286,8 +286,6 @@ From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the s
 - **Design:** rewrite-rules, report.
 - **Status:** todo
 
-### 20261011-12. Keyword operators in candidates: refuse an ambiguous one the original doesn't use (and document the original's behavior). Done, see BACKLOG-COMPLETE.md.
-
 ### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-3. rewrite-test: a bounded enumeration pass after the random search, and what a pass says. Done, see BACKLOG-COMPLETE.md.
@@ -789,15 +787,6 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
 
 ### 20261111-200042-1. Keyword operators: a whole-row operand reaches a user operator on the row type. Done, see BACKLOG-COMPLETE.md.
-
-### 20261111-200042-2. rewrite_candidate_check_spec: split the three-rule example, and watch for a flake.
-
-From the review of 20261011-12. The example near `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it into one example per rule. One earlier full run had a single unidentified failure in this spec that didn't recur; if it shows again, capture the output and file it.
-
-- **Depends on:** None.
-- **Came from:** 20261011-12.
-- **Design:** none.
-- **Status:** todo
 
 ### 20261111-210000-1. not_in_to_not_exists: `own_links` descends into set-operation arms.
 

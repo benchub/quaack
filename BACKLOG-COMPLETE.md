@@ -13109,3 +13109,13 @@ From the second review of 20261110-14 (minor). `Typed#oids` (`arena_runner/typed
 - **Design:** counterexamples, fuzz.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-17`. The bug needed no connection error: `ArenaRunner#statement` sends statements in an already aborted transaction on purpose, which cached the OID-0 fallback for every later world. `Typed` now caches only types it read back, runs PREPARE and the read-back (and DEALLOCATE's check) in a `quaack_arena_types` savepoint inside a transaction, and rescues `PgQuery::ParseError` into the fallback. The review found nothing blocking; four mutations each went red. The per-commit check passed with rake's own exit 0. Minors are in 20261112-090000-1.
+
+### 20261111-200042-2. rewrite_candidate_check_spec: split the three-rule example, and watch for a flake.
+
+From the review of 20261011-12. The example near `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it into one example per rule. One earlier full run had a single unidentified failure in this spec that didn't recur; if it shows again, capture the output and file it.
+
+- **Depends on:** None.
+- **Came from:** 20261011-12.
+- **Design:** none.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261111-200042-2`. The three-rule example is now three (implicit-cast target, pseudo-type, function result type), each with its own setup; a mutation of each rule in `keyword_reach.rb` fails exactly its own example. The whole spec file passed three runs in a row (241 examples each), so the earlier unidentified failure didn't recur. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
