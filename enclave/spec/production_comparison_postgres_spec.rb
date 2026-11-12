@@ -496,9 +496,136 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     end
   end
 
+  # Task 20261111-192302-1: row hashes round floats to eight significant
+  # digits, so two floats a last bit apart can hash differently. The
+  # verdict stays as it is, but says when the results match with float
+  # columns rounded to five, so the report can say why.
+  describe "float noise" do
+    # Adjacent doubles that print to eight significant digits as
+    # 1.0000000 and 1.0000001.
+    below = "'1.000000050000002'::float8"
+    above = "'1.0000000500000021'::float8"
+
+    def noise(original, candidate, **) = compare(original, candidate, **).then { [*verdict_of(it), it.float_noise] }
+    def verdict_of(result) = [result.result, result.rule, *result.reason]
+
+    # Counts the queries a compare sends.
+    let(:counting) do
+      Class.new(SimpleDelegator) do
+        def sent = (@sent ||= [])
+
+        def send_query_params(sql, *)
+          sent << sql
+          super
+        end
+      end.new(conn)
+    end
+
+    it "flags a multiset that differs only across a rounding boundary" do
+      expect(noise("SELECT 7 AS k, #{below} AS v, NULL::float8 AS n",
+                   "SELECT 7 AS k, #{above} AS v, NULL::float8 AS n"))
+        .to eq(["fail", "multiset", true])
+    end
+
+    it "flags an ordered value mismatch that's only float noise" do
+      rows = ->(v) { "SELECT k, CASE WHEN k = 2 THEN #{v} ELSE k END AS v FROM generate_series(1, 3) k ORDER BY k" }
+      expect(noise(rows.call(below), rows.call(above))).to eq(["fail", "value", true])
+    end
+
+    # Each run gives every row a value within a 1e-12 of the boundary, so
+    # the original's two tiebreaker runs keep other row hashes.
+    it "flags an original refused as unstable_original by float noise" do
+      rows = "SELECT g, #{below} + (random() - 0.5) * 1e-12 AS v FROM generate_series(1, 20) g ORDER BY g"
+      expect(noise(rows, rows)).to eq(["fail", "unsupported_order", "unstable_original", true])
+    end
+
+    it "flags a subset mismatch that's only float noise" do
+      expect(noise("SELECT v FROM (VALUES (#{below}), (2)) t(v) LIMIT 1", "SELECT #{above} LIMIT 1"))
+        .to eq(["fail", "subset", true])
+    end
+
+    it "flags an original refused as cut_tie under a LIMIT by float noise" do
+      rows = "SELECT g, #{below} + (random() - 0.5) * 1e-12 AS v FROM generate_series(1, 20) g ORDER BY g LIMIT 15"
+      expect(noise(rows, rows)).to eq(["fail", "unsupported_order", "cut_tie", true])
+    end
+
+    it "doesn't flag floats that differ plainly" do
+      expect(noise("SELECT 7 AS k, 1.0001::float8 AS v", "SELECT 7 AS k, 1.0002::float8 AS v"))
+        .to eq(["fail", "multiset", false])
+    end
+
+    # Review of 20261111-192302-1: a second look that rounded to five
+    # significant digits flagged these.
+    it "doesn't flag floats more than a step of eight significant digits apart" do
+      expect(noise("SELECT 7 AS k, 1.00000004::float8 AS v", "SELECT 7 AS k, 1.00000016::float8 AS v"))
+        .to eq(["fail", "multiset", false])
+    end
+
+    it "flags negative float noise, but not a flipped sign" do
+      expect(noise("SELECT -#{below}", "SELECT -#{above}")).to eq(["fail", "multiset", true])
+      expect(noise("SELECT -#{below}", "SELECT #{below}")).to eq(["fail", "multiset", false])
+    end
+
+    it "doesn't flag a rewrite that drops one row from a large float sum or avg" do
+      rows = "SELECT g % 5 AS u, g AS id, ((g::bigint * 7919) % 1000) / 7.0::float8 AS score " \
+             "FROM generate_series(1, 500000) g"
+      %w[sum avg].each do |aggregate|
+        query = ->(where) { "SELECT u, #{aggregate}(score) FROM (#{rows}) r #{where} GROUP BY u ORDER BY u" }
+        expect(noise(query.call(""), query.call("WHERE id <> 3"), timeout_ms: 30_000))
+          .to eq(["fail", "value", false])
+      end
+    end
+
+    it "doesn't flag float noise when another column differs" do
+      expect(noise("SELECT 7 AS k, #{below} AS v", "SELECT 8 AS k, #{above} AS v"))
+        .to eq(["fail", "multiset", false])
+    end
+
+    it "doesn't flag a row count mismatch" do
+      expect(noise("SELECT #{below}", "SELECT #{above} UNION ALL SELECT #{above}"))
+        .to eq(["fail", "row_count", false])
+    end
+
+    it "doesn't flag a pass" do
+      expect(noise("SELECT #{below}", "SELECT #{below}")).to eq(["pass", nil, false])
+    end
+
+    it "runs nothing more for a result with no float columns" do
+      expect(verdict_of(described_class.compare(connection: counting, original: "SELECT 1.5::numeric",
+                                                candidate: "SELECT 1.5000001::numeric", params: [],
+                                                timeout_ms: 5_000))).to eq(%w[fail multiset])
+      expect(counting.sent.size).to eq(2)
+    end
+
+    # The original sleeps once the server's clock passes a mark that the
+    # candidate's sleep carries the first compare past, so only the
+    # second look times out.
+    it "keeps the verdict, unflagged, when the second look times out" do
+      mark = conn.exec("SELECT (clock_timestamp() + interval '300 ms')::text").getvalue(0, 0)
+      original = "SELECT #{below} FROM pg_sleep(CASE WHEN clock_timestamp() > '#{mark}' THEN 3 ELSE 0 END)"
+      expect(noise(original, "SELECT #{above} FROM pg_sleep(0.6)", timeout_ms: 1_500))
+        .to eq(["fail", "multiset", false])
+    end
+  end
+
   it "keeps row values out of the verdict" do
     result = compare("SELECT 'SENTINEL_ROW_VALUE'", "SELECT 'OTHER_SENTINEL_VALUE'")
-    expect(result.to_h).to eq(result: "fail", rule: "multiset", reason: nil)
+    expect(result.to_h).to eq(result: "fail", rule: "multiset", reason: nil, float_noise: false)
+  end
+
+  # Task 20261111-192302-1: float_noise is true or false, and true only on a
+  # failing verdict.
+  it "refuses a verdict whose float_noise isn't a boolean, or is true on a verdict that didn't fail" do
+    sentinel = "SENTINEL_ROW_VALUE"
+    [{ result: "fail", rule: "multiset", float_noise: sentinel },
+     { result: "fail", rule: "multiset", float_noise: nil },
+     { result: "pass", rule: nil, float_noise: true },
+     { result: "partial", rule: "subset_timed_out", float_noise: true }].each do |fields|
+      expect { described_class::Verdict.new(**fields) }
+        .to raise_error(ArgumentError) { |e| expect(e.message).not_to include(sentinel) }
+    end
+    expect(described_class::Verdict.new(result: "fail", rule: "value", float_noise: true).float_noise).to be(true)
+    expect(described_class::Verdict.new(result: "pass", rule: nil).float_noise).to be(false)
   end
 
   # Task 20261110-7: a refusal's reason is one of Protocol::RefusalReasons,

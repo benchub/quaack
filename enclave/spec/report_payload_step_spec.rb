@@ -670,7 +670,7 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished",
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "reason" => nil,
-                                 "plan" => nil,
+                                 "float_noise" => nil, "plan" => nil,
                                  "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
                                  "evidence" => nil, "out_of_time" => nil, "not_tested" => nil,
                                  "trials" => nil, "fuzz_stop" => nil, "worlds" => nil, "bound" => nil,
@@ -898,6 +898,43 @@ RSpec.describe "quaacks report-payload" do
            not_compared.merge("reason" => "hidden_tie")]
         )
         expect(rewrite(4)).to include("reason" => nil)
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    # Task 20261111-192302-1: a production failure that matched with float
+    # columns rounded says float_noise, but only when every failing
+    # verdict of the rewrite does, and only as true.
+    context "when result-comparison's failing verdicts say float_noise" do
+      let(:outcome) do
+        payload_of do |store|
+          (2..7).each { measured(store, it, "none" => "result_mismatch") }
+          failed = ->(rule, reason = nil) { { "result" => "fail", "rule" => rule, "reason" => reason } }
+          noisy = ->(rule, reason = nil, noise = true) { failed.call(rule, reason).merge("float_noise" => noise) }
+          pass = { "result" => "pass", "rule" => nil, "float_noise" => false }
+          verdicts = {
+            "rewrite_2" => { "slow" => noisy.call("multiset"), "typical" => pass },
+            "rewrite_3" => { "slow" => noisy.call("multiset"), "typical" => noisy.call("value", nil, false) },
+            "rewrite_4" => { "slow" => noisy.call("unsupported_order", "unstable_original") },
+            "rewrite_5" => { "slow" => noisy.call("value", nil, REPORT_WORD_SENTINEL) },
+            "rewrite_6" => { "slow" => noisy.call("value"), "typical" => failed.call("timed_out") },
+            "rewrite_7" => { "slow" => noisy.call("value", nil, "true") }
+          }
+          store.write("result_comparison", Quaack::Enclave::Steps::ResultComparison.entry(verdicts))
+        end
+      end
+
+      it "sends float_noise true only when every failing verdict says so, and none of the values" do
+        expect((2..7).map { rewrite(it).slice("fate", "rule", "reason", "float_noise").compact }).to eq(
+          [{ "fate" => "production_mismatch", "rule" => "multiset", "float_noise" => true },
+           { "fate" => "production_mismatch", "rule" => "value" },
+           { "fate" => "production_not_compared", "rule" => "unsupported_order", "reason" => "unstable_original",
+             "float_noise" => true },
+           { "fate" => "production_mismatch", "rule" => "value" },
+           { "fate" => "production_mismatch", "rule" => "value" },
+           { "fate" => "production_mismatch", "rule" => "value" }]
+        )
+        expect(rewrite(3)).to include("float_noise" => nil)
         expect_no_leaks(sentinels, outcome)
       end
     end

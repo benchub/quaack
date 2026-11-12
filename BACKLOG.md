@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261111-185500-1 (no `cut_tie` blame without a LIMIT or OFFSET: new refusal reason `unstable_original`; the comparator partners floats across a bucket boundary).
+- 20261111-192302-1 (production comparison takes a second look at float columns on a grid shifted half a step; verdicts and the report's rewrites gain a boolean `float_noise`).
 
 ## How this file works.
 
@@ -884,16 +885,6 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261111-191130-1. Keep each counterexample round's inserts for replay. Done, see BACKLOG-COMPLETE.md.
 
-### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary.
-
-- **Depends on:** None.
-- **Came from:** The builder of 20261111-185500-1, 2026-11-11.
-- **Design:** DESIGN.md, result-comparison.
-- **Status:** todo.
-- **What's wrong:** `ProductionComparison` hashes each row from `ResultComparator::Values.key`, which rounds floats with `%.7e`. Two runs of the original whose float column differs only in the last bit (such as an `avg` that met its rows in another order) can hash differently when the two values sit on either side of a rounding boundary. 20261111-185500-1 fixed this for fixture-compare, whose comparator now looks for a partner in other buckets, but the racetrack only keeps hashes. There, the original's tiebreaker runs then disagree, and with no LIMIT or OFFSET it refuses `unstable_original`; with one, the cut-tie check may refuse `cut_tie`, and a candidate run can fail `value` or `multiset`. Rare, and it always errs toward refusal or mismatch, never a false pass.
-- **Do:** Decide whether it's worth fixing on hashed rows, or list it in DESIGN.md as a known way to discard a good candidate.
-- **Answers (user, 2026-11-11):** Stay strict: never fall back to fixture-compare. But when production comparison fails or refuses a rewrite whose result has float columns, and the difference may be only minor float noise, the report must say the rewrite failed because of minor mismatches in float values, and that writing the query to deal with them (for example, rounding the float outputs) might let the rewrite through. Add a docs page explaining what that means, with examples, and link to it from that report message, the way `report/rule_links.rb` links to `docs/transforms/`. List the edge case in DESIGN.md.
-
 ### 20261111-213055-1. Test the small guards in the counterexample-rounds record.
 
 - **Depends on:** None.
@@ -903,3 +894,12 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **What's wrong:** Three guards added by 20261111-191130-1 can be deleted with every test still green: the guard at the top of `counterexample_round!` (driver/lib/quaack/driver/provenance.rb) that drops a bad rewrite name or round number; the `named?` check on the entry when a round is recorded; and `.reject { tries.empty? }` in `Provenance::Rounds.check`, without which a rewrite whose tries are all malformed is kept as an empty list.
 - **Do:** Add a focused test for each, watching it go red when the guard is removed.
 - **Also (second review of 20261111-191130-1, minor):** in `driver/spec/pipeline_provenance_spec.rb`, the fan-out failure test's cut-short LLM reply is `"SENTINEL_REASON"`, which now legitimately appears in `counterexample_rounds` feedback, so that test can't tell if the reply's text leaks into the record. Give `cut_short` its own sentinel, such as `SENTINEL_REPLY`, and add it to `secret`.
+
+### 20261111-223753-1. Should a float-noise production failure count as a wrong result?
+
+- **Depends on:** None.
+- **Came from:** The builder of 20261111-192302-1, 2026-11-11.
+- **Design:** DESIGN.md, result-comparison.
+- **Status:** todo.
+- **What's wrong:** A rewrite whose production comparison failed only on float noise (`float_noise: true`) is still counted as a wrong result, and as a bug in the rule that made it, in the report's accountability and rule-bug lists, and `Report::Words` still calls it "wrong on the real data", though the rewrite was likely right.
+- **Do:** Ask the user whether a flagged failure should stay counted that way, be counted apart, or be left out, and build what they decide.

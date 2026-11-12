@@ -18,7 +18,7 @@ module Quaack
     #
     #   ProductionComparison.compare(connection:, original:, candidate:, params:, timeout_ms:)
     #   # => Verdict(result: "pass" | "fail" | "partial", rule: nil | String,
-    #   #            reason: nil | String)
+    #   #            reason: nil | String, float_noise: true | false)
     #
     # Each row is hashed (SHA-256) from ResultComparator::Values.key, which
     # rounds float columns to eight significant digits (and to zero below
@@ -60,26 +60,54 @@ module Quaack
     #
     # Any other timeout fails, rule timed_out.
     #
+    # Float noise (task 20261111-192302-1). A row hash can't partner floats
+    # across a rounding boundary as fixture-compare does, so floats a last
+    # bit apart can fail a good rewrite. The verdict stands, but when it's
+    # one float noise could cause (NOISY_RULES, or unsupported_order with
+    # one of NOISY_REASONS) and a result it streamed had a float column,
+    # the whole compare runs a second time, under the same timeout and row
+    # caps, with float columns cut to the same eight significant digits
+    # on a grid shifted half a step from the first's (FloatNoise). If that
+    # passes, the verdict says float_noise true, so the report can say the
+    # rewrite failed on minor mismatches in float values. Any other
+    # outcome of the second look, a timeout included, leaves float_noise
+    # false. It's no looser than the first look: floats a step of eight
+    # significant digits apart or more never pass it. A pair less than
+    # half a step apart can't straddle a boundary of both grids, so it
+    # passes one of them, unless it straddles a power of ten.
+    #
     # Trust boundary. A Verdict holds only a fixed result word, a rule
-    # name, and for unsupported_order the check that refused, one of
-    # Protocol::RefusalReasons. Row values live only as hashes inside one
-    # compare.
+    # name, for unsupported_order the check that refused, one of
+    # Protocol::RefusalReasons, and float_noise, true or false. Row values
+    # live only as hashes inside one compare.
     module ProductionComparison # rubocop:disable Metrics/ModuleLength -- one refusal per check
       RESULTS = %w[pass fail partial].freeze
       RULES = [*ResultComparator::RULES.map(&:to_s), "timed_out", "subset_timed_out"].freeze
 
-      Verdict = Data.define(:result, :rule, :reason) do
-        def initialize(result:, rule:, reason: nil)
+      Verdict = Data.define(:result, :rule, :reason, :float_noise) do
+        def initialize(result:, rule:, reason: nil, float_noise: false)
           raise ArgumentError, "a verdict's result must be one of RESULTS" unless RESULTS.include?(result)
           raise ArgumentError, "a verdict's rule must be one of RULES, or nil" unless rule.nil? || RULES.include?(rule)
           unless rule == "unsupported_order" ? Protocol::RefusalReasons.valid?(reason) : reason.nil?
             raise ArgumentError, "a verdict's reason must be one of Protocol::RefusalReasons on an " \
                                  "unsupported_order verdict, and nil on any other"
           end
+          unless float_noise_fits?(result, float_noise)
+            raise ArgumentError, "a verdict's float_noise must be true or false, and true only on a failing verdict"
+          end
 
           super
         end
+
+        private
+
+        def float_noise_fits?(result, float_noise) = float_noise == false || (float_noise == true && result == "fail")
       end
+
+      # The failures float noise can cause: a mismatch of rows, or a
+      # refusal that compares row hashes (FloatNoise).
+      NOISY_RULES = %w[value multiset subset].freeze
+      NOISY_REASONS = %w[unstable_original cut_tie].freeze
 
       # A streamed result: its column types, row count, and digests.
       # hidden is whether rows agree on the tie columns but differ in the
@@ -102,9 +130,24 @@ module Quaack
       module_function
 
       def compare(connection:, original:, candidate:, params:, timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
-        by_mode(Run.new(connection, params, timeout_ms), original, candidate, binding)
+        run = Run.new(connection, params, timeout_ms)
+        verdict = strict(run, original, candidate, binding)
+        return verdict unless run.floats? && noisy?(verdict)
+
+        shifted = Run.new(connection, params, timeout_ms, shifted: true)
+        strict(shifted, original, candidate, binding).result == "pass" ? verdict.with(float_noise: true) : verdict
+      end
+
+      def strict(run, original, candidate, binding)
+        by_mode(run, original, candidate, binding)
       rescue TimedOut
         fail("timed_out")
+      end
+
+      # Whether float noise could explain verdict (see FloatNoise).
+      def noisy?(verdict)
+        NOISY_RULES.include?(verdict.rule) || (verdict.rule == "unsupported_order" &&
+                                               NOISY_REASONS.include?(verdict.reason))
       end
 
       def by_mode(run, original, candidate, binding)
@@ -311,11 +354,16 @@ module Quaack
       class Run
         attr_reader :connection
 
-        def initialize(connection, params, timeout_ms)
+        def initialize(connection, params, timeout_ms, shifted: false)
           @connection = connection
           @params = params
           @timeout_ms = Integer(timeout_ms)
+          @shifted = shifted
+          @floats = false
         end
+
+        # Whether any result this run streamed had a float column.
+        def floats? = @floats
 
         # Streams sql's rows into a Digested. Yields each row's hash.
         # tie_positions, 1-based, turn on the hidden check.
@@ -337,11 +385,11 @@ module Quaack
         # on the server's clock, the one statement_timeout fires by. The
         # jump server's clock can run at another rate.
         def stream(sql, tie_positions, started, max_rows, &)
-          rows = Rows.new(tie_positions, max_rows)
+          rows = Rows.new(tie_positions, max_rows, shifted: @shifted)
           @connection.send_query_params(sql, @params)
           @connection.set_single_row_mode
           read(rows, &)
-          rows.digested
+          rows.digested.tap { @floats ||= it.types.to_a.intersect?(ResultComparator::FLOAT_TYPES) }
         rescue PG::QueryCanceled
           drain
           raise unless ServerClock.timed_out?(@connection, started, @timeout_ms)
@@ -361,11 +409,41 @@ module Quaack
         end
       end
 
+      # The row key compare's second look uses: float columns cut, not
+      # rounded, to eight significant digits, so the grid's boundaries sit
+      # half a step from those of ResultComparator::Values's %.7e rounding,
+      # and every other column as ResultComparator::Values keys it.
+      module FloatNoise
+        module_function
+
+        def key(types, row)
+          types.each_index.map do |i|
+            value = row[i]
+            next ResultComparator::Values.value_key(types[i], value) unless value && float?(types[i])
+
+            "f:#{shifted(ResultComparator::Values.parse_float(value))}"
+          end
+        end
+
+        def float?(type) = ResultComparator::FLOAT_TYPES.include?(type)
+
+        # %.20e prints the double's own digits far past the eighth, so
+        # cutting there floors its magnitude to eight significant digits.
+        def shifted(value)
+          return value.to_s if value.nan? || value.infinite?
+          return "0" if value.abs < ResultComparator::ABSOLUTE_TOLERANCE
+
+          digits, exponent = format("%.20e", value.abs).split("e")
+          "#{"-" if value.negative?}#{digits[0, 9]}e#{exponent}"
+        end
+      end
+
       # Row hashes gathered from one query.
       class Rows
-        def initialize(tie_positions, max_rows = nil)
+        def initialize(tie_positions, max_rows = nil, shifted: false)
           @kept = tie_positions&.map(&:pred)
           @max_rows = max_rows
+          @shifted = shifted
           @hashes = []
           @ties = {}
           @hidden = false
@@ -374,7 +452,7 @@ module Quaack
         def add(result)
           @types ||= result.nfields.times.map { result.ftype(it) }
           result.each_row do |row|
-            key = ResultComparator::Values.key(@types, row)
+            key = row_key(row)
             hash = Digest::SHA256.digest(JSON.generate(key))
             @hashes << hash
             raise HashedRuns::TooManyRows if @max_rows && @hashes.size > @max_rows
@@ -395,6 +473,8 @@ module Quaack
 
         # Whether key agrees with an earlier row on the tie columns but
         # differs in another.
+        def row_key(row) = @shifted ? FloatNoise.key(@types, row) : ResultComparator::Values.key(@types, row)
+
         def hidden?(key)
           tie = @kept.map { key[it] }
           rest = key.each_index.reject { @kept.include?(it) }.map { key[it] }

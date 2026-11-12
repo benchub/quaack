@@ -194,6 +194,7 @@ module Quaack
         check_untested_atoms(rewrites)
         check_not_tested(rewrites)
         check_refusal_reasons(rewrites)
+        check_float_noise(rewrites)
       end
 
       def check_findings(fields)
@@ -270,6 +271,16 @@ module Quaack
         return if reasons.all? { it.nil? || Protocol::RefusalReasons.valid?(it) }
 
         raise Error, "a value in this report message has a refusal reason that isn't one of QUAACK's"
+      end
+
+      # Each rewrite's float_noise, whether a production failure matched
+      # with float columns rounded (task 20261111-192302-1), must be true,
+      # false, or nil, under either kind of key.
+      def check_float_noise(rewrites)
+        flags = rewrites.flat_map { |rewrite| ["float_noise", :float_noise].map { rewrite[it] } }
+        return if flags.all? { |flag| [true, false, nil].any? { flag.equal?(it) } }
+
+        raise Error, "a value in this report message has a float_noise that isn't true, false, or nil"
       end
 
       # Each label's suggested_drops, if it has one, must pass
