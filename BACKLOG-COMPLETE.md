@@ -13099,3 +13099,13 @@ Found in the build of 20261111-200042-1, 2026-11-12. `x IN (SELECT ...)` parses 
 - **Design:** qualify, rewrite-check.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-073000-1`. `KeywordOperators` walks SubLinks and treats an ANY SubLink with no operator name (`IN`/`NOT IN (SELECT ...)`, bare `=`) as a keyword form, keyed by its deparsed text for the exemption. `= ANY` and `<> ALL (SELECT ...)` name their operator and were already qualified by `NameQualifier`, so they needed nothing; a row IN subquery is refused earlier as RowExpr. The Opus reviewer tried IN subqueries in ON, a CTE, a scalar subquery and HAVING and found nothing blocking; two mutations went red. The per-commit check passed with rake's own exit 0. Minors are in 20261112-083000-1.
+
+### 20261110-17. ArenaRunner::Typed: don't cache a failed type lookup.
+
+From the second review of 20261110-14 (minor). `Typed#oids` (`arena_runner/typed.rb` around line 50) caches its OID-0 fallback per SQL text. If the type read-back fails once (an aborted transaction or a brief connection error), every later world that runs the same SQL runs it untyped, which brings back the `total * 1.5` 22P02 failure silently. Cache the fallback only when the PREPARE itself failed cleanly, or not at all. Check first whether the runner ever sends a new `$n` query after one failed in the same transaction. Also: inside a transaction `read` runs outside the savepoint (around line 58), and `declared` (around line 69) doesn't rescue `PgQuery::ParseError`.
+
+- **Depends on:** 20261110-14.
+- **Came from:** The second review of 20261110-14, 2026-11-10.
+- **Design:** counterexamples, fuzz.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-17`. The bug needed no connection error: `ArenaRunner#statement` sends statements in an already aborted transaction on purpose, which cached the OID-0 fallback for every later world. `Typed` now caches only types it read back, runs PREPARE and the read-back (and DEALLOCATE's check) in a `quaack_arena_types` savepoint inside a transaction, and rescues `PgQuery::ParseError` into the fallback. The review found nothing blocking; four mutations each went red. The per-commit check passed with rake's own exit 0. Minors are in 20261112-090000-1.

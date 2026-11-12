@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261111-260000-1
 - 20261111-200042-1
 - 20261112-073000-1
+- 20261110-17
 
 ## How this file works.
 
@@ -696,15 +697,6 @@ From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its
 - **Design:** fuzz.
 - **Status:** todo
 
-### 20261110-17. ArenaRunner::Typed: don't cache a failed type lookup.
-
-From the second review of 20261110-14 (minor). `Typed#oids` (`arena_runner/typed.rb` around line 50) caches its OID-0 fallback per SQL text. If the type read-back fails once (an aborted transaction or a brief connection error), every later world that runs the same SQL runs it untyped, which brings back the `total * 1.5` 22P02 failure silently. Cache the fallback only when the PREPARE itself failed cleanly, or not at all. Check first whether the runner ever sends a new `$n` query after one failed in the same transaction. Also: inside a transaction `read` runs outside the savepoint (around line 58), and `declared` (around line 69) doesn't rescue `PgQuery::ParseError`.
-
-- **Depends on:** 20261110-14.
-- **Came from:** The second review of 20261110-14, 2026-11-10.
-- **Design:** counterexamples, fuzz.
-- **Status:** todo
-
 ### 20261110-18. Literals USERS guard: don't skip a step silently.
 
 From the review of 20261010-7 (minor). `enclave/spec/literals_users_spec.rb` matches writes only when the receiver is named `store`, and picks steps with one regex (`LiteralSet.load`, `Measurement.measure`, `IndexShare.`). A step that renames its store variable or loads the sets another way is skipped without failing; only the five steps the spec names are checked by name. Make the scan fail on a step that loads the sets but yields no writes it can read, and handle `case` and `||` names, or give them a clearer failure. Two steps writing the same name also get duplicate example descriptions.
@@ -842,4 +834,13 @@ From the review of 20261112-073000-1 (minor). (1) Existing behavior, not that di
 - **Depends on:** 20261112-073000-1 (landed).
 - **Came from:** 20261112-073000-1.
 - **Design:** qualify, rewrite-check.
+- **Status:** todo
+
+### 20261112-090000-1. ArenaRunner::Typed: cache a clean PREPARE failure, and test one.
+
+From the review of 20261110-17 (minor). (1) Cost: failures aren't cached now, so a query whose PREPARE fails cleanly every time (the `unknown`-parameter case `typed.rb` names, which needs the 42P18 retry) is re-prepared on every `tx.query` call, original and candidate, every fuzz trial and world: about 7 extra round trips inside a transaction (SAVEPOINT, PREPARE, ROLLBACK TO, RELEASE, then SAVEPOINT, the `pg_prepared_statements` check, RELEASE). Cache the fallback when PREPARE itself fails in a healthy transaction (status IDLE or INTRANS before the call, a PG::Error from PREPARE), and skip caching only when the transaction was already aborted or the connection failed. Measure trials per second on a fuzz session for such a query before and after. (2) No example uses a real failing PREPARE in a clean transaction; add one (the 42P18 case), asserting the fallback, that the transaction stays usable, and (after part 1) that a second call doesn't PREPARE again. Red first where there's a real failure; mutate. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** 20261110-17.
+- **Design:** counterexamples, fuzz.
 - **Status:** todo
