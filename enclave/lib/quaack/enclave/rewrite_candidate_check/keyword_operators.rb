@@ -107,10 +107,12 @@ module Quaack
           case node
           when PgQuery::A_Expr then a_expr(node)
           when PgQuery::CaseExpr then ["="] if node.arg
-          when PgQuery::JoinExpr then ["="] if node.is_natural || !node.using_clause.empty?
+          when PgQuery::JoinExpr then join(node)
           when PgQuery::SubLink then sub_link(node)
           end
         end
+
+        def join(node) = (["="] if node.is_natural || !node.using_clause.empty?)
 
         # IN (SELECT ...) is an ANY SubLink with no operator name, so its =
         # resolves through the path (20261112-073000-1). One that names its

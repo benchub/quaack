@@ -1267,7 +1267,8 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
       it "qualifies the operator of = ANY and <> ALL subqueries instead, since they name it" do
         outcomes = subquery_forms.last(2).map { kw_outcome(it, "kw, pg_catalog, public") }
-        expect(outcomes).to all(match(/\ASELECT id FROM public\.orders t WHERE t\.status OPERATOR\(\w+\.(=|<>)\) (ANY|ALL) /))
+        qualified = /\ASELECT id FROM public\.orders t WHERE t\.status OPERATOR\(\w+\.(=|<>)\) (ANY|ALL) /
+        expect(outcomes).to all(match(qualified))
       end
 
       it "accepts them when only pg_catalog has their operators" do
