@@ -453,6 +453,18 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(run("The original OR read two tables, so a UNION let each arm use an Index Scan.", base))
         .to have_attributes(outcome: "used")
     end
+
+    ["Rewrite every query this way.", "Every query ought to use UNION.",
+     "Split every query's OR into a UNION.", "Replace the OR in all queries with a UNION."].each do |text|
+      it "refuses #{text.inspect}" do
+        expect(run(text, base)).to have_attributes(outcome: "rejected")
+      end
+    end
+
+    it "keeps a conditional heuristic that names no every or all query" do
+      text = "When a query only reads a few selective keys, an index on that column lets the database skip the rest."
+      expect(run(text, base)).to have_attributes(outcome: "used")
+    end
   end
 
   describe "an index-only winner" do
