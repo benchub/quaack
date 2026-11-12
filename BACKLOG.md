@@ -860,6 +860,7 @@ From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundl
 - **Depends on:** None.
 - **Came from:** The build of 20261021-3.
 - **Design:** none.
+- **Likely cause found (2026-11-12):** the build of 20261016-16 saw the driver suite fail at `driver/spec/winner_summary_spec.rb:456` ("the report changes nothing else in the section, or the report, and without a summary reads as it did"). The two renders it compares differed only in the "Generated on" stamp, 05:44:43Z against 05:44:44Z: the same clock race 20261021-4 fixed in `report_spec.rb`. Fix it the same way (pass one fixed `generated_at` to both renders, and run under a clock that ticks a second per read so it fails every time before the fix), and check the driver specs for any other example that compares two renders.
 - **Status:** todo
 
 ### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
