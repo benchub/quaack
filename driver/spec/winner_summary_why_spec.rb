@@ -266,7 +266,9 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     # isn't read as a step where it reads as a verb; any other one-word type
     # always counts. 20261112-063000-1: mid-sentence, the verb reading needs
     # a modal or "to" just before it, and at a sentence's start a finite
-    # verb right after it makes it a step.
+    # verb right after it makes it a step. 20261112-080000-1: a lead-in word
+    # (Then, First, Next, Instead, and the like) with an optional comma still
+    # leaves a sentence start.
     ["The rewrite can Hash the smaller input and reads 40 blocks.",
      "It can Sort them once, and the winner reads 40 blocks.",
      "It can Hash it, and the winner reads 40 blocks.",
@@ -276,7 +278,11 @@ RSpec.describe Quaack::Driver::WinnerSummary do
      "Sort by date first, and the winner reads 40 blocks.",
      "Sort the rows by id, and the winner reads 40 blocks.",
      "Limit the scan to recent rows, and the winner reads 40 blocks.",
-     "Limit the scan, and the winner reads 40 blocks."].each do |text|
+     "Limit the scan, and the winner reads 40 blocks.",
+     "Then Sort by id. The winner reads 40 blocks.",
+     "First, Group by tenant. The winner reads 40 blocks.",
+     "Next, Sort the rows by id. The winner reads 40 blocks.",
+     "Instead Limit the scan. The winner reads 40 blocks."].each do |text|
       it "reads the one-word type in #{text.inspect} as a verb" do
         expect(run(text, base)).to have_attributes(text:, outcome: "used")
       end
@@ -301,7 +307,12 @@ RSpec.describe Quaack::Driver::WinnerSummary do
      "We use Hash the rows, and the winner reads 40 blocks.",
      "Sort happens later, and the winner reads 40 blocks.",
      "The winner reads 40 blocks. Hash runs once.",
-     "Sort dominates the original. The winner reads 40 blocks."].each do |text|
+     "Sort dominates the original. The winner reads 40 blocks.",
+     "First, Sort happens. The winner reads 40 blocks.",
+     "Then a Hash runs. The winner reads 40 blocks.",
+     "Then the Sort is gone. The winner reads 40 blocks.",
+     "The winner reads 40 blocks and uses Hash instead of Sort.",
+     "The winner reads 40 blocks and then Sort by id."].each do |text|
       it "reads the one-word type in #{text.inspect} as a step" do
         expect(run(text, base)).to have_attributes(outcome: "rejected")
       end

@@ -55,7 +55,11 @@ module Quaack
         # just after a determiner (a Sort by created_at, the Sort the
         # original had), where it's a noun.
         VERBS = %w[Hash Sort Group Limit Unique Result].freeze
-        SENTENCE_START = /(?:\A|[.!?;]\s)\s*\z/
+        # A capitalised lead-in word and an optional comma (Then, First,
+        # Instead) still leave a sentence start (20261112-080000-1). Only at
+        # a sentence's start: "instead of" mid-sentence isn't a lead-in.
+        LEAD_IN = /(?:Then|First|Next|Instead|Finally|Also|Otherwise|So),?\s+/
+        SENTENCE_START = /(?:\A|[.!?;]\s)\s*(?:#{LEAD_IN.source})?\z/
         MODAL = /\b(?:can|could|should|will|would|may|might|must|to)\s+\z/i
         FINITE_VERB = /\A\s+(?:happens|runs|is|was|takes|costs|dominates|appears|remains)\b/i
         DETERMINER = /\b(?:an?|the|its|their|this|that|each|no)\s+\z/i
