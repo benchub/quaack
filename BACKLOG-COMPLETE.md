@@ -13159,3 +13159,13 @@ From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Gro
 - **Design:** LLM prompts.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-080000-1`. `SENTENCE_START` allows a capitalised lead-in word (Then, First, Next, Instead, Finally, Also, Otherwise, So) with an optional comma right after a sentence start, so "Then Sort by id." and "First, Group by tenant." pass again; "First, Sort happens.", "Then a Hash runs." and a mid-sentence "and then Sort by id" stay refused. Two mutations went red. The per-commit check passed with rake's own exit 0. Driver only; I read the diff and started no reviewer.
+
+### 20261110-18. Literals USERS guard: don't skip a step silently.
+
+From the review of 20261010-7 (minor). `enclave/spec/literals_users_spec.rb` matches writes only when the receiver is named `store`, and picks steps with one regex (`LiteralSet.load`, `Measurement.measure`, `IndexShare.`). A step that renames its store variable or loads the sets another way is skipped without failing; only the five steps the spec names are checked by name. Make the scan fail on a step that loads the sets but yields no writes it can read, and handle `case` and `||` names, or give them a clearer failure. Two steps writing the same name also get duplicate example descriptions.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261010-7, 2026-11-10.
+- **Design:** literals.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-18`. The guard follows store aliases and positional arguments to same-file methods, reads names built with if/unless/case/||, fails on a step that loads the sets with no write it can read unless `writes_elsewhere` names its entries, and gives each example a file:line description. It found that `index_build` writes its entry in `Enclave::IndexBuild`; the reviewer confirmed it needs no USERS listing, since `IndexBuild.searches` only takes searches with an `index_ranking_` entry, so an `index_search_` entry (already in USERS) exists first, and it holds no per-set numbers. Five planted steps and five mutations went red. The per-commit check passed with rake's own exit 0. The minor is 20261112-120000-1.

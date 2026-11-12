@@ -698,15 +698,6 @@ From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its
 - **Design:** fuzz.
 - **Status:** todo
 
-### 20261110-18. Literals USERS guard: don't skip a step silently.
-
-From the review of 20261010-7 (minor). `enclave/spec/literals_users_spec.rb` matches writes only when the receiver is named `store`, and picks steps with one regex (`LiteralSet.load`, `Measurement.measure`, `IndexShare.`). A step that renames its store variable or loads the sets another way is skipped without failing; only the five steps the spec names are checked by name. Make the scan fail on a step that loads the sets but yields no writes it can read, and handle `case` and `||` names, or give them a clearer failure. Two steps writing the same name also get duplicate example descriptions.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261010-7, 2026-11-10.
-- **Design:** literals.
-- **Status:** todo
-
 ### 20261110-19. claude_cli: keep user-level Claude Code settings out of each ask.
 
 From the review of 20261010-18 (minor). The command runs in a private temp dir, so project settings and CLAUDE.md stay out, but user-level ones still apply: `~/.claude` settings hooks run (a UserPromptSubmit hook receives the prompt), user plugins load, and `~/.claude/CLAUDE.md` and auto-memory reach the model as context even with `--system-prompt-file`. Prompts carry only shapes, so this isn't a boundary leak, but it can steer replies or run the operator's code on every ask. Check whether `--setting-sources ""` (or similar) also stops user CLAUDE.md and memory, and add it to the default command; otherwise document `--bare` with an API key. Verify with a real `claude` run the user approves.
@@ -817,4 +808,13 @@ From the review of 20261112-083000-1 (minor, pre-existing). With `CREATE CAST (c
 - **Depends on:** 20261112-083000-1 (landed).
 - **Came from:** 20261112-083000-1.
 - **Design:** qualify, rewrite-check.
+- **Status:** todo
+
+### 20261112-120000-1. literals_users_spec: plant a same-name collision for the uniqueness example.
+
+From the review of 20261110-18 (minor). The example that checks every description in `enclave/spec/literals_users_spec.rb` is unique goes red when descriptions collide, but not when only the line number is dropped, because no real step writes the same entry name twice in one file. Plant a step file with two writes of one name, and show that dropping the line number from descriptions turns the uniqueness example red. Spec only.
+
+- **Depends on:** 20261110-18 (landed).
+- **Came from:** 20261110-18.
+- **Design:** literals.
 - **Status:** todo
