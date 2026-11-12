@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261111-260000-1
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -547,8 +549,6 @@ From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that f
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261016-17. Spec flake: the trigger-refuses-every-row fuzz example gets `no_world` under load.
@@ -844,15 +844,6 @@ From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclav
 - **Design:** llm-counterexamples.
 - **Status:** todo
 
-### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
-
-From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the `min`/`max` check, still filters on `quaack_arg IS NOT NULL`. A composite argument can reach it (`max(t)`, `max(row(a, b))`), and a row with a NULL field then drops out of the tied list, so ties among those rows aren't checked. For example `(10, NULL)` and `(10.0, NULL)` tie under record comparison but print differently, and the check passes them. It's a false pass, but only for a min or max over a row value that has both a NULL field and a numeric or collation-equal field that prints differently; rare. Reproduce on Postgres first, red first; the fix is the `num_nonnulls` switch with a spec. (2) `string_agg`, `json_agg_strict` and `jsonb_agg_strict` also skip NULL inputs, so one value beside NULLs still refuses for them the way `any_value` did; apply the same filter and spec each. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261015-6 (landed).
-- **Came from:** 20261015-6.
-- **Design:** fixture-compare, result comparison.
-- **Status:** todo
-
 ### 20261112-063000-1. Winner summary guard: minors from 20261016-16.
 
 From the review of 20261016-16's second loop (minor). (1) A verb-type step named as a noun with no determiner, before "by" or a pronoun, now passes: "It needs Sort by id now." was refused on main. Accept the "by" or pronoun reading only at a sentence's start or after a modal (can, could, should, will, would, may, might, must), red first. (2) A verb-type step at a sentence's start that isn't a verb still passes, as on main ("Sort happens later."); decide whether a following verb (happens, runs, is, takes) should mark it a step, without refusing "Sort by date first." (3) The spec example "doesn't read a one-word type as a step where it reads as a verb" in `driver/spec/winner_summary_why_spec.rb` checks every case in one loop and stops at the first failure; split it or use `aggregate_failures`, so a mutation shows every case it breaks. Driver only.
@@ -860,4 +851,13 @@ From the review of 20261016-16's second loop (minor). (1) A verb-type step named
 - **Depends on:** 20261016-16 (landed).
 - **Came from:** 20261016-16.
 - **Design:** LLM prompts.
+- **Status:** todo
+
+### 20261112-070000-1. Pick checks: pin that string_agg's check ignores only its value, not its delimiter.
+
+From the review of 20261111-260000-1 (minor). `non_null(call)` in `result_comparison/pick_checks.rb` tests only the first argument, which is right: `string_agg(x, NULL)` skips only a NULL value, and a NULL delimiter skips nothing. But making the check also filter on the delimiter keeps every spec green. Add a real-Postgres spec where a non-NULL value has a NULL delimiter and the pick must still be checked (two values that print differently must refuse), and show that filtering on the delimiter turns it red. Enclave spec only.
+
+- **Depends on:** 20261111-260000-1 (landed).
+- **Came from:** 20261111-260000-1.
+- **Design:** fixture-compare, result comparison.
 - **Status:** todo
