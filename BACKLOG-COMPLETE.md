@@ -13365,3 +13365,13 @@ From the review of 20261110-1 (minor). In `ProductionComparison`, when the origi
 - **Design:** result-comparison (Picks).
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-3`. The gap was real: under a case-insensitive nondeterministic collation, a candidate adding DISTINCT or GROUP BY over a key where 'a' and 'A' tie passed by luck. When the gate says `:total` and the row-for-row compare matches, `ProductionComparison` now runs a candidate that has picks once more with them forced and checked (`Picks.force(..., check: true)`), through the same read-only, time-limited `run.digest`; a real choice refuses as `unsupported_order`/`rewrite_pick`, and other failures refuse with fixed reasons. It costs at most one more candidate run per matching rewrite with picks. The Opus review found nothing blocking; three mutations went red. The per-commit check passed with rake's own exit 0. Minors are in 20261112-200000-1.
+
+### 20261112-200000-1. Production comparison's picks check: spec the paths it doesn't cover.
+
+From the review of 20261110-3 (minor). The checked candidate run in `production_comparison.rb` (`total_ordered`, `picked`, `checked_sql`) has three paths no spec covers: (1) a candidate with no picks gets no extra run (count the statements the run sends, or plant a check that would fail); (2) a GROUP BY whose collation calls two keys equal while they print the same must pass; (3) the `pick_run_failed`, `unforceable_pick` and `timed_out` outcomes of the checked run (force each at the edge). Real Postgres; mutate each path to show its spec goes red. Enclave spec only.
+
+- **Depends on:** 20261110-3 (landed).
+- **Came from:** 20261110-3.
+- **Design:** result comparison.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-200000-1`. Specs with a recording stand-in at the connection edge: a candidate with no picks sends 4 queries where a picking GROUP BY sends 5; a GROUP BY whose collation calls keys equal that print the same passes; the checked run's `pick_run_failed`, `unforceable_pick` and `timed_out` outcomes each have an example. Each code path's mutation turns its spec red. The builder's own per-commit log mixed three overlapping runs, so I ran one clean check on the branch head before landing: rake's own exit 0. Spec-only; I read the report and diff stat and started no reviewer.
