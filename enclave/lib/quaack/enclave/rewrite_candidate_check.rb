@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
 require_relative "relations"
+require_relative "rewrite_candidate_check/implicit_casts"
 require_relative "rewrite_candidate_check/keyword_operators"
 require_relative "rewrite_candidate_check/names"
 require_relative "rewrite_candidate_check/reg_types"
@@ -92,6 +93,10 @@ module Quaack
     #    candidate writes a keyword form (IN, LIKE, BETWEEN, and the like)
     #    the original doesn't, and a schema on the stored path other than
     #    pg_catalog has an operator of its name (20261011-12).
+    #    Then unknown_name, with Names' message, if a type the candidate
+    #    sees has a cast Postgres applies on its own through a function
+    #    outside pg_catalog, and the candidate writes an expression or
+    #    clause the original doesn't (see ImplicitCasts, 20261112-110000-1).
     # 7. volatile_function (or bad_search_path): volatility's VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
@@ -152,6 +157,7 @@ module Quaack
         keywords = syntactic!(parse, original.sql)
         accepted = qualified!(sql, parse, original, settings, connection)
         keyword_operators!(keywords, accepted.parse, settings, connection)
+        ImplicitCasts.check!(accepted.parse, original.sql, connection)
         volatility!(accepted.sql, settings, connection)
         RegTypes.check!(accepted.parse, original, connection)
         accepted

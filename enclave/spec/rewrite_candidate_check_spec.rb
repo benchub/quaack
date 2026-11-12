@@ -1276,6 +1276,82 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         end
       end
 
+      # 20261112-110000-1. Postgres runs an implicit cast's function with no
+      # node for it in the parse tree, so no name check sees it.
+      describe "a cast Postgres applies through a user function" do
+        let(:names_detail) do
+          "unknown_name: a rewrite may use only the original's functions, types, collations, and operators, " \
+            "and pg_catalog's"
+        end
+        let(:qty_original) do
+          described_class::Original.new(relations:, placeholders: 3,
+                                        sql: "SELECT id FROM sales.items WHERE qty = $1 AND code = $2")
+        end
+        let(:probe) { "SELECT id FROM sales.items WHERE qty = code" }
+
+        def cast!(target, context)
+          conn.exec(<<~SQL)
+            CREATE FUNCTION public.ci2x(public.citext) RETURNS #{target} LANGUAGE sql IMMUTABLE AS 'SELECT NULL::#{target}';
+            CREATE CAST (public.citext AS #{target}) WITH FUNCTION public.ci2x(public.citext) AS #{context};
+          SQL
+        end
+
+        it "refuses a new expression that can pick up an implicit cast the original doesn't make" do
+          expect(kw_outcome(probe, "pg_catalog, public", original: qty_original)).not_to eq(names_detail)
+          cast!("int", "IMPLICIT")
+          expect(kw_outcome(probe, "pg_catalog, public", original: qty_original)).to eq(names_detail)
+        end
+
+        it "refuses a new WHERE on a value an assignment cast turns into boolean" do
+          cast!("boolean", "ASSIGNMENT")
+          expect(kw_outcome("SELECT id FROM sales.items WHERE code", "pg_catalog, public", original: qty_original))
+            .to eq(names_detail)
+        end
+
+        it "keeps the expression when the original makes it too" do
+          cast!("int", "IMPLICIT")
+          same = described_class::Original.new(relations:, placeholders: 3,
+                                               sql: "SELECT order_id FROM sales.items WHERE qty = code")
+          expect(kw_outcome(probe, "pg_catalog, public", original: same))
+            .to eq("SELECT id FROM sales.items WHERE qty = code")
+        end
+
+        it "keeps a new expression when no reached type has such a cast" do
+          cast!("int", "IMPLICIT")
+          sql = "SELECT id FROM orders WHERE status = $2 AND id = 1"
+          expect(kw_outcome(sql, "pg_catalog, public", original: qty_original)).to eq(
+            "SELECT id FROM public.orders WHERE status = $2 AND id = 1"
+          )
+        end
+
+        # The user's choice (2026-11-12): a cast an installed extension owns
+        # doesn't count, only one written by hand. PostGIS's implicit
+        # text -> geometry goes through public.geometry(text), and text is
+        # always seen.
+        it "keeps a new expression on integer columns with PostGIS installed" do
+          conn.exec("CREATE EXTENSION postgis WITH SCHEMA public")
+          expect(kw_outcome("SELECT id FROM orders WHERE id = 1", "pg_catalog, public", original: qty_original))
+            .to eq("SELECT id FROM public.orders WHERE id = 1")
+        end
+
+        it "keeps a new expression on a table with a citext column, whose casts citext owns" do
+          expect(kw_outcome("SELECT id FROM sales.items WHERE qty = 2 AND id = 1", "pg_catalog, public",
+                            original: qty_original)).to eq("SELECT id FROM sales.items WHERE qty = 2 AND id = 1")
+        end
+
+        it "still refuses a hand-written cast with PostGIS installed" do
+          conn.exec("CREATE EXTENSION postgis WITH SCHEMA public")
+          cast!("int", "IMPLICIT")
+          expect(kw_outcome(probe, "pg_catalog, public", original: qty_original)).to eq(names_detail)
+        end
+
+        it "ignores an assignment cast to a type a SELECT never assigns to" do
+          cast!("int", "ASSIGNMENT")
+          expect(kw_outcome("SELECT id FROM sales.items WHERE qty = 1", "pg_catalog, public", original: qty_original))
+            .to eq("SELECT id FROM sales.items WHERE qty = 1")
+        end
+      end
+
       it "still refuses a text column or text literals when a user schema has =(text, text)" do
         expect(kw_outcome("SELECT 1 WHERE 'a' IN ('a', 'b')", "kw, pg_catalog, public")).to eq(kw_detail)
         expect(kw_outcome("SELECT id FROM orders WHERE status IN ('a', 'b')", "kw, pg_catalog, public"))
