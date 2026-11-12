@@ -64,7 +64,10 @@ module Quaack
         def listed_filter(call)
           return copy(call[:agg_filter]) unless call[:funcname].last.dig(:string, :sval) == "any_value"
 
-          filter = call[:agg_filter] ? "quaack_arg IS NOT NULL AND (quaack_filter)" : "quaack_arg IS NOT NULL"
+          # num_nonnulls tests the value, where IS NOT NULL on a row tests
+          # its fields, and any_value keeps a row with a NULL field.
+          null = "pg_catalog.num_nonnulls(quaack_arg) = 1"
+          filter = call[:agg_filter] ? "#{null} AND (quaack_filter)" : null
           template(filter, arg: copy(call[:args].first), filter: copy(call[:agg_filter]))
         end
 

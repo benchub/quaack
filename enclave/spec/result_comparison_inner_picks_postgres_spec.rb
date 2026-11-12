@@ -197,6 +197,24 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
+    it "still refuses an any_value over whole rows that differ, though a field of one is NULL" do
+      rows = labelled([1, 1, nil], [2, 1, "x"])
+      original = subquery(grouped("any_value(items)::text"))
+
+      expect(fields(compare(original, original, rows:)))
+        .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+    end
+
+    it "matches an any_value whose FILTER leaves out a second value, and refuses one whose FILTER keeps both" do
+      rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, "y"])
+      kept = subquery(grouped("any_value(label) FILTER (WHERE label <> 'y')"))
+      expect(fields(compare(subquery(grouped("min(label)")), kept, rows:))).to eq(match: true, rule: nil)
+
+      both = subquery(grouped("any_value(label) FILTER (WHERE id > 1)"))
+      expect(fields(compare(both, both, rows:)))
+        .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+    end
+
     it "matches when no group holds two values, and leaves DISTINCT and window aggregates alone" do
       rows = fixture.values_at(0, 3)
       expect(compare(subquery(grouped("min(label)")), subquery(grouped("any_value(label)")), rows:).match?).to be(true)
