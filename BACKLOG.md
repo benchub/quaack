@@ -556,6 +556,7 @@ From the review of 20261016-13. The guard still counts a capitalised one-word st
 - **Depends on:** None.
 - **Came from:** Review of 20261016-13, 2026-10-16.
 - **Design:** LLM prompts.
+- **Not landed (2026-11-12):** branch `task/20261016-16` (head `e9dad9f0`) holds a built attempt. A one-word type counts as a step by default; a type in `VERBS` (Hash, Sort, Group, Limit, Unique, Result) doesn't count at the start of a sentence or when the next word is by, an article or a pronoun; every other one-word type (Memoize, Materialize, Gather, Append, Aggregate) always counts. The first review found an over-loose first version; the fix round resolved it. The second review found one blocking leak that the loop has no round left for: the next-word check fires on a noun too, so "It adds a Sort by created_at.", "It drops the Sort the original had.", "The original needed a Hash the winner skips." and "A Limit the planner pushes down helps." pass, where main refused them. Fix: don't apply the next-word rule when a determiner (a, an, the, its, their, this, that, each) comes just before the type; add those four to the spec's must-refuse list, red first on `e9dad9f0`. Everything else checked out: the specs fail on main for the right reason, and four mutations of `verb?` all go red. Start a fresh loop from that branch (rebase it on main first).
 - **Status:** todo
 
 ### 20261016-17. Spec flake: the trigger-refuses-every-row fuzz example gets `no_world` under load.
