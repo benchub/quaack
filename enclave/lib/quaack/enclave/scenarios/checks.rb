@@ -10,11 +10,15 @@ module Quaack
       # each. A CHECK is simple when it's an AND of tests of one column
       # (or a cast of it) against expressions with no column: a comparison,
       # = ANY (ARRAY[...]) (how Postgres prints IN), <> ALL (how it prints NOT
-      # IN), an IN list, BETWEEN, or IS [NOT] NULL. Anything else, such as
-      # lo < hi, an OR, or a function of the column, raises Error(:complex_check), so the query
-      # is refused, as does a CHECK whose operator the catalog says is
-      # another schema's and no extension's (Constraints#foreign_operator),
-      # however it prints. Postgres evaluates each condition, as for the
+      # IN), an IN list, BETWEEN, or IS [NOT] NULL. It also takes any op
+      # ANY or op ALL over an array with no column, such as = ALL, > ALL,
+      # or a function's result like string_to_array; Postgres checks each
+      # candidate value against it, so no wrong value gets through.
+      # Anything else, such as lo < hi, an OR, or a function of the
+      # column, raises Error(:complex_check), so the query is refused,
+      # as does a CHECK whose operator the catalog says is another
+      # schema's and no extension's (Constraints#foreign_operator), however
+      # it prints. Postgres evaluates each condition, as for the
       # pools.
       class Checks
         OPERATORS = %w[= <> < <= > >=].freeze
