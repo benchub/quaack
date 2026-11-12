@@ -12,7 +12,7 @@ When that happens, QUAACK looks again. This time each row gets a second fingerpr
 
 Since such a rewrite is likely right, the report doesn't count it as a wrong result. Its "Who proposed what" table counts it under "Failed on float noise", and so does its burndown. A rewrite a transform rule made isn't reported as a bug in the rule.
 
-The same thing can stop QUAACK comparing results at all. It runs the original query twice to learn whether its order or its `LIMIT` cut is stable, and two runs that add rows in a different order can disagree in the last digit too. When the second look shows that was only float noise, the report says the original query's two runs differed only in float values.
+The same thing can stop QUAACK comparing results at all. It runs the original query twice to learn whether its order or its `LIMIT` cut is stable, and two runs that add rows in a different order can disagree in the last digit too. When the second look shows that was only float noise, the report says the original query's two runs differed only in float values. [The original query's own two runs differed](unstable-original.md) says more about those two runs, and what else can make them differ.
 
 ## What you can do.
 

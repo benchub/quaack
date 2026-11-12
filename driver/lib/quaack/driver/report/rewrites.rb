@@ -59,7 +59,7 @@ module Quaack
 
         # A production failure that matched on production comparison's
         # second look at float columns (float_noise, task 20261111-192302-1).
-        # FloatValues links FLOAT_PHRASE to docs/float-values.md.
+        # DocLinks links FLOAT_PHRASE to docs/float-values.md.
         # A production_not_compared refusal means the original's own two
         # runs differed, not the rewrite's results and the original's.
         FLOAT_PHRASE = "minor mismatches in float values"

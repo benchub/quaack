@@ -13,7 +13,7 @@ require_relative "verdict"
 require_relative "rewrites"
 require_relative "own_rewrite_list"
 require_relative "rule_links"
-require_relative "float_values"
+require_relative "doc_links"
 require_relative "indexes"
 require_relative "accountability"
 require_relative "plans"
@@ -45,7 +45,7 @@ module Quaack
         include Rewrites
         include OwnRewriteList
         include RuleLinks
-        include FloatValues
+        include DocLinks
         include Indexes
         include Accountability
         include Plans
