@@ -620,13 +620,45 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       end
 
       # Each of the candidate's rows needs a row of the original's of its
-      # own that it matches: 1.00000016 matches neither of the original's
-      # under either look, though below matches above under the second.
-      it "doesn't flag a row whose only partners are another row's" do
-        original = "SELECT #{below} UNION ALL SELECT #{below}"
-        candidate = "SELECT #{above} UNION ALL SELECT 1.00000016::float8"
-        expect(noise(original, candidate))
-          .to eq(["fail", "multiset", false])
+      # own that it matches. Two rows can't share one partner, nor a row
+      # take as a partner one already paired by its first-look hash: above
+      # matches below under the second look, but 2 is left with no partner.
+      it "doesn't flag two rows that share one partner" do
+        original = "SELECT #{below} UNION ALL SELECT 2"
+        candidate = "SELECT #{above} UNION ALL SELECT #{above}"
+        expect(noise(original, candidate)).to eq(["fail", "multiset", false])
+      end
+
+      it "doesn't flag a row whose only partner is already paired by its first-look hash" do
+        original = "SELECT #{below} UNION ALL SELECT 2"
+        candidate = "SELECT #{below} UNION ALL SELECT #{above}"
+        expect(noise(original, candidate)).to eq(["fail", "multiset", false])
+      end
+
+      # The first look's rows carry one hash each, so they compare as
+      # plain strings, sorted or tallied, which takes much less time and
+      # memory on a large result than pairing them by look. Only the
+      # second look pairs them.
+      describe "pairing rows by look" do
+        match = Quaack::Enclave::ProductionComparison::RowMatch
+        before { %i[spare_seconds same?].each { allow(match).to receive(it).and_call_original } }
+
+        it "is skipped in the first look" do
+          nine = "SELECT i FROM generate_series(1, 9) i"
+          expect(verdict(nine, "SELECT i FROM generate_series(2, 10) i")).to eq(%w[fail multiset])
+          expect(verdict("#{nine} LIMIT 3", "SELECT 7 FROM generate_series(1, 3) LIMIT 3")).to eq(%w[fail subset])
+          expect(verdict("#{nine} ORDER BY i", "#{nine} ORDER BY -i")).to eq(%w[fail value])
+          expect(match).not_to have_received(:spare_seconds)
+          expect(match).not_to have_received(:same?)
+        end
+
+        it "is taken in the second look" do
+          ordered = ->(v) { "SELECT * FROM (VALUES (1, #{v})) r(k, v) ORDER BY k" }
+          expect(noise("SELECT #{below}", "SELECT #{above}")).to eq(["fail", "multiset", true])
+          expect(noise(ordered.call(below), ordered.call(above))).to eq(["fail", "value", true])
+          expect(match).to have_received(:spare_seconds).at_least(:once)
+          expect(match).to have_received(:same?).at_least(:once)
+        end
       end
     end
 

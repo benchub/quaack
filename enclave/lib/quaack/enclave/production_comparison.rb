@@ -444,26 +444,40 @@ module Quaack
       # two rows match when either half does, so each row of a result may
       # match under its own look (task 20261112-000801-1). Every pair of
       # rows it matches matches under one look or the other, so floats a
-      # step of eight significant digits apart never match.
+      # step of eight significant digits apart never match. The first
+      # look's rows, one hash each, compare as plain strings, which takes
+      # much less time and memory on a large result than pairing them.
       module RowMatch
         module_function
 
         def first(row) = row.byteslice(0, 32)
         def second(row) = (row.byteslice(32, 32) if row.bytesize > 32)
+        def paired?(*runs) = runs.any? { it.first&.bytesize.to_i > 32 }
 
         def same?(row, other) = first(row) == first(other) || (!second(row).nil? && second(row) == second(other))
 
         # Whether two runs hold matching rows at each place.
-        def in_order?(rows, others) = rows.size == others.size && rows.each_index.all? { same?(rows[it], others[it]) }
+        def in_order?(rows, others)
+          return rows == others unless paired?(rows, others)
+
+          rows.size == others.size && rows.each_index.all? { same?(rows[it], others[it]) }
+        end
 
         # Whether two runs hold the same rows, in any order.
-        def same_rows?(rows, others) = rows.size == others.size && contained?(rows, others)
+        def same_rows?(rows, others)
+          return false unless rows.size == others.size
+          return rows.sort == others.sort unless paired?(rows, others)
+
+          contained?(rows, others)
+        end
 
         # Whether each of small's rows can be paired with a row of big's of
         # its own: first those whose first-look hashes match, then, of the
         # rows left over, those whose second-look hashes match. Holds only
         # small's rows, so big can be a whole result.
         def contained?(big, small)
+          return tallied?(big, small) unless paired?(big, small)
+
           wanted = small.group_by { first(it) }
           spare = spare_seconds(big, wanted, small.filter_map { second(it) }.to_set)
           wanted.values.flatten.map { second(it) }.tally.all? { |second, count| second && spare[second] >= count }
@@ -479,6 +493,20 @@ module Quaack
             second = second(row)
             spare[second] += 1 if seconds.include?(second)
           end
+        end
+
+        # Whether big holds each of small's rows, each its own, with one
+        # hash per row. Stops reading big once it has them all.
+        def tallied?(big, small)
+          wanted = small.tally
+          big.each do |row|
+            next unless wanted.key?(row)
+
+            wanted[row] -= 1
+            wanted.delete(row) if wanted[row].zero?
+            break if wanted.empty?
+          end
+          wanted.empty?
         end
       end
 
