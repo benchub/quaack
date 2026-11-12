@@ -170,6 +170,33 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                                    candidate))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
+    # any_value ignores NULL inputs, so NULLs beside one value give it no
+    # real choice (task 20261015-6).
+    def labelled(*rows)
+      rows.map do |id, grp, label|
+        Quaack::Enclave::ArenaRunner::FixtureRow.new(table: items, columns: %w[id grp label],
+                                                     values: [id.to_s, grp.to_s, label])
+      end
+    end
+
+    it "matches an any_value over one value beside NULLs, or over only NULLs" do
+      rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, nil], [4, 2, nil], [5, 2, nil])
+      original = subquery(grouped("min(label)"))
+      candidate = subquery(grouped("any_value(label)"))
+      expect(raw(candidate, rows:).first.sort).to eq([%w[1 x], ["2", nil]])
+
+      expect(fields(compare(original, candidate, rows:))).to eq(match: true, rule: nil)
+      expect(fields(compare(candidate, original, rows:))).to eq(match: true, rule: nil)
+    end
+
+    it "still refuses an any_value over two different values beside NULLs" do
+      rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, "y"])
+      original = subquery(grouped("any_value(label)"))
+
+      expect(fields(compare(original, subquery(grouped("min(label)")), rows:)))
+        .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+    end
+
     it "matches when no group holds two values, and leaves DISTINCT and window aggregates alone" do
       rows = fixture.values_at(0, 3)
       expect(compare(subquery(grouped("min(label)")), subquery(grouped("any_value(label)")), rows:).match?).to be(true)
