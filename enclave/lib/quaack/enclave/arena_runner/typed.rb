@@ -47,19 +47,40 @@ module Quaack
         def params(conn, sql)
           return [] unless @binding
 
-          oids = @oids.fetch(sql) { @oids[sql] = oids(conn, sql) }
+          oids = @oids[sql] || oids(conn, sql)
           @binding.values.zip(oids).map { |value, type| { value:, type: } }
         end
 
         private
 
+        # Only types read back are kept, so a failure (an aborted
+        # transaction, a brief connection error) is tried again next time
+        # rather than leaving the query untyped for good (task 20261110-17).
+        # In a transaction the PREPARE, the read, and the DEALLOCATE run in
+        # savepoints, so a failed read doesn't abort the caller's
+        # transaction. A query that doesn't parse is left to Postgres too.
         def oids(conn, sql)
-          declared(sql).then { Redaction::Binding.new(sql:, types: it, values: []).prepare(conn, NAME) }
-          read(conn)
-        rescue Redaction::Error, PG::Error
+          @oids[sql] = saved(conn) do
+            declared(sql).then { Redaction::Binding.new(sql:, types: it, values: []).prepare(conn, NAME) }
+            read(conn)
+          end
+        rescue Redaction::Error, PG::Error, PgQuery::ParseError
           Array.new(@binding.values.size, 0)
         ensure
           deallocate(conn)
+        end
+
+        def saved(conn)
+          return yield if conn.transaction_status.zero?
+
+          conn.exec("SAVEPOINT #{NAME}")
+          begin
+            yield.tap { conn.exec("RELEASE SAVEPOINT #{NAME}") }
+          rescue PG::Error
+            conn.exec("ROLLBACK TO SAVEPOINT #{NAME}")
+            conn.exec("RELEASE SAVEPOINT #{NAME}")
+            raise
+          end
         end
 
         # binding's types, with an untyped placeholder sql doesn't use
@@ -76,7 +97,7 @@ module Quaack
         end
 
         def deallocate(conn)
-          conn.exec("DEALLOCATE #{NAME}") if conn.exec_params(TYPES_SQL, [NAME]).ntuples.positive?
+          saved(conn) { conn.exec("DEALLOCATE #{NAME}") if conn.exec_params(TYPES_SQL, [NAME]).ntuples.positive? }
         rescue PG::Error
           nil
         end

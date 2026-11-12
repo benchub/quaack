@@ -355,6 +355,43 @@ RSpec.describe "the arena's queries on the $n form" do
              }
     end
 
+    # Task 20261110-17: a query sent in an aborted transaction can't be
+    # typed, but that mustn't stick: the next world runs it typed.
+    it "types a query again in a later world after an aborted transaction left it untyped" do
+      sql = "SELECT 2 * $1 AS n"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+      runner = Quaack::Enclave::ArenaRunner.new(conn, binding: bound)
+
+      runner.with_fixture([]) do |tx|
+        expect { tx.query("SELECT 1 / 0") }.to raise_error(Quaack::Enclave::ArenaRunner::Error)
+        expect { tx.query(sql) }.to raise_error(Quaack::Enclave::ArenaRunner::Error)
+      end
+
+      expect(runner.with_fixture([]) { |tx| tx.query(sql).rows }).to eq([["3.0"]])
+    end
+
+    # A real Postgres error reading the types back, in a transaction, is
+    # rolled back to a savepoint, so the caller's transaction stays usable.
+    it "keeps the transaction usable when reading the types back fails in Postgres" do
+      sql = "SELECT 2 * $1 AS n"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+      allow(conn).to receive(:exec_params).and_wrap_original do |m, q, *rest|
+        q == typed_class::TYPES_SQL ? m.call("SELECT 1 / 0", []) : m.call(q, *rest)
+      end
+      conn.exec("BEGIN")
+      params = typed_class.new(bound).params(conn, sql)
+
+      expect([params, conn.transaction_status]).to eq([[{ value: "1.5", type: 0 }], PG::PQTRANS_INTRANS])
+    ensure
+      conn.exec("ROLLBACK")
+    end
+
+    it "leaves the types to Postgres when the query doesn't parse, raising nothing" do
+      bound = Quaack::Enclave::Redaction::Binding.new(sql: "SELECT $1", types: ["integer"], values: ["7"])
+
+      expect(typed_class.new(bound).params(conn, "SELECT $1 FROM")).to eq([{ value: "7", type: 0 }])
+    end
+
     it "gives no parameters with no binding" do
       expect(typed_class.new(nil).params(conn, "SELECT 1")).to eq([])
     end
