@@ -42,12 +42,18 @@ module Quaack
         # or a plain word.
         MOST_STEP_NAMES = 2
 
-        # Where a sentence starts: the reply's start, or after a full stop, an
-        # exclamation mark, or a question mark and a space. A one-word type
-        # there is as likely a capitalised plain word (Limit what it reads,
-        # Group the conditions) as a step, so it isn't read as one
-        # (20261016-13).
+        # The one-word types that are also English verbs. Where one starts a
+        # sentence, or is followed by by, an article, or a pronoun, it reads
+        # as a verb (Limit what it reads, the rewrite can Hash the input, Sort
+        # by date), so it isn't read as a step there (20261016-13,
+        # 20261016-16). Any other one-word type, such as Memoize, Materialize,
+        # or Gather, is always read as a step. Nor does one read as a verb
+        # just after a determiner (a Sort by created_at, the Sort the
+        # original had), where it's a noun.
+        VERBS = %w[Hash Sort Group Limit Unique Result].freeze
         SENTENCE_START = /(?:\A|[.!?]\s)\s*\z/
+        DETERMINER = /\b(?:an?|the|its|their|this|that|each|no)\s+\z/i
+        VERB_OBJECT = /\A\s+(?:by|an?|the|its|their|each|every|them|it|rows)\b/i
 
         # A join or parallel qualifier on a node type: Hash Anti Join, a semi
         # join, a Parallel Seq Scan. The payload's plan nodes carry only the
@@ -76,13 +82,19 @@ module Quaack
           end
         end
 
-        # The node types text names, leaving out a one-word type that starts
-        # a sentence.
+        # The node types text names, leaving out a one-word type that reads
+        # as a verb.
         def step_names(text)
           text.to_enum(:scan, NODE_PATTERN).filter_map do
             match = Regexp.last_match
-            match[0] unless ONE_WORD.include?(match[0]) && match.pre_match.match?(SENTENCE_START)
+            match[0] unless verb?(match)
           end
+        end
+
+        # Whether a match is a one-word type that reads as a verb there.
+        def verb?(match)
+          VERBS.include?(match[0]) && !match.pre_match.match?(DETERMINER) &&
+            (match.pre_match.match?(SENTENCE_START) || match.post_match.match?(VERB_OBJECT))
         end
 
         # The node types of the original's plan and the winner's, downcased.
