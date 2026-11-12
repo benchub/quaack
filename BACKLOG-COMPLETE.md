@@ -13079,3 +13079,13 @@ From the review of 20261011-12. A relation's row type (`pg_class.reltype`) isn't
 - **Design:** qualify, rewrite-check.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261111-200042-1`. `keyword_reach.rb` adds `pg_class.reltype` of each relation the candidate reads to the seen types, so a candidate adding a whole-row keyword form (`t IN (t2)`, `(t.*) IN (...)`, IS DISTINCT FROM, NULLIF, BETWEEN, simple CASE) is refused as `unknown_name` when a user schema on the path has that operator on the row type. The Opus reviewer tried each form on both path orders and found nothing blocking; two mutations each turned the new spec red. A stray Gemfile.lock change was reverted on the branch. The per-commit check passed with rake's own exit 0. The IN-subquery gap the build found is 20261112-073000-1.
+
+### 20261112-063000-1. Winner summary guard: minors from 20261016-16.
+
+From the review of 20261016-16's second loop (minor). (1) A verb-type step named as a noun with no determiner, before "by" or a pronoun, now passes: "It needs Sort by id now." was refused on main. Accept the "by" or pronoun reading only at a sentence's start or after a modal (can, could, should, will, would, may, might, must), red first. (2) A verb-type step at a sentence's start that isn't a verb still passes, as on main ("Sort happens later."); decide whether a following verb (happens, runs, is, takes) should mark it a step, without refusing "Sort by date first." (3) The spec example "doesn't read a one-word type as a step where it reads as a verb" in `driver/spec/winner_summary_why_spec.rb` checks every case in one loop and stops at the first failure; split it or use `aggregate_failures`, so a mutation shows every case it breaks. Driver only.
+
+- **Depends on:** 20261016-16 (landed).
+- **Came from:** 20261016-16.
+- **Design:** LLM prompts.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-063000-1`. Mid-sentence, a verb-type reads as a verb only after a modal or "to"; at a sentence's start (now also after a semicolon) a following finite verb (happens, runs, is, was, takes, costs, dominates, appears, remains) makes it a step; the spec has one example per case. The review found nothing blocking: every hallucinated step main refused stays refused, six main let through are now refused, and five mutations, including the semicolon one, go red. The per-commit check passed with rake's own exit 0. The minor is 20261112-080000-1.

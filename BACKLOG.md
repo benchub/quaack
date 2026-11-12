@@ -548,8 +548,6 @@ From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that f
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261016-17. Spec flake: the trigger-refuses-every-row fuzz example gets `no_world` under load.
 
 From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexample_steps_postgres_spec.rb`'s "passes, cautioning every atom, when a trigger refuses every row, without the database's message" got `"rule" => "no_world"` with `"trials" => 0, "worlds" => 0` instead of `"rule" => nil`, while all four suites ran at once. It passed on its own four times in a row, and the build didn't touch fuzz or rewrite-test. It looks like the search's time budget running out before it tries the empty world when the machine is busy. Find why a loaded machine can end the search with no world tried, and make the example (or the search's floor) independent of machine speed, as `QUAACKS_FUZZ_TRIALS` is meant to.
@@ -827,15 +825,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Design:** counterexamples.
 - **Status:** todo
 
-### 20261112-063000-1. Winner summary guard: minors from 20261016-16.
-
-From the review of 20261016-16's second loop (minor). (1) A verb-type step named as a noun with no determiner, before "by" or a pronoun, now passes: "It needs Sort by id now." was refused on main. Accept the "by" or pronoun reading only at a sentence's start or after a modal (can, could, should, will, would, may, might, must), red first. (2) A verb-type step at a sentence's start that isn't a verb still passes, as on main ("Sort happens later."); decide whether a following verb (happens, runs, is, takes) should mark it a step, without refusing "Sort by date first." (3) The spec example "doesn't read a one-word type as a step where it reads as a verb" in `driver/spec/winner_summary_why_spec.rb` checks every case in one loop and stops at the first failure; split it or use `aggregate_failures`, so a mutation shows every case it breaks. Driver only.
-
-- **Depends on:** 20261016-16 (landed).
-- **Came from:** 20261016-16.
-- **Design:** LLM prompts.
-- **Status:** todo
-
 ### 20261112-073000-1. Keyword operators: an `IN (SELECT ...)` in a candidate isn't checked.
 
 Found in the build of 20261111-200042-1, 2026-11-12. `x IN (SELECT ...)` parses as a SubLink (ANY_SUBLINK, with its operator in `oper_name`), not an A_Expr, and `RewriteCandidateCheck::KeywordOperators` (`rewrite_candidate_check/keyword_operators.rb`) never walks SubLinks. So a candidate that adds an IN-subquery, or `= ANY (SELECT ...)`, `<> ALL (SELECT ...)`, or `NOT IN (SELECT ...)`, skips the keyword-operator check entirely, even when a user schema on the path has a reachable operator of that name. That's the same trust-boundary gap 20261011-12 closed for IN lists, on a realistic query shape (NOT IN to NOT EXISTS and semi-join rewrites add exactly this). Walk ANY_SUBLINK and ALL_SUBLINK nodes as keyword forms (an absent `oper_name` means `=`), apply the same refusal and the same exemption for a form the original uses, and test on real Postgres, red first: with a user `=` on a reachable type ahead of pg_catalog on the path, a candidate adding `t.x IN (SELECT ...)` the original doesn't use must be refused; an ordinary one with no such operator must pass; and an original using the form is exempt. Mutate (skip SubLinks again) to confirm red. Enclave change; trust boundary (Opus builder and reviewer); it goes on "Unreleased enclave changes".
@@ -843,4 +832,13 @@ Found in the build of 20261111-200042-1, 2026-11-12. `x IN (SELECT ...)` parses 
 - **Depends on:** 20261111-200042-1.
 - **Came from:** The build of 20261111-200042-1.
 - **Design:** qualify, rewrite-check.
+- **Status:** todo
+
+### 20261112-080000-1. Winner summary guard: a verb after a lead-in word or a comma.
+
+From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Group by tenant." passed on main and are now refused: a capitalised verb-type after a lead-in adverb or a comma no longer counts as a sentence start. A good LLM usually writes the verb lowercase there, and a refusal only drops the summary, so the cost is small. Count a sentence start after a lead-in word (Then, First, Next, Instead, Finally, Also) or after a comma that follows one, red first, without letting "First, Sort happens." or "Then a Hash runs." through. Also note: mid-sentence with no modal ("We Sort them by id.") is refused by design. Driver only.
+
+- **Depends on:** 20261112-063000-1 (landed).
+- **Came from:** 20261112-063000-1.
+- **Design:** LLM prompts.
 - **Status:** todo
