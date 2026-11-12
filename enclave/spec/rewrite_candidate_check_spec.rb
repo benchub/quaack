@@ -1206,17 +1206,28 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         expect(refused.map { kw_outcome(it, "public") }).to all(eq(kw_detail))
       end
 
-      it "refuses a type a seen type casts to implicitly, a pseudo-type, and a function's result type" do
+      it "refuses an integer IN when a seen type casts implicitly to a type public has = on" do
+        sql = "SELECT id FROM orders WHERE id IN ($1, $2)"
+        expect(kw_outcome(sql, "public")).to start_with("SELECT")
         conn.exec("CREATE CAST (bigint AS public.citext) WITH INOUT AS IMPLICIT")
-        expect(kw_outcome("SELECT id FROM orders WHERE id IN ($1, $2)", "public")).to eq(kw_detail)
+        expect(kw_outcome(sql, "public")).to eq(kw_detail)
+      end
+
+      it "refuses an integer IN when a user schema has = on a pseudo-type" do
         conn.exec(<<~SQL)
-          DROP CAST (bigint AS public.citext); CREATE SCHEMA poly;
+          CREATE SCHEMA poly;
           CREATE FUNCTION poly.eq(anyelement, anyelement) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
           CREATE OPERATOR poly.= (LEFTARG = anyelement, RIGHTARG = anyelement, FUNCTION = poly.eq);
+        SQL
+        sql = "SELECT id FROM orders WHERE id IN ($1, $2)"
+        expect(kw_outcome(sql, "public")).to start_with("SELECT")
+        expect(kw_outcome(sql, "public, poly")).to eq(kw_detail)
+      end
+
+      it "refuses an IN on a function whose result type public has = on" do
+        conn.exec(<<~SQL)
           CREATE FUNCTION public.ci() RETURNS public.citext LANGUAGE sql IMMUTABLE AS $$SELECT 'a'::public.citext$$;
         SQL
-        expect(kw_outcome("SELECT id FROM orders WHERE id IN ($1, $2)", "public")).to start_with("SELECT")
-        expect(kw_outcome("SELECT id FROM orders WHERE id IN ($1, $2)", "public, poly")).to eq(kw_detail)
         with_ci = described_class::Original.new(relations:, placeholders: 3,
                                                 sql: "SELECT public.ci() FROM public.orders")
         expect(kw_outcome("SELECT id FROM orders WHERE public.ci() IN ('a')", "public", original: with_ci))
