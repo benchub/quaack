@@ -650,6 +650,22 @@ RSpec.describe Quaack::Enclave::Egress do
           }
       end
 
+      # Task 20261111-250000-1: egress gets the UTF-8 and 63-byte checks
+      # through Protocol::TablespaceMoves.valid?, so it refuses both too.
+      [
+        ["invalid UTF-8", %(public."#{EGRESS_SENTINEL}\xFF").b],
+        ["a 64-byte part", %(public."#{EGRESS_SENTINEL}#{"é" * ((64 - EGRESS_SENTINEL.bytesize) / 2)}")]
+      ].each do |what, planted|
+        it "refuses a name with #{what}, without quoting it" do
+          expect(planted.b.delete_prefix('public."').delete_suffix('"').bytesize).to eq(64) if what.include?("64")
+          expect { egress.serialize(report_with([planted])) }
+            .to raise_error(described_class::Error,
+                            "a value in this report message has tablespace moves that aren't table names") { |e|
+              expect(e.message).not_to include(EGRESS_SENTINEL)
+            }
+        end
+      end
+
       # Review of 20261010-17: a well-formed name of a relation the query doesn't
       # name would put that relation's name out, so only the query's own tables pass.
       it "refuses a well-formed name of a table the query doesn't name, without quoting it" do

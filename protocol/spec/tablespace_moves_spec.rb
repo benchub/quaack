@@ -85,5 +85,15 @@ RSpec.describe Quaack::Protocol::TablespaceMoves do
       expect(described_class.within?(nil, tables)).to be(false)
       expect(described_class.within?(["public.orders"] * 65, tables)).to be(false)
     end
+
+    # Task 20261111-250000-1: names match as exact bytes, as Postgres
+    # compares them, with no Unicode normalization.
+    it "matches names as exact bytes, so NFD café isn't NFC café" do
+      nfc = "caf\u00e9"
+      nfd = "cafe\u0301"
+      expect(described_class.within?([%(public."#{nfc}")], [["public", nfc]])).to be(true)
+      expect(described_class.within?([%(public."#{nfd}")], [["public", nfc]])).to be(false)
+      expect(described_class.within?([%(public."#{nfc}")], [["public", nfd]])).to be(false)
+    end
   end
 end
