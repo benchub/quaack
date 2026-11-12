@@ -895,18 +895,6 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Do:** Ask the user whether a flagged failure should stay counted that way, be counted apart, or be left out, and build what they decide.
 - **Answer (user, 2026-11-11):** Count it apart: a flagged failure goes in its own "failed on float noise" category, not as a wrong result and not as a bug in the rule that made it.
 
-### 20261111-233822-1. Tidy-ups from the reviews of 20261111-192302-1.
-
-- **Depends on:** None.
-- **Came from:** The reviews of 20261111-192302-1 (minor), 2026-11-11.
-- **Design:** DESIGN.md, result-comparison.
-- **Status:** todo.
-- **Do:**
-  - `NOISY_RULES` in `enclave/lib/quaack/enclave/production_comparison.rb` is tested only one way: adding `row_count` or `timed_out` to it keeps every spec green. Add a test that a float-column `row_count` or `timed_out` failure sends no second-look query (the `counting` delegator in the spec counts queries).
-  - Move the misplaced `hidden?` comment in `Rows` in `production_comparison.rb` to the method it describes.
-  - The report's float-noise note says "its results and the original query's differed", which is wrong for a `production_not_compared` refusal (`unstable_original` or `cut_tie`), where the original's own two runs differed. Word that case to match.
-  - The comment at the top of the "float noise" spec block still says floats are "rounded to five"; it's now cut to eight significant digits.
-
 ### 20261112-000801-1. Flag float noise on multi-row results.
 
 - **Depends on:** None.

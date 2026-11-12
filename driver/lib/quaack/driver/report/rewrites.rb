@@ -59,12 +59,21 @@ module Quaack
         # A production failure that matched on production comparison's
         # second look at float columns (float_noise, task 20261111-192302-1).
         # FloatValues links FLOAT_PHRASE to docs/float-values.md.
+        # A production_not_compared refusal means the original's own two
+        # runs differed, not the rewrite's results and the original's.
         FLOAT_PHRASE = "minor mismatches in float values"
-        FLOAT_NOISE = "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, its results and " \
-                      "the original query's differed only in float values, each by less than one part in ten " \
-                      "million. The rewrite is likely right, but check. Writing the query to deal with them, for " \
-                      "example by rounding its float outputs, might let the rewrite through.".freeze
-        FLOAT_NOISE_FATES = %w[production_mismatch production_not_compared].freeze
+        FLOAT_ADVICE = "The rewrite is likely right, but check. Writing the query to deal with them, for example " \
+                       "by rounding its float outputs, might let the rewrite through."
+        FLOAT_NOISE = {
+          "production_mismatch" => "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, its " \
+                                   "results and the original query's differed only in float values, each by less " \
+                                   "than one part in ten million. #{FLOAT_ADVICE}",
+          "production_not_compared" => "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, " \
+                                       "two runs of the original query differed only in float values, each by " \
+                                       "less than one part in ten million, so QUAACK couldn't compare its results " \
+                                       "with the original query's. #{FLOAT_ADVICE}"
+        }.freeze
+        FLOAT_NOISE_FATES = FLOAT_NOISE.keys.freeze
 
         # fuzz_disproved by query_failed: the rewrite failed where the
         # original ran (task 20261012-2).
@@ -200,7 +209,7 @@ module Quaack
 
         def fate_text(entry)
           return SEARCH_FAILED[entry["fate"]] if SEARCH_FAILED.key?(entry["fate"]) && entry["rule"] == "query_failed"
-          return FLOAT_NOISE if float_noise?(entry)
+          return FLOAT_NOISE[entry["fate"]] if float_noise?(entry)
 
           FATES[entry["fate"]]
         end

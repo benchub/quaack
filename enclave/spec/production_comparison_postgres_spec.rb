@@ -499,7 +499,8 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
   # Task 20261111-192302-1: row hashes round floats to eight significant
   # digits, so two floats a last bit apart can hash differently. The
   # verdict stays as it is, but says when the results match with float
-  # columns rounded to five, so the report can say why.
+  # columns cut to eight significant digits on a shifted grid, so the
+  # report can say why.
   describe "float noise" do
     # Adjacent doubles that print to eight significant digits as
     # 1.0000000 and 1.0000001.
@@ -595,6 +596,18 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
                                                 candidate: "SELECT 1.5000001::numeric", params: [],
                                                 timeout_ms: 5_000))).to eq(%w[fail multiset])
       expect(counting.sent.size).to eq(2)
+    end
+
+    # Review of 20261111-192302-1: neither failure is one float noise
+    # could cause, so neither earns a second look.
+    it "runs nothing more for a float result that fails row_count or timed_out" do
+      [["SELECT #{below}", "SELECT #{above} UNION ALL SELECT #{above}", %w[fail row_count]],
+       ["SELECT #{below}", "SELECT #{above} FROM pg_sleep(2)", %w[fail timed_out]]].each do |original, candidate, rule|
+        counting.sent.clear
+        expect(verdict_of(described_class.compare(connection: counting, original:, candidate:, params: [],
+                                                  timeout_ms: 500))).to eq(rule)
+        expect(counting.sent.size).to eq(2)
+      end
     end
 
     # The original sleeps once the server's clock passes a mark that the

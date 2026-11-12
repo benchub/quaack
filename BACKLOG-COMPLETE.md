@@ -12860,3 +12860,16 @@ On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without c
 - **Do:** Add a focused test for each, watching it go red when the guard is removed.
 - **Also (second review of 20261111-191130-1, minor):** in `driver/spec/pipeline_provenance_spec.rb`, the fan-out failure test's cut-short LLM reply is `"SENTINEL_REASON"`, which now legitimately appears in `counterexample_rounds` feedback, so that test can't tell if the reply's text leaks into the record. Give `cut_short` its own sentinel, such as `SENTINEL_REPLY`, and add it to `secret`.
 - **Landed:** 2026-11-11 (guards-20261111-213055-1). `driver/spec/provenance_spec.rb` gains three tests: a bad rewrite name or a round outside 1 to 3 records nothing; a round's entry that isn't a name is left out; and a rewrite read back whose tries are all malformed is dropped. Each goes red with its guard removed. The fan-out failure test in `driver/spec/pipeline_provenance_spec.rb` now cuts the reply short with `SENTINEL_REPLY`, which is in `secret`, so a reply's text leaking into the record turns it red.
+
+### 20261111-233822-1. Tidy-ups from the reviews of 20261111-192302-1.
+
+- **Depends on:** None.
+- **Came from:** The reviews of 20261111-192302-1 (minor), 2026-11-11.
+- **Design:** DESIGN.md, result-comparison.
+- **Status:** done.
+- **Do:**
+  - `NOISY_RULES` in `enclave/lib/quaack/enclave/production_comparison.rb` is tested only one way: adding `row_count` or `timed_out` to it keeps every spec green. Add a test that a float-column `row_count` or `timed_out` failure sends no second-look query (the `counting` delegator in the spec counts queries).
+  - Move the misplaced `hidden?` comment in `Rows` in `production_comparison.rb` to the method it describes.
+  - The report's float-noise note says "its results and the original query's differed", which is wrong for a `production_not_compared` refusal (`unstable_original` or `cut_tie`), where the original's own two runs differed. Word that case to match.
+  - The comment at the top of the "float noise" spec block still says floats are "rounded to five"; it's now cut to eight significant digits.
+- **Landed:** 2026-11-11 (tidy-20261111-233822-1). `enclave/spec/production_comparison_postgres_spec.rb` gains a test that a float result failing `row_count` or `timed_out` sends only its two queries; it goes red with either rule added to `NOISY_RULES`. The `hidden?` comment in `ProductionComparison::Rows` now sits on `hidden?`, and the float-noise spec block's comment says floats are cut to eight significant digits on a shifted grid. The report's float-noise note for `production_not_compared` now says two runs of the original query differed only in float values, so QUAACK couldn't compare the rewrite's results with them; `production_mismatch` keeps its words. docs/float-values.md says so too.
