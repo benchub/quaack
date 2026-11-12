@@ -13219,3 +13219,13 @@ From the review of 20261110-10 (pre-existing; minor by frequency, but a wrong pl
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-150000-1`. `Matcher#one_value` gives a plan value no candidates when its candidate placeholders hold more than one distinct raw value, for string and number literals, so `'10'` and `10.0` in one query are both masked as `$?` instead of swapped. One expectation in `redaction_plan_spec.rb` changed from `$1` to `$?` (`'5.0'::numeric` against placeholders 5 and 5.0): the reviewer confirmed `$1` was a wrong placeholder there. Booleans and bits are left as they were; the reviewer found no wrong `$n` for them, since two different booleans or bit strings can't print the same plan literal. Two mutations went red. The per-commit check passed with rake's own exit 0.
+
+### 20261112-140000-1. redact: pin that the printed-forms rescue stays narrow.
+
+From the review of 20261110-9 (minor). The rescue in `steps/redact.rb`'s `printed` lambda covers only `Inventory::Error` and `PG::Error` around `Redaction.printed`, but widening it to `StandardError` keeps every spec green: case 5 of `enclave/spec/redact_production_unavailable_postgres_spec.rb` fails outside the lambda (a bad plan in `Plan#check`), and only asserts `raise_error(StandardError)`. A wide rescue would still mask literals, but it would hide bugs in `Printed`. Add a case where something inside the lambda raises a non-PG, non-Inventory error (stub at the connection edge to raise, say, `TypeError` from `exec_params`) and the step must still fail with that error; make case 5 name `ArgumentError`. Show the StandardError mutation turns the new case red. Enclave spec only.
+
+- **Depends on:** 20261110-9 (landed).
+- **Came from:** 20261110-9.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-140000-1`. A new case makes the production connection's `exec_params` raise `TypeError` inside the printed-forms question and asserts the redact step fails with it and stores nothing; case 5 now names `ArgumentError`. Widening the rescue to `StandardError` turns the new case red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
