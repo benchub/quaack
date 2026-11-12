@@ -6,6 +6,7 @@ require_relative "index_candidate"
 require_relative "plain_data"
 require_relative "plan_node"
 require_relative "redaction"
+require_relative "session_failure"
 require_relative "single_candidate_test/hypopg"
 
 module Quaack
@@ -204,7 +205,7 @@ module Quaack
 
       # SQLSTATE classes and codes that mean the session failed, not the
       # candidate. See the comment at the top.
-      SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\A(?:55P03|XX001|XX002)\z/
+      SESSION_FAILURE = SessionFailure::PATTERN
 
       # libpq's PG_DIAG_SQLSTATE, the field code for an error's SQLSTATE.
       SQLSTATE_FIELD = "C".ord

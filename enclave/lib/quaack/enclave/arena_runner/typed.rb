@@ -3,6 +3,7 @@
 require "pg"
 require "pg_query"
 require_relative "../redaction"
+require_relative "../session_failure"
 
 module Quaack
   module Enclave
@@ -78,11 +79,12 @@ module Quaack
         end
 
         # Redaction::Binding#prepare raises prepare_failed from the PREPARE.
-        # A connection error, with no SQLSTATE or one of class 08, isn't
-        # clean.
+        # One with no SQLSTATE, or one that means the session failed, such
+        # as a lost connection or a cancel, isn't clean (task
+        # 20261112-100000-1).
         def clean_prepare_failure?(error)
           error.is_a?(Redaction::Error) && error.rule == "prepare_failed" &&
-            !error.sqlstate.nil? && !error.sqlstate.start_with?("08")
+            !error.sqlstate.nil? && !SessionFailure.match?(error.sqlstate)
         end
 
         def saved(conn)
