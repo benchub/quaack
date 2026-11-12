@@ -13179,3 +13179,13 @@ From the review of 20261110-18 (minor). The example that checks every descriptio
 - **Design:** literals.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-120000-1`. A planted step writes `baseline` on two lines; the new example checks its two descriptions are unique. Dropping the line number from descriptions turns it red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
+
+### 20261110-20. LLM settings: small regressions from the claude_cli refactor.
+
+From the review of 20261010-18 (minor). For copilot_cli, a non-array template, a non-string element, or a missing `{model}` now says "must be an argv array with a {model} placeholder" instead of naming both placeholders. `command_template?` now rejects an empty string only in the first element, so `["copilot", "", "{prompt_file}", "{model}"]` is accepted where it used to fail; no spec covers it. No spec covers a `QUAACK_LLM_PROVIDER=copilot_cli` override on a claude_cli block's template.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261010-18, 2026-11-10.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-20`. A bad copilot_cli `command_template` again names both `{prompt_file}` and `{model}`; `command_template?` refuses an empty string in any element; two specs pin a `QUAACK_LLM_PROVIDER=copilot_cli` switch over a claude_cli block (the block's template is checked as claude_cli's, then dropped with the block, as DESIGN.md says). Four mutations went red. The per-commit check passed with rake's own exit 0. Driver only; I read the diff and started no reviewer.

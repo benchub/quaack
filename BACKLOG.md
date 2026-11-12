@@ -707,15 +707,6 @@ From the review of 20261010-18 (minor). The command runs in a private temp dir, 
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261110-20. LLM settings: small regressions from the claude_cli refactor.
-
-From the review of 20261010-18 (minor). For copilot_cli, a non-array template, a non-string element, or a missing `{model}` now says "must be an argv array with a {model} placeholder" instead of naming both placeholders. `command_template?` now rejects an empty string only in the first element, so `["copilot", "", "{prompt_file}", "{model}"]` is accepted where it used to fail; no spec covers it. No spec covers a `QUAACK_LLM_PROVIDER=copilot_cli` override on a claude_cli block's template.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261010-18, 2026-11-10.
-- **Design:** LLM client.
-- **Status:** todo
-
 ### 20261110-21. Winner summary: qualifier style, and the every-query guard's edges.
 
 From the second review of 20261010-41 (minor). (1) A condition written `orders.state` in the original and `o.state` in the winner (or bare in one and qualified in the other) still gets two shapes, so the winner's count reads 0; resolve aliases to their table before comparing, or document it. (2) The guard now refuses plain descriptions: "Every query will be compared against the original.", "All queries could run under the time limit.", "Every query that would have timed out finished.", "We put the same limit on every query." (3) It still accepts advice: "Rewrite every query this way.", "Every query ought to use UNION."; add rewrite, split and replace to the imperative words, and ought to the modals. Add each sentence as a spec.
