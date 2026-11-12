@@ -101,8 +101,20 @@ RSpec.describe "quaacks redact, when production can't answer the printed-forms q
       broken = fill(Quaack::Enclave::Store.create(base:), "not a plan")
       allow(PG).to receive(:connect).and_raise(PG::ConnectionBad)
 
-      expect { Quaack::Enclave::Steps::Redact.call(store: broken) }.to raise_error(StandardError)
+      expect { Quaack::Enclave::Steps::Redact.call(store: broken) }.to raise_error(ArgumentError)
       expect(entries.map { broken.entry?(it) }).to all(be(false))
+    end
+
+    # 20261112-140000-1: only Inventory and PG errors mean production can't
+    # answer. Any other error inside the question is a bug, and must fail.
+    it "fails, storing nothing, when the printed-forms question raises an error that isn't PG's" do
+      store
+      conn = timing_out
+      def conn.exec_params(*) = raise(TypeError, "printed bug")
+      allow(PG).to receive(:connect).and_return(conn)
+
+      expect { Quaack::Enclave::Steps::Redact.call(store:) }.to raise_error(TypeError, "printed bug")
+      expect(entries.map { store.entry?(it) }).to all(be(false))
     end
   end
 end
