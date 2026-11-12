@@ -529,8 +529,6 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.
 
-### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261015-4. Result-comparison on the racetrack doesn't check inner cuts or picks.
 
 From the build of 20261008-67. `ProductionComparison` (result-comparison on production data) runs neither `InnerCuts` (a LIMIT or OFFSET below the top level) nor `Picks` (a DISTINCT ON without a full order, an aggregate that follows its input order, a DISTINCT or set operation that keeps one of several equal values), which fixture-compare now has. A candidate whose inner pick goes another way can match there by luck, and a good one can fail against an original whose own pick decides its answer. Decide whether production gets the same checks (each forced run re-reads production rows, so it costs a full query run per direction), and test first.
