@@ -13169,3 +13169,13 @@ From the review of 20261010-7 (minor). `enclave/spec/literals_users_spec.rb` mat
 - **Design:** literals.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-18`. The guard follows store aliases and positional arguments to same-file methods, reads names built with if/unless/case/||, fails on a step that loads the sets with no write it can read unless `writes_elsewhere` names its entries, and gives each example a file:line description. It found that `index_build` writes its entry in `Enclave::IndexBuild`; the reviewer confirmed it needs no USERS listing, since `IndexBuild.searches` only takes searches with an `index_ranking_` entry, so an `index_search_` entry (already in USERS) exists first, and it holds no per-set numbers. Five planted steps and five mutations went red. The per-commit check passed with rake's own exit 0. The minor is 20261112-120000-1.
+
+### 20261112-120000-1. literals_users_spec: plant a same-name collision for the uniqueness example.
+
+From the review of 20261110-18 (minor). The example that checks every description in `enclave/spec/literals_users_spec.rb` is unique goes red when descriptions collide, but not when only the line number is dropped, because no real step writes the same entry name twice in one file. Plant a step file with two writes of one name, and show that dropping the line number from descriptions turns the uniqueness example red. Spec only.
+
+- **Depends on:** 20261110-18 (landed).
+- **Came from:** 20261110-18.
+- **Design:** literals.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-120000-1`. A planted step writes `baseline` on two lines; the new example checks its two descriptions are unique. Dropping the line number from descriptions turns it red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
