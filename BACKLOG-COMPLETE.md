@@ -13199,3 +13199,13 @@ From the review of 20261008-53 item 2 (minor). `Redaction::Printed.of` connects 
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-9`. The `printed` lambda in `steps/redact.rb` rescues `Inventory::Error` (production's own wrapper, there's no `Production::Error`) and `PG::Error` around `Redaction.printed` only, and returns no printed forms; the error, whose message can hold the literal, is dropped. A literal still becomes `$n`, and a plan value printed from a date literal is masked as `$?`, as before 20261008-53. The header comment says what the step touches. The Opus review found nothing blocking; cases 1 to 4 fail on main for the right reason. The per-commit check passed with rake's own exit 0. The minor is 20261112-140000-1.
+
+### 20261110-10. redact: printed date/time forms that collide with another literal.
+
+From the review of 20261008-53 item 2 (minor). Printed texts share the matcher's text lookup with raw values (`matcher.rb` around 108-110). `'2026-01-01'` printed as a timestamp equals a second literal `'2026-01-01 00:00:00'`, and `'5'` prints as the interval `00:00:05`. Write a spec with two literals that collide this way and confirm the plan literal is masked rather than given the wrong `$n`; fix if not. Also note in DESIGN.md that an input EXPLAIN captured under client settings other than production's leaves these literals masked.
+
+- **Depends on:** 20261008-53 item 2.
+- **Came from:** The review of 20261008-53 item 2, 2026-11-10.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-10`. The bug was real: a printed date or interval that equals another literal's text gave both plan values `$1`, since the lookup kept both numbers and `candidates` takes the lowest. `Matcher` now records each placeholder's value and drops a text that two different values give, raw or printed, so it's masked as `$?`; the same value twice still matches. DESIGN.md says so and notes that an EXPLAIN under other client settings leaves these literals masked. The Opus review found nothing blocking; two mutations went red. The per-commit check passed with rake's own exit 0. The numeric case the review found is 20261112-150000-1.
