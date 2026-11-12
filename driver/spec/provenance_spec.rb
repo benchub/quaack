@@ -151,6 +151,30 @@ RSpec.describe Quaack::Driver::Provenance do
       expect(saved["counterexample_rounds"]).to eq("rewrite_3" => [{ "1" => { "inserts" => ["INSERT 1"] } }])
     end
 
+    it "records nothing for a rewrite that isn't a store name, or a round that isn't 1 to 3" do
+      provenance.counterexample_round!("SELECT 1", 1, inserts: ["INSERT 1"], entry: "groq")
+      [0, 4].each { provenance.counterexample_round!("rewrite_3", it, inserts: ["INSERT 1"], entry: "groq") }
+      provenance.save
+
+      expect(saved).not_to have_key("counterexample_rounds")
+    end
+
+    it "leaves out a round's entry that isn't a name" do
+      provenance.counterexample_round!("rewrite_3", 1, inserts: ["INSERT 1"], entry: "SELECT 1").save
+
+      expect(saved["counterexample_rounds"]).to eq("rewrite_3" => [{ "1" => { "inserts" => ["INSERT 1"] } }])
+    end
+
+    it "reads back no rewrite whose tries are all malformed" do
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.generate("counterexample_rounds" => {
+                                       "rewrite_1" => [{ "1" => { "inserts" => ["INSERT 1"] } }],
+                                       "rewrite_2" => [{ "4" => { "inserts" => ["INSERT 1"] } }, "not an object"]
+                                     }))
+
+      expect(provenance.record["counterexample_rounds"].keys).to eq(["rewrite_1"])
+    end
+
     it "keeps each earlier try's rounds as first recorded across a resume, and adds a rerun's as a try of its own" do
       rounds(provenance, "rewrite_3", "INSERT 1", "INSERT 2").save
       resumed = described_class.open(@home, run_id)
