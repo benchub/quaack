@@ -620,8 +620,6 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 
 ### 20261020-6. redact-rewrite: test the parse-position range clamp. Done, see BACKLOG-COMPLETE.md.
 
-### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261021-5. Own rewrites in the report: send the deparsed text, not the raw `--rewrites` text.
