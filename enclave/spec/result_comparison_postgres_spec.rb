@@ -1108,6 +1108,51 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           expect(fields(compare(sql, sql,
                                 rows: []))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
         end
+
+        describe "and the target list holds a set-returning function" do
+          let(:posts) { Quaack::Enclave::TableName.new(schema: "public", name: "posts") }
+          let(:post_rows) do
+            [[1, "{b,a}"], [2, "{c,B,b}"]].map do |id, tags|
+              Quaack::Enclave::ArenaRunner::FixtureRow.new(table: posts, columns: %w[id tags], values: [id.to_s, tags])
+            end
+          end
+          let(:first) { %(tags[1] COLLATE public."und-u-kn-true" AS first) }
+
+          before do
+            conn.exec(<<~SQL)
+              CREATE TABLE posts (id integer PRIMARY KEY, tags text[]);
+              CREATE FUNCTION public.each_tag(text[]) RETURNS SETOF text LANGUAGE sql AS 'SELECT unnest($1)'
+            SQL
+          end
+
+          {
+            "unnest" => "unnest(tags)",
+            "generate_series" => "generate_series(1, id)",
+            "jsonb_array_elements" => "jsonb_array_elements(to_jsonb(tags))",
+            "a user SETOF function" => "public.each_tag(tags)",
+            "a SETOF function inside an expression" => "upper(each_tag(tags))"
+          }.each do |label, call|
+            it "refuses #{label}, whose rows tie on the key" do
+              sql = "SELECT id, #{first}, #{call} AS tag FROM posts ORDER BY id"
+
+              expect(fields(compare(sql, sql, rows: post_rows)))
+                .to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+            end
+          end
+
+          it "keeps a total order for the array itself" do
+            sql = "SELECT id, #{first}, tags FROM posts ORDER BY id"
+
+            expect(fields(compare(sql, sql, rows: post_rows))).to include(match: true)
+          end
+
+          it "still refuses one only in FROM, as before, since the query reads two FROM items" do
+            sql = "SELECT t.id, #{first.sub("tags", "t.tags")}, u FROM posts t, unnest(t.tags) u ORDER BY t.id"
+
+            expect(fields(compare(sql, sql, rows: post_rows)))
+              .to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          end
+        end
       end
 
       it "doesn't refuse when one only exists" do

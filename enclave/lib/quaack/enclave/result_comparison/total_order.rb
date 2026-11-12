@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../function_calls"
+
 module Quaack
   module Enclave
     module ResultComparison
@@ -41,10 +43,51 @@ module Quaack
           return :none if shapes.all? { it.collation_names.empty? } && types.all?(COLLATION_FREE_OIDS)
           return :none unless Tiebreaker.nondeterministic_collation?(transaction, shapes.flat_map(&:collation_names))
 
-          tree = shapes.first.tree
-          top = tree[:stmts].first[:stmt][:select_stmt]
-          :total if InnerCuts.deterministic?(transaction, top, InnerCuts.cte_names(tree), DETERMINISTIC_KEYS_SQL)
+          :total if !returns_set?(transaction, shapes.first.sql) && keyed?(transaction, shapes.first.tree)
         end
+
+        def keyed?(transaction, tree)
+          top = tree[:stmts].first[:stmt][:select_stmt]
+          InnerCuts.deterministic?(transaction, top, InnerCuts.cte_names(tree), DETERMINISTIC_KEYS_SQL)
+        end
+
+        # A function of the name, in the schema if the call names one and in
+        # any schema if not, or an operator of the name, that returns a set.
+        SET_RETURNING_SQL = <<~SQL
+          SELECT count(*) FROM pg_catalog.pg_proc p
+          JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+          WHERE p.proretset AND (%<calls>s)
+        SQL
+
+        # Whether the target list calls a function or operator that could
+        # return a set, by the catalog, so one key's row can repeat, once
+        # for each of its values, and tie in the sort. Which overload
+        # Postgres would pick isn't worked out, so one of the name is enough.
+        def returns_set?(transaction, sql)
+          calls = target_calls(sql)
+          return false if calls.empty?
+
+          clauses = calls.map { returns_set_clause(it) }.join(" OR ")
+          transaction.query(format(SET_RETURNING_SQL, calls: clauses)).rows.first.first != "0"
+        end
+
+        def target_calls(sql)
+          targets = PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt.target_list
+          FunctionCalls.of(targets).select { %i[function operator].include?(it.kind) }.uniq
+        end
+
+        def returns_set_clause(call)
+          name = literal(call.name)
+          if call.kind == :operator
+            return "p.oid IN (SELECT o.oprcode FROM pg_catalog.pg_operator o " \
+                   "WHERE o.oprname OPERATOR(pg_catalog.=) #{name})"
+          end
+
+          schema = call.schema ? " AND n.nspname OPERATOR(pg_catalog.=) #{literal(call.schema)}" : ""
+          "(p.proname OPERATOR(pg_catalog.=) #{name}#{schema})"
+        end
+
+        def literal(text) = "'#{text.gsub("'", "''")}'"
 
         # The original's order is total, so the results compare row for row.
         def compare(transaction, *shapes)
