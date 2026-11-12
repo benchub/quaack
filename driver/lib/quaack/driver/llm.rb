@@ -159,7 +159,7 @@ module Quaack
             raise ConfigError, "#{key(name, at)} isn't a setting: use #{KEYS[0..-2].join(", ")}, or #{KEYS.last}"
           end
 
-          check(key(name, at), name, value)
+          check_key(block, name, value, at)
         end
       end
 
@@ -197,8 +197,17 @@ module Quaack
         template = block["command_template"]
         return unless provider == "copilot_cli" && template&.none? { it.include?("{prompt_file}") }
 
-        raise ConfigError, "#{key("command_template", at)} must be an argv array with {prompt_file} and {model} " \
-                           "placeholders"
+        raise ConfigError, "#{key("command_template", at)} #{COPILOT_TEMPLATE}"
+      end
+
+      COPILOT_TEMPLATE = "must be an argv array with {prompt_file} and {model} placeholders"
+
+      # Checks one key of block. A copilot_cli template's problem names both
+      # placeholders it needs.
+      def self.check_key(block, name, value, at)
+        return check(key(name, at), name, value) unless name == "command_template" && block["provider"] == "copilot_cli"
+
+        raise ConfigError, "#{key(name, at)} #{COPILOT_TEMPLATE}" unless command_template?(value)
       end
 
       def self.applies?(name, provider) = ONLY.fetch(name, [provider]).include?(provider)
@@ -225,13 +234,14 @@ module Quaack
       def self.key(name, at) = "#{at}.#{name} in #{FILE}"
 
       def self.command_template?(value)
-        return false unless value.is_a?(Array) && value.any? && value.all?(String) && !value.first.empty?
+        return false unless value.is_a?(Array) && value.any? && value.all? { it.is_a?(String) && !it.empty? }
 
         value.any? { it.include?("{model}") }
       end
 
       private_class_method :check_block, :for_provider, :no_model, :check_applies, :applies?, :pick, :from_env?,
-                           :check, :key, :command_template?, :check_prompt_file
+                           :check, :key, :command_template?, :check_prompt_file,
+                           :check_key
     end
   end
 end

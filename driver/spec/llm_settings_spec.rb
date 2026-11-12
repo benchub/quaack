@@ -62,6 +62,23 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(settings(nil, env:).base_url).to eq("https://env.example.com")
     end
 
+    # The claude_cli block's template, which has no {prompt_file}, is
+    # checked for claude_cli and then dropped with the rest of the block,
+    # so copilot_cli runs its default template.
+    it "drops a claude_cli block's template when QUAACK_LLM_PROVIDER switches to copilot_cli" do
+      block = { "provider" => "claude_cli", "command_template" => ["claude", "-p", "--model", "{model}"] }
+      result = settings(block, env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
+
+      expect([result.provider, result.model, result.command_template]).to eq(["copilot_cli", "claude-opus-5.5", nil])
+    end
+
+    it "still checks a claude_cli block's template when QUAACK_LLM_PROVIDER switches to copilot_cli" do
+      block = { "provider" => "claude_cli", "command_template" => ["claude", "-p"] }
+
+      expect(config_error(block, env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" }).message)
+        .to eq("llm.command_template in ~/.quaack/driver.json must be an argv array with a {model} placeholder")
+    end
+
     it "takes QUAACK_LLM_PROVIDER over the block's provider" do
       env = { "QUAACK_LLM_PROVIDER" => "anthropic" }
       block = { "provider" => "openai_compatible", "model" => "m" }
@@ -179,11 +196,11 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                              "profile"],
       "a command_template that isn't an array" => [{ "provider" => "copilot_cli", "command_template" => "copilot" },
                                                    "llm.command_template in ~/.quaack/driver.json must be an argv " \
-                                                   "array with a {model} placeholder"],
+                                                   "array with {prompt_file} and {model} placeholders"],
       "a command_template with a bad arg" => [{ "provider" => "copilot_cli",
                                                 "command_template" => ["copilot", 1, "{prompt_file}", "{model}"] },
                                               "llm.command_template in ~/.quaack/driver.json must be an argv array " \
-                                              "with a {model} placeholder"],
+                                              "with {prompt_file} and {model} placeholders"],
       "a command_template without the prompt placeholder" => [
         { "provider" => "copilot_cli", "command_template" => ["copilot", "{model}"] },
         "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
@@ -191,6 +208,16 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       ],
       "a command_template without the model placeholder" => [
         { "provider" => "copilot_cli", "command_template" => ["copilot", "{prompt_file}"] },
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
+        "placeholders"
+      ],
+      "a command_template with an empty arg after the command" => [
+        { "provider" => "copilot_cli", "command_template" => ["copilot", "", "{prompt_file}", "{model}"] },
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
+        "placeholders"
+      ],
+      "a claude_cli command_template with an empty arg after the command" => [
+        { "provider" => "claude_cli", "command_template" => ["claude", "{model}", ""] },
         "llm.command_template in ~/.quaack/driver.json must be an argv array with a {model} placeholder"
       ],
       "a claude_cli command_template without the model placeholder" => [
