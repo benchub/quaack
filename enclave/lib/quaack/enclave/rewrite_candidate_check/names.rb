@@ -39,6 +39,23 @@ module Quaack
           end
         end
 
+        # After qualify (20261112-083000-1): raises Error if a function or
+        # operator in the qualified parse names a schema other than
+        # pg_catalog that the original doesn't write it with. A bare name
+        # the original uses passes pin!, but the original's resolves to
+        # pg_catalog's, and qualify can resolve the candidate's, on new
+        # argument types, to a user schema's, such as citext's = on a citext
+        # column the original never compares.
+        def resolved!(parse, original_sql)
+          allowed = allowed(original_sql)
+          names(parse.tree).each do |kind, list|
+            next unless %i[function operator].include?(kind) && list.size == 2
+
+            key = key(kind, list)
+            raise Error.new(RULE, DETAIL) unless key.last.first == "pg_catalog" || allowed.include?(key)
+          end
+        end
+
         # The original's names, as keys.
         def allowed(original_sql)
           original_sql ? names(PgQuery.parse(original_sql).tree).to_set { key(*it) } : Set.new

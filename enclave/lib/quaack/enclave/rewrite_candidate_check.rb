@@ -85,6 +85,9 @@ module Quaack
     #    Deparse). So Accepted's parse is the candidate's own parse with
     #    schemas added, and checks 2 to 5 hold for it without being run
     #    again.
+    #    Then unknown_name, with Names' message, if qualify resolved a
+    #    function or operator to a schema other than pg_catalog that the
+    #    original doesn't write it with (20261112-083000-1).
     #    Then unknown_name, with KeywordOperators' message, if the
     #    candidate writes a keyword form (IN, LIKE, BETWEEN, and the like)
     #    the original doesn't, and a schema on the stored path other than
@@ -147,7 +150,7 @@ module Quaack
         supported!(parse)
         placeholders!(parse, original.placeholders)
         keywords = syntactic!(parse, original.sql)
-        accepted = relations!(pinned(sql, parse, original.sql), original.relations, settings, connection)
+        accepted = qualified!(sql, parse, original, settings, connection)
         keyword_operators!(keywords, accepted.parse, settings, connection)
         volatility!(accepted.sql, settings, connection)
         RegTypes.check!(accepted.parse, original, connection)
@@ -168,6 +171,14 @@ module Quaack
         parse.tree.to_proto == before ? sql : Deparse.faithfully(parse.tree)
       rescue Deparse::Error => e
         raise Error.from(e), cause: nil
+      end
+
+      # The candidate pinned, then qualified by Relations, then its names
+      # checked again once qualify has resolved them (Names.resolved!).
+      def qualified!(sql, parse, original, settings, connection)
+        accepted = relations!(pinned(sql, parse, original.sql), original.relations, settings, connection)
+        Names.resolved!(accepted.parse, original.sql)
+        accepted
       end
 
       def supported!(parse)

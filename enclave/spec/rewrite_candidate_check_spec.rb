@@ -1234,6 +1234,48 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
           .to eq(kw_detail)
       end
 
+      # 20261112-083000-1. The original's = on text stays bare, since it
+      # resolves to pg_catalog's. Before this check, the candidate's bare
+      # = on a citext column passed Names as the original's, then qualify
+      # resolved it to OPERATOR(public.=), citext's, which the original
+      # never uses.
+      describe "an operator or function the original writes bare" do
+        let(:text_original) do
+          described_class::Original.new(
+            relations:, placeholders: 3,
+            sql: "SELECT i.id, lower(o.status) FROM public.orders o " \
+                 "JOIN sales.items i ON i.order_id = o.id WHERE o.status = 'a'"
+          )
+        end
+        let(:names_detail) do
+          "unknown_name: a rewrite may use only the original's functions, types, collations, and operators, " \
+            "and pg_catalog's"
+        end
+
+        it "refuses it where qualify resolves it to a user schema the original doesn't use" do
+          conn.exec(<<~SQL)
+            CREATE FUNCTION public.lower(public.citext) RETURNS text LANGUAGE sql IMMUTABLE AS 'SELECT ''x''';
+          SQL
+          refused = [
+            "SELECT i.id FROM orders o JOIN sales.items i ON i.order_id = o.id WHERE o.status = 'a' AND i.code = 'a'",
+            "SELECT id FROM sales.items WHERE code = 'a'",
+            "SELECT lower(code) FROM sales.items"
+          ]
+          expect(refused.map { kw_outcome(it, "pg_catalog, public", original: text_original) })
+            .to all(eq(names_detail))
+        end
+
+        it "keeps it where it resolves to pg_catalog's, or to the schema the original's resolves to" do
+          expect(kw_outcome("SELECT id FROM sales.items WHERE code::text = 'a'", "pg_catalog, public",
+                            original: text_original))
+            .to eq("SELECT id FROM sales.items WHERE code::pg_catalog.text = 'a'")
+          ci = described_class::Original.new(relations:, placeholders: 3,
+                                             sql: "SELECT id FROM sales.items WHERE code OPERATOR(public.=) 'b'")
+          expect(kw_outcome("SELECT id FROM sales.items WHERE code = 'a'", "pg_catalog, public", original: ci))
+            .to eq("SELECT id FROM sales.items WHERE code OPERATOR(public.=) 'a'")
+        end
+      end
+
       it "still refuses a text column or text literals when a user schema has =(text, text)" do
         expect(kw_outcome("SELECT 1 WHERE 'a' IN ('a', 'b')", "kw, pg_catalog, public")).to eq(kw_detail)
         expect(kw_outcome("SELECT id FROM orders WHERE status IN ('a', 'b')", "kw, pg_catalog, public"))
@@ -1276,21 +1318,42 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         expect(subquery_forms.first(2).map { kw_outcome(it, "kw, pg_catalog, public") }).to all(eq(kw_detail))
       end
 
-      it "qualifies the operator of = ANY and <> ALL subqueries instead, since they name it" do
+      # The original's = on int resolves to pg_catalog's, so a bare = it
+      # writes doesn't let the candidate's resolve to kw's on text
+      # (20261112-083000-1). Its new <> is pinned to pg_catalog.
+      it "checks the operator of = ANY and <> ALL subqueries as names instead, since they name it" do
         outcomes = subquery_forms.last(2).map { kw_outcome(it, "kw, pg_catalog, public") }
-        qualified = /\ASELECT id FROM public\.orders t WHERE t\.status OPERATOR\(\w+\.(=|<>)\) (ANY|ALL) /
-        expect(outcomes).to all(match(qualified))
+        expect(outcomes).to eq(
+          [
+            "unknown_name: a rewrite may use only the original's functions, types, collations, and operators, " \
+            "and pg_catalog's",
+            "SELECT id FROM public.orders t WHERE t.status OPERATOR(pg_catalog.<>) ALL " \
+            "(SELECT status FROM public.orders)"
+          ]
+        )
       end
 
       it "accepts them when only pg_catalog has their operators" do
         expect(subquery_forms.map { kw_outcome(it, "public") }).to all(start_with("SELECT"))
       end
 
+      # Each original as its qualified query writes it, so = ANY and
+      # <> ALL name kw's operators.
       it "keeps one the original uses, subquery for subquery" do
         subquery_forms.each do |sql|
-          same = described_class::Original.new(relations:, placeholders: 3, sql:)
+          qualified = sql.sub("status = ANY", "status OPERATOR(kw.=) ANY")
+                         .sub("status <> ALL", "status OPERATOR(kw.<>) ALL")
+          same = described_class::Original.new(relations:, placeholders: 3, sql: qualified)
           expect(kw_outcome(sql, "kw, pg_catalog, public", original: same)).to start_with("SELECT")
         end
+      end
+
+      # 20261112-083000-1. The exemption is keyed on the whole form, so a
+      # change to the subquery's body alone is refused.
+      it "refuses an IN subquery whose body differs from the original's" do
+        original = described_class::Original.new(relations:, placeholders: 3, sql: subquery_forms.first)
+        changed = "SELECT id FROM orders t WHERE t.status IN (SELECT status FROM orders WHERE id > 0)"
+        expect(kw_outcome(changed, "kw, pg_catalog, public", original:)).to eq(kw_detail)
       end
 
       it "refuses a new one when a user schema has = on the row type" do
