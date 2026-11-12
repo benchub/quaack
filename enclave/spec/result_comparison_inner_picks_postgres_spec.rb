@@ -205,6 +205,20 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
+    # string_agg, json_agg_strict, and jsonb_agg_strict skip NULL inputs
+    # too (task 20261111-260000-1).
+    ["string_agg(label, ',')", "json_agg_strict(label)::text", "jsonb_agg_strict(label)::text"].each do |aggregate|
+      it "matches #{aggregate} over one value beside NULLs, and refuses it over two values" do
+        rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, nil])
+        original = subquery(grouped(aggregate))
+        expect(fields(compare(original, original, rows:))).to eq(match: true, rule: nil)
+
+        rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, "y"])
+        expect(fields(compare(original, original, rows:)))
+          .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+      end
+    end
+
     it "matches an any_value whose FILTER leaves out a second value, and refuses one whose FILTER keeps both" do
       rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, "y"])
       kept = subquery(grouped("any_value(label) FILTER (WHERE label <> 'y')"))

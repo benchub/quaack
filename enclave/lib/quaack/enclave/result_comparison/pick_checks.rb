@@ -59,13 +59,20 @@ module Quaack
                                              agg_filter: listed_filter(call), func_variadic: false))
         end
 
-        # any_value ignores NULL inputs, so its check leaves them out too
-        # (task 20261015-6).
-        def listed_filter(call)
-          return copy(call[:agg_filter]) unless call[:funcname].last.dig(:string, :sval) == "any_value"
+        # The aggregates that ignore NULL in their first argument, the
+        # value, so their checks leave those rows out too (tasks 20261015-6
+        # and 20261111-260000-1). string_agg's NULL delimiter isn't skipped.
+        NULL_SKIPPING = %w[any_value string_agg json_agg_strict jsonb_agg_strict].freeze
 
-          # num_nonnulls tests the value, where IS NOT NULL on a row tests
-          # its fields, and any_value keeps a row with a NULL field.
+        def listed_filter(call)
+          return copy(call[:agg_filter]) unless NULL_SKIPPING.include?(call[:funcname].last.dig(:string, :sval))
+
+          non_null(call)
+        end
+
+        # num_nonnulls tests the value, where IS NOT NULL on a row tests its
+        # fields, and a row with a NULL field is a value these keep.
+        def non_null(call)
           null = "pg_catalog.num_nonnulls(quaack_arg) = 1"
           filter = call[:agg_filter] ? "#{null} AND (quaack_filter)" : null
           template(filter, arg: copy(call[:args].first), filter: copy(call[:agg_filter]))
@@ -84,9 +91,8 @@ module Quaack
         end
 
         def tied_text(call, arg, order)
-          filter = call[:agg_filter] ? "quaack_arg IS NOT NULL AND (quaack_filter)" : "quaack_arg IS NOT NULL"
-          template("(pg_catalog.array_agg(quaack_text ORDER BY quaack_arg #{order}) FILTER (WHERE #{filter}))[1]",
-                   text: printed(copy(arg)), arg: copy(arg), filter: copy(call[:agg_filter]))
+          template("(pg_catalog.array_agg(quaack_text ORDER BY quaack_arg #{order}) FILTER (WHERE quaack_filter))[1]",
+                   text: printed(copy(arg)), arg: copy(arg), filter: non_null(call))
         end
 
         # The check, for a HAVING, that each of select's GROUP BY keys

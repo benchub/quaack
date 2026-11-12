@@ -56,6 +56,13 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       .to eq(refused)
   end
 
+  # A record with a NULL field is a value, so its ties are checked too
+  # (task 20261111-260000-1).
+  it "refuses a min or max over rows whose ties print two ways, though a field of each is NULL" do
+    expect(verdict("SELECT max(s)::text FROM (SELECT n, NULL::integer AS z FROM items WHERE grp = 1) s")).to eq(refused)
+    expect(verdict("SELECT min(s)::text FROM (SELECT n, NULL::integer AS z FROM items WHERE grp = 1) s")).to eq(refused)
+  end
+
   it "checks a filtered max's ties among the rows its FILTER keeps" do
     expect(verdict("SELECT max(n) FILTER (WHERE grp = 1) FROM items",
                    data: rows([1, 1, "10"], [2, 1, "10.0"], [3, 2, "11"]))).to eq(refused)
