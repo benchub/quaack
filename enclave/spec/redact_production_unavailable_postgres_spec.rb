@@ -37,12 +37,12 @@ RSpec.describe "quaacks redact, when production can't answer the printed-forms q
     store
   end
 
+  def written(stored) = %w[placeholder_shapes redacted_query redacted_plan].map { stored.read(it) }
+
   def expect_masked(stored)
     expect(stored.read("redacted_query")).to eq("SELECT o.id FROM public.orders o WHERE o.sku = $1")
     expect(stored.read("placeholder_map")["$1"]["value"]).to eq(sku)
-    %w[placeholder_shapes redacted_query redacted_plan].each do |name|
-      expect(JSON.generate(stored.read(name))).not_to include(sku)
-    end
+    expect(JSON.generate(written(stored))).not_to include(sku)
   end
 
   it "succeeds without printed forms when production refuses the connection" do
