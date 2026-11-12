@@ -13280,3 +13280,13 @@ From the review of 20261010-52 (minor). A set-operation SelectStmt keeps its `la
 - **Proposed drop (2026-11-12, waiting on the user):** the builder found this can't happen. `Links.all` (`not_in_to_not_exists/links.rb`, line 25) keeps only SelectStmts with `op == :SETOP_NONE` as owners, so `own_links` always starts at a plain SELECT, whose `larg` and `rarg` are nil, and every nested SELECT inside it sits in a Node wrapper that `own_links` stops at. No test can go red. A NOT IN in a UNION's ORDER BY isn't valid Postgres either. Drop it, or reword it as a guard for the day Links lets a set-op own a NOT IN.
 - **Status:** dropped
 - **Dropped:** 2026-11-12, decided by the user: stale, since `Links.all` only makes plain SELECTs owners, so the bug can't happen.
+
+### 20261110-2. Total-order gate: refuse a set-returning function in the original's target list.
+
+From the review of 20261110-1 (minor). `TotalOrder.gate` returns `:total` for `SELECT id, unnest(tags) FROM t ORDER BY id`, though its rows tie on `id`. Under a nondeterministic collation that can fail a good rewrite whose order inside the tie differs. Refuse `:total` when the target list holds a set-returning function, and list the case in DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-1, 2026-11-10.
+- **Design:** result-comparison, fixture-compare (`unsupported_order`).
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-2`. `TotalOrder.gate` refuses `:total` when the target list, at its own level (not inside a subquery), calls a function or operator whose name matches a `pg_proc` row with `proretset`. The first review found it walked into subqueries and over-refused a scalar subquery and `ARRAY(SELECT unnest(...))`; the fix round stops at a SubLink. The second review found nothing blocking: every row-multiplying SRF it tried is refused, Postgres itself rejects the rest, and subquery forms stay total. Three mutations went red. The per-commit check passed with rake's own exit 0. The minor is 20261112-180000-1.

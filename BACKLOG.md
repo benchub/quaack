@@ -19,6 +19,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261111-4
 - 20261112-160000-1
 - 20261112-170000-1
+- 20261110-2
 
 ## How this file works.
 
@@ -632,15 +633,6 @@ From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text 
 
 ### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties. Done, see BACKLOG-COMPLETE.md.
 
-### 20261110-2. Total-order gate: refuse a set-returning function in the original's target list.
-
-From the review of 20261110-1 (minor). `TotalOrder.gate` returns `:total` for `SELECT id, unnest(tags) FROM t ORDER BY id`, though its rows tie on `id`. Under a nondeterministic collation that can fail a good rewrite whose order inside the tie differs. Refuse `:total` when the target list holds a set-returning function, and list the case in DESIGN.md.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261110-1, 2026-11-10.
-- **Design:** result-comparison, fixture-compare (`unsupported_order`).
-- **Status:** todo
-
 ### 20261110-3. Result-comparison: check a candidate's own DISTINCT or GROUP BY picks under a total original.
 
 From the review of 20261110-1 (minor). In `ProductionComparison`, when the original's order is total, a candidate that adds DISTINCT or GROUP BY over a nondeterministic-collation key is compared row for row and can pass if Postgres happens to pick the same values on this run. Fixture-compare's `Picks` covers this; check whether result-comparison needs the same, and refuse if so.
@@ -773,4 +765,13 @@ From the review of 20261110-21 (minor, pre-existing on main). The guard against 
 - **Depends on:** 20261110-21.
 - **Came from:** 20261110-21.
 - **Design:** report.
+- **Status:** todo
+
+### 20261112-180000-1. Total-order gate: a set-returning function in attribute notation.
+
+From the second review of 20261110-2 (minor, rare SQL). The gate's target-list walk drops `:attribute` calls, so a SETOF function on a table's row type written in attribute notation (`SELECT p.f FROM posts p`, where `f(posts) RETURNS SETOF ...`) isn't refused and the order is wrongly taken as total. Refuse it (or list it as unsupported in v1 in DESIGN.md), red first on real Postgres. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261110-2 (landed).
+- **Came from:** 20261110-2.
+- **Design:** result-comparison.
 - **Status:** todo
