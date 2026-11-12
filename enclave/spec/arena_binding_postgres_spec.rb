@@ -301,6 +301,49 @@ RSpec.describe "the arena's queries on the $n form" do
       expect(typed_class.new(bound).params(conn, "SELECT no_such_column, $1")).to eq([{ value: "7", type: 0 }])
     end
 
+    # Task 20261112-090000-1: a PREPARE that fails cleanly fails the same
+    # way every time, so its fallback is kept, and a second call doesn't
+    # PREPARE again.
+    it "keeps the fallback when the PREPARE fails in a clean transaction, which stays usable" do
+      sql = "SELECT no_such_column, $1"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql: "SELECT $1", types: ["integer"], values: ["7"])
+      typed = typed_class.new(bound)
+      prepares = []
+      allow(conn).to(receive(:exec).and_wrap_original do |m, q|
+        prepares << q if q.start_with?("PREPARE")
+        m.call(q)
+      end)
+      conn.exec("BEGIN")
+
+      first = typed.params(conn, sql)
+      state = conn.transaction_status
+      second = typed.params(conn, sql)
+
+      expect([first, second, state, prepares.size]).to eq(([[{ value: "7", type: 0 }]] * 2) + [PG::PQTRANS_INTRANS, 1])
+      expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+    ensure
+      conn.exec("ROLLBACK")
+    end
+
+    # A PREPARE lost to the connection, forced here at the connection, may
+    # work next time, so its fallback isn't kept.
+    it "tries the PREPARE again after it failed on the connection" do
+      sql = "SELECT 2 * $1"
+      bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+      typed = typed_class.new(bound)
+      lost = false
+      allow(conn).to(receive(:exec).and_wrap_original do |m, q|
+        if q.start_with?("PREPARE") && !lost
+          lost = true
+          raise PG::ConnectionBad, "gone"
+        end
+        m.call(q)
+      end)
+
+      expect([typed.params(conn, sql), typed.params(conn, sql)]).to eq([[{ value: "1.5", type: 0 }],
+                                                                        [{ value: "1.5", type: 1700 }]])
+    end
+
     it "declares an unused untyped $n text up front, so one PREPARE does" do
       sql = "SELECT 1 + $1"
       bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: %w[integer unknown], values: %w[1 z])

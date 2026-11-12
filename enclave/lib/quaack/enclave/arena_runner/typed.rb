@@ -59,15 +59,30 @@ module Quaack
         # In a transaction the PREPARE, the read, and the DEALLOCATE run in
         # savepoints, so a failed read doesn't abort the caller's
         # transaction. A query that doesn't parse is left to Postgres too.
+        #
+        # A PREPARE that fails cleanly, in a healthy transaction or outside
+        # one, fails the same way every time, so its fallback is kept (task
+        # 20261112-090000-1). An aborted transaction never gets that far:
+        # its SAVEPOINT fails first, with a PG::Error, which isn't kept.
         def oids(conn, sql)
           @oids[sql] = saved(conn) do
             declared(sql).then { Redaction::Binding.new(sql:, types: it, values: []).prepare(conn, NAME) }
             read(conn)
           end
-        rescue Redaction::Error, PG::Error, PgQuery::ParseError
-          Array.new(@binding.values.size, 0)
+        rescue Redaction::Error, PG::Error, PgQuery::ParseError => e
+          untyped = Array.new(@binding.values.size, 0)
+          @oids[sql] = untyped if clean_prepare_failure?(e)
+          untyped
         ensure
           deallocate(conn)
+        end
+
+        # Redaction::Binding#prepare raises prepare_failed from the PREPARE.
+        # A connection error, with no SQLSTATE or one of class 08, isn't
+        # clean.
+        def clean_prepare_failure?(error)
+          error.is_a?(Redaction::Error) && error.rule == "prepare_failed" &&
+            !error.sqlstate.nil? && !error.sqlstate.start_with?("08")
         end
 
         def saved(conn)
