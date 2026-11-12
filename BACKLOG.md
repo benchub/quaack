@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261110-9
 - 20261110-10
 - 20261112-150000-1
+- 20261111-4
 
 ## How this file works.
 
@@ -656,15 +657,6 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261111-4. redact sharing: don't join a same-text constant used against another type.
-
-First filed as 20261110-8, renumbered on 2026-11-11 since another session used it. From the review of 20261008-53 item 1 (minor, a regression). `Sharing#alike` (`enclave/lib/quaack/enclave/redaction/sharing.rb`, around lines 91 and 102-106) runs on every key and joins any same-text constant in the matching clauses, even one the tree match already covered and that only happens to share the text. `SELECT coalesce(o.status, '5'), count(*) FROM orders o GROUP BY coalesce(o.status, '5') HAVING max(o.id) > '5'` used to bind; it now shares `$1` with the text key and fails closed as `prepare_failed` (42883). Only join a constant that sits in an expression shaped like the key, or skip `alike` where the tree match already joined the copies.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261008-53 item 1, 2026-11-10.
-- **Design:** redact.
-- **Status:** todo
-
 ### 20261110-16. Arena Binding: cut the per-trial round trips.
 
 From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its batch statement by statement, about 4 round trips per trial instead of 1, and each new query text costs about 5 more for `ArenaRunner::Typed`'s type lookup (savepoint, PREPARE, release, read, DEALLOCATE). `Differ#multisets` builds a new combined SQL whenever the loosened set changes, so it misses Typed's cache and re-prepares. Batch the statements with `send_query_params` in pipeline mode as `ArenaRunner::Pipeline` does, and key Differ's types so the combined SQL reuses them. The user wants run time spent on trying more rewrites, so measure trials per second before and after on a recorded replay.
@@ -788,4 +780,13 @@ From the review of 20261110-21 (minor, pre-existing on main). The guard against 
 - **Depends on:** 20261110-21.
 - **Came from:** 20261110-21.
 - **Design:** report.
+- **Status:** todo
+
+### 20261112-160000-1. redact sharing: same-named columns of different tables share a constant.
+
+From the review of 20261111-4 (minor, not a regression). The tree match in `redaction/sharing.rb` cuts each column reference to its last field, so `coalesce(o.status, '5')` and `coalesce(t.status, '5')` count as the same expression even when `o` and `t` are different tables. When the two columns have different types (text and int), both copies share `$1` and the query fails closed as `prepare_failed` (42804), where it could have bound with two placeholders. A self-join of the same table shares correctly. Keep the qualifier when the two references resolve to different relations (the redact step has the relation list), red first on real Postgres with a text and an int column of the same name; or list the case as unsupported in v1 in DESIGN.md. Enclave change if code changes; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261111-4 (landed).
+- **Came from:** 20261111-4.
+- **Design:** redact.
 - **Status:** todo

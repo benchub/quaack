@@ -13239,3 +13239,13 @@ From the second review of 20261008-53 item 2 (minor). No spec has an interval pl
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-11`. A new real-Postgres example has an interval literal under production's `IntervalStyle=sql_standard` match `$1::interval`; the session-settings example now asserts `$1` (timestamp), `$2` (timestamptz) and `$3` (date). Dropping IntervalStyle or DateStyle from `Printed::SETTINGS` turns its own example red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
+
+### 20261111-4. redact sharing: don't join a same-text constant used against another type.
+
+First filed as 20261110-8, renumbered on 2026-11-11 since another session used it. From the review of 20261008-53 item 1 (minor, a regression). `Sharing#alike` (`enclave/lib/quaack/enclave/redaction/sharing.rb`, around lines 91 and 102-106) runs on every key and joins any same-text constant in the matching clauses, even one the tree match already covered and that only happens to share the text. `SELECT coalesce(o.status, '5'), count(*) FROM orders o GROUP BY coalesce(o.status, '5') HAVING max(o.id) > '5'` used to bind; it now shares `$1` with the text key and fails closed as `prepare_failed` (42883). Only join a constant that sits in an expression shaped like the key, or skip `alike` where the tree match already joined the copies.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261008-53 item 1, 2026-11-10.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261111-4`. `Sharing#alike` and its helpers are gone; the tree match cuts each column reference to its last field and counts it as one node, so only expressions shaped like the key share constants (`o.status || '-x'` still matches `status || '-x'`). The regression query binds with the key's copies on `$1` and the HAVING's `'5'` on `$2`. The Opus reviewer merged it onto main, found nothing blocking, and ran the per-commit check there (rake's own exit 0). The minor is 20261112-160000-1.
