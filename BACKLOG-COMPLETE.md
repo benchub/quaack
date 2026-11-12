@@ -12894,3 +12894,13 @@ From the second review of 20261008-60 (minor). `ExtraServer.start` (`spec/suppor
 - **Design:** Development (test Postgres).
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261015-1`. `ExtraServer.start` removes the container in its own rescue and re-raises the readiness error. The new example failed on the old code with the removal error, and dropping the inner rescue turned it red again. The per-commit check passed in all four suites. Test support only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report.
+
+From the first review of 20261010-17 (minor). `Placement.moves` uses Postgres's `quote_ident`, which can emit a quoted non-ASCII identifier such as `public."café"`, but `Protocol::TablespaceMoves` allows printable ASCII only, so Egress refuses the report instead of carrying the warning. Accept valid UTF-8 quoted identifiers, keeping the control-character, length, quoting, membership and count checks. Test first.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261010-17, 2026-10-15 (minor).
+- **Design:** What goes into the enclave, report.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261015-3`. `Protocol::TablespaceMoves` accepts a quoted part of printable ASCII or non-ASCII outside Unicode C and Z, refuses invalid UTF-8 (which used to raise), and caps each part at 63 bytes; membership (`within?`) stays an exact byte match. Reviewed with no blocking findings; minors are in 20261111-250000-1.

@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-12
 - 20261010-52
 - 20261012-7
+- 20261015-3
 
 ## How this file works.
 
@@ -533,14 +534,7 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.
 
-### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report.
-
-From the first review of 20261010-17 (minor). `Placement.moves` uses Postgres's `quote_ident`, which can emit a quoted non-ASCII identifier such as `public."café"`, but `Protocol::TablespaceMoves` allows printable ASCII only, so Egress refuses the report instead of carrying the warning. Accept valid UTF-8 quoted identifiers, keeping the control-character, length, quoting, membership and count checks. Test first.
-
-- **Depends on:** None.
-- **Came from:** The first review of 20261010-17, 2026-10-15 (minor).
-- **Design:** What goes into the enclave, report.
-- **Status:** todo
+### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261015-4. Result-comparison on the racetrack doesn't check inner cuts or picks.
 
@@ -867,4 +861,13 @@ From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundl
 - **Depends on:** None.
 - **Came from:** The build of 20261021-3.
 - **Design:** none.
+- **Status:** todo
+
+### 20261111-250000-1. Tablespace moves: end-to-end cover for invalid UTF-8 and the byte limit, and say how names compare.
+
+From the review of 20261015-3 (minor). (1) Only `protocol/spec/tablespace_moves_spec.rb` covers invalid UTF-8 and the 63-byte limit; Egress and the driver's `TablespaceMovesCheck` get both through the shared `valid?`. Add an Egress example for each, red first by mutating `valid?`. (2) DESIGN.md doesn't say how names are compared. Add a line: the match is exact bytes, with no Unicode normalization or case folding, as Postgres does it (NFD `café` doesn't match NFC `café`). Enclave spec and DESIGN.md only; if the example is red on the shipped code, stop and report.
+
+- **Depends on:** 20261015-3 (landed).
+- **Came from:** 20261015-3.
+- **Design:** What goes into the enclave, report.
 - **Status:** todo
