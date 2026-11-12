@@ -13345,3 +13345,13 @@ From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` 
 - **Design:** result-comparison.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-4`. The arena path already had these specs; `production_comparison_postgres_spec.rb` now has four, under a nondeterministic collation with a total original order: DISTINCT, GROUP BY, a UNION, and a key column that itself uses the collation each still refuse as `unsupported_order`/`nondeterministic_collation`. Four mutations (in `inner_cuts.rb`'s `sole_table` and `total_order.rb`'s `keyed?`) each turn only its own example red. The set operation's refusal has no check of its own: a UNION's top SelectStmt has no `from_clause`. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
+
+### 20261112-180000-1. Total-order gate: a set-returning function in attribute notation.
+
+From the second review of 20261110-2 (minor, rare SQL). The gate's target-list walk drops `:attribute` calls, so a SETOF function on a table's row type written in attribute notation (`SELECT p.f FROM posts p`, where `f(posts) RETURNS SETOF ...`) isn't refused and the order is wrongly taken as total. Refuse it (or list it as unsupported in v1 in DESIGN.md), red first on real Postgres. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261110-2 (landed).
+- **Came from:** 20261110-2.
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-180000-1`. `target_calls` keeps attribute calls, and the catalog query counts an attribute name as set-returning only for a one-argument function of a row type with `proretset`, so `SELECT p.id, p.post_tag FROM posts p ORDER BY p.id` (which multiplies rows) refuses `:total`, while `p.id` and a scalar `p.post_size` stay total. Two mutations went red. The lookup is by name, so a column sharing a SETOF function's name refuses too (the safe direction). The per-commit check passed with rake's own exit 0. Refusal-only; I read the report and diff stat and started no reviewer.

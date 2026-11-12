@@ -21,6 +21,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261112-170000-1
 - 20261110-2
 - 20261112-110000-1
+- 20261112-180000-1
 
 ## How this file works.
 
@@ -725,13 +726,4 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Depends on:** None.
 - **Came from:** 20261011-10.
 - **Design:** counterexamples.
-- **Status:** todo
-
-### 20261112-180000-1. Total-order gate: a set-returning function in attribute notation.
-
-From the second review of 20261110-2 (minor, rare SQL). The gate's target-list walk drops `:attribute` calls, so a SETOF function on a table's row type written in attribute notation (`SELECT p.f FROM posts p`, where `f(posts) RETURNS SETOF ...`) isn't refused and the order is wrongly taken as total. Refuse it (or list it as unsupported in v1 in DESIGN.md), red first on real Postgres. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261110-2 (landed).
-- **Came from:** 20261110-2.
-- **Design:** result-comparison.
 - **Status:** todo
