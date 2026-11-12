@@ -363,6 +363,43 @@ RSpec.describe Quaack::Enclave::Redaction do
       expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(rows(query))
     end
 
+    # Task 20261112-160000-1: column references with the same name in
+    # different tables aren't the same expression, so their keys' constants
+    # don't share. Here o.status is text and t.status is an integer.
+    context "with a same-named column in another table" do
+      before do
+        conn = test_database.connection
+        conn.exec("CREATE TABLE public.tickets (id int, status int)")
+        conn.exec("INSERT INTO public.tickets SELECT id, id % 7 FROM public.orders")
+        conn.exec("ANALYZE public.tickets")
+      end
+
+      it "keeps keys on different tables' columns on their own placeholders" do
+        query = "SELECT coalesce(o.status, '5'), coalesce(t.status, '5'), count(*) FROM public.orders o " \
+                "JOIN public.tickets t ON t.id = o.id GROUP BY coalesce(o.status, '5'), coalesce(t.status, '5') " \
+                "HAVING max(coalesce(t.status, '5')) > 1"
+        result = redact(query)
+        expect(result.query.sql).to eq("SELECT COALESCE(o.status, $1), COALESCE(t.status, $2), count(*) " \
+                                       "FROM public.orders o JOIN public.tickets t ON t.id = o.id " \
+                                       "GROUP BY COALESCE(o.status, $1), COALESCE(t.status, $2) " \
+                                       "HAVING max(COALESCE(t.status, $2)) > $3")
+        expect(JSON.generate([result.query.sql, result.plan.explain, result.placeholder_shapes])).not_to include("'5'")
+        original = rows(query)
+        expect(original).not_to be_empty
+        expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(original)
+      end
+
+      it "still shares a self-join's keys on one table's column" do
+        query = "SELECT coalesce(a.status, 5), count(*) FROM public.tickets a JOIN public.tickets b ON b.id = a.id " \
+                "GROUP BY coalesce(a.status, 5) HAVING max(coalesce(b.status, 5)) > 1"
+        result = redact(query)
+        expect(result.query.sql).to eq("SELECT COALESCE(a.status, $1), count(*) FROM public.tickets a " \
+                                       "JOIN public.tickets b ON b.id = a.id GROUP BY COALESCE(a.status, $1) " \
+                                       "HAVING max(COALESCE(b.status, $1)) > $2")
+        expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(rows(query))
+      end
+    end
+
     # Constants equal in value but written differently don't share, so the
     # prepare fails closed.
     it "fails closed on matching expressions whose constants are written differently" do

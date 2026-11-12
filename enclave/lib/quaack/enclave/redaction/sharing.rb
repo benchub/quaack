@@ -41,6 +41,7 @@ module Quaack
         def initialize(found)
           @found = found
           @parent = {}
+          @relations = {}
         end
 
         # Joins the constants of every matching pair the message holds, if
@@ -61,6 +62,7 @@ module Quaack
         private
 
         def select(stmt)
+          @relations = Relations.of(stmt.from_clause)
           targets = stmt.target_list.map(&:res_target)
           sort_keys = Keys.resolved(sort_keys(stmt.sort_clause), targets)
           pair(Keys.resolved(stmt.group_clause, targets),
@@ -79,7 +81,12 @@ module Quaack
 
         def sort_keys(clause) = clause.filter_map { it.sort_by&.node }
 
-        def aggregate(call) = pair(sort_keys(call.agg_order), call.args)
+        # An aggregate's note doesn't say which FROM list it's in, so its
+        # column references match whatever relation they name.
+        def aggregate(call)
+          @relations = {}
+          pair(sort_keys(call.agg_order), call.args)
+        end
 
         # Joins every key with every node under the regions that's the same
         # expression. Only a node with as many nodes under it as a key can be
@@ -91,8 +98,24 @@ module Quaack
 
           sizes = keys.to_set { size(it) }
           regions.compact.each do |region|
-            sized(region) { |node, size| by_form[form(node)]&.each { join(it, node) } if sizes.include?(size) }
+            sized(region) do |node, size|
+              next unless sizes.include?(size)
+
+              by_form[form(node)]&.each { join(it, node) if same_relations?(it, node) }
+            end
           end
+        end
+
+        # Whether each column reference under one node resolves to the same
+        # relation as the one in its place under the other. Their forms
+        # match, so they line up. A reference whose relation isn't known,
+        # such as an unqualified one, matches any.
+        def same_relations?(one, other)
+          relations(one).zip(relations(other)).all? { |a, b| a.nil? || b.nil? || a == b }
+        end
+
+        def relations(node)
+          [].tap { |found| everything(node) { |n| found << Relations.named(@relations, n.column_ref) if n.column_ref } }
         end
 
         # Yields every Node under this one, and it, with the number of nodes
@@ -201,7 +224,37 @@ module Quaack
         end
       end
 
-      private_constant :Sharing, :Keys
+      # The relations a FROM list names, by the name a column reference
+      # qualifies them with: its alias, or the table's own name. Two names
+      # for one table, as in a self-join, give the same relation, so their
+      # columns count as the same. A subquery or function in the list is its
+      # own relation, by its alias. A table counts by its name alone, so
+      # public.t and t count as one.
+      module Relations
+        module_function
+
+        def of(from_clause) = {}.tap { |map| from_clause.each { add(map, it) } }
+
+        def add(map, node)
+          case node.node
+          when :range_var then table(map, node.range_var)
+          when :join_expr then [node.join_expr.larg, node.join_expr.rarg].compact.each { add(map, it) }
+          else name(node.inner)&.then { map[it] = [:alias, it] }
+          end
+        end
+
+        def table(map, range) = map[name(range) || range.relname] = [:table, range.relname]
+
+        def name(item) = item.respond_to?(:alias) ? item.alias&.aliasname : nil
+
+        # The relation a qualified column reference names, or nil.
+        def named(map, ref)
+          fields = ref.fields
+          map[fields[-2].string&.sval] if fields.size > 1
+        end
+      end
+
+      private_constant :Sharing, :Keys, :Relations
     end
   end
 end
