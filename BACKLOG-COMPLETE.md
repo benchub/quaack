@@ -13149,3 +13149,13 @@ From the review of 20261112-073000-1 (minor). (1) Existing behavior, not that di
 - **Design:** qualify, rewrite-check.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-083000-1`. (1) was real: with citext in public, a candidate's `=` on a citext column, `lower(code)` or `max(code)` the original never applies to citext passed Names (the original writes a bare `=`) and qualify resolved it to `public.=`, `public.lower` or `public.max`. A new `Names.resolved!`, run right after Relations qualifies the candidate, refuses as `unknown_name` any function or operator qualify puts in a schema other than pg_catalog unless the original's qualified text uses it there. Production's original is `redacted_query`, built from the qualified query, so a candidate using the same user-schema names as the original still passes; the Opus reviewer checked this on real Postgres. (2) is documented; (3) has its example. Three mutations went red. The per-commit check passed with rake's own exit 0. The implicit-cast gap the review found is 20261112-110000-1.
+
+### 20261112-080000-1. Winner summary guard: a verb after a lead-in word or a comma.
+
+From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Group by tenant." passed on main and are now refused: a capitalised verb-type after a lead-in adverb or a comma no longer counts as a sentence start. A good LLM usually writes the verb lowercase there, and a refusal only drops the summary, so the cost is small. Count a sentence start after a lead-in word (Then, First, Next, Instead, Finally, Also) or after a comma that follows one, red first, without letting "First, Sort happens." or "Then a Hash runs." through. Also note: mid-sentence with no modal ("We Sort them by id.") is refused by design. Driver only.
+
+- **Depends on:** 20261112-063000-1 (landed).
+- **Came from:** 20261112-063000-1.
+- **Design:** LLM prompts.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-080000-1`. `SENTENCE_START` allows a capitalised lead-in word (Then, First, Next, Instead, Finally, Also, Otherwise, So) with an optional comma right after a sentence start, so "Then Sort by id." and "First, Group by tenant." pass again; "First, Sort happens.", "Then a Hash runs." and a mid-sentence "and then Sort by id" stay refused. Two mutations went red. The per-commit check passed with rake's own exit 0. Driver only; I read the diff and started no reviewer.

@@ -810,15 +810,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Design:** counterexamples.
 - **Status:** todo
 
-### 20261112-080000-1. Winner summary guard: a verb after a lead-in word or a comma.
-
-From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Group by tenant." passed on main and are now refused: a capitalised verb-type after a lead-in adverb or a comma no longer counts as a sentence start. A good LLM usually writes the verb lowercase there, and a refusal only drops the summary, so the cost is small. Count a sentence start after a lead-in word (Then, First, Next, Instead, Finally, Also) or after a comma that follows one, red first, without letting "First, Sort happens." or "Then a Hash runs." through. Also note: mid-sentence with no modal ("We Sort them by id.") is refused by design. Driver only.
-
-- **Depends on:** 20261112-063000-1 (landed).
-- **Came from:** 20261112-063000-1.
-- **Design:** LLM prompts.
-- **Status:** todo
-
 ### 20261112-110000-1. Rewrite candidate check: an implicit cast through a user function.
 
 From the review of 20261112-083000-1 (minor, pre-existing). With `CREATE CAST (citext AS int) WITH FUNCTION public.ci2int AS IMPLICIT`, a candidate `WHERE qty = code` is accepted, and at run time it calls `public.ci2int`, which the original never uses. The parse tree has no node for an implicit cast's function, so `Names` and `Names.resolved!` can't see it. Find, on real Postgres, the casts a candidate's expressions can pick up implicitly (`pg_cast` with `castcontext = 'i'` or `'a'` and a `castfunc` outside pg_catalog, between types the candidate reaches, see `keyword_reach.rb` for how reached types are found), and refuse the candidate when it reaches such a cast the original doesn't (the original's qualified text, or its reached types). Red first; mutate; DESIGN.md's names paragraph. Trust boundary; Opus builder and reviewer. Enclave change; it goes on "Unreleased enclave changes".
