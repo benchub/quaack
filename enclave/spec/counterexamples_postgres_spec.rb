@@ -45,14 +45,16 @@ RSpec.describe Quaack::Enclave::Counterexamples do
   end
 
   # NOT IN on a varchar column prints as <> ALL over an ARRAY cast to
-  # text[] (20261012-7).
+  # text[] (20261012-7). The list holds '', the typical text value
+  # ParentRows tries first, so a parent that ignored the NOT IN would
+  # take it (20261111-230000-1).
   it "builds a parent whose varchar column has a NOT IN CHECK, with a value outside the list" do
-    conn.exec("ALTER TABLE fx.customers ADD COLUMN g varchar NOT NULL CHECK (g NOT IN ('bad', 'worse'))")
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN g varchar NOT NULL CHECK (g NOT IN ('', 'bad'))")
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
     expect(prepared.refused).to eq([])
     g = prepared.rows.first.then { |r| r.values[r.columns.index("g")] }
-    expect(%w[bad worse]).not_to include(g)
-    expect(load(prepared, "SELECT c.g NOT IN ('bad', 'worse') FROM fx.customers c")).to eq([["t"]])
+    expect(["", "bad"]).not_to include(g)
+    expect(load(prepared, "SELECT c.g NOT IN ('', 'bad') FROM fx.customers c")).to eq([["t"]])
   end
 
   it "adds no parent that another insert supplies, and loads parents' inserts first" do
