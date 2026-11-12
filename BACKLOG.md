@@ -883,3 +883,14 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 
 ### 20261111-185500-1. Don't blame a LIMIT or OFFSET that isn't there. Done, see BACKLOG-COMPLETE.md.
+
+### 20261112-032618-1. Tests and a missed case left by 20261112-000801-1.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261112-000801-1 (minor), 2026-11-12.
+- **Design:** DESIGN.md, result-comparison; docs/float-values.md.
+- **Status:** todo.
+- **What's wrong:**
+  - A cut-tie layout in the second look is meant to need both hashes to match, but keying it on the first-look hash alone keeps every spec green. Either key is strict, so this can only lose the flag, never set it wrongly.
+  - The second look cancels rows on the first-look hash greedily before pairing the rest on the second-look hash. When two rows share a first-look hash but have different second-look hashes, it can cancel the wrong pair and miss the flag, though a one-to-one pairing exists. This also only loses the flag.
+- **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
