@@ -15,7 +15,10 @@ module Quaack
       # assignment casts only to boolean (WHERE, AND, CASE WHEN, and the
       # like) and to bigint (LIMIT and OFFSET). A cast counts when its
       # function is outside pg_catalog, or it's an I/O cast through a type
-      # whose output or input function is.
+      # whose output or input function is, and that function doesn't belong
+      # to an installed extension (pg_depend deptype 'e'). The user chose
+      # this on 2026-11-12: only casts written by hand count, so PostGIS's
+      # implicit text -> geometry through public.geometry(text) doesn't.
       #
       # Which expression picks the cast up needs the types Postgres resolves,
       # which the parse doesn't hold. So when a type the candidate sees
@@ -58,6 +61,11 @@ module Quaack
             AND EXISTS (
               SELECT 1 FROM pg_catalog.pg_proc p
               WHERE p.pronamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace
+                AND NOT EXISTS (
+                  SELECT 1 FROM pg_catalog.pg_depend dep
+                  WHERE dep.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass
+                    AND dep.objid OPERATOR(pg_catalog.=) p.oid
+                    AND dep.deptype OPERATOR(pg_catalog.=) 'e')
                 AND (p.oid OPERATOR(pg_catalog.=) c.castfunc
                   OR (c.castmethod OPERATOR(pg_catalog.=) 'i'
                     AND p.oid OPERATOR(pg_catalog.=) ANY (ARRAY[s.typoutput, d.typinput]::pg_catalog.oid[]))))

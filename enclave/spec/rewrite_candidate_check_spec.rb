@@ -1324,6 +1324,27 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
           )
         end
 
+        # The user's choice (2026-11-12): a cast an installed extension owns
+        # doesn't count, only one written by hand. PostGIS's implicit
+        # text -> geometry goes through public.geometry(text), and text is
+        # always seen.
+        it "keeps a new expression on integer columns with PostGIS installed" do
+          conn.exec("CREATE EXTENSION postgis WITH SCHEMA public")
+          expect(kw_outcome("SELECT id FROM orders WHERE id = 1", "pg_catalog, public", original: qty_original))
+            .to eq("SELECT id FROM public.orders WHERE id = 1")
+        end
+
+        it "keeps a new expression on a table with a citext column, whose casts citext owns" do
+          expect(kw_outcome("SELECT id FROM sales.items WHERE qty = 2 AND id = 1", "pg_catalog, public",
+                            original: qty_original)).to eq("SELECT id FROM sales.items WHERE qty = 2 AND id = 1")
+        end
+
+        it "still refuses a hand-written cast with PostGIS installed" do
+          conn.exec("CREATE EXTENSION postgis WITH SCHEMA public")
+          cast!("int", "IMPLICIT")
+          expect(kw_outcome(probe, "pg_catalog, public", original: qty_original)).to eq(names_detail)
+        end
+
         it "ignores an assignment cast to a type a SELECT never assigns to" do
           cast!("int", "ASSIGNMENT")
           expect(kw_outcome("SELECT id FROM sales.items WHERE qty = 1", "pg_catalog, public", original: qty_original))
