@@ -39,7 +39,8 @@ module Quaack
         # named in operators that the candidate's operands could pick: one
         # with an argument type the candidate can see, one Postgres casts a
         # seen type to implicitly, or a pseudo-type, such as anyelement. A
-        # seen type is a column type of a relation parse reads, a type it
+        # seen type is a column type or the row type of a relation parse
+        # reads, a type it
         # casts to, the result type of a function it calls outside
         # pg_catalog, or a literal's type, each with the base types of its
         # domains and the element types of its arrays.

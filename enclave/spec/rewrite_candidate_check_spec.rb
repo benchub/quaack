@@ -1230,6 +1230,25 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       end
     end
 
+    # 20261111-200042-1. A whole-row operand has the relation's row type.
+    it "refuses a whole-row keyword form when a user schema has an operator on the row type" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA rowop;
+        CREATE FUNCTION rowop.eq(public.customers, public.customers) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
+        CREATE OPERATOR rowop.= (LEFTARG = public.customers, RIGHTARG = public.customers, FUNCTION = rowop.eq);
+      SQL
+      whole_row = [
+        "SELECT id FROM customers t WHERE t IN (t)",
+        "SELECT id FROM customers t WHERE (t.*) IN (t)"
+      ]
+      expect(whole_row.map { kw_outcome(it, "rowop, public") }).to all(eq(kw_detail))
+      expect(whole_row.map { kw_outcome(it, "public") }).to all(start_with("SELECT"))
+      sql = "SELECT id FROM orders WHERE status IN ($2, $3) AND id BETWEEN $1 AND $3 AND status LIKE $2"
+      expect(kw_outcome(sql, "rowop, public")).to start_with("SELECT")
+      same = described_class::Original.new(relations:, placeholders: 3, sql: whole_row.first)
+      expect(kw_outcome(whole_row.first, "rowop, public", original: same)).to start_with("SELECT")
+    end
+
     it "checks keyword operators after relations" do
       expect(kw_outcome("SELECT 1 FROM public.nowhere WHERE 1 IN (2)", "kw, public")).to start_with("unknown_relation")
     end
