@@ -889,3 +889,30 @@ From a user reading report 20261112T151221Z-7c50452e, 2026-11-12. A rewrite's fa
 - **Came from:** A user question about report 20261112T151221Z-7c50452e.
 - **Design:** result-comparison, report.
 - **Status:** todo
+
+### 20261112-204606-1. docs/unstable-original.md: same plan, different order on the real data.
+
+From the review of 20261112-171103-1 (minor). The page puts an original's two differing runs down only to a changed plan. On the real data, a parallel aggregate or a synchronized seq scan can feed rows to an order-sensitive step in a different order with the same plan; the racetrack's `clock_anchor` is `PARALLEL SAFE` (`enclave/lib/quaack/enclave/racetrack.rb:20`), so parallel plans can run there. Confirm on Postgres that a parallel plan or `synchronize_seqscans` can reach it, then add the cause to the page. Docs only.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** result-comparison.
+- **Status:** todo
+
+### 20261112-204606-2. Report: the float-noise sentence for the original's two runs.
+
+From the review of 20261112-171103-1 (minor). The `production_not_compared` float-noise wording still says "two runs of the original query differed" without saying they were QUAACK's own tiebreaker runs, and it doesn't link to `docs/unstable-original.md`. It also covers `cut_tie`, where the runs that differed aren't the original's two runs with no `LIMIT` (they're the full runs without the cut), so "the original query's two runs" isn't accurate there. Reword to match 20261112-171103-1's wording, split the `cut_tie` case if needed, and link it. Driver and docs only; red first.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** result-comparison, report.
+- **Status:** todo
+
+### 20261112-204606-3. report_spec: the doc-link guard examples can't fail.
+
+From the review of 20261112-171103-1 (minor). In `driver/spec/report_spec.rb` (about lines 1318–1322), the examples that a `cut_tie` reason and a `statement_timeout` rule get no link stay green with `DocLinks`' reason or rule check removed, since their text never holds the linked phrase. Plant the phrase in a fate whose reason isn't `unstable_original` (or otherwise make the check matter) and confirm the examples go red with the check removed. Spec only.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** report.
+- **Status:** todo
