@@ -13325,3 +13325,13 @@ From the review of 20261110-21 (minor, pre-existing on main). The guard against 
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-130000-1`. Only "Consider rewriting every query." still passed on main once 20261110-21 landed; `UNIVERSAL` now adds gerund forms (using, applying, adding, rewriting, splitting, replacing), recommend, suggest and consider as advice verbs, and 'd as a modal, with no exceptions. Each new form has its own red example and mutation; two conditional heuristics with no every/all query still pass. A conditional heuristic that itself says "all queries" ("Consider an index if all queries on this table filter by tenant.") is now refused, as the user's rule implies; a refusal only drops the summary. The per-commit check passed with rake's own exit 0. Driver only; I read the report and diff stat and started no reviewer.
+
+### 20261112-190000-1. Implicit casts: test the I/O-cast branch, and say it in DESIGN.md.
+
+From the review of 20261112-110000-1 (minor). Disabling the I/O-cast branch (`castmethod = 'i'`) of `rewrite_candidate_check/implicit_casts.rb` keeps all 252 examples in `rewrite_candidate_check_spec.rb` green: no spec covers an implicit I/O cast through a user type's hand-written input or output function. Add one on real Postgres (a user type with a hand-written input/output function and an implicit I/O cast a candidate reaches, refused; the same with the function owned by an extension, kept), red first by disabling that branch. DESIGN.md's names-paragraph sentence for 20261112-110000-1 doesn't mention the I/O-cast half; add it. Optionally note that a function a DBA adds to an extension (ALTER EXTENSION ... ADD FUNCTION) is trusted like the extension's own. Enclave spec and DESIGN.md only.
+
+- **Depends on:** 20261112-110000-1 (landed).
+- **Came from:** 20261112-110000-1.
+- **Design:** qualify, rewrite-check.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-190000-1`. The I/O-cast branch is reachable without C: a superuser's `LANGUAGE internal` I/O functions (`AS 'textin'`/`'textout'`) for a `CREATE TYPE ... LIKE = text`, with `CREATE CAST ... WITH INOUT AS IMPLICIT`. Three real-Postgres examples: refused through the hand-written output function; kept once `ALTER EXTENSION ... ADD FUNCTION` makes the functions extension-owned; kept for an enum's pg_catalog I/O. Disabling the I/O branch or the extension test turns its own example red. DESIGN.md covers the I/O half and the ADD FUNCTION trust. The per-commit check passed with rake's own exit 0. Spec and docs only; I read the report and diff stat and started no reviewer.
