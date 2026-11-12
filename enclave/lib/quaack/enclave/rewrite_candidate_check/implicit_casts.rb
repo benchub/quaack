@@ -2,7 +2,6 @@
 
 require "pg_query"
 require_relative "keyword_operators"
-require_relative "keyword_reach"
 require_relative "names"
 
 module Quaack
@@ -25,7 +24,29 @@ module Quaack
       # it's refused with Names' message. Without such a cast, as with
       # citext's own casts, nothing changes.
       module ImplicitCasts
-        SQL = KeywordReach::SEEN.chomp.gsub(/\$([3-6])/) { "$#{::Regexp.last_match(1).to_i - 2}" } + <<~SQL
+        RULE = "unknown_name"
+        DETAIL = Names::DETAIL
+
+        # KeywordReach's seen types, from $1 to $4 in its $3 to $6's place.
+        SQL = <<~SQL
+          WITH RECURSIVE seen(t) AS (
+            SELECT a.atttypid FROM pg_catalog.pg_attribute a
+            WHERE a.attrelid OPERATOR(pg_catalog.=) ANY (
+                SELECT pg_catalog.to_regclass(r) FROM pg_catalog.unnest($1::pg_catalog.text[]) r)
+              AND a.attnum OPERATOR(pg_catalog.>) 0
+            UNION SELECT c.reltype FROM pg_catalog.pg_class c
+            WHERE c.oid OPERATOR(pg_catalog.=) ANY (
+                SELECT pg_catalog.to_regclass(r) FROM pg_catalog.unnest($1::pg_catalog.text[]) r)
+            UNION SELECT pg_catalog.to_regtype(n) FROM pg_catalog.unnest($2::pg_catalog.text[]) n
+            UNION SELECT p.prorettype FROM pg_catalog.pg_proc p
+              JOIN pg_catalog.pg_namespace pn ON pn.oid OPERATOR(pg_catalog.=) p.pronamespace
+            WHERE EXISTS (
+              SELECT 1 FROM ROWS FROM (pg_catalog.unnest($3::pg_catalog.text[]), pg_catalog.unnest($4::pg_catalog.text[])) f(s, n)
+              WHERE f.s OPERATOR(pg_catalog.=) pn.nspname AND f.n OPERATOR(pg_catalog.=) p.proname)
+            UNION SELECT x FROM pg_catalog.pg_type ty JOIN seen ON ty.oid OPERATOR(pg_catalog.=) seen.t,
+              LATERAL (VALUES (ty.typbasetype), (ty.typelem)) v(x)
+            WHERE x OPERATOR(pg_catalog.<>) 0
+          )
           SELECT 1 FROM pg_catalog.pg_cast c
             JOIN pg_catalog.pg_type s ON s.oid OPERATOR(pg_catalog.=) c.castsource
             JOIN pg_catalog.pg_type d ON d.oid OPERATOR(pg_catalog.=) c.casttarget
@@ -59,7 +80,7 @@ module Quaack
           return if keys(parse.tree).subset?(original)
 
           found = connection.exec_params(SQL, KeywordOperators.seen(parse)).ntuples
-          raise Error.new(Names::RULE, Names::DETAIL) if found.positive?
+          raise Error.new(RULE, DETAIL) if found.positive?
         end
 
         # Each expression and clause in tree, as [label, deparsed text].
