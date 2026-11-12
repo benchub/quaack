@@ -13069,3 +13069,13 @@ From the review of 20261111-260000-1 (minor). `non_null(call)` in `result_compar
 - **Design:** fixture-compare, result comparison.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-070000-1`. A real-Postgres example: `string_agg(id::text, label)` over three values whose delimiter is NULL in two rows must refuse as `original_pick`. Green on the shipped code; also filtering on the delimiter turns it red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff and started no reviewer.
+
+### 20261111-200042-1. Keyword operators: a whole-row operand reaches a user operator on the row type.
+
+From the review of 20261011-12. A relation's row type (`pg_class.reltype`) isn't among the seen types in `rewrite_candidate_check/keyword_reach.rb`, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through. Add `reltype` to the seen types, or refuse whole-row operands of keyword forms. Test first against real Postgres. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** 20261011-12.
+- **Design:** qualify, rewrite-check.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261111-200042-1`. `keyword_reach.rb` adds `pg_class.reltype` of each relation the candidate reads to the seen types, so a candidate adding a whole-row keyword form (`t IN (t2)`, `(t.*) IN (...)`, IS DISTINCT FROM, NULLIF, BETWEEN, simple CASE) is refused as `unknown_name` when a user schema on the path has that operator on the row type. The Opus reviewer tried each form on both path orders and found nothing blocking; two mutations each turned the new spec red. A stray Gemfile.lock change was reverted on the branch. The per-commit check passed with rake's own exit 0. The IN-subquery gap the build found is 20261112-073000-1.

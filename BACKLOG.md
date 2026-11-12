@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261111-260000-1
+- 20261111-200042-1
 
 ## How this file works.
 
@@ -796,14 +797,7 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
   - The second look cancels rows on the first-look hash greedily before pairing the rest on the second-look hash. When two rows share a first-look hash but have different second-look hashes, it can cancel the wrong pair and miss the flag, though a one-to-one pairing exists. This also only loses the flag.
 - **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
 
-### 20261111-200042-1. Keyword operators: a whole-row operand reaches a user operator on the row type.
-
-From the review of 20261011-12. A relation's row type (`pg_class.reltype`) isn't among the seen types in `rewrite_candidate_check/keyword_reach.rb`, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through. Add `reltype` to the seen types, or refuse whole-row operands of keyword forms. Test first against real Postgres. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** None.
-- **Came from:** 20261011-12.
-- **Design:** qualify, rewrite-check.
-- **Status:** todo
+### 20261111-200042-1. Keyword operators: a whole-row operand reaches a user operator on the row type. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261111-200042-2. rewrite_candidate_check_spec: split the three-rule example, and watch for a flake.
 
