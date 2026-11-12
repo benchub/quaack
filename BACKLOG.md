@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261110-10
 - 20261112-150000-1
 - 20261111-4
+- 20261112-160000-1
 
 ## How this file works.
 
@@ -782,11 +783,11 @@ From the review of 20261110-21 (minor, pre-existing on main). The guard against 
 - **Design:** report.
 - **Status:** todo
 
-### 20261112-160000-1. redact sharing: same-named columns of different tables share a constant.
+### 20261112-170000-1. redact sharing: `aggregate` leaves `@relations` reset.
 
-From the review of 20261111-4 (minor, not a regression). The tree match in `redaction/sharing.rb` cuts each column reference to its last field, so `coalesce(o.status, '5')` and `coalesce(t.status, '5')` count as the same expression even when `o` and `t` are different tables. When the two columns have different types (text and int), both copies share `$1` and the query fails closed as `prepare_failed` (42804), where it could have bound with two placeholders. A self-join of the same table shares correctly. Keep the qualifier when the two references resolve to different relations (the redact step has the relation list), red first on real Postgres with a text and an int column of the same name; or list the case as unsupported in v1 in DESIGN.md. Enclave change if code changes; it goes on "Unreleased enclave changes".
+From the review of 20261112-160000-1 (minor). In `redaction/sharing.rb`, `aggregate` sets `@relations = {}` and nothing restores it, so whatever runs after it sees an empty relation map. That only loosens matching (refs then match any relation), so it's safe today, but it depends on `select` always resetting before it pairs and would break quietly if the code is reordered. Pass the relation map as an argument or a local instead of an instance variable, with a spec that pairs a key after an aggregate note in the same query (a GROUP BY key plus `string_agg(DISTINCT ...)`) and shows different-table refs stay apart there too. Enclave change; it goes on "Unreleased enclave changes".
 
-- **Depends on:** 20261111-4 (landed).
-- **Came from:** 20261111-4.
+- **Depends on:** 20261112-160000-1 (landed).
+- **Came from:** 20261112-160000-1.
 - **Design:** redact.
 - **Status:** todo

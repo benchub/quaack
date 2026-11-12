@@ -13249,3 +13249,13 @@ First filed as 20261110-8, renumbered on 2026-11-11 since another session used i
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261111-4`. `Sharing#alike` and its helpers are gone; the tree match cuts each column reference to its last field and counts it as one node, so only expressions shaped like the key share constants (`o.status || '-x'` still matches `status || '-x'`). The regression query binds with the key's copies on `$1` and the HAVING's `'5'` on `$2`. The Opus reviewer merged it onto main, found nothing blocking, and ran the per-commit check there (rake's own exit 0). The minor is 20261112-160000-1.
+
+### 20261112-160000-1. redact sharing: same-named columns of different tables share a constant.
+
+From the review of 20261111-4 (minor, not a regression). The tree match in `redaction/sharing.rb` cuts each column reference to its last field, so `coalesce(o.status, '5')` and `coalesce(t.status, '5')` count as the same expression even when `o` and `t` are different tables. When the two columns have different types (text and int), both copies share `$1` and the query fails closed as `prepare_failed` (42804), where it could have bound with two placeholders. A self-join of the same table shares correctly. Keep the qualifier when the two references resolve to different relations (the redact step has the relation list), red first on real Postgres with a text and an int column of the same name; or list the case as unsupported in v1 in DESIGN.md. Enclave change if code changes; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261111-4 (landed).
+- **Came from:** 20261111-4.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-160000-1`. Sharing joins a matching pair only when each pair of column refs resolves to the same relation (a new `Relations` map from the SELECT's FROM list; unqualified refs, qualifiers outside the FROM list and aggregate-note refs match any, schema ignored), so `coalesce(o.status,'5')` and `coalesce(t.status,'5')` on different tables get separate placeholders and a self-join still shares. The reviewer ran 13 ordinary shapes main binds (schema-qualified vs bare, alias vs bare, GROUP BY 1, subquery and CTE keys, EXISTS) and all still bind with equal rows; three mutations went red. The per-commit check passed with rake's own exit 0. The minor is 20261112-170000-1.
