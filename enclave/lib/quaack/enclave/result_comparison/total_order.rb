@@ -51,7 +51,8 @@ module Quaack
           InnerCuts.deterministic?(transaction, top, InnerCuts.cte_names(tree), DETERMINISTIC_KEYS_SQL)
         end
 
-        # A function of the name, unqualified or as schema.name, or an
+        # A function of the name, unqualified or as schema.name, a function
+        # of one row-type argument named in attribute notation, or an
         # operator of the name, that returns a set.
         SET_RETURNING_SQL = <<~SQL
           SELECT pg_catalog.count(*)::int FROM pg_catalog.pg_proc p
@@ -59,6 +60,10 @@ module Quaack
           WHERE p.proretset
             AND (p.proname OPERATOR(pg_catalog.=) ANY ('{%<names>s}'::pg_catalog.name[])
               OR pg_catalog.concat(n.nspname, '.', p.proname) OPERATOR(pg_catalog.=) ANY ('{%<qualified>s}'::pg_catalog.text[])
+              OR (p.proname OPERATOR(pg_catalog.=) ANY ('{%<attributes>s}'::pg_catalog.name[])
+                AND p.pronargs OPERATOR(pg_catalog.=) 1
+                AND EXISTS (SELECT FROM pg_catalog.pg_type t
+                  WHERE t.oid OPERATOR(pg_catalog.=) p.proargtypes[0] AND t.typtype OPERATOR(pg_catalog.=) 'c'))
               OR p.oid OPERATOR(pg_catalog.=) ANY (
                 SELECT o.oprcode::pg_catalog.oid FROM pg_catalog.pg_operator o
                 WHERE o.oprname OPERATOR(pg_catalog.=) ANY ('{%<operators>s}'::pg_catalog.name[])))
@@ -76,18 +81,22 @@ module Quaack
         end
 
         def returns_set_sql(calls)
-          functions, operators = calls.partition { it.kind == :function }
-          qualified, names = functions.partition(&:schema)
-          format(SET_RETURNING_SQL, names: elements(names.map(&:name)),
-                                    qualified: elements(qualified.map { "#{it.schema}.#{it.name}" }),
-                                    operators: elements(operators.map(&:name)))
+          by_kind = calls.group_by { it.kind == :function && it.schema ? :qualified : it.kind }
+          format(SET_RETURNING_SQL, names: call_texts(by_kind, :function), attributes: call_texts(by_kind, :attribute),
+                                    qualified: call_texts(by_kind, :qualified),
+                                    operators: call_texts(by_kind, :operator))
+        end
+
+        # The calls of the kind as array elements, schema.name when there's a schema.
+        def call_texts(by_kind, kind)
+          elements(by_kind.fetch(kind, []).map { [it.schema, it.name].compact.join(".") })
         end
 
         def target_calls(sql)
           targets = PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt.target_list
           found = []
           own_level_calls(targets, found)
-          found.select { %i[function operator].include?(it.kind) }.uniq
+          found.select { %i[function operator attribute].include?(it.kind) }.uniq
         end
 
         # FunctionCalls' walk, but it stops at a subquery: a SubLink gives
