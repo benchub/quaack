@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261111-260000-1
 - 20261111-200042-1
+- 20261112-073000-1
 
 ## How this file works.
 
@@ -825,15 +826,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Design:** counterexamples.
 - **Status:** todo
 
-### 20261112-073000-1. Keyword operators: an `IN (SELECT ...)` in a candidate isn't checked.
-
-Found in the build of 20261111-200042-1, 2026-11-12. `x IN (SELECT ...)` parses as a SubLink (ANY_SUBLINK, with its operator in `oper_name`), not an A_Expr, and `RewriteCandidateCheck::KeywordOperators` (`rewrite_candidate_check/keyword_operators.rb`) never walks SubLinks. So a candidate that adds an IN-subquery, or `= ANY (SELECT ...)`, `<> ALL (SELECT ...)`, or `NOT IN (SELECT ...)`, skips the keyword-operator check entirely, even when a user schema on the path has a reachable operator of that name. That's the same trust-boundary gap 20261011-12 closed for IN lists, on a realistic query shape (NOT IN to NOT EXISTS and semi-join rewrites add exactly this). Walk ANY_SUBLINK and ALL_SUBLINK nodes as keyword forms (an absent `oper_name` means `=`), apply the same refusal and the same exemption for a form the original uses, and test on real Postgres, red first: with a user `=` on a reachable type ahead of pg_catalog on the path, a candidate adding `t.x IN (SELECT ...)` the original doesn't use must be refused; an ordinary one with no such operator must pass; and an original using the form is exempt. Mutate (skip SubLinks again) to confirm red. Enclave change; trust boundary (Opus builder and reviewer); it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261111-200042-1.
-- **Came from:** The build of 20261111-200042-1.
-- **Design:** qualify, rewrite-check.
-- **Status:** todo
-
 ### 20261112-080000-1. Winner summary guard: a verb after a lead-in word or a comma.
 
 From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Group by tenant." passed on main and are now refused: a capitalised verb-type after a lead-in adverb or a comma no longer counts as a sentence start. A good LLM usually writes the verb lowercase there, and a refusal only drops the summary, so the cost is small. Count a sentence start after a lead-in word (Then, First, Next, Instead, Finally, Also) or after a comma that follows one, red first, without letting "First, Sort happens." or "Then a Hash runs." through. Also note: mid-sentence with no modal ("We Sort them by id.") is refused by design. Driver only.
@@ -841,4 +833,13 @@ From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Gro
 - **Depends on:** 20261112-063000-1 (landed).
 - **Came from:** 20261112-063000-1.
 - **Design:** LLM prompts.
+- **Status:** todo
+
+### 20261112-083000-1. Keyword operators: minors from 20261112-073000-1.
+
+From the review of 20261112-073000-1 (minor). (1) Existing behavior, not that diff: with the path `pg_catalog, kw, public`, a candidate's explicit `=` the original also uses (`= ANY (SELECT ...)`, or a plain `t.status = (SELECT ...)`) stays bare, because the original's `=` doesn't constrain operand types. A closer-typed operator later on the path (citext's `=`, for example) could then pick up a new operand type the candidate introduces. Check on real Postgres whether a realistic candidate can reach that (a new cast or column of a type a user operator covers), and if so pin it the way qualify pins a name the original doesn't use; red first. Trust boundary; Opus builder and reviewer. (2) The exemption for an IN subquery is keyed on the whole deparsed text, so a candidate that only changes the subquery's body (adds `WHERE id > 0`) is refused when a user `=` is reachable for the operand types. That's a safe refusal; decide whether to key on the left operand and operator instead, and say so in DESIGN.md either way. (3) No subquery-specific example pins the argument-for-argument key: keying the exemption on the operator alone keeps all six subquery examples green. Add one where the original's IN subquery differs from the candidate's and isn't exempt, and show the operator-only mutation turns it red. Enclave change if (1) or (2) changes code.
+
+- **Depends on:** 20261112-073000-1 (landed).
+- **Came from:** 20261112-073000-1.
+- **Design:** qualify, rewrite-check.
 - **Status:** todo
