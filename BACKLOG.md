@@ -842,15 +842,6 @@ From the review of 20261016-16's second loop (minor). (1) A verb-type step named
 - **Design:** LLM prompts.
 - **Status:** todo
 
-### 20261112-070000-1. Pick checks: pin that string_agg's check ignores only its value, not its delimiter.
-
-From the review of 20261111-260000-1 (minor). `non_null(call)` in `result_comparison/pick_checks.rb` tests only the first argument, which is right: `string_agg(x, NULL)` skips only a NULL value, and a NULL delimiter skips nothing. But making the check also filter on the delimiter keeps every spec green. Add a real-Postgres spec where a non-NULL value has a NULL delimiter and the pick must still be checked (two values that print differently must refuse), and show that filtering on the delimiter turns it red. Enclave spec only.
-
-- **Depends on:** 20261111-260000-1 (landed).
-- **Came from:** 20261111-260000-1.
-- **Design:** fixture-compare, result comparison.
-- **Status:** todo
-
 ### 20261112-073000-1. Keyword operators: an `IN (SELECT ...)` in a candidate isn't checked.
 
 Found in the build of 20261111-200042-1, 2026-11-12. `x IN (SELECT ...)` parses as a SubLink (ANY_SUBLINK, with its operator in `oper_name`), not an A_Expr, and `RewriteCandidateCheck::KeywordOperators` (`rewrite_candidate_check/keyword_operators.rb`) never walks SubLinks. So a candidate that adds an IN-subquery, or `= ANY (SELECT ...)`, `<> ALL (SELECT ...)`, or `NOT IN (SELECT ...)`, skips the keyword-operator check entirely, even when a user schema on the path has a reachable operator of that name. That's the same trust-boundary gap 20261011-12 closed for IN lists, on a realistic query shape (NOT IN to NOT EXISTS and semi-join rewrites add exactly this). Walk ANY_SUBLINK and ALL_SUBLINK nodes as keyword forms (an absent `oper_name` means `=`), apply the same refusal and the same exemption for a form the original uses, and test on real Postgres, red first: with a user `=` on a reachable type ahead of pg_catalog on the path, a candidate adding `t.x IN (SELECT ...)` the original doesn't use must be refused; an ordinary one with no such operator must pass; and an original using the form is exempt. Mutate (skip SubLinks again) to confirm red. Enclave change; trust boundary (Opus builder and reviewer); it goes on "Unreleased enclave changes".
@@ -859,4 +850,3 @@ Found in the build of 20261111-200042-1, 2026-11-12. `x IN (SELECT ...)` parses 
 - **Came from:** The build of 20261111-200042-1.
 - **Design:** qualify, rewrite-check.
 - **Status:** todo
-

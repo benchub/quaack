@@ -13059,3 +13059,13 @@ From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclav
 - **Design:** llm-counterexamples.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261111-230000-1`. The planted CHECK is now `g NOT IN ('', 'bad')`, with `''` the typical text value ParentRows tries first. The task's premise was off: reading `<> ALL` as `= ANY` already turned the old spec red. The mutation the old spec missed was ignoring the NOT IN CHECK altogether; it now turns the spec red. DESIGN.md and the `checks.rb` comment say any `op ANY` or `op ALL` over an array with no column is accepted and checked by Postgres. The per-commit check passed with rake's own exit 0. Spec and docs only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261112-070000-1. Pick checks: pin that string_agg's check ignores only its value, not its delimiter.
+
+From the review of 20261111-260000-1 (minor). `non_null(call)` in `result_comparison/pick_checks.rb` tests only the first argument, which is right: `string_agg(x, NULL)` skips only a NULL value, and a NULL delimiter skips nothing. But making the check also filter on the delimiter keeps every spec green. Add a real-Postgres spec where a non-NULL value has a NULL delimiter and the pick must still be checked (two values that print differently must refuse), and show that filtering on the delimiter turns it red. Enclave spec only.
+
+- **Depends on:** 20261111-260000-1 (landed).
+- **Came from:** 20261111-260000-1.
+- **Design:** fixture-compare, result comparison.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-070000-1`. A real-Postgres example: `string_agg(id::text, label)` over three values whose delimiter is NULL in two rows must refuse as `original_pick`. Green on the shipped code; also filtering on the delimiter turns it red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff and started no reviewer.
