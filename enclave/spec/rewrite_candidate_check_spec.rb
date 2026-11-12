@@ -1345,6 +1345,46 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
           expect(kw_outcome(probe, "pg_catalog, public", original: qty_original)).to eq(names_detail)
         end
 
+        # 20261112-190000-1. A WITH INOUT cast has no castfunc: it runs the
+        # source type's output function and the target's input function.
+        # A base type's I/O functions can't be SQL or plpgsql, but a
+        # superuser can write them in LANGUAGE internal, with no C.
+        def io_type!
+          conn.exec(<<~SQL)
+            SET client_min_messages = warning;
+            CREATE FUNCTION public.tag_in(cstring) RETURNS public.tag LANGUAGE internal IMMUTABLE STRICT AS 'textin';
+            CREATE FUNCTION public.tag_out(public.tag) RETURNS cstring LANGUAGE internal IMMUTABLE STRICT AS 'textout';
+            CREATE TYPE public.tag (INPUT = public.tag_in, OUTPUT = public.tag_out, LIKE = text);
+            CREATE CAST (public.tag AS int) WITH INOUT AS IMPLICIT;
+            ALTER TABLE sales.items ADD COLUMN tagc public.tag;
+            RESET client_min_messages;
+          SQL
+        end
+        let(:tag_probe) { "SELECT id FROM sales.items WHERE qty = tagc" }
+
+        it "refuses a new expression that can pick up an implicit I/O cast through a hand-written output function" do
+          io_type!
+          expect(kw_outcome(tag_probe, "pg_catalog, public", original: qty_original)).to eq(names_detail)
+        end
+
+        it "keeps it when an extension owns the I/O functions" do
+          io_type!
+          conn.exec("ALTER EXTENSION citext ADD FUNCTION public.tag_out(public.tag)")
+          conn.exec("ALTER EXTENSION citext ADD FUNCTION public.tag_in(cstring)")
+          expect(kw_outcome(tag_probe, "pg_catalog, public", original: qty_original))
+            .to eq("SELECT id FROM sales.items WHERE qty = tagc")
+        end
+
+        it "keeps an implicit I/O cast through pg_catalog's I/O functions" do
+          conn.exec(<<~SQL)
+            CREATE TYPE public.mood AS ENUM ('1', '2');
+            CREATE CAST (public.mood AS int) WITH INOUT AS IMPLICIT;
+            ALTER TABLE sales.items ADD COLUMN moodc public.mood;
+          SQL
+          expect(kw_outcome("SELECT id FROM sales.items WHERE qty = moodc", "pg_catalog, public",
+                            original: qty_original)).to eq("SELECT id FROM sales.items WHERE qty = moodc")
+        end
+
         it "ignores an assignment cast to a type a SELECT never assigns to" do
           cast!("int", "ASSIGNMENT")
           expect(kw_outcome("SELECT id FROM sales.items WHERE qty = 1", "pg_catalog, public", original: qty_original))
