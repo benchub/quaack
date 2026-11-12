@@ -24,24 +24,24 @@ module Quaack
     # rounds float columns to eight significant digits (and to zero below
     # 1e-12) and is exact for every other type. So float noise within fixture-compare's
     # tolerance hashes the same, except across a rounding boundary, which
-    # says mismatch. A result's digest hashes its row count together with
-    # its row hashes: sorted, for a multiset, or in order, for an ordered
-    # comparison.
+    # says mismatch. Results compare by their row hashes (RowMatch): in any
+    # order, for a multiset, or row for row, for an ordered comparison.
     #
     # Modes, as fixture-compare picks them from the original's top level:
-    # - multiset: the column types, row counts, and sorted digests match.
+    # - multiset: the column types, row counts, and row hashes in any order
+    #   match.
     # - ordered: fixture-compare's tiebreaker runs, T and T', on both queries, and the
     #   same refusals apply (unsupported_order): when a column is left out
     #   of the tiebreaker, no two of the original's rows may agree on every
     #   tiebreaker column but differ in a left-out one. When the original's
-    #   T and T' sorted digests match, and either it has no LIMIT and
+    #   T and T' runs hold the same rows, and either it has no LIMIT and
     #   OFFSET together or its runs through the end of the window
-    #   (Shape#through_window) match too, the candidate's T and T' ordered
-    #   digests must match the original's, or, when they don't, its runs'
+    #   (Shape#through_window) do too, the candidate's T and T' runs must
+    #   match the original's row for row, or, when they don't, its runs'
     #   row hashes must hold each of the original's tie groups at its place,
-    #   in any order (ResultComparison::Regrouped), and so must the sorted digests
-    #   of its own runs through its window, when it has a LIMIT and an
-    #   OFFSET. When the original's T and T' sorted digests differ with no
+    #   in any order (ResultComparison::Regrouped), and its own runs through
+    #   its window must hold the same rows, when it has a LIMIT and an
+    #   OFFSET. When the original's T and T' runs hold other rows with no
     #   LIMIT or OFFSET (and no DISTINCT ON), it refuses, unsupported_order
     #   with reason unstable_original (CutTies.unstable?). Since row hashes
     #   round floats, a last-bit difference across a rounding boundary does
@@ -52,7 +52,7 @@ module Quaack
     #   LIMIT that times out refuses, unsupported_order.
     # - subset (LIMIT or OFFSET, no ORDER BY): the original as written gives
     #   the expected count. The candidate's row hashes, which number at most
-    #   that, are tallied, and the original without its LIMIT streams past
+    #   that, are held, and the original without its LIMIT streams past
     #   them, each row taking one. Every candidate row must be taken. If
     #   the full original times out, only the count is checked, and a match
     #   is partial, rule subset_timed_out.
@@ -67,14 +67,18 @@ module Quaack
     # one of NOISY_REASONS) and a result it streamed had a float column,
     # the whole compare runs a second time, under the same timeout and row
     # caps, with float columns cut to the same eight significant digits
-    # on a grid shifted half a step from the first's (FloatNoise). If that
-    # passes, the verdict says float_noise true, so the report can say the
-    # rewrite failed on minor mismatches in float values. Any other
-    # outcome of the second look, a timeout included, leaves float_noise
-    # false. It's no looser than the first look: floats a step of eight
-    # significant digits apart or more never pass it. A pair less than
-    # half a step apart can't straddle a boundary of both grids, so it
-    # passes one of them, unless it straddles a power of ten.
+    # on a grid shifted half a step from the first's (FloatNoise). Each
+    # row keeps both looks' hashes, and two rows match when either look
+    # matches them (RowMatch, task 20261112-000801-1), so each row of a
+    # result may pass on its own grid. If that passes, the verdict says
+    # float_noise true, so the report can say the rewrite failed on minor
+    # mismatches in float values. Any other outcome of the second look, a
+    # timeout included, leaves float_noise false. It's no looser than the
+    # first look: floats a step of eight significant digits apart or more
+    # never match under either grid. A pair less than half a step apart
+    # can't straddle a boundary of both grids, so it matches under one of
+    # them, unless it straddles a power of ten. A row with two float
+    # columns must match under one grid in both.
     #
     # Trust boundary. A Verdict holds only a fixed result word, a rule
     # name, for unsupported_order the check that refused, one of
@@ -109,11 +113,11 @@ module Quaack
       NOISY_RULES = %w[value multiset subset].freeze
       NOISY_REASONS = %w[unstable_original cut_tie].freeze
 
-      # A streamed result: its column types, row count, and digests.
-      # hidden is whether rows agree on the tie columns but differ in the
-      # others (only when tie columns were given).
-      # hashes are the row hashes, in order.
-      Digested = Data.define(:types, :count, :sorted, :ordered, :hidden, :hashes)
+      # A streamed result: its column types and row count. hidden is
+      # whether rows agree on the tie columns but differ in the others
+      # (only when tie columns were given). hashes are the row hashes, in
+      # order (RowMatch).
+      Digested = Data.define(:types, :count, :hidden, :hashes)
 
       class TimedOut < StandardError; end
 
@@ -177,34 +181,27 @@ module Quaack
         actual = run.digest(candidate)
         rule = shape_rule(expected, actual)
         rule ||= "row_count" if expected.count != actual.count
-        rule ||= "multiset" if expected.sorted != actual.sorted
+        rule ||= "multiset" unless RowMatch.same_rows?(expected.hashes, actual.hashes)
         rule ? fail(rule) : pass
       end
 
       def subset(run, original_shape, original, candidate)
         expected = run.digest(original)
-        tally = Hash.new(0)
-        actual = run.digest(candidate) { tally[it] += 1 }
+        actual = run.digest(candidate)
         rule = shape_rule(expected, actual)
         rule ||= "row_count" if expected.count != actual.count
         return fail(rule) if rule
 
-        taken = take(run, original_shape.without_limit, tally)
+        taken = take(run, original_shape.without_limit, actual.hashes)
         return Verdict.new(result: "partial", rule: "subset_timed_out") if taken.nil?
 
         taken ? pass : fail("subset")
       end
 
-      # Whether the full result's rows take every tallied row; nil when it
+      # Whether the full result's rows take every one of rows; nil when it
       # times out.
-      def take(run, sql, tally)
-        run.digest(sql) do |hash|
-          next unless tally.key?(hash)
-
-          tally[hash] -= 1
-          tally.delete(hash) if tally[hash].zero?
-        end
-        tally.empty?
+      def take(run, sql, rows)
+        RowMatch.contained?(run.digest(sql).hashes, rows)
       rescue TimedOut
         nil
       end
@@ -242,7 +239,7 @@ module Quaack
       end
 
       # The original's order is total (ResultComparison::TotalOrder), so
-      # the two runs compare by ordered digest.
+      # the two runs compare row for row.
       def total_ordered(run, *shapes) = ordered_rule(*shapes.map { run.digest(it.sql) }).then { it ? fail(it) : pass }
 
       # The rule for a candidate's run that doesn't match the original's
@@ -250,11 +247,11 @@ module Quaack
       def ordered_rule(original, actual)
         return "row_count" if actual.count != original.count
 
-        "value" if actual.ordered != original.ordered
+        "value" unless RowMatch.in_order?(original.hashes, actual.hashes)
       end
 
       # The candidate's verdict from the original's tiebreaker runs: they
-      # match by ordered digest or group by group (tiebroken), or, when
+      # match row for row or group by group (tiebroken), or, when
       # CutTies.needed?, ResultComparison::CutTies' check runs on row
       # hashes, with this class as its source. Its runs
       # without a LIMIT keep only row hashes, and when one times out, the
@@ -265,7 +262,8 @@ module Quaack
         class TooManyRows < StandardError; end
 
         # The most rows one of the cut-tie check's runs without a LIMIT may
-        # hold hashes for (32 bytes each, plus Ruby's overhead). Four such
+        # hold hashes for (32 bytes each, or 64 in the second look, plus
+        # Ruby's overhead). Four such
         # runs are held at once, so a result past it refuses, as a timeout
         # does, with unsupported_order. The rows still coming are discarded by
         # the ROLLBACK that ends the run.
@@ -301,8 +299,10 @@ module Quaack
           end
         end
 
+        # A layout only lines up one query's own runs, so its rows match
+        # exactly, both hashes at once in the second look.
         def key(row) = row
-        def contained?(big, small) = ResultComparison::CutTies.tallied?(big, small)
+        def contained?(big, small) = RowMatch.contained?(big, small)
 
         # Regrouped's source, for the candidate's runs: run(descending),
         # mismatch, and rows.
@@ -312,7 +312,7 @@ module Quaack
 
         private
 
-        # The candidate's verdict from its T and T' runs: by ordered digest,
+        # The candidate's verdict from its T and T' runs: row for row,
         # or, when that fails, by row hashes (ResultComparison::Regrouped).
         def tiebroken(shape, originals)
           @candidate = shape
@@ -341,13 +341,13 @@ module Quaack
         # then for a candidate's once it has matched those runs (tiebroken).
         def cut?(shape, originals)
           ResultComparison::CutTies.needed?(shape, uncut: uncut?(originals), kept_rows: originals.first.hashes.any?) do
-            [false, true].map { @run.digest(shape.through_window(@positions, descending: it)).sorted }.uniq.one?
+            runs = [false, true].map { @run.digest(shape.through_window(@positions, descending: it)).hashes }
+            RowMatch.same_rows?(*runs)
           end
         end
 
-        # Whether the original's T and T' runs hold the same rows, by
-        # sorted digest.
-        def uncut?(originals) = originals.map(&:sorted).uniq.one?
+        # Whether the original's T and T' runs hold the same rows.
+        def uncut?(originals) = RowMatch.same_rows?(*originals.map(&:hashes))
       end
 
       # Runs queries for one compare.
@@ -365,14 +365,14 @@ module Quaack
         # Whether any result this run streamed had a float column.
         def floats? = @floats
 
-        # Streams sql's rows into a Digested. Yields each row's hash.
-        # tie_positions, 1-based, turn on the hidden check.
-        def digest(sql, tie_positions = nil, max_rows: nil, &)
+        # Streams sql's rows into a Digested. tie_positions, 1-based, turn
+        # on the hidden check.
+        def digest(sql, tie_positions = nil, max_rows: nil)
           RunDiscipline::LOCK.synchronize do
             @connection.exec("BEGIN READ ONLY")
             begin
               started = ServerClock.mark(@connection, "SET LOCAL statement_timeout = #{@timeout_ms};")
-              stream(sql, tie_positions, started, max_rows, &)
+              stream(sql, tie_positions, started, max_rows)
             ensure
               @connection.exec("ROLLBACK")
             end
@@ -384,11 +384,11 @@ module Quaack
         # A cancel is a timeout only if timeout_ms has passed since started
         # on the server's clock, the one statement_timeout fires by. The
         # jump server's clock can run at another rate.
-        def stream(sql, tie_positions, started, max_rows, &)
+        def stream(sql, tie_positions, started, max_rows)
           rows = Rows.new(tie_positions, max_rows, shifted: @shifted)
           @connection.send_query_params(sql, @params)
           @connection.set_single_row_mode
-          read(rows, &)
+          read(rows)
           rows.digested.tap { @floats ||= it.types.to_a.intersect?(ResultComparator::FLOAT_TYPES) }
         rescue PG::QueryCanceled
           drain
@@ -397,10 +397,10 @@ module Quaack
           raise TimedOut
         end
 
-        def read(rows, &)
+        def read(rows)
           while (result = @connection.get_result)
             result.check
-            rows.add(result, &)
+            rows.add(result)
           end
         end
 
@@ -438,6 +438,50 @@ module Quaack
         end
       end
 
+      # Compares row hashes. In the first look a row's hash is the SHA-256
+      # of its ResultComparator::Values key. In the second look (FloatNoise)
+      # it's that hash followed by the SHA-256 of its FloatNoise key, and
+      # two rows match when either half does, so each row of a result may
+      # match under its own look (task 20261112-000801-1). Every pair of
+      # rows it matches matches under one look or the other, so floats a
+      # step of eight significant digits apart never match.
+      module RowMatch
+        module_function
+
+        def first(row) = row.byteslice(0, 32)
+        def second(row) = (row.byteslice(32, 32) if row.bytesize > 32)
+
+        def same?(row, other) = first(row) == first(other) || (!second(row).nil? && second(row) == second(other))
+
+        # Whether two runs hold matching rows at each place.
+        def in_order?(rows, others) = rows.size == others.size && rows.each_index.all? { same?(rows[it], others[it]) }
+
+        # Whether two runs hold the same rows, in any order.
+        def same_rows?(rows, others) = rows.size == others.size && contained?(rows, others)
+
+        # Whether each of small's rows can be paired with a row of big's of
+        # its own: first those whose first-look hashes match, then, of the
+        # rows left over, those whose second-look hashes match. Holds only
+        # small's rows, so big can be a whole result.
+        def contained?(big, small)
+          wanted = small.group_by { first(it) }
+          spare = spare_seconds(big, wanted, small.filter_map { second(it) }.to_set)
+          wanted.values.flatten.map { second(it) }.tally.all? { |second, count| second && spare[second] >= count }
+        end
+
+        # How many of big's rows have each of seconds as their second-look
+        # hash, among those whose first-look hash takes none of wanted's
+        # rows. Takes the rows it can from wanted.
+        def spare_seconds(big, wanted, seconds)
+          big.each_with_object(Hash.new(0)) do |row, spare|
+            next if wanted[first(row)]&.pop
+
+            second = second(row)
+            spare[second] += 1 if seconds.include?(second)
+          end
+        end
+      end
+
       # Row hashes gathered from one query.
       class Rows
         def initialize(tie_positions, max_rows = nil, shifted: false)
@@ -452,26 +496,24 @@ module Quaack
         def add(result)
           @types ||= result.nfields.times.map { result.ftype(it) }
           result.each_row do |row|
-            key = row_key(row)
-            hash = Digest::SHA256.digest(JSON.generate(key))
-            @hashes << hash
+            key = ResultComparator::Values.key(@types, row)
+            @hashes << row_hash(key, row)
             raise HashedRuns::TooManyRows if @max_rows && @hashes.size > @max_rows
 
-            yield hash if block_given?
             @hidden ||= hidden?(key) if @kept
           end
         end
 
-        def digested
-          count = @hashes.size
-          Digested.new(types: @types, count:, sorted: Digest::SHA256.digest("#{count}:#{@hashes.sort.join}"),
-                       ordered: Digest::SHA256.digest("#{count}:#{@hashes.join}"), hidden: @hidden,
-                       hashes: @hashes)
-        end
+        def digested = Digested.new(types: @types, count: @hashes.size, hidden: @hidden, hashes: @hashes)
 
         private
 
-        def row_key(row) = @shifted ? FloatNoise.key(@types, row) : ResultComparator::Values.key(@types, row)
+        # The first look's hash, and in the second look the second's after
+        # it (RowMatch).
+        def row_hash(key, row)
+          hash = Digest::SHA256.digest(JSON.generate(key))
+          @shifted ? hash + Digest::SHA256.digest(JSON.generate(FloatNoise.key(@types, row))) : hash
+        end
 
         # Whether key agrees with an earlier row on the tie columns but
         # differs in another.

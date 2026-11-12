@@ -550,6 +550,84 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       expect(noise(rows, rows)).to eq(["fail", "unsupported_order", "cut_tie", true])
     end
 
+    # Task 20261112-000801-1: the second look's grid cuts at eight
+    # significant digits, so its boundaries sit on short decimals such as
+    # 0.3, where noise fails it about half the time. A result whose rows
+    # each match under one look or the other is flagged, though no single
+    # look matches every row. 0.3 and 0.1 + 0.2 match under the first.
+    describe "across many rows" do
+      point_three = "0.3::float8"
+      sum_point_three = "(0.1::float8 + 0.2::float8)"
+      rows = ->(v, w) { "SELECT 1 AS k, #{v} AS v UNION ALL SELECT 2, #{w}" }
+
+      it "flags a multiset whose rows each match under one look or the other" do
+        expect(noise(rows.call(below, point_three), rows.call(above, sum_point_three)))
+          .to eq(["fail", "multiset", true])
+      end
+
+      it "flags an ordered result whose rows each match under one look or the other at their place" do
+        ordered = ->(v, w) { "SELECT * FROM (#{rows.call(v, w)}) r ORDER BY k" }
+        expect(noise(ordered.call(below, point_three), ordered.call(above, sum_point_three)))
+          .to eq(["fail", "value", true])
+      end
+
+      it "doesn't flag an ordered result whose rows match only in another place" do
+        ordered = ->(v, w, direction) { "SELECT * FROM (#{rows.call(v, w)}) r ORDER BY k #{direction}" }
+        expect(noise(ordered.call(below, point_three, "ASC"), ordered.call(above, sum_point_three, "DESC")))
+          .to eq(["fail", "value", false])
+      end
+
+      it "flags a subset whose rows each match a row of the full result under one look or the other" do
+        full = "SELECT v FROM (VALUES (#{below}), (#{point_three}), (2)) t(v) LIMIT 2"
+        expect(noise(full, "SELECT #{above} UNION ALL SELECT #{sum_point_three} LIMIT 2"))
+          .to eq(["fail", "subset", true])
+      end
+
+      # A float8 sum of cent amounts adds in another order and lands a last
+      # bit apart: in one group of these across the first look's grid, in
+      # four others across the second's.
+      it "flags a GROUP BY sum over float cents added in another order" do
+        amounts = "SELECT g / 500 AS u, g AS id, ((hashint4(g) & 2147483647) % 2000000) / 100.0::float8 AS amount " \
+                  "FROM generate_series(0, 49999) g"
+        query = ->(direction) { "SELECT u, sum(amount ORDER BY id #{direction}) FROM (#{amounts}) a GROUP BY u" }
+        expect(noise(query.call("ASC"), query.call("DESC"), timeout_ms: 30_000)).to eq(["fail", "multiset", true])
+        expect(noise("#{query.call("ASC")} ORDER BY u", "#{query.call("DESC")} ORDER BY u", timeout_ms: 30_000))
+          .to eq(["fail", "value", true])
+      end
+
+      # Each run gives half the rows a value within a 1e-12 of the first
+      # look's boundary and half within a 1e-12 of the second's.
+      jittered = lambda do |cut|
+        "SELECT g, CASE WHEN g % 2 = 0 THEN #{below} ELSE #{point_three} END + (random() - 0.5) * 1e-12 AS v " \
+          "FROM generate_series(1, 40) g ORDER BY g#{cut}"
+      end
+
+      it "flags an original refused as unstable_original by float noise across both grids" do
+        expect(noise(jittered.call(""), jittered.call("")))
+          .to eq(["fail", "unsupported_order", "unstable_original", true])
+      end
+
+      it "flags an original refused as cut_tie under a LIMIT by float noise across both grids" do
+        expect(noise(jittered.call(" LIMIT 30"), jittered.call(" LIMIT 30")))
+          .to eq(["fail", "unsupported_order", "cut_tie", true])
+      end
+
+      # Its runs through the end of the window must hold the same rows too
+      # (CutTies.needed?).
+      it "flags an original refused as cut_tie under a LIMIT and an OFFSET by float noise across both grids" do
+        expect(noise(jittered.call(" LIMIT 20 OFFSET 5"), jittered.call(" LIMIT 20 OFFSET 5")))
+          .to eq(["fail", "unsupported_order", "cut_tie", true])
+      end
+
+      # Each of the candidate's rows needs a row of the original's of its
+      # own that it matches: 1.00000016 matches neither of the original's
+      # under either look, though below matches above under the second.
+      it "doesn't flag a row whose only partners are another row's" do
+        expect(noise("SELECT #{below} UNION ALL SELECT #{below}", "SELECT #{above} UNION ALL SELECT 1.00000016::float8"))
+          .to eq(["fail", "multiset", false])
+      end
+    end
+
     it "doesn't flag floats that differ plainly" do
       expect(noise("SELECT 7 AS k, 1.0001::float8 AS v", "SELECT 7 AS k, 1.0002::float8 AS v"))
         .to eq(["fail", "multiset", false])

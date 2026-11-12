@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261111-185500-1 (no `cut_tie` blame without a LIMIT or OFFSET: new refusal reason `unstable_original`; the comparator partners floats across a bucket boundary).
 - 20261111-192302-1 (production comparison takes a second look at float columns on a grid shifted half a step; verdicts and the report's rewrites gain a boolean `float_noise`).
+- 20261112-000801-1 (production comparison's second look matches each row under either look's hash, so multi-row float results get flagged).
 
 ## How this file works.
 
@@ -882,14 +883,3 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 
 ### 20261111-185500-1. Don't blame a LIMIT or OFFSET that isn't there. Done, see BACKLOG-COMPLETE.md.
-
-### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary. Done, see BACKLOG-COMPLETE.md.
-
-### 20261112-000801-1. Flag float noise on multi-row results.
-
-- **Depends on:** None.
-- **Came from:** The second review of 20261111-192302-1 (minor), 2026-11-12.
-- **Design:** DESIGN.md, result-comparison; docs/float-values.md.
-- **Status:** todo.
-- **What's wrong:** The `float_noise` second look only flags a failure when every row matches under that one look. The cut-off grid puts its boundaries on short decimals such as 0.3 or 1234.56, so noise around such a value fails the second look about half the time. Simulated float sums of cent amounts, summed in two orders and failing the first look, were flagged 100% of the time with 1 row, 47% with 5, 3% with 20, and 0% with 100. So the main case, `GROUP BY` with `sum` over a float column, mostly goes unflagged. The verdict is never wrong; the report just doesn't add the note. DESIGN.md and docs/float-values.md say a pair "passes one look or the other", which holds for one pair, not a whole result.
-- **Do:** Keep both hashes per row; cancel rows that match on the first-look hash, then compare only the leftover rows on the second-look hash. For ordered compares, accept a position that matches under either hash. Keep the guarantee that values one part in ten million or more apart are never flagged. Fix the DESIGN.md and docs wording. While in DESIGN.md's float-noise passage, also say the report words a `production_not_compared` note differently, as the original's own two runs differing (review of 20261111-233822-1, minor).
