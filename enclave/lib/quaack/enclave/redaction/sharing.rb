@@ -41,7 +41,6 @@ module Quaack
         def initialize(found)
           @found = found
           @parent = {}
-          @relations = {}
         end
 
         # Joins the constants of every matching pair the message holds, if
@@ -62,20 +61,20 @@ module Quaack
         private
 
         def select(stmt)
-          @relations = Relations.of(stmt.from_clause)
+          relations = Relations.of(stmt.from_clause)
           targets = stmt.target_list.map(&:res_target)
           sort_keys = Keys.resolved(sort_keys(stmt.sort_clause), targets)
           pair(Keys.resolved(stmt.group_clause, targets),
-               [*stmt.target_list, stmt.having_clause, *sort_keys, *stmt.window_clause])
-          distinct(stmt, targets, sort_keys)
+               [*stmt.target_list, stmt.having_clause, *sort_keys, *stmt.window_clause], relations)
+          distinct(stmt, targets, sort_keys, relations)
         end
 
         # DISTINCT ON's list holds its expressions. A plain DISTINCT's holds
         # one empty node.
-        def distinct(stmt, targets, sort_keys)
+        def distinct(stmt, targets, sort_keys, relations)
           on = stmt.distinct_clause.reject { it.node.nil? }
-          if on.any? then pair(Keys.resolved(on, targets), sort_keys)
-          elsif stmt.distinct_clause.any? then pair(sort_keys, stmt.target_list)
+          if on.any? then pair(Keys.resolved(on, targets), sort_keys, relations)
+          elsif stmt.distinct_clause.any? then pair(sort_keys, stmt.target_list, relations)
           end
         end
 
@@ -84,15 +83,14 @@ module Quaack
         # An aggregate's note doesn't say which FROM list it's in, so its
         # column references match whatever relation they name.
         def aggregate(call)
-          @relations = {}
-          pair(sort_keys(call.agg_order), call.args)
+          pair(sort_keys(call.agg_order), call.args, {})
         end
 
         # Joins every key with every node under the regions that's the same
         # expression. Only a node with as many nodes under it as a key can be
         # the same, so only those are compared, and a deep expression costs
         # one form per key rather than one for every node under it.
-        def pair(keys, regions)
+        def pair(keys, regions, relations)
           by_form = keys.group_by { form(it) }
           return if by_form.empty?
 
@@ -101,7 +99,7 @@ module Quaack
             sized(region) do |node, size|
               next unless sizes.include?(size)
 
-              by_form[form(node)]&.each { join(it, node) if same_relations?(it, node) }
+              by_form[form(node)]&.each { join(it, node) if same_relations?(it, node, relations) }
             end
           end
         end
@@ -110,12 +108,13 @@ module Quaack
         # relation as the one in its place under the other. Their forms
         # match, so they line up. A reference whose relation isn't known,
         # such as an unqualified one, matches any.
-        def same_relations?(one, other)
-          relations(one).zip(relations(other)).all? { |a, b| a.nil? || b.nil? || a == b }
+        def same_relations?(one, other, relations)
+          pairs = relations_under(one, relations).zip(relations_under(other, relations))
+          pairs.all? { |a, b| a.nil? || b.nil? || a == b }
         end
 
-        def relations(node)
-          [].tap { |found| everything(node) { |n| found << Relations.named(@relations, n.column_ref) if n.column_ref } }
+        def relations_under(node, relations)
+          [].tap { |found| everything(node) { |n| found << Relations.named(relations, n.column_ref) if n.column_ref } }
         end
 
         # Yields every Node under this one, and it, with the number of nodes

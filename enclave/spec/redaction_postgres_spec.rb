@@ -389,6 +389,26 @@ RSpec.describe Quaack::Enclave::Redaction do
         expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(original)
       end
 
+      # Task 20261112-170000-1: an aggregate's note in the same query
+      # doesn't change which relations the keys' column references name.
+      it "keeps different tables' keys apart next to a DISTINCT aggregate" do
+        query = "SELECT string_agg(DISTINCT coalesce(o.status, '5'), ',' ORDER BY coalesce(o.status, '5')), " \
+                "coalesce(t.status, '5') FROM public.orders o JOIN public.tickets t ON t.id = o.id " \
+                "GROUP BY coalesce(t.status, '5') " \
+                "HAVING max(coalesce(t.status, '5')) < (SELECT count(DISTINCT coalesce(t2.status, '5')) " \
+                "FROM public.tickets t2)"
+        result = redact(query)
+        expect(result.query.sql).to eq("SELECT string_agg(DISTINCT COALESCE(o.status, $1), $2 " \
+                                       "ORDER BY COALESCE(o.status, $1)), COALESCE(t.status, $3) " \
+                                       "FROM public.orders o JOIN public.tickets t ON t.id = o.id " \
+                                       "GROUP BY COALESCE(t.status, $3) HAVING max(COALESCE(t.status, $3)) < " \
+                                       "(SELECT count(DISTINCT COALESCE(t2.status, $4)) FROM public.tickets t2)")
+        expect(JSON.generate([result.query.sql, result.plan.explain, result.placeholder_shapes])).not_to include("'5'")
+        original = rows(query)
+        expect(original).not_to be_empty
+        expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(original)
+      end
+
       it "still shares a self-join's keys on one table's column" do
         query = "SELECT coalesce(a.status, 5), count(*) FROM public.tickets a JOIN public.tickets b ON b.id = a.id " \
                 "GROUP BY coalesce(a.status, 5) HAVING max(coalesce(b.status, 5)) > 1"
