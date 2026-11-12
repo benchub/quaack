@@ -95,8 +95,9 @@ module Quaack
       UNIVERSAL = /\b(?:always|never)\s+(?:use|write|split|prefer|avoid|add|put|rewrite|replace|turn|create|do)\b|
                    \b(?:should|must|you)\s+(?:always|never)\b|(?:\A|[.;!]\s+)(?:always|never)\b|
                    \b(?:all|every)\s+quer(?:y|ies)\b[^.;!]*?
-                   \b(?:should|must|needs?|gains?|benefits?|helps?|can|could|will|would|ought)\b|
-                   \b(?:use|apply|add|create|put|write|prefer|rewrite|split|replace)\b
+                   \b(?:should|must|needs?|gains?|benefits?|helps?|can|could|will|would|ought|['’]d)\b|
+                   \b(?:us(?:e|ing)|apply(?:ing)?|add(?:ing)?|create|put|write|prefer|rewrit(?:e|ing)|
+                   split(?:ting)?|replac(?:e|ing)|recommend|suggest|consider)\b
                    [^.;!]*?\b(?:all|every)\s+quer(?:y|ies)\b/ix
       REFUSED = [
         %r{<\s*[A-Za-z/!?]}, /&#?\w+;/, /https?:|www\.|\w+\.(?:com|org|net|io|dev)\b/i,

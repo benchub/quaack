@@ -455,7 +455,17 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     end
 
     ["Rewrite every query this way.", "Every query ought to use UNION.",
-     "Split every query's OR into a UNION.", "Replace the OR in all queries with a UNION."].each do |text|
+     "Split every query's OR into a UNION.", "Replace the OR in all queries with a UNION.",
+     "You should rewrite every query this way.", "We recommend you rewrite all queries.",
+     "Consider rewriting every query.", "I'd split every query's OR.",
+     "The plan is slow. Then rewrite every query.", "Also, replace every query's OR.",
+     "We suggest splitting every query's OR.", "We'd recommend using a UNION in all queries.",
+     "Try applying this to every query.", "Think about adding the index to all queries.",
+     "Replacing every query's OR is wise.", "Every query'd be faster with a UNION.",
+     "Using a UNION in all queries is wise.", "Rewriting every query is wise.",
+     "Splitting every query's OR is wise.",
+     "We recommend this for every query.", "We suggest the same for all queries.",
+     "Consider this for every query."].each do |text|
       it "refuses #{text.inspect}" do
         expect(run(text, base)).to have_attributes(outcome: "rejected")
       end
@@ -463,6 +473,12 @@ RSpec.describe Quaack::Driver::WinnerSummary do
 
     it "keeps a conditional heuristic that names no every or all query" do
       text = "When a query only reads a few selective keys, an index on that column lets the database skip the rest."
+      expect(run(text, base)).to have_attributes(outcome: "used")
+    end
+
+    it "keeps a conditional rewrite heuristic that names no every or all query" do
+      text = "If a query ORs two columns from different tables, consider rewriting it as a UNION, " \
+             "so each arm can use its own index."
       expect(run(text, base)).to have_attributes(outcome: "used")
     end
   end
