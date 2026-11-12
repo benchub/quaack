@@ -51,12 +51,17 @@ module Quaack
           InnerCuts.deterministic?(transaction, top, InnerCuts.cte_names(tree), DETERMINISTIC_KEYS_SQL)
         end
 
-        # A function of the name, in the schema if the call names one and in
-        # any schema if not, or an operator of the name, that returns a set.
+        # A function of the name, unqualified or as schema.name, or an
+        # operator of the name, that returns a set.
         SET_RETURNING_SQL = <<~SQL
-          SELECT count(*) FROM pg_catalog.pg_proc p
+          SELECT pg_catalog.count(*)::int FROM pg_catalog.pg_proc p
           JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
-          WHERE p.proretset AND (%<calls>s)
+          WHERE p.proretset
+            AND (p.proname OPERATOR(pg_catalog.=) ANY ('{%<names>s}'::pg_catalog.name[])
+              OR pg_catalog.concat(n.nspname, '.', p.proname) OPERATOR(pg_catalog.=) ANY ('{%<qualified>s}'::pg_catalog.text[])
+              OR p.oid OPERATOR(pg_catalog.=) ANY (
+                SELECT o.oprcode::pg_catalog.oid FROM pg_catalog.pg_operator o
+                WHERE o.oprname OPERATOR(pg_catalog.=) ANY ('{%<operators>s}'::pg_catalog.name[])))
         SQL
 
         # Whether the target list calls a function or operator that could
@@ -67,8 +72,15 @@ module Quaack
           calls = target_calls(sql)
           return false if calls.empty?
 
-          clauses = calls.map { returns_set_clause(it) }.join(" OR ")
-          transaction.query(format(SET_RETURNING_SQL, calls: clauses)).rows.first.first != "0"
+          transaction.query(returns_set_sql(calls)).rows.first.first != "0"
+        end
+
+        def returns_set_sql(calls)
+          functions, operators = calls.partition { it.kind == :function }
+          qualified, names = functions.partition(&:schema)
+          format(SET_RETURNING_SQL, names: elements(names.map(&:name)),
+                                    qualified: elements(qualified.map { "#{it.schema}.#{it.name}" }),
+                                    operators: elements(operators.map(&:name)))
         end
 
         def target_calls(sql)
@@ -76,18 +88,10 @@ module Quaack
           FunctionCalls.of(targets).select { %i[function operator].include?(it.kind) }.uniq
         end
 
-        def returns_set_clause(call)
-          name = literal(call.name)
-          if call.kind == :operator
-            return "p.oid IN (SELECT o.oprcode FROM pg_catalog.pg_operator o " \
-                   "WHERE o.oprname OPERATOR(pg_catalog.=) #{name})"
-          end
-
-          schema = call.schema ? " AND n.nspname OPERATOR(pg_catalog.=) #{literal(call.schema)}" : ""
-          "(p.proname OPERATOR(pg_catalog.=) #{name}#{schema})"
+        # The texts as an array literal's elements, inside a string literal.
+        def elements(texts)
+          texts.map { %("#{it.gsub(/["\\]/) { "\\#{it}" }}") }.join(",").gsub("'", "''")
         end
-
-        def literal(text) = "'#{text.gsub("'", "''")}'"
 
         # The original's order is total, so the results compare row for row.
         def compare(transaction, *shapes)
