@@ -6,7 +6,7 @@ module Quaack
       # KeywordOperators' catalog query (20261011-12): a row if an operator
       # named in $1, in a schema in $2, has an argument type that's a
       # pseudo-type or one the candidate can reach. $3 holds its relations,
-      # $4 its type names, and $5 and $6 the schemas and names of its
+      # whose column types and row types are seen, $4 its type names, and $5 and $6 the schemas and names of its
       # functions outside pg_catalog. A seen type brings in its domain's
       # base type and its array's element type, recursively, and reach adds
       # the types each seen type casts to implicitly.
@@ -17,6 +17,9 @@ module Quaack
             WHERE a.attrelid OPERATOR(pg_catalog.=) ANY (
                 SELECT pg_catalog.to_regclass(r) FROM pg_catalog.unnest($3::pg_catalog.text[]) r)
               AND a.attnum OPERATOR(pg_catalog.>) 0
+            UNION SELECT c.reltype FROM pg_catalog.pg_class c
+            WHERE c.oid OPERATOR(pg_catalog.=) ANY (
+                SELECT pg_catalog.to_regclass(r) FROM pg_catalog.unnest($3::pg_catalog.text[]) r)
             UNION SELECT pg_catalog.to_regtype(n) FROM pg_catalog.unnest($4::pg_catalog.text[]) n
             UNION SELECT p.prorettype FROM pg_catalog.pg_proc p
               JOIN pg_catalog.pg_namespace pn ON pn.oid OPERATOR(pg_catalog.=) p.pronamespace
