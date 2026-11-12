@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261112-160000-1
 - 20261112-170000-1
 - 20261110-2
+- 20261112-110000-1
 
 ## How this file works.
 
@@ -748,16 +749,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Design:** counterexamples.
 - **Status:** todo
 
-### 20261112-110000-1. Rewrite candidate check: an implicit cast through a user function.
-
-From the review of 20261112-083000-1 (minor, pre-existing). With `CREATE CAST (citext AS int) WITH FUNCTION public.ci2int AS IMPLICIT`, a candidate `WHERE qty = code` is accepted, and at run time it calls `public.ci2int`, which the original never uses. The parse tree has no node for an implicit cast's function, so `Names` and `Names.resolved!` can't see it. Find, on real Postgres, the casts a candidate's expressions can pick up implicitly (`pg_cast` with `castcontext = 'i'` or `'a'` and a `castfunc` outside pg_catalog, between types the candidate reaches, see `keyword_reach.rb` for how reached types are found), and refuse the candidate when it reaches such a cast the original doesn't (the original's qualified text, or its reached types). Red first; mutate; DESIGN.md's names paragraph. Trust boundary; Opus builder and reviewer. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261112-083000-1 (landed).
-- **Came from:** 20261112-083000-1.
-- **Design:** qualify, rewrite-check.
-- **Built, not landed; needs the user's decision (2026-11-12):** branch `task/20261112-110000-1` (head `a1938841`, per-commit check passed) adds `rewrite_candidate_check/implicit_casts.rb`. If a type the candidate reaches has an implicit cast, or an assignment cast to bool or int8 (the only two assignment spots a SELECT reaches: a boolean context and LIMIT/OFFSET), whose function is outside pg_catalog (or an I/O cast through a user input/output function), every expression and clause the candidate writes must appear in the original as deparsed text, or it's refused as `unknown_name`. It closes the probe. The Opus review blocked it on over-refusal: PostGIS creates an implicit `text -> geometry` cast through `public.geometry(text)`, and `text` is always a seen type (it's in `LITERAL_TYPES`), so every non-identical rewrite in any PostGIS database is refused, even on int-only tables; a geometry or geography column adds six more such casts. citext, hstore, ltree, pg_trgm, isn, cube, earthdistance, uuid-ossp, intarray and btree_gist don't trigger it. Options, each changing the threat model: (a) trust a cast whose function belongs to an installed extension (`pg_depend` deptype `e`), so only casts a user wrote by hand count; (b) exempt casts whose source is only a literal type, which keeps PostGIS's geometry casts in scope for tables with geometry columns; (c) accept the gap and document it as unsupported in v1. - **Decided by the user (2026-11-12):** option (a). A cast whose function belongs to an installed extension (`pg_depend` deptype `e`) doesn't count; only casts a user wrote by hand trigger the refusal. Build it in a fresh loop from `task/20261112-110000-1`.
-- **Status:** todo
-
 ### 20261112-130000-1. Winner summary every-query guard: advice it has always let through.
 
 From the review of 20261110-21 (minor, pre-existing on main). The guard against advice about every query passes these on main and on 20261110-21's branch: "You should rewrite every query this way.", "We recommend you rewrite all queries.", "Consider rewriting every query.", "I'd split every query's OR.", "The plan is slow. Then rewrite every query.", "Also, replace every query's OR.". Each is advice to change all queries, which the guard exists to refuse. Catch an advice verb (rewrite, split, replace, use, apply, add, write, prefer, consider ...ing) after a subject plus modal (should, must, ought to, could, can, recommend, suggest, 'd), after a lead-in word (Then, Also, Next time, So), or as a gerund after consider/try, without refusing plain descriptions ("Every query will be compared against the original.", "We put the same limit on every query."). One spec example per sentence, red first; mutate. Driver only.
@@ -774,4 +765,13 @@ From the second review of 20261110-2 (minor, rare SQL). The gate's target-list w
 - **Depends on:** 20261110-2 (landed).
 - **Came from:** 20261110-2.
 - **Design:** result-comparison.
+- **Status:** todo
+
+### 20261112-190000-1. Implicit casts: test the I/O-cast branch, and say it in DESIGN.md.
+
+From the review of 20261112-110000-1 (minor). Disabling the I/O-cast branch (`castmethod = 'i'`) of `rewrite_candidate_check/implicit_casts.rb` keeps all 252 examples in `rewrite_candidate_check_spec.rb` green: no spec covers an implicit I/O cast through a user type's hand-written input or output function. Add one on real Postgres (a user type with a hand-written input/output function and an implicit I/O cast a candidate reaches, refused; the same with the function owned by an extension, kept), red first by disabling that branch. DESIGN.md's names-paragraph sentence for 20261112-110000-1 doesn't mention the I/O-cast half; add it. Optionally note that a function a DBA adds to an extension (ALTER EXTENSION ... ADD FUNCTION) is trusted like the extension's own. Enclave spec and DESIGN.md only.
+
+- **Depends on:** 20261112-110000-1 (landed).
+- **Came from:** 20261112-110000-1.
+- **Design:** qualify, rewrite-check.
 - **Status:** todo
