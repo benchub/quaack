@@ -623,7 +623,9 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       # own that it matches: 1.00000016 matches neither of the original's
       # under either look, though below matches above under the second.
       it "doesn't flag a row whose only partners are another row's" do
-        expect(noise("SELECT #{below} UNION ALL SELECT #{below}", "SELECT #{above} UNION ALL SELECT 1.00000016::float8"))
+        original = "SELECT #{below} UNION ALL SELECT #{below}"
+        candidate = "SELECT #{above} UNION ALL SELECT 1.00000016::float8"
+        expect(noise(original, candidate))
           .to eq(["fail", "multiset", false])
       end
     end
