@@ -219,6 +219,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
+    # A NULL delimiter skips nothing, so only the value's NULLs leave the
+    # check (task 20261112-070000-1).
+    it "refuses a string_agg over three values whose delimiter is NULL for two of them" do
+      rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, nil])
+      original = subquery(grouped("string_agg(id::text, label)"))
+      expect(fields(compare(original, original, rows:)))
+        .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+    end
+
     it "matches an any_value whose FILTER leaves out a second value, and refuses one whose FILTER keeps both" do
       rows = labelled([1, 1, nil], [2, 1, "x"], [3, 1, "y"])
       kept = subquery(grouped("any_value(label) FILTER (WHERE label <> 'y')"))
