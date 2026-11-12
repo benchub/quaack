@@ -665,15 +665,6 @@ First filed as 20261110-8, renumbered on 2026-11-11 since another session used i
 - **Design:** redact.
 - **Status:** todo
 
-### 20261110-11. redact printed forms: spec IntervalStyle, and $1 and $3 under non-default settings.
-
-From the second review of 20261008-53 item 2 (minor). No spec has an interval placeholder under a non-default IntervalStyle, so dropping it from `Printed::SETTINGS` stays green. The session-settings example in `redact_datetime_postgres_spec.rb` asserts only `$2` (timestamptz); also assert `$1` (timestamp) and `$3` (date), which depend on DateStyle.
-
-- **Depends on:** 20261008-53 item 2.
-- **Came from:** The second review of 20261008-53 item 2, 2026-11-10.
-- **Design:** redact.
-- **Status:** todo
-
 ### 20261110-16. Arena Binding: cut the per-trial round trips.
 
 From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its batch statement by statement, about 4 round trips per trial instead of 1, and each new query text costs about 5 more for `ArenaRunner::Typed`'s type lookup (savepoint, PREPARE, release, read, DEALLOCATE). `Differ#multisets` builds a new combined SQL whenever the loosened set changes, so it misses Typed's cache and re-prepares. Batch the statements with `send_query_params` in pipeline mode as `ArenaRunner::Pipeline` does, and key Differ's types so the combined SQL reuses them. The user wants run time spent on trying more rewrites, so measure trials per second before and after on a recorded replay.

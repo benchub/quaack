@@ -13229,3 +13229,13 @@ From the review of 20261110-9 (minor). The rescue in `steps/redact.rb`'s `printe
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-140000-1`. A new case makes the production connection's `exec_params` raise `TypeError` inside the printed-forms question and asserts the redact step fails with it and stores nothing; case 5 now names `ArgumentError`. Widening the rescue to `StandardError` turns the new case red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
+
+### 20261110-11. redact printed forms: spec IntervalStyle, and $1 and $3 under non-default settings.
+
+From the second review of 20261008-53 item 2 (minor). No spec has an interval placeholder under a non-default IntervalStyle, so dropping it from `Printed::SETTINGS` stays green. The session-settings example in `redact_datetime_postgres_spec.rb` asserts only `$2` (timestamptz); also assert `$1` (timestamp) and `$3` (date), which depend on DateStyle.
+
+- **Depends on:** 20261008-53 item 2.
+- **Came from:** The second review of 20261008-53 item 2, 2026-11-10.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-11`. A new real-Postgres example has an interval literal under production's `IntervalStyle=sql_standard` match `$1::interval`; the session-settings example now asserts `$1` (timestamp), `$2` (timestamptz) and `$3` (date). Dropping IntervalStyle or DateStyle from `Printed::SETTINGS` turns its own example red. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
