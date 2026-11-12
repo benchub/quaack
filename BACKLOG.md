@@ -549,15 +549,7 @@ From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that f
 
 ### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse. Done, see BACKLOG-COMPLETE.md.
 
-### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence.
-
-From the review of 20261016-13. The guard still counts a capitalised one-word step type mid-sentence as a plan step, so "The rewrite can Hash the smaller input" or "Group by tenant" is refused when neither plan has that step. That's rare in replies (SQL's `GROUP BY` in capitals doesn't match), but a good answer could be refused. Consider counting a one-word type only when the words around it mark it as a step, such as "a Hash step" or "the Group node".
-
-- **Depends on:** None.
-- **Came from:** Review of 20261016-13, 2026-10-16.
-- **Design:** LLM prompts.
-- **Not landed (2026-11-12):** branch `task/20261016-16` (head `e9dad9f0`) holds a built attempt. A one-word type counts as a step by default; a type in `VERBS` (Hash, Sort, Group, Limit, Unique, Result) doesn't count at the start of a sentence or when the next word is by, an article or a pronoun; every other one-word type (Memoize, Materialize, Gather, Append, Aggregate) always counts. The first review found an over-loose first version; the fix round resolved it. The second review found one blocking leak that the loop has no round left for: the next-word check fires on a noun too, so "It adds a Sort by created_at.", "It drops the Sort the original had.", "The original needed a Hash the winner skips." and "A Limit the planner pushes down helps." pass, where main refused them. Fix: don't apply the next-word rule when a determiner (a, an, the, its, their, this, that, each) comes just before the type; add those four to the spec's must-refuse list, red first on `e9dad9f0`. Everything else checked out: the specs fail on main for the right reason, and four mutations of `verb?` all go red. Start a fresh loop from that branch (rebase it on main first).
-- **Status:** todo
+### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261016-17. Spec flake: the trigger-refuses-every-row fuzz example gets `no_world` under load.
 
@@ -859,4 +851,13 @@ From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the
 - **Depends on:** 20261015-6 (landed).
 - **Came from:** 20261015-6.
 - **Design:** fixture-compare, result comparison.
+- **Status:** todo
+
+### 20261112-063000-1. Winner summary guard: minors from 20261016-16.
+
+From the review of 20261016-16's second loop (minor). (1) A verb-type step named as a noun with no determiner, before "by" or a pronoun, now passes: "It needs Sort by id now." was refused on main. Accept the "by" or pronoun reading only at a sentence's start or after a modal (can, could, should, will, would, may, might, must), red first. (2) A verb-type step at a sentence's start that isn't a verb still passes, as on main ("Sort happens later."); decide whether a following verb (happens, runs, is, takes) should mark it a step, without refusing "Sort by date first." (3) The spec example "doesn't read a one-word type as a step where it reads as a verb" in `driver/spec/winner_summary_why_spec.rb` checks every case in one loop and stops at the first failure; split it or use `aggregate_failures`, so a mutation shows every case it breaks. Driver only.
+
+- **Depends on:** 20261016-16 (landed).
+- **Came from:** 20261016-16.
+- **Design:** LLM prompts.
 - **Status:** todo
