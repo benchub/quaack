@@ -107,8 +107,19 @@ module Quaack
           case node
           when PgQuery::A_Expr then a_expr(node)
           when PgQuery::CaseExpr then ["="] if node.arg
-          when PgQuery::JoinExpr then ["="] if node.is_natural || !node.using_clause.empty?
+          when PgQuery::JoinExpr then join(node)
+          when PgQuery::SubLink then sub_link(node)
           end
+        end
+
+        def join(node) = (["="] if node.is_natural || !node.using_clause.empty?)
+
+        # IN (SELECT ...) is an ANY SubLink with no operator name, so its =
+        # resolves through the path (20261112-073000-1). One that names its
+        # operator, as = ANY (SELECT ...) and every ALL SubLink do,
+        # NameQualifier qualifies.
+        def sub_link(node)
+          ["="] if node.sub_link_type == :ANY_SUBLINK && node.oper_name.empty?
         end
 
         # Every A_Expr kind but those NameQualifier qualifies is a keyword
@@ -136,10 +147,11 @@ module Quaack
           PgQuery.deparse(PgQuery::ParseResult.new(version: PgQuery::PG_VERSION_NUM, stmts: [stmt]))
         end
 
-        # Every A_Expr, CaseExpr, and JoinExpr in the tree, in tree order.
+        # Every A_Expr, CaseExpr, JoinExpr, and SubLink in the tree, in tree
+        # order.
         def walk(node, found = [])
           case node
-          when PgQuery::A_Expr, PgQuery::CaseExpr, PgQuery::JoinExpr then found << node
+          when PgQuery::A_Expr, PgQuery::CaseExpr, PgQuery::JoinExpr, PgQuery::SubLink then found << node
           end
           case node
           when Google::Protobuf::RepeatedField then node.each { walk(it, found) }

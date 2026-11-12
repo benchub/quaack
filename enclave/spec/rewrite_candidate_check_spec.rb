@@ -1249,6 +1249,51 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect(kw_outcome(whole_row.first, "rowop, public", original: same)).to start_with("SELECT")
     end
 
+    # 20261112-073000-1. IN (SELECT ...), = ANY (SELECT ...), and
+    # <> ALL (SELECT ...) parse as SubLinks, not A_Exprs.
+    describe "subquery keyword forms" do
+      let(:subquery_forms) do
+        [
+          "SELECT id FROM orders t WHERE t.status IN (SELECT status FROM orders)",
+          "SELECT id FROM orders t WHERE t.status NOT IN (SELECT status FROM orders)",
+          "SELECT id FROM orders t WHERE t.status = ANY (SELECT status FROM orders)",
+          "SELECT id FROM orders t WHERE t.status <> ALL (SELECT status FROM orders)"
+        ]
+      end
+
+      it "refuses a new IN or NOT IN subquery when a user schema ahead of pg_catalog has = on text" do
+        expect(subquery_forms.first(2).map { kw_outcome(it, "kw, pg_catalog, public") }).to all(eq(kw_detail))
+      end
+
+      it "qualifies the operator of = ANY and <> ALL subqueries instead, since they name it" do
+        outcomes = subquery_forms.last(2).map { kw_outcome(it, "kw, pg_catalog, public") }
+        qualified = /\ASELECT id FROM public\.orders t WHERE t\.status OPERATOR\(\w+\.(=|<>)\) (ANY|ALL) /
+        expect(outcomes).to all(match(qualified))
+      end
+
+      it "accepts them when only pg_catalog has their operators" do
+        expect(subquery_forms.map { kw_outcome(it, "public") }).to all(start_with("SELECT"))
+      end
+
+      it "keeps one the original uses, subquery for subquery" do
+        subquery_forms.each do |sql|
+          same = described_class::Original.new(relations:, placeholders: 3, sql:)
+          expect(kw_outcome(sql, "kw, pg_catalog, public", original: same)).to start_with("SELECT")
+        end
+      end
+
+      it "refuses a new one when a user schema has = on the row type" do
+        conn.exec(<<~SQL)
+          CREATE SCHEMA rowop;
+          CREATE FUNCTION rowop.eq(public.customers, public.customers) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true';
+          CREATE OPERATOR rowop.= (LEFTARG = public.customers, RIGHTARG = public.customers, FUNCTION = rowop.eq);
+        SQL
+        sql = "SELECT id FROM customers t WHERE t IN (SELECT c FROM customers c)"
+        expect(kw_outcome(sql, "rowop, public")).to eq(kw_detail)
+        expect(kw_outcome(sql, "public")).to start_with("SELECT")
+      end
+    end
+
     it "checks keyword operators after relations" do
       expect(kw_outcome("SELECT 1 FROM public.nowhere WHERE 1 IN (2)", "kw, public")).to start_with("unknown_relation")
     end
