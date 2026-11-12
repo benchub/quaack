@@ -11,7 +11,8 @@ module Quaack
       # base type and its array's element type, recursively, and reach adds
       # the types each seen type casts to implicitly.
       module KeywordReach
-        SQL = <<~SQL
+        # The types the candidate sees, from $3 to $6 as above.
+        SEEN = <<~SQL
           WITH RECURSIVE seen(t) AS (
             SELECT a.atttypid FROM pg_catalog.pg_attribute a
             WHERE a.attrelid OPERATOR(pg_catalog.=) ANY (
@@ -29,7 +30,11 @@ module Quaack
             UNION SELECT x FROM pg_catalog.pg_type ty JOIN seen ON ty.oid OPERATOR(pg_catalog.=) seen.t,
               LATERAL (VALUES (ty.typbasetype), (ty.typelem)) v(x)
             WHERE x OPERATOR(pg_catalog.<>) 0
-          ), reach(t) AS (
+          )
+        SQL
+
+        SQL = SEEN.chomp + <<~SQL
+          , reach(t) AS (
             SELECT t FROM seen
             UNION SELECT c.casttarget FROM pg_catalog.pg_cast c JOIN seen ON c.castsource OPERATOR(pg_catalog.=) seen.t
             WHERE c.castcontext OPERATOR(pg_catalog.=) 'i'
