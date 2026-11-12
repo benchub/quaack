@@ -47,7 +47,7 @@ RSpec.describe "The pipeline's provenance record" do
   # for the LLM, and what the LLM wrote, but for its counterexample
   # inserts and the driver's feedback on them, which the record keeps
   # (task 20261111-191130-1).
-  let(:secret) { %w[SENTINEL_PAYLOAD SENTINEL_DDL SENTINEL_REWRITE_SQL] }
+  let(:secret) { %w[SENTINEL_PAYLOAD SENTINEL_DDL SENTINEL_REWRITE_SQL SENTINEL_REPLY] }
 
   let(:initial) do
     { "index_search_original" => false, "index_generated_original" => false, "index_ranking_original" => false,
@@ -321,7 +321,7 @@ RSpec.describe "The pipeline's provenance record" do
 
     before do
       script
-      fa.cut_short("llm-rewrites", "SENTINEL_REASON")
+      fa.cut_short("llm-rewrites", "SENTINEL_REPLY")
     end
 
     it "records the branch's step, entry, and rule only, and the report says so" do

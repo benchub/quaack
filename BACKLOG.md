@@ -883,19 +883,7 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261111-185500-1. Don't blame a LIMIT or OFFSET that isn't there. Done, see BACKLOG-COMPLETE.md.
 
-### 20261111-191130-1. Keep each counterexample round's inserts for replay. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary. Done, see BACKLOG-COMPLETE.md.
-
-### 20261111-213055-1. Test the small guards in the counterexample-rounds record.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261111-191130-1 (minor), 2026-11-11.
-- **Design:** DESIGN.md, Provenance.
-- **Status:** todo.
-- **What's wrong:** Three guards added by 20261111-191130-1 can be deleted with every test still green: the guard at the top of `counterexample_round!` (driver/lib/quaack/driver/provenance.rb) that drops a bad rewrite name or round number; the `named?` check on the entry when a round is recorded; and `.reject { tries.empty? }` in `Provenance::Rounds.check`, without which a rewrite whose tries are all malformed is kept as an empty list.
-- **Do:** Add a focused test for each, watching it go red when the guard is removed.
-- **Also (second review of 20261111-191130-1, minor):** in `driver/spec/pipeline_provenance_spec.rb`, the fan-out failure test's cut-short LLM reply is `"SENTINEL_REASON"`, which now legitimately appears in `counterexample_rounds` feedback, so that test can't tell if the reply's text leaks into the record. Give `cut_short` its own sentinel, such as `SENTINEL_REPLY`, and add it to `secret`.
 
 ### 20261111-223753-1. Should a float-noise production failure count as a wrong result?
 
