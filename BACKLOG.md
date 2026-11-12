@@ -880,3 +880,12 @@ From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the
 - **Came from:** 20261015-6.
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
+
+### 20261112-171103-1. Report: clearer `unstable_original` wording, a docs page with examples, and a link to it.
+
+From a user reading report 20261112T151221Z-7c50452e, 2026-11-12. A rewrite's fate read "ended without comparing results, because the original query returned different rows on two runs over the same data". The user took "two runs" to mean the rewrite, and couldn't see why their query (no volatile functions, `ORDER BY min(created_at)`, no `LIMIT`) would ever return different rows. The two runs are QUAACK's tiebreaker runs (ascending and descending, DESIGN.md's result-comparison), and the likely cause there was `avg` over a `float8` column on LLM-written data whose values cancel (such as `1e20, 1, -1e20`), so the sum depended on the order the plan read the rows. (1) Reword `Words`' `unstable_original` phrase (`driver/lib/quaack/driver/report/words.rb`) so it says the two runs were QUAACK's own, of the original query, differing only in how ties were broken, and that the rewrite wasn't run on that data. (2) Add a docs page, such as `docs/unstable-original.md`, in the style of `docs/float-values.md`: what the two runs are and why QUAACK makes them; what makes an original's runs differ, with examples (a float aggregate whose order matters, with cancelling values beyond the float tolerance; a volatile function such as `random()`; anything else the code can reach); why the refusal says nothing about the rewrite; and what the user can do (round or cast float outputs, `numeric`). Point `docs/float-values.md`'s paragraph on the original's two runs at it, and update DESIGN.md's result-comparison paragraph on `unstable_original` if its wording changes. (3) Link the phrase to the page in a new tab, as `Report::FloatValues` links `FLOAT_PHRASE`, wherever the report shows the `unstable_original` reason (rewrite fates, fate lines, and any table that names it). Driver and docs only; no enclave change. Red first: a report spec that asserts the new words and the link.
+
+- **Depends on:** None.
+- **Came from:** A user question about report 20261112T151221Z-7c50452e.
+- **Design:** result-comparison, report.
+- **Status:** todo
