@@ -219,6 +219,22 @@ RSpec.describe Quaack::Enclave::Steps::Literals do
       )
     end
 
+    it "gives two writes of one name on different lines their own descriptions" do
+      descriptions = Dir.mktmpdir do |dir|
+        path = File.join(dir, "planted_step.rb")
+        File.write(path, <<~RUBY)
+          def call(store:, **)
+            LiteralSet.load(store)
+            store.write("baseline", 1)
+            store.write("baseline", 2)
+          end
+        RUBY
+        scan.call([path]).map(&:first)
+      end
+      expect(descriptions.size).to eq(2)
+      expect(descriptions).to eq(descriptions.uniq)
+    end
+
     it "passes a planted step whose writes are all listed" do
       failures = plant.call(<<~RUBY)
         def call(store:, **)
