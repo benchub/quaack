@@ -13355,3 +13355,13 @@ From the second review of 20261110-2 (minor, rare SQL). The gate's target-list w
 - **Design:** result-comparison.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-180000-1`. `target_calls` keeps attribute calls, and the catalog query counts an attribute name as set-returning only for a one-argument function of a row type with `proretset`, so `SELECT p.id, p.post_tag FROM posts p ORDER BY p.id` (which multiplies rows) refuses `:total`, while `p.id` and a scalar `p.post_size` stay total. Two mutations went red. The lookup is by name, so a column sharing a SETOF function's name refuses too (the safe direction). The per-commit check passed with rake's own exit 0. Refusal-only; I read the report and diff stat and started no reviewer.
+
+### 20261110-3. Result-comparison: check a candidate's own DISTINCT or GROUP BY picks under a total original.
+
+From the review of 20261110-1 (minor). In `ProductionComparison`, when the original's order is total, a candidate that adds DISTINCT or GROUP BY over a nondeterministic-collation key is compared row for row and can pass if Postgres happens to pick the same values on this run. Fixture-compare's `Picks` covers this; check whether result-comparison needs the same, and refuse if so.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-1, 2026-11-10.
+- **Design:** result-comparison (Picks).
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-3`. The gap was real: under a case-insensitive nondeterministic collation, a candidate adding DISTINCT or GROUP BY over a key where 'a' and 'A' tie passed by luck. When the gate says `:total` and the row-for-row compare matches, `ProductionComparison` now runs a candidate that has picks once more with them forced and checked (`Picks.force(..., check: true)`), through the same read-only, time-limited `run.digest`; a real choice refuses as `unsupported_order`/`rewrite_pick`, and other failures refuse with fixed reasons. It costs at most one more candidate run per matching rewrite with picks. The Opus review found nothing blocking; three mutations went red. The per-commit check passed with rake's own exit 0. Minors are in 20261112-200000-1.

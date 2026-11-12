@@ -239,8 +239,40 @@ module Quaack
       end
 
       # The original's order is total (ResultComparison::TotalOrder), so
-      # the two runs compare row for row.
-      def total_ordered(run, *shapes) = ordered_rule(*shapes.map { run.digest(it.sql) }).then { it ? fail(it) : pass }
+      # the two runs compare row for row. A matching candidate's own
+      # picks, such as a DISTINCT or GROUP BY that keeps one of 'a' and
+      # 'A', must then have no choice on the data (picked), or it matched
+      # by luck (task 20261110-3).
+      def total_ordered(run, *shapes)
+        rule = ordered_rule(*shapes.map { run.digest(it.sql) })
+        rule ? fail(rule) : picked(run, shapes.last) || pass
+      end
+
+      # unsupported_order when the candidate's query with its picks
+      # checked (ResultComparison::PickChecks), its top level's DISTINCT
+      # or set operation among them, fails on the data, or nil.
+      def picked(run, shape)
+        sql = checked_sql(shape)
+        run.digest(sql) && nil if sql
+      rescue PG::Error => e
+        raise if e.is_a?(PG::QueryCanceled)
+
+        checked = e.result&.error_field(PG::PG_DIAG_SQLSTATE) == ResultComparison::PickChecks::FAILED
+        refused(checked ? "rewrite_pick" : "pick_run_failed")
+      rescue ResultComparison::Picks::Unforceable
+        refused("unforceable_pick")
+      rescue Deparse::Error
+        refused("pick_run_failed")
+      end
+
+      # shape's SQL with its picks forced and checked, or nil when it has none.
+      def checked_sql(shape)
+        picks = ResultComparison::Picks
+        tree, count = picks.force(shape.tree, descending: false, top: true, check: true)
+        return unless count.positive? || picks.printed?(shape.tree)
+
+        Deparse.faithfully(PgQuery::ParseResult.new(tree))
+      end
 
       # The rule for a candidate's run that doesn't match the original's
       # in order, or nil.

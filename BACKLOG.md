@@ -22,6 +22,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261110-2
 - 20261112-110000-1
 - 20261112-180000-1
+- 20261110-3
 
 ## How this file works.
 
@@ -635,15 +636,6 @@ From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text 
 
 ### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties. Done, see BACKLOG-COMPLETE.md.
 
-### 20261110-3. Result-comparison: check a candidate's own DISTINCT or GROUP BY picks under a total original.
-
-From the review of 20261110-1 (minor). In `ProductionComparison`, when the original's order is total, a candidate that adds DISTINCT or GROUP BY over a nondeterministic-collation key is compared row for row and can pass if Postgres happens to pick the same values on this run. Fixture-compare's `Picks` covers this; check whether result-comparison needs the same, and refuse if so.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261110-1, 2026-11-10.
-- **Design:** result-comparison (Picks).
-- **Status:** todo
-
 ### 20261110-16. Arena Binding: cut the per-trial round trips.
 
 From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its batch statement by statement, about 4 round trips per trial instead of 1, and each new query text costs about 5 more for `ArenaRunner::Typed`'s type lookup (savepoint, PREPARE, release, read, DEALLOCATE). `Differ#multisets` builds a new combined SQL whenever the loosened set changes, so it misses Typed's cache and re-prepares. Batch the statements with `send_query_params` in pipeline mode as `ArenaRunner::Pipeline` does, and key Differ's types so the combined SQL reuses them. The user wants run time spent on trying more rewrites, so measure trials per second before and after on a recorded replay.
@@ -726,4 +718,13 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Depends on:** None.
 - **Came from:** 20261011-10.
 - **Design:** counterexamples.
+- **Status:** todo
+
+### 20261112-200000-1. Production comparison's picks check: spec the paths it doesn't cover.
+
+From the review of 20261110-3 (minor). The checked candidate run in `production_comparison.rb` (`total_ordered`, `picked`, `checked_sql`) has three paths no spec covers: (1) a candidate with no picks gets no extra run (count the statements the run sends, or plant a check that would fail); (2) a GROUP BY whose collation calls two keys equal while they print the same must pass; (3) the `pick_run_failed`, `unforceable_pick` and `timed_out` outcomes of the checked run (force each at the edge). Real Postgres; mutate each path to show its spec goes red. Enclave spec only.
+
+- **Depends on:** 20261110-3 (landed).
+- **Came from:** 20261110-3.
+- **Design:** result comparison.
 - **Status:** todo

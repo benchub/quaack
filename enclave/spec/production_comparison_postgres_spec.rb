@@ -528,6 +528,44 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     ensure
       conn.exec("DROP TABLE IF EXISTS nd_tags")
     end
+
+    # Task 20261110-3: the original's order is total, but the candidate's
+    # DISTINCT or GROUP BY keeps one of 'a' and 'A', which the collation
+    # calls equal. It keeps the one the original prints only by luck.
+    describe "a candidate whose own DISTINCT or GROUP BY picks under it" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE COLLATION nd_ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+          CREATE TABLE nd_aliases (user_id integer, name text);
+          INSERT INTO nd_aliases VALUES (1, 'b2'), (2, 'B10'), (3, 'a'), (3, 'A'), (4, 'a'), (5, 'c')
+        SQL
+      end
+
+      after { conn.exec("DROP TABLE nd_aliases; DROP COLLATION nd_ci") }
+
+      let(:total) { "SELECT nd_users.id, nd_users.name COLLATE public.nd_ci FROM nd_users ORDER BY nd_users.id" }
+      let(:joined) { "FROM nd_users JOIN nd_aliases a ON a.user_id = nd_users.id" }
+
+      it "refuses a DISTINCT that could keep either" do
+        candidate = "SELECT DISTINCT nd_users.id, a.name COLLATE public.nd_ci #{joined} ORDER BY nd_users.id"
+
+        expect(verdict(total, candidate)).to eq(%w[fail unsupported_order rewrite_pick])
+      end
+
+      it "refuses a GROUP BY that could keep either" do
+        candidate = "SELECT nd_users.id, a.name COLLATE public.nd_ci AS name #{joined} " \
+                    "GROUP BY nd_users.id, 2 ORDER BY nd_users.id"
+
+        expect(verdict(total, candidate)).to eq(%w[fail unsupported_order rewrite_pick])
+      end
+
+      it "still compares a DISTINCT over deterministic keys" do
+        candidate = "SELECT DISTINCT nd_users.id, nd_users.name #{joined} ORDER BY nd_users.id"
+        wrong = "SELECT DISTINCT nd_users.id, a.name #{joined} ORDER BY nd_users.id"
+
+        expect([verdict(total, candidate), verdict(total, wrong)]).to eq([["pass", nil], %w[fail row_count]])
+      end
+    end
   end
 
   # Task 20261111-192302-1: row hashes round floats to eight significant
