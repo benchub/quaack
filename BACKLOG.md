@@ -885,6 +885,8 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261111-191130-1. Keep each counterexample round's inserts for replay. Done, see BACKLOG-COMPLETE.md.
 
+### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary. Done, see BACKLOG-COMPLETE.md.
+
 ### 20261111-213055-1. Test the small guards in the counterexample-rounds record.
 
 - **Depends on:** None.
@@ -903,3 +905,25 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Status:** todo.
 - **What's wrong:** A rewrite whose production comparison failed only on float noise (`float_noise: true`) is still counted as a wrong result, and as a bug in the rule that made it, in the report's accountability and rule-bug lists, and `Report::Words` still calls it "wrong on the real data", though the rewrite was likely right.
 - **Do:** Ask the user whether a flagged failure should stay counted that way, be counted apart, or be left out, and build what they decide.
+- **Answer (user, 2026-11-11):** Count it apart: a flagged failure goes in its own "failed on float noise" category, not as a wrong result and not as a bug in the rule that made it.
+
+### 20261111-233822-1. Tidy-ups from the reviews of 20261111-192302-1.
+
+- **Depends on:** None.
+- **Came from:** The reviews of 20261111-192302-1 (minor), 2026-11-11.
+- **Design:** DESIGN.md, result-comparison.
+- **Status:** todo.
+- **Do:**
+  - `NOISY_RULES` in `enclave/lib/quaack/enclave/production_comparison.rb` is tested only one way: adding `row_count` or `timed_out` to it keeps every spec green. Add a test that a float-column `row_count` or `timed_out` failure sends no second-look query (the `counting` delegator in the spec counts queries).
+  - Move the misplaced `hidden?` comment in `Rows` in `production_comparison.rb` to the method it describes.
+  - The report's float-noise note says "its results and the original query's differed", which is wrong for a `production_not_compared` refusal (`unstable_original` or `cut_tie`), where the original's own two runs differed. Word that case to match.
+  - The comment at the top of the "float noise" spec block still says floats are "rounded to five"; it's now cut to eight significant digits.
+
+### 20261112-000801-1. Flag float noise on multi-row results.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261111-192302-1 (minor), 2026-11-12.
+- **Design:** DESIGN.md, result-comparison; docs/float-values.md.
+- **Status:** todo.
+- **What's wrong:** The `float_noise` second look only flags a failure when every row matches under that one look. The cut-off grid puts its boundaries on short decimals such as 0.3 or 1234.56, so noise around such a value fails the second look about half the time. Simulated float sums of cent amounts, summed in two orders and failing the first look, were flagged 100% of the time with 1 row, 47% with 5, 3% with 20, and 0% with 100. So the main case, `GROUP BY` with `sum` over a float column, mostly goes unflagged. The verdict is never wrong; the report just doesn't add the note. DESIGN.md and docs/float-values.md say a pair "passes one look or the other", which holds for one pair, not a whole result.
+- **Do:** Keep both hashes per row; cancel rows that match on the first-look hash, then compare only the leftover rows on the second-look hash. For ordered compares, accept a position that matches under either hash. Keep the guarantee that values one part in ten million or more apart are never flagged. Fix the DESIGN.md and docs wording.
