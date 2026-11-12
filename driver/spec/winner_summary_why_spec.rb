@@ -345,13 +345,13 @@ RSpec.describe Quaack::Driver::WinnerSummary do
                         "SELECT o.id FROM public.orders o WHERE o.tenant_id = $1 AND o.state = $2 UNION " \
                         "SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id " \
                         "WHERE o.tenant_id = $3 AND u.region = $4",
-                        { "condition" => "o.tenant_id = $", "repeated_across" => "OR arms", "in_original" => 2,
+                        { "condition" => "orders.tenant_id = $", "repeated_across" => "OR arms", "in_original" => 2,
                           "in_winner" => 2 }],
       "existence_in_flip" => ["SELECT 1 FROM public.orders WHERE user_id IN (SELECT id FROM public.users u " \
                               "WHERE (u.region = $1 AND u.active) OR (u.region = $2 AND u.vip)) LIMIT $3",
                               "SELECT 1 FROM public.users u WHERE u.region = $1 AND (u.active OR u.vip) AND " \
                               "EXISTS (SELECT 1 FROM public.orders o WHERE o.user_id = u.id) LIMIT 1",
-                              { "condition" => "u.region = $", "repeated_across" => "OR arms", "in_original" => 2,
+                              { "condition" => "users.region = $", "repeated_across" => "OR arms", "in_original" => 2,
                                 "in_winner" => 1 }],
       "union_outer_filter_removal" => ["SELECT id FROM (SELECT id, state FROM public.orders WHERE state = $1 " \
                                        "UNION SELECT id, state FROM public.archived WHERE state = $2) s " \

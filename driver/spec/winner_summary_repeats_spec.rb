@@ -42,7 +42,7 @@ RSpec.describe Quaack::Driver::WinnerSummary::Repeats do
     winner = "SELECT 1 FROM public.users u WHERE u.region = $1 AND (u.active OR u.vip) AND EXISTS " \
              "(SELECT 1 FROM public.orders o WHERE o.user_id = u.id) LIMIT 1"
     expect(of(original, winner).map { it.values_at("condition", "in_original", "in_winner") })
-      .to eq([["u.region = $", 2, 1]])
+      .to eq([["users.region = $", 2, 1]])
   end
 
   it "reports nothing when no condition repeats" do
@@ -76,7 +76,8 @@ RSpec.describe Quaack::Driver::WinnerSummary::Repeats do
     arms = "(o.state = $1 AND o.a) OR (o.state = $2 AND o.b)"
     original = "SELECT o.id FROM public.orders o JOIN public.users u ON o.user_id = u.id WHERE #{arms}"
     expect(of(original, "SELECT o.id FROM public.orders o WHERE #{arms}"))
-      .to eq([{ "condition" => "o.state = $", "repeated_across" => "OR arms", "in_original" => 2, "in_winner" => 2 }])
+      .to eq([{ "condition" => "orders.state = $", "repeated_across" => "OR arms", "in_original" => 2,
+                "in_winner" => 2 }])
   end
 
   it "gives a condition one shape in both queries when the winner adds a table" do
@@ -85,6 +86,26 @@ RSpec.describe Quaack::Driver::WinnerSummary::Repeats do
              "EXISTS (SELECT 1 FROM public.users u WHERE u.id = o.user_id)"
     expect(of("SELECT o.id FROM public.orders o WHERE #{arms}", winner)
       .map { it.values_at("in_original", "in_winner") }).to eq([[2, 2]])
+  end
+
+  it "gives a condition one shape when one query names the table and the other an alias for it" do
+    original = "SELECT 1 FROM public.orders JOIN public.users u ON orders.user_id = u.id WHERE " \
+               "(orders.a AND orders.b = $1) OR (orders.a AND orders.c = $2)"
+    winner = "SELECT 1 FROM public.orders o JOIN public.users u ON o.user_id = u.id WHERE " \
+             "(o.a AND o.b = $1) OR (o.a AND o.c = $2)"
+    expect(of(original, winner))
+      .to eq([{ "condition" => "orders.a", "repeated_across" => "OR arms", "in_original" => 2, "in_winner" => 2 }])
+  end
+
+  it "keeps an alias that names two tables, so it isn't written as either one" do
+    original = "SELECT 1 FROM public.orders x JOIN public.items i ON i.id = x.item_id WHERE (x.a AND x.b) OR " \
+               "(x.a AND x.c) UNION ALL SELECT 1 FROM public.users x"
+    expect(of(original, original).map { it["condition"] }).to eq(["x.a"])
+  end
+
+  it "keeps a self-join's aliases apart" do
+    original = "SELECT 1 FROM public.t a JOIN public.t b ON a.id = b.id WHERE (a.x AND a.y) OR (b.x AND b.z)"
+    expect(of(original, original)).to eq([])
   end
 
   it "doesn't count a condition twice within one OR arm" do

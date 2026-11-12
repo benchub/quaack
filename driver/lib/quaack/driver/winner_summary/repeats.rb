@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "aliases"
 
 module Quaack
   module Driver
@@ -33,23 +34,29 @@ module Quaack
         def of(original, winner)
           return [] unless original.is_a?(String) && winner.is_a?(String)
 
-          original_tree, winner_tree = [original, winner].map { PgQuery.parse(it) }
-          keep = tables(original_tree, winner_tree)
-          original_counts, winner_counts = [original_tree, winner_tree].map { tally(it, keep) }
-          repeated(original_tree, keep).first(MOST).map do |shape, across|
-            { "condition" => shape, "repeated_across" => across, "in_original" => original_counts[shape],
-              "in_winner" => winner_counts[shape] }
-          end
+          trees = [original, winner].map { PgQuery.parse(it) }
+          names = trees.map { Aliases.of(it) }
+          keep = tables(trees, names)
+          original_counts, winner_counts = trees.zip(names).map { |tree, map| tally(tree, keep, map) }
+          list(repeated(trees.first, keep, names.first), original_counts, winner_counts)
         rescue PgQuery::ParseError
           []
         end
 
+        def list(repeated, original_counts, winner_counts)
+          repeated.first(MOST).map do |shape, across|
+            { "condition" => shape, "repeated_across" => across, "in_original" => original_counts[shape],
+              "in_winner" => winner_counts[shape] }
+          end
+        end
+
         # Each shape that two or more places of one group hold, with the
         # group's kind, in the order first found.
-        def repeated(tree, keep)
+        def repeated(tree, keep, names = {})
           found = {}
           groups(tree).each do |across, places|
-            places.flat_map { |conjuncts| conjuncts.filter_map { shape(it, keep) }.uniq }.tally.each do |shape, n|
+            shapes = places.flat_map { |conjuncts| conjuncts.filter_map { shape(it, keep, names) }.uniq }
+            shapes.tally.each do |shape, n|
               found[shape] ||= across if n > 1
             end
           end
@@ -94,9 +101,9 @@ module Quaack
         end
 
         # How many times each shape appears as a condition anywhere in tree.
-        def tally(tree, keep)
+        def tally(tree, keep, names = {})
           shapes = []
-          tree.walk! { |_p, _f, node, _l| shapes << shape(node, keep) if node.is_a?(PgQuery::Node) }
+          tree.walk! { |_p, _f, node, _l| shapes << shape(node, keep, names) if node.is_a?(PgQuery::Node) }
           shapes.compact.tally.tap { it.default = 0 }
         end
 
@@ -106,19 +113,18 @@ module Quaack
         # table still gives a condition one shape in each. "More than one
         # table" counts every RangeVar anywhere in either: subquery tables,
         # and a CTE's name where the query reads it, included.
-        def tables(*trees)
-          names = []
-          trees.each { it.walk! { |_p, _f, node, _l| names << table_name(node) if node.is_a?(PgQuery::RangeVar) } }
+        # A qualifier is resolved through aliases first, so orders.state and
+        # o.state count as one name.
+        def tables(trees, aliases)
+          names = trees.zip(aliases).flat_map { |tree, map| Aliases.names(tree).map { Aliases.resolve(it.first, map) } }
           names.uniq.size > 1 ? names.uniq : []
         end
 
-        def table_name(range_var) = range_var.alias&.aliasname.to_s.then { it.empty? ? range_var.relname : it }
-
-        def shape(node, keep = [])
+        def shape(node, keep = [], names = {})
           return unless CONDITIONS.include?(node.node)
 
           copy = PgQuery::Node.decode(PgQuery::Node.encode(node))
-          return unless strip(copy, cut: !columns_equal?(copy), keep:)
+          return unless strip(copy, cut: !columns_equal?(copy), keep:, names:)
 
           text = PgQuery.deparse_expr(copy).gsub(/\$1(?!\d)/, "$")
           text if text.size <= LONGEST
@@ -137,19 +143,20 @@ module Quaack
         # shapes may hold different values), cuts each column reference to its
         # column name unless cut is false, and says whether message holds no
         # literal.
-        def strip(message, cut: true, keep: [])
+        def strip(message, cut: true, keep: [], names: {})
           return false if message.is_a?(PgQuery::A_Const)
 
-          normalize(message, cut, keep)
+          normalize(message, cut, keep, names)
           message.class.descriptor.all? do |field|
             value = message[field.name]
             values = field.label == :repeated ? value.to_a : [value]
-            values.all? { !it.class.respond_to?(:descriptor) || strip(it, cut:, keep:) }
+            values.all? { !it.class.respond_to?(:descriptor) || strip(it, cut:, keep:, names:) }
           end
         end
 
-        def normalize(message, cut, keep)
+        def normalize(message, cut, keep, names)
           message.number = 1 if message.is_a?(PgQuery::ParamRef)
+          Aliases.rename(message, names) if message.is_a?(PgQuery::ColumnRef)
           cut(message) if cut && message.is_a?(PgQuery::ColumnRef) && !keep.include?(qualifier(message))
         end
 
