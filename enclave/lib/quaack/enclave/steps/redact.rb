@@ -11,7 +11,10 @@ module Quaack
       # and input plan (see Redaction).
       #
       # It reads the run's qualified_query entry, which `quaacks qualify`
-      # wrote, and plan. It doesn't touch production. It writes four
+      # wrote, and plan. It connects to production only when a string
+      # literal holds a digit, to ask in one read-only query how it prints
+      # as a date or time (see printed); if production can't answer, the
+      # step goes on without printed forms. It writes four
       # entries: placeholder_map, which holds the literals and never leaves;
       # placeholder_shapes; redacted_query, the SQL with $n in place of each
       # literal; and redacted_plan, {"explain", "masked", "dropped"}. The
@@ -38,13 +41,18 @@ module Quaack
         # How Postgres prints the string placeholders that read as dates or
         # times, asked of production in one read-only query, with
         # inventory's DateStyle, IntervalStyle, and TimeZone when the run
-        # has them.
+        # has them. A failed connection or read, a statement timeout
+        # included, gives no printed forms, so those literals are still
+        # masked, just without matching their printed forms in the plan
+        # (20261110-9).
         def printed(store)
           production = Enclave::Inventory::Production
           settings = store.read("inventory")["settings"] if store.entry?("inventory")
           lambda do |map|
             Redaction.printed(map, settings:, connect: -> { production.connect(production.params(store)) },
                                    read_only: production.method(:read_only))
+          rescue Enclave::Inventory::Error, PG::Error
+            {}
           end
         end
       end
