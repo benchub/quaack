@@ -13269,3 +13269,14 @@ From the review of 20261112-160000-1 (minor). In `redaction/sharing.rb`, `aggreg
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-170000-1`. `@relations` is gone: `select` builds a local map from its FROM list and passes it to `pair` and `distinct`, `aggregate` passes `{}` explicitly, and `same_relations?` takes the map. Behavior is unchanged: the old reset could never reach a pairing, so the new spec (a DISTINCT aggregate next to different-table keys) is characterization only, as the builder showed. Emptying the SELECT's map turns it and an existing example red. The per-commit check passed with rake's own exit 0. I read the diff and started no reviewer.
+
+### 20261111-210000-1. not_in_to_not_exists: `own_links` descends into set-operation arms.
+
+From the review of 20261010-52 (minor). A set-operation SelectStmt keeps its `larg` and `rarg` arms as bare SelectStmt messages, not wrapped in a Node, so `own_links` walks into them when a NOT IN's owner is the top set-op SELECT (for example a NOT IN in the ORDER BY of a UNION). The result is an over-cautious refusal or a candidate that fails to plan, never a wrong result. Skip `larg` and `rarg` in `own_links`, with a test first. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261010-52 (landed).
+- **Came from:** 20261010-52.
+- **Design:** rewrite-rules.
+- **Proposed drop (2026-11-12, waiting on the user):** the builder found this can't happen. `Links.all` (`not_in_to_not_exists/links.rb`, line 25) keeps only SelectStmts with `op == :SETOP_NONE` as owners, so `own_links` always starts at a plain SELECT, whose `larg` and `rarg` are nil, and every nested SELECT inside it sits in a Node wrapper that `own_links` stops at. No test can go red. A NOT IN in a UNION's ORDER BY isn't valid Postgres either. Drop it, or reword it as a guard for the day Links lets a set-op own a NOT IN.
+- **Status:** dropped
+- **Dropped:** 2026-11-12, decided by the user: stale, since `Links.all` only makes plain SELECTs owners, so the bug can't happen.
