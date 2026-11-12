@@ -344,6 +344,34 @@ RSpec.describe "the arena's queries on the $n form" do
                                                                         [{ value: "1.5", type: 1700 }]])
     end
 
+    # Task 20261112-100000-1: a PREPARE that fails with a SQLSTATE that
+    # means the session failed, forced here at the connection, may work
+    # next time, so its fallback isn't kept.
+    %w[08006 57014].each do |code|
+      it "tries the PREPARE again after it failed with session-failure SQLSTATE #{code}" do
+        sql = "SELECT 2 * $1"
+        bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: ["numeric"], values: ["1.5"])
+        typed = typed_class.new(bound)
+        prepares = 0
+        allow(conn).to(receive(:exec).and_wrap_original do |m, q|
+          if q.start_with?("PREPARE")
+            prepares += 1
+            if prepares == 1
+              error = PG::Error.new("failed")
+              allow(error).to receive(:result).and_return(instance_double(PG::Result, error_field: code))
+              raise error
+            end
+          end
+          m.call(q)
+        end)
+
+        first = typed.params(conn, sql)
+        typed.params(conn, sql)
+
+        expect([first, prepares]).to eq([[{ value: "1.5", type: 0 }], 2])
+      end
+    end
+
     it "declares an unused untyped $n text up front, so one PREPARE does" do
       sql = "SELECT 1 + $1"
       bound = Quaack::Enclave::Redaction::Binding.new(sql:, types: %w[integer unknown], values: %w[1 z])
