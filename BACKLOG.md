@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261010-52
 - 20261012-7
 - 20261015-3
+- 20261015-6
 
 ## How this file works.
 
@@ -554,14 +555,7 @@ From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that f
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse.
-
-From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`result_comparison/pick_checks.rb`) lists every argument row of an `any_value`, NULLs included, but `any_value` ignores NULL inputs, so `any_value(v)` over `{NULL, 'x'}` has no real choice yet the check fires and the comparison refuses with `unsupported_order`. Leave NULL arguments out of `any_value`'s check, test first with one value plus NULLs, and mutation-test it. Also note in DESIGN.md that a query with picks runs about 5x slower in fuzz (about 156 against 750 trials/s), since it skips the cheap match.
-
-- **Depends on:** None.
-- **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
-- **Design:** fixture-compare, result comparison.
-- **Status:** todo
+### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261016-16. Winner summary guard: capitalised one-word step names mid-sentence.
 
@@ -870,4 +864,13 @@ From the review of 20261015-3 (minor). (1) Only `protocol/spec/tablespace_moves_
 - **Depends on:** 20261015-3 (landed).
 - **Came from:** 20261015-3.
 - **Design:** What goes into the enclave, report.
+- **Status:** todo
+
+### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
+
+From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the `min`/`max` check, still filters on `quaack_arg IS NOT NULL`. A composite argument can reach it (`max(t)`, `max(row(a, b))`), and a row with a NULL field then drops out of the tied list, so ties among those rows aren't checked. For example `(10, NULL)` and `(10.0, NULL)` tie under record comparison but print differently, and the check passes them. It's a false pass, but only for a min or max over a row value that has both a NULL field and a numeric or collation-equal field that prints differently; rare. Reproduce on Postgres first, red first; the fix is the `num_nonnulls` switch with a spec. (2) `string_agg`, `json_agg_strict` and `jsonb_agg_strict` also skip NULL inputs, so one value beside NULLs still refuses for them the way `any_value` did; apply the same filter and spec each. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261015-6 (landed).
+- **Came from:** 20261015-6.
+- **Design:** fixture-compare, result comparison.
 - **Status:** todo

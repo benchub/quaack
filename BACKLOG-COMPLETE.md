@@ -12904,3 +12904,13 @@ From the first review of 20261010-17 (minor). `Placement.moves` uses Postgres's 
 - **Design:** What goes into the enclave, report.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261015-3`. `Protocol::TablespaceMoves` accepts a quoted part of printable ASCII or non-ASCII outside Unicode C and Z, refuses invalid UTF-8 (which used to raise), and caps each part at 63 bytes; membership (`within?`) stays an exact byte match. Reviewed with no blocking findings; minors are in 20261111-250000-1.
+
+### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse.
+
+From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`result_comparison/pick_checks.rb`) lists every argument row of an `any_value`, NULLs included, but `any_value` ignores NULL inputs, so `any_value(v)` over `{NULL, 'x'}` has no real choice yet the check fires and the comparison refuses with `unsupported_order`. Leave NULL arguments out of `any_value`'s check, test first with one value plus NULLs, and mutation-test it. Also note in DESIGN.md that a query with picks runs about 5x slower in fuzz (about 156 against 750 trials/s), since it skips the cheap match.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
+- **Design:** fixture-compare, result comparison.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261015-6`. `listed_filter` leaves an `any_value`'s NULL arguments out of the pick check, testing the value with `num_nonnulls` (a row with a NULL field stays in), ANDed with the call's own FILTER; DESIGN.md says so and notes picks run about 5x slower in fuzz. The first review found a false pass on composites and an untested FILTER branch; one fix round resolved both. The second review ran the specs and four mutations, all red, and found only a merged DESIGN.md line, which I fixed on the branch. The per-commit check passed in all four suites with rake's own exit 0. Minors are in 20261111-260000-1.
