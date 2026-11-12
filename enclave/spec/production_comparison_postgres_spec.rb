@@ -565,6 +565,70 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
 
         expect([verdict(total, candidate), verdict(total, wrong)]).to eq([["pass", nil], %w[fail row_count]])
       end
+
+      # Task 20261112-200000-1: the paths the picks check had no spec for.
+      # A connection that records what it sends and can swap the checked
+      # run's SQL (the one with its picks checked, which alone holds
+      # COLLATE "C") for another, or raise on it.
+      let(:edge) do
+        Class.new(SimpleDelegator) do
+          attr_accessor :on_checked
+
+          def sent = (@sent ||= [])
+
+          def send_query_params(sql, *rest)
+            sent << sql
+            sql = on_checked.call(sql) if on_checked && sql.include?('COLLATE "C"')
+            super
+          end
+        end.new(conn)
+      end
+
+      def at_edge(candidate, timeout_ms: 5_000)
+        described_class.compare(connection: edge, original: total, candidate:, params: [], timeout_ms:)
+                       .then { [it.result, it.rule, *it.reason] }
+      end
+
+      let(:grouped) do
+        "SELECT nd_users.id, a.name COLLATE public.nd_ci AS name #{joined} GROUP BY nd_users.id, 2 ORDER BY nd_users.id"
+      end
+
+      it "runs a candidate with no picks only as written" do
+        plain = "SELECT nd_users.id, nd_users.name COLLATE public.nd_ci FROM nd_users ORDER BY nd_users.id"
+        counts = [plain, grouped].map do |candidate|
+          edge.sent.clear
+          at_edge(candidate)
+          edge.sent.size
+        end
+
+        expect(counts).to eq([4, 5])
+      end
+
+      it "passes a GROUP BY whose collation calls equal keys that print the same" do
+        candidate = "SELECT nd_users.id, nd_users.name COLLATE public.nd_ci AS name #{joined} " \
+                    "GROUP BY nd_users.id, 2 ORDER BY nd_users.id"
+
+        expect(verdict(total, candidate)).to eq(["pass", nil])
+      end
+
+      it "refuses with pick_run_failed when the checked run fails for another reason" do
+        edge.on_checked = ->(_) { raise PG::ConnectionBad, "lost the connection" }
+
+        expect(at_edge(grouped)).to eq(%w[fail unsupported_order pick_run_failed])
+      end
+
+      it "refuses with unforceable_pick when the candidate's picks can't be forced" do
+        candidate = "SELECT DISTINCT ON (nd_users.*) nd_users.id, nd_users.name COLLATE public.nd_ci " \
+                    "FROM nd_users ORDER BY nd_users.*"
+
+        expect(verdict(total, candidate)).to eq(%w[fail unsupported_order unforceable_pick])
+      end
+
+      it "fails timed_out when the checked run times out" do
+        edge.on_checked = ->(_) { "SELECT pg_sleep(5)" }
+
+        expect(at_edge(grouped, timeout_ms: 300)).to eq(%w[fail timed_out])
+      end
     end
   end
 
