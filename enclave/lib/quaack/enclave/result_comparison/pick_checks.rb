@@ -56,7 +56,19 @@ module Quaack
           order = Array(copy(call[:agg_order])) + texts.map { Picks.sort(copy(it), descending) }
           c_text(func_call: copy(call).merge(funcname: [Picks.name("pg_catalog"), Picks.name("array_agg")],
                                              args: [template("ROW(quaack_texts)", texts:)], agg_order: order,
-                                             func_variadic: false))
+                                             agg_filter: listed_filter(call), func_variadic: false))
+        end
+
+        # any_value ignores NULL inputs, so its check leaves them out too
+        # (task 20261015-6).
+        def listed_filter(call)
+          return copy(call[:agg_filter]) unless call[:funcname].last.dig(:string, :sval) == "any_value"
+
+          # num_nonnulls tests the value, where IS NOT NULL on a row tests
+          # its fields, and any_value keeps a row with a NULL field.
+          null = "pg_catalog.num_nonnulls(quaack_arg) = 1"
+          filter = call[:agg_filter] ? "#{null} AND (quaack_filter)" : null
+          template(filter, arg: copy(call[:args].first), filter: copy(call[:agg_filter]))
         end
 
         # A min or max in a check that its argument's values tied for the

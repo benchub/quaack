@@ -637,6 +637,19 @@ RSpec.describe Quaack::Enclave::Egress do
         end
       end
 
+      # Task 20261015-3: quote_ident quotes a non-ASCII name, which goes out
+      # as it is; one with a control or format character in it doesn't.
+      it "sends a quoted non-ASCII name of the query's, and refuses one with a format character" do
+        sql = %(SELECT 1 FROM public."café" JOIN public."a‮#{EGRESS_SENTINEL}" ON true)
+        expect(JSON.parse(egress.serialize(report_with([%(public."café")], sql)))["tablespace_moves"])
+          .to eq([%(public."café")])
+        expect { egress.serialize(report_with([%(public."a‮#{EGRESS_SENTINEL}")], sql)) }
+          .to raise_error(described_class::Error,
+                          "a value in this report message has tablespace moves that aren't table names") { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+          }
+      end
+
       # Review of 20261010-17: a well-formed name of a relation the query doesn't
       # name would put that relation's name out, so only the query's own tables pass.
       it "refuses a well-formed name of a table the query doesn't name, without quoting it" do

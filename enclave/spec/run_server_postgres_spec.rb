@@ -6,6 +6,7 @@ require "securerandom"
 require "shellwords"
 require "quaack/enclave/inventory/production"
 require "quaack/enclave/placement"
+require "quaack/protocol/tablespace_moves"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
@@ -184,6 +185,21 @@ RSpec.describe "quaacks run-server, against a real server" do
         move("ALTER INDEX public.ts_probe_note SET TABLESPACE #{space}")
         expect(run_server.stdout).to eq(done)
         expect(stored.read("tablespace_moves")).to eq(["public.ts_probe"])
+      end
+
+      # Task 20261015-3: quote_ident quotes a non-ASCII name, or one with a
+      # quote mark or space, and egress lets each out as the query's table.
+      it "names a moved non-ASCII or quoted table as quote_ident writes it, which egress lets out" do
+        tables = [["public", "caf\u00e9"], ["public", %(a "b c)]]
+        move(%(CREATE TABLE public."caf\u00e9" (id int); CREATE TABLE public."a ""b c" (id int)))
+        conn = production.connect
+        before = Quaack::Enclave::Placement.read(conn, tables)
+        conn.exec(%(ALTER TABLE public."caf\u00e9" SET TABLESPACE #{space};
+                    ALTER TABLE public."a ""b c" SET TABLESPACE #{space}))
+        moves = Quaack::Enclave::Placement.moves(conn, before)
+        conn.close
+        expect(moves).to contain_exactly(%(public."caf\u00e9"), %(public."a ""b c"))
+        expect(Quaack::Protocol::TablespaceMoves.within?(moves, tables)).to be(true)
       end
 
       it "records nothing for a run whose qualify recorded no placement" do

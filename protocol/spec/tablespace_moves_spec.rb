@@ -19,10 +19,41 @@ RSpec.describe Quaack::Protocol::TablespaceMoves do
     ["an uppercase bare name", "public.Orders"],
     ["a quoted name with a lone quote mark", %(public."a"b")],
     ["a name with a space outside quotes", "public.my orders"],
-    ["a non-ASCII quoted name", %(public."caf\u00e9")],
     ["a control character", %(public."a\nb")],
     ["a name that isn't a String", ["public.orders"]],
     ["an empty String", ""]
+  ].each do |what, name|
+    it "refuses #{what}" do
+      expect(valid?([name])).to be(false)
+    end
+  end
+
+  # Task 20261015-3: quote_ident quotes a non-ASCII name, and it crosses as
+  # long as it's valid UTF-8 with no control or format character.
+  it "passes a quoted non-ASCII name of valid UTF-8" do
+    expect(valid?([%(public."café"), %("schéma"."日本 ""x"""), %(public."#{"é" * 31}")]))
+      .to be(true)
+  end
+
+  [
+    ["invalid UTF-8 as binary", %(public."caf\xC3").b],
+    ["invalid UTF-8 labelled UTF-8", +%(public."caf\xC3")],
+    ["a NUL", %(public."a\u0000b")],
+    ["DEL", %(public."a\u007fb")],
+    ["a C1 control character", %(public."a\u0085b")],
+    ["a no-break space", %(public."a b")],
+    ["a line separator", %(public."a b")],
+    ["a paragraph separator", %(public."a b")],
+    ["a bidi override", %(public."a‮b")],
+    ["a bidi isolate", %(public."a⁦b")],
+    ["a zero-width space", %(public."a​b")],
+    ["a zero-width joiner", %(public."a‍b")],
+    ["a byte-order mark", %(public."a﻿b")],
+    ["a non-ASCII bare name", "public.café"],
+    ["a non-ASCII name with a lone quote mark", %(public."café"b")],
+    # Postgres keeps at most 63 bytes of a name (NAMEDATALEN - 1), so a
+    # part's unquoted name is counted in bytes: 32 two-byte characters are 64.
+    ["a non-ASCII name over 63 bytes", %(public."#{"é" * 32}")]
   ].each do |what, name|
     it "refuses #{what}" do
       expect(valid?([name])).to be(false)

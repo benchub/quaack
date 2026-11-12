@@ -44,6 +44,17 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       .to eq([%w[SENTINEL_10a 3 gold]])
   end
 
+  # NOT IN on a varchar column prints as <> ALL over an ARRAY cast to
+  # text[] (20261012-7).
+  it "builds a parent whose varchar column has a NOT IN CHECK, with a value outside the list" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN g varchar NOT NULL CHECK (g NOT IN ('bad', 'worse'))")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(prepared.refused).to eq([])
+    g = prepared.rows.first.then { |r| r.values[r.columns.index("g")] }
+    expect(%w[bad worse]).not_to include(g)
+    expect(load(prepared, "SELECT c.g NOT IN ('bad', 'worse') FROM fx.customers c")).to eq([["t"]])
+  end
+
   it "adds no parent that another insert supplies, and loads parents' inserts first" do
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')",
                        "INSERT INTO fx.customers (id, name, tier) VALUES (7, 'n', 'silver')")

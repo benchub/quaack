@@ -12894,3 +12894,116 @@ On run 20261110T232744Z-74d8049f the report said of Sleepy Pike "ended without c
 - **What's wrong:** The `float_noise` second look only flags a failure when every row matches under that one look. The cut-off grid puts its boundaries on short decimals such as 0.3 or 1234.56, so noise around such a value fails the second look about half the time. Simulated float sums of cent amounts, summed in two orders and failing the first look, were flagged 100% of the time with 1 row, 47% with 5, 3% with 20, and 0% with 100. So the main case, `GROUP BY` with `sum` over a float column, mostly goes unflagged. The verdict is never wrong; the report just doesn't add the note. DESIGN.md and docs/float-values.md say a pair "passes one look or the other", which holds for one pair, not a whole result.
 - **Do:** Keep both hashes per row; cancel rows that match on the first-look hash, then compare only the leftover rows on the second-look hash. For ordered compares, accept a position that matches under either hash. Keep the guarantee that values one part in ten million or more apart are never flagged. Fix the DESIGN.md and docs wording. While in DESIGN.md's float-noise passage, also say the report words a `production_not_compared` note differently, as the original's own two runs differing (review of 20261111-233822-1, minor).
 - **Landed:** 2026-11-12 (float-noise-rows-20261112-000801-1). Enclave change. The second look keeps two hashes per row, the first look's and the cut grid's, as one 64-byte string, and two rows match when either half does (`ProductionComparison::RowMatch`). A multiset, a subset, the original's two tiebreaker runs (`unstable_original`), runs through a window, and the cut-tie check's and Regrouped's containment pair rows by first-look hash, then the rows left over by second-look hash, each row with one of its own; an ordered compare accepts a place whose rows match under either. A cut-tie layout, which lines up one query's own runs, still needs both hashes to match. Every accepted pair matches under one look, so values a step of eight significant digits apart never match. The first look never pairs rows by look: with one 32-byte hash per row it compares by `sort ==`, an early-exit tally for a subset, and `==` in order, instead of sorted and ordered digests, with the same verdicts and less memory, and `CutTies.tallied?` is gone. DESIGN.md's result-comparison and docs/float-values.md say a row matches under one look or the other, and DESIGN.md says how the report words a `production_not_compared` note.
+
+### 20261011-12. Keyword operators in candidates: refuse an ambiguous one the original doesn't use (and document the original's behavior).
+
+From 20261008-44 (option b) and item 1 of 20261008-41. The original query's keyword operators (IN, BETWEEN, NOT BETWEEN, LIKE, ILIKE, IS DISTINCT FROM, NULLIF, simple CASE, USING, NATURAL) stay bare and resolve through the stored `search_path`, which every racetrack and arena connection sets, so they behave on the run server as in production given the same dump. A rewrite candidate (LLM or rule) could add a keyword form the original doesn't use whose operator resolves differently on the path (more than one usable schema on the path defines the operator, such as citext or hstore next to pg_catalog). Fix in the candidate name lockdown: refuse a candidate whose keyword operator is ambiguous on the path unless the original uses the same keyword form (mirror `unmade_lookup`'s exemption); reuse an existing rule code if one fits (a new rule code needs the protocol `ErrorRules` and driver text). Add a DESIGN.md paragraph saying how keyword operators resolve and what is refused. Postgres-backed tests with a user schema defining a same-signature `=`/`~~`/`LIKE`-family operator placed ahead of or beside pg_catalog on the path (red first, mutate), and one that shows an ordinary query with IN, BETWEEN and LIKE and no ambiguity still passes. Enclave change; trust boundary (Opus builder and reviewer).
+
+- **Depends on:** 20261008-41 (landed), 20261007-21 (landed).
+- **Came from:** The builder of 20261008-44, 2026-10-11.
+- **Design:** qualify, rewrite-check.
+- **Built, not merged:** branch `task/20261011-12` (head `6270cc2a`), two Opus reviews clean (the first found the refusal too coarse for citext and hstore in `public`; the fix narrows it to operators with a reachable argument type, `rewrite_candidate_check/keyword_reach.rb`). Held until after the 0.1.33 bump so `main` stays deployable; merge it as the first change of the next batch and put `20261011-12` on the unreleased list. Minors: a relation's row type (`pg_class.reltype`) isn't among the seen types, so a user operator on a composite row type in a whole-row comparison like `(t.*) IN (...)` gets through (add `reltype`, or refuse whole-row operands of keyword forms); the example at `rewrite_candidate_check_spec.rb:1201` covers three rules at once (implicit-cast target, pseudo-type, function result type): split it; one earlier full run had a single unidentified failure in `rewrite_candidate_check_spec.rb` that didn't recur: watch for it.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261011-12`. Minor findings are in 20261111-200042-1 and 20261111-200042-2.
+
+### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling.
+
+From the review of 20261010-12 (minor). `repeated?` uses `Tree.find_all(select, ...)`, which probably also counts copies in nested subqueries and CTEs of the same SELECT, so a copy in another scope plus one in GROUP BY or ORDER BY refuses a rewrite that would have worked (untested). Copies written differently (another alias, an added cast) aren't detected and fall back to `failed_to_plan`, which is safe but wastes a candidate; list that in docs/transforms/not_in_to_not_exists.md. Test the nested-scope case and either count only this SELECT's own copies or document the extra refusal.
+
+- **Depends on:** 20261010-12 (landed).
+- **Came from:** The review of 20261010-12, 2026-10-10.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261010-52`. The rule counts only the SELECT's own copies; the docs list the undetected spellings. Reviewed with no blocking findings. Minor: set-operation arms aren't wrapped in a Node, so `own_links` descends into them when a NOT IN sits in the top set-op SELECT (rare; over-cautious refusal only). Filed as 20261111-210000-1.
+
+### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale.
+
+Found in the build of 20261010-10. In `driver/spec/report_spec.rb` the memoized `html` and `ranking` lets make a second `whos` call after mutating the payload return the stale render. The existing example "says not recorded for the indexes of a run that recorded no sources" calls `whos` twice and likely has this weakness in its second half (it may pass whatever the code does). Render fresh for each call (build the report in a helper, not a memoized let), then mutate the code under test to confirm that example goes red. Check the other examples that call a render helper twice.
+
+- **Depends on:** 20261010-10 (landed).
+- **Came from:** The build of 20261010-10, 2026-10-11.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261011-8`. `whos` renders afresh each call; mutation of `index_proposers.rb` turns the named example red. Reviewed with no findings. Spec-only, so it isn't on the unreleased list.
+
+### 20261011-10. Rewrite budget: minors from 20261010-53.
+
+(1) DESIGN.md's budget paragraph (rewrite-test, ~line 1149) doesn't say a running statement can overrun the deadline by up to its 10 s `statement_timeout`: add one clause. (3) Counterexample rounds have no overall budget (only the 10 s per statement). DESIGN.md says they "load only the LLM's inserts and have no such budget", but not why that's fine; add that, or add a budget if rounds can pile up.
+
+Trimmed 2026-10-14 after 20261012-4: removed (2), the burndown losing an out-of-time rewrite-test's fixture loads and retries. rewrite-test no longer loads scenarios, and an out-of-time rewrite records fuzz's record with `not_tested_in_time` 1 (`RewriteBurndown#record_fuzz`).
+
+- **Depends on:** 20261010-53 (landed).
+- **Came from:** The review of 20261010-53, 2026-10-11 (minor).
+- **Design:** rewrite-test, counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261011-10`. DESIGN.md only. Item 1: a statement running at the deadline can overrun it by up to 10 s. Item 3, decided by the user: document that a counterexample round has no time budget of its own, bounded only by the CLI input caps and the LLM reply size, and that a huge reply is unsupported in v1. A real per-round cap is filed as 20261111-220000-1. Docs only, so not on the unreleased list.
+
+### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`.
+
+From the review of 20261012-1. `g varchar CHECK (g NOT IN ('bad', 'worse'))` prints as `((g)::text <> ALL ((ARRAY['bad'::character varying, 'worse'::character varying])::text[]))`. `Scenarios::Checks::KINDS` (`enclave/lib/quaack/enclave/scenarios/checks.rb:21`) doesn't hold `AEXPR_OP_ALL`, so `Checks.new` raises `complex_check`. fuzz doesn't use `Checks`, but llm-counterexamples' `Counterexamples::ParentRows` does (`counterexamples/parent_rows.rb`, ~line 44), so when a counterexample round's accepted inserts need a parent row, and any table in their foreign-key closure (`ArenaSchema.load_closure`) has such a CHECK, the round fails with `complex_check` instead of testing the LLM's rows. That hits every rewrite's rounds on a schema that uses NOT IN CHECKs on varchar columns near the queries' tables. `Sides.sides` already reads `<> ALL` over a cast ARRAY since 20261012-1, so accepting it should be small. DESIGN.md doesn't list NOT IN as simple today, so update its simple-CHECK sentence. Also add the specs the review found missing, for behaviour it checked by hand: a CHECK IN list holding NULL (`IN ('p', NULL)` gives values `["p"]` and, as in Postgres, rejects nothing), and a one-element IN list (which prints as `= 'only'`). Reworded 2026-10-14 after 20261012-4 for the ParentRows path (kept by the user, 2026-10-14).
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-1, 2026-10-12 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261012-7`. `AEXPR_OP_ALL` is in `Checks::KINDS`; DESIGN.md names NOT IN; specs for NOT IN through ParentRows, a NULL in an IN list, and a one-element IN list. Reviewed with no blocking findings. Minors are in 20261111-230000-1.
+
+### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky.
+
+From the review of 20261021-1. The example renders the report twice and compares, and the "Generated on" stamps differed by one second (17:58:51Z against 17:58:52Z), failing the per-commit check once; it passes on rerun. Freeze the clock in the example or compare with the stamp masked.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-1, 2026-10-21.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261021-4`. The example passes one fixed `generated_at` to the write and the render, and runs under a clock that ticks a second per read, so it failed every time before the fix. Mutating `Report.write` turns it red. Spec-only; I read the diff myself and started no reviewer. Not on the unreleased list.
+
+### 20261020-6. redact-rewrite: test the parse-position range clamp.
+
+From the review of 20261019-5 (minor). `parse_position`'s range check (`location.between?(1, sql.length + 1)`) has no test: widening its upper bound leaves every spec green. Stub `PgQuery.parse` to raise a ParseError whose `location` is `sql.length + 5` (and one below 1) and expect the refusal to carry no `position`; show widening the bound turns it red. Enclave spec only.
+
+- **Depends on:** 20261019-5.
+- **Came from:** The review of 20261019-5, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261020-6`. Two examples in `rewrite_redaction_spec.rb`: locations past the end or below 1 give no position; 1 and `sql.length + 1` keep theirs. Four bound mutations each turned the matching example red. The clamp already worked, so the specs had no red-first step. Spec-only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261021-3. Index DDL: test that a non-42P18 prepare error stays `untyped_literal`.
+
+From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_to_plan` back to `untyped_literal`, but only the RULES-list spec guards it. Add a spec where an index probe fails to prepare with a non-42P18 error and assert `untyped_literal`; show dropping the remap turns it red.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-1, 2026-10-21.
+- **Design:** index-ddl-check.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261021-3`. Two real-Postgres examples (42883 and 42804) in `index_ddl_check_spec.rb`; dropping the `failed_to_plan` remap turned both red. The clean per-commit check wasn't seen: the driver suite failed once in the parallel run (cause not captured) and passed twice standalone, 2209 examples each. Filed as 20261111-240000-1. Spec-only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error.
+
+From the second review of 20261008-60 (minor). `ExtraServer.start` (`spec/support/test_postgres.rb`) removes the container when the server never gets ready, then re-raises. If `remove_container` itself raises (Docker unavailable, permission denied), that error replaces the readiness failure. Keep the original error: attempt removal in its own rescue, and re-raise the readiness error either way. Test first: readiness and removal both raise, and the readiness error is the one reported.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261008-60, 2026-10-15 (minor).
+- **Design:** Development (test Postgres).
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261015-1`. `ExtraServer.start` removes the container in its own rescue and re-raises the readiness error. The new example failed on the old code with the removal error, and dropping the inner rescue turned it red again. The per-commit check passed in all four suites. Test support only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report.
+
+From the first review of 20261010-17 (minor). `Placement.moves` uses Postgres's `quote_ident`, which can emit a quoted non-ASCII identifier such as `public."café"`, but `Protocol::TablespaceMoves` allows printable ASCII only, so Egress refuses the report instead of carrying the warning. Accept valid UTF-8 quoted identifiers, keeping the control-character, length, quoting, membership and count checks. Test first.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261010-17, 2026-10-15 (minor).
+- **Design:** What goes into the enclave, report.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261015-3`. `Protocol::TablespaceMoves` accepts a quoted part of printable ASCII or non-ASCII outside Unicode C and Z, refuses invalid UTF-8 (which used to raise), and caps each part at 63 bytes; membership (`within?`) stays an exact byte match. Reviewed with no blocking findings; minors are in 20261111-250000-1.
+
+### 20261015-6. Pick checks: a NULL beside one value makes `any_value` refuse.
+
+From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`result_comparison/pick_checks.rb`) lists every argument row of an `any_value`, NULLs included, but `any_value` ignores NULL inputs, so `any_value(v)` over `{NULL, 'x'}` has no real choice yet the check fires and the comparison refuses with `unsupported_order`. Leave NULL arguments out of `any_value`'s check, test first with one value plus NULLs, and mutation-test it. Also note in DESIGN.md that a query with picks runs about 5x slower in fuzz (about 156 against 750 trials/s), since it skips the cheap match.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261008-67, 2026-10-15 (minor).
+- **Design:** fixture-compare, result comparison.
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261015-6`. `listed_filter` leaves an `any_value`'s NULL arguments out of the pick check, testing the value with `num_nonnulls` (a row with a NULL field stays in), ANDed with the call's own FILTER; DESIGN.md says so and notes picks run about 5x slower in fuzz. The first review found a false pass on composites and an untested FILTER branch; one fix round resolved both. The second review ran the specs and four mutations, all red, and found only a merged DESIGN.md line, which I fixed on the branch. The per-commit check passed in all four suites with rake's own exit 0. Minors are in 20261111-260000-1.
