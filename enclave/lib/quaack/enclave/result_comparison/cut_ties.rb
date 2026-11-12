@@ -110,12 +110,6 @@ module Quaack
           nil
         end
 
-        # contained for rows that are their own keys, such as hashes.
-        def tallied?(big, small)
-          tally = big.tally
-          small.tally.all? { |row, count| tally.fetch(row, 0) >= count }
-        end
-
         # full and cut are each [ascending, descending] rows. offset is
         # the cut's OFFSET when it's known, or nil, and then it's the only
         # place both cut runs fit, if there's just one. nil when there's no
