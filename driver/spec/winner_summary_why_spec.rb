@@ -269,7 +269,9 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       ["The rewrite can Hash the smaller input and reads 40 blocks.",
        "Group by tenant first, and the winner reads 40 blocks.",
        "The winner reads 40 blocks; Group by tenant if you can.",
-       "Sort by date first, and the winner reads 40 blocks."].each do |text|
+       "Sort by date first, and the winner reads 40 blocks.",
+       "Sort the rows by id, and the winner reads 40 blocks.",
+       "Limit the scan, and the winner reads 40 blocks."].each do |text|
         expect(run(text, base)).to have_attributes(text:, outcome: "used"), text
       end
       ["The winner uses a Hash step and reads 40 blocks.",
@@ -282,7 +284,11 @@ RSpec.describe Quaack::Driver::WinnerSummary do
        "The winner reads 40 blocks after Sort, Limit and Hash.",
        "The winner reads 40 blocks via Hash.",
        "The winner reads 40 blocks with Materialize.",
-       "Memoize now caches the lookups, and the winner reads 40 blocks."].each do |text|
+       "Memoize now caches the lookups, and the winner reads 40 blocks.",
+       "It adds a Sort by created_at. The winner reads 40 blocks.",
+       "It drops the Sort the original had. The winner reads 40 blocks.",
+       "The original needed a Hash the winner skips. The winner reads 40 blocks.",
+       "A Limit the planner pushes down helps. The winner reads 40 blocks."].each do |text|
         expect(run(text, base)).to have_attributes(outcome: "rejected"), text
       end
     end

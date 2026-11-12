@@ -47,9 +47,12 @@ module Quaack
         # as a verb (Limit what it reads, the rewrite can Hash the input, Sort
         # by date), so it isn't read as a step there (20261016-13,
         # 20261016-16). Any other one-word type, such as Memoize, Materialize,
-        # or Gather, is always read as a step.
+        # or Gather, is always read as a step. Nor does one read as a verb
+        # just after a determiner (a Sort by created_at, the Sort the
+        # original had), where it's a noun.
         VERBS = %w[Hash Sort Group Limit Unique Result].freeze
         SENTENCE_START = /(?:\A|[.!?]\s)\s*\z/
+        DETERMINER = /\b(?:an?|the|its|their|this|that|each|no)\s+\z/i
         VERB_OBJECT = /\A\s+(?:by|an?|the|its|their|each|every|them|it|rows)\b/i
 
         # A join or parallel qualifier on a node type: Hash Anti Join, a semi
@@ -90,7 +93,7 @@ module Quaack
 
         # Whether a match is a one-word type that reads as a verb there.
         def verb?(match)
-          VERBS.include?(match[0]) &&
+          VERBS.include?(match[0]) && !match.pre_match.match?(DETERMINER) &&
             (match.pre_match.match?(SENTENCE_START) || match.post_match.match?(VERB_OBJECT))
         end
 
