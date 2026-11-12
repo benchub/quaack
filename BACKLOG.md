@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261110-17
 - 20261112-090000-1
 - 20261112-100000-1
+- 20261112-083000-1
 
 ## How this file works.
 
@@ -818,11 +819,11 @@ From the review of 20261112-063000-1 (minor). "Then Sort by id." and "First, Gro
 - **Design:** LLM prompts.
 - **Status:** todo
 
-### 20261112-083000-1. Keyword operators: minors from 20261112-073000-1.
+### 20261112-110000-1. Rewrite candidate check: an implicit cast through a user function.
 
-From the review of 20261112-073000-1 (minor). (1) Existing behavior, not that diff: with the path `pg_catalog, kw, public`, a candidate's explicit `=` the original also uses (`= ANY (SELECT ...)`, or a plain `t.status = (SELECT ...)`) stays bare, because the original's `=` doesn't constrain operand types. A closer-typed operator later on the path (citext's `=`, for example) could then pick up a new operand type the candidate introduces. Check on real Postgres whether a realistic candidate can reach that (a new cast or column of a type a user operator covers), and if so pin it the way qualify pins a name the original doesn't use; red first. Trust boundary; Opus builder and reviewer. (2) The exemption for an IN subquery is keyed on the whole deparsed text, so a candidate that only changes the subquery's body (adds `WHERE id > 0`) is refused when a user `=` is reachable for the operand types. That's a safe refusal; decide whether to key on the left operand and operator instead, and say so in DESIGN.md either way. (3) No subquery-specific example pins the argument-for-argument key: keying the exemption on the operator alone keeps all six subquery examples green. Add one where the original's IN subquery differs from the candidate's and isn't exempt, and show the operator-only mutation turns it red. Enclave change if (1) or (2) changes code.
+From the review of 20261112-083000-1 (minor, pre-existing). With `CREATE CAST (citext AS int) WITH FUNCTION public.ci2int AS IMPLICIT`, a candidate `WHERE qty = code` is accepted, and at run time it calls `public.ci2int`, which the original never uses. The parse tree has no node for an implicit cast's function, so `Names` and `Names.resolved!` can't see it. Find, on real Postgres, the casts a candidate's expressions can pick up implicitly (`pg_cast` with `castcontext = 'i'` or `'a'` and a `castfunc` outside pg_catalog, between types the candidate reaches, see `keyword_reach.rb` for how reached types are found), and refuse the candidate when it reaches such a cast the original doesn't (the original's qualified text, or its reached types). Red first; mutate; DESIGN.md's names paragraph. Trust boundary; Opus builder and reviewer. Enclave change; it goes on "Unreleased enclave changes".
 
-- **Depends on:** 20261112-073000-1 (landed).
-- **Came from:** 20261112-073000-1.
+- **Depends on:** 20261112-083000-1 (landed).
+- **Came from:** 20261112-083000-1.
 - **Design:** qualify, rewrite-check.
 - **Status:** todo
