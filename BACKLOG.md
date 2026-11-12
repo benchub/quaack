@@ -808,7 +808,8 @@ From the review of 20261112-083000-1 (minor, pre-existing). With `CREATE CAST (c
 - **Depends on:** 20261112-083000-1 (landed).
 - **Came from:** 20261112-083000-1.
 - **Design:** qualify, rewrite-check.
-- **Status:** todo
+- **Built, not landed; needs the user's decision (2026-11-12):** branch `task/20261112-110000-1` (head `a1938841`, per-commit check passed) adds `rewrite_candidate_check/implicit_casts.rb`. If a type the candidate reaches has an implicit cast, or an assignment cast to bool or int8 (the only two assignment spots a SELECT reaches: a boolean context and LIMIT/OFFSET), whose function is outside pg_catalog (or an I/O cast through a user input/output function), every expression and clause the candidate writes must appear in the original as deparsed text, or it's refused as `unknown_name`. It closes the probe. The Opus review blocked it on over-refusal: PostGIS creates an implicit `text -> geometry` cast through `public.geometry(text)`, and `text` is always a seen type (it's in `LITERAL_TYPES`), so every non-identical rewrite in any PostGIS database is refused, even on int-only tables; a geometry or geography column adds six more such casts. citext, hstore, ltree, pg_trgm, isn, cube, earthdistance, uuid-ossp, intarray and btree_gist don't trigger it. Options, each changing the threat model: (a) trust a cast whose function belongs to an installed extension (`pg_depend` deptype `e`), so only casts a user wrote by hand count; (b) exempt casts whose source is only a literal type, which keeps PostGIS's geometry casts in scope for tables with geometry columns; (c) accept the gap and document it as unsupported in v1. Ask the user before building more; don't build until they choose.
+- **Status:** todo (waiting on the user's choice; don't build)
 
 ### 20261112-120000-1. literals_users_spec: plant a same-name collision for the uniqueness example.
 
