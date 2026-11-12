@@ -32,7 +32,10 @@ module Quaack
       # placeholder's value as for each date and time type it reads as
       # (Printed asks production for them, 20261008-53), and a string
       # matches those as it matches the value's own text. Without them,
-      # such a literal matches nothing and is masked.
+      # such a literal matches nothing and is masked. A text that two
+      # different values give, raw or printed, as '2026-01-01' printed as a
+      # timestamp and '2026-01-01 00:00:00', could be either literal, so it
+      # matches nothing and is masked too (20261110-10).
       class Matcher
         NUMBER_TYPES = %w[integer bigint numeric].freeze
         TYPES = [*NUMBER_TYPES, "boolean", "bit varying", "unknown"].freeze
@@ -66,6 +69,7 @@ module Quaack
           @bits = lookup
           @booleans = lookup
           @types = {}
+          @values = {}
           Redaction.checked_map(map).each { |key, entry| index(Integer(key[1..]), entry["value"], entry["type"]) }
           add_printed(printed)
         end
@@ -98,6 +102,7 @@ module Quaack
           return if value.nil?
 
           @types[number] = type
+          @values[number] = value
           add(@texts, value, number)
           add(@numbers, number(value), number) if NUMBER_TYPES.include?(type)
           add(@numbers_from, number(value), number) if NUMBERS_FROM.include?(type)
@@ -105,8 +110,12 @@ module Quaack
           add(@booleans, boolean(value), number) if BOOLEANS_FROM.include?(type)
         end
 
+        # A text that two different values give, raw or printed, as
+        # '2026-01-01' printed as a timestamp and '2026-01-01 00:00:00', could
+        # be either literal, so it's dropped and a plan literal of it masked.
         def add_printed(printed)
           printed.each { |number, texts| texts.each { add(@texts, it, number) if @types.key?(number) } }
+          @texts.delete_if { |_, numbers| numbers.map { @values[it] }.uniq.size > 1 }
         end
 
         def add(lookup, key, number)
