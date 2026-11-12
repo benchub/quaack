@@ -342,9 +342,14 @@ module TestPostgres
   module ExtraServer
     def self.start(id)
       Server.new(id).tap(&:wait_until_ready)
-    rescue StandardError, Interrupt
-      TestPostgres.remove_container(id)
-      raise
+    # A failed removal mustn't hide why the server never got ready.
+    rescue StandardError, Interrupt => e
+      begin
+        TestPostgres.remove_container(id)
+      rescue StandardError
+        nil
+      end
+      raise e
     end
   end
 
