@@ -15,6 +15,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261112-083000-1
 - 20261110-9
 - 20261110-10
+- 20261112-150000-1
 
 ## How this file works.
 
@@ -803,14 +804,5 @@ From the review of 20261110-9 (minor). The rescue in `steps/redact.rb`'s `printe
 
 - **Depends on:** 20261110-9 (landed).
 - **Came from:** 20261110-9.
-- **Design:** redact.
-- **Status:** todo
-
-### 20261112-150000-1. redact: a number two different literals give gets the wrong `$n`.
-
-From the review of 20261110-10 (pre-existing; minor by frequency, but a wrong placeholder). With `id::numeric > '10' AND id::numeric < 10.0`, `redacted_plan` reads `(id)::numeric > $2::numeric AND (id)::numeric < $1`: the two placeholders are swapped. Number matching in `redaction/matcher.rb` treats both as 10, and `prefer` and lowest-first then choose differently for the cast and the bare literal. A wrong `$n` means a later step reads the wrong value for that literal. Mask a number that two different placeholder values give, the same way 20261110-10 masks texts, red first on real Postgres with that query; check that the same number used twice still matches and that a lone number still gets its `$n`; mutate. Enclave change; trust boundary area (Opus builder and reviewer); it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261110-10 (landed).
-- **Came from:** 20261110-10.
 - **Design:** redact.
 - **Status:** todo

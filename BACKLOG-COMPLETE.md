@@ -13209,3 +13209,13 @@ From the review of 20261008-53 item 2 (minor). Printed texts share the matcher's
 - **Design:** redact.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-10`. The bug was real: a printed date or interval that equals another literal's text gave both plan values `$1`, since the lookup kept both numbers and `candidates` takes the lowest. `Matcher` now records each placeholder's value and drops a text that two different values give, raw or printed, so it's masked as `$?`; the same value twice still matches. DESIGN.md says so and notes that an EXPLAIN under other client settings leaves these literals masked. The Opus review found nothing blocking; two mutations went red. The per-commit check passed with rake's own exit 0. The numeric case the review found is 20261112-150000-1.
+
+### 20261112-150000-1. redact: a number two different literals give gets the wrong `$n`.
+
+From the review of 20261110-10 (pre-existing; minor by frequency, but a wrong placeholder). With `id::numeric > '10' AND id::numeric < 10.0`, `redacted_plan` reads `(id)::numeric > $2::numeric AND (id)::numeric < $1`: the two placeholders are swapped. Number matching in `redaction/matcher.rb` treats both as 10, and `prefer` and lowest-first then choose differently for the cast and the bare literal. A wrong `$n` means a later step reads the wrong value for that literal. Mask a number that two different placeholder values give, the same way 20261110-10 masks texts, red first on real Postgres with that query; check that the same number used twice still matches and that a lone number still gets its `$n`; mutate. Enclave change; trust boundary area (Opus builder and reviewer); it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261110-10 (landed).
+- **Came from:** 20261110-10.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-150000-1`. `Matcher#one_value` gives a plan value no candidates when its candidate placeholders hold more than one distinct raw value, for string and number literals, so `'10'` and `10.0` in one query are both masked as `$?` instead of swapped. One expectation in `redaction_plan_spec.rb` changed from `$1` to `$?` (`'5.0'::numeric` against placeholders 5 and 5.0): the reviewer confirmed `$1` was a wrong placeholder there. Booleans and bits are left as they were; the reviewer found no wrong `$n` for them, since two different booleans or bit strings can't print the same plan literal. Two mutations went red. The per-commit check passed with rake's own exit 0.
