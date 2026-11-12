@@ -223,8 +223,13 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
           .to eq("((x = $1) AND (y = $2))")
       end
 
-      it "writes the lowest placeholder a string matches, by text or by number" do
-        expect(filter("(x = '5.0'::numeric)", map(entry("5", "integer"), entry("5.0")))).to eq("(x = $1::numeric)")
+      it "writes the lowest placeholder a string matches, by text or by number, when they hold one value" do
+        expect(filter("(x = '5.0'::numeric)", map(entry("5.0", "integer"), entry("5.0")))).to eq("(x = $1::numeric)")
+      end
+
+      # 20261112-150000-1: '5' and '5.0' are different values, so either could be it.
+      it "masks a string that two different values match, by text or by number" do
+        expect(filter("(x = '5.0'::numeric)", map(entry("5", "integer"), entry("5.0")))).to eq("(x = $?::numeric)")
       end
 
       it "reads a number the query wrote with spaces around it" do

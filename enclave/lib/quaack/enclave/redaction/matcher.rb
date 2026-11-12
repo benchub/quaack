@@ -77,13 +77,11 @@ module Quaack
         # The numbers of the placeholders the literal could be, lowest first.
         def candidates(literal)
           kind, text = literal
-          one_value(
-            case kind
-            when :string then [@texts[text], @numbers[number(text)], @bits[text]].flatten.uniq.sort
-            when :number then @numbers_from[number(text)].sort
-            else @booleans[text].sort
-            end
-          )
+          case kind
+          when :string then (one_value(@texts[text] | @numbers[number(text)]) | @bits[text]).sort
+          when :number then one_value(@numbers_from[number(text)]).sort
+          else @booleans[text].sort
+          end
         end
 
         # numbers, those whose placeholder's type matches cast, a type
