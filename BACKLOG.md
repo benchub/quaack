@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261112-073000-1
 - 20261110-17
 - 20261112-090000-1
+- 20261112-100000-1
 
 ## How this file works.
 
@@ -824,13 +825,4 @@ From the review of 20261112-073000-1 (minor). (1) Existing behavior, not that di
 - **Depends on:** 20261112-073000-1 (landed).
 - **Came from:** 20261112-073000-1.
 - **Design:** qualify, rewrite-check.
-- **Status:** todo
-
-### 20261112-100000-1. ArenaRunner::Typed: don't cache a transient PREPARE failure, and test the class-08 rule.
-
-From the review of 20261112-090000-1 (minor). `clean_prepare_failure?` in `arena_runner/typed.rb` caches every SQLSTATE except class 08, so a transient one (57014, 55P03, 40001, 40P01, 53xxx, 57P01) would leave that SQL untyped for the rest of the run. The reviewer reasoned none realistically reaches a PREPARE in an arena transaction, but `single_candidate_test.rb` (around line 207) already defines `SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\A(?:55P03|XX001|XX002)\z/`. Cache only when the SQLSTATE isn't a session failure, reusing that list (move it somewhere both can share). The class-08 clause has no test today (caching class 08 keeps every spec green): add an example raising a PREPARE error with a non-nil class-08 SQLSTATE at the connection edge, and one with another session-failure SQLSTATE (57014), each asserting the next call PREPAREs again; red first for the second; mutate. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261112-090000-1 (landed).
-- **Came from:** 20261112-090000-1.
-- **Design:** counterexamples, fuzz.
 - **Status:** todo

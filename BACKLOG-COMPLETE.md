@@ -13129,3 +13129,13 @@ From the review of 20261110-17 (minor). (1) Cost: failures aren't cached now, so
 - **Design:** counterexamples, fuzz.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-090000-1`. `Typed#oids` caches the all-0 fallback when a PREPARE fails with a SQLSTATE outside class 08 (`clean_prepare_failure?`); a connection error with no SQLSTATE is retried, and an aborted transaction still fails at Typed's own SAVEPOINT, so it's never cached. A query whose PREPARE fails cleanly went from about 11.2 ms to about 0.02 ms per call (builder's measure). The review found nothing blocking; three mutations went red, and the 20261110-17 later-world guarantee holds. The per-commit check passed with rake's own exit 0. Minors are in 20261112-100000-1.
+
+### 20261112-100000-1. ArenaRunner::Typed: don't cache a transient PREPARE failure, and test the class-08 rule.
+
+From the review of 20261112-090000-1 (minor). `clean_prepare_failure?` in `arena_runner/typed.rb` caches every SQLSTATE except class 08, so a transient one (57014, 55P03, 40001, 40P01, 53xxx, 57P01) would leave that SQL untyped for the rest of the run. The reviewer reasoned none realistically reaches a PREPARE in an arena transaction, but `single_candidate_test.rb` (around line 207) already defines `SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\A(?:55P03|XX001|XX002)\z/`. Cache only when the SQLSTATE isn't a session failure, reusing that list (move it somewhere both can share). The class-08 clause has no test today (caching class 08 keeps every spec green): add an example raising a PREPARE error with a non-nil class-08 SQLSTATE at the connection edge, and one with another session-failure SQLSTATE (57014), each asserting the next call PREPAREs again; red first for the second; mutate. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261112-090000-1 (landed).
+- **Came from:** 20261112-090000-1.
+- **Design:** counterexamples, fuzz.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-100000-1`. `SessionFailure` (`enclave/lib/quaack/enclave/session_failure.rb`) holds the SQLSTATE pattern `SingleCandidateTest` used, unchanged; `Typed#clean_prepare_failure?` caches only when the SQLSTATE is present and not a session failure. New examples for 08006 and 57014 each assert the next call PREPAREs again; the 57014 one was red first. Three mutations went red, including emptying the shared list, which also turns nine SingleCandidateTest examples red. The per-commit check passed with rake's own exit 0. I read the diff and started no reviewer.
