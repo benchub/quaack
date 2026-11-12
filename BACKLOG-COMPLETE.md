@@ -13119,3 +13119,13 @@ From the review of 20261011-12. The example near `rewrite_candidate_check_spec.r
 - **Design:** none.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261111-200042-2`. The three-rule example is now three (implicit-cast target, pseudo-type, function result type), each with its own setup; a mutation of each rule in `keyword_reach.rb` fails exactly its own example. The whole spec file passed three runs in a row (241 examples each), so the earlier unidentified failure didn't recur. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
+
+### 20261112-090000-1. ArenaRunner::Typed: cache a clean PREPARE failure, and test one.
+
+From the review of 20261110-17 (minor). (1) Cost: failures aren't cached now, so a query whose PREPARE fails cleanly every time (the `unknown`-parameter case `typed.rb` names, which needs the 42P18 retry) is re-prepared on every `tx.query` call, original and candidate, every fuzz trial and world: about 7 extra round trips inside a transaction (SAVEPOINT, PREPARE, ROLLBACK TO, RELEASE, then SAVEPOINT, the `pg_prepared_statements` check, RELEASE). Cache the fallback when PREPARE itself fails in a healthy transaction (status IDLE or INTRANS before the call, a PG::Error from PREPARE), and skip caching only when the transaction was already aborted or the connection failed. Measure trials per second on a fuzz session for such a query before and after. (2) No example uses a real failing PREPARE in a clean transaction; add one (the 42P18 case), asserting the fallback, that the transaction stays usable, and (after part 1) that a second call doesn't PREPARE again. Red first where there's a real failure; mutate. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** 20261110-17.
+- **Design:** counterexamples, fuzz.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261112-090000-1`. `Typed#oids` caches the all-0 fallback when a PREPARE fails with a SQLSTATE outside class 08 (`clean_prepare_failure?`); a connection error with no SQLSTATE is retried, and an aborted transaction still fails at Typed's own SAVEPOINT, so it's never cached. A query whose PREPARE fails cleanly went from about 11.2 ms to about 0.02 ms per call (builder's measure). The review found nothing blocking; three mutations went red, and the 20261110-17 later-world guarantee holds. The per-commit check passed with rake's own exit 0. Minors are in 20261112-100000-1.
