@@ -11,7 +11,8 @@ module Quaack
       # became of it, from the one fate the payload gives it (DESIGN.md's report).
       #
       # Only the disproved fates and production_mismatch say a rewrite is
-      # wrong. A test that failed, timed out, or never ran compared
+      # wrong, and production_mismatch not when it was only float noise
+      # (FloatNoise). A test that failed, timed out, or never ran compared
       # nothing, and its sentence says so instead.
       module Rewrites # rubocop:disable Metrics/ModuleLength -- report wording, one sentence per entry
         SOURCES = { "llm" => "suggested by the LLM", "operator" => "your own rewrite" }.freeze
@@ -73,7 +74,6 @@ module Quaack
                                        "less than one part in ten million, so QUAACK couldn't compare its results " \
                                        "with the original query's. #{FLOAT_ADVICE}"
         }.freeze
-        FLOAT_NOISE_FATES = FLOAT_NOISE.keys.freeze
 
         # fuzz_disproved by query_failed: the rewrite failed where the
         # original ran (task 20261012-2).
@@ -202,10 +202,10 @@ module Quaack
             size[2].between?(1, Protocol::FuzzResult::MAX_SIZE)
         end
 
-        # Whether a stage after the searches disproved the rewrite: a fate
-        # the accountability table counts as wrong results. fuzz_line says
+        # Whether a stage after the searches disproved the rewrite: what the
+        # accountability table counts as wrong results. fuzz_line says
         # nothing for fuzz's and enumerate's own, so it never asks of them.
-        def later_disproof?(fate) = Accountability::OUTCOMES[fate] == Accountability::WRONG
+        def later_disproof?(entry) = outcome(entry) == Accountability::WRONG
 
         def fate_text(entry)
           return SEARCH_FAILED[entry["fate"]] if SEARCH_FAILED.key?(entry["fate"]) && entry["rule"] == "query_failed"
@@ -215,7 +215,7 @@ module Quaack
         end
 
         # Whether the payload says a production failure was only float noise.
-        def float_noise?(entry) = entry["float_noise"] == true && FLOAT_NOISE_FATES.include?(entry["fate"])
+        def float_noise?(entry) = FloatNoise.flagged?(entry)
 
         # An fk_cycle refusal's tables, in the order their foreign keys
         # point, or nil.

@@ -885,16 +885,6 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 
 ### 20261111-192302-1. Production comparison: floats a last bit apart across a rounding boundary. Done, see BACKLOG-COMPLETE.md.
 
-### 20261111-223753-1. Should a float-noise production failure count as a wrong result?
-
-- **Depends on:** None.
-- **Came from:** The builder of 20261111-192302-1, 2026-11-11.
-- **Design:** DESIGN.md, result-comparison.
-- **Status:** todo.
-- **What's wrong:** A rewrite whose production comparison failed only on float noise (`float_noise: true`) is still counted as a wrong result, and as a bug in the rule that made it, in the report's accountability and rule-bug lists, and `Report::Words` still calls it "wrong on the real data", though the rewrite was likely right.
-- **Do:** Ask the user whether a flagged failure should stay counted that way, be counted apart, or be left out, and build what they decide.
-- **Answer (user, 2026-11-11):** Count it apart: a flagged failure goes in its own "failed on float noise" category, not as a wrong result and not as a bug in the rule that made it.
-
 ### 20261112-000801-1. Flag float noise on multi-row results.
 
 - **Depends on:** None.

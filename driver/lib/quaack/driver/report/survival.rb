@@ -75,7 +75,7 @@ module Quaack
         def bound_claim(entry)
           bound = entry["bound"]
           return "" unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND) &&
-                           !later_disproof?(entry["fate"])
+                           !later_disproof?(entry)
 
           ", which covered every data set of up to #{Words.count(bound, "row")} over its value classes"
         end

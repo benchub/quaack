@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "float_noise"
+
 module Quaack
   module Driver
     module Report
@@ -10,7 +12,9 @@ module Quaack
       # the report shows as "not recorded" and never as zero.
       #
       # Rewrites. The payload gives every stored rewrite a source and a
-      # fate, so the outcome columns are always counts. How many each source
+      # fate, so the outcome columns are always counts. A production
+      # failure that was only float noise counts as failed on float noise,
+      # not by its fate (FloatNoise). How many each source
       # proposed is what its burndown stage added (rewrite-rules, llm-rewrites, operator-rewrites), over
       # every search. Those not kept are the proposals that weren't stored,
       # whichever check dropped them: more than the burndown's arrival rules. Both are nil until the stage is recorded.
@@ -27,7 +31,7 @@ module Quaack
       # (index_totals).
       module Accountability
         REWRITE_COLUMNS = ["Proposed", "Not kept", "Same plan as the original", "Wrong results",
-                           "Not better", "Ranked", "Stopped for another reason"].freeze
+                           "Failed on float noise", "Not better", "Ranked", "Stopped for another reason"].freeze
         INDEX_COLUMNS = ["Proposed", "Already existed", "Planner ignored or couldn't try", "Built and measured",
                          "Not better", "Ranked"].freeze
 
@@ -39,12 +43,16 @@ module Quaack
         # The outcome column of the fates that proved a rewrite wrong.
         WRONG = 1
 
+        # The outcome column of a production failure that was only float
+        # noise (FloatNoise), whatever its fate.
+        FLOAT_NOISE = 2
+
         # The outcome column a fate counts in. Any other fate is the last.
         OUTCOMES = { "same_plans" => 0, "fuzz_disproved" => WRONG, "enumerate_disproved" => WRONG,
                      "rewrite_test_disproved" => WRONG,
-                     "counterexamples_disproved" => WRONG, "production_mismatch" => WRONG, "not_better" => 2,
-                     "ranked" => 3 }.freeze
-        OTHER = 4
+                     "counterexamples_disproved" => WRONG, "production_mismatch" => WRONG, "not_better" => 3,
+                     "ranked" => 4 }.freeze
+        OTHER = 5
 
         LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
@@ -70,9 +78,12 @@ module Quaack
 
         def rewrite_counts(kept, proposed)
           refused = proposed - kept.size if proposed && proposed >= kept.size
-          outcomes = kept.map { OUTCOMES.fetch(it["fate"], OTHER) }
+          outcomes = kept.map { outcome(it) }
           [proposed, refused, *Array.new(OTHER + 1) { |column| outcomes.count(column) }]
         end
+
+        # The outcome column a rewrite counts in.
+        def outcome(entry) = FloatNoise.flagged?(entry) ? FLOAT_NOISE : OUTCOMES.fetch(entry["fate"], OTHER)
 
         def index_account
           proposals = [added("index-from-query"), added("index-from-plan"), added(*LLM_ROUNDS)]

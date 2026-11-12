@@ -2,6 +2,7 @@
 
 require_relative "report/view"
 require_relative "report/own_rewrites"
+require_relative "report/float_noise"
 
 module Quaack
   module Driver
@@ -63,14 +64,15 @@ module Quaack
       # uses it, so named and View draw each rewrite's name from the same
       # string. own_rewrites is how many rewrites of your own the run was
       # given (`--rewrites`), as its provenance record says, or nil when
-      # nothing says (OwnRewrites).
+      # nothing says (OwnRewrites). A rewrite that failed only on float
+      # noise is counted apart (FloatNoise).
       #
       # generated_at is when the report says it was generated, now unless
       # given.
       def render(payload, run_id:, llm_calls: {}, llm: {}, summary: nil, own_rewrites: nil, generated_at: Time.now) # rubocop:disable Metrics/ParameterLists
         run_id = Format.unmarked(run_id)
-        View.new(named(OwnRewrites.fill(payload, own_rewrites), run_id), run_id, llm_calls, llm, summary,
-                 generated_at).render
+        View.new(named(FloatNoise.apart(OwnRewrites.fill(payload, own_rewrites)), run_id), run_id, llm_calls, llm,
+                 summary, generated_at).render
       end
 
       def write(payload, path:, **)

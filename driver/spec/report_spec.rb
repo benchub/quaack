@@ -994,6 +994,13 @@ RSpec.describe Quaack::Driver::Report do
         end
       end
 
+      # Task 20261111-223753-1: float noise disproved nothing.
+      it "claims the bound for a rewrite that failed on the real data only on float noise" do
+        payload["rewrites"].first.merge!("float_noise" => true)
+        expect(enumerated(2, "production_mismatch")).to end_with("which covered every data set of up to 2 rows " \
+                                                                 "over its value classes.")
+      end
+
       it "claims the bound for a rewrite that passed every test but wasn't faster" do
         expect(enumerated(2, "not_better")).to end_with("which covered every data set of up to 2 rows over its " \
                                                         "value classes.")
@@ -2657,6 +2664,48 @@ RSpec.describe Quaack::Driver::Report do
                         "on a small database QUAACK enumerated from its own values.</li>"))
     end
 
+    # Task 20261111-223753-1: a production failure that was only float
+    # noise is likely right, so it's no bug in the rule that made it.
+    describe "a production failure that was only float noise" do
+      def noisy(flag, fate = "production_mismatch")
+        payload.merge("rewrites" => [fated(4, fate, source: "rule", rules: ["<b>"], float_noise: flag)],
+                      "rule_bugs" => bugs)
+      end
+
+      it "isn't listed as a bug" do
+        listed = section(render(noisy(true)), "quaack-bugs")
+        expect(listed).not_to include("Odd Mitten")
+        expect(listed).to include("Smooth Kayak", "Dainty Bloom")
+      end
+
+      it "leaves the section out when it was the only one" do
+        lone = noisy(true).merge("rule_bugs" => [bugs.last])
+        expect(render(lone)).not_to include('id="quaack-bugs"')
+      end
+
+      it "is listed as before without a true flag" do
+        [nil, false, "true"].each do |flag|
+          expect(section(render(noisy(flag)), "quaack-bugs")).to include("Odd Mitten"), flag.inspect
+        end
+      end
+
+      it "drops only the flagged rewrite's bug when another rewrite's comparison found one too" do
+        both = payload.merge("rewrites" => [fated(4, "production_mismatch", source: "rule", rules: ["<b>"],
+                                                                            float_noise: true),
+                                            fated(5, "production_mismatch", source: "rule", rules: ["<b>"])],
+                             "rule_bugs" => [bugs.last, bugs.last.merge("rewrite" => "rewrite_5")])
+        listed = section(render(both), "quaack-bugs")
+        expect(listed).to include(esc("<li>Rewrite Bright Island, made by transform rule &lt;b&gt;, returned " \
+                                      "different results on the real data.</li>"))
+        expect(listed).not_to include("Odd Mitten")
+      end
+
+      it "leaves a bug another step found listed, whatever the rewrite's fate says" do
+        earlier = noisy(true).merge("rule_bugs" => [bugs.last.merge("step" => "counterexamples")])
+        expect(section(render(earlier), "quaack-bugs")).to include("Odd Mitten")
+      end
+    end
+
     it "is left out when no rule-made rewrite was disproved, or the enclave sent no list" do
       expect(render(payload.merge("rule_bugs" => []))).not_to include('id="quaack-bugs"')
       expect(html).not_to include('id="quaack-bugs"')
@@ -2865,13 +2914,39 @@ RSpec.describe Quaack::Driver::Report do
       table = accountable[%r{<table id="accountability-rewrites">.*?</table>}m]
       expect(table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
         .to eq(["Source", "Proposed", "Not kept", "Same plan as the original", "Wrong results",
-                "Not better", "Ranked", "Stopped for another reason"])
+                "Failed on float noise", "Not better", "Ranked", "Stopped for another reason"])
       expect(rows(accountable, "rewrites").keys).to eq(["Transform rules", "The LLM", "You"])
     end
 
     # Task 20261004-69: the burndown's "refused on arrival" is only
     # llm-rewrites' and operator-rewrites' own rules, so this column, which
     # counts every proposal that wasn't stored, has a name of its own.
+    # Task 20261111-223753-1: a production failure that was only float
+    # noise is likely right, so it's neither a wrong result nor stopped
+    # for another reason.
+    it "counts a production failure that was only float noise in a column of its own" do
+      noisy = rewrites + [fated(20, "production_mismatch", source: "operator", rule: "value", float_noise: true),
+                          fated(21, "production_not_compared", source: "operator", rule: "unsupported_order",
+                                                               reason: "cut_tie", float_noise: true)]
+      expect(rows(render(payload.merge("rewrites" => noisy)), "rewrites")["You"].last(6)).to eq(%w[0 0 2 0 0 2])
+    end
+
+    it "counts a production failure without a true flag, or another fate with one, as before" do
+      flags = [fated(20, "production_mismatch", source: "operator", float_noise: false),
+               fated(21, "production_not_compared", source: "operator", float_noise: "true"),
+               fated(22, "production_timed_out", source: "operator", float_noise: true)]
+      expect(rows(render(payload.merge("rewrites" => rewrites + flags)), "rewrites")["You"].last(6))
+        .to eq(%w[0 1 0 0 0 4])
+    end
+
+    it "says what the float noise column counts" do
+      expect(accountable).to include(
+        "A rewrite that failed on float noise is one QUAACK dropped because, on the real data, its results and " \
+        "the original query's, or two runs of the original query, differed only in float values. It's " \
+        "likely right, so it isn't counted as a wrong result."
+      )
+    end
+
     it "says what the not kept column counts: every rewrite dropped before it was stored" do
       expect(accountable).to include(
         "A rewrite not kept is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, " \
@@ -2884,24 +2959,24 @@ RSpec.describe Quaack::Driver::Report do
 
     it "counts each source's rewrites by what became of them" do
       counted = rows(accountable, "rewrites")
-      expect(counted["Transform rules"]).to eq(%w[3 2 0 0 0 1 0])
-      expect(counted["The LLM"]).to eq(%w[8 2 1 3 1 0 1])
+      expect(counted["Transform rules"]).to eq(%w[3 2 0 0 0 0 1 0])
+      expect(counted["The LLM"]).to eq(%w[8 2 1 3 0 1 0 1])
     end
 
     it "never counts a failed, tied, or unfinished rewrite as wrong or not better" do
-      expect(rows(accountable, "rewrites")["You"].last(5)).to eq(%w[0 0 0 0 2])
+      expect(rows(accountable, "rewrites")["You"].last(6)).to eq(%w[0 0 0 0 0 2])
     end
 
     # Task 20261012-2: a fuzz disproof proved the rewrite wrong.
     it "counts a rewrite a random small database proved wrong as wrong results" do
       wrong = rewrites + [fated(30, "fuzz_disproved", source: "operator", rule: "row_count")]
-      expect(rows(render(payload.merge("rewrites" => wrong)), "rewrites")["You"].last(5)).to eq(%w[0 1 0 0 2])
+      expect(rows(render(payload.merge("rewrites" => wrong)), "rewrites")["You"].last(6)).to eq(%w[0 1 0 0 0 2])
     end
 
     # Task 20261012-3.
     it "counts a rewrite a small database QUAACK enumerated proved wrong as wrong results" do
       wrong = rewrites + [fated(30, "enumerate_disproved", source: "operator", rule: "value")]
-      expect(rows(render(payload.merge("rewrites" => wrong)), "rewrites")["You"].last(5)).to eq(%w[0 1 0 0 2])
+      expect(rows(render(payload.merge("rewrites" => wrong)), "rewrites")["You"].last(6)).to eq(%w[0 1 0 0 0 2])
     end
 
     it "counts every fate that neither proved a rewrite wrong nor judged it not better as stopped for another reason" do
@@ -2909,13 +2984,13 @@ RSpec.describe Quaack::Driver::Report do
                   below_top_three measurement_timed_out]
       stopped = rewrites + others.each_with_index.map { |fate, i| fated(20 + i, fate, source: "operator") }
       counted = rows(render(payload.merge("rewrites" => stopped)), "rewrites")
-      expect(counted["You"].last(5)).to eq(%w[0 0 0 0 8])
+      expect(counted["You"].last(6)).to eq(%w[0 0 0 0 0 8])
     end
 
     it "says not recorded, never zero, for proposals and refusals the burndown doesn't count" do
       expect(rows(accountable, "rewrites")["You"].first(2)).to eq(["not recorded", "not recorded"])
       expect(rows(html, "rewrites")["Transform rules"]).to eq(["not recorded", "not recorded", "0", "0",
-                                                               "0", "1", "0"])
+                                                               "0", "0", "1", "0"])
       expect(html).to include("&ldquo;Not recorded&rdquo; means this run didn't count it. It doesn't mean none.")
     end
 
@@ -2928,7 +3003,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows(accountable, "rewrites").keys).not_to include("Source not recorded")
       unsourced = render(payload.merge("rewrites" => rewrites + [fated(10, "not_better")]))
       expect(rows(unsourced, "rewrites")["Source not recorded"])
-        .to eq(["not recorded", "not recorded", "0", "0", "1", "0", "0"])
+        .to eq(["not recorded", "not recorded", "0", "0", "0", "1", "0", "0"])
     end
 
     describe "the index table" do
@@ -3319,6 +3394,32 @@ RSpec.describe Quaack::Driver::Report do
                                    "timed out in every measurement run: 1; lost a tie on index size: 1; " \
                                    "outside the top three: 1", 0, 0,
                                    "compared on only part of the real data: 2"))
+    end
+
+    # Task 20261111-223753-1: a production failure that was only float
+    # noise is counted apart from the wrong ones, by its rewrite's fate.
+    it "counts the rewrites that failed on the real data only on float noise apart" do
+      measured = { "production_mismatch" => 2, "production_timed_out" => 1, "production_not_compared" => 2 }
+      stages = { "measurement" => { "rewrites" => rec(5, 0, dropped: measured) } }
+      rewrites = [fated(1, "production_mismatch", float_noise: true), fated(2, "production_mismatch"),
+                  fated(3, "production_not_compared", float_noise: true), fated(4, "production_not_compared"),
+                  fated(5, "production_timed_out", float_noise: true)]
+      table = section(render(payload.merge("rewrites" => rewrites,
+                                           "burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+      expect(table).to include(row("Measuring on the real data and choosing", 5, "none",
+                                   "wrong on the real data: 1; failed on float noise: 2; timed out on the real " \
+                                   "data: 1; couldn&#39;t be compared on the real data: 1", 0, 0, "none"))
+    end
+
+    it "moves no more rewrites to float noise than their fate's count holds" do
+      stages = { "measurement" => { "rewrites" => rec(2, 0, dropped: { "production_mismatch" => 1,
+                                                                       "not_better" => 1 }) } }
+      rewrites = [fated(1, "production_mismatch", float_noise: true), fated(2, "production_mismatch",
+                                                                            float_noise: true)]
+      table = section(render(payload.merge("rewrites" => rewrites,
+                                           "burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+      expect(table).to include(row("Measuring on the real data and choosing", 2, "none",
+                                   "failed on float noise: 1; no better than the original query: 1", 0, 0, "none"))
     end
 
     # Task 20261012-2: the fuzz search, between plan-pruning and rewrite-test.

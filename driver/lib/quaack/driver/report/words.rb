@@ -161,7 +161,7 @@ module Quaack
                    "not_tested_in_time" => "not tested in time, so checked only on the LLM's test data and the " \
                                            "real data",
                    "atoms_covered" => "untested conditions the LLM's data exercised",
-                   "production_mismatch" => "wrong on the real data",
+                   "production_mismatch" => "wrong on the real data", "float_noise" => "failed on float noise",
                    "production_timed_out" => "timed out on the real data",
                    "production_not_compared" => "couldn't be compared on the real data",
                    "not_better" => "no better than the original query", "footprint_tie" => "lost a tie on index size",
