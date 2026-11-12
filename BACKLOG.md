@@ -834,7 +834,8 @@ From the review of 20261010-52 (minor). A set-operation SelectStmt keeps its `la
 - **Depends on:** 20261010-52 (landed).
 - **Came from:** 20261010-52.
 - **Design:** rewrite-rules.
-- **Status:** todo
+- **Proposed drop (2026-11-12, waiting on the user):** the builder found this can't happen. `Links.all` (`not_in_to_not_exists/links.rb`, line 25) keeps only SelectStmts with `op == :SETOP_NONE` as owners, so `own_links` always starts at a plain SELECT, whose `larg` and `rarg` are nil, and every nested SELECT inside it sits in a Node wrapper that `own_links` stops at. No test can go red. A NOT IN in a UNION's ORDER BY isn't valid Postgres either. Drop it, or reword it as a guard for the day Links lets a set-op own a NOT IN.
+- **Status:** todo (proposed drop; don't build)
 
 ### 20261111-220000-1. Counterexample rounds: cap the work in a round.
 
