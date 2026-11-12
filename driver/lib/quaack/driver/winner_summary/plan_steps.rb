@@ -43,15 +43,21 @@ module Quaack
         MOST_STEP_NAMES = 2
 
         # The one-word types that are also English verbs. Where one starts a
-        # sentence, or is followed by by, an article, or a pronoun, it reads
-        # as a verb (Limit what it reads, the rewrite can Hash the input, Sort
-        # by date), so it isn't read as a step there (20261016-13,
-        # 20261016-16). Any other one-word type, such as Memoize, Materialize,
-        # or Gather, is always read as a step. Nor does one read as a verb
+        # sentence or a clause after a semicolon, or follows a modal or "to"
+        # and is followed by by, an article, or a pronoun, it reads as a verb
+        # (Limit what it reads, the rewrite can Hash the input, Sort by date),
+        # so it isn't read as a step there (20261016-13, 20261016-16,
+        # 20261112-063000-1). Elsewhere in a sentence it's a step (It needs
+        # Sort by id). At a sentence's start, a finite verb right after it
+        # makes it the subject, so a step (Sort happens later). Any other
+        # one-word type, such as Memoize, Materialize, or Gather, is always
+        # read as a step. Nor does one read as a verb
         # just after a determiner (a Sort by created_at, the Sort the
         # original had), where it's a noun.
         VERBS = %w[Hash Sort Group Limit Unique Result].freeze
-        SENTENCE_START = /(?:\A|[.!?]\s)\s*\z/
+        SENTENCE_START = /(?:\A|[.!?;]\s)\s*\z/
+        MODAL = /\b(?:can|could|should|will|would|may|might|must|to)\s+\z/i
+        FINITE_VERB = /\A\s+(?:happens|runs|is|was|takes|costs|dominates|appears|remains)\b/i
         DETERMINER = /\b(?:an?|the|its|their|this|that|each|no)\s+\z/i
         VERB_OBJECT = /\A\s+(?:by|an?|the|its|their|each|every|them|it|rows)\b/i
 
@@ -93,8 +99,12 @@ module Quaack
 
         # Whether a match is a one-word type that reads as a verb there.
         def verb?(match)
-          VERBS.include?(match[0]) && !match.pre_match.match?(DETERMINER) &&
-            (match.pre_match.match?(SENTENCE_START) || match.post_match.match?(VERB_OBJECT))
+          before = match.pre_match
+          after = match.post_match
+          return false unless VERBS.include?(match[0]) && !before.match?(DETERMINER)
+          return !after.match?(FINITE_VERB) if before.match?(SENTENCE_START)
+
+          before.match?(MODAL) && after.match?(VERB_OBJECT)
         end
 
         # The node types of the original's plan and the winner's, downcased.
