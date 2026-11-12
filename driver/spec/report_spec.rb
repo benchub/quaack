@@ -2689,6 +2689,17 @@ RSpec.describe Quaack::Driver::Report do
         end
       end
 
+      it "drops only the flagged rewrite's bug when another rewrite's comparison found one too" do
+        both = payload.merge("rewrites" => [fated(4, "production_mismatch", source: "rule", rules: ["<b>"],
+                                                                            float_noise: true),
+                                            fated(5, "production_mismatch", source: "rule", rules: ["<b>"])],
+                             "rule_bugs" => [bugs.last, bugs.last.merge("rewrite" => "rewrite_5")])
+        listed = section(render(both), "quaack-bugs")
+        expect(listed).to include(esc("<li>Rewrite Bright Island, made by transform rule &lt;b&gt;, returned " \
+                                      "different results on the real data.</li>"))
+        expect(listed).not_to include("Odd Mitten")
+      end
+
       it "leaves a bug another step found listed, whatever the rewrite's fate says" do
         earlier = noisy(true).merge("rule_bugs" => [bugs.last.merge("step" => "counterexamples")])
         expect(section(render(earlier), "quaack-bugs")).to include("Odd Mitten")
