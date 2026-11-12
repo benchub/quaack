@@ -531,14 +531,7 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error.
-
-From the second review of 20261008-60 (minor). `ExtraServer.start` (`spec/support/test_postgres.rb`) removes the container when the server never gets ready, then re-raises. If `remove_container` itself raises (Docker unavailable, permission denied), that error replaces the readiness failure. Keep the original error: attempt removal in its own rescue, and re-raise the readiness error either way. Test first: readiness and removal both raise, and the readiness error is the one reported.
-
-- **Depends on:** None.
-- **Came from:** The second review of 20261008-60, 2026-10-15 (minor).
-- **Design:** Development (test Postgres).
-- **Status:** todo
+### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261015-3. Tablespace moves: a non-ASCII table name refuses the whole report.
 

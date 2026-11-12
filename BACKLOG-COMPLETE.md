@@ -12884,3 +12884,13 @@ From the review of 20261021-1 (minor). `IndexDdlCheck#reg_values!` maps `failed_
 - **Design:** index-ddl-check.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261021-3`. Two real-Postgres examples (42883 and 42804) in `index_ddl_check_spec.rb`; dropping the `failed_to_plan` remap turned both red. The clean per-commit check wasn't seen: the driver suite failed once in the parallel run (cause not captured) and passed twice standalone, 2209 examples each. Filed as 20261111-240000-1. Spec-only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error.
+
+From the second review of 20261008-60 (minor). `ExtraServer.start` (`spec/support/test_postgres.rb`) removes the container when the server never gets ready, then re-raises. If `remove_container` itself raises (Docker unavailable, permission denied), that error replaces the readiness failure. Keep the original error: attempt removal in its own rescue, and re-raise the readiness error either way. Test first: readiness and removal both raise, and the readiness error is the one reported.
+
+- **Depends on:** None.
+- **Came from:** The second review of 20261008-60, 2026-10-15 (minor).
+- **Design:** Development (test Postgres).
+- **Status:** done
+- **Landed:** 2026-11-11, merged from `task/20261015-1`. `ExtraServer.start` removes the container in its own rescue and re-raises the readiness error. The new example failed on the old code with the removal error, and dropping the inner rescue turned it red again. The per-commit check passed in all four suites. Test support only; I read the diff and started no reviewer. Not on the unreleased list.
