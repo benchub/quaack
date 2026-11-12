@@ -263,33 +263,47 @@ RSpec.describe Quaack::Driver::WinnerSummary do
     end
 
     # 20261016-16: a capitalised one-word type that is also an English verb
-    # isn't read as a step where it reads as a verb, followed by by, an
-    # article, or a pronoun; any other one-word type always counts.
-    it "doesn't read a one-word type as a step where it reads as a verb" do
-      ["The rewrite can Hash the smaller input and reads 40 blocks.",
-       "Group by tenant first, and the winner reads 40 blocks.",
-       "The winner reads 40 blocks; Group by tenant if you can.",
-       "Sort by date first, and the winner reads 40 blocks.",
-       "Sort the rows by id, and the winner reads 40 blocks.",
-       "Limit the scan, and the winner reads 40 blocks."].each do |text|
-        expect(run(text, base)).to have_attributes(text:, outcome: "used"), text
+    # isn't read as a step where it reads as a verb; any other one-word type
+    # always counts. 20261112-063000-1: mid-sentence, the verb reading needs
+    # a modal or "to" just before it, and at a sentence's start a finite
+    # verb right after it makes it a step.
+    ["The rewrite can Hash the smaller input and reads 40 blocks.",
+     "It can Sort them once, and the winner reads 40 blocks.",
+     "It can Hash it, and the winner reads 40 blocks.",
+     "It chooses to Sort the rows once, and the winner reads 40 blocks.",
+     "Group by tenant first, and the winner reads 40 blocks.",
+     "The winner reads 40 blocks; Group by tenant if you can.",
+     "Sort by date first, and the winner reads 40 blocks.",
+     "Sort the rows by id, and the winner reads 40 blocks.",
+     "Limit the scan to recent rows, and the winner reads 40 blocks.",
+     "Limit the scan, and the winner reads 40 blocks."].each do |text|
+      it "reads the one-word type in #{text.inspect} as a verb" do
+        expect(run(text, base)).to have_attributes(text:, outcome: "used")
       end
-      ["The winner uses a Hash step and reads 40 blocks.",
-       "The winner drops the Sort node and reads 40 blocks.",
-       "The winner reads 40 blocks with a Sort.",
-       "The winner reads 40 blocks, and Sort nodes are gone.",
-       "The winner uses Hash instead of Sort and reads 40 blocks.",
-       "The winner switches from Sort to Hash and reads 40 blocks.",
-       "The winner reads 40 blocks. Hash and Sort are gone.",
-       "The winner reads 40 blocks after Sort, Limit and Hash.",
-       "The winner reads 40 blocks via Hash.",
-       "The winner reads 40 blocks with Materialize.",
-       "Memoize now caches the lookups, and the winner reads 40 blocks.",
-       "It adds a Sort by created_at. The winner reads 40 blocks.",
-       "It drops the Sort the original had. The winner reads 40 blocks.",
-       "The original needed a Hash the winner skips. The winner reads 40 blocks.",
-       "A Limit the planner pushes down helps. The winner reads 40 blocks."].each do |text|
-        expect(run(text, base)).to have_attributes(outcome: "rejected"), text
+    end
+
+    ["The winner uses a Hash step and reads 40 blocks.",
+     "The winner drops the Sort node and reads 40 blocks.",
+     "The winner reads 40 blocks with a Sort.",
+     "The winner reads 40 blocks, and Sort nodes are gone.",
+     "The winner uses Hash instead of Sort and reads 40 blocks.",
+     "The winner switches from Sort to Hash and reads 40 blocks.",
+     "The winner reads 40 blocks. Hash and Sort are gone.",
+     "The winner reads 40 blocks after Sort, Limit and Hash.",
+     "The winner reads 40 blocks via Hash.",
+     "The winner reads 40 blocks with Materialize.",
+     "Memoize now caches the lookups, and the winner reads 40 blocks.",
+     "It adds a Sort by created_at. The winner reads 40 blocks.",
+     "It drops the Sort the original had. The winner reads 40 blocks.",
+     "The original needed a Hash the winner skips. The winner reads 40 blocks.",
+     "A Limit the planner pushes down helps. The winner reads 40 blocks.",
+     "It needs Sort by id now. The winner reads 40 blocks.",
+     "We use Hash the rows, and the winner reads 40 blocks.",
+     "Sort happens later, and the winner reads 40 blocks.",
+     "The winner reads 40 blocks. Hash runs once.",
+     "Sort dominates the original. The winner reads 40 blocks."].each do |text|
+      it "reads the one-word type in #{text.inspect} as a step" do
+        expect(run(text, base)).to have_attributes(outcome: "rejected")
       end
     end
   end
