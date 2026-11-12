@@ -77,11 +77,13 @@ module Quaack
         # The numbers of the placeholders the literal could be, lowest first.
         def candidates(literal)
           kind, text = literal
-          case kind
-          when :string then [@texts[text], @numbers[number(text)], @bits[text]].flatten.uniq.sort
-          when :number then @numbers_from[number(text)].sort
-          else @booleans[text].sort
-          end
+          one_value(
+            case kind
+            when :string then [@texts[text], @numbers[number(text)], @bits[text]].flatten.uniq.sort
+            when :number then @numbers_from[number(text)].sort
+            else @booleans[text].sort
+            end
+          )
         end
 
         # numbers, those whose placeholder's type matches cast, a type
@@ -117,6 +119,11 @@ module Quaack
           printed.each { |number, texts| texts.each { add(@texts, it, number) if @types.key?(number) } }
           @texts.delete_if { |_, numbers| numbers.map { @values[it] }.uniq.size > 1 }
         end
+
+        # Candidates that two different raw values give, as '10' and 10.0
+        # give the number 10, could be either literal, so there are none
+        # (20261112-150000-1).
+        def one_value(numbers) = numbers.map { @values[it] }.uniq.size > 1 ? [] : numbers
 
         def add(lookup, key, number)
           lookup[key] += [number] unless key.nil?

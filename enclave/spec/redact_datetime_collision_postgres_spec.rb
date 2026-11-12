@@ -68,4 +68,22 @@ RSpec.describe "quaacks redact, with a printed date that equals another literal"
       expect(filter).to eq("((wait > $?::interval) AND (note <> $?::text))")
     end
   end
+
+  # 20261112-150000-1: '10' and 10.0 are different values with the same
+  # number, so a 10 in the plan could be either, and it's masked.
+  context "when a string and a number literal give the same number" do
+    let(:query) { "SELECT e.id FROM public.events e WHERE e.id::numeric > '10' AND e.id::numeric < 10.0" }
+
+    it "masks both rather than swap their $n" do
+      expect(filter).to eq("(((id)::numeric > $?::numeric) AND ((id)::numeric < $?))")
+    end
+  end
+
+  context "when the same number is used twice" do
+    let(:query) { "SELECT e.id FROM public.events e WHERE e.id > 10 AND e.id <> 10" }
+
+    it "still gives each its $n" do
+      expect(filter).to match(/\A\(\(id > \$\d\) AND \(id <> \$\d\)\)\z/)
+    end
+  end
 end
