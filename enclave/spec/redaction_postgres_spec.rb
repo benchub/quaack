@@ -350,6 +350,19 @@ RSpec.describe Quaack::Enclave::Redaction do
       end
     end
 
+    # Task 20261111-4: a constant outside any copy of the key doesn't share
+    # with the key's, though it's written the same way. Here the HAVING's
+    # '5' is compared with an integer, so sharing the key's text '5' fails.
+    it "keeps a same-text constant outside the key's copies on its own placeholder" do
+      query = "SELECT coalesce(o.status, '5'), count(*) FROM public.orders o " \
+              "GROUP BY coalesce(o.status, '5') HAVING max(o.id) > '5'"
+      result = redact(query)
+      expect(result.query.sql).to eq("SELECT COALESCE(o.status, $1), count(*) FROM public.orders o " \
+                                     "GROUP BY COALESCE(o.status, $1) HAVING max(o.id) > $2")
+      expect(JSON.generate([result.query.sql, result.plan.explain, result.placeholder_shapes])).not_to include("'5'")
+      expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(rows(query))
+    end
+
     # Constants equal in value but written differently don't share, so the
     # prepare fails closed.
     it "fails closed on matching expressions whose constants are written differently" do
