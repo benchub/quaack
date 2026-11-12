@@ -13007,3 +13007,13 @@ From the second review of 20261008-67 (minor). `ResultComparison::PickChecks` (`
 - **Design:** fixture-compare, result comparison.
 - **Status:** done
 - **Landed:** 2026-11-11, merged from `task/20261015-6`. `listed_filter` leaves an `any_value`'s NULL arguments out of the pick check, testing the value with `num_nonnulls` (a row with a NULL field stays in), ANDed with the call's own FILTER; DESIGN.md says so and notes picks run about 5x slower in fuzz. The first review found a false pass on composites and an untested FILTER branch; one fix round resolved both. The second review ran the specs and four mutations, all red, and found only a merged DESIGN.md line, which I fixed on the branch. The per-commit check passed in all four suites with rake's own exit 0. Minors are in 20261111-260000-1.
+
+### 20261111-250000-1. Tablespace moves: end-to-end cover for invalid UTF-8 and the byte limit, and say how names compare.
+
+From the review of 20261015-3 (minor). (1) Only `protocol/spec/tablespace_moves_spec.rb` covers invalid UTF-8 and the 63-byte limit; Egress and the driver's `TablespaceMovesCheck` get both through the shared `valid?`. Add an Egress example for each, red first by mutating `valid?`. (2) DESIGN.md doesn't say how names are compared. Add a line: the match is exact bytes, with no Unicode normalization or case folding, as Postgres does it (NFD `café` doesn't match NFC `café`). Enclave spec and DESIGN.md only; if the example is red on the shipped code, stop and report.
+
+- **Depends on:** 20261015-3 (landed).
+- **Came from:** 20261015-3.
+- **Design:** What goes into the enclave, report.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261111-250000-1`. Egress refuses invalid UTF-8 and a 64-byte part without quoting the sentinel; a protocol spec shows NFD `café` doesn't match NFC; DESIGN.md says names match as exact bytes. Dropping `valid_encoding?` or raising `NAME_BYTES` each turned its example red. The per-commit check passed with rake's own exit 0. Spec and docs only; I read the diff and started no reviewer. Not on the unreleased list.

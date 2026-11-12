@@ -864,15 +864,6 @@ From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundl
 - **Design:** none.
 - **Status:** todo
 
-### 20261111-250000-1. Tablespace moves: end-to-end cover for invalid UTF-8 and the byte limit, and say how names compare.
-
-From the review of 20261015-3 (minor). (1) Only `protocol/spec/tablespace_moves_spec.rb` covers invalid UTF-8 and the 63-byte limit; Egress and the driver's `TablespaceMovesCheck` get both through the shared `valid?`. Add an Egress example for each, red first by mutating `valid?`. (2) DESIGN.md doesn't say how names are compared. Add a line: the match is exact bytes, with no Unicode normalization or case folding, as Postgres does it (NFD `café` doesn't match NFC `café`). Enclave spec and DESIGN.md only; if the example is red on the shipped code, stop and report.
-
-- **Depends on:** 20261015-3 (landed).
-- **Came from:** 20261015-3.
-- **Design:** What goes into the enclave, report.
-- **Status:** todo
-
 ### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
 
 From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the `min`/`max` check, still filters on `quaack_arg IS NOT NULL`. A composite argument can reach it (`max(t)`, `max(row(a, b))`), and a row with a NULL field then drops out of the tied list, so ties among those rows aren't checked. For example `(10, NULL)` and `(10.0, NULL)` tie under record comparison but print differently, and the check passes them. It's a false pass, but only for a min or max over a row value that has both a NULL field and a numeric or collation-equal field that prints differently; rare. Reproduce on Postgres first, red first; the fix is the `num_nonnulls` switch with a spec. (2) `string_agg`, `json_agg_strict` and `jsonb_agg_strict` also skip NULL inputs, so one value beside NULLs still refuses for them the way `any_value` did; apply the same filter and spec each. Enclave change; it goes on "Unreleased enclave changes".
