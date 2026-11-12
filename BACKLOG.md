@@ -670,8 +670,6 @@ From the review of 20261010-18 (minor). The command runs in a private temp dir, 
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261110-21. Winner summary: qualifier style, and the every-query guard's edges. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-7. Report: name the check behind an `unsupported_order` refusal. Done, see BACKLOG-COMPLETE.md.
@@ -736,15 +734,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Depends on:** None.
 - **Came from:** 20261011-10.
 - **Design:** counterexamples.
-- **Status:** todo
-
-### 20261112-130000-1. Winner summary every-query guard: advice it has always let through.
-
-From the review of 20261110-21 (minor, pre-existing on main). The guard against advice about every query passes these on main and on 20261110-21's branch: "You should rewrite every query this way.", "We recommend you rewrite all queries.", "Consider rewriting every query.", "I'd split every query's OR.", "The plan is slow. Then rewrite every query.", "Also, replace every query's OR.". Each is advice to change all queries, which the guard exists to refuse. Catch an advice verb (rewrite, split, replace, use, apply, add, write, prefer, consider ...ing) after a subject plus modal (should, must, ought to, could, can, recommend, suggest, 'd), after a lead-in word (Then, Also, Next time, So), or as a gerund after consider/try, without refusing plain descriptions ("Every query will be compared against the original.", "We put the same limit on every query."). One spec example per sentence, red first; mutate. Driver only.
-
-- **Depends on:** 20261110-21.
-- **Came from:** 20261110-21.
-- **Design:** report.
 - **Status:** todo
 
 ### 20261112-180000-1. Total-order gate: a set-returning function in attribute notation.
