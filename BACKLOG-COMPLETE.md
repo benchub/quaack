@@ -13017,3 +13017,14 @@ From the review of 20261015-3 (minor). (1) Only `protocol/spec/tablespace_moves_
 - **Design:** What goes into the enclave, report.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261111-250000-1`. Egress refuses invalid UTF-8 and a 64-byte part without quoting the sentinel; a protocol spec shows NFD `café` doesn't match NFC; DESIGN.md says names match as exact bytes. Dropping `valid_encoding?` or raising `NAME_BYTES` each turned its example red. The per-commit check passed with rake's own exit 0. Spec and docs only; I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261111-240000-1. Driver suite: an unexplained failure in the parallel per-commit run.
+
+From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundle exec rake` (the line read "Spec suites failed: driver/spec (exit 1)") while the other three passed; the builder kept only the last 40 lines, so the failing example isn't known. `bundle exec rspec` in `driver/` passed twice on its own (2209 examples, 0 failures). The change under test was an enclave spec only, so it's a flake that shows under the load of the parallel run. 20261016-17 and 20261012-20 are similar flakes in other suites. If it shows again, capture the whole driver block of the rake output (the suite's output is printed whole under its header) and file the failing example here. Candidates to check: examples that read the clock or a port.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261021-3.
+- **Design:** none.
+- **Likely cause found (2026-11-12):** the build of 20261016-16 saw the driver suite fail at `driver/spec/winner_summary_spec.rb:456` ("the report changes nothing else in the section, or the report, and without a summary reads as it did"). The two renders it compares differed only in the "Generated on" stamp, 05:44:43Z against 05:44:44Z: the same clock race 20261021-4 fixed in `report_spec.rb`. Fix it the same way (pass one fixed `generated_at` to both renders, and run under a clock that ticks a second per read so it fails every time before the fix), and check the driver specs for any other example that compares two renders.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261111-240000-1`. The `winner_summary_spec.rb` example passes one fixed `generated_at` to all four renders and runs under a clock that ticks a second per read. Under that clock it failed 3 of 3 before the fix and passed 3 of 3 after. Two template mutations each turned it red. No other driver example compares two renders. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff and started no reviewer.

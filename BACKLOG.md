@@ -853,16 +853,6 @@ From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclav
 - **Design:** llm-counterexamples.
 - **Status:** todo
 
-### 20261111-240000-1. Driver suite: an unexplained failure in the parallel per-commit run.
-
-From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundle exec rake` (the line read "Spec suites failed: driver/spec (exit 1)") while the other three passed; the builder kept only the last 40 lines, so the failing example isn't known. `bundle exec rspec` in `driver/` passed twice on its own (2209 examples, 0 failures). The change under test was an enclave spec only, so it's a flake that shows under the load of the parallel run. 20261016-17 and 20261012-20 are similar flakes in other suites. If it shows again, capture the whole driver block of the rake output (the suite's output is printed whole under its header) and file the failing example here. Candidates to check: examples that read the clock or a port.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261021-3.
-- **Design:** none.
-- **Likely cause found (2026-11-12):** the build of 20261016-16 saw the driver suite fail at `driver/spec/winner_summary_spec.rb:456` ("the report changes nothing else in the section, or the report, and without a summary reads as it did"). The two renders it compares differed only in the "Generated on" stamp, 05:44:43Z against 05:44:44Z: the same clock race 20261021-4 fixed in `report_spec.rb`. Fix it the same way (pass one fixed `generated_at` to both renders, and run under a clock that ticks a second per read so it fails every time before the fix), and check the driver specs for any other example that compares two renders.
-- **Status:** todo
-
 ### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
 
 From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the `min`/`max` check, still filters on `quaack_arg IS NOT NULL`. A composite argument can reach it (`max(t)`, `max(row(a, b))`), and a row with a NULL field then drops out of the tied list, so ties among those rows aren't checked. For example `(10, NULL)` and `(10.0, NULL)` tie under record comparison but print differently, and the check passes them. It's a false pass, but only for a min or max over a row value that has both a NULL field and a numeric or collation-equal field that prints differently; rare. Reproduce on Postgres first, red first; the fix is the `num_nonnulls` switch with a spec. (2) `string_agg`, `json_agg_strict` and `jsonb_agg_strict` also skip NULL inputs, so one value beside NULLs still refuses for them the way `any_value` did; apply the same filter and spec each. Enclave change; it goes on "Unreleased enclave changes".
