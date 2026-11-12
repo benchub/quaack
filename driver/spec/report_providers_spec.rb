@@ -186,10 +186,10 @@ RSpec.describe Quaack::Driver::Report do
       counted = rows("accountability-rewrites")
       expect(counted.keys).to eq(["Transform rules", "The LLM", "The LLM: groq", "The LLM: opus",
                                   "The LLM: not recorded", "You"])
-      expect(counted["The LLM"]).to eq(%w[5 2 1 0 1 1 0])
-      expect(counted["The LLM: groq"]).to eq(%w[3 2 0 0 1 0 0])
-      expect(counted["The LLM: opus"]).to eq(%w[2 1 0 0 0 1 0])
-      expect(counted["The LLM: not recorded"]).to eq(["not recorded", "not recorded", "1", "0", "0", "0", "0"])
+      expect(counted["The LLM"]).to eq(%w[5 2 1 0 0 1 1 0])
+      expect(counted["The LLM: groq"]).to eq(%w[3 2 0 0 0 1 0 0])
+      expect(counted["The LLM: opus"]).to eq(%w[2 1 0 0 0 0 1 0])
+      expect(counted["The LLM: not recorded"]).to eq(["not recorded", "not recorded", "1", "0", "0", "0", "0", "0"])
     end
 
     it "splits the LLM's indices row by provider for what the record counts, and says not recorded for the rest" do
@@ -210,8 +210,8 @@ RSpec.describe Quaack::Driver::Report do
       rewrites = rows("accountability-rewrites")
       expect(rewrites.keys).to include("The LLM: groq", "The LLM: opus")
       expect(rewrites.keys).not_to include("The LLM: not recorded")
-      expect(rewrites.select { |name, _| name.start_with?("The LLM: ") }.values).to all(eq(["not recorded"] * 7))
-      expect(rewrites["The LLM"]).to eq(%w[5 2 1 0 1 1 0])
+      expect(rewrites.select { |name, _| name.start_with?("The LLM: ") }.values).to all(eq(["not recorded"] * 8))
+      expect(rewrites["The LLM"]).to eq(%w[5 2 1 0 0 1 1 0])
       expect(rows("accountability-indexes")["The LLM: groq"]).to eq(["not recorded"] * 6)
     end
 

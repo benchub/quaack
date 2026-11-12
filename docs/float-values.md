@@ -10,6 +10,8 @@ Floating-point arithmetic isn't exact, and the order of the work changes the las
 
 When that happens, QUAACK looks again with every float value cut to eight significant digits instead of rounded, so the boundaries fall halfway between the first look's. Two values that differ by less than half a step of the eighth digit can't sit on a boundary of both. If the results then match, every float value differs from the original's by less than one part in ten million, and the report says the rewrite failed on minor mismatches in float values. That's what float noise looks like, so the rewrite is likely right, but QUAACK can't be sure: a real difference that small, such as one row dropped from a sum over hundreds of millions, looks the same. Check the rewrite before you trust it. If the results still differ, the report keeps its usual words.
 
+Since such a rewrite is likely right, the report doesn't count it as a wrong result. Its "Who proposed what" table counts it under "Failed on float noise", and so does its burndown. A rewrite a transform rule made isn't reported as a bug in the rule.
+
 The same thing can stop QUAACK comparing results at all. It runs the original query twice to learn whether its order or its `LIMIT` cut is stable, and two runs that add rows in a different order can disagree in the last digit too. When the second look shows that was only float noise, the report says the original query's two runs differed only in float values.
 
 ## What you can do.
