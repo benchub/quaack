@@ -42,14 +42,15 @@ module Quaack
         # or a plain word.
         MOST_STEP_NAMES = 2
 
-        # The words that mark a capitalised one-word type as a step: an
-        # article or no just before it (a Sort, the Hash, no Limit), or step
-        # or node just after it (Sort nodes). Without them it's as likely a
-        # capitalised plain word (Limit what it reads, the rewrite can Hash
-        # the input, Group by tenant) as a step, so it isn't read as one
-        # (20261016-13, 20261016-16).
-        STEP_BEFORE = /\b(?:an?|the|no)\s+\z/i
-        STEP_AFTER = /\A\s+(?:step|node)s?\b/i
+        # The one-word types that are also English verbs. Where one starts a
+        # sentence, or is followed by by, an article, or a pronoun, it reads
+        # as a verb (Limit what it reads, the rewrite can Hash the input, Sort
+        # by date), so it isn't read as a step there (20261016-13,
+        # 20261016-16). Any other one-word type, such as Memoize, Materialize,
+        # or Gather, is always read as a step.
+        VERBS = %w[Hash Sort Group Limit Unique Result].freeze
+        SENTENCE_START = /(?:\A|[.!?]\s)\s*\z/
+        VERB_OBJECT = /\A\s+(?:by|an?|the|its|their|each|every|them|it|rows)\b/i
 
         # A join or parallel qualifier on a node type: Hash Anti Join, a semi
         # join, a Parallel Seq Scan. The payload's plan nodes carry only the
@@ -78,17 +79,19 @@ module Quaack
           end
         end
 
-        # The node types text names, leaving out a one-word type the words
-        # around it don't mark as a step.
+        # The node types text names, leaving out a one-word type that reads
+        # as a verb.
         def step_names(text)
           text.to_enum(:scan, NODE_PATTERN).filter_map do
             match = Regexp.last_match
-            match[0] unless ONE_WORD.include?(match[0]) && !marked_step?(match)
+            match[0] unless verb?(match)
           end
         end
 
-        def marked_step?(match)
-          match.pre_match.match?(STEP_BEFORE) || match.post_match.match?(STEP_AFTER)
+        # Whether a match is a one-word type that reads as a verb there.
+        def verb?(match)
+          VERBS.include?(match[0]) &&
+            (match.pre_match.match?(SENTENCE_START) || match.post_match.match?(VERB_OBJECT))
         end
 
         # The node types of the original's plan and the winner's, downcased.
