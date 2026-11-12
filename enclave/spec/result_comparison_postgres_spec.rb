@@ -1151,6 +1151,38 @@ RSpec.describe Quaack::Enclave::ResultComparison do
             end
           end
 
+          describe "on the table's row, in attribute notation" do
+            before do
+              conn.exec(<<~SQL)
+                CREATE FUNCTION public.post_tag(posts) RETURNS SETOF text LANGUAGE sql AS 'SELECT unnest($1.tags)';
+                CREATE FUNCTION public.post_size(posts) RETURNS int LANGUAGE sql AS 'SELECT cardinality($1.tags)'
+              SQL
+            end
+
+            let(:first) { %(p.tags[1] COLLATE public."und-u-kn-true" AS first) }
+
+            it "refuses a SETOF one, whose rows tie on the key" do
+              sql = "SELECT p.id, #{first}, p.post_tag AS tag FROM posts p ORDER BY p.id"
+              conn.exec("INSERT INTO posts VALUES (1, '{b,a}')")
+              expect(conn.exec(sql).ntuples).to eq(2)
+              conn.exec("DELETE FROM posts")
+
+              expect(fields(compare(sql, sql, rows: post_rows)))
+                .to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+            end
+
+            {
+              "an ordinary column" => "p.id AS again",
+              "a scalar function" => "p.post_size AS size"
+            }.each do |label, column|
+              it "keeps a total order for #{label}" do
+                sql = "SELECT p.id, #{first}, #{column} FROM posts p ORDER BY p.id"
+
+                expect(fields(compare(sql, sql, rows: post_rows))).to include(match: true)
+              end
+            end
+          end
+
           it "keeps a total order for the array itself" do
             sql = "SELECT id, #{first}, tags FROM posts ORDER BY id"
 
