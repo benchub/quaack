@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261112-090000-1
 - 20261112-100000-1
 - 20261112-083000-1
+- 20261110-9
 
 ## How this file works.
 
@@ -662,15 +663,6 @@ First filed as 20261110-8, renumbered on 2026-11-11 since another session used i
 - **Design:** redact.
 - **Status:** todo
 
-### 20261110-9. redact: a failure printing date/time values masks them instead of failing the step.
-
-From the review of 20261008-53 item 2 (minor). `Redaction::Printed.of` connects to production whenever a string placeholder holds a digit, so a query with `'SKU-9'` and no dates now fails `quaacks redact` with `production_connection_failed` or on a statement timeout, where it used to succeed. Rescue `Production::Error` and `PG::Error` there and return no printed forms, so those literals are masked as before. Also fix the stale "It doesn't touch production" header in `steps/redact.rb`.
-
-- **Depends on:** 20261008-53 item 2.
-- **Came from:** The review of 20261008-53 item 2, 2026-11-10.
-- **Design:** redact.
-- **Status:** todo
-
 ### 20261110-10. redact: printed date/time forms that collide with another literal.
 
 From the review of 20261008-53 item 2 (minor). Printed texts share the matcher's text lookup with raw values (`matcher.rb` around 108-110). `'2026-01-01'` printed as a timestamp equals a second literal `'2026-01-01 00:00:00'`, and `'5'` prints as the interval `00:00:05`. Write a spec with two literals that collide this way and confirm the plan literal is masked rather than given the wrong `$n`; fix if not. Also note in DESIGN.md that an input EXPLAIN captured under client settings other than production's leaves these literals masked.
@@ -811,3 +803,11 @@ From the review of 20261110-21 (minor, pre-existing on main). The guard against 
 - **Design:** report.
 - **Status:** todo
 
+### 20261112-140000-1. redact: pin that the printed-forms rescue stays narrow.
+
+From the review of 20261110-9 (minor). The rescue in `steps/redact.rb`'s `printed` lambda covers only `Inventory::Error` and `PG::Error` around `Redaction.printed`, but widening it to `StandardError` keeps every spec green: case 5 of `enclave/spec/redact_production_unavailable_postgres_spec.rb` fails outside the lambda (a bad plan in `Plan#check`), and only asserts `raise_error(StandardError)`. A wide rescue would still mask literals, but it would hide bugs in `Printed`. Add a case where something inside the lambda raises a non-PG, non-Inventory error (stub at the connection edge to raise, say, `TypeError` from `exec_params`) and the step must still fail with that error; make case 5 name `ArgumentError`. Show the StandardError mutation turns the new case red. Enclave spec only.
+
+- **Depends on:** 20261110-9 (landed).
+- **Came from:** 20261110-9.
+- **Design:** redact.
+- **Status:** todo

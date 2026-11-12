@@ -13189,3 +13189,13 @@ From the review of 20261010-18 (minor). For copilot_cli, a non-array template, a
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261110-20`. A bad copilot_cli `command_template` again names both `{prompt_file}` and `{model}`; `command_template?` refuses an empty string in any element; two specs pin a `QUAACK_LLM_PROVIDER=copilot_cli` switch over a claude_cli block (the block's template is checked as claude_cli's, then dropped with the block, as DESIGN.md says). Four mutations went red. The per-commit check passed with rake's own exit 0. Driver only; I read the diff and started no reviewer.
+
+### 20261110-9. redact: a failure printing date/time values masks them instead of failing the step.
+
+From the review of 20261008-53 item 2 (minor). `Redaction::Printed.of` connects to production whenever a string placeholder holds a digit, so a query with `'SKU-9'` and no dates now fails `quaacks redact` with `production_connection_failed` or on a statement timeout, where it used to succeed. Rescue `Production::Error` and `PG::Error` there and return no printed forms, so those literals are masked as before. Also fix the stale "It doesn't touch production" header in `steps/redact.rb`.
+
+- **Depends on:** 20261008-53 item 2.
+- **Came from:** The review of 20261008-53 item 2, 2026-11-10.
+- **Design:** redact.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-9`. The `printed` lambda in `steps/redact.rb` rescues `Inventory::Error` (production's own wrapper, there's no `Production::Error`) and `PG::Error` around `Redaction.printed` only, and returns no printed forms; the error, whose message can hold the literal, is dropped. A literal still becomes `$n`, and a plan value printed from a date literal is masked as `$?`, as before 20261008-53. The header comment says what the step touches. The Opus review found nothing blocking; cases 1 to 4 fail on main for the right reason. The per-commit check passed with rake's own exit 0. The minor is 20261112-140000-1.
