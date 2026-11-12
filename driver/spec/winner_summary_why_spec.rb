@@ -261,6 +261,23 @@ RSpec.describe Quaack::Driver::WinnerSummary do
       expect(run("The winner reads 40 blocks, and a Group step is gone.", base))
         .to have_attributes(outcome: "rejected")
     end
+
+    # 20261016-16: a capitalised one-word type counts only where the words
+    # around it mark it as a step: an article or no before it, or step or
+    # node after it.
+    it "reads a one-word type only where the words around it mark it as a step" do
+      ["The rewrite can Hash the smaller input and reads 40 blocks.",
+       "Group by tenant first, and the winner reads 40 blocks.",
+       "The winner reads 40 blocks; Group by tenant if you can."].each do |text|
+        expect(run(text, base)).to have_attributes(text:, outcome: "used"), text
+      end
+      ["The winner uses a Hash step and reads 40 blocks.",
+       "The winner drops the Sort node and reads 40 blocks.",
+       "The winner reads 40 blocks with a Sort.",
+       "The winner reads 40 blocks, and Sort nodes are gone."].each do |text|
+        expect(run(text, base)).to have_attributes(outcome: "rejected"), text
+      end
+    end
   end
 
   describe "the node-type check on join and parallel qualifiers" do

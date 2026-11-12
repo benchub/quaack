@@ -42,12 +42,14 @@ module Quaack
         # or a plain word.
         MOST_STEP_NAMES = 2
 
-        # Where a sentence starts: the reply's start, or after a full stop, an
-        # exclamation mark, or a question mark and a space. A one-word type
-        # there is as likely a capitalised plain word (Limit what it reads,
-        # Group the conditions) as a step, so it isn't read as one
-        # (20261016-13).
-        SENTENCE_START = /(?:\A|[.!?]\s)\s*\z/
+        # The words that mark a capitalised one-word type as a step: an
+        # article or no just before it (a Sort, the Hash, no Limit), or step
+        # or node just after it (Sort nodes). Without them it's as likely a
+        # capitalised plain word (Limit what it reads, the rewrite can Hash
+        # the input, Group by tenant) as a step, so it isn't read as one
+        # (20261016-13, 20261016-16).
+        STEP_BEFORE = /\b(?:an?|the|no)\s+\z/i
+        STEP_AFTER = /\A\s+(?:step|node)s?\b/i
 
         # A join or parallel qualifier on a node type: Hash Anti Join, a semi
         # join, a Parallel Seq Scan. The payload's plan nodes carry only the
@@ -76,13 +78,17 @@ module Quaack
           end
         end
 
-        # The node types text names, leaving out a one-word type that starts
-        # a sentence.
+        # The node types text names, leaving out a one-word type the words
+        # around it don't mark as a step.
         def step_names(text)
           text.to_enum(:scan, NODE_PATTERN).filter_map do
             match = Regexp.last_match
-            match[0] unless ONE_WORD.include?(match[0]) && match.pre_match.match?(SENTENCE_START)
+            match[0] unless ONE_WORD.include?(match[0]) && !marked_step?(match)
           end
+        end
+
+        def marked_step?(match)
+          match.pre_match.match?(STEP_BEFORE) || match.post_match.match?(STEP_AFTER)
         end
 
         # The node types of the original's plan and the winner's, downcased.
