@@ -72,10 +72,34 @@ RSpec.describe "quaacks redact, with dates and timestamps" do
 
     expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
     plan = stored.read("redacted_plan")
-    expect(plan["explain"][0]["Plan"]["Filter"]).to include("$2::timestamp with time zone")
+    expect(plan["explain"][0]["Plan"]["Filter"])
+      .to include("$1::timestamp without time zone", "$2::timestamp with time zone", "$3::date")
     expect(plan["masked"]).to eq(0)
-    rows = stored.read("placeholder_shapes")["$2"]["rows"]
-    expect([rows["status"], rows["estimated_rows"].class]).to eq(["found", Integer])
+    rows = stored.read("placeholder_shapes").values_at("$1", "$2", "$3").map { it["rows"] }
+    expect(rows.map { [it["status"], it["estimated_rows"].class] }).to eq([["found", Integer]] * 3)
+  end
+
+  context "with an interval literal" do
+    let(:events) { <<~SQL }
+      CREATE TABLE public.events (id int, span interval);
+      INSERT INTO public.events SELECT g, g * interval '1 hour' FROM generate_series(1, 100) g;
+    SQL
+    let(:query) { "SELECT e.id FROM public.events e WHERE e.span > '1 day 2 hours'" }
+
+    it "prints it under inventory's IntervalStyle, as the input EXPLAIN did" do
+      settings = { "IntervalStyle" => "sql_standard" }
+      store.write("inventory", { "settings" => settings })
+      store.write("plan", explain(settings))
+
+      outcome = redact
+
+      expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
+      plan = stored.read("redacted_plan")
+      expect(plan["explain"][0]["Plan"]["Filter"]).to include("$1::interval")
+      expect(plan["masked"]).to eq(0)
+      rows = stored.read("placeholder_shapes")["$1"]["rows"]
+      expect([rows["status"], rows["estimated_rows"].class]).to eq(["found", Integer])
+    end
   end
 
   it "keeps the printed values out of all it sends or shares, and the check would catch them" do
