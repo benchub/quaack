@@ -412,6 +412,21 @@ RSpec.describe TestPostgres do
     started&.each { TestPostgres.docker("rm", "-f", "-v", it) }
   end
 
+  it "reports the readiness error when removing a never-ready extra server's container also fails" do
+    TestPostgres.server
+    started = []
+    allow(TestPostgres).to receive(:start_container).and_wrap_original do |original, *args|
+      original.call(*args).tap { started << it }
+    end
+    allow_any_instance_of(TestPostgres::Server).to receive(:wait_until_ready).and_raise("not ready")
+    allow(TestPostgres).to receive(:remove_container).and_raise("docker rm failed: permission denied")
+
+    expect { TestPostgres.extra_server(%w[autovacuum=on]) }.to raise_error(RuntimeError, "not ready")
+    expect(TestPostgres).to have_received(:remove_container).with(started.first)
+  ensure
+    started&.each { TestPostgres.docker("rm", "-f", "-v", it) }
+  end
+
   describe "PgBouncer" do
     def through_pgbouncer(db) = PG.connect(**db.connection_params, port: TestPostgres.server.pgbouncer_port)
 
