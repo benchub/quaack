@@ -13049,3 +13049,13 @@ From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the
 - **Design:** fixture-compare, result comparison.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261111-260000-1`. `NULL_SKIPPING` (any_value, string_agg, json_agg_strict, jsonb_agg_strict) and the min/max `tied_text` check leave out NULL first arguments with `num_nonnulls`, so a row with a NULL field stays in. `max(row(...))` is refused earlier by SupportedSql, so the min/max spec uses a whole-row reference. The reviewer checked each aggregate's NULL handling on Postgres 18 and found nothing blocking; five mutations went red. The per-commit check passed with rake's own exit 0. The minor is 20261112-070000-1.
+
+### 20261111-230000-1. NOT IN CHECK: sharpen the ParentRows spec, and fix the simple-CHECK wording.
+
+From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclave/spec/counterexamples_postgres_spec.rb` stays green if `Checks#add` treats `<> ALL` like `= ANY`, because ParentRows tries the column's typical value first and that value already sits outside the list. Plant a CHECK that also excludes the typical value, so the spec tells NOT IN from IN; mutate to confirm it goes red. (2) DESIGN.md and the `checks.rb` comment define a simple CHECK as a comparison, IN/NOT IN, BETWEEN, or IS [NOT] NULL, but the code also takes any `op ANY` or `op ALL` over a non-column array (`= ALL`, `> ALL`, a function result such as `string_to_array`). Postgres evaluates every value, so a wrong answer can't come out; say the extra shapes are accepted and checked by Postgres, or narrow the code. Enclave change if the code is narrowed; spec-only otherwise.
+
+- **Depends on:** 20261012-7 (landed).
+- **Came from:** 20261012-7.
+- **Design:** llm-counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261111-230000-1`. The planted CHECK is now `g NOT IN ('', 'bad')`, with `''` the typical text value ParentRows tries first. The task's premise was off: reading `<> ALL` as `= ANY` already turned the old spec red. The mutation the old spec missed was ignoring the NOT IN CHECK altogether; it now turns the spec red. DESIGN.md and the `checks.rb` comment say any `op ANY` or `op ALL` over an array with no column is accepted and checked by Postgres. The per-commit check passed with rake's own exit 0. Spec and docs only; I read the diff and started no reviewer. Not on the unreleased list.

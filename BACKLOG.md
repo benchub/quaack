@@ -295,8 +295,6 @@ From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the s
 
 ### 20261012-6. Report: remove the burndown funnels; the Sankey diagrams replace them. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-7. A CHECK with NOT IN on a varchar column is refused as `complex_check`. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261012-8. Value pools: an array literal under `= ANY` isn't split, and a bare `ARRAY[...]` compared with an array column is.
 
 From the build and review of 20261012-1. Two readers of array sides in `ValuePools::Sides.sides` still get the wrong values. Check each first:
@@ -833,15 +831,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Depends on:** None.
 - **Came from:** 20261011-10.
 - **Design:** counterexamples.
-- **Status:** todo
-
-### 20261111-230000-1. NOT IN CHECK: sharpen the ParentRows spec, and fix the simple-CHECK wording.
-
-From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclave/spec/counterexamples_postgres_spec.rb` stays green if `Checks#add` treats `<> ALL` like `= ANY`, because ParentRows tries the column's typical value first and that value already sits outside the list. Plant a CHECK that also excludes the typical value, so the spec tells NOT IN from IN; mutate to confirm it goes red. (2) DESIGN.md and the `checks.rb` comment define a simple CHECK as a comparison, IN/NOT IN, BETWEEN, or IS [NOT] NULL, but the code also takes any `op ANY` or `op ALL` over a non-column array (`= ALL`, `> ALL`, a function result such as `string_to_array`). Postgres evaluates every value, so a wrong answer can't come out; say the extra shapes are accepted and checked by Postgres, or narrow the code. Enclave change if the code is narrowed; spec-only otherwise.
-
-- **Depends on:** 20261012-7 (landed).
-- **Came from:** 20261012-7.
-- **Design:** llm-counterexamples.
 - **Status:** todo
 
 ### 20261112-063000-1. Winner summary guard: minors from 20261016-16.
