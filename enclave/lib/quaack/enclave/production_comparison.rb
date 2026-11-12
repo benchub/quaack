@@ -471,10 +471,10 @@ module Quaack
 
         private
 
-        # Whether key agrees with an earlier row on the tie columns but
-        # differs in another.
         def row_key(row) = @shifted ? FloatNoise.key(@types, row) : ResultComparator::Values.key(@types, row)
 
+        # Whether key agrees with an earlier row on the tie columns but
+        # differs in another.
         def hidden?(key)
           tie = @kept.map { key[it] }
           rest = key.each_index.reject { @kept.include?(it) }.map { key[it] }

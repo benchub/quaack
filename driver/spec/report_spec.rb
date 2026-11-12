@@ -1431,8 +1431,20 @@ RSpec.describe Quaack::Driver::Report do
 
         it "says the rewrite failed on minor float mismatches, and links to what to do" do
           expect(fate("production_mismatch", rule: "value", float_noise: true)).to eq(said)
-          expect(fate("production_not_compared", rule: "unsupported_order", reason: "unstable_original",
-                                                 float_noise: true)).to eq(said)
+        end
+
+        # Review of 20261111-192302-1: a refusal is the original's own two
+        # runs differing, not the rewrite's results and the original's.
+        it "says the original's own runs differed when float noise kept QUAACK from comparing" do
+          unstable = esc("It passed the tests on made-up data, but QUAACK dropped it because of #{float_link}: on " \
+                         "the real data, two runs of the original query differed only in float values, each by " \
+                         "less than one part in ten million, so QUAACK couldn't compare its results with the " \
+                         "original query's. The rewrite is likely right, but check. Writing the query to deal " \
+                         "with them, for example by rounding its float outputs, might let the rewrite through.")
+          %w[unstable_original cut_tie].each do |reason|
+            expect(fate("production_not_compared", rule: "unsupported_order", reason:, float_noise: true))
+              .to eq(unstable)
+          end
         end
 
         it "links it in the list of rewrites that didn't make it too" do
