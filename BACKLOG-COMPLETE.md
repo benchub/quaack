@@ -13335,3 +13335,13 @@ From the review of 20261112-110000-1 (minor). Disabling the I/O-cast branch (`ca
 - **Design:** qualify, rewrite-check.
 - **Status:** done
 - **Landed:** 2026-11-12, merged from `task/20261112-190000-1`. The I/O-cast branch is reachable without C: a superuser's `LANGUAGE internal` I/O functions (`AS 'textin'`/`'textout'`) for a `CREATE TYPE ... LIKE = text`, with `CREATE CAST ... WITH INOUT AS IMPLICIT`. Three real-Postgres examples: refused through the hand-written output function; kept once `ALTER EXTENSION ... ADD FUNCTION` makes the functions extension-owned; kept for an enum's pg_catalog I/O. Disabling the I/O branch or the extension test turns its own example red. DESIGN.md covers the I/O half and the ADD FUNCTION trust. The per-commit check passed with rake's own exit 0. Spec and docs only; I read the report and diff stat and started no reviewer.
+
+### 20261110-4. Result-comparison specs: cover the total-order refusals.
+
+From the review of 20261110-1 (minor). `production_comparison_postgres_spec.rb` tests only the pass, reorder-fail, and join cases of the total-order gate. Add the DISTINCT, GROUP BY, set-operation, and key-collation refusals, so a refactor that splits the two paths keeps the coverage.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261110-1, 2026-11-10.
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** 2026-11-12, merged from `task/20261110-4`. The arena path already had these specs; `production_comparison_postgres_spec.rb` now has four, under a nondeterministic collation with a total original order: DISTINCT, GROUP BY, a UNION, and a key column that itself uses the collation each still refuse as `unsupported_order`/`nondeterministic_collation`. Four mutations (in `inner_cuts.rb`'s `sole_table` and `total_order.rb`'s `keyed?`) each turn only its own example red. The set operation's refusal has no check of its own: a UNION's top SelectStmt has no `from_clause`. The per-commit check passed with rake's own exit 0. Spec-only; I read the diff stat and started no reviewer.
