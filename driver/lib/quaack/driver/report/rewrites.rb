@@ -56,14 +56,14 @@ module Quaack
           "measurement_timed_out" => "It passed every correctness test, but every measurement run of it timed out."
         }.freeze
 
-        # A production failure that matched with float columns rounded to
-        # five significant digits (float_noise, task 20261111-192302-1).
+        # A production failure that matched on production comparison's
+        # second look at float columns (float_noise, task 20261111-192302-1).
         # FloatValues links FLOAT_PHRASE to docs/float-values.md.
         FLOAT_PHRASE = "minor mismatches in float values"
         FLOAT_NOISE = "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, its results and " \
-                      "the original query's matched only with float values rounded to five significant digits. " \
-                      "Writing the query to deal with them, for example by rounding its float outputs, might let " \
-                      "the rewrite through.".freeze
+                      "the original query's differed only in float values, each by less than one part in ten " \
+                      "million. The rewrite is likely right, but check. Writing the query to deal with them, for " \
+                      "example by rounding its float outputs, might let the rewrite through.".freeze
         FLOAT_NOISE_FATES = %w[production_mismatch production_not_compared].freeze
 
         # fuzz_disproved by query_failed: the rewrite failed where the

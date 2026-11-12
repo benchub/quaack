@@ -66,13 +66,15 @@ module Quaack
     # one float noise could cause (NOISY_RULES, or unsupported_order with
     # one of NOISY_REASONS) and a result it streamed had a float column,
     # the whole compare runs a second time, under the same timeout and row
-    # caps, with float columns rounded to five significant digits
-    # (FloatNoise). If that passes, the verdict says float_noise true, so
-    # the report can say the rewrite failed on minor mismatches in float
-    # values. Any other outcome of the second look, a timeout included,
-    # leaves float_noise false. Floats that differ by more than the coarse
-    # rounding never pass it, and a pair that straddles one of its own
-    # boundaries just isn't flagged.
+    # caps, with float columns cut to the same eight significant digits
+    # on a grid shifted half a step from the first's (FloatNoise). If that
+    # passes, the verdict says float_noise true, so the report can say the
+    # rewrite failed on minor mismatches in float values. Any other
+    # outcome of the second look, a timeout included, leaves float_noise
+    # false. It's no looser than the first look: floats a step of eight
+    # significant digits apart or more never pass it. A pair less than
+    # half a step apart can't straddle a boundary of both grids, so it
+    # passes one of them, unless it straddles a power of ten.
     #
     # Trust boundary. A Verdict holds only a fixed result word, a rule
     # name, for unsupported_order the check that refused, one of
@@ -132,8 +134,8 @@ module Quaack
         verdict = strict(run, original, candidate, binding)
         return verdict unless run.floats? && noisy?(verdict)
 
-        coarse = Run.new(connection, params, timeout_ms, coarse: true)
-        strict(coarse, original, candidate, binding).result == "pass" ? verdict.with(float_noise: true) : verdict
+        shifted = Run.new(connection, params, timeout_ms, shifted: true)
+        strict(shifted, original, candidate, binding).result == "pass" ? verdict.with(float_noise: true) : verdict
       end
 
       def strict(run, original, candidate, binding)
@@ -352,11 +354,11 @@ module Quaack
       class Run
         attr_reader :connection
 
-        def initialize(connection, params, timeout_ms, coarse: false)
+        def initialize(connection, params, timeout_ms, shifted: false)
           @connection = connection
           @params = params
           @timeout_ms = Integer(timeout_ms)
-          @coarse = coarse
+          @shifted = shifted
           @floats = false
         end
 
@@ -383,7 +385,7 @@ module Quaack
         # on the server's clock, the one statement_timeout fires by. The
         # jump server's clock can run at another rate.
         def stream(sql, tie_positions, started, max_rows, &)
-          rows = Rows.new(tie_positions, max_rows, coarse: @coarse)
+          rows = Rows.new(tie_positions, max_rows, shifted: @shifted)
           @connection.send_query_params(sql, @params)
           @connection.set_single_row_mode
           read(rows, &)
@@ -407,9 +409,10 @@ module Quaack
         end
       end
 
-      # The coarse row key compare's second look uses: float columns
-      # rounded to five significant digits, every other column as
-      # ResultComparator::Values keys it.
+      # The row key compare's second look uses: float columns cut, not
+      # rounded, to eight significant digits, so the grid's boundaries sit
+      # half a step from those of ResultComparator::Values's %.7e rounding,
+      # and every other column as ResultComparator::Values keys it.
       module FloatNoise
         module_function
 
@@ -418,26 +421,29 @@ module Quaack
             value = row[i]
             next ResultComparator::Values.value_key(types[i], value) unless value && float?(types[i])
 
-            "f:#{coarse(ResultComparator::Values.parse_float(value))}"
+            "f:#{shifted(ResultComparator::Values.parse_float(value))}"
           end
         end
 
         def float?(type) = ResultComparator::FLOAT_TYPES.include?(type)
 
-        def coarse(value)
+        # %.20e prints the double's own digits far past the eighth, so
+        # cutting there floors its magnitude to eight significant digits.
+        def shifted(value)
           return value.to_s if value.nan? || value.infinite?
           return "0" if value.abs < ResultComparator::ABSOLUTE_TOLERANCE
 
-          format("%.4e", value)
+          digits, exponent = format("%.20e", value.abs).split("e")
+          "#{"-" if value.negative?}#{digits[0, 9]}e#{exponent}"
         end
       end
 
       # Row hashes gathered from one query.
       class Rows
-        def initialize(tie_positions, max_rows = nil, coarse: false)
+        def initialize(tie_positions, max_rows = nil, shifted: false)
           @kept = tie_positions&.map(&:pred)
           @max_rows = max_rows
-          @coarse = coarse
+          @shifted = shifted
           @hashes = []
           @ties = {}
           @hidden = false
@@ -467,7 +473,7 @@ module Quaack
 
         # Whether key agrees with an earlier row on the tie columns but
         # differs in another.
-        def row_key(row) = @coarse ? FloatNoise.key(@types, row) : ResultComparator::Values.key(@types, row)
+        def row_key(row) = @shifted ? FloatNoise.key(@types, row) : ResultComparator::Values.key(@types, row)
 
         def hidden?(key)
           tie = @kept.map { key[it] }

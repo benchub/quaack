@@ -72,8 +72,8 @@ module Quaack
       #                            first of its verdicts that has one
       #   A production_mismatch or production_not_compared fate has
       #   float_noise true when every failing verdict has float_noise true
-      #   (ProductionComparison: it matched with float columns rounded to
-      #   five significant digits), and nil otherwise.
+      #   (ProductionComparison: it matched with float columns cut to
+      #   a grid shifted half a step), and nil otherwise.
       #   below_top_three          a label beat the original and fell
       #                            outside selection's top three
       #   footprint_tie            a label beat the original and lost

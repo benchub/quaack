@@ -7,7 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261111-185500-1 (no `cut_tie` blame without a LIMIT or OFFSET: new refusal reason `unstable_original`; the comparator partners floats across a bucket boundary).
-- 20261111-192302-1 (production comparison takes a second look at float columns at five significant digits; verdicts and the report's rewrites gain a boolean `float_noise`).
+- 20261111-192302-1 (production comparison takes a second look at float columns on a grid shifted half a step; verdicts and the report's rewrites gain a boolean `float_noise`).
 
 ## How this file works.
 

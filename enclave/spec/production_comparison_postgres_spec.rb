@@ -549,9 +549,31 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       expect(noise(rows, rows)).to eq(["fail", "unsupported_order", "cut_tie", true])
     end
 
-    it "doesn't flag floats that differ past five significant digits" do
+    it "doesn't flag floats that differ plainly" do
       expect(noise("SELECT 7 AS k, 1.0001::float8 AS v", "SELECT 7 AS k, 1.0002::float8 AS v"))
         .to eq(["fail", "multiset", false])
+    end
+
+    # Review of 20261111-192302-1: a second look that rounded to five
+    # significant digits flagged these.
+    it "doesn't flag floats more than a step of eight significant digits apart" do
+      expect(noise("SELECT 7 AS k, 1.00000004::float8 AS v", "SELECT 7 AS k, 1.00000016::float8 AS v"))
+        .to eq(["fail", "multiset", false])
+    end
+
+    it "flags negative float noise, but not a flipped sign" do
+      expect(noise("SELECT -#{below}", "SELECT -#{above}")).to eq(["fail", "multiset", true])
+      expect(noise("SELECT -#{below}", "SELECT #{below}")).to eq(["fail", "multiset", false])
+    end
+
+    it "doesn't flag a rewrite that drops one row from a large float sum or avg" do
+      rows = "SELECT g % 5 AS u, g AS id, ((g::bigint * 7919) % 1000) / 7.0::float8 AS score " \
+             "FROM generate_series(1, 500000) g"
+      %w[sum avg].each do |aggregate|
+        query = ->(where) { "SELECT u, #{aggregate}(score) FROM (#{rows}) r #{where} GROUP BY u ORDER BY u" }
+        expect(noise(query.call(""), query.call("WHERE id <> 3"), timeout_ms: 30_000))
+          .to eq(["fail", "value", false])
+      end
     end
 
     it "doesn't flag float noise when another column differs" do

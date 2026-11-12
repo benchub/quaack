@@ -1424,9 +1424,9 @@ RSpec.describe Quaack::Driver::Report do
         end
         let(:said) do
           esc("It passed the tests on made-up data, but QUAACK dropped it because of #{float_link}: on the real " \
-              "data, its results and the original query's matched only with float values rounded to five " \
-              "significant digits. Writing the query to deal with them, for example by rounding its float " \
-              "outputs, might let the rewrite through.")
+              "data, its results and the original query's differed only in float values, each by less than one " \
+              "part in ten million. The rewrite is likely right, but check. Writing the query to deal with them, " \
+              "for example by rounding its float outputs, might let the rewrite through.")
         end
 
         it "says the rewrite failed on minor float mismatches, and links to what to do" do

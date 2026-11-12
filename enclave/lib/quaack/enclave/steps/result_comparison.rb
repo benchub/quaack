@@ -22,7 +22,7 @@ module Quaack
       #                   "reason" => the check an unsupported_order
       #                   refusal came from, or nil, "float_noise" => true
       #                   when a failure matched with float columns
-      #                   rounded to five significant digits, else false } } }
+      #                   on a grid shifted half a step, else false } } }
       #   "discarded"     the candidates with any failing verdict: a real
       #                   divergence on production data, which selection drops
       #                   and the report shows prominently
