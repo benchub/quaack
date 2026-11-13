@@ -80,12 +80,13 @@ RSpec.describe Quaack::Enclave::Fuzz::Coverage do
     expect(untested(sql)).to eq(["USING (id)"])
   end
 
-  # The 20261011-2 rule: whether a random world reaches past a count
-  # threshold follows the literal, so such a query reports every atom
-  # untested, whatever the literal.
-  it "reports every atom untested, checking none, for a query that compares an aggregate with a constant" do
+  # The 20261011-2 rule, narrowed by 20261011-7: whether a random world
+  # reaches past a count threshold follows the literal, so the threshold
+  # atom is untested, whatever the literal, while the WHERE atom outside
+  # the aggregate's scope keeps its real state.
+  it "reports only the threshold atom untested for a query that compares an aggregate with a constant" do
     sql = "SELECT customer_id FROM s.orders WHERE total > 100 GROUP BY customer_id HAVING count(*) > 0"
-    expect(untested(sql)).to eq(["total > $1", "count(*) > $2"])
+    expect(untested(sql)).to eq(["count(*) > $2"])
   end
 
   it "reports every atom untested for a constant compared with a column over a derived table's aggregate" do
