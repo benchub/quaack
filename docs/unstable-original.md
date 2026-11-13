@@ -21,11 +21,11 @@ Changing the tiebreaker's direction changes the query, so Postgres may plan it d
 - **A function that returns something different each time, but isn't marked `VOLATILE`.** QUAACK refuses a query that calls a volatile function, such as `random()` or `clock_timestamp()`, before it tests anything, and it fixes the clock that `now()`, `current_date`, and the like read. But it trusts how each function is declared. A function of your own declared `STABLE` or `IMMUTABLE` that calls `random()` can still return something different on each run.
 - **A clock QUAACK couldn't fix.** A clock word such as `'today'` that QUAACK can't see as a date, such as one passed to a function that takes a date, still reads the clock. On the real data each run is its own transaction, so the two runs can read different times, and a query that filters on that time can keep different rows.
 - **Something that keeps whichever of several rows or values comes first.** Its result follows the order its rows arrive in, by design:
-  - an aggregate such as `array_agg`, `string_agg`, `jsonb_agg`, `JSON_ARRAYAGG`, or `any_value`, without an `ORDER BY` of its own, such as `string_agg(name, ', ')`;
+  - an aggregate such as `array_agg`, `string_agg`, `jsonb_agg`, or `any_value`, without an `ORDER BY` of its own, such as `string_agg(name, ', ')`;
   - a window function over rows its window's `ORDER BY` leaves tied, such as `row_number() OVER (ORDER BY created_at)` where two rows share a time, or `first_value(name) OVER (PARTITION BY team_id)` with no `ORDER BY` at all;
   - an `ARRAY(SELECT ...)` with no `ORDER BY`.
 
-  On made-up data and the LLM's, QUAACK runs most of the aggregates again with their order pinned down, and when that shows a choice, the report names that check instead. It doesn't pin window functions, `JSON_ARRAYAGG`, or `ARRAY(SELECT ...)`, and on the real data it pins nothing, so there any of these shows up here.
+  On made-up data and the LLM's, QUAACK runs most of the aggregates again with their order pinned down, and when that shows a choice, the report names that check instead. It doesn't pin window functions or `ARRAY(SELECT ...)`, and on the real data it pins nothing, so there any of these shows up here.
 
 ## Why it says nothing about the rewrite.
 
