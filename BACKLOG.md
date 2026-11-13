@@ -719,3 +719,77 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Came from:** 20261011-10.
 - **Design:** counterexamples.
 - **Status:** todo
+
+### 20261111-230000-1. NOT IN CHECK: sharpen the ParentRows spec, and fix the simple-CHECK wording.
+
+From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclave/spec/counterexamples_postgres_spec.rb` stays green if `Checks#add` treats `<> ALL` like `= ANY`, because ParentRows tries the column's typical value first and that value already sits outside the list. Plant a CHECK that also excludes the typical value, so the spec tells NOT IN from IN; mutate to confirm it goes red. (2) DESIGN.md and the `checks.rb` comment define a simple CHECK as a comparison, IN/NOT IN, BETWEEN, or IS [NOT] NULL, but the code also takes any `op ANY` or `op ALL` over a non-column array (`= ALL`, `> ALL`, a function result such as `string_to_array`). Postgres evaluates every value, so a wrong answer can't come out; say the extra shapes are accepted and checked by Postgres, or narrow the code. Enclave change if the code is narrowed; spec-only otherwise.
+
+- **Depends on:** 20261012-7 (landed).
+- **Came from:** 20261012-7.
+- **Design:** llm-counterexamples.
+- **Status:** todo
+
+### 20261111-240000-1. Driver suite: an unexplained failure in the parallel per-commit run.
+
+From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundle exec rake` (the line read "Spec suites failed: driver/spec (exit 1)") while the other three passed; the builder kept only the last 40 lines, so the failing example isn't known. `bundle exec rspec` in `driver/` passed twice on its own (2209 examples, 0 failures). The change under test was an enclave spec only, so it's a flake that shows under the load of the parallel run. 20261016-17 and 20261012-20 are similar flakes in other suites. If it shows again, capture the whole driver block of the rake output (the suite's output is printed whole under its header) and file the failing example here. Candidates to check: examples that read the clock or a port.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261021-3.
+- **Design:** none.
+- **Status:** todo
+
+### 20261111-250000-1. Tablespace moves: end-to-end cover for invalid UTF-8 and the byte limit, and say how names compare.
+
+From the review of 20261015-3 (minor). (1) Only `protocol/spec/tablespace_moves_spec.rb` covers invalid UTF-8 and the 63-byte limit; Egress and the driver's `TablespaceMovesCheck` get both through the shared `valid?`. Add an Egress example for each, red first by mutating `valid?`. (2) DESIGN.md doesn't say how names are compared. Add a line: the match is exact bytes, with no Unicode normalization or case folding, as Postgres does it (NFD `café` doesn't match NFC `café`). Enclave spec and DESIGN.md only; if the example is red on the shipped code, stop and report.
+
+- **Depends on:** 20261015-3 (landed).
+- **Came from:** 20261015-3.
+- **Design:** What goes into the enclave, report.
+- **Status:** todo
+
+### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
+
+From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the `min`/`max` check, still filters on `quaack_arg IS NOT NULL`. A composite argument can reach it (`max(t)`, `max(row(a, b))`), and a row with a NULL field then drops out of the tied list, so ties among those rows aren't checked. For example `(10, NULL)` and `(10.0, NULL)` tie under record comparison but print differently, and the check passes them. It's a false pass, but only for a min or max over a row value that has both a NULL field and a numeric or collation-equal field that prints differently; rare. Reproduce on Postgres first, red first; the fix is the `num_nonnulls` switch with a spec. (2) `string_agg`, `json_agg_strict` and `jsonb_agg_strict` also skip NULL inputs, so one value beside NULLs still refuses for them the way `any_value` did; apply the same filter and spec each. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261015-6 (landed).
+- **Came from:** 20261015-6.
+- **Design:** fixture-compare, result comparison.
+- **Status:** todo
+
+### 20261112-171103-1. Report: clearer `unstable_original` wording, a docs page with examples, and a link to it. Done, see BACKLOG-COMPLETE.md.
+
+### 20261112-204606-1. docs/unstable-original.md: same plan, different order on the real data.
+
+From the review of 20261112-171103-1 (minor). The page puts an original's two differing runs down only to a changed plan. On the real data, a parallel aggregate or a synchronized seq scan can feed rows to an order-sensitive step in a different order with the same plan; the racetrack's `clock_anchor` is `PARALLEL SAFE` (`enclave/lib/quaack/enclave/racetrack.rb:20`), so parallel plans can run there. Confirm on Postgres that a parallel plan or `synchronize_seqscans` can reach it, then add the cause to the page. Docs only.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** result-comparison.
+- **Status:** todo
+
+### 20261112-204606-2. Report: the float-noise sentence for the original's two runs.
+
+From the review of 20261112-171103-1 (minor). The `production_not_compared` float-noise wording still says "two runs of the original query differed" without saying they were QUAACK's own tiebreaker runs, and it doesn't link to `docs/unstable-original.md`. It also covers `cut_tie`, where the runs that differed aren't the original's two runs with no `LIMIT` (they're the full runs without the cut), so "the original query's two runs" isn't accurate there. Reword to match 20261112-171103-1's wording, split the `cut_tie` case if needed, and link it. Driver and docs only; red first.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** result-comparison, report.
+- **Status:** todo
+
+### 20261112-204606-3. report_spec: the doc-link guard examples can't fail.
+
+From the review of 20261112-171103-1 (minor). In `driver/spec/report_spec.rb` (about lines 1318–1322), the examples that a `cut_tie` reason, a `statement_timeout` rule, and a float-noise fate get no link stay green (the float-noise one also stays green with the float and unstable checks swapped in `doc_link`; only the older float spec goes red) with `DocLinks`' reason or rule check removed, since their text never holds the linked phrase. Plant the phrase in a fate whose reason isn't `unstable_original` (or otherwise make the check matter) and confirm the examples go red with the check removed. Spec only.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** report.
+- **Status:** todo
+
+### 20261113-035826-1. docs/unstable-original.md: tiebreaker columns, DISTINCT ON, and DESIGN.md's JSON_ARRAYAGG.
+
+From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and DESIGN.md (about line 1303) say the tiebreaker takes every output column whose type QUAACK can sort, giving only `json` as an exception. `Tiebreaker::UNFAITHFUL` (`enclave/lib/quaack/enclave/result_comparison/tiebreaker.rb:36`) also leaves out `jsonb`, which sorts, and arrays and ranges of float, numeric, or interval; say so, or say "the columns it can sort faithfully" and list them. (2) The page says that with no `LIMIT` or `OFFSET` the two runs must hold the same rows; a `DISTINCT ON` with no `LIMIT` can differ too, but it refuses as `cut_tie`, not `unstable_original` (`CutTies.unstable?`). Add a sentence. (3) DESIGN.md (about line 1330, "Gaps remain") lists a SQL/JSON `JSON_ARRAYAGG` as an unpinned pick, but `SupportedSql` refuses the SQL/JSON functions up front (`unsupported_construct: JsonArrayAgg`); drop it there. Docs only.
+
+- **Depends on:** None.
+- **Came from:** 20261112-171103-1.
+- **Design:** fixture-compare, result-comparison.
+- **Status:** todo

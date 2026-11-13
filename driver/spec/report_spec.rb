@@ -1203,6 +1203,11 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     describe "what became of a rewrite" do
+      def unstable_link
+        %(<a href="https://github.com/benchub/quaack/blob/main/docs/unstable-original.md" target="_blank" ) +
+          %(rel="noopener">ran the original query twice</a>)
+      end
+
       def fate(name, **details)
         payload["rewrites"] = [fated(2, name, **details)]
         section(render(payload), "queries")[%r{<span class="fate">What became of it: (.*?)</span>}m, 1]
@@ -1277,9 +1282,45 @@ RSpec.describe Quaack::Driver::Report do
         expect(Quaack::Driver::Report::Words::REFUSAL_REASONS.keys).to eq(Quaack::Protocol::RefusalReasons::NAMES)
         Quaack::Protocol::RefusalReasons::NAMES.each do |reason|
           text = fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason:)
+          text = text.sub(unstable_link, Quaack::Driver::Report::Words::UNSTABLE_PHRASE)
           expect(text).to include(esc(", because #{Quaack::Driver::Report::Words::REFUSAL_REASONS.fetch(reason)}, " \
                                       "so QUAACK dropped it"))
           expect(text).not_to include(reason)
+        end
+      end
+
+      # Task 20261112-171103-1: unstable_original says the two runs were
+      # QUAACK's own, of the original query, and links to the page on them.
+      describe "an original whose own two runs differed" do
+        let(:reason_words) do
+          "QUAACK #{unstable_link} over the same data, breaking ties in its ORDER BY one way and then the " \
+            "other, and the two runs returned different rows"
+        end
+
+        it "says the runs were QUAACK's own, of the original query, and links to the page on them" do
+          expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason: "unstable_original"))
+            .to eq(esc("A test on data the LLM wrote to break it (round 1) ended without comparing results, " \
+                       "because #{reason_words}, so QUAACK dropped it. That says nothing about whether it's " \
+                       "right."))
+          expect(fate("production_not_compared", rule: "unsupported_order", reason: "unstable_original"))
+            .to eq(esc("It passed the tests on made-up data, but QUAACK couldn't compare its results with the " \
+                       "original query's on the real data, because #{reason_words}, so QUAACK dropped it. That " \
+                       "says nothing about whether it's right."))
+        end
+
+        it "links it in the list of rewrites that didn't make it too" do
+          rewrites = [fated(2, "rewrite_test_failed", rule: "unsupported_order", reason: "unstable_original")]
+          list = section(render(negative_payload.merge("rewrites" => rewrites)), "negative-result")
+          expect(list[%r{<ul id="negative-rewrites">.*?</ul>}m]).to include(unstable_link)
+        end
+
+        it "links nothing for another reason or rule, or for float noise" do
+          [fate("rewrite_test_failed", rule: "unsupported_order", reason: "cut_tie"),
+           fate("rewrite_test_failed", rule: "statement_timeout", reason: "unstable_original"),
+           fate("production_not_compared", rule: "unsupported_order", reason: "unstable_original",
+                                           float_noise: true)].each do |text|
+            expect(text).not_to include("unstable-original.md")
+          end
         end
       end
 
