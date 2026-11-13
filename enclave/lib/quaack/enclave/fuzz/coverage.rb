@@ -30,7 +30,10 @@ module Quaack
       # atom untested that in fact came out both ways, never the other way
       # round. An atom with_value can't replace (a USING column, a NATURAL
       # JOIN marker, a deparse it can't trust) is untested, and so is every
-      # atom of a query Reach.worst_case? names, or whose uncut original
+      # atom of a query Reach.whole_worst_case? names, each threshold atom
+      # (Reach.threshold_paths) and every atom in or holding one (the rest
+      # are judged with each threshold replaced by TRUE, the same for every
+      # literal: task 20261011-7), or every atom of one whose uncut original
       # doesn't deparse faithfully or whose cut holds more than a constant
       # or a parameter (Uncut), with nothing checked.
       #
@@ -53,7 +56,7 @@ module Quaack
 
         def initialize(atoms, original, binding = nil)
           @atoms = atoms
-          @pending = Reach.worst_case?(original, binding) ? {} : pending(original)
+          @pending = Reach.whole_worst_case?(original, binding) ? {} : pending(original, binding)
           @seen = Hash.new { |h, k| h[k] = Set.new }
           @observed = 0
         end
@@ -90,16 +93,37 @@ module Quaack
         # The original uncut, and each replaceable atom's two loosened
         # queries of it, by [index, value]; none, so every atom untested,
         # when Uncut can't give the uncut original.
-        def pending(original)
+        def pending(original, binding)
           parse = Uncut.parse(original)
+          thresholds = Reach.threshold_paths(parse.tree, binding)
+          parse = unthresholded(parse, thresholds) unless thresholds.empty?
           @original = parse.query
-          loosened(parse)
+          loosened(parse, thresholds)
         rescue Deparse::Error
           {}
         end
 
-        def loosened(parse)
+        # The parse with each threshold replaced by TRUE, the same for every
+        # literal (task 20261011-7), its atoms' paths kept.
+        def unthresholded(parse, thresholds)
+          tree = Deparse.copy(parse.tree)
+          thresholds.each do |path|
+            path[0...-1].reduce(tree) { |node, step| node[step] }[path.last] =
+              PgQuery::Node.new(a_const: PgQuery::A_Const.new(boolval: PgQuery::Boolean.new(boolval: true)))
+          end
+          Deparse.faithful_parse(tree)
+        end
+
+        # An atom that is a threshold, holds one, or sits inside one gets the
+        # worst case: whether a world reaches it follows the literal.
+        def threshold_scoped?(atom, thresholds)
+          thresholds.any? { |at| atom.path.first(at.size) == at || at.first(atom.path.size) == atom.path }
+        end
+
+        def loosened(parse, thresholds)
           @atoms.each_with_index.with_object({}) do |(atom, index), pending|
+            next if threshold_scoped?(atom, thresholds)
+
             [true, false].each { pending[[index, it]] = PredicateAtoms.with_value(parse, atom, it) }
           rescue PredicateAtoms::Error, Deparse::Error
             next

@@ -142,7 +142,7 @@ RSpec.describe "the arena's queries on the $n form" do
       sql = "SELECT max(i.points) FROM fx.items i WHERE 100 / i.points > 2"
       allow(shape_class).to receive(:parse).and_call_original
       allow(Quaack::Enclave::Fuzz::Domains).to receive(:new).and_call_original
-      allow(Quaack::Enclave::Fuzz::Reach).to receive(:worst_case?).and_call_original
+      allow(Quaack::Enclave::Fuzz::Reach).to receive(:whole_worst_case?).and_call_original
       allow(Quaack::Enclave::Fuzz).to receive(:unjudged?).and_call_original
       allow(result_comparison::Picks).to receive(:any?).and_call_original
       allow(result_comparison).to receive(:compare).and_call_original
@@ -156,7 +156,7 @@ RSpec.describe "the arena's queries on the $n form" do
       }, original: sql, candidate: sql)
                                                           .at_least(:once)
       expect(Quaack::Enclave::Fuzz::Domains).to have_received(:new).with(conn, anything, [sql, sql], binding: bound)
-      expect(Quaack::Enclave::Fuzz::Reach).to have_received(:worst_case?).with(sql, bound)
+      expect(Quaack::Enclave::Fuzz::Reach).to have_received(:whole_worst_case?).with(sql, bound)
     ensure
       conn.exec("DROP SCHEMA IF EXISTS fx CASCADE")
     end

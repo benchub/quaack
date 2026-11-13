@@ -20,7 +20,8 @@ RSpec.describe "The search's caution across literals" do
       CREATE SCHEMA fx;
       CREATE TABLE fx.users (id integer PRIMARY KEY, name text NOT NULL);
       CREATE TABLE fx.posts (id integer PRIMARY KEY, user_id integer NOT NULL REFERENCES fx.users,
-                             score integer NOT NULL, published boolean NOT NULL);
+                             score integer NOT NULL, published boolean NOT NULL, title text NOT NULL);
+      CREATE TABLE fx.comments (id integer PRIMARY KEY, post_id integer NOT NULL REFERENCES fx.posts);
     SQL
   end
 
@@ -118,11 +119,39 @@ RSpec.describe "The search's caution across literals" do
   # case turned off, count(*) >= 0 is never false and count(*) > 0 is both,
   # so the two caution differently, and the comparison above says so.
   it "catches a caution that follows the threshold, when the worst case is planted away" do
-    allow(fuzz::Reach).to receive(:worst_case?).and_return(false)
+    allow(fuzz::Reach).to receive(:threshold_paths).and_return([])
     make = families.fetch("count(*) >= threshold")
 
     by_value = [0, 1].to_h { |n| [n, outgoing(make.call(n), "#{make.call(n)} AND true")] }
 
     expect(by_value.values.uniq.size).to eq(2), classes(by_value).join("\n")
+  end
+
+  # Task 20261011-7: a threshold makes only its own atom, and the atoms
+  # inside its aggregate's subquery, untested. Coverage judges the rest on
+  # the original with each threshold replaced by TRUE, the same for every
+  # literal, so their states are real and still never follow it.
+  scoped = {
+    "HAVING count(*) over a pinned id list" => [lambda { |op, n|
+      "SELECT fx.users.id FROM fx.users JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
+        "WHERE fx.users.id IN (1, 2, 3) GROUP BY fx.users.id HAVING count(*) #{op} #{n}"
+    }, 1],
+    "a correlated count beside other atoms" => [lambda { |op, n|
+      "SELECT fx.posts.id FROM fx.posts WHERE (SELECT count(*) FROM fx.comments " \
+        "WHERE fx.comments.post_id = fx.posts.id) #{op} #{n} AND fx.posts.title = 'x' AND fx.posts.score > 3"
+    }, 2]
+  }.freeze
+
+  scoped.each do |name, (make, threshold_atoms)|
+    operators.each do |op|
+      it "keeps the real states of the atoms outside #{name} #{op} threshold, the same for every value" do
+        by_value = thresholds.to_h do |n|
+          [n, outgoing(make.call(op, n), "#{make.call(op, n)} AND true", trials: 100)]
+        end
+        expect(by_value.values.uniq.size).to eq(1), classes(by_value).join("\n")
+        caution = by_value.values.first.last
+        expect(caution[:untested_atoms].size).to eq(threshold_atoms), caution.to_s
+      end
+    end
   end
 end

@@ -28,6 +28,36 @@ module Quaack
 
         def worst_case?(sql, binding = nil) = volatile?(sql) || threshold_bound?(sql, binding)
 
+        # Whether every atom's coverage could follow a literal, not just the
+        # thresholds' own (task 20261011-7): a volatile call, or a constant
+        # compared with a column over a layer holding an aggregate, which
+        # isn't traced to the aggregate it may carry.
+        def whole_worst_case?(sql, binding = nil)
+          return true if volatile?(sql)
+
+          all = nodes(PgQuery.parse(sql).tree)
+          all.any? { fed_layer?(it) } && all.any? { column_compared?(it, binding) }
+        end
+
+        # Paths (PredicateAtoms' form) to the outermost nodes comparing an
+        # aggregate with a constant, in tree.
+        def threshold_paths(tree, binding = nil, path = [], found = [])
+          return found << path if tree.is_a?(PgQuery::Node) && tree.node && threshold?(tree[tree.node.to_s], binding)
+
+          steps(tree).each { |step, child| threshold_paths(child, binding, path + [step], found) }
+          found
+        end
+
+        # A node's set children, by the step a path takes to each.
+        def steps(tree)
+          case tree
+          when Google::Protobuf::RepeatedField then tree.each_with_index.map { |item, i| [i, item] }
+          when Google::Protobuf::MessageExts
+            tree.class.descriptor.filter_map { |field| (value = field.get(tree)) && [field.name, value] }
+          else []
+          end
+        end
+
         def volatile?(sql) = PgQuery.parse(sql).functions.intersect?(VOLATILE)
 
         # Whether the query compares an aggregate with a constant anywhere.
