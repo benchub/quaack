@@ -1205,7 +1205,7 @@ RSpec.describe Quaack::Driver::Report do
     describe "what became of a rewrite" do
       def unstable_link
         %(<a href="https://github.com/benchub/quaack/blob/main/docs/unstable-original.md" target="_blank" ) +
-          %(rel="noopener">two runs QUAACK made of it</a>)
+          %(rel="noopener">ran the original query twice</a>)
       end
 
       def fate(name, **details)
@@ -1293,8 +1293,8 @@ RSpec.describe Quaack::Driver::Report do
       # QUAACK's own, of the original query, and links to the page on them.
       describe "an original whose own two runs differed" do
         let(:reason_words) do
-          "the original query returned different rows on #{unstable_link} over the same data, which differed " \
-            "only in how they broke ties (QUAACK didn't check the rewrite's results on that data)"
+          "QUAACK #{unstable_link} over the same data, breaking ties in its ORDER BY one way and then the " \
+            "other, and the two runs returned different rows"
         end
 
         it "says the runs were QUAACK's own, of the original query, and links to the page on them" do

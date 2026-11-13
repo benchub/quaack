@@ -47,7 +47,7 @@ module Quaack
         # unstable_original's runs are QUAACK's own tiebreaker runs of the
         # original query, not the rewrite's. DocLinks links UNSTABLE_PHRASE
         # to docs/unstable-original.md (task 20261112-171103-1).
-        UNSTABLE_PHRASE = "two runs QUAACK made of it"
+        UNSTABLE_PHRASE = "ran the original query twice"
 
         # Which check kept an unsupported_order test from comparing results,
         # by its reason (Protocol::RefusalReasons, task 20261110-7). A
@@ -66,9 +66,8 @@ module Quaack
           "unsteady_order" => "the rewrite's tied rows didn't come back in a consistent order",
           "cut_tie" => "a LIMIT, OFFSET, or DISTINCT ON keeps only some of a group of tied rows, in a way QUAACK " \
                        "can't check",
-          "unstable_original" => "the original query returned different rows on #{UNSTABLE_PHRASE} over the same " \
-                                 "data, which differed only in how they broke ties (QUAACK didn't check the " \
-                                 "rewrite's results on that data)",
+          "unstable_original" => "QUAACK #{UNSTABLE_PHRASE} over the same data, breaking ties in its ORDER BY " \
+                                 "one way and then the other, and the two runs returned different rows",
           "full_run_timed_out" => format(FULL_RUN, "timed out"),
           "full_run_too_many_rows" => format(FULL_RUN, "returned more rows than QUAACK can hold")
         }.freeze
