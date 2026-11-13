@@ -2,6 +2,6 @@
 
 module Quaack
   module Protocol
-    VERSION = "0.1.44"
+    VERSION = "0.1.45"
   end
 end
