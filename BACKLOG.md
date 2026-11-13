@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261011-7
+
 
 ## How this file works.
 
@@ -254,20 +256,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261011-7. A count threshold makes every atom of the query untested; keep the atoms outside the aggregate's scope.
-
-From the review of 20261011-2 (minor, usefulness). Any query that compares an aggregate with a constant reports every atom as untested, including atoms unrelated to the count (`published = true` next to `HAVING count(*) > 5`). Since 20261012-4 that's fuzz's coverage: `Fuzz::Coverage` (`fuzz/coverage.rb`, ~line 53) skips every atom when `Fuzz::Reach.worst_case?` holds, and `Reach#threshold_bound?` (`fuzz/reach.rb`, ~lines 35–38) is true for any aggregate compared with a constant, or any constant comparison over a derived table or CTE with an aggregate. That is common in reporting and ORM SQL, so the caution says nothing useful for those queries. Keep the real result for atoms outside the aggregate's scope (WHERE atoms of the grouped query, whose chance of being reached by a world doesn't depend on the threshold); only the threshold atom, and atoms inside its correlated subquery, get the worst case.
-- It needs its own across-literals proof in `enclave/spec/across_literals_postgres_spec.rb` (thresholds 0..10, all operators, every outgoing field identical, with the other atoms' states real), red first. Shapes to cover include `HAVING count(*) > 1` with a pinned `users.id IN` list (from 20261010-39) and `count(...) > 2 AND title = 'x' AND score > 3` (from 20261010-46).
-- **Folded in from 20261010-48 (2026-10-14):** test the atoms under a correlated count threshold too (`(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > 2`), so a `count > n` vs `count >= n` rewrite is caught, without letting any reported count or the caution depend on the threshold. 20261010-35's earlier attempt (n+1 children per parent, in the removed scenario builder) leaked the threshold through the load count and was rejected; its findings that may still apply: handle only count(*)/count(x) with no GROUP BY, window or second target; a non-aggregate scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code; the boundary needs a parent with exactly n children and one with n+1.
-
-Opus builder and reviewer.
-
-Reworded 2026-10-14 after 20261012-4: the vacuity guard and its S1 reach became `Fuzz::Coverage` and `Fuzz::Reach`, and the corpus's HAVING entries are gone, so the proof goes in the across-literals spec.
-
-- **Depends on:** 20261011-2 (landed with its fix round).
-- **Came from:** The review of 20261011-2, 2026-10-11 (minor).
-- **Design:** rewrite-test (coverage).
-- **Status:** todo
+### 20261011-7. A count threshold makes every atom of the query untested; keep the atoms outside the aggregate's scope. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale. Done, see BACKLOG-COMPLETE.md.
 
@@ -775,4 +764,22 @@ From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and D
 - **Depends on:** None.
 - **Came from:** 20261112-171103-1.
 - **Design:** fixture-compare, result-comparison.
+- **Status:** todo
+
+### 20261113-210241-1. Fuzz worlds: build a parent with exactly n children, and one with n+1, for a correlated count threshold.
+
+The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrite of `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > n` as `>= n` should be disproved at every n, but fuzz missed it at n=7 and n=10 even with 200 trials: world generation doesn't reliably build a parent with exactly n children. Make it do so, without letting any reported count (trials, worlds, bound) or the caution follow the threshold. 20261010-35's earlier attempt (n+1 children per parent) leaked the threshold through the load count and was rejected; handle only count(*)/count(x) with no GROUP BY, window or second target; a scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code. Add the across-literals proof for it (thresholds 0..10), red first. Trust boundary: have an Opus reviewer.
+
+- **Depends on:** 20261011-7 (landed).
+- **Came from:** 20261011-7 (not landed part), 20261010-48.
+- **Design:** rewrite-test (fuzz worlds).
+- **Status:** todo
+
+### 20261113-210241-2. Coverage: minors from the review of 20261011-7.
+
+(1) `threshold_scoped?` in `enclave/lib/quaack/enclave/fuzz/coverage.rb`: its "atom holds a threshold" branch (`at.first(atom.path.size) == atom.path`) has no test; dropping it keeps the suite green. Plant one atom that contains a threshold (a boolean CASE or an unsplit expression wrapping `count(*) > n`) and assert it is reported untested, red first. (2) `Reach.worst_case?` and `Reach#threshold_bound?` in `fuzz/reach.rb` are no longer called by Coverage. Find out whether anything else uses them; if not, remove them and any spec that only covers them.
+
+- **Depends on:** 20261011-7 (landed).
+- **Came from:** The review of 20261011-7, 2026-11-13 (minor).
+- **Design:** rewrite-test (coverage).
 - **Status:** todo
