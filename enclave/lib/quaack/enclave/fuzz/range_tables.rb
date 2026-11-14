@@ -36,17 +36,22 @@ module Quaack
         private
 
         def named(items, found = {})
-          Array(items).each do |item|
-            if (var = item[:range_var])
-              found[var.dig(:alias, :aliasname) || var[:relname]] = relation(var)
-            else
-              named(item[:join_expr].values_at(:larg, :rarg), found) if item[:join_expr]
-              name = item.values.first.dig(:alias, :aliasname)
-              found[name] = nil if name
-            end
-          end
+          Array(items).each { add(unsampled(it), found) }
           found
         end
+
+        def add(item, found)
+          if (var = item[:range_var])
+            found[var.dig(:alias, :aliasname) || var[:relname]] = relation(var)
+          else
+            named(item[:join_expr].values_at(:larg, :rarg), found) if item[:join_expr]
+            name = item.values.first.dig(:alias, :aliasname)
+            found[name] = nil if name
+          end
+        end
+
+        # TABLESAMPLE wraps the table, alias and all, in a range_table_sample.
+        def unsampled(item) = item.dig(:range_table_sample, :relation) || item
 
         # A CTE's name has no schema.
         def relation(var)

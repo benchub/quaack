@@ -170,6 +170,13 @@ RSpec.describe "Quaack::Enclave::Fuzz's values that solve a comparison's boundar
       expect(solved.values(u, "p")).to eq(%w[4 8 13])
     end
 
+    # Task 20261012-42: TABLESAMPLE wraps the table in a range_table_sample.
+    it "finds a qualifier's table through TABLESAMPLE" do
+      solved = thresholds("a.p * 2 > 9", "b.p + 1 = 5", from: "fx.t a TABLESAMPLE SYSTEM (10) JOIN fx.u b ON true")
+      expect(solved.values(t, "p")).to eq(%w[4.5 5 4])
+      expect(solved.values(u, "p")).to eq(%w[4])
+    end
+
     it "resolves a qualifier in the innermost query that has it, and gives a subquery's or CTE's column's " \
        "solutions to every table" do
       solved = thresholds("EXISTS (SELECT 1 FROM fx.u a WHERE a.p * 2 > 9 AND b.p + 1 = 5) AND a.p - 1 = 7",
