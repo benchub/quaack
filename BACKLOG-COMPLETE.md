@@ -13506,3 +13506,22 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 - **Design:** result-comparison.
 - **Status:** done
 - **Landed:** 2026-11-14, merged from `task/20261012-17`. Item 1: `Regrouped#noisy?` splits the candidate's two runs on exact rows with `CutTies.layout` and refuses with `unsupported_order` (reported as `unsteady_order`) when one exact group holds rows that differ exactly but match by key; the entry's picture was slightly off (split by rounded key, each noisy row gets its own group), so a key-only check would have changed nothing. `ProductionComparison` compares rounded values only, so it can't see this noise and wasn't changed. Item 2 was stale: "refuses a candidate whose runs fit but don't show its ties" (task 20261110-7) already covers it, and mapping `:unsupported_order` to a pass turns it red. Reviewed with no findings. Enclave change, on the unreleased list.
+
+### 20261012-19. counterexamples' `original_failed` rerun: two untested branches, and the CutTies run it skips.
+
+From the review of 20261012-10 (minor). When a round's comparison raises a non-load error, `Counterexamples::Failure.rerun` (`enclave/lib/quaack/enclave/counterexamples/failure.rb`) reruns the original against itself, once per distinct load order. If the original fails, the round reports `original_failed`.
+- **The step check is untested.** Changing `e.step == :query ? :query_failed : :not_loaded` to always return `:query_failed` passes every spec. The branch runs only when a rerun's load fails in a later load order after the candidate's error in an earlier one.
+- **The multi-load-order rerun is untested.** Limiting `original_fails?` to the first load order passes every spec.
+- **The CutTies unlimited-original run isn't rerun.** The rerun takes the self-comparison's path, so the run of the original without its LIMIT, which only the candidate's cut triggers, never happens in the rerun. An original that fails only there would still count as a disproof. The reviewer judged it nearly unreachable: the tiebroken runs compute every output column for every row, so a failing original fails there first.
+
+Add tests that go red under the two surviving mutants, using real Postgres. For the CutTies gap, either show it's unreachable on a realistic query, or make the rerun follow the comparison's path.
+
+20261012-11 moved the rerun to `ResultComparison::OriginalRerun`; its only caller is `Counterexamples::Failure`.
+
+Trimmed 2026-10-14 after 20261012-4: removed the paragraph about ScenarioTests also using the rerun, since ScenarioTests is gone.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-10, 2026-10-12 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-14, merged from `task/20261012-19`. Tests only, no production change: two real-Postgres examples in `counterexamples_postgres_spec.rb` ("reports original_failed when the original fails only in the reverse load" and "is a disproof when the original runs in the forward load and the reverse load fails"). Each goes red under exactly its own mutant (`.first(1).each` in the rerun; the step check always returning `:query_failed`), and the reviewer reran both to confirm. The CutTies unlimited-original gap is unreachable (the original runs without its LIMIT only in `CutTies` and `Tiebreaker.hidden_cut_tie?`; the self-comparison rerun triggers the same runs, and the tiebroken run computes every output column otherwise); dropped. The reviewer agreed but checked that argument only briefly. Not on the unreleased list.

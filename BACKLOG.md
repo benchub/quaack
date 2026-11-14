@@ -297,23 +297,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-17. Regrouped: minors from the review of 20261012-16. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-19. counterexamples' `original_failed` rerun: two untested branches, and the CutTies run it skips.
-
-From the review of 20261012-10 (minor). When a round's comparison raises a non-load error, `Counterexamples::Failure.rerun` (`enclave/lib/quaack/enclave/counterexamples/failure.rb`) reruns the original against itself, once per distinct load order. If the original fails, the round reports `original_failed`.
-- **The step check is untested.** Changing `e.step == :query ? :query_failed : :not_loaded` to always return `:query_failed` passes every spec. The branch runs only when a rerun's load fails in a later load order after the candidate's error in an earlier one.
-- **The multi-load-order rerun is untested.** Limiting `original_fails?` to the first load order passes every spec.
-- **The CutTies unlimited-original run isn't rerun.** The rerun takes the self-comparison's path, so the run of the original without its LIMIT, which only the candidate's cut triggers, never happens in the rerun. An original that fails only there would still count as a disproof. The reviewer judged it nearly unreachable: the tiebroken runs compute every output column for every row, so a failing original fails there first.
-
-Add tests that go red under the two surviving mutants, using real Postgres. For the CutTies gap, either show it's unreachable on a realistic query, or make the rerun follow the comparison's path.
-
-20261012-11 moved the rerun to `ResultComparison::OriginalRerun`; its only caller is `Counterexamples::Failure`.
-
-Trimmed 2026-10-14 after 20261012-4: removed the paragraph about ScenarioTests also using the rerun, since ScenarioTests is gone.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-10, 2026-10-12 (minor).
-- **Design:** llm-counterexamples.
-- **Status:** todo
+### 20261012-19. counterexamples' `original_failed` rerun: two untested branches, and the CutTies run it skips. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-20. TestPostgres's PgBouncer specs flake with "Connection refused" on the published port under load.
 
