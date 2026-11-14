@@ -299,18 +299,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-19. counterexamples' `original_failed` rerun: two untested branches, and the CutTies run it skips. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-20. TestPostgres's PgBouncer specs flake with "Connection refused" on the published port under load.
-
-In 20261012-10's per-commit check, `spec/test_postgres_spec.rb:414`, `:433`, `:462` and `:510` failed with `PG::ConnectionBad: connection to server at "127.0.0.1", port <published port> failed: Connection refused`, from `through_pgbouncer` (`:401`). All four passed when rerun alone. Earlier checks saw `:414` and `:862` fail the same way, and landings have called them "port-forward flakes".
-
-A likely cause: `PgBouncer.wait_until_ready` (`spec/support/test_pgbouncer.rb`) runs `pg_isready` inside the container on 127.0.0.1:6432. But the specs connect from the host through Docker's published port, and that forward can lag behind under load. Confirm the cause first. If it's right, also wait until the published port answers from the host (for example with `PG::Connection.ping`, which stops at PgBouncer's password request and so opens no server backend). Do the same for the server's own port if `wait_until_ready` there has the same gap. Then drop these examples from the "rerun alone" folklore in landing notes.
-
-Another candidate, found while landing 20261012-13 (2026-10-13), and to rule out first: every run that saw these flakes ran the specs inside a `docker run` runner container (the overnight sandbox setup), often while another runner ran specs at the same time. Each runner had its own PID namespace, so `TestPostgres.remove_stale_containers` in one runner saw the other runner's owner PIDs as dead and removed its live Postgres containers. With two runners overlapping, that broke a per-commit check outright (3,605 enclave failures, "No such container"). A sweep that lands mid-example would look exactly like "Connection refused" on the published port. Running each runner with `docker run --pid host` fixes the sweep. If the flakes stop under `--pid host`, this task is moot for a developer running specs on the host. The sweep may still be worth hardening, for example by keying on the container's start time, or on a host label that names the PID namespace.
-
-- **Depends on:** None.
-- **Came from:** The landing of 20261012-10, 2026-10-12.
-- **Design:** none (test harness).
-- **Status:** todo
+### 20261012-20. TestPostgres's PgBouncer specs flake with "Connection refused" on the published port under load. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-21. report-payload: the `original_failed` "isn't a rule bug" check was green before 20261012-11.
 
@@ -729,3 +718,21 @@ The measuring half of 20261012-12, skipped because it needs live LLM calls (spen
 - **Came from:** 20261012-12 (not landed part).
 - **Design:** llm-counterexamples.
 - **Status:** todo (waits on the user)
+
+### 20261114-190619-1. TestPostgres: don't sweep another runner's live containers when hostnames match but PID namespaces differ.
+
+From 20261012-20's second candidate. `TestPostgres.remove_stale_containers` (`spec/support/test_postgres.rb`, ~lines 258-263) treats a container as foreign only when its `quaack.test-postgres.owner-host` label differs from `Socket.gethostname`; otherwise it removes the container if `Process.kill(0, owner_pid)` gets ESRCH. Runners that share a hostname but not a PID namespace (`docker run --network host`, a shared `--hostname`, `--uts=host`) see each other's owner PIDs as dead and remove live containers (the 2026-10-13 failure: 3,605 enclave failures, "No such container"). Fix: add the PID-namespace identity to the host label value where there is one (on Linux the inode of `/proc/self/ns/pid`; on macOS the hostname only, so dev Macs see no change), so a container from another namespace counts as foreign. A dead runner's containers may then leak, which is safer than removing live ones. `spec/e2e_verify_spec.rb` and the E2E harness use the same owner/host label scheme; change them together. Test with real containers started from a second namespace if you can, or a fake label at the edge. Until it lands, `docker run --pid host` for runners avoids the sweep. Test harness only.
+
+- **Depends on:** 20261012-20 (landed).
+- **Came from:** 20261012-20 (second candidate).
+- **Design:** none (test harness).
+- **Status:** todo
+
+### 20261114-190619-2. TestPostgres PgBouncer wait: minors from the review of 20261012-20.
+
+(1) The timeout error in `spec/support/test_pgbouncer.rb` (~line 85) names the container but not the port, and doesn't say which probe failed (in-container `pg_isready` or the host ping). Name both. (2) The new spec's TCP forward (`spec/test_postgres_spec.rb`, ~lines 545-576) leaves its copy threads and proxied sockets alive until the process exits, because the listener closes only through the forward thread's own `ensure`. Close them in the spec's `ensure`. Both harmless today.
+
+- **Depends on:** 20261012-20 (landed).
+- **Came from:** The review of 20261012-20, 2026-11-14 (minor).
+- **Design:** none (test harness).
+- **Status:** todo
