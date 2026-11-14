@@ -718,14 +718,7 @@ The measuring half of 20261012-12, skipped because it needs live LLM calls (spen
 - **Design:** llm-counterexamples.
 - **Status:** todo (waits on the user)
 
-### 20261114-190619-1. TestPostgres: don't sweep another runner's live containers when hostnames match but PID namespaces differ.
-
-From 20261012-20's second candidate. `TestPostgres.remove_stale_containers` (`spec/support/test_postgres.rb`, ~lines 258-263) treats a container as foreign only when its `quaack.test-postgres.owner-host` label differs from `Socket.gethostname`; otherwise it removes the container if `Process.kill(0, owner_pid)` gets ESRCH. Runners that share a hostname but not a PID namespace (`docker run --network host`, a shared `--hostname`, `--uts=host`) see each other's owner PIDs as dead and remove live containers (the 2026-10-13 failure: 3,605 enclave failures, "No such container"). Fix: add the PID-namespace identity to the host label value where there is one (on Linux the inode of `/proc/self/ns/pid`; on macOS the hostname only, so dev Macs see no change), so a container from another namespace counts as foreign. A dead runner's containers may then leak, which is safer than removing live ones. `spec/e2e_verify_spec.rb` and the E2E harness use the same owner/host label scheme; change them together. Test with real containers started from a second namespace if you can, or a fake label at the edge. Until it lands, `docker run --pid host` for runners avoids the sweep. Test harness only.
-
-- **Depends on:** 20261012-20 (landed).
-- **Came from:** 20261012-20 (second candidate).
-- **Design:** none (test harness).
-- **Status:** todo
+### 20261114-190619-1. TestPostgres: don't sweep another runner's live containers when hostnames match but PID namespaces differ. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261114-190619-2. TestPostgres PgBouncer wait: minors from the review of 20261012-20.
 
@@ -733,5 +726,14 @@ From 20261012-20's second candidate. `TestPostgres.remove_stale_containers` (`sp
 
 - **Depends on:** 20261012-20 (landed).
 - **Came from:** The review of 20261012-20, 2026-11-14 (minor).
+- **Design:** none (test harness).
+- **Status:** todo
+
+### 20261114-193920-1. Test harness owner-host label: minors from the review of 20261114-190619-1.
+
+(1) A crashed pre-change run on Linux leaves a container labeled with the bare hostname; the new label never matches it, so it counts as foreign and stays until someone runs `docker rm` by hand (it can't remove a live run's container, so this is safe). Say so in a comment at `spec/support/test_postgres.rb` (~line 270) and `e2e/verify.rb` (~line 86), and in the sweep's docs if they describe cleanup. (2) `spec/support/test_postgres.rb` (~line 256) checks `File.exist?` before `File.stat` on `/proc/self/ns/pid`, while `e2e/verify.rb` (~line 35) rescues `SystemCallError`; make them the same so an unreadable `/proc` can't raise in one and not the other. Cosmetic.
+
+- **Depends on:** 20261114-190619-1 (landed).
+- **Came from:** The review of 20261114-190619-1, 2026-11-14 (minor).
 - **Design:** none (test harness).
 - **Status:** todo
