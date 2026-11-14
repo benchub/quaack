@@ -68,7 +68,8 @@ module Quaack
         # run only once its T run fits. :match when both fit, and
         # :unsupported_order when they do but the candidate's runs don't
         # split into reversed groups, so they can't show its ties, such as
-        # for a volatile sort key. nil when they don't fit, or the
+        # for a volatile sort key, or a group holds float noise (noisy?).
+        # nil when they don't fit, or the
         # original's runs don't split into reversed groups.
         def check(originals, ascending, key:, contained:)
           original = whole(originals, key)
@@ -77,7 +78,22 @@ module Quaack
           descending = yield
           return unless fits?(original, descending, contained)
 
-          whole([ascending, descending], key) ? :match : :unsupported_order
+          return :unsupported_order unless whole([ascending, descending], key)
+
+          noisy?([ascending, descending], key) ? :unsupported_order : :match
+        end
+
+        # Whether one of the candidate's tie groups, split on exact rows,
+        # holds rows that differ exactly but match by key, which rounds
+        # floats. Split by key, such rows look like groups of their own,
+        # while the tiebreaker sorts them apart, so the group check can't
+        # show where they could go. Float noise is unsupported (task
+        # 20261012-17).
+        def noisy?(runs, key)
+          exact = whole(runs, :itself.to_proc)
+          exact&.blocks&.any? do |block|
+            exact.rows[block].uniq.group_by(&key).any? { |_, rows| rows.size > 1 }
+          end
         end
 
         # The Layout of two whole runs.
