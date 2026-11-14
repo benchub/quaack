@@ -11,6 +11,7 @@ require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/refusal_reasons"
+require "quaack/protocol/refused_inserts"
 require "quaack/protocol/own_rewrites"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
@@ -122,6 +123,7 @@ module Quaack
         check_report(fields) if type == "report"
         check_step_counts(fields) if type == "step_counts"
         check_rewrite_test(fields) if type == "rewrite_test"
+        check_counterexample_round(fields) if type == "counterexample_round"
         JSON.generate({ "type" => type, **fields })
       rescue PlainData::NotPlain, JSON::JSONError => e
         error = e.is_a?(JSON::NestingError) ? TooDeep : Error
@@ -156,6 +158,15 @@ module Quaack
         return if Protocol::RewriteBudget.rule?(fields["rule"]) && Protocol::FuzzResult.rewrite_test?(fields)
 
         raise Error, "a value in this rewrite_test message isn't a rule, a stage, or counts"
+      end
+
+      # A counterexample_round's refused must be exactly each refused
+      # insert's index and rule, and a not_immutable refusal's function name
+      # (see Protocol::RefusedInserts.valid?), task 20261012-12.
+      def check_counterexample_round(fields)
+        return if Protocol::RefusedInserts.valid?(fields["refused"])
+
+        raise Error, "a value in this counterexample_round message isn't refused inserts"
       end
 
       # A report's plans are nested too, so each must be exactly plan nodes

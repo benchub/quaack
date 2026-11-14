@@ -71,7 +71,7 @@ RSpec.describe Quaack::Enclave::Egress do
     it "keeps every field on each type's list, and only those, for every type on the whitelist" do
       # A burndown's fields must be a burndown, a report's plans plan nodes,
       # and step_counts' counts, so they get their own tests below.
-      whitelist.except(:burndown, :report, :step_counts, :rewrite_test).each do |type, fields|
+      whitelist.except(:burndown, :report, :step_counts, :rewrite_test, :counterexample_round).each do |type, fields|
         message = fields.to_h { |f| [f, "value of #{f}"] }.merge(type: type, not_on_the_list: EGRESS_SENTINEL)
         out = egress.serialize(message)
 
@@ -296,6 +296,36 @@ RSpec.describe Quaack::Enclave::Egress do
         message = "a value in this rewrite_test message isn't a rule, a stage, or counts"
         expect { egress.serialize(type: :rewrite_test, rewrite: "rewrite_1", passed: false, **fields) }
           .to raise_error(described_class::Error, message) { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+      end
+    end
+  end
+
+  # Task 20261012-12: refused may name the function that got a not_immutable
+  # insert refused, so it must pass Protocol::RefusedInserts.valid?.
+  describe "a counterexample_round message" do
+    let(:round) { { type: :counterexample_round, match: true, rule: nil, load_order: nil, covered: [], load_failed: false } }
+
+    it "sends each refusal's index and rule, and a not_immutable refusal's function" do
+      refused = [{ index: 0, rule: "insert_select" }, { index: 1, rule: "not_immutable", function: "pg_catalog.concat" }]
+      out = egress.serialize(**round, refused:)
+
+      expect(JSON.parse(out)["refused"]).to eq([{ "index" => 0, "rule" => "insert_select" },
+                                                { "index" => 1, "rule" => "not_immutable",
+                                                  "function" => "pg_catalog.concat" }])
+    end
+
+    [
+      ["a planted value as a function", [{ index: 0, rule: "not_immutable", function: EGRESS_SENTINEL }]],
+      ["a planted key in a refusal", [{ index: 0, rule: "insert_select", detail: EGRESS_SENTINEL }]],
+      ["a planted value as a rule", [{ index: 0, rule: EGRESS_SENTINEL }]],
+      ["no refused at all", nil]
+    ].each do |what, refused|
+      it "refuses one with #{what}, without quoting it" do
+        expect { egress.serialize(**round, refused:) }
+          .to raise_error(described_class::Error, "a value in this counterexample_round message isn't refused inserts") { |e|
             expect(e.message).not_to include(EGRESS_SENTINEL)
             expect(e.cause).to be_nil
           }
