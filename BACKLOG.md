@@ -13,6 +13,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-12
 - 20261012-17
 - 20261012-31
+- 20261012-42
 
 
 ## How this file works.
@@ -326,14 +327,7 @@ Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' re
 
 ### 20261012-40. Enumerate's value classes: generated columns, the key fallback, and two stale comments. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-42. fuzz's RangeTables: a TABLESAMPLE hides the table's alias.
-
-From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclave/lib/quaack/enclave/fuzz/range_tables.rb`) registers each FROM item's alias, but a `TABLESAMPLE` wraps the table in a `range_table_sample`, so `FROM orders o TABLESAMPLE SYSTEM (10) WHERE o.total / 3 > 2` doesn't find `o`, and the column falls back to matching by name. That's harmless: the solutions still reach `orders.total`, and a same-named column elsewhere in the query gets them too, as before 20261012-33. Look through `range_table_sample` to its relation, test first, or leave it and say so in DESIGN.md beside the other fallbacks.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-33, 2026-10-13 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-42. fuzz's RangeTables: a TABLESAMPLE hides the table's alias. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-46. enumerate: a key compared with a constant lowers the bound on keyset pages.
 

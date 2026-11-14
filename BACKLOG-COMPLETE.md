@@ -13579,3 +13579,13 @@ Answers (the user, 2026-10-14):
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-11-14, merge of task/20261012-31. New `tables` count (0 to 5) from enclave to driver; the bound is claimed only when it covers every table; wording per the user's answers. Enclave and protocol change, on the unreleased list.
+
+### 20261012-42. fuzz's RangeTables: a TABLESAMPLE hides the table's alias.
+
+From the review of 20261012-33, 2026-10-13 (minor). `Fuzz::RangeTables` (`enclave/lib/quaack/enclave/fuzz/range_tables.rb`) registers each FROM item's alias, but a `TABLESAMPLE` wraps the table in a `range_table_sample`, so `FROM orders o TABLESAMPLE SYSTEM (10) WHERE o.total / 3 > 2` doesn't find `o`, and the column falls back to matching by name. That's harmless: the solutions still reach `orders.total`, and a same-named column elsewhere in the query gets them too, as before 20261012-33. Look through `range_table_sample` to its relation, test first, or leave it and say so in DESIGN.md beside the other fallbacks.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-33, 2026-10-13 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-11-14, merge of task/20261012-42. `RangeTables` finds a TABLESAMPLE table's alias. Enclave change, on the unreleased list.
