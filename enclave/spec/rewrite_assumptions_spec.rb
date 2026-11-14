@@ -22,4 +22,27 @@ RSpec.describe Quaack::Enclave::RewriteAssumptions do
             described_class.valid?([denormalized.merge("references_table" => "assignments")])])
       .to eq([false, false, false, false])
   end
+
+  describe ".normalized" do
+    let(:check) { { "kind" => "check", "table" => "public.orders", "expression" => "total >= 0" } }
+    let(:not_null) { { "kind" => "not_null", "table" => "public.orders", "column" => "id" } }
+
+    it "gives the same form for reordered, re-spaced assumptions" do
+      spaced = check.merge("expression" => " total \n  >=  0\t")
+      expect(described_class.normalized([spaced, not_null])).to eq(described_class.normalized([not_null, check]))
+    end
+
+    it "gives different forms for really different assumptions" do
+      expect(described_class.normalized([check])).not_to eq(described_class.normalized([not_null]))
+      other = check.merge("expression" => "total > 0")
+      expect(described_class.normalized([check])).not_to eq(described_class.normalized([other]))
+    end
+
+    it "keeps a column list's order, which a foreign key pairs on" do
+      fk = { "kind" => "foreign_key", "table" => "public.a", "columns" => %w[x y],
+             "references_table" => "public.b", "references_columns" => %w[p q] }
+      expect(described_class.normalized([fk]))
+        .not_to eq(described_class.normalized([fk.merge("references_columns" => %w[q p])]))
+    end
+  end
 end
