@@ -30,6 +30,18 @@ module E2E
   BLOCK_KEYS = ["Shared Hit Blocks", "Shared Read Blocks", "Local Hit Blocks",
                 "Local Read Blocks", "Temp Read Blocks", "Temp Written Blocks"].freeze
 
+  # The inode of this process's PID namespace, on Linux, or nil where
+  # there's none (macOS). A pid means something only in its own namespace.
+  def self.pid_namespace
+    File.stat("/proc/self/ns/pid").ino.to_s
+  rescue SystemCallError
+    nil
+  end
+
+  # What HOST_LABEL holds, the same scheme as spec/support/test_postgres.rb:
+  # the hostname, plus the PID namespace where there is one.
+  def self.owner_host = [Socket.gethostname, pid_namespace&.then { "pidns:#{it}" }].compact.join("/")
+
   # One throwaway Postgres container, reached with docker exec and psql.
   class Postgres
     attr_reader :id
@@ -42,7 +54,7 @@ module E2E
       # Autovacuum is off, as DESIGN.md's run-server requires of the run server, so a
       # background vacuum or analyze can't change a measurement.
       @id = capture("docker", "run", "-d", "--label", @label, "--label", "#{OWNER_LABEL}=#{Process.pid}",
-                    "--label", "#{HOST_LABEL}=#{Socket.gethostname}", "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE,
+                    "--label", "#{HOST_LABEL}=#{E2E.owner_host}", "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE,
                     "-c", "autovacuum=off").strip
       at_exit { system("docker", "rm", "-f", "-v", @id, out: File::NULL, err: File::NULL) }
       wait_until_ready
@@ -57,7 +69,7 @@ module E2E
 
     # Removes containers whose owning run is gone. One whose owner is still
     # running is another run's server, maybe from another worktree, so it
-    # stays. So does one another host started, since its pid can't be checked
+    # stays. So does one another host or PID namespace started, since its pid can't be checked
     # here. One with no owner label predates the labels and counts as gone,
     # the way spec/support/test_postgres.rb treats it.
     def remove_stale_containers
@@ -71,7 +83,7 @@ module E2E
       system("docker", "rm", "-f", "-v", *stale.map(&:first), out: File::NULL, err: File::NULL) unless stale.empty?
     end
 
-    def foreign?(host) = !host.empty? && host != Socket.gethostname
+    def foreign?(host) = !host.empty? && host != E2E.owner_host
 
     def process_alive?(pid)
       return false unless pid&.positive?

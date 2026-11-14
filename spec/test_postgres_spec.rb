@@ -763,6 +763,46 @@ RSpec.describe TestPostgres do
       end
     end
 
+    # Task 20261114-190619-1: two PID namespaces can share a hostname, so a
+    # pid that looks dead here may be alive in the other. The namespace id
+    # stands in for a real Linux one, so the label can match no real run.
+    describe "with a PID namespace" do
+      let(:namespace) { "spec-#{Process.pid}-#{rand(1 << 30)}" }
+
+      before do
+        TestPostgres.server
+        allow(TestPostgres).to receive(:pid_namespace).and_return(namespace)
+      end
+
+      def leftover(host)
+        dead_pid = Process.spawn(RbConfig.ruby, "-e", "exit").tap { Process.wait(it) }
+        id, = Open3.capture2("docker", "create", "--label", "#{TestPostgres::LABEL}=1",
+                             "--label", "#{TestPostgres::OWNER_LABEL}=#{dead_pid}",
+                             "--label", "#{TestPostgres::HOST_LABEL}=#{host}", TestPostgres.image_tag)
+        id.strip
+      end
+
+      it "keeps a dead-looking container from another namespace on this host, and removes one from its own" do
+        other = leftover("#{Socket.gethostname}/pidns:other-#{namespace}")
+        own = leftover("#{Socket.gethostname}/pidns:#{namespace}")
+
+        TestPostgres.remove_stale_containers
+
+        expect([docker_ids("id=#{other}"), docker_ids("id=#{own}")]).to eq([[other], []])
+      ensure
+        Open3.capture2e("docker", "rm", "-f", "-v", *[other, own].compact)
+      end
+
+      it "puts the namespace in its owner-host label" do
+        expect(TestPostgres.owner_host).to eq("#{Socket.gethostname}/pidns:#{namespace}")
+      end
+    end
+
+    it "uses the bare hostname as owner host where there is no PID namespace" do
+      allow(TestPostgres).to receive(:pid_namespace).and_return(nil)
+      expect(TestPostgres.owner_host).to eq(Socket.gethostname)
+    end
+
     it "labels its container with this host's name" do
       id = TestPostgres.server.container_id
       host = TestPostgres.docker("inspect", "--format", "{{index .Config.Labels \"#{TestPostgres::HOST_LABEL}\"}}", id)

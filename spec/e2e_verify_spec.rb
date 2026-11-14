@@ -77,4 +77,32 @@ RSpec.describe E2E::Postgres do
 
     expect(labels).to eq([Process.pid.to_s, this_host])
   end
+
+  # Task 20261114-190619-1: a stand-in PID namespace id, as on Linux.
+  describe "with a PID namespace" do
+    let(:namespace) { "spec-#{Process.pid}" }
+
+    before { allow(E2E).to receive(:pid_namespace).and_return(namespace) }
+
+    it "keeps a dead-looking leftover from another namespace on this host, and removes one from its own" do
+      other = create_container(*owner(dead_pid, "#{this_host}/pidns:other-#{namespace}"))
+      own = create_container(*owner(dead_pid, "#{this_host}/pidns:#{namespace}"))
+
+      described_class.new(label: label)
+
+      expect([listed?(other), listed?(own)]).to eq([true, false])
+    end
+
+    it "puts the namespace in its owner-host label" do
+      id = described_class.new(label: label).id
+      host = docker("inspect", "--format", "{{index .Config.Labels \"#{E2E::HOST_LABEL}\"}}", id)
+
+      expect(host).to eq("#{this_host}/pidns:#{namespace}")
+    end
+  end
+
+  it "uses the bare hostname as owner host where there is no PID namespace" do
+    allow(E2E).to receive(:pid_namespace).and_return(nil)
+    expect(E2E.owner_host).to eq(this_host)
+  end
 end
