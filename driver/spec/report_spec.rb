@@ -3918,6 +3918,25 @@ RSpec.describe Quaack::Driver::Report do
       expect(sankeys("index").scan(/>([^<]*)</).join(" ")).not_to match(/-[12]\b/)
     end
 
+    # Task 20261012-14: the table shows what went on as not recorded where the Sankey does.
+    it "shows what went on as not recorded in the table when a stage's count is negative, as the Sankey does" do
+      stages["index-dedupe"]["original"] = rec(-1, 3)
+      stages["index-rank"]["original"] = rec(3, -2)
+      words = Quaack::Driver::Report::Words::INDEX_STAGES
+      went_on = %w[index-dedupe index-rank].map do |stage|
+        row = table("index")[%r{<th scope="row">#{Regexp.escape(words.fetch(stage))}</th>.*?</tr>}m]
+        row.scan(%r{<td[^>]*>[^<]*</td>})[-2]
+      end
+      expect(went_on).to eq(['<td class="missing">not recorded</td>'] * 2)
+    end
+
+    it "gives no hover note for a zero count of rewrites not tested in time, as for none" do
+      style = Quaack::Driver::Report::StageStyle
+      expect(style.untimed({ "extra" => { "not_tested_in_time" => 0 } })).to be_nil
+      expect(style.went_on_notes({ "extra" => { "not_tested_in_time" => 0 } }, "rewrite-test")).to eq([])
+      expect(style.untimed({ "extra" => { "not_tested_in_time" => 2 } })).to eq(2)
+    end
+
     it "says in the Sankey and the table what a stage set aside, added, and dropped, by reason" do
       stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1)
       index = sankeys("index")
@@ -4731,7 +4750,7 @@ RSpec.describe Quaack::Driver::Report do
     it "prints, escaped, every value a negative report shows" do
       expect_escaped(rendered(negative_sentinels),
                      '<ul id="negative-rewrites"><li>', %(<tr><td><code class="sql">),
-                     "(Postgres error code ", %(#{escaped}</td><td>), "<tbody>\n<tr><td>",
+                     "(Postgres error code ", "not recorded</td><td>", "<tbody>\n<tr><td>",
                      "</td><td>Made by transform rules ", %(<td><code class="sql">))
     end
 
