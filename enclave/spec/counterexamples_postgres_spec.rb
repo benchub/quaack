@@ -550,6 +550,60 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       expect(outcome(round)).to eq([true, nil, false, []])
     end
 
+    # Task 20261012-19: the rerun of the original goes through every
+    # distinct load order, and a load that fails there ends it as "the
+    # original ran", not as the original failing. The inserts need
+    # customers 7 and 8, so the parent rows load in a different order in
+    # the reverse load.
+    describe "when the outcome turns on a later load order (task 20261012-19)" do
+      let(:two_parents) do
+        orders = "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a'), (2, 8, 'b')"
+        described_class.prepare(conn, [orders], placeholder_map: map, tables: %w[customers orders].map { tn(it) })
+      end
+
+      def customer_round(original, candidate)
+        column_names = { tn("customers") => %w[id name tier], tn("first_loaded") => %w[id] }
+        atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(original), column_names:)
+        described_class.compare(runner, two_parents, original:, candidate:, atoms:, untested: [])
+      end
+
+      it "reports original_failed when the original fails only in the reverse load" do
+        expect(two_parents.rows.map { it.values[it.columns.index("id")] }).to eq(%w[7 8])
+        # A trigger keeps the first customer loaded: 7 in the forward load (1 / -1), 8 in the reverse one (1 / 0).
+        conn.exec(<<~SQL)
+          CREATE TABLE fx.first_loaded (id integer PRIMARY KEY);
+          CREATE FUNCTION fx.keep_first() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            INSERT INTO fx.first_loaded SELECT NEW.id WHERE NOT EXISTS (SELECT FROM fx.first_loaded);
+            RETURN NEW;
+          END $$;
+          CREATE TRIGGER keep_first AFTER INSERT ON fx.customers FOR EACH ROW EXECUTE FUNCTION fx.keep_first();
+        SQL
+        original = "SELECT 1 / (f.id - 8) AS r FROM fx.first_loaded f"
+        candidate = "SELECT 1 / (f.id - f.id) AS r FROM fx.first_loaded f"
+
+        expect(outcome(customer_round(original, candidate))).to eq([nil, :original_failed, false, []])
+      end
+
+      it "is a disproof when the original runs in the forward load and the reverse load fails" do
+        conn.exec(<<~SQL)
+          CREATE FUNCTION fx.seven_first() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF NEW.id = 8 AND NOT EXISTS (SELECT FROM fx.customers WHERE id = 7) THEN
+              RAISE EXCEPTION 'customer 7 loads first';
+            END IF;
+            RETURN NEW;
+          END $$;
+          CREATE TRIGGER seven_first BEFORE INSERT ON fx.customers FOR EACH ROW EXECUTE FUNCTION fx.seven_first();
+        SQL
+        original = "SELECT c.id FROM fx.customers c ORDER BY c.id"
+
+        round = customer_round(original, "SELECT c.id / 0 AS id FROM fx.customers c ORDER BY c.id")
+
+        expect(outcome(round)).to eq([false, :query_failed, false, []])
+      end
+    end
+
     describe "under a short statement_timeout" do
       let(:quick) { Quaack::Enclave::ArenaRunner.new(conn, statement_timeout_ms: 300) }
       let(:sleepy) { "SELECT t.id, (SELECT 1 FROM pg_sleep(5) WHERE t.b = 0) AS slept FROM fx.t t" }
