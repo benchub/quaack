@@ -294,6 +294,20 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect(fields(compare("SELECT id, grp FROM items ORDER BY grp", candidate, rows: tied)))
           .to eq(match: false, mode: :ordered, rule: :unsupported_order, reason: :unsteady_order, row: nil, column: nil)
       end
+
+      # 20261012-17: keys round floats, so the candidate's tie group can
+      # hold rows that look the same by key but differ exactly, and the
+      # tiebreaker sorts them apart. The original orders (1.0, z) before
+      # the other two, but the candidate could return (1.0000000002, a)
+      # first. Float noise is unsupported, so that's a refusal.
+      it "refuses a candidate whose tie group holds rows that differ only within float tolerance" do
+        rows = rows_of(%w[id grp label], [1, 1, "z"], [2, 2, "a"], [3, 2, "z"])
+        floats = ->(last) { "CASE id WHEN 1 THEN 1.0 WHEN 2 THEN 1.0000000002 ELSE #{last} END::float8 AS f" }
+
+        expect(fields(compare("SELECT #{floats["1.0000000003"]}, label FROM items ORDER BY grp",
+                              "SELECT #{floats["1.0000000005"]}, label FROM items ORDER BY id * 0", rows:)))
+          .to eq(match: false, mode: :ordered, rule: :unsupported_order, reason: :unsteady_order, row: nil, column: nil)
+      end
     end
 
     # 20261111-185500-1: with no LIMIT or OFFSET, nothing cuts a tie, so
