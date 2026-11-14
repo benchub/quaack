@@ -46,7 +46,8 @@ module Quaack
     # The column may sit on either side, as in $n < col. A placeholder may
     # be cast to the column's own type, as psycopg2 writes Django's dates
     # and lists, $1::timestamptz against a timestamptz column, or
-    # col = ANY($1::bigint[]) on a bigint one: the type's name, bare or
+    # col = ANY($1::bigint[]) on a bigint one, or a whole ARRAY[$1, ...]
+    # cast so, as in col = ANY (ARRAY[$1, $2]::bigint[]): the type's name, bare or
     # under pg_catalog, matches statistics' column_types for the column,
     # with no modifier. The cast stays in the SQL, and reads the picked
     # pg_stats text as the column does.
@@ -149,6 +150,12 @@ module Quaack
         names = type_name.names.map { it.string.sval }
         names = names.drop(1) if names.size == 2 && names.first == "pg_catalog"
         names == [type] && type_name.typmods.empty? && type_name.array_bounds.size == (array ? 1 : 0)
+      end
+
+      # node, or what it casts if the cast is to type (see cast_to?), or nil.
+      def castless(node, type, array: false)
+        cast = node.type_cast
+        cast ? (cast.arg if cast_to?(cast.type_name, type, array:)) : node
       end
 
       def load(store)
@@ -325,7 +332,8 @@ module Quaack
           array = placeholder(expr.rexpr, array: true)
           return [[name(array), :array]] if array
 
-          list(expr.lexpr, expr.rexpr.a_array_expr&.elements.to_a)
+          # An ARRAY[...], bare or cast to the column's array type.
+          list(expr.lexpr, LiteralSet.castless(expr.rexpr, @type, array: true)&.a_array_expr&.elements.to_a)
         end
 
         def list(column, items)
@@ -340,9 +348,8 @@ module Quaack
         # The placeholder node, plain or cast to the column's own type (an
         # array of it, for = ANY), or nil.
         def placeholder(node, array: false)
-          return node if node.param_ref
-
-          node.type_cast&.then { it.arg if it.arg&.param_ref && LiteralSet.cast_to?(it.type_name, @type, array:) }
+          node = LiteralSet.castless(node, @type, array:)
+          node if node&.param_ref
         end
       end
 

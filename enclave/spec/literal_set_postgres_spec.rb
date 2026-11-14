@@ -268,6 +268,22 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(rows(sql, result.sets["worst_case"]).size).to eq(6000)
     end
 
+    # 20261012-9: an ARRAY[...] cast to the column's array type.
+    it "keeps the list's length for = ANY of an ARRAY cast to the column's array type" do
+      sql, result = literal_sets("SELECT r.id FROM public.readings r WHERE r.k = ANY (ARRAY[1, 2]::integer[])")
+
+      expect(sql).to include("ARRAY[$1, $2]::int[]").or include("ARRAY[$1, $2]::integer[]")
+      expect(values(result, "worst_case")).to eq("$1" => "7", "$2" => "3")
+      expect(result.fallbacks["worst_case"]).to eq({})
+      expect(rows(sql, result.sets["worst_case"]).size).to eq(6000)
+    end
+
+    it "keeps an ARRAY cast to another type than the column's slow" do
+      _, result = literal_sets("SELECT r.id FROM public.readings r WHERE r.k = ANY (ARRAY[1, 2]::bigint[])")
+
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "unsupported_shape", "$2" => "unsupported_shape")
+    end
+
     # 20261008-36: a statistics entry stored before column_types existed has
     # no types to match a cast against, so a cast placeholder keeps its slow
     # value and a plain one still picks.
