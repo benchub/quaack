@@ -288,17 +288,24 @@ module Quaack
         # A list or an ARRAY[...] gives each element. So does an ARRAY under
         # casts that = ANY or <> ALL reads: Postgres prints IN on a varchar
         # column as = ANY ((ARRAY['a'::character varying])::text[]). A cast
-        # ARRAY that = compares with an array column stays whole.
-        def sides(expr)
-          quantified = %i[AEXPR_OP_ANY AEXPR_OP_ALL].include?(expr.kind)
-          [expr.lexpr, expr.rexpr].compact.flat_map do |s|
-            array = (quantified ? uncast(s) : s).a_array_expr
-            if s.list then s.list.items.to_a
-            elsif array then array.elements.to_a
-            else [s]
-            end
+        # ARRAY that = compares with an array column stays whole, bare or
+        # cast.
+        def sides(expr) = [expr.lexpr, expr.rexpr].compact.flat_map { side(expr, it) }
+
+        def side(expr, whole)
+          array = quantified?(expr) && uncast(whole).a_array_expr
+          if whole.list then whole.list.items.to_a
+          elsif array then array.elements.to_a
+          else [whole]
           end
         end
+
+        def quantified?(expr) = %i[AEXPR_OP_ANY AEXPR_OP_ALL].include?(expr.kind)
+
+        # Under = ANY or <> ALL, a side that isn't a list or an ARRAY[...]
+        # is a whole array, such as '{x,y}'::text[] (how drivers bind a
+        # list as one array). Postgres splits it, with unnest.
+        def whole_array?(expr, side) = quantified?(expr) && !side.list && !uncast(side).a_array_expr
 
         def uncast(node) = node.type_cast ? uncast(node.type_cast.arg) : node
 
@@ -314,13 +321,25 @@ module Quaack
           expr = node.a_expr
           return [] unless expr
 
-          sides(expr).reject { |s| column_ref?(s) }.filter_map do |side|
-            conn.exec(<<~SQL).getvalue(0, 0)
-              SELECT CAST(q.v AS #{col.type})::pg_catalog.text FROM (#{select_of(Sides.copy(side))}) q(v)
-            SQL
-          rescue PG::Error
-            nil
+          [expr.lexpr, expr.rexpr].compact.reject { column_ref?(it) }.flat_map do |whole|
+            next evaluate(conn, "pg_catalog.unnest((#{select_of(Sides.copy(whole))}))", col) if whole_array?(expr,
+                                                                                                             whole)
+
+            side_literals(conn, expr, whole, col)
           end
+        end
+
+        def side_literals(conn, expr, whole, col)
+          elements = side(expr, whole).reject { column_ref?(it) }
+          elements.flat_map { evaluate(conn, "(#{select_of(Sides.copy(it))})", col) }
+        end
+
+        def evaluate(conn, from, col)
+          conn.exec(<<~SQL).column_values(0).compact
+            SELECT CAST(q.v AS #{col.type})::pg_catalog.text FROM #{from} q(v)
+          SQL
+        rescue PG::Error
+          []
         end
       end
     end

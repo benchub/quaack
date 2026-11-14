@@ -108,6 +108,26 @@ RSpec.describe Quaack::Enclave::ValuePools do
     expect(p.satisfying).to eq(["{open,shut}"])
   end
 
+  # Drivers that bind a list as one array (= ANY($1)) give an array
+  # literal, not ARRAY[...] (20261012-8).
+  it "pools each element of a query's = ANY over an array literal" do
+    p = pool("s.kind::text = ANY ('{x,y}'::text[])")
+    expect(p.satisfying).to eq(%w[x y])
+  end
+
+  it "gives a CHECK's = ANY over an array literal each element as one of its values" do
+    t = Quaack::Enclave::TableName.new(schema: "fx", name: "lit")
+    conn.exec("CREATE TABLE fx.lit (id integer PRIMARY KEY, f text NOT NULL CHECK (f = ANY ('{u,v}'::text[])))")
+    s = Quaack::Enclave::ArenaSchema.load_closure(conn, [t])
+    checks = Quaack::Enclave::Scenarios::Checks.new(conn, s)
+    expect(checks.values(t, s.column(t, "f"))).to eq(%w[u v])
+  end
+
+  it "keeps a bare ARRAY whole when it's compared with an array column" do
+    p = pool("s.tags = ARRAY['open', 'shut']")
+    expect(p.satisfying).to eq(["{open,shut}"])
+  end
+
   it "pools each element under nested casts" do
     p = pool("s.kind = ANY (ARRAY['open', 'shut']::varchar[]::text[])")
     expect(p.satisfying).to eq(%w[open shut])
