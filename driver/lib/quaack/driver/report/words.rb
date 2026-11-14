@@ -16,6 +16,10 @@ module Quaack
       module Words # rubocop:disable Metrics/ModuleLength
         MISSING = "not recorded"
 
+        # What enumerate's data sets are built from, after its bound (task
+        # 20261012-31, the user's words).
+        ENUMERATED_FROM = "built from the query's own values (its constants, values next to them, and NULL)"
+
         SETS = { "slow" => "slow", "worst_case" => "worst case", "typical" => "typical" }.freeze
         VERDICTS = { "better" => "better", "no_worse" => "no worse", "worse" => "worse" }.freeze
 

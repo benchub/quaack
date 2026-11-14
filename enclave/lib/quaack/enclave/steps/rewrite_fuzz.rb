@@ -7,6 +7,7 @@ require_relative "../arena_runner"
 require_relative "../atom_position"
 require_relative "../deadline"
 require_relative "../fuzz"
+require_relative "../fuzz_sizes"
 require_relative "../rewrite_burndown"
 require_relative "../rewrite_entry"
 
@@ -45,7 +46,10 @@ module Quaack
       # record marked with each spec setting set (SETTINGS).
       #
       # result's entry carries passed, rule, the stage that decided (fuzz or
-      # enumerate), fuzz's trials and fuzz_stop, a pass's
+      # enumerate), tables, how many tables the queries read, up to
+      # Protocol::FuzzResult::MAX_TABLES (task 20261012-31), so the driver
+      # claims enumerate's bound only when it gives each table a row,
+      # fuzz's trials and fuzz_stop, a pass's
       # Fuzz::StopRule#stopped (task 20261016-4), for the report, not the
       # rewrite_test message, enumerate's worlds and bound, and, for a
       # disproof, sizes, the shrunk counterexample's rows per table as
@@ -110,12 +114,14 @@ module Quaack
           results.coverage.untested_atoms.size if passed?(results)
         end
 
-        # The rewrite_tested_<n> entry for results.
+        # The rewrite_tested_<n> entry for results, with tables, how many
+        # tables the two queries read (FuzzSizes.count, task 20261012-31).
         def result(store, search, results)
-          return disproof(results) if disproved?(results)
-          return untested(results) unless passed?(results)
-
-          passed(store, search, results)
+          entry = if disproved?(results) then disproof(results)
+                  elsif passed?(results) then passed(store, search, results)
+                  else untested(results)
+                  end
+          entry.merge("tables" => FuzzSizes.count(*Counterexamples.queries(store, search)))
         end
 
         def fuzz_disproved?(results) = results.fuzz.verdict == :disproved

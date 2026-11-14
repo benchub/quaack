@@ -97,7 +97,9 @@ module Quaack
       #                    small databases rewrite-test's enumerate stage
       #                    compared it on, and the most rows of every one
       #                    it tried, task 20261012-3; a count and 0 to 4,
-      #                    or nil), and "sizes" (a fuzz or enumerate disproof's
+      #                    or nil), "tables" (how many tables the queries
+      #                    read, 0 to 5, 5 meaning 5 or more, or nil, task
+      #                    20261012-31), and "sizes" (a fuzz or enumerate disproof's
       #                    rows per table, [schema, table, rows], or nil;
       #                    FuzzSizes, which egress checks too) }
       #   indexes          { built index name => { "ddl", "size",
@@ -231,16 +233,18 @@ module Quaack
         end
 
         # rewrite-test's fuzz trials and enumerate's worlds, if they're
-        # counts, why fuzz stopped, if Protocol::FuzzResult.stop? passes it
+        # counts, how many tables the queries read (task 20261012-31), if
+        # Protocol::FuzzResult.tables? passes it, why fuzz stopped, if Protocol::FuzzResult.stop? passes it
         # (task 20261016-4), enumerate's bound if it's one, and a disproof's
         # sizes, if FuzzSizes.check passes them against the two queries.
         def fuzz(store, name, original, sql)
           tested = NegativeResult.optional(store, name.sub("rewrite_", "rewrite_tested_")) || {}
-          trials, worlds, bound, stop = tested.values_at("trials", "worlds", "bound", "fuzz_stop")
+          trials, worlds, bound, tables, stop = tested.values_at("trials", "worlds", "bound", "tables", "fuzz_stop")
           { "trials" => (trials if Protocol::FuzzResult.trials?(trials)),
             "fuzz_stop" => (stop if Protocol::FuzzResult.stop?(stop)),
             "worlds" => (worlds if Protocol::FuzzResult.trials?(worlds)),
             "bound" => (bound if Protocol::FuzzResult.bound?(bound)),
+            "tables" => (tables if Protocol::FuzzResult.tables?(tables)),
             "sizes" => FuzzSizes.check(tested["sizes"], FuzzSizes.tables(original, sql)) }
         end
 

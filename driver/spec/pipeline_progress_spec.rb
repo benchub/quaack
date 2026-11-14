@@ -398,14 +398,44 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     it "says, in the user's words, that no random dataset nor any dataset up to the bound differed" do
       entries.merge!(rewrite(1, rewrite_survived: false))
       tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
-                   "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2 })
+                   "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2, "tables" => 2 })
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
 
       run
 
       expect(lines_of("rewrite-correctness")[2])
-        .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows over its " \
-               "value classes (rewrite-test)")
+        .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows built " \
+               "from the query's own values (its constants, values next to them, and NULL) (rewrite-test)")
+    end
+
+    # Task 20261012-31: a bound that can't give each table the queries
+    # read a row claims nothing, so the line is fuzz's.
+    [{ "bound" => 1, "tables" => 2 }, { "bound" => 2 }, { "bound" => 4, "tables" => 5 }].each do |fields|
+      it "says only fuzz's line when the bound is under the tables the queries read, or they aren't " \
+         "counted: #{fields}" do
+        entries.merge!(rewrite(1, rewrite_survived: false))
+        tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
+                     "stage" => "enumerate", "trials" => 40, "worlds" => 905, **fields })
+        3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+        run
+
+        expect(lines_of("rewrite-correctness")[2])
+          .to eq("#{name}: Survived 40 random small databases built around the query's values (rewrite-test)")
+      end
+    end
+
+    it "claims a bound equal to the tables the queries read" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
+                   "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 1, "tables" => 1 })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2]).to end_with("or on any dataset of up to 1 row built from the " \
+                                                             "query's own values (its constants, values next to " \
+                                                             "them, and NULL) (rewrite-test)")
     end
 
     it "says nothing of random small databases when the search compared none" do

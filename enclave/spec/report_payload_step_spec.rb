@@ -674,7 +674,7 @@ RSpec.describe "quaacks report-payload" do
                                  "untested_atoms" => nil, "untested_unchanged" => nil, "covered" => nil,
                                  "evidence" => nil, "out_of_time" => nil, "not_tested" => nil,
                                  "trials" => nil, "fuzz_stop" => nil, "worlds" => nil, "bound" => nil,
-                                 "sizes" => nil)
+                                 "tables" => nil, "sizes" => nil)
       end
     end
   end
@@ -962,12 +962,12 @@ RSpec.describe "quaacks report-payload" do
           stored(store, 6, tested: tested(true).merge("stage" => "fuzz", "trials" => 41_200))
           stored(store, 7, tested: fuzzed(false, REPORT_WORD_SENTINEL, 3, []), survived: false)
           stored(store, 8, tested: fuzzed(false, "query_failed", 9, [["public", "orders", 1]]), survived: false)
-          enumerated = { "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2 }
+          enumerated = { "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2, "tables" => 2 }
           stored(store, 9, tested: tested(false, nil, "value").merge(enumerated, "sizes" => [["public", "orders", 2]]),
                            survived: false)
           stored(store, 10, tested: tested(true).merge(enumerated, "fuzz_stop" => stop))
           stored(store, 11, tested: tested(true).merge("stage" => "enumerate", "trials" => 40,
-                                                       "worlds" => sentinel, "bound" => 37,
+                                                       "worlds" => sentinel, "bound" => 37, "tables" => 37,
                                                        "fuzz_stop" => stop.merge("reason" => sentinel)))
           stored(store, 12, tested: tested(true).merge("trials" => 40, "fuzz_stop" => stop.merge("seconds" => 4.2)))
         end
@@ -990,10 +990,10 @@ RSpec.describe "quaacks report-payload" do
         expect_no_leaks(sentinels, outcome)
       end
 
-      it "sends an enumerate pass's worlds and bound, and none that aren't a count and a bound" do
-        expect(rewrite(10)).to include("trials" => 40, "worlds" => 905, "bound" => 2, "sizes" => nil)
-        expect(rewrite(11)).to include("trials" => 40, "worlds" => nil, "bound" => nil)
-        expect(rewrite(6)).to include("worlds" => nil, "bound" => nil)
+      it "sends an enumerate pass's worlds, bound and tables, and none that aren't a count and a bound" do
+        expect(rewrite(10)).to include("trials" => 40, "worlds" => 905, "bound" => 2, "tables" => 2, "sizes" => nil)
+        expect(rewrite(11)).to include("trials" => 40, "worlds" => nil, "bound" => nil, "tables" => nil)
+        expect(rewrite(6)).to include("worlds" => nil, "bound" => nil, "tables" => nil)
         expect_no_leaks(sentinels, outcome)
       end
 

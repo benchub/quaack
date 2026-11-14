@@ -178,13 +178,16 @@ RSpec.describe PipelineReplay do
           expect(rows.assoc("Testing on every small database up to a few rows")).not_to be_nil
         end
 
+        # Task 20261012-31: group_having reads one table, so a bound of 1
+        # gives it a row and the section claims the bound.
         it "shows the enumerate sentence with its bound in each sound rewrite's section" do
-          expect(outcome.report["rewrites"].to_h { [it["rewrite"], it["bound"]] })
-            .to include("rewrite_1" => 1, "rewrite_3" => 1)
+          expect(outcome.report["rewrites"].to_h { [it["rewrite"], it.values_at("bound", "tables")] })
+            .to include("rewrite_1" => [1, 1], "rewrite_3" => [1, 1])
           sentences = outcome.html.scan(/[^<>]*enumerated in order of size[^<>]*/)
           expect(sentences.size).to eq(2)
           expect(sentences).to all(include(", then #{worlds} enumerated in order of size, which covered every " \
-                                           "data set of up to 1 row over its value classes."))
+                                           "data set of up to 1 row built from the query&#39;s own values (its " \
+                                           "constants, values next to them, and NULL)."))
         end
       end
     end

@@ -37,6 +37,10 @@ module Quaack
         end.uniq
       end
 
+      # How many tables the queries name, up to Protocol::FuzzResult::MAX_TABLES
+      # (task 20261012-31): a count, never a name.
+      def count(*sqls) = [tables(*sqls).size, Protocol::FuzzResult::MAX_TABLES].min
+
       # sizes, if it's a list whose every entry is a table of tables, or nil.
       def check(sizes, tables)
         sizes if sizes.is_a?(Array) && Protocol::FuzzResult.sizes?(sizes) && sizes.all? { tables.include?(it.take(2)) }
@@ -44,14 +48,14 @@ module Quaack
 
       # Whether a report's rewrites each carry sizes check passes against
       # the original's and that rewrite's tables, or none, trials, worlds
-      # and bound that Protocol::FuzzResult.counts? passes, and a fuzz_stop
+      # bound and tables that Protocol::FuzzResult.counts? passes, and a fuzz_stop
       # that Protocol::FuzzResult.stop? passes (task 20261016-4). A
       # rewrite's keys may be Strings or Symbols.
       def report?(original_sql, rewrites)
         rewrites.all? do |rewrite|
           sizes = field(rewrite, "sizes")
           (sizes.nil? || check(sizes, tables(original_sql, field(rewrite, "sql")))) &&
-            Protocol::FuzzResult.counts?(%w[trials worlds bound].to_h { [it, field(rewrite, it)] }) &&
+            Protocol::FuzzResult.counts?(%w[trials worlds bound tables].to_h { [it, field(rewrite, it)] }) &&
             Protocol::FuzzResult.stop?(field(rewrite, "fuzz_stop"))
         end
       end

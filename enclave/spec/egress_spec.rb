@@ -278,6 +278,13 @@ RSpec.describe Quaack::Enclave::Egress do
                                     "trials" => 41_200, "worlds" => 905, "bound" => 4)
     end
 
+    it "sends how many tables the queries read, up to MAX_TABLES (20261012-31)" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, rule: nil,
+                             stage: "enumerate", trials: 40, worlds: 905, bound: 1, tables: 2)
+
+      expect(JSON.parse(out)).to include("bound" => 1, "tables" => 2)
+    end
+
     [
       ["an error message as the rewrite's rule", { rule: "PG::Error: #{EGRESS_SENTINEL}" }],
       ["a number as the rewrite's rule", { rule: 5 }],
@@ -290,7 +297,10 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a negative worlds count", { worlds: -1 }],
       ["a string where the bound belongs", { bound: EGRESS_SENTINEL }],
       ["a bound past MAX_BOUND", { bound: Quaack::Protocol::FuzzResult::MAX_BOUND + 1 }],
-      ["a bound of a query constant's worth", { bound: 37 }]
+      ["a bound of a query constant's worth", { bound: 37 }],
+      ["a string where the tables count belongs", { tables: EGRESS_SENTINEL }],
+      ["a tables count past MAX_TABLES", { tables: Quaack::Protocol::FuzzResult::MAX_TABLES + 1 }],
+      ["a tables count of a query constant's worth", { tables: 37 }]
     ].each do |what, fields|
       it "refuses one with #{what}, without quoting it" do
         message = "a value in this rewrite_test message isn't a rule, a stage, or counts"
@@ -812,11 +822,12 @@ RSpec.describe Quaack::Enclave::Egress do
       it "sends tables either query names, with their row counts, and trials as a count" do
         sizes = [["public", "orders", 5], ["sales", "customers", 1], ["sales", "refunds", 1]]
         rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
-        counts = { "trials" => 41_200, "worlds" => 905, "bound" => 3,
+        counts = { "trials" => 41_200, "worlds" => 905, "bound" => 3, "tables" => 3,
                    "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
         sent = parsed(report_with({ "sizes" => sizes, **counts }, sql: rewrite_sql))
         expect(sent["rewrites"].first).to include("sizes" => sizes, **counts)
-        none = { "sizes" => nil, "trials" => nil, "worlds" => nil, "bound" => nil, "fuzz_stop" => nil }
+        none = { "sizes" => nil, "trials" => nil, "worlds" => nil, "bound" => nil, "tables" => nil,
+                 "fuzz_stop" => nil }
         expect(parsed(report_with(none))["rewrites"].first).to include(none)
       end
 
@@ -837,6 +848,9 @@ RSpec.describe Quaack::Enclave::Egress do
         ["a String in place of the bound", { "bound" => EGRESS_SENTINEL }],
         ["a bound past MAX_BOUND", { "bound" => Quaack::Protocol::FuzzResult::MAX_BOUND + 1 }],
         ["a bound under a Symbol key", { bound: 37 }],
+        ["a String in place of tables (20261012-31)", { "tables" => EGRESS_SENTINEL }],
+        ["a tables count of a query constant's worth", { "tables" => 37 }],
+        ["tables under a Symbol key", { tables: 37 }],
         ["a stop reason off the list (20261016-4)",
          { "fuzz_stop" => { "reason" => EGRESS_SENTINEL, "seconds" => 41, "quiet" => 20 } }],
         ["a String in place of the stop's seconds",
