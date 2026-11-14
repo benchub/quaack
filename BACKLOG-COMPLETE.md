@@ -13435,3 +13435,42 @@ From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`
 - **Design:** literal-sets, index-ideas.
 - **Status:** done
 - **Landed:** 2026-11-14, merged from `task/20261012-9`. `LiteralSet.castless` unwraps a cast only when it's to the column's own type, so `= ANY (ARRAY[$1, $2]::integer[])` on an integer column gets picks; a cast to another type still falls back. The `CastlessIndex` gap wasn't real (`uncast` already strips nested casts, and `castless_index_spec.rb` covers the printed varchar form); dropped. Reviewed with no blocking findings; the minor is in 20261114-160902-1. On the unreleased list.
+
+### 20261012-12. llm-counterexamples: tell the LLM which values get an insert refused, and what each refusal means.
+
+Found by 20261012-5's phase 2 (2026-10-12; `scratch/corpus-20261012-5/results/llm-score.md` in the main checkout). We replayed 531 replies from three models through production's InsertCheck, over up to 3 rounds with production's feedback. Many inserts were refused for values the system prompt never warns about, and the feedback doesn't say enough for the model to recover.
+
+What we saw:
+- **Operators.** `$1 || ' '`, `$2 - interval '1 day'` and `$1 * 2` are refused as `not_plain_value` (`insert_values.rb` `plain!`, `insert_check.rb` rule 10). The system prompt (`driver/lib/quaack/driver/counterexamples.rb` `SYSTEM`) says values must be "constants, casts, $n, DEFAULT, or immutable function calls on those", and models read that as allowing operators. claude-opus-5.5 had 50 such refusals and gemini-3.8-flash 24. In round 1, claude ended with nothing accepted on 42 of 99 cases.
+- **`not_immutable` doesn't name the refused call.** The enclave's error detail does ("function pg_catalog.timezone is stable, not immutable"), but only the rule reaches the LLM.
+  - claude and gemini kept using `jsonb_build_object` and `concat`, which are STABLE.
+  - `InsertValues::MUTABLE_SQL` matches by name and argument count, not by the overload Postgres would resolve. So `timezone($1, <timestamp>)` is refused because `timezone(text, timetz)` is STABLE, even though `timezone(text, timestamp)` is IMMUTABLE. A model can't work that out from "not_immutable".
+- **One refused value loses the whole statement.** It refuses the whole multi-row INSERT, so every row in it is lost.
+- **Misleading feedback.** After a round where every insert was refused, the feedback still says "The accepted inserts gave both queries the same results." (`result_line`).
+
+Most of claude's gain from round 1 to round 3 (41 to 73 of 76 wrong rewrites) came from working around these refusals, not from new ideas. gemini went from 35 to 72. gpt-6.1-sol, which seldom wrote operators, got 69 in round 1. So a clearer prompt should make round 1 much stronger, and fewer rounds means less time.
+
+Fix it test first:
+- **System prompt.**
+  - Say that operators are refused, and that the way around them is an immutable function (`pg_catalog.textcat`, `int4pl`, ...) or the value written out.
+  - Say that a function is refused if any of its overloads with that many arguments isn't IMMUTABLE (`timezone`, `concat`, `jsonb_build_object`), and suggest writing the value out instead.
+  - Suggest one row per INSERT when a value might be refused.
+- **Feedback.**
+  - Give each refusal rule a fixed sentence that says what it means.
+  - When nothing was accepted, say so.
+
+Decide with the user:
+- Whether the enclave should also send the refused function's name, which its error detail already holds. The name comes from the insert's own text, never a value, but it would need a protocol field and an egress check, and the change would go on the unreleased enclave list.
+- Whether `MUTABLE_SQL` should resolve the overload from the argument types instead.
+
+Answers (the user, 2026-10-12):
+- Yes, send the refused function's name back to the LLM. It goes in a new protocol field with an egress check. The task goes on the unreleased enclave list.
+- Yes, judge the overload Postgres resolves the call to, not every overload with that many arguments.
+
+Re-measure with the corpus harness, which builds prompts with the driver's and the enclave's real code. Compare round-1 refusals and catches before and after.
+
+- **Depends on:** None.
+- **Came from:** 20261012-5's phase 2, 2026-10-12.
+- **Design:** llm-counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-14, merged from `task/20261012-12`. A `not_immutable` refusal carries the refused function's name (`function`, only when it's two plain lowercase identifiers) in `counterexample_round`'s `refused`; `Protocol::RefusedInserts.valid?` checks it in Egress and fails closed. The system prompt now covers operators, the overload rule and one row per INSERT; each refusal rule has a fixed sentence; a round with nothing accepted says so. 52 corpus prompt fixtures got the new system text; recorded replies are unchanged. Not landed: the overload resolution in `MUTABLE_SQL` (20261114-170743-1) and the corpus re-measurement (20261114-170743-2). Reviewed with no blocking findings. Protocol and enclave change, on the unreleased list.

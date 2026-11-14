@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-11
 - 20261012-8
 - 20261012-9
+- 20261012-12
 
 
 ## How this file works.
@@ -285,43 +286,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-11. rewrite-test crashes when the original query fails on a scenario's data. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-12. llm-counterexamples: tell the LLM which values get an insert refused, and what each refusal means.
-
-Found by 20261012-5's phase 2 (2026-10-12; `scratch/corpus-20261012-5/results/llm-score.md` in the main checkout). We replayed 531 replies from three models through production's InsertCheck, over up to 3 rounds with production's feedback. Many inserts were refused for values the system prompt never warns about, and the feedback doesn't say enough for the model to recover.
-
-What we saw:
-- **Operators.** `$1 || ' '`, `$2 - interval '1 day'` and `$1 * 2` are refused as `not_plain_value` (`insert_values.rb` `plain!`, `insert_check.rb` rule 10). The system prompt (`driver/lib/quaack/driver/counterexamples.rb` `SYSTEM`) says values must be "constants, casts, $n, DEFAULT, or immutable function calls on those", and models read that as allowing operators. claude-opus-5.5 had 50 such refusals and gemini-3.8-flash 24. In round 1, claude ended with nothing accepted on 42 of 99 cases.
-- **`not_immutable` doesn't name the refused call.** The enclave's error detail does ("function pg_catalog.timezone is stable, not immutable"), but only the rule reaches the LLM.
-  - claude and gemini kept using `jsonb_build_object` and `concat`, which are STABLE.
-  - `InsertValues::MUTABLE_SQL` matches by name and argument count, not by the overload Postgres would resolve. So `timezone($1, <timestamp>)` is refused because `timezone(text, timetz)` is STABLE, even though `timezone(text, timestamp)` is IMMUTABLE. A model can't work that out from "not_immutable".
-- **One refused value loses the whole statement.** It refuses the whole multi-row INSERT, so every row in it is lost.
-- **Misleading feedback.** After a round where every insert was refused, the feedback still says "The accepted inserts gave both queries the same results." (`result_line`).
-
-Most of claude's gain from round 1 to round 3 (41 to 73 of 76 wrong rewrites) came from working around these refusals, not from new ideas. gemini went from 35 to 72. gpt-6.1-sol, which seldom wrote operators, got 69 in round 1. So a clearer prompt should make round 1 much stronger, and fewer rounds means less time.
-
-Fix it test first:
-- **System prompt.**
-  - Say that operators are refused, and that the way around them is an immutable function (`pg_catalog.textcat`, `int4pl`, ...) or the value written out.
-  - Say that a function is refused if any of its overloads with that many arguments isn't IMMUTABLE (`timezone`, `concat`, `jsonb_build_object`), and suggest writing the value out instead.
-  - Suggest one row per INSERT when a value might be refused.
-- **Feedback.**
-  - Give each refusal rule a fixed sentence that says what it means.
-  - When nothing was accepted, say so.
-
-Decide with the user:
-- Whether the enclave should also send the refused function's name, which its error detail already holds. The name comes from the insert's own text, never a value, but it would need a protocol field and an egress check, and the change would go on the unreleased enclave list.
-- Whether `MUTABLE_SQL` should resolve the overload from the argument types instead.
-
-Answers (the user, 2026-10-12):
-- Yes, send the refused function's name back to the LLM. It goes in a new protocol field with an egress check. The task goes on the unreleased enclave list.
-- Yes, judge the overload Postgres resolves the call to, not every overload with that many arguments.
-
-Re-measure with the corpus harness, which builds prompts with the driver's and the enclave's real code. Compare round-1 refusals and catches before and after.
-
-- **Depends on:** None.
-- **Came from:** 20261012-5's phase 2, 2026-10-12.
-- **Design:** llm-counterexamples.
-- **Status:** todo
+### 20261012-12. llm-counterexamples: tell the LLM which values get an insert refused, and what each refusal means. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-13. fuzz: value classes from world knowledge, and many copies of a row. Done, see BACKLOG-COMPLETE.md.
 
@@ -787,3 +752,21 @@ From the review of 20261012-9 (minor). `LiteralSet` doesn't pick for `(status)::
 - **Came from:** The review of 20261012-9, 2026-11-14 (minor).
 - **Design:** literal-sets.
 - **Status:** todo
+
+### 20261114-170743-1. InsertValues: judge the overload Postgres resolves a call to, not every overload with that many arguments.
+
+The part of 20261012-12 that didn't land (the user said yes to it on 2026-10-12). `InsertValues::MUTABLE_SQL` matches by name and argument count, so `timezone($1, <timestamp>)` is refused because `timezone(text, timetz)` is STABLE, though `timezone(text, timestamp)` is IMMUTABLE. Doing it right means asking Postgres which overload a call resolves to (a temporary view plus `pg_depend`, or a probe like qualify uses), which would run analysis, including type input functions, before the volatility check, or reorder insert-check rules 11 and 12. Find a way that doesn't run anything a refused insert shouldn't, test first, and update the system prompt's overload sentence and DESIGN.md (both say overloads are judged by argument count today). Enclave change; have an Opus reviewer.
+
+- **Depends on:** 20261012-12 (landed).
+- **Came from:** 20261012-12 (not landed part).
+- **Design:** llm-counterexamples.
+- **Status:** todo
+
+### 20261114-170743-2. llm-counterexamples: re-measure round-1 refusals with the new prompt and feedback.
+
+The measuring half of 20261012-12, skipped because it needs live LLM calls (spend). With the corpus harness from 20261012-5 phase 2 (`scratch/corpus-20261012-5/` in the main checkout), re-run round 1 for the three models on the new prompt, replay through production InsertCheck with the new feedback, and compare round-1 refusals per rule and wrong rewrites caught against the old numbers (claude 41/76, gemini 35/76, gpt-6.1-sol 69/76 after 3 rounds; claude ended round 1 with nothing accepted on 42 of 99 cases). Ask the user before spending on the API.
+
+- **Depends on:** 20261012-12 (landed); the user's go-ahead on spend.
+- **Came from:** 20261012-12 (not landed part).
+- **Design:** llm-counterexamples.
+- **Status:** todo (waits on the user)
