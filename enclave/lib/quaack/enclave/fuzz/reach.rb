@@ -82,8 +82,8 @@ module Quaack
           select && nodes(select).any? { it.is_a?(PgQuery::FuncCall) && (aggregate_call?(it) || it.over) }
         end
 
-        # A constant, or a list of them (IN, BETWEEN), compared with a
-        # column, either side.
+        # A constant, or a list of them (IN, BETWEEN, = ANY (ARRAY[...]),
+        # bare or cast), compared with a column, either side.
         def column_compared?(node, binding)
           return false unless node.is_a?(PgQuery::A_Expr) && node.lexpr && node.rexpr
 
@@ -91,7 +91,11 @@ module Quaack
           sides.any?(&:column_ref) && sides.any? { constant?(it, binding) || constants?(it, binding) }
         end
 
-        def constants?(node, binding) = !!node.list && node.list.items.any? { constant?(it, binding) }
+        def constants?(node, binding)
+          array = (node.type_cast&.arg || node).a_array_expr
+          items = node.list&.items || array&.elements || []
+          items.any? { constant?(it, binding) }
+        end
 
         def nodes(node, found = [])
           found << node
