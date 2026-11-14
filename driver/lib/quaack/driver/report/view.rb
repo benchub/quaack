@@ -172,7 +172,8 @@ module Quaack
           return %(<td colspan="5" class="missing">#{Words::MISSING}</td>) unless record
 
           ["<td>#{h breakdown(record["added"], rules: stage == "rewrite-rules")}</td>",
-           "<td>#{h breakdown(record["dropped"], stage:)}</td>", num(record["set_aside"]), count_cell(record["out"]),
+           "<td>#{h breakdown(record["dropped"], stage:)}</td>", num(record["set_aside"]),
+           count_cell(StageStyle.counted(record).last),
            "<td>#{h breakdown(record["extra"], words: Words::STAGE_EXTRAS.fetch(stage, {}))}</td>"].join
         end
 

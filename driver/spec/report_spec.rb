@@ -3918,6 +3918,25 @@ RSpec.describe Quaack::Driver::Report do
       expect(sankeys("index").scan(/>([^<]*)</).join(" ")).not_to match(/-[12]\b/)
     end
 
+    # Task 20261012-14: the table shows what went on as not recorded where the Sankey does.
+    it "shows what went on as not recorded in the table when a stage's count is negative, as the Sankey does" do
+      stages["index-dedupe"]["original"] = rec(-1, 3)
+      stages["index-rank"]["original"] = rec(3, -2)
+      words = Quaack::Driver::Report::Words::INDEX_STAGES
+      went_on = %w[index-dedupe index-rank].map do |stage|
+        row = table("index")[%r{<th scope="row">#{Regexp.escape(words.fetch(stage))}</th>.*?</tr>}m]
+        row.scan(%r{<td[^>]*>[^<]*</td>})[-2]
+      end
+      expect(went_on).to eq(['<td class="missing">not recorded</td>'] * 2)
+    end
+
+    it "gives no hover note for a zero count of rewrites not tested in time, as for none" do
+      style = Quaack::Driver::Report::StageStyle
+      expect(style.untimed({ "extra" => { "not_tested_in_time" => 0 } })).to be_nil
+      expect(style.went_on_notes({ "extra" => { "not_tested_in_time" => 0 } }, "rewrite-test")).to eq([])
+      expect(style.untimed({ "extra" => { "not_tested_in_time" => 2 } })).to eq(2)
+    end
+
     it "says in the Sankey and the table what a stage set aside, added, and dropped, by reason" do
       stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1)
       index = sankeys("index")
@@ -4109,8 +4128,20 @@ RSpec.describe Quaack::Driver::Report do
       colors = Quaack::Driver::Report::StageStyle::COLORS
       painted = painted_layers(out)
       expect(painted.reject { |_, stage, fill| fill == colors.fetch(stage) }).to eq([])
-      # Every stage the fixture records, but index-from-plan, which joins index-from-query's layer.
-      expect(painted.map { it[1] }.uniq.sort).to eq((colors.keys - ["index-from-plan"]).sort)
+      # Task 20261012-14: one [diagram, stage] pair per layer, so a layer dropped from only one
+      # diagram fails here too. Every stage the fixture records, but index-from-plan, which joins
+      # index-from-query's layer; a stage that adds and drops has a merge layer and an after layer.
+      expect(painted.map { it.take(2) }).to eq(
+        [%w[index index-from-query], %w[index index-dedupe], %w[index index-test],
+         %w[index llm-index-ideas], %w[index llm-index-ideas], %w[index llm-index-refine],
+         %w[index llm-index-refine], %w[index index-rank], %w[index index-rank],
+         %w[rewrite rewrite-rules], %w[rewrite rewrite-rules], %w[rewrite llm-rewrites],
+         %w[rewrite llm-rewrites], %w[rewrite operator-rewrites], %w[rewrite assumption-check],
+         %w[rewrite plan-pruning], %w[rewrite fuzz], %w[rewrite enumerate], %w[rewrite rewrite-test],
+         %w[rewrite counterexamples], %w[rewrite rewrite-index-ideas], %w[rewrite measurement],
+         %w[rewrite-index index-from-query], %w[rewrite-index index-dedupe], %w[rewrite-index index-rank],
+         %w[rewrite-index index-rank]]
+      )
       dedupe = painted.select { it[1] == "index-dedupe" }
       expect(dedupe.map(&:first).uniq).to eq(%w[index rewrite-index])
       expect(dedupe.map(&:last).uniq).to eq(["var(--st-violet)"])
@@ -4118,6 +4149,22 @@ RSpec.describe Quaack::Driver::Report do
       expect(painted.select { it[1] == "fuzz" }.map(&:last).uniq).to eq(["var(--st-indigo)"])
       expect(painted.select { it[1] == "enumerate" }.map(&:last).uniq).to eq(["var(--st-slate)"])
       expect(painted.map { it[1] }.uniq.map { colors[it] }.uniq.size).to be >= 7
+    end
+
+    # Task 20261012-14: the palette checks the funnel's test once made.
+    it "gives every stage the burndown can show a palette color, and no key for a stage it can't" do
+      expect(Quaack::Driver::Report::StageStyle::COLORS.keys.sort).to eq(stage_keys_by_name.values.uniq.sort)
+    end
+
+    # Each diagram's part in one unit (the candidates' part of the rewrites' diagram is
+    # its own, past the dashed line) gives each of its stages a different color.
+    it "gives the stages in each part of a diagram different colors" do
+      colors = Quaack::Driver::Report::StageStyle::COLORS
+      unit = Quaack::Driver::Report::Sankey::STAGE_UNIT
+      parts = painted_layers(out).map { it.take(2) }.uniq.group_by { |id, stage| [id, unit.fetch(stage, :ideas)] }
+      clashes = parts.transform_values { |pairs| pairs.map { colors.fetch(it[1]) } }.reject { _2.uniq == _2 }
+      expect(parts.keys.size).to eq(6)
+      expect(clashes).to eq({})
     end
 
     it "draws one layer per state, in order: a stage that adds and drops is a merge layer and the layer after it" do
@@ -4731,7 +4778,7 @@ RSpec.describe Quaack::Driver::Report do
     it "prints, escaped, every value a negative report shows" do
       expect_escaped(rendered(negative_sentinels),
                      '<ul id="negative-rewrites"><li>', %(<tr><td><code class="sql">),
-                     "(Postgres error code ", %(#{escaped}</td><td>), "<tbody>\n<tr><td>",
+                     "(Postgres error code ", "not recorded</td><td>", "<tbody>\n<tr><td>",
                      "</td><td>Made by transform rules ", %(<td><code class="sql">))
     end
 
