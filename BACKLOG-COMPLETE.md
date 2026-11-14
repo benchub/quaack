@@ -13549,3 +13549,17 @@ From 20261012-20's second candidate. `TestPostgres.remove_stale_containers` (`sp
 - **Design:** none (test harness).
 - **Status:** done
 - **Landed:** 2026-11-14, merged from `task/20261114-190619-1`. The owner-host label is the hostname plus `/pidns:<inode of /proc/self/ns/pid>` where that file exists (Linux), the bare hostname elsewhere (macOS), in both `spec/support/test_postgres.rb` and `e2e/verify.rb`; a container from another PID namespace that shares this hostname counts as foreign and is never swept. Specs use real containers with dead owner PIDs and unique spec-only label values; three mutants turn them red. The real Linux `/proc` lookup isn't run on the Mac (tests stub it); the reviewer checked it in a throwaway alpine container. Reviewed with no blocking findings; minors in 20261114-193920-1. Test harness only; not on the unreleased list.
+
+### 20261012-29. The recorded pipeline replays never run enumerate.
+
+From the build of 20261012-3. The root suite sets `QUAACKS_ENUMERATE_WORLDS=0` for the replays' `quaacks` children, so no recorded run sends an enumerate pass or disproof through the driver: its transport check, the report's enumerate sentence, the `enumerate_disproved` fate, the burndown's `enumerate` stage and its Sankey layer are only covered by specs that build the messages by hand. With enumerate on at 30 s, the `key_in_self_join` replay spent 30 s for a bound of 1, which is why the builder left it off.
+
+Add a replay variant that turns enumerate on with a small world cap, so its verdict doesn't depend on the machine's speed, and check that it reaches the report: a rewrite whose section shows the enumerate sentence with its bound, and the `enumerate` stage in the burndown. If a planted run can be made to have a rewrite only enumerate catches (such as a NULLS LAST change, like `cv_topics_nulls_last`), check its `enumerate_disproved` fate too. Keep the per-commit check's run time about the same: put the variant in `rake full` if it's slow.
+
+The replay example 20261012-15 added, that no rewrite outside a run's `outcome.wrong` is `fuzz_disproved` or `enumerate_disproved`, can't fail on enumerate until a replay runs it (the review of 20261012-15). Make sure the variant runs that example too.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-3, 2026-10-13.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-11-14, merge of task/20261012-29. Replay variant for group_having with enumerate on (300 worlds) in `rake full` only. The `enumerate_disproved` case moved to 20261114-211947-1.
