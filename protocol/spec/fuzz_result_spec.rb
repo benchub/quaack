@@ -29,6 +29,31 @@ RSpec.describe Quaack::Protocol::FuzzResult do
     expect(described_class::MAX_BOUND).to eq(4)
   end
 
+  # Task 20261012-31: how many tables the two queries read, so the driver
+  # claims the bound only when it gives each table a row. Past MAX_BOUND
+  # it says only "more", so the count can't carry a constant out.
+  it "accepts a rewrite_test's tables only as nil or 0 to MAX_TABLES" do
+    accepted = [{ "tables" => nil }, { "tables" => 0 }, { "tables" => 1 }, { "tables" => 5 }]
+    expect(accepted.map { described_class.rewrite_test?(it) }).to all(be(true))
+    refused = [{ "tables" => 6 }, { "tables" => -1 }, { "tables" => "2" }, { "tables" => 2.0 },
+               { "tables" => 37 }]
+    expect(refused.map { described_class.rewrite_test?(it) }).to all(be(false))
+    expect(described_class::MAX_TABLES).to eq(5)
+    sound = { "trials" => 41_200, "worlds" => 900, "bound" => 2, "tables" => 2 }
+    expect(described_class.rewrites?([sound, sound.merge("tables" => nil)])).to be(true)
+    expect(described_class.rewrites?([sound, sound.merge("tables" => 37)])).to be(false)
+  end
+
+  it "claims a bound only when it's 1 to MAX_BOUND and at least the tables the queries read" do
+    claimed = [{ "bound" => 1, "tables" => 1 }, { "bound" => 2, "tables" => 1 }, { "bound" => 4, "tables" => 4 },
+               { "bound" => 1, "tables" => 0 }]
+    expect(claimed.map { described_class.bound_claimed?(it) }).to all(be(true))
+    unclaimed = [{ "bound" => 1, "tables" => 2 }, { "bound" => 4, "tables" => 5 }, { "bound" => 2 },
+                 { "bound" => 0, "tables" => 0 }, { "bound" => nil, "tables" => 1 }, { "bound" => 5, "tables" => 1 },
+                 { "bound" => "2", "tables" => 1 }, { "bound" => 2, "tables" => "1" }]
+    expect(unclaimed.map { described_class.bound_claimed?(it) }).to all(be(false))
+  end
+
   it "accepts sizes only as nil or [schema, table, rows] triples, each table once, with rows a positive count" do
     accepted = [nil, [], [["public", "orders", 2], ["Billing", "line items", 1]]]
     expect(accepted.map { described_class.sizes?(it) }).to all(be(true))

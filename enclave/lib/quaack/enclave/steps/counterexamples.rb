@@ -29,7 +29,7 @@ module Quaack
       # Store entries, which the driver resumes by and rewrite-index-ideas reads:
       #   rewrite_tested_<n>   rewrite-test's result (RewriteFuzz.result):
       #                        { "passed", "rule", "stage", "trials",
-      #                          "worlds", "bound", "untested",
+      #                          "worlds", "bound", "tables", "untested",
       #                          "untested_atoms", "untested_unchanged" },
       #                        plus "sizes" for a disproof. An entry from
       #                        before task 20261012-4 has ScenarioTests'
@@ -87,7 +87,7 @@ module Quaack
         # fuzz then enumerate (RewriteFuzz). A rewrite whose
         # rewrite_pruned_<n> says discarded is skipped, with rule discarded.
         # Sends one rewrite_test: rewrite, passed, rule, stage, trials,
-        # worlds, bound.
+        # worlds, bound, tables.
         #
         # deadline is the rewrite's budget (Deadline, five minutes from the
         # call). The search can only disprove a rewrite, so one it couldn't
@@ -112,7 +112,7 @@ module Quaack
             [{ type: :rewrite_test, rewrite: search, **result.slice(*MESSAGE_KEYS).transform_keys(&:to_sym) }]
           end
 
-          MESSAGE_KEYS = %w[passed rule stage trials worlds bound].freeze
+          MESSAGE_KEYS = %w[passed rule stage trials worlds bound tables].freeze
 
           def discarded?(store, number)
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]

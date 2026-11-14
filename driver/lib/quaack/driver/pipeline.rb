@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/fuzz_result"
 require "quaack/protocol/rewrite_budget"
 require_relative "counterexamples"
 require_relative "enclave_error"
@@ -314,14 +315,11 @@ module Quaack
           trials, bound = message.values_at("trials", "bound")
           return unless trials.is_a?(Integer) && trials.positive?
           return "Survived #{Report::Words.count(trials, "random small database")} built around the query's values" \
-            unless enumerated?(message)
+            unless Protocol::FuzzResult.bound_claimed?(message)
 
           "Found no difference on #{Report::Words.count(trials, "random dataset")}, or on any dataset of up to " \
-            "#{Report::Words.count(bound, "row")} over its value classes"
+            "#{Report::Words.count(bound, "row")} #{Report::Words::ENUMERATED_FROM}"
         end
-
-        # Whether enumerate finished a bound.
-        def enumerated?(message) = message["bound"].then { it.is_a?(Integer) && it.positive? }
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)
         # isn't disproved: it goes on (passed, task 20261011-15), and

@@ -49,6 +49,12 @@ module Quaack
       # rows wouldn't be true of every database that size.
       MAX_BOUND = 4
 
+      # Task 20261012-31: tables is how many tables the two queries read,
+      # nil or 0 to MAX_TABLES, which means MAX_TABLES or more: the driver
+      # claims a bound only when it's at least tables, so each table can get
+      # a row, and a count past MAX_BOUND tells it nothing more.
+      MAX_TABLES = MAX_BOUND + 1
+
       # Task 20261016-4: why the fuzz search stopped, in the report's
       # fuzz_stop: its stop rule's minimum ran out with nothing new (floor),
       # or it had run twice as long as it took to find its last new plan
@@ -80,8 +86,22 @@ module Quaack
 
       def bound?(bound) = bound.nil? || (count?(bound) && bound <= MAX_BOUND)
 
-      # Whether fields' trials and worlds are nil or counts, and its bound nil or 0 to MAX_BOUND.
-      def counts?(fields) = trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"])
+      def tables?(tables) = tables.nil? || (count?(tables) && tables <= MAX_TABLES)
+
+      # Whether the report and the progress line claim fields' bound (task
+      # 20261012-31): a bound of 1 to MAX_BOUND that gives each table the
+      # queries read a row, so at least their tables. A message without
+      # tables, from before the task, claims none.
+      def bound_claimed?(fields)
+        bound, tables = fields.values_at("bound", "tables")
+        bound.is_a?(Integer) && bound.between?(1, MAX_BOUND) && tables.is_a?(Integer) && tables.between?(0, bound)
+      end
+
+      # Whether fields' trials and worlds are nil or counts, its bound nil or
+      # 0 to MAX_BOUND, and its tables nil or 0 to MAX_TABLES.
+      def counts?(fields)
+        trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"]) && tables?(fields["tables"])
+      end
 
       # Whether each of a report's rewrites carries sizes, trials, worlds and
       # bound that pass, a not_tested that's nil or on NOT_TESTED, and a

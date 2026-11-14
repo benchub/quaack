@@ -160,9 +160,11 @@ module Quaack
       # small random databases fuzz compared it on (nil or a count). Task
       # 20261012-3 adds enumerate: stage may be enumerate, worlds is how many
       # small databases enumerate compared (nil or a count), and bound the
-      # most rows of every database it tried (nil or 0 to 4). All are
+      # most rows of every database it tried (nil or 0 to 4). Task
+      # 20261012-31 adds tables, how many tables the queries read (nil or 0
+      # to 5, 5 meaning 5 or more). All are
       # checked by Protocol::FuzzResult.rewrite_test?. Never SQL or a row.
-      rewrite_test: %i[rewrite passed rule stage trials worlds bound].freeze,
+      rewrite_test: %i[rewrite passed rule stage trials worlds bound tables].freeze,
       # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
       # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound

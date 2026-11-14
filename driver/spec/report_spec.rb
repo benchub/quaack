@@ -933,7 +933,7 @@ RSpec.describe Quaack::Driver::Report do
         section(render(payload), "queries")
       end
 
-      def line(text) = text[%r{<p class="fuzz">(.*?)</p>}, 1]
+      def line(text) = text[%r{<p class="fuzz">(.*?)</p>}, 1]&.gsub("&#39;", "'")
 
       let(:lead) { "trying to show it gives different results from the original query" }
 
@@ -954,25 +954,39 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       # Task 20261012-3.
-      def enumerated(bound, fate = "ranked", trials: 40, worlds: 905)
-        payload["rewrites"].first.merge!("worlds" => worlds, "bound" => bound)
+      def enumerated(bound, fate = "ranked", trials: 40, worlds: 905, tables: 1)
+        payload["rewrites"].first.merge!("worlds" => worlds, "bound" => bound, "tables" => tables)
         line(survived(trials, fate)).to_s
       end
 
       it "counts enumerate's data sets too, and says every data set up to its bound was among them" do
         expect(enumerated(2)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: 40 " \
                                     "random ones, then 905 enumerated in order of size, which covered every data " \
-                                    "set of up to 2 rows over its value classes.")
+                                    "set of up to 2 rows built from the query's own values (its constants, " \
+                                    "values next to them, and NULL).")
         expect(enumerated(1, trials: 1, worlds: 1)).to eq("Vivid Cove survived 2 mechanically generated data sets " \
                                                           "#{lead}: 1 random one, then 1 enumerated in order of " \
-                                                          "size, which covered every data set of up to 1 row over " \
-                                                          "its value classes.")
+                                                          "size, which covered every data set of up to 1 row built " \
+                                                          "from the query's own values (its constants, values next " \
+                                                          "to them, and NULL).")
       end
 
       it "counts enumerate's data sets with no bound when it finished none, or the bound isn't one" do
         [0, nil, 5, "2", -1].each do |bound|
           expect(enumerated(bound)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: 40 " \
                                           "random ones, then 905 enumerated in order of size."), bound.inspect
+        end
+      end
+
+      # Task 20261012-31.
+      it "claims the bound only when it gives each table the queries read a row" do
+        expect(enumerated(2, tables: 2)).to end_with("which covered every data set of up to 2 rows built from " \
+                                                     "the query's own values (its constants, values next to " \
+                                                     "them, and NULL).")
+        [[1, 2], [2, 3], [4, 5], [2, nil]].each do |bound, tables|
+          expect(enumerated(bound, tables:)).to eq("Vivid Cove survived 945 mechanically generated data sets " \
+                                                   "#{lead}: 40 random ones, then 905 enumerated in order of size."),
+                                                [bound, tables].inspect
         end
       end
 
@@ -998,12 +1012,14 @@ RSpec.describe Quaack::Driver::Report do
       it "claims the bound for a rewrite that failed on the real data only on float noise" do
         payload["rewrites"].first.merge!("float_noise" => true)
         expect(enumerated(2, "production_mismatch")).to end_with("which covered every data set of up to 2 rows " \
-                                                                 "over its value classes.")
+                                                                 "built from the query's own values (its constants, " \
+                                                                 "values next to them, and NULL).")
       end
 
       it "claims the bound for a rewrite that passed every test but wasn't faster" do
-        expect(enumerated(2, "not_better")).to end_with("which covered every data set of up to 2 rows over its " \
-                                                        "value classes.")
+        expect(enumerated(2, "not_better")).to end_with("which covered every data set of up to 2 rows built from " \
+                                                        "the query's own values (its constants, values next to " \
+                                                        "them, and NULL).")
       end
 
       # Task 20261012-28: the accountability table's wrong results are the

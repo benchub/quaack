@@ -72,12 +72,12 @@ module Quaack
             "order of size#{bound_claim(entry)}"
         end
 
+        # The bound, only when it gives each table the queries read a row
+        # (Protocol::FuzzResult.bound_claimed?, task 20261012-31).
         def bound_claim(entry)
-          bound = entry["bound"]
-          return "" unless bound.is_a?(Integer) && bound.between?(1, Protocol::FuzzResult::MAX_BOUND) &&
-                           !later_disproof?(entry)
+          return "" unless Protocol::FuzzResult.bound_claimed?(entry) && !later_disproof?(entry)
 
-          ", which covered every data set of up to #{Words.count(bound, "row")} over its value classes"
+          ", which covered every data set of up to #{Words.count(entry["bound"], "row")} #{Words::ENUMERATED_FROM}"
         end
 
         # Who wrote a rewrite's counterexample rounds, as a sentence, or nil

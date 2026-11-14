@@ -169,7 +169,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     def tested(number = 1) = stored.read("rewrite_tested_#{number}")
 
     # Task 20261012-4: what a rewrite_test message carries.
-    let(:keys) { %w[type rewrite passed rule stage trials worlds bound] }
+    let(:keys) { %w[type rewrite passed rule stage trials worlds bound tables] }
 
     it "passes an equivalent rewrite, stores its result, and doesn't decide survival yet" do
       ready(same)
@@ -250,7 +250,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     describe "a rewrite the search can't test" do
       def goes_on(outcome, rule)
         expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-        counts = { "rule" => rule, "stage" => "fuzz", "trials" => 0, "worlds" => 0, "bound" => nil }
+        counts = { "rule" => rule, "stage" => "fuzz", "trials" => 0, "worlds" => 0, "bound" => nil, "tables" => 1 }
         expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => true,
                                         **counts }, { "type" => "done" }])
         expect(tested).to eq("passed" => true, **counts, "fuzz_stop" => nil, "untested" => [], "untested_atoms" => [],
@@ -270,6 +270,16 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         ready(looser)
 
         goes_on(step("rewrite-test", "--search", "rewrite_1"), "fuzz_off")
+      end
+
+      # Task 20261012-31: tables counts what both queries read.
+      it "counts the tables both queries read, the rewrite's own included" do
+        ready("#{looser} AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = o.id)")
+
+        message = lines(step("rewrite-test", "--search", "rewrite_1")).first
+
+        expect(message).to include("rule" => "fuzz_off", "tables" => 2)
+        expect(tested).to include("tables" => 2)
       end
 
       context "with an original whose FETCH FIRST ... WITH TIES the comparison can't judge" do
@@ -314,7 +324,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
 
         expect(message).to eq(type: :rewrite_test, rewrite: "rewrite_1", passed: true, rule: "search_failed",
-                              stage: "fuzz", trials: 0, worlds: 0, bound: nil)
+                              stage: "fuzz", trials: 0, worlds: 0, bound: nil, tables: 1)
         expect(burndown["stages"]["fuzz"]["rewrite_1"])
           .to eq(counted(out: 1, extra: marked("trials" => 0, "untested" => 1)))
         expect(burndown["stages"]["enumerate"]["rewrite_1"])
@@ -806,7 +816,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
         message = lines(enumerate_step).first
 
-        expect(message).to include("passed" => true, "rule" => nil, "stage" => "enumerate")
+        expect(message).to include("passed" => true, "rule" => nil, "stage" => "enumerate", "tables" => 1)
         expect(message["trials"]).to be_a(Integer).and be >= 40
         expect(message["worlds"]).to be_a(Integer).and be_positive
         expect(message["bound"]).to be_a(Integer).and be_between(1, 4)
@@ -853,7 +863,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         messages = in_process("rewrite_1", spent, FUZZ_ON)
 
         expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, rule: "out_of_time",
-                                  stage: "fuzz", trials: 0, worlds: 0, bound: nil }])
+                                  stage: "fuzz", trials: 0, worlds: 0, bound: nil, tables: 1 }])
         line = Quaack::Enclave::Egress.serialize(messages.first)
         expect(JSON.parse(line)).to include("passed" => true, "rule" => "out_of_time")
         expect(stored.read("rewrite_tested_1")).to include("passed" => true, "rule" => "out_of_time",
@@ -909,7 +919,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
         expect(expired).to be(true)
         expect(messages).to eq([{ type: :rewrite_test, rewrite: "rewrite_1", passed: true, rule: "unconfirmed",
-                                  stage: "fuzz", trials: 0, worlds: 0, bound: nil }])
+                                  stage: "fuzz", trials: 0, worlds: 0, bound: nil, tables: 1 }])
         expect(burndown["stages"]["fuzz"]["rewrite_1"]).to eq(counted(out: 1, extra: marked("trials" => 0,
                                                                                             "untested" => 1)))
       end
