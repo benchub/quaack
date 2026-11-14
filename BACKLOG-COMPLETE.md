@@ -13474,3 +13474,20 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 - **Design:** llm-counterexamples.
 - **Status:** done
 - **Landed:** 2026-11-14, merged from `task/20261012-12`. A `not_immutable` refusal carries the refused function's name (`function`, only when it's two plain lowercase identifiers) in `counterexample_round`'s `refused`; `Protocol::RefusedInserts.valid?` checks it in Egress and fails closed. The system prompt now covers operators, the overload rule and one row per INSERT; each refusal rule has a fixed sentence; a round with nothing accepted says so. 52 corpus prompt fixtures got the new system text; recorded replies are unchanged. Not landed: the overload resolution in `MUTABLE_SQL` (20261114-170743-1) and the corpus re-measurement (20261114-170743-2). Reviewed with no blocking findings. Protocol and enclave change, on the unreleased list.
+
+### 20261012-14. Report: minors from the reviews of 20261012-6.
+
+1. **`StageStyle.untimed` with `not_tested_in_time: 0` is untested** (`driver/lib/quaack/driver/report/stage_style.rb`, `untimed`). A zero must give no hover note, as a missing count does. No spec feeds it a zero.
+2. **The burndown table prints a negative count as a raw number.** `StageStyle.counted` treats a negative `in` or `out` as no count, so the Sankey leaves it out. The table still prints it as recorded. Show it as not counted, or flag it, the way the Sankey does.
+3. **Palette coverage that went with the funnel test.** The deleted funnel test checked two things that nothing checks now:
+   - every stage key has an entry in `StageStyle::COLORS`;
+   - the stages in one diagram all get different colors.
+
+   Making `operator-rewrites` violet, the same as `llm-rewrites`, stays green, and so does removing the key of a stage that the spec's fixture doesn't draw. Add both checks.
+4. **The color test checks the painted stages across all diagrams together, not per diagram.** Dropping one stage's layer in only one diagram, or dropping a merge layer but keeping its after layer, leaves "paints each stage's layers in the stage's own palette color" green. The sibling test "draws one layer per state" catches both, so this is only about which test fails. Asserting the full list of `[diagram, stage]` pairs, one per layer, would make the color test catch them too.
+
+- **Depends on:** None.
+- **Came from:** The reviews of 20261012-6, 2026-10-12 (minor).
+- **Design:** report, burndown.
+- **Status:** done
+- **Landed:** 2026-11-14, merged from `task/20261012-14`. All four items were still true. The burndown table's "Went on" cell follows `StageStyle.counted`, so a negative or non-integer count shows as not recorded, as in the Sankey; new specs cover a zero `not_tested_in_time`, every stage key having a palette color, distinct colors within each diagram part, and the full `[diagram, stage]` layer list. One existing escaping spec's place string changed to match the new cell, and the reviewer confirmed it still catches a raw sentinel. Reviewed with no findings. Driver/report only; not on the unreleased list.

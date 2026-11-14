@@ -290,21 +290,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-13. fuzz: value classes from world knowledge, and many copies of a row. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-14. Report: minors from the reviews of 20261012-6.
-
-1. **`StageStyle.untimed` with `not_tested_in_time: 0` is untested** (`driver/lib/quaack/driver/report/stage_style.rb`, `untimed`). A zero must give no hover note, as a missing count does. No spec feeds it a zero.
-2. **The burndown table prints a negative count as a raw number.** `StageStyle.counted` treats a negative `in` or `out` as no count, so the Sankey leaves it out. The table still prints it as recorded. Show it as not counted, or flag it, the way the Sankey does.
-3. **Palette coverage that went with the funnel test.** The deleted funnel test checked two things that nothing checks now:
-   - every stage key has an entry in `StageStyle::COLORS`;
-   - the stages in one diagram all get different colors.
-
-   Making `operator-rewrites` violet, the same as `llm-rewrites`, stays green, and so does removing the key of a stage that the spec's fixture doesn't draw. Add both checks.
-4. **The color test checks the painted stages across all diagrams together, not per diagram.** Dropping one stage's layer in only one diagram, or dropping a merge layer but keeping its after layer, leaves "paints each stage's layers in the stage's own palette color" green. The sibling test "draws one layer per state" catches both, so this is only about which test fails. Asserting the full list of `[diagram, stage]` pairs, one per layer, would make the color test catch them too.
-
-- **Depends on:** None.
-- **Came from:** The reviews of 20261012-6, 2026-10-12 (minor).
-- **Design:** report, burndown.
-- **Status:** todo
+### 20261012-14. Report: minors from the reviews of 20261012-6. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY. Done, see BACKLOG-COMPLETE.md.
 
