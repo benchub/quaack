@@ -11,6 +11,7 @@ require "quaack/protocol/tablespace_moves"
 require "quaack/protocol/suggested_drops"
 require "quaack/protocol/plan_nodes"
 require "quaack/protocol/refusal_reasons"
+require "quaack/protocol/refused_inserts"
 require "quaack/protocol/own_rewrites"
 require "quaack/protocol/rewrite_budget"
 require "quaack/protocol/step_counts"
@@ -74,6 +75,12 @@ module Quaack
       # always the whitelist's String, never the caller's object.
       TYPES = Protocol::WHITELIST.to_h { |type, fields| [type.name, [type.name, fields.map(&:name)].freeze] }.freeze
 
+      # The types whose fields get a check of their own beyond PlainData,
+      # each by the method that checks them.
+      FIELD_CHECKS = { "burndown" => :check_burndown, "report" => :check_report,
+                       "step_counts" => :check_step_counts, "rewrite_test" => :check_rewrite_test,
+                       "counterexample_round" => :check_counterexample_round }.freeze
+
       # Marks a name given both as a Symbol and as a String. No message has
       # it as a key, so looking it up finds nothing.
       TWICE = Object.new.freeze
@@ -118,10 +125,8 @@ module Quaack
       def write(type, pairs)
         fields = pairs.to_h
         fields.each_value { PlainData.check(it) }
-        check_burndown(fields) if type == "burndown"
-        check_report(fields) if type == "report"
-        check_step_counts(fields) if type == "step_counts"
-        check_rewrite_test(fields) if type == "rewrite_test"
+        check = FIELD_CHECKS[type]
+        public_send(check, fields) if check
         JSON.generate({ "type" => type, **fields })
       rescue PlainData::NotPlain, JSON::JSONError => e
         error = e.is_a?(JSON::NestingError) ? TooDeep : Error
@@ -156,6 +161,15 @@ module Quaack
         return if Protocol::RewriteBudget.rule?(fields["rule"]) && Protocol::FuzzResult.rewrite_test?(fields)
 
         raise Error, "a value in this rewrite_test message isn't a rule, a stage, or counts"
+      end
+
+      # A counterexample_round's refused must be exactly each refused
+      # insert's index and rule, and a not_immutable refusal's function name
+      # (see Protocol::RefusedInserts.valid?), task 20261012-12.
+      def check_counterexample_round(fields)
+        return if Protocol::RefusedInserts.valid?(fields["refused"])
+
+        raise Error, "a value in this counterexample_round message isn't refused inserts"
       end
 
       # A report's plans are nested too, so each must be exactly plan nodes

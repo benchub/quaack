@@ -136,7 +136,7 @@ RSpec.describe "The pipeline's provenance record" do
   def prompts = JSON.generate(fakes.values.flat_map(&:asks).map { [it.body[:system], it.body[:messages]] })
 
   # What the driver told the LLM about each round of the counterexample-round reply.
-  let(:same) { "insert 1 was refused (SENTINEL_REASON)\nThe accepted inserts gave both queries the same results." }
+  let(:same) { "insert 1 was refused (SENTINEL_REASON)\nNo insert was accepted, so the round compared nothing." }
 
   it "records, as it goes, which provider and model produced each idea, rewrite, and counterexample round" do
     script

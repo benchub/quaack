@@ -54,6 +54,16 @@ RSpec.describe Quaack::Driver::Counterexamples do
                               "fixed dates and times")
   end
 
+  # Task 20261012-12: the values models wrote that got refused most.
+  it "tells the LLM operators are refused, which functions are, and to write one row per insert when unsure" do
+    fake.reply("llm-counterexamples", { "inserts" => [] })
+    described_class.new(client:).ask(payload)
+    system = fake.asks.first.body[:system]
+    expect(system).to include("Operators", "||", "pg_catalog.textcat", "int4pl", "write the value out")
+    expect(system).to include("any of its overloads", "concat", "jsonb_build_object", "timezone")
+    expect(system).to include("one row per INSERT")
+  end
+
   describe "the rounds" do
     let(:outcomes) { [] }
     let(:compared) { [] }
@@ -79,7 +89,54 @@ RSpec.describe Quaack::Driver::Counterexamples do
       second = fake.asks[1].body[:messages]
       expect(second.map { it[:role] }).to eq(%i[user assistant user])
       expect(second[1][:content]).to include("INSERT 0")
-      expect(second[2][:content]).to include("insert_select", "same results")
+      expect(second[2][:content]).to include("insert_select", described_class::NONE_ACCEPTED)
+    end
+
+    # Task 20261012-12: each refusal rule gets a fixed sentence saying what
+    # it means, a not_immutable refusal names its function, and a round
+    # whose inserts were all refused says it compared nothing.
+    describe "the feedback on refusals" do
+      def feedback_after(inserts, outcome)
+        fake.reply("llm-counterexamples", { "inserts" => inserts })
+        2.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+        outcomes.push(outcome, clean, clean)
+        run
+        fake.asks[1].body[:messages][2][:content]
+      end
+
+      it "says what each rule means, names a not_immutable refusal's function, and says the rest loaded" do
+        text = feedback_after(["INSERT 0", "INSERT 1", "INSERT 2"],
+                              clean(refused: [{ "index" => 0, "rule" => "not_plain_value" },
+                                              { "index" => 2, "rule" => "not_immutable",
+                                                "function" => "pg_catalog.concat" }]))
+        lines = text.lines.map(&:chomp)
+
+        expect(lines[0]).to start_with("insert 1 was refused (not_plain_value): ")
+        expect(lines[0]).to include("operator")
+        expect(lines[1]).to start_with("insert 3 was refused (not_immutable, pg_catalog.concat): ")
+        expect(lines[1]).to include("overload")
+        expect(lines[2]).to eq("The accepted inserts gave both queries the same results.")
+      end
+
+      it "gives each refusal rule its own sentence" do
+        rules = described_class::REFUSAL_MEANINGS.keys
+        expect(rules).to include("not_plain_value", "not_immutable", "volatile_function", "clock_literal",
+                                 "insert_select", "unknown_column", "unknown_placeholder", "bad_value")
+        expect(described_class::REFUSAL_MEANINGS.values.uniq.size).to eq(rules.size)
+      end
+
+      it "names an unknown rule alone" do
+        text = feedback_after(["INSERT 0", "INSERT 1"], clean(refused: [{ "index" => 1, "rule" => "new_rule" }]))
+        expect(text.lines.first.chomp).to eq("insert 2 was refused (new_rule)")
+      end
+
+      it "says nothing was compared when every insert was refused, not that the results matched" do
+        text = feedback_after(["INSERT 0", "INSERT 1"],
+                              clean(refused: [{ "index" => 0, "rule" => "insert_select" },
+                                              { "index" => 1, "rule" => "insert_select" }]))
+        expect(text).to include(described_class::NONE_ACCEPTED)
+        expect(text).not_to include("same results")
+      end
     end
 
     it "tells progress what each round's ask is for" do
@@ -132,7 +189,8 @@ RSpec.describe Quaack::Driver::Counterexamples do
       described_class.new(client: router_over({ "groq" => fake }))
                      .run(payload, compare: comparing, keep: ->(round, **fields) { kept << [round, fields] })
 
-      feedback = "insert 1 was refused (insert_select)\nThe accepted inserts gave both queries the same results.\n" \
+      feedback = "insert 1 was refused (insert_select): the rows must be a plain VALUES list, with no SELECT, " \
+                 "ORDER BY, or LIMIT.\nNo insert was accepted, so the round compared nothing.\n" \
                  "They exercised: o.status = $1."
       expect(kept).to eq([[1, { inserts: ["INSERT 0"], entry: "groq" }], :compare, [1, { feedback: }],
                           [2, { inserts: ["INSERT 1"], entry: "groq" }], :compare])
@@ -181,6 +239,8 @@ RSpec.describe Quaack::Driver::Counterexamples do
       let(:client) { router_over(fakes, routing: { "mode" => "failover" }, max_retries: 0) }
       let(:notes) { [] }
       let(:same) { "The accepted inserts gave both queries the same results." }
+      let(:select_meaning) { described_class::REFUSAL_MEANINGS.fetch("insert_select") }
+      let(:none) { "No insert was accepted, so the round compared nothing." }
 
       before do
         seen = notes
@@ -217,8 +277,8 @@ RSpec.describe Quaack::Driver::Counterexamples do
         expect(result.rounds.size).to eq(3)
         expect(compared).to eq([["INSERT 0"], ["INSERT 1"], ["INSERT 2"]])
         first, second = fakes["b"].asks.map { it.body[:messages] }
-        expect(first).to eq([{ role: :user,
-                               content: fresh_text([["INSERT 0"], "insert 1 was refused (insert_select)\n#{same}"]) }])
+        refusal = "insert 1 was refused (insert_select): #{select_meaning}\n#{none}"
+        expect(first).to eq([{ role: :user, content: fresh_text([["INSERT 0"], refusal]) }])
         expect(second.map { it[:role] }).to eq(%i[user assistant user])
         expect(fakes["b"].asks.map { it.body[:system] }).to all(eq(fake.asks.first.body[:system]))
         expect(fakes["c"].asks).to eq([])
@@ -371,7 +431,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
           expect(messages.size).to eq(1)
           text = messages.first[:content]
           expect(text).to eq(fresh_text([["INSERT sentinel_insert_one"],
-                                         "insert 1 was refused (sentinel_refusal_rule)\n#{same}\n" \
+                                         "insert 1 was refused (sentinel_refusal_rule)\n#{none}\n" \
                                          "They exercised: sentinel_covered_atom."]))
           expect(text.scan(/sentinel[\w-]*/).uniq)
             .to contain_exactly("sentinel_payload_original", "sentinel_payload_candidate", "sentinel_payload_atom",

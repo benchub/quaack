@@ -90,16 +90,20 @@ module Quaack
     # which drops its comments; that SQL's parse; and the table.
     module InsertCheck
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :function
 
-        def initialize(rule, detail)
+        def initialize(rule, detail, function: nil)
           @rule = rule
+          @function = function
           super("#{rule}: #{detail}")
         end
 
         # The same rule and message as another check's error, which follows
-        # the same "rule: detail" form.
-        def self.from(error) = new(error.rule, error.message.delete_prefix("#{error.rule}: "))
+        # the same "rule: detail" form, and its function if it names one.
+        def self.from(error)
+          new(error.rule, error.message.delete_prefix("#{error.rule}: "),
+              function: (error.function if error.respond_to?(:function)))
+        end
       end
 
       Accepted = Data.define(:sql, :parse, :table)

@@ -178,7 +178,8 @@ module Quaack
           bound = bind(sql, placeholder_map, ClockBinding.anchored(conn, sql, placeholder_map, tables, settings))
           accepted << Evaluated.of(conn, InsertCheck.check(bound, tables, settings, conn))
         rescue InsertCheck::Error, Refusal => e
-          refused << { index:, rule: e.rule.to_s }
+          function = e.function if e.respond_to?(:function)
+          refused << { index:, rule: e.rule.to_s, **({ function: } if function) }
         end
         [accepted, refused]
       end

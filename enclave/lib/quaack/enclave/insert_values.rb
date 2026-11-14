@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require "quaack/protocol/refused_inserts"
 require_relative "function_calls"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
@@ -19,11 +20,15 @@ module Quaack
     # follow the "rule: detail" form, name only node types and function
     # names, and have no cause.
     module InsertValues
+      # function is, for not_immutable, the refused function's
+      # schema-qualified name as pg_proc has it, or nil when that needs
+      # quoting (Protocol::RefusedInserts sends only plain names).
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :function
 
-        def initialize(rule, detail)
+        def initialize(rule, detail, function: nil)
           @rule = rule
+          @function = function
           super("#{rule}: #{detail}")
         end
       end
@@ -107,7 +112,8 @@ module Quaack
         return if rows.ntuples.zero?
 
         schema, name, volatility = rows.values.first
-        raise Error.new("not_immutable", "function #{schema}.#{name} is #{volatility}, not immutable")
+        function = "#{schema}.#{name}" if Protocol::RefusedInserts::FUNCTION.match?("#{schema}.#{name}")
+        raise Error.new("not_immutable", "function #{schema}.#{name} is #{volatility}, not immutable", function:)
       end
 
       def search_path(settings, connection)

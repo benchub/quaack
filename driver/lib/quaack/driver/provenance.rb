@@ -68,8 +68,8 @@ module Quaack
     # never other SQL, DDL, a prompt, or a reply. counterexample_rounds'
     # inserts are the LLM's own text, written from shape-only payloads, so
     # they hold no production value, and its feedback is the driver's own
-    # words, built only from counterexample_round's refused indexes and
-    # rules, its rule, load_failed, and covered (redacted atom shapes):
+    # words, built only from counterexample_round's refused indexes,
+    # rules, and not_immutable function names, its rule, load_failed, and covered (redacted atom shapes):
     # shape data, already sent to an LLM. Nothing else from the enclave
     # goes in. Each writer takes only those, and a record read back keeps
     # only the parts that have exactly those shapes, so the report reads

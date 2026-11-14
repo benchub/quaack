@@ -125,7 +125,7 @@ RSpec.describe Quaack::Driver::Provenance do
   # Task 20261111-191130-1: each round's inserts and feedback, so a round
   # can be replayed by hand.
   describe "counterexample rounds" do
-    let(:feedback) { "insert 1 was refused (insert_select)\nThe accepted inserts gave both queries the same results." }
+    let(:feedback) { "insert 1 was refused (insert_select)\nNo insert was accepted, so the round compared nothing." }
 
     def rounds(provenance, rewrite, *inserts)
       inserts.each.with_index(1) do |sql, round|

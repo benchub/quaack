@@ -174,8 +174,10 @@ module Quaack
       # One counterexample-compare and counterexample-rollback round, from `quaacks counterexample-round`: match is
       # true, false, or nil; rule and load_order nil or enclave constants;
       # covered the redacted shapes of the untested atoms the round
-      # exercised; refused [{ index, rule }], each refused insert's 0-based
-      # index and rule constant; load_failed true or false.
+      # exercised; refused [{ index, rule, function }], each refused insert's 0-based
+      # index and rule constant, and, for not_immutable, the refused
+      # function's plain schema-qualified name when it has one; load_failed
+      # true or false. refused must pass Protocol::RefusedInserts.valid?.
       counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
       # DESIGN.md's report, from `quaacks report-payload`.
       # original_sql is the original query, always sent: its $n SQL with

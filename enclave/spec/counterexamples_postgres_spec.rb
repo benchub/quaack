@@ -212,6 +212,36 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(prepared.refused.to_s).not_to include("SENTINEL_10a")
   end
 
+  # Task 20261012-12: a not_immutable refusal names the catalog function the
+  # insert's own text calls, never the value bound into it, and the name
+  # goes out through the egress function.
+  describe "a not_immutable refusal's function" do
+    before { require "quaack/enclave/egress" }
+
+    def round_line(refused)
+      Quaack::Enclave::Egress.serialize(type: :counterexample_round, match: true, rule: nil, load_order: nil,
+                                        covered: [], refused:, load_failed: false)
+    end
+
+    it "is the schema-qualified name of the STABLE function, with no bound value" do
+      prepared = prepare("INSERT INTO fx.customers (id, name, tier) VALUES (7, concat($1, 'x'), 'gold')")
+
+      expect(prepared.refused).to eq([{ index: 0, rule: "not_immutable", function: "pg_catalog.concat" }])
+      line = round_line(prepared.refused)
+      expect(JSON.parse(line)["refused"]).to eq([{ "index" => 0, "rule" => "not_immutable",
+                                                   "function" => "pg_catalog.concat" }])
+      expect(line).not_to include("SENTINEL_10a")
+    end
+
+    it "is left off when the name needs quoting" do
+      conn.exec(%(CREATE FUNCTION fx."Odd fn"(text) RETURNS text STABLE LANGUAGE sql AS 'SELECT $1'))
+      prepared = prepare(%(INSERT INTO fx.customers (id, name, tier) VALUES (7, fx."Odd fn"($1), 'gold')))
+
+      expect(prepared.refused).to eq([{ index: 0, rule: "not_immutable" }])
+      expect(round_line(prepared.refused)).not_to include("SENTINEL_10a")
+    end
+  end
+
   describe "an insert with a value Postgres can't evaluate (20261003-24)" do
     # $1 binds to the sentinel, and casting it to integer fails with the
     # value in Postgres's message.
