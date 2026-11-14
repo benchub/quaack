@@ -11,6 +11,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-8
 - 20261012-9
 - 20261012-12
+- 20261012-17
 
 
 ## How this file works.
@@ -294,19 +295,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-16. ResultComparison disproves a rewrite that only adds a tiebreak to its ORDER BY. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-17. Regrouped: minors from the review of 20261012-16.
-
-1. **A false match on float noise** (`enclave/lib/quaack/enclave/result_comparison/regrouped.rb`, about lines 73–82, and DESIGN.md's sentence "both runs fit only when all its rows are the same").
-   - Row keys round floats to 8 significant digits. So rows in one of the candidate's tied groups can look the same by key while the tiebreaker still sorts them apart, and a middle row with a different label slips through.
-   - Repro (`scratch/review-20261012-16/probe_float_spec.rb` in the main checkout): the original is `SELECT f, label … ORDER BY g`, with groups {(1.0, 'z')} and {(1.0000000002, 'a'), (1.0000000003, 'z')}. The candidate is `SELECT cf AS f, label … ORDER BY cg`, which ties all three rows, with values 1.0, 1.0000000002 and 1.0000000005.
-   - It matches now; `main` before 20261012-16 said `value`. Postgres can return `[1.0000000002, 'a']` first, which the original can't.
-   - It needs values within 1e-9 of each other that differ between the two queries, and DESIGN.md already calls float noise unsupported. So the fix is a clean refusal: build the candidate's layout on exact row text and run CutTies' `covers?`, or refuse with `unsupported_order` when a candidate group's rows differ exactly but match by key.
-2. **ProductionComparison's `unsupported_order` branch is untested** (`production_comparison.rb`, `tiebroken`). Mapping `:unsupported_order` to a pass survives every test in `production_comparison_postgres_spec.rb`. The fixture path's refusal is tested. Add the same volatile-key case for production.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-16, 2026-10-12 (minor).
-- **Design:** result-comparison.
-- **Status:** todo
+### 20261012-17. Regrouped: minors from the review of 20261012-16. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-19. counterexamples' `original_failed` rerun: two untested branches, and the CutTies run it skips.
 

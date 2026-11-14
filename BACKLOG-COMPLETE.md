@@ -13491,3 +13491,18 @@ Re-measure with the corpus harness, which builds prompts with the driver's and t
 - **Design:** report, burndown.
 - **Status:** done
 - **Landed:** 2026-11-14, merged from `task/20261012-14`. All four items were still true. The burndown table's "Went on" cell follows `StageStyle.counted`, so a negative or non-integer count shows as not recorded, as in the Sankey; new specs cover a zero `not_tested_in_time`, every stage key having a palette color, distinct colors within each diagram part, and the full `[diagram, stage]` layer list. One existing escaping spec's place string changed to match the new cell, and the reviewer confirmed it still catches a raw sentinel. Reviewed with no findings. Driver/report only; not on the unreleased list.
+
+### 20261012-17. Regrouped: minors from the review of 20261012-16.
+
+1. **A false match on float noise** (`enclave/lib/quaack/enclave/result_comparison/regrouped.rb`, about lines 73–82, and DESIGN.md's sentence "both runs fit only when all its rows are the same").
+   - Row keys round floats to 8 significant digits. So rows in one of the candidate's tied groups can look the same by key while the tiebreaker still sorts them apart, and a middle row with a different label slips through.
+   - Repro (`scratch/review-20261012-16/probe_float_spec.rb` in the main checkout): the original is `SELECT f, label … ORDER BY g`, with groups {(1.0, 'z')} and {(1.0000000002, 'a'), (1.0000000003, 'z')}. The candidate is `SELECT cf AS f, label … ORDER BY cg`, which ties all three rows, with values 1.0, 1.0000000002 and 1.0000000005.
+   - It matches now; `main` before 20261012-16 said `value`. Postgres can return `[1.0000000002, 'a']` first, which the original can't.
+   - It needs values within 1e-9 of each other that differ between the two queries, and DESIGN.md already calls float noise unsupported. So the fix is a clean refusal: build the candidate's layout on exact row text and run CutTies' `covers?`, or refuse with `unsupported_order` when a candidate group's rows differ exactly but match by key.
+2. **ProductionComparison's `unsupported_order` branch is untested** (`production_comparison.rb`, `tiebroken`). Mapping `:unsupported_order` to a pass survives every test in `production_comparison_postgres_spec.rb`. The fixture path's refusal is tested. Add the same volatile-key case for production.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-16, 2026-10-12 (minor).
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** 2026-11-14, merged from `task/20261012-17`. Item 1: `Regrouped#noisy?` splits the candidate's two runs on exact rows with `CutTies.layout` and refuses with `unsupported_order` (reported as `unsteady_order`) when one exact group holds rows that differ exactly but match by key; the entry's picture was slightly off (split by rounded key, each noisy row gets its own group), so a key-only check would have changed nothing. `ProductionComparison` compares rounded values only, so it can't see this noise and wasn't changed. Item 2 was stale: "refuses a candidate whose runs fit but don't show its ties" (task 20261110-7) already covers it, and mapping `:unsupported_order` to a pass turns it red. Reviewed with no findings. Enclave change, on the unreleased list.
