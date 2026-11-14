@@ -54,83 +54,137 @@ RSpec.describe PipelineReplay do
       expect(joined_runs.size).to be >= 6
     end
 
+    # What every replayed run must do, whatever its variant. A context
+    # gives the query and its outcome.
+    shared_examples "a replayed run" do
+      it "ends in a report or a clean refusal" do
+        if outcome.error
+          expect(outcome.error).to be_a(Quaack::Driver::LLM::Error).or be_a(Quaack::Driver::EnclaveError)
+        else
+          expect(outcome.report).to include("type" => "report")
+        end
+      end
+
+      it "tears the run down when it ends, deleting its store" do
+        expect(outcome.store_left).to be(false)
+        expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
+      end
+
+      # Task 20261001-20.
+      it "records every index stage of the original query's search when it ends in a report" do
+        stages = outcome.report ? outcome.report["burndown"]["stages"] : {}
+        missing = Quaack::Driver::Report::Words::INDEX_STAGES.keys.reject { stages.dig(it, "original") }
+        expect(missing).to eq([]) if outcome.report
+      end
+
+      # Task 20261009-4: a stage's count of what came in is what the
+      # stages before it left. A stage that adds (in 0) starts from the
+      # width before it.
+      it "counts what each burndown stage came in with as what the stages before it left" do
+        # A run that ended in an error has no report to check. Say that is why it is skipped.
+        unless outcome.report
+          expect(outcome.error).not_to be_nil
+          next
+        end
+
+        joined_runs << [query.name, outcome.variant]
+        view = Quaack::Driver::Report::View.new(outcome.report, "run")
+        gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
+               burndown_gaps(view.rewrite_index_rows, strict: true)
+        expect(gaps).to eq([])
+      end
+
+      it "sends each replayed ask the prompt its reply answered" do
+        expect(outcome.drift).to be_empty
+      end
+
+      it "never reports the subtly wrong rewrite as a winning fix" do
+        # Disproved at fuzz, enumerate, or counterexamples: never marked for rewrite-index-ideas, and
+        # so never measured or ranked. The report sends it with that fate.
+        labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
+        fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
+        outcome.wrong.each do |n|
+          expect(outcome.entries["rewrite_index_ideas_#{n}"]).to be(false)
+          expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
+          if outcome.report
+            expect(fates["rewrite_#{n}"])
+              .to eq("fuzz_disproved").or eq("enumerate_disproved").or eq("counterexamples_disproved")
+          end
+        end
+      end
+
+      # Task 20261012-15: the searches never disprove a sound rewrite.
+      it "never disproves a rewrite at fuzz or enumerate unless it holds the wrong condition" do
+        rewrites = outcome.report ? outcome.report["rewrites"] : []
+        disproved = rewrites.select { %w[fuzz_disproved enumerate_disproved].include?(it["fate"]) }
+        sound = disproved.map { it["rewrite"] } - outcome.wrong.map { "rewrite_#{it}" }
+        expect(sound).to eq([])
+      end
+
+      it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
+        wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
+        if wrong_condition
+          expect(outcome.wrong).not_to be_empty
+        else
+          expect(outcome.wrong).to be_empty
+        end
+      end
+    end
+
     PromptPack::QUERIES.each do |query|
       described_class.selected_variants(query.name, full: FullReplay.on?).each do |variant|
         context "#{query.name}, replaying #{variant}" do
+          let(:query) { query }
           let(:outcome) { described_class.cached(TestPostgres.server, query, variant) }
 
-          it "ends in a report or a clean refusal" do
-            if outcome.error
-              expect(outcome.error).to be_a(Quaack::Driver::LLM::Error).or be_a(Quaack::Driver::EnclaveError)
-            else
-              expect(outcome.report).to include("type" => "report")
-            end
-          end
+          include_examples "a replayed run"
+        end
+      end
+    end
 
-          it "tears the run down when it ends, deleting its store" do
-            expect(outcome.store_left).to be(false)
-            expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
-          end
+    # Task 20261012-29: the spec_helper turns enumerate off, so this is the
+    # one replay that sends enumerate's passes through the driver, capped at
+    # a count of worlds so its verdict doesn't depend on the machine's
+    # speed. It runs only in `rake full`, since it adds a run of its own.
+    if FullReplay.on?
+      context "group_having, replaying planted-1 with enumerate on" do
+        let(:worlds) { described_class::ENUMERATE_REPLAY_WORLDS }
+        let(:query) { PromptPack::QUERIES.find { it.name == "group_having" } }
+        let(:outcome) do
+          described_class.cached(TestPostgres.server, query, described_class::Variant.new(llm: "planted", k: 1),
+                                 enumerate: worlds)
+        end
+        let(:passed) { %w[rewrite_1 rewrite_3] }
 
-          # Task 20261001-20.
-          it "records every index stage of the original query's search when it ends in a report" do
-            stages = outcome.report ? outcome.report["burndown"]["stages"] : {}
-            missing = Quaack::Driver::Report::Words::INDEX_STAGES.keys.reject { stages.dig(it, "original") }
-            expect(missing).to eq([]) if outcome.report
-          end
+        include_examples "a replayed run"
 
-          # Task 20261009-4: a stage's count of what came in is what the
-          # stages before it left. A stage that adds (in 0) starts from the
-          # width before it.
-          it "counts what each burndown stage came in with as what the stages before it left" do
-            # A run that ended in an error has no report to check. Say that is why it is skipped.
-            unless outcome.report
-              expect(outcome.error).not_to be_nil
-              next
-            end
+        # So the shared examples above check a report, not a refusal.
+        it "ends in a report, the sound rewrites passing enumerate and the wrong one disproved at fuzz" do
+          expect(outcome.error).to be_nil
+          fates = outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] }
+          expect(fates.keys).to eq(%w[rewrite_1 rewrite_2 rewrite_3])
+          expect(fates["rewrite_2"]).to eq("fuzz_disproved")
+          expect(fates.values_at(*passed)).to all(eq("ranked").or(eq("not_better")))
+        end
 
-            joined_runs << [query.name, variant]
-            view = Quaack::Driver::Report::View.new(outcome.report, "run")
-            gaps = %i[index_rows rewrite_rows].flat_map { burndown_gaps(view.public_send(it), strict: true) } +
-                   burndown_gaps(view.rewrite_index_rows, strict: true)
-            expect(gaps).to eq([])
+        it "records each sound rewrite's enumerate pass in the burndown, with its worlds and its bound" do
+          stages = outcome.report["burndown"]["stages"]
+          expect(stages["enumerate"].keys).to match_array(passed)
+          passed.each do |name|
+            expect(stages.dig("enumerate", name)).to include("in" => 1, "out" => 1)
+            expect(stages.dig("enumerate", name, "extra")).to include("worlds" => worlds, "bound_1" => 1)
           end
+          rows = Quaack::Driver::Report::View.new(outcome.report, "run").rewrite_rows
+          expect(rows.assoc("Testing on every small database up to a few rows")).not_to be_nil
+        end
 
-          it "sends each replayed ask the prompt its reply answered" do
-            expect(outcome.drift).to be_empty
-          end
-
-          it "never reports the subtly wrong rewrite as a winning fix" do
-            # Disproved at fuzz, enumerate, or counterexamples: never marked for rewrite-index-ideas, and
-            # so never measured or ranked. The report sends it with that fate.
-            labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
-            fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
-            outcome.wrong.each do |n|
-              expect(outcome.entries["rewrite_index_ideas_#{n}"]).to be(false)
-              expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
-              if outcome.report
-                expect(fates["rewrite_#{n}"])
-                  .to eq("fuzz_disproved").or eq("enumerate_disproved").or eq("counterexamples_disproved")
-              end
-            end
-          end
-
-          # Task 20261012-15: the searches never disprove a sound rewrite.
-          it "never disproves a rewrite at fuzz or enumerate unless it holds the wrong condition" do
-            rewrites = outcome.report ? outcome.report["rewrites"] : []
-            disproved = rewrites.select { %w[fuzz_disproved enumerate_disproved].include?(it["fate"]) }
-            sound = disproved.map { it["rewrite"] } - outcome.wrong.map { "rewrite_#{it}" }
-            expect(sound).to eq([])
-          end
-
-          it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
-            wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
-            if wrong_condition
-              expect(outcome.wrong).not_to be_empty
-            else
-              expect(outcome.wrong).to be_empty
-            end
-          end
+        it "shows the enumerate sentence with its bound in each sound rewrite's section" do
+          expect(outcome.report["rewrites"].to_h { [it["rewrite"], it["bound"]] })
+            .to include("rewrite_1" => 1, "rewrite_3" => 1)
+          sentences = outcome.html.scan(/[^<>]*enumerated in order of size[^<>]*/)
+          expect(sentences.size).to eq(2)
+          expect(sentences).to all(include(", then #{worlds} enumerated in order of size, which covered every " \
+                                           "data set of up to 1 row over its value classes."))
         end
       end
     end

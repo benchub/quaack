@@ -34,6 +34,10 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   end
   EMPTY = Variant.new(llm: nil, k: nil)
 
+  # The worlds the enumerate replay caps enumerate at (task 20261012-29):
+  # enough to finish a bound of 1 for group_having's sound rewrites.
+  ENUMERATE_REPLAY_WORLDS = 300
+
   # What one replayed run did. log has one line per ask: its directory and
   # whether it was replayed or fell back. drift names replayed asks whose
   # prompt doesn't match the saved prompt.md.
@@ -161,13 +165,16 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   # Runs query through intake, setup, and the Pipeline once, with variant's
   # replies. An EnclaveError or LLM::Error ends the run cleanly and comes
   # back in the outcome; anything else raises. fuzz false turns
-  # rewrite-test's fuzz search off for the run (without_fuzz).
-  def run(server, query, variant, fuzz: true)
+  # rewrite-test's fuzz search off for the run (without_fuzz). enumerate,
+  # a whole number, turns enumerate on for the run, capped at that many
+  # worlds (with_enumerate), where the spec_helper turns it off.
+  def run(server, query, variant, fuzz: true, enumerate: nil)
     Dir.mktmpdir("quaack-replay") do |home|
       prod, racetrack = PromptPack.databases(server, query)
       PromptPack.with_env(home, server, prod) do
         replay = -> { start(home, server, query, prod, racetrack, variant) }
-        fuzz ? replay.call : without_fuzz(&replay)
+        searched = enumerate ? -> { with_enumerate(enumerate, &replay) } : replay
+        fuzz ? searched.call : without_fuzz(&searched)
       end
     ensure
       drop(server, [prod, racetrack, "#{racetrack}_arena"].compact)
@@ -184,6 +191,17 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     yield
   ensure
     ENV["QUAACKS_FUZZ_TRIALS"] = saved
+  end
+
+  # Runs the block with enumerate capped at worlds worlds in every quaacks
+  # child it starts (QUAACKS_ENUMERATE_WORLDS), so its verdict doesn't
+  # depend on the machine's speed (task 20261012-29).
+  def with_enumerate(worlds)
+    saved = ENV.fetch("QUAACKS_ENUMERATE_WORLDS", nil)
+    ENV["QUAACKS_ENUMERATE_WORLDS"] = worlds.to_s
+    yield
+  ensure
+    ENV["QUAACKS_ENUMERATE_WORLDS"] = saved
   end
 
   def start(home, server, query, prod, racetrack, variant) # rubocop:disable Metrics/ParameterLists
@@ -257,9 +275,10 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
 
   # One run per query, variant, and fuzz in a spec process, shared by its
   # examples. It prints how many asks were replayed and how many fell back.
-  def cached(server, query, variant, fuzz: true)
+  def cached(server, query, variant, fuzz: true, enumerate: nil)
     @cached ||= {}
-    @cached[[query.name, variant, fuzz]] ||= run(server, query, variant, fuzz:).tap { puts summary(query, variant, it) }
+    @cached[[query.name, variant, fuzz, enumerate]] ||=
+      run(server, query, variant, fuzz:, enumerate:).tap { puts summary(query, variant, it) }
   end
 
   def summary(query, variant, outcome)
