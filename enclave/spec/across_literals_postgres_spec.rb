@@ -57,6 +57,16 @@ RSpec.describe "The search's caution across literals" do
         "SELECT fx.users.id FROM fx.users LEFT JOIN fx.posts ON fx.posts.user_id = fx.users.id " \
           "GROUP BY fx.users.id HAVING count(fx.posts.id) #{op} #{n} AND max(fx.posts.score) > 2"
       }]
+    end,
+    # A derived count compared with an array of literals (task 20261012-8),
+    # bare, cast, or as an array literal the way drivers bind a list.
+    { "derived count = ANY (ARRAY[...])" => "ARRAY[%d, %d]",
+      "derived count = ANY (ARRAY[...]::integer[])" => "ARRAY[%d, %d]::integer[]",
+      "derived count = ANY ('{...}'::bigint[])" => "'{%d,%d}'::bigint[]" }.transform_values do |array|
+      lambda { |n|
+        "SELECT t.uid FROM (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts " \
+          "GROUP BY fx.posts.user_id) t WHERE t.k = ANY (#{format(array, n, n + 1)})"
+      }
     end
   ).freeze
 
