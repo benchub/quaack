@@ -13410,3 +13410,18 @@ From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the s
 - **Design:** rewrite-rules, report.
 - **Status:** done
 - **Landed:** 2026-11-13, merged from `task/20261011-11`. Dedupe keys on the SQL plus `RewriteAssumptions.normalized` (strip, collapse whitespace, sort the assumptions and their keys, keep column lists in order), used only as an in-memory key; stored entries keep their raw assumptions. DESIGN.md says the same SQL with really different assumptions is tested and ranked as separate entries, ungrouped (the user chose this, 2026-11-13). Reviewed with no blocking findings; minors are in 20261114-053159-1. On the unreleased list.
+
+### 20261012-8. Value pools: an array literal under `= ANY` isn't split, and a bare `ARRAY[...]` compared with an array column is.
+
+From the build and review of 20261012-1. Two readers of array sides in `ValuePools::Sides.sides` still get the wrong values. Check each first:
+- An array literal, not `ARRAY[...]`: `CHECK (f = ANY ('{u,v}'::text[]))` gives `Checks#values` `[]` and then `unsatisfiable_check`, and a query's `s.a::text = ANY ('{x,y}'::text[])` gets a pool with nothing satisfying and `"{x,y}"` as its only literal. Postgres never prints an IN list this way, but drivers that bind a list as one array (node-postgres, Ecto, `= ANY($1)`) give queries in this shape. Split it into its elements in Postgres (`unnest`), not by parsing the text.
+- A bare, uncast `ARRAY[...]` compared with `=` on an array column (`tags = ARRAY['a', 'b']`) is split into elements, so its pool comes out empty. 20261012-1 keeps the cast form whole; do the same for the bare one.
+- Also from the builder, carried into fuzz by 20261012-4: `Fuzz::Reach#column_compared?` (`enclave/lib/quaack/enclave/fuzz/reach.rb:52`, which replaced the vacuity guard's `Skips#column_compared?`) counts only a constant or a list (IN, BETWEEN) as a constant side, not `col = ANY (ARRAY[...])`, cast or not. So a derived aggregate compared as `t.k = ANY (ARRAY[2, 3])` may not get the worst case, and the coverage caution could follow those literals. Read from the code, not yet run: reproduce first. If real, it's a trust-boundary fix (add the family to `across_literals_postgres_spec.rb`).
+
+Unsupported in v1 instead, if any of these turns out hard: list it in DESIGN.md.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-1, 2026-10-12 (minor).
+- **Design:** rewrite-test (coverage), llm-counterexamples.
+- **Status:** done
+- **Landed:** 2026-11-14, merged from `task/20261012-8`. All three parts were real. `ValuePools::Sides` hands an array literal under `= ANY`/`<> ALL` to Postgres's `unnest` (a CHECK `f = ANY ('{u,v}'::text[])` now gives its elements), and keeps a bare `ARRAY[...]` under `=` whole, like the cast form. `Fuzz::Reach` reads `col = ANY (ARRAY[...])`, bare or cast, as a constant side, with three new across-literals families (thresholds 0..10). Reviewed with no blocking findings; minors are in 20261114-060517-1. On the unreleased list.
