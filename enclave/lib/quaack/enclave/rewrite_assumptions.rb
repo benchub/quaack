@@ -62,6 +62,26 @@ module Quaack
 
       def string?(value) = value.is_a?(String) && !value.empty?
 
+      # The form rewrite dedupe compares (DESIGN.md's rewrite-rules): each
+      # assumption's string values stripped with inner whitespace collapsed
+      # to one space, its keys sorted, and the assumptions sorted, so the
+      # same ones in another order or spacing compare equal. A column list
+      # keeps its order, which a foreign key pairs on. It's only ever a
+      # lookup key, never stored or sent, and it holds nothing the raw
+      # assumptions didn't.
+      def normalized(assumptions)
+        Array(assumptions).map { normal_value(it) }.sort_by(&:inspect)
+      end
+
+      def normal_value(value)
+        case value
+        when String then value.strip.gsub(/\s+/, " ")
+        when Array then value.map { normal_value(it) }
+        when Hash then value.sort.to_h { |key, inner| [key, normal_value(inner)] }
+        else value
+        end
+      end
+
       # The TableName-style pair for a valid assumption's "schema.name".
       def split(name) = name.split(".", 2)
     end
