@@ -537,6 +537,46 @@ RSpec.describe TestPostgres do
       expect(TestPostgres::PgBouncer.start(id)).to eq(port)
     end
 
+    # Task 20261012-20: Docker's published port can lag behind the
+    # listener inside the container, so readiness must wait until the port
+    # answers from the host. A forward that opens a second after the wait
+    # starts stands in for a lagging published port.
+    it "waits until the port answers from the host, not just inside the container" do
+      server = TestPostgres.server
+      target = server.pgbouncer_port
+      probe = TCPServer.new("127.0.0.1", 0)
+      port = probe.addr[1]
+      probe.close
+      forward = Thread.new do
+        sleep 1
+        listener = TCPServer.new("127.0.0.1", port)
+        loop do
+          client = listener.accept
+          upstream = TCPSocket.new("127.0.0.1", target)
+          [[client, upstream], [upstream, client]].each do |from, to|
+            Thread.new do
+              IO.copy_stream(from, to)
+            rescue IOError, SystemCallError
+              nil
+            ensure
+              to.close
+            end
+          end
+        end
+      ensure
+        listener&.close
+      end
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      TestPostgres::PgBouncer.wait_until_ready(server.container_id, port)
+
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be >= 1
+      expect(PG::Connection.ping(host: "127.0.0.1", port: port, dbname: "postgres", user: TestPostgres::USER))
+        .to eq(PG::PQPING_OK)
+    ensure
+      forward&.kill
+    end
+
     it "keeps a closed client's server backend in its pool" do
       conn = through_pgbouncer(test_database)
       server_pid = conn.exec("SELECT pg_backend_pid()").getvalue(0, 0)

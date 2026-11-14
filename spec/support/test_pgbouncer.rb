@@ -41,8 +41,9 @@ module TestPostgres
       write(container_id, "pgbouncer.ini", CONFIG)
       write(container_id, "userlist.txt", %("#{USER}" "#{PASSWORD}"\n))
       TestPostgres.docker("exec", "-u", "postgres", container_id, "pgbouncer", "-d", "#{DIR}/pgbouncer.ini")
-      wait_until_ready(container_id)
-      Integer(TestPostgres.docker("port", container_id, "#{PORT}/tcp").lines.first.strip.split(":").last)
+      port = Integer(TestPostgres.docker("port", container_id, "#{PORT}/tcp").lines.first.strip.split(":").last)
+      wait_until_ready(container_id, port)
+      port
     rescue StandardError
       stop(container_id)
       raise
@@ -71,16 +72,25 @@ module TestPostgres
       SH
     end
 
-    # pg_isready stops at PgBouncer's password request, so it opens no
-    # server backend, which a spec would see as another client.
-    def wait_until_ready(container_id)
+    # Waits until PgBouncer answers inside the container and then on its
+    # published port from the host, since Docker's forward to that port can
+    # lag behind the listener (task 20261012-20). pg_isready and
+    # PG::Connection.ping both stop at PgBouncer's password request, so
+    # neither opens a server backend, which a spec would see as another
+    # client.
+    def wait_until_ready(container_id, port)
       deadline = now + READY_TIMEOUT
       until system("docker", "exec", container_id, "pg_isready", "-q", "-h", "127.0.0.1", "-p", PORT.to_s,
-                   "-U", USER, "-d", "postgres", out: File::NULL, err: File::NULL)
+                   "-U", USER, "-d", "postgres", out: File::NULL, err: File::NULL) && answers_on_host?(port)
         raise "PgBouncer in #{container_id} wasn't ready after #{READY_TIMEOUT}s" if now > deadline
 
         sleep 0.1
       end
+    end
+
+    def answers_on_host?(port)
+      PG::Connection.ping(host: "127.0.0.1", port: port, dbname: "postgres", user: USER,
+                          connect_timeout: 2) == PG::PQPING_OK
     end
 
     def write(container_id, name, text)
