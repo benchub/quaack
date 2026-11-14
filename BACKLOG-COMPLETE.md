@@ -13425,3 +13425,13 @@ Unsupported in v1 instead, if any of these turns out hard: list it in DESIGN.md.
 - **Design:** rewrite-test (coverage), llm-counterexamples.
 - **Status:** done
 - **Landed:** 2026-11-14, merged from `task/20261012-8`. All three parts were real. `ValuePools::Sides` hands an array literal under `= ANY`/`<> ALL` to Postgres's `unnest` (a CHECK `f = ANY ('{u,v}'::text[])` now gives its elements), and keeps a bare `ARRAY[...]` under `=` whole, like the cast form. `Fuzz::Reach` reads `col = ANY (ARRAY[...])`, bare or cast, as a constant side, with three new across-literals families (thresholds 0..10). Reviewed with no blocking findings; minors are in 20261114-060517-1. On the unreleased list.
+
+### 20261012-9. LiteralSet and CastlessIndex don't read an `ARRAY[$1, ...]` under a cast.
+
+From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`enclave/lib/quaack/enclave/literal_set.rb:322`) reads `col = ANY (ARRAY[$1, $2])`'s elements as list placeholders, but not when the ARRAY is cast (`= ANY (ARRAY[$1, $2]::text[])`, or the cast `IN` form Postgres prints), so those placeholders fall back instead of getting worst-case and typical picks. The builder said `CastlessIndex` has a similar gap. Reproduce each with a realistic query first; for each that's real, fix it test first, and for one that isn't, say so and drop it. The picks stay in the store, so this isn't a trust-boundary issue, only weaker picks.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-1, 2026-10-12 (minor).
+- **Design:** literal-sets, index-ideas.
+- **Status:** done
+- **Landed:** 2026-11-14, merged from `task/20261012-9`. `LiteralSet.castless` unwraps a cast only when it's to the column's own type, so `= ANY (ARRAY[$1, $2]::integer[])` on an integer column gets picks; a cast to another type still falls back. The `CastlessIndex` gap wasn't real (`uncast` already strips nested casts, and `castless_index_spec.rb` covers the printed varchar form); dropped. Reviewed with no blocking findings; the minor is in 20261114-160902-1. On the unreleased list.

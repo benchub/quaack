@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-7
 - 20261011-11
 - 20261012-8
+- 20261012-9
 
 
 ## How this file works.
@@ -278,14 +279,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-8. Value pools: an array literal under `= ANY` isn't split, and a bare `ARRAY[...]` compared with an array column is. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-9. LiteralSet and CastlessIndex don't read an `ARRAY[$1, ...]` under a cast.
-
-From the build of 20261012-1, not yet checked by a reviewer. `LiteralSet#any` (`enclave/lib/quaack/enclave/literal_set.rb:322`) reads `col = ANY (ARRAY[$1, $2])`'s elements as list placeholders, but not when the ARRAY is cast (`= ANY (ARRAY[$1, $2]::text[])`, or the cast `IN` form Postgres prints), so those placeholders fall back instead of getting worst-case and typical picks. The builder said `CastlessIndex` has a similar gap. Reproduce each with a realistic query first; for each that's real, fix it test first, and for one that isn't, say so and drop it. The picks stay in the store, so this isn't a trust-boundary issue, only weaker picks.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261012-1, 2026-10-12 (minor).
-- **Design:** literal-sets, index-ideas.
-- **Status:** todo
+### 20261012-9. LiteralSet and CastlessIndex don't read an `ARRAY[$1, ...]` under a cast. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-10. llm-counterexamples counts a round where the ORIGINAL query fails as a disproof. Done, see BACKLOG-COMPLETE.md.
 
@@ -783,4 +777,13 @@ The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrit
 - **Depends on:** 20261012-8 (landed).
 - **Came from:** The review of 20261012-8, 2026-11-14 (minor).
 - **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261114-160902-1. LiteralSet: picks for the varchar IN shape Postgres prints.
+
+From the review of 20261012-9 (minor). `LiteralSet` doesn't pick for `(status)::text = ANY ((ARRAY[$1::varchar, $2::varchar])::text[])`: `lexpr` isn't a plain column and the elements carry their own casts (`enclave/lib/quaack/enclave/literal_set.rb`, ~lines 332-336). The cost is weaker picks, not a leak. Reproduce with a realistic ORM varchar IN query first; if the client's own SQL doesn't take this form, say so and drop the task.
+
+- **Depends on:** 20261012-9 (landed).
+- **Came from:** The review of 20261012-9, 2026-11-14 (minor).
+- **Design:** literal-sets.
 - **Status:** todo
