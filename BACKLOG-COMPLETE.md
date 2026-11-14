@@ -13400,3 +13400,13 @@ Reworded 2026-10-14 after 20261012-4: the vacuity guard and its S1 reach became 
 - **Design:** rewrite-test (coverage).
 - **Status:** done
 - **Landed:** 2026-11-13, merged from `task/20261011-7`. `Fuzz::Coverage` judges atoms on the original with each threshold node replaced by TRUE, so a count threshold leaves only its own atoms (and atoms inside its correlated subquery) untested; the rest keep their real state. A volatile call, or a constant compared over a derived table or CTE holding an aggregate, still gets the whole-query worst case (`Reach.whole_worst_case?`). Twelve across-literals examples (two shapes, six operators, thresholds 0..10) hold every outgoing field identical. Not landed: the verdict half of the folded-in 20261010-48 (a correlated `count > n` rewritten as `count >= n` is caught only at some n), now 20261113-210241-1. Reviewed with no blocking findings; minors are in 20261113-210241-2. Enclave behavior changed, so it is on the unreleased list.
+
+### 20261011-11. Rewrite dedupe: normalize the stated assumptions, and say what happens to the same SQL with different assumptions.
+
+From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the stated assumptions as the raw array the LLM sent, so the same assumptions in another order or with trivially different text become a separate entry that gets its own rewrite-test, counterexamples, burndown count and report row (two rewrites that look the same). A rerun of the same input is unaffected. Compare a sorted, normalized form (strip and collapse whitespace, sort) so reordering dedupes. Also say in DESIGN.md whether two entries with the same SQL and really different assumptions are both tested and ranked (extra time and LLM calls, the same SQL twice in the report) or whether the report groups them. Enclave change.
+
+- **Depends on:** 20261008-57 (landed).
+- **Came from:** The review of 20261008-57, 2026-10-11 (minor).
+- **Design:** rewrite-rules, report.
+- **Status:** done
+- **Landed:** 2026-11-13, merged from `task/20261011-11`. Dedupe keys on the SQL plus `RewriteAssumptions.normalized` (strip, collapse whitespace, sort the assumptions and their keys, keep column lists in order), used only as an in-memory key; stored entries keep their raw assumptions. DESIGN.md says the same SQL with really different assumptions is tested and ranked as separate entries, ungrouped (the user chose this, 2026-11-13). Reviewed with no blocking findings; minors are in 20261114-053159-1. On the unreleased list.

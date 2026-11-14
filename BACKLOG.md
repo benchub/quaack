@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261011-7
+- 20261011-11
 
 
 ## How this file works.
@@ -262,14 +263,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261011-10. Rewrite budget: minors from 20261010-53. Done, see BACKLOG-COMPLETE.md.
 
-### 20261011-11. Rewrite dedupe: normalize the stated assumptions, and say what happens to the same SQL with different assumptions.
-
-From the review of 20261008-57 (minor). Dedupe now matches on the SQL plus the stated assumptions as the raw array the LLM sent, so the same assumptions in another order or with trivially different text become a separate entry that gets its own rewrite-test, counterexamples, burndown count and report row (two rewrites that look the same). A rerun of the same input is unaffected. Compare a sorted, normalized form (strip and collapse whitespace, sort) so reordering dedupes. Also say in DESIGN.md whether two entries with the same SQL and really different assumptions are both tested and ranked (extra time and LLM calls, the same SQL twice in the report) or whether the report groups them. Enclave change.
-
-- **Depends on:** 20261008-57 (landed).
-- **Came from:** The review of 20261008-57, 2026-10-11 (minor).
-- **Design:** rewrite-rules, report.
-- **Status:** todo
+### 20261011-11. Rewrite dedupe: normalize the stated assumptions, and say what happens to the same SQL with different assumptions. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-1. A CHECK's IN list on a varchar column reads as one array literal. Done, see BACKLOG-COMPLETE.md.
 
@@ -782,4 +776,13 @@ The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrit
 - **Depends on:** 20261011-7 (landed).
 - **Came from:** The review of 20261011-7, 2026-11-13 (minor).
 - **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261114-053159-1. Rewrite dedupe: minors from the review of 20261011-11.
+
+(1) `RewriteAssumptions.normalized` (`enclave/lib/quaack/enclave/rewrite_assumptions.rb`) collapses whitespace inside quoted literals of a check `expression`, so `status <> 'a  b'` and `status <> 'a b'` dedupe and the second assumption is never checked. Leave quoted text alone, or compare after a pg_query parse and deparse. (2) Duplicates inside one rewrite-check call don't dedupe: `context[:stored]` holds only earlier calls' entries and `save` doesn't add to it, so one LLM response with the same SQL twice (reordered assumptions, or identical ones) stores two entries. This predates 20261011-11. Fix and test both, red first. Enclave change.
+
+- **Depends on:** 20261011-11 (landed).
+- **Came from:** The review of 20261011-11, 2026-11-13 (minor).
+- **Design:** rewrite-rules.
 - **Status:** todo
