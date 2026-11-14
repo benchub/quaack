@@ -26,7 +26,7 @@ require "pg"
 # The first example that asks for a database starts one container for the
 # whole spec process: Postgres 18 with HypoPG, built from postgres/Dockerfile.
 # It's removed when the process exits. Every container carries LABEL and the
-# owning process's pid and host in OWNER_LABEL and HOST_LABEL, so one left
+# owning process's pid and host (with its PID namespace, on Linux) in OWNER_LABEL and HOST_LABEL, so one left
 # behind by a crashed run can be found with
 # `docker ps -a --filter label=quaack.test-postgres`. The next run on the same
 # host removes any whose owner is gone.
@@ -250,15 +250,24 @@ module TestPostgres
 
   def build_image = ImageBuild.run(image_tag, DIR)
 
+  # The inode of this process's PID namespace, on Linux. Two namespaces can
+  # share a hostname, such as two containers on one host, and a pid from one
+  # means nothing in the other. macOS has none, so it's nil there.
+  def pid_namespace = File.exist?("/proc/self/ns/pid") ? File.stat("/proc/self/ns/pid").ino.to_s : nil
+
+  # What HOST_LABEL holds: the hostname, plus the PID namespace where there
+  # is one, so a pid in the label can be checked only where it means the same.
+  def owner_host = [Socket.gethostname, pid_namespace&.then { "pidns:#{it}" }].compact.join("/")
+
   # Removes containers whose owning process is gone. A container whose owner
   # is still running belongs to another spec process, maybe in another
-  # worktree, so it stays. So does one another host started, since its pid
-  # can't be checked here. One with no host label predates that label and
-  # counts as this host's.
+  # worktree, so it stays. So does one another host or PID namespace started,
+  # since its pid can't be checked here. One with no host label predates that
+  # label and counts as this host's.
   def remove_stale_containers
     format = "{{.ID}} {{.Label \"#{OWNER_LABEL}\"}} {{.Label \"#{HOST_LABEL}\"}}"
     docker("ps", "-a", "--filter", "label=#{LABEL}", "--format", format).lines.map(&:split).each do |id, pid, host|
-      foreign = host && host != Socket.gethostname
+      foreign = host && host != owner_host
       remove_container(id) unless foreign || process_alive?(Integer(pid.to_s, exception: false))
     end
   end
@@ -290,7 +299,7 @@ module TestPostgres
 
   def start_container(settings = SERVER_SETTINGS)
     docker("run", "-d", "--label", "#{LABEL}=1", "--label", "#{OWNER_LABEL}=#{Process.pid}",
-           "--label", "#{HOST_LABEL}=#{Socket.gethostname}",
+           "--label", "#{HOST_LABEL}=#{owner_host}",
            "--tmpfs", "/var/lib/postgresql", "-e", "POSTGRES_PASSWORD=#{PASSWORD}",
            "-p", "127.0.0.1::5432", "-p", "127.0.0.1::#{PgBouncer::PORT}", image_tag, *settings.flat_map { ["-c", it] })
   end
