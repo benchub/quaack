@@ -12,6 +12,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-9
 - 20261012-12
 - 20261012-17
+- 20261012-31
 
 
 ## How this file works.
@@ -319,20 +320,7 @@ Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' re
 
 ### 20261012-30. enumerate: a primary key the queries read gets only a few key classes. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-31. enumerate's pass sentence at w = 1.
-
-From the build of 20261012-3. A pass with w = 1 says only that every one-row database (one row in one table) gave the same result. On queries over several tables that's common: 21 of the 28 sound Canvas rewrites passed at w = 1, since a join needs a row in each table. The report then says "Found no difference on N random datasets, or on any dataset of up to 1 row over its value classes.", which is true but may read as more than it is.
-
-Open question for the user: at w = 1, should the rewrite's section keep fuzz's sentence ("It also survived N random small databases built around its own values."), use the enumerate sentence as now, or word it another way? The same choice applies to the progress line and to the burndown's `bound_1` count.
-
-Answers (the user, 2026-10-14):
-- **When to claim the bound.** The report's rewrite section and the progress line mention enumerate's bound only when it gives every table the query reads at least one row. Otherwise they use fuzz's sentence. Enumerate still tries w = 1 first, since it's cheap and catches real bugs (an inner join turned outer differs with the second table empty, and a single-table query is fully covered at w = 1); only the pass claim changes. The burndown keeps its exact bound counts.
-- **No "value classes".** The user didn't know the term, so readers won't either. The new sentence: "Found no difference on N random datasets, or on any dataset of up to W rows built from the query's own values (its constants, values next to them, and NULL)." Use the same words in the progress line, and check the report's other enumerate words (stage sentences, Sankey layer, burndown words) for the term.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261012-3, 2026-10-13.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-31. enumerate's pass sentence at w = 1. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-35. fuzz's stop rule rarely stops before the 5-minute deadline, and starves enumerate. Done, see BACKLOG-COMPLETE.md.
 
@@ -733,5 +721,23 @@ From the review of 20261012-29. No replay run ends a rewrite as `enumerate_dispr
 
 - **Depends on:** 20261012-29 (landed).
 - **Came from:** The review of 20261012-29, 2026-11-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261114-222449-1. FuzzSizes.count: bare relation names count as zero.
+
+From the review of 20261012-31 (minor). `query_tables` skips any relation that isn't schema-qualified, so `SELECT * FROM a JOIN public.b` counts 1 and the bound could be claimed too early. Queries reach it fully qualified today. Count bare RangeVars that aren't CTE names, or treat an unqualified relation as one more table. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261012-31 (landed).
+- **Came from:** The review of 20261012-31, 2026-11-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261114-222449-2. fuzz_sizes_count_spec has no self-join or CTE example.
+
+From the review of 20261012-31 (minor). Add examples: a self-join counts one table, a CTE name isn't counted, aliases collapse. Test only.
+
+- **Depends on:** 20261012-31 (landed).
+- **Came from:** The review of 20261012-31, 2026-11-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
