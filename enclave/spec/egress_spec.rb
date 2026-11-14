@@ -306,10 +306,13 @@ RSpec.describe Quaack::Enclave::Egress do
   # Task 20261012-12: refused may name the function that got a not_immutable
   # insert refused, so it must pass Protocol::RefusedInserts.valid?.
   describe "a counterexample_round message" do
-    let(:round) { { type: :counterexample_round, match: true, rule: nil, load_order: nil, covered: [], load_failed: false } }
+    let(:round) do
+      { type: :counterexample_round, match: true, rule: nil, load_order: nil, covered: [], load_failed: false }
+    end
 
     it "sends each refusal's index and rule, and a not_immutable refusal's function" do
-      refused = [{ index: 0, rule: "insert_select" }, { index: 1, rule: "not_immutable", function: "pg_catalog.concat" }]
+      refused = [{ index: 0, rule: "insert_select" },
+                 { index: 1, rule: "not_immutable", function: "pg_catalog.concat" }]
       out = egress.serialize(**round, refused:)
 
       expect(JSON.parse(out)["refused"]).to eq([{ "index" => 0, "rule" => "insert_select" },
@@ -325,7 +328,8 @@ RSpec.describe Quaack::Enclave::Egress do
     ].each do |what, refused|
       it "refuses one with #{what}, without quoting it" do
         expect { egress.serialize(**round, refused:) }
-          .to raise_error(described_class::Error, "a value in this counterexample_round message isn't refused inserts") { |e|
+          .to raise_error(described_class::Error,
+                          "a value in this counterexample_round message isn't refused inserts") { |e|
             expect(e.message).not_to include(EGRESS_SENTINEL)
             expect(e.cause).to be_nil
           }

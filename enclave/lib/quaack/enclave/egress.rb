@@ -75,6 +75,12 @@ module Quaack
       # always the whitelist's String, never the caller's object.
       TYPES = Protocol::WHITELIST.to_h { |type, fields| [type.name, [type.name, fields.map(&:name)].freeze] }.freeze
 
+      # The types whose fields get a check of their own beyond PlainData,
+      # each by the method that checks them.
+      FIELD_CHECKS = { "burndown" => :check_burndown, "report" => :check_report,
+                       "step_counts" => :check_step_counts, "rewrite_test" => :check_rewrite_test,
+                       "counterexample_round" => :check_counterexample_round }.freeze
+
       # Marks a name given both as a Symbol and as a String. No message has
       # it as a key, so looking it up finds nothing.
       TWICE = Object.new.freeze
@@ -119,11 +125,8 @@ module Quaack
       def write(type, pairs)
         fields = pairs.to_h
         fields.each_value { PlainData.check(it) }
-        check_burndown(fields) if type == "burndown"
-        check_report(fields) if type == "report"
-        check_step_counts(fields) if type == "step_counts"
-        check_rewrite_test(fields) if type == "rewrite_test"
-        check_counterexample_round(fields) if type == "counterexample_round"
+        check = FIELD_CHECKS[type]
+        public_send(check, fields) if check
         JSON.generate({ "type" => type, **fields })
       rescue PlainData::NotPlain, JSON::JSONError => e
         error = e.is_a?(JSON::NestingError) ? TooDeep : Error

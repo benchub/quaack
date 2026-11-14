@@ -59,7 +59,7 @@ module Quaack
 
         Write $1, $2, and so on wherever you want the query's own literal: the enclave puts the real value there. You may wrap one in an immutable function, such as upper($1).
 
-        Write each insert as INSERT INTO schema.table (columns) VALUES (...), (...). Always schema-qualify the table and list the columns. Values must be constants, casts, $n, DEFAULT, or immutable function calls on those. To set a GENERATED ALWAYS identity column, write OVERRIDING SYSTEM VALUE before VALUES. Don't read the clock: now(), CURRENT_DATE, CURRENT_TIMESTAMP, and a string such as 'now', 'today', 'tomorrow', or 'yesterday' read as a date or time get the insert refused, so write fixed dates and times, such as '2024-01-15 10:00:00+00'. Don't use INSERT ... SELECT, WITH, ON CONFLICT, or RETURNING: they get the insert refused. The rows must satisfy every constraint. The enclave adds parent rows for any foreign key you leave dangling, but never bypasses a constraint.
+        Write each insert as INSERT INTO schema.table (columns) VALUES (...), (...). Always schema-qualify the table and list the columns. Values must be constants, casts, $n, DEFAULT, ARRAY[...], or calls of IMMUTABLE functions on those. Operators get the insert refused, even on constants: ||, -, +, *, and the rest. To get around one, call the operator's immutable function, such as pg_catalog.textcat($1, ' ') or pg_catalog.int4pl($2, 1), or write the value out. A function call is refused if any of its overloads that could take that many arguments isn't IMMUTABLE, even when the one Postgres would pick is: concat, jsonb_build_object, and timezone are refused that way, so write the value out instead. One refused value gets its whole INSERT refused, every row in it, so write one row per INSERT when a value might be refused. To set a GENERATED ALWAYS identity column, write OVERRIDING SYSTEM VALUE before VALUES. Don't read the clock: now(), CURRENT_DATE, CURRENT_TIMESTAMP, and a string such as 'now', 'today', 'tomorrow', or 'yesterday' read as a date or time get the insert refused, so write fixed dates and times, such as '2024-01-15 10:00:00+00'. Don't use INSERT ... SELECT, WITH, ON CONFLICT, or RETURNING: they get the insert refused. The rows must satisfy every constraint. The enclave adds parent rows for any foreign key you leave dangling, but never bypasses a constraint.
 
         Answer with JSON: {"inserts": ["INSERT INTO ...", ...]}.
       PROMPT
@@ -79,6 +79,34 @@ module Quaack
       # A round whose rows made the original fail (task 20261012-10).
       ORIGINAL_FAILED = "The accepted inserts made the original query fail (original_failed), so the round " \
                         "compared nothing. Write rows the original query can run on."
+      # A round whose inserts were all refused (task 20261012-12).
+      NONE_ACCEPTED = "No insert was accepted, so the round compared nothing."
+      # What each refusal rule means, in a fixed sentence (task 20261012-12).
+      # A rule not listed here is named alone.
+      REFUSAL_MEANINGS = {
+        "unparsable" => "it isn't valid SQL.",
+        "not_insert" => "it must be exactly one INSERT statement.",
+        "with" => "WITH isn't allowed.",
+        "on_conflict" => "ON CONFLICT isn't allowed.",
+        "returning" => "RETURNING isn't allowed.",
+        "missing_columns" => "list the columns after the table name.",
+        "insert_select" => "the rows must be a plain VALUES list, with no SELECT, ORDER BY, or LIMIT.",
+        "alias" => "don't give the table an alias.",
+        "unqualified_table" => "schema-qualify the table.",
+        "unknown_relation" => "the table isn't in the payload's schema.",
+        "unknown_column" => "a column isn't in the table, or has a subscript or field.",
+        "not_plain_value" => "a value uses something other than a constant, a cast, $n, DEFAULT, ARRAY[...], " \
+                             "or a plain function call, such as an operator, CASE, or a subquery. Call the " \
+                             "operator's immutable function instead, or write the value out.",
+        "not_immutable" => "a function call could reach an overload that isn't IMMUTABLE. Write the value out " \
+                           "instead.",
+        "volatile_function" => "a value uses a volatile cast or function.",
+        "clock_literal" => "a value reads the clock. Write fixed dates and times.",
+        "bad_search_path" => "an unqualified function name couldn't be looked up. Schema-qualify it.",
+        "deparse_mismatch" => "the insert doesn't survive being parsed and written back. Write it more plainly.",
+        "unknown_placeholder" => "it uses a $n the payload doesn't have.",
+        "bad_value" => "Postgres couldn't evaluate one of its values, such as a cast that doesn't fit the type."
+      }.freeze
 
       # provider is the entry that wrote the inserts; after, for a fresh
       # start's first round, the rule that ended the unit before it; and
@@ -133,7 +161,7 @@ module Quaack
         lambda do |inserts, by:|
           keep.call(rounds.size + 1, inserts:, entry: by.first)
           compare.call(inserts, by:).tap do |outcome|
-            keep.call(rounds.size + 1, feedback: feedback_lines(outcome)) unless outcome["match"] == false
+            keep.call(rounds.size + 1, feedback: feedback_lines(outcome, inserts.size)) unless outcome["match"] == false
           end
         end
       end
@@ -179,7 +207,7 @@ module Quaack
 
       def follow_up(round)
         [{ role: :assistant, content: JSON.generate("inserts" => round.inserts) },
-         { role: :user, content: "#{feedback_lines(round.outcome)}\n\n#{ANOTHER}" }]
+         { role: :user, content: "#{feedback_lines(round.outcome, round.inserts.size)}\n\n#{ANOTHER}" }]
       end
 
       # A fresh start's one user message: the payload as the first round
@@ -188,7 +216,7 @@ module Quaack
       def fresh_message(payload, rounds)
         earlier = rounds.each_with_index.map do |round, i|
           "Round #{i + 1}'s inserts:\n\n```json\n#{JSON.generate("inserts" => round.inserts)}\n```\n\n" \
-            "#{feedback_lines(round.outcome)}"
+            "#{feedback_lines(round.outcome, round.inserts.size)}"
         end
         { role: :user, content: "#{payload_message(payload)[:content]}\n\n#{EARLIER}\n\n" \
                                 "#{earlier.join("\n\n")}\n\n#{DIFFERENT}" }
@@ -203,21 +231,28 @@ module Quaack
                .fetch("inserts")
       end
 
-      def result_line(outcome)
+      def result_line(outcome, count)
         return "The accepted inserts failed to load (#{outcome["rule"]})." if outcome["load_failed"]
+        return NONE_ACCEPTED if outcome["refused"].size >= count
         return ORIGINAL_FAILED if outcome["rule"] == "original_failed"
 
         "The accepted inserts gave both queries the same results."
       end
 
-      # What the driver tells the LLM about a round: which inserts were
-      # refused and by which rule, whether the accepted ones loaded, and
-      # which untested atoms they exercised.
-      def feedback_lines(outcome)
-        refused = outcome["refused"].map { |r| "insert #{r["index"] + 1} was refused (#{r["rule"]})" }
-        lines = refused + [result_line(outcome)]
+      # What the driver tells the LLM about a round of count inserts: which
+      # were refused, by which rule and what it means, and for not_immutable
+      # which function, whether the accepted ones loaded, or that none was
+      # accepted, and which untested atoms they exercised.
+      def feedback_lines(outcome, count)
+        lines = outcome["refused"].map { refusal_line(it) } + [result_line(outcome, count)]
         lines << "They exercised: #{outcome["covered"].join(", ")}." unless outcome["covered"].empty?
         lines.join("\n")
+      end
+
+      def refusal_line(refusal)
+        named = [refusal["rule"], refusal["function"]].compact.join(", ")
+        meaning = REFUSAL_MEANINGS[refusal["rule"]]
+        "insert #{refusal["index"] + 1} was refused (#{named})#{": #{meaning}" if meaning}"
       end
     end
   end

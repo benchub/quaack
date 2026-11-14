@@ -22,15 +22,24 @@ module Quaack
       def valid?(refused) = refused.is_a?(Array) && refused.all? { entry?(it) }
 
       def entry?(entry)
-        return false unless entry.is_a?(Hash)
-
-        fields = entry.to_h { |key, value| [key.to_s, value] }
-        return false unless fields.size == entry.size && (fields.keys - KEYS).empty?
+        fields = fields(entry)
+        return false unless fields
 
         index, rule = fields.values_at("index", "rule")
-        index.is_a?(Integer) && index >= 0 && rule.is_a?(String) && RULE.match?(rule) &&
+        index.is_a?(Integer) && index >= 0 && rule?(rule) &&
           (!fields.key?("function") || function?(rule, fields["function"]))
       end
+
+      # entry with String keys, or nil if it isn't a Hash, names a key twice,
+      # or has a key not in KEYS.
+      def fields(entry)
+        return unless entry.is_a?(Hash)
+
+        fields = entry.to_h { |key, value| [key.to_s, value] }
+        fields if fields.size == entry.size && (fields.keys - KEYS).empty?
+      end
+
+      def rule?(rule) = rule.is_a?(String) && RULE.match?(rule)
 
       def function?(rule, function) = rule == "not_immutable" && function.is_a?(String) && FUNCTION.match?(function)
     end
