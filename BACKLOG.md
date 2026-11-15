@@ -379,6 +379,8 @@ From the build of 20261008-67. `ProductionComparison` (result-comparison on prod
 
 From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexample_steps_postgres_spec.rb`'s "passes, cautioning every atom, when a trigger refuses every row, without the database's message" got `"rule" => "no_world"` with `"trials" => 0, "worlds" => 0` instead of `"rule" => nil`, while all four suites ran at once. It passed on its own four times in a row, and the build didn't touch fuzz or rewrite-test. It looks like the search's time budget running out before it tries the empty world when the machine is busy. Find why a loaded machine can end the search with no world tried, and make the example (or the search's floor) independent of machine speed, as `QUAACKS_FUZZ_TRIALS` is meant to.
 
+Builder check 2026-11-15: the stated cause is ruled out. The example runs with `QUAACKS_FUZZ_TRIALS=40`, where `StopRule` counts trials and never reads a clock, and the worlds are seeded from the queries' text, so two runs gave the same 40 trials, five of them empty worlds that compare. 16 busy-loop processes didn't reproduce it. A `no_world` with 0 trials means all five empty-world trials raised a `PG::Error` (load or query), likely a server-side wait hitting the 10 s `statement_timeout` on a crowded Docker host, or state left by an earlier example. Proposed: drop this task, or narrow it to recording each failed trial's `PG::Error` class or SQLSTATE inside the enclave (never printed) during a full per-commit run to see what fails. Waiting on the user to choose.
+
 - **Depends on:** None.
 - **Came from:** Build of 20261016-14, 2026-10-16.
 - **Design:** rewrite-test.
