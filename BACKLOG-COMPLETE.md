@@ -13764,3 +13764,13 @@ From the review of 20261110-16 (minor). No spec covers a statement_timeout firin
 - **Design:** rewrite-test (coverage).
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261113-210241-2. A coverage spec covers `threshold_scoped?`'s "atom holds a threshold" branch (a boolean CASE over `count(*) > 0` in HAVING); dropping the branch turns it red. `Reach.worst_case?` and `Reach.threshold_bound?` had no callers outside one spec block, so both and that block went. No enclave behavior change; not on the unreleased list. I read the diff and started no reviewer; the per-commit check passed. DESIGN.md's coverage paragraph still describes the older all-atoms rule: 20261115-143355-1.
+
+### 20261114-053159-1. Rewrite dedupe: minors from the review of 20261011-11.
+
+(1) `RewriteAssumptions.normalized` (`enclave/lib/quaack/enclave/rewrite_assumptions.rb`) collapses whitespace inside quoted literals of a check `expression`, so `status <> 'a  b'` and `status <> 'a b'` dedupe and the second assumption is never checked. Leave quoted text alone, or compare after a pg_query parse and deparse. (2) Duplicates inside one rewrite-check call don't dedupe: `context[:stored]` holds only earlier calls' entries and `save` doesn't add to it, so one LLM response with the same SQL twice (reordered assumptions, or identical ones) stores two entries. This predates 20261011-11. Fix and test both, red first. Enclave change.
+
+- **Depends on:** 20261011-11 (landed).
+- **Came from:** The review of 20261011-11, 2026-11-13 (minor).
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261114-053159-1. A check's expression compares as pg_query's deparse of `SELECT <expr>` (quoted text keeps its spacing; unparseable text compares exactly), and the same rewrite twice in one call stores one entry. Enclave change, on the unreleased list. Reviewed with no blocking findings; the minors are in 20261115-152943-1.

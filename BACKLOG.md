@@ -21,6 +21,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261015-5
 - 20261110-16
 - 20261114-222449-1
+- 20261114-053159-1
 
 
 ## How this file works.
@@ -513,15 +514,6 @@ The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrit
 - **Design:** rewrite-test (fuzz worlds).
 - **Status:** todo
 
-### 20261114-053159-1. Rewrite dedupe: minors from the review of 20261011-11.
-
-(1) `RewriteAssumptions.normalized` (`enclave/lib/quaack/enclave/rewrite_assumptions.rb`) collapses whitespace inside quoted literals of a check `expression`, so `status <> 'a  b'` and `status <> 'a b'` dedupe and the second assumption is never checked. Leave quoted text alone, or compare after a pg_query parse and deparse. (2) Duplicates inside one rewrite-check call don't dedupe: `context[:stored]` holds only earlier calls' entries and `save` doesn't add to it, so one LLM response with the same SQL twice (reordered assumptions, or identical ones) stores two entries. This predates 20261011-11. Fix and test both, red first. Enclave change.
-
-- **Depends on:** 20261011-11 (landed).
-- **Came from:** The review of 20261011-11, 2026-11-13 (minor).
-- **Design:** rewrite-rules.
-- **Status:** todo
-
 ### 20261114-060517-1. Array reads: minors from the review of 20261012-8.
 
 (1) The `'{%d,%d}'::bigint[]` family in `enclave/spec/across_literals_postgres_spec.rb` (~line 64) stays green with `Reach#constants?` broken, because a cast string already counts as one constant. It guards regressions only. Either say so in its name or replace it with a family that pins the change. (2) In `value_pools.rb` `literals`, the `next evaluate(...) if whole_array?(...)` line wraps awkwardly at the line limit; a plain if/else reads better. Cosmetic.
@@ -640,4 +632,13 @@ From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph st
 - **Depends on:** 20261113-210241-2 (landed).
 - **Came from:** The build of 20261113-210241-2, 2026-11-15.
 - **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261115-152943-1. Rewrite dedupe: two missing tests from the review of 20261114-053159-1.
+
+Minor. (1) No test sends two rewrites with the same SQL and different assumptions in one call (the test at `enclave/spec/rewrite_steps_postgres_spec.rb:162` covers it across calls only); changing the dedupe key to the SQL alone wouldn't turn a within-call test red. Add it. (2) No test asserts a pair only the deparse merges, such as `total>=0` and `total >= 0`. Add it. Spec only.
+
+- **Depends on:** 20261114-053159-1 (landed).
+- **Came from:** The review of 20261114-053159-1, 2026-11-15 (minor).
+- **Design:** rewrite-rules.
 - **Status:** todo
