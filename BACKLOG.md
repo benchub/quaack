@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-50
 - 20261018-32
 - 20261021-5
+- 20261015-5
 
 
 ## How this file works.
@@ -372,14 +373,7 @@ From the build of 20261008-67. `ProductionComparison` (result-comparison on prod
 - **Design:** result comparison, fixture-compare.
 - **Status:** todo
 
-### 20261015-5. Fixture-compare: window functions over tied rows pick arbitrarily.
-
-From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that follows its input order, and a deduplicating DISTINCT or set operation, but not a window function whose frame or `ORDER BY` ties, such as `row_number() OVER (PARTITION BY grp ORDER BY created_at)` over equal timestamps, `first_value`, `lag`, or `array_agg(...) OVER (...)`, nor a SQL/JSON `JSON_ARRAYAGG`, an `ARRAY(SELECT ...)` with no `ORDER BY`, or a `GROUP BY` key under a nondeterministic collation (either of `'a'` and `'A'`). A candidate that drops a window's tiebreaking key can match the fixture by luck. Force them the same way (append each argument's or output's `::text` to the window's `ORDER BY`), or refuse; test first with a realistic dedupe-by-`row_number()` query.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261008-67, 2026-10-15.
-- **Design:** fixture-compare.
-- **Status:** todo
+### 20261015-5. Fixture-compare: window functions over tied rows pick arbitrarily. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261016-17. Spec flake: the trigger-refuses-every-row fuzz example gets `no_world` under load.
 
@@ -728,4 +722,22 @@ From the review of 20261021-5 (minor). (1) `OwnRewrites.text` doesn't rescue an 
 - **Came from:** The review of 20261021-5, 2026-11-15 (minor).
 - **Design:** Report, Operator rewrites (`--rewrites`).
 - **Open questions:** Whether identifier names in own rewrites should be redacted (part 2 only).
+- **Status:** todo
+
+### 20261115-073253-1. Window picks: gaps the builder of 20261015-5 left.
+
+From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one that ties, is neither forced nor refused; only reordered loads catch it, and the load-order specs rely on it to expose ties, so refusing it means rewriting those specs. (2) A window `min` or `max` over values that are equal but print differently (numeric 10 vs 10.0) has no check; the non-window ones do. (3) A window over unique input in an aggregate select with no GROUP BY uses `name.*::text` and fails at run time as `pick_run_failed`; refuse it cleanly. (4) Fail-closed costs worth revisiting if real runs hit them: the `row_number` check refuses any tie in the partition, not just at the kept row; `first_value`, `last_value` and `array_agg` over the default RANGE frame refuse; named windows refuse (inline them before forcing); `PEER_AGGREGATES` is a fixed list. Check each is real before building.
+
+- **Depends on:** 20261015-5 (landed).
+- **Came from:** The build of 20261015-5, 2026-11-15.
+- **Design:** fixture-compare.
+- **Status:** todo
+
+### 20261115-073253-2. Window picks: an unaliased FROM subquery, and GROUPING SETS with a window.
+
+From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquery (`SELECT *, row_number() OVER (...) rn FROM (SELECT * FROM items)`) refuses as `unforceable_pick` where the aliased form matches. Support it or list it in DESIGN.md as unsupported in v1. (2) `GROUP BY GROUPING SETS` or `ROLLUP` with a window function may end as `pick_run_failed` rather than a clean refusal (the reviewer's guess, untested). Test first, then refuse cleanly.
+
+- **Depends on:** 20261015-5 (landed).
+- **Came from:** The review of 20261015-5, 2026-11-15 (minor).
+- **Design:** fixture-compare.
 - **Status:** todo

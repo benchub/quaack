@@ -13644,3 +13644,13 @@ From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text 
 - **Design:** Report, Operator rewrites (`--rewrites`).
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261021-5. `OwnRewrites.text` sends the deparse of the operator's SQL when `sendable?` passes. Enclave change, on the unreleased list. A quoted identifier's name still goes out (see 20261115-055039-1).
+
+### 20261015-5. Fixture-compare: window functions over tied rows pick arbitrarily.
+
+From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that follows its input order, and a deduplicating DISTINCT or set operation, but not a window function whose frame or `ORDER BY` ties, such as `row_number() OVER (PARTITION BY grp ORDER BY created_at)` over equal timestamps, `first_value`, `lag`, or `array_agg(...) OVER (...)`, nor a SQL/JSON `JSON_ARRAYAGG`, an `ARRAY(SELECT ...)` with no `ORDER BY`, or a `GROUP BY` key under a nondeterministic collation (either of `'a'` and `'A'`). A candidate that drops a window's tiebreaking key can match the fixture by luck. Force them the same way (append each argument's or output's `::text` to the window's `ORDER BY`), or refuse; test first with a realistic dedupe-by-`row_number()` query.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261008-67, 2026-10-15.
+- **Design:** fixture-compare.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261015-5. `Picks` forces and checks row_number, ntile, lag, lead and ROWS-frame windows over ties; rank-style windows and a fixed aggregate list need no pick; the rest refuse as `unforceable_pick`. Enclave change, on the unreleased list. Leftovers are in 20261115-073253-1 and -2.
