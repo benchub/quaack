@@ -46,7 +46,7 @@ module Quaack
               "EXISTS ((SELECT * FROM #{ORIGINAL}) EXCEPT ALL (#{sql}))"
           end
           sql = "WITH #{ORIGINAL} AS MATERIALIZED (#{original}) SELECT #{checks.join(", ")}"
-          row = conn.exec_params(sql, typed.params(conn, sql)).values.first
+          row = conn.exec_params(sql, typed.params(conn, sql, shared: true)).values.first
           row.each_index.select { row[it] == "t" }
         end
 

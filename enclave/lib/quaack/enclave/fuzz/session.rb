@@ -112,21 +112,29 @@ module Quaack
           [plans, runs.all?(&:last) ? runs.last(2).map(&:first) : nil, candidate_failed(runs)]
         end
 
-        # Session.batch's one round trip with no binding. With one, each
-        # statement runs on its own with the binding's values, typed for
-        # its query, and those after the first that fails don't run, as in
-        # the batch.
+        # Session.batch's one round trip with no binding. With one, the
+        # statements go through one pipeline (ArenaRunner::Pipeline), still
+        # one round trip once each query's types are known, with the
+        # binding's values typed for its query. Those after the first that
+        # fails come back aborted, unrun, as in the batch (task
+        # 20261110-16). A connection that fails mid-pipeline fails them all.
         def batch(statements)
           return Session.batch(@conn, statements.map(&:first)) unless @binding
 
-          runs = []
-          statements.each do |sql, query|
-            runs << [@conn.exec_params(sql, @typed.params(@conn, query)), true]
-          rescue PG::Error => e
-            runs << [e.result, false]
-            break
+          pairs = statements.map { |sql, query| [sql, @typed.params(@conn, query)] }
+          ArenaRunner::Pipeline.run(@conn, pairs).map { run_of(it) }
+        rescue PG::Error, ArenaRunner::Pipeline::Broken
+          Array.new(statements.size) { [nil, false] }
+        end
+
+        # A pipeline result as a batch's [result, ok]: an aborted one, unrun,
+        # has no result.
+        def run_of(result)
+          case result.result_status
+          when PG::PGRES_TUPLES_OK, PG::PGRES_COMMAND_OK then [result, true]
+          when PG::PGRES_FATAL_ERROR then [result, false]
+          else [nil, false]
           end
-          runs.fill([nil, false], runs.size...statements.size)
         end
 
         # :query_failed when the original ran and the candidate failed on
