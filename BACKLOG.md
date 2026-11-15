@@ -514,15 +514,6 @@ The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrit
 - **Design:** rewrite-test (fuzz worlds).
 - **Status:** todo
 
-### 20261114-060517-1. Array reads: minors from the review of 20261012-8.
-
-(1) The `'{%d,%d}'::bigint[]` family in `enclave/spec/across_literals_postgres_spec.rb` (~line 64) stays green with `Reach#constants?` broken, because a cast string already counts as one constant. It guards regressions only. Either say so in its name or replace it with a family that pins the change. (2) In `value_pools.rb` `literals`, the `next evaluate(...) if whole_array?(...)` line wraps awkwardly at the line limit; a plain if/else reads better. Cosmetic.
-
-- **Depends on:** 20261012-8 (landed).
-- **Came from:** The review of 20261012-8, 2026-11-14 (minor).
-- **Design:** rewrite-test (coverage).
-- **Status:** todo
-
 ### 20261114-170743-1. InsertValues: judge the overload Postgres resolves a call to, not every overload with that many arguments.
 
 The part of 20261012-12 that didn't land (the user said yes to it on 2026-10-12). `InsertValues::MUTABLE_SQL` matches by name and argument count, so `timezone($1, <timestamp>)` is refused because `timezone(text, timetz)` is STABLE, though `timezone(text, timestamp)` is IMMUTABLE. Doing it right means asking Postgres which overload a call resolves to (a temporary view plus `pg_depend`, or a probe like qualify uses), which would run analysis, including type input functions, before the volatility check, or reorder insert-check rules 11 and 12. Find a way that doesn't run anything a refused insert shouldn't, test first, and update the system prompt's overload sentence and DESIGN.md (both say overloads are judged by argument count today). Enclave change; have an Opus reviewer.

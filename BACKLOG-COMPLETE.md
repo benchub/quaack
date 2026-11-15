@@ -13783,3 +13783,13 @@ From the review of 20261012-9 (minor). `LiteralSet` doesn't pick for `(status)::
 - **Came from:** The review of 20261012-9, 2026-11-14 (minor).
 - **Design:** literal-sets.
 - **Status:** dropped (2026-11-15). The task said to drop it if the client's own SQL doesn't take the form. A builder ran the real redact, statistics and literals steps on Postgres 18: qualify and redact only parse and deparse the client's text, so the form `(col)::text = ANY ((ARRAY[...])::text[])` exists only in Postgres's own output (EXPLAIN, `pg_get_expr`) and reaches `LiteralSet` only if someone pastes it in by hand. A Rails-style `IN ('a','b')`, `IN ('a'::varchar, ...)` and `= ANY(ARRAY[...])` all pick per element already. The pasted form falls back cleanly with `unsupported_shape`. Not run against Django, SQLAlchemy or Hibernate, whose usual output was taken from knowledge.
+
+### 20261114-060517-1. Array reads: minors from the review of 20261012-8.
+
+(1) The `'{%d,%d}'::bigint[]` family in `enclave/spec/across_literals_postgres_spec.rb` (~line 64) stays green with `Reach#constants?` broken, because a cast string already counts as one constant. It guards regressions only. Either say so in its name or replace it with a family that pins the change. (2) In `value_pools.rb` `literals`, the `next evaluate(...) if whole_array?(...)` line wraps awkwardly at the line limit; a plain if/else reads better. Cosmetic.
+
+- **Depends on:** 20261012-8 (landed).
+- **Came from:** The review of 20261012-8, 2026-11-14 (minor).
+- **Design:** rewrite-test (coverage).
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261114-060517-1. The across-literals array family `'{...}'::bigint[]` (which stays green with `Reach#constants?` broken) is replaced by a `t.k IN (n, n+1)` family that goes red with it broken, with a comment on why no `'{...}'` shape can pin it; `value_pools.rb`'s `literals` uses a plain if/else. No enclave behavior change; not on the unreleased list. I read the diff and started no reviewer. The builder's own check had one uncaptured driver failure that didn't repeat; my rerun passed all four suites.
