@@ -6,6 +6,7 @@ require "pg_query"
 require_relative "build_connection"
 require_relative "build_order"
 require_relative "index_build_sql"
+require_relative "index_spellings"
 require_relative "index_store"
 require_relative "plain_data"
 
@@ -50,9 +51,10 @@ module Quaack
       def build(store, connection, starting: nil, built: nil, share: nil)
         BuildConnection.configure(connection)
         combinations = combinations(store)
-        indexes = create_all(connection, BuildOrder.ddls(combinations), starting)
+        kept = IndexSpellings.kept(connection, combinations)
+        indexes = create_all(connection, kept.values.uniq, starting)
         hide_all(connection, "indexes" => indexes)
-        names = combinations.transform_values { it.map { name(it) } }
+        names = names(combinations, kept)
         names = names.merge(share.call(connection, "indexes" => indexes, "combinations" => names)) if share
         built&.call(indexes)
         store.write("index_build", "indexes" => indexes, "combinations" => names)
@@ -66,6 +68,9 @@ module Quaack
           [name(ddl), { "ddl" => ddl, "size" => create(connection, name(ddl), ddl) }]
         end
       end
+
+      # combinations as built names, each spelling under its kept one's.
+      def names(combinations, kept) = combinations.transform_values { it.map { name(kept[it]) }.uniq }
 
       # Every search's combinations, as DDL lists.
       def combinations(store)
