@@ -2060,6 +2060,20 @@ RSpec.describe "quaacks report-payload" do
       expect_no_leaks(sentinels, outcome)
     end
 
+    # Task 20261021-5: the text sent is the deparse of the operator's SQL,
+    # so a comment or an identifier's quoting doesn't go out as written.
+    context "when the operator's text holds comments and needless quoting" do
+      let(:own) do
+        [{ "index" => 1, "sql" => "SELECT \"id\" /* #{sentinel} */ FROM public.orders -- #{sentinel}\nWHERE note = $2",
+           "outcome" => "rejected", "rule" => "output_mismatch", "rewrite" => nil }]
+      end
+
+      it "sends the deparse, without the comments, and leaks nothing" do
+        expect(report["own_rewrites"][0]["sql"]).to eq("SELECT id FROM public.orders WHERE note = $2")
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
     context "when a stored field isn't QUAACK's own" do
       let(:own) do
         [{ "index" => sentinel, "sql" => 7, "outcome" => sentinel, "rule" => "Not A Word #{sentinel}",

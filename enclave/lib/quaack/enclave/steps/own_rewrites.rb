@@ -15,7 +15,8 @@ module Quaack
       # if every constant in its parse is one the redacted query holds or one
       # a rule writes (RewritePayload.sendable?, the check rule-made rewrites
       # pass before they go to the LLM), so text that holds a real literal
-      # goes out as nil.
+      # goes out as nil. Text that passes goes out as its deparse (task
+      # 20261021-5), never as written, so its comments and quoting never go out.
       module OwnRewrites
         module_function
 
@@ -31,13 +32,17 @@ module Quaack
         end
 
         def entry(stored, allowed)
-          sql = stored["sql"]
           fields = { "index" => (stored["index"] if stored["index"].is_a?(Integer)),
-                     "sql" => (sql if RewritePayload.sendable?(sql, allowed)),
+                     "sql" => text(stored["sql"], allowed),
                      "outcome" => (stored["outcome"] if Protocol::OwnRewrites::OUTCOMES.include?(stored["outcome"])),
                      "rule" => (stored["rule"] if Protocol::RewriteBudget.rule?(stored["rule"])),
                      "rewrite" => (stored["rewrite"] if Protocol::OwnRewrites.name?(stored["rewrite"])) }
           fields.sort.to_h
+        end
+
+        # sql's deparse, or nil unless it's sendable.
+        def text(sql, allowed)
+          PgQuery.parse(sql).deparse if RewritePayload.sendable?(sql, allowed)
         end
       end
     end
