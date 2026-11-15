@@ -12,7 +12,7 @@ module Quaack
       # untested for them without checking any (task 20261012-4; the rule
       # of task 20261011-2, from the vacuity guard's search).
       #
-      #   Reach.worst_case?("SELECT ... HAVING count(*) > 2")  # => true
+      #   Reach.whole_worst_case?("SELECT ... WHERE random() > 0.5")  # => true
       #
       # A volatile function's call can make a loosened query differ on its
       # own. And whether a random world reaches past a count threshold
@@ -25,8 +25,6 @@ module Quaack
         AGGREGATES = %w[count sum avg min max array_agg string_agg bool_and bool_or every].freeze
 
         module_function
-
-        def worst_case?(sql, binding = nil) = volatile?(sql) || threshold_bound?(sql, binding)
 
         # Whether every atom's coverage could follow a literal, not just the
         # thresholds' own (task 20261011-7): a volatile call, or a constant
@@ -59,19 +57,6 @@ module Quaack
         end
 
         def volatile?(sql) = PgQuery.parse(sql).functions.intersect?(VOLATILE)
-
-        # Whether the query compares an aggregate with a constant anywhere.
-        #
-        # It also counts a constant compared with a column when a derived
-        # table or CTE holds an aggregate or window call, since that column
-        # can carry the aggregate out a layer or more (t.k > 2 over a GROUP
-        # BY's count(*) AS k). It doesn't trace which column is which, so it
-        # fails closed: any such comparison counts.
-        def threshold_bound?(sql, binding = nil)
-          all = nodes(PgQuery.parse(sql).tree)
-          all.any? { threshold?(it, binding) } ||
-            (all.any? { fed_layer?(it) } && all.any? { column_compared?(it, binding) })
-        end
 
         # A derived table's or CTE's SELECT whose select list holds an
         # aggregate or window call anywhere (failing closed: not only its
