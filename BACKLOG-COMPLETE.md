@@ -13793,3 +13793,23 @@ From the review of 20261012-9 (minor). `LiteralSet` doesn't pick for `(status)::
 - **Design:** rewrite-test (coverage).
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261114-060517-1. The across-literals array family `'{...}'::bigint[]` (which stays green with `Reach#constants?` broken) is replaced by a `t.k IN (n, n+1)` family that goes red with it broken, with a comment on why no `'{...}'` shape can pin it; `value_pools.rb`'s `literals` uses a plain if/else. No enclave behavior change; not on the unreleased list. I read the diff and started no reviewer. The builder's own check had one uncaptured driver failure that didn't repeat; my rerun passed all four suites.
+
+### 20261114-190619-2. TestPostgres PgBouncer wait: minors from the review of 20261012-20.
+
+(1) The timeout error in `spec/support/test_pgbouncer.rb` (~line 85) names the container but not the port, and doesn't say which probe failed (in-container `pg_isready` or the host ping). Name both. (2) The new spec's TCP forward (`spec/test_postgres_spec.rb`, ~lines 545-576) leaves its copy threads and proxied sockets alive until the process exits, because the listener closes only through the forward thread's own `ensure`. Close them in the spec's `ensure`. Both harmless today.
+
+- **Depends on:** 20261012-20 (landed).
+- **Came from:** The review of 20261012-20, 2026-11-14 (minor).
+- **Design:** none (test harness).
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261114-190619-2 (one commit for both). The PgBouncer wait's timeout names the container, the port and the failed probe; the forward spec closes its sockets and threads; the old-label leftover is commented in `test_postgres.rb` and `e2e/verify.rb`; `pid_namespace` rescues `SystemCallError` like `e2e/verify.rb`. Test harness only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on a base that differs from main only by backlog commits.
+
+### 20261114-193920-1. Test harness owner-host label: minors from the review of 20261114-190619-1.
+
+(1) A crashed pre-change run on Linux leaves a container labeled with the bare hostname; the new label never matches it, so it counts as foreign and stays until someone runs `docker rm` by hand (it can't remove a live run's container, so this is safe). Say so in a comment at `spec/support/test_postgres.rb` (~line 270) and `e2e/verify.rb` (~line 86), and in the sweep's docs if they describe cleanup. (2) `spec/support/test_postgres.rb` (~line 256) checks `File.exist?` before `File.stat` on `/proc/self/ns/pid`, while `e2e/verify.rb` (~line 35) rescues `SystemCallError`; make them the same so an unreadable `/proc` can't raise in one and not the other. Cosmetic.
+
+- **Depends on:** 20261114-190619-1 (landed).
+- **Came from:** The review of 20261114-190619-1, 2026-11-14 (minor).
+- **Design:** none (test harness).
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261114-190619-2 (one commit for both). The PgBouncer wait's timeout names the container, the port and the failed probe; the forward spec closes its sockets and threads; the old-label leftover is commented in `test_postgres.rb` and `e2e/verify.rb`; `pid_namespace` rescues `SystemCallError` like `e2e/verify.rb`. Test harness only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on a base that differs from main only by backlog commits.

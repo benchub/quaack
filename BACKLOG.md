@@ -534,24 +534,6 @@ The measuring half of 20261012-12, skipped because it needs live LLM calls (spen
 
 ### 20261114-190619-1. TestPostgres: don't sweep another runner's live containers when hostnames match but PID namespaces differ. Done, see BACKLOG-COMPLETE.md.
 
-### 20261114-190619-2. TestPostgres PgBouncer wait: minors from the review of 20261012-20.
-
-(1) The timeout error in `spec/support/test_pgbouncer.rb` (~line 85) names the container but not the port, and doesn't say which probe failed (in-container `pg_isready` or the host ping). Name both. (2) The new spec's TCP forward (`spec/test_postgres_spec.rb`, ~lines 545-576) leaves its copy threads and proxied sockets alive until the process exits, because the listener closes only through the forward thread's own `ensure`. Close them in the spec's `ensure`. Both harmless today.
-
-- **Depends on:** 20261012-20 (landed).
-- **Came from:** The review of 20261012-20, 2026-11-14 (minor).
-- **Design:** none (test harness).
-- **Status:** todo
-
-### 20261114-193920-1. Test harness owner-host label: minors from the review of 20261114-190619-1.
-
-(1) A crashed pre-change run on Linux leaves a container labeled with the bare hostname; the new label never matches it, so it counts as foreign and stays until someone runs `docker rm` by hand (it can't remove a live run's container, so this is safe). Say so in a comment at `spec/support/test_postgres.rb` (~line 270) and `e2e/verify.rb` (~line 86), and in the sweep's docs if they describe cleanup. (2) `spec/support/test_postgres.rb` (~line 256) checks `File.exist?` before `File.stat` on `/proc/self/ns/pid`, while `e2e/verify.rb` (~line 35) rescues `SystemCallError`; make them the same so an unreadable `/proc` can't raise in one and not the other. Cosmetic.
-
-- **Depends on:** 20261114-190619-1 (landed).
-- **Came from:** The review of 20261114-190619-1, 2026-11-14 (minor).
-- **Design:** none (test harness).
-- **Status:** todo
-
 ### 20261114-211947-1. A planted replay for the enumerate_disproved fate.
 
 From the review of 20261012-29. No replay run ends a rewrite as `enumerate_disproved`, so a driver regression in carrying an enumerate disproof passes every replay. Plant a rewrite that random fuzz misses and enumerate catches (such as a NULLS LAST change) and check its fate and report text. Also make the cache-key check in the replay helper independent of example order (the enumerate cache key only shows under defined order).
