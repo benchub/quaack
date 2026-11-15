@@ -13754,3 +13754,13 @@ From the review of 20261110-16 (minor). No spec covers a statement_timeout firin
 - **Design:** fuzz.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261115-092519-1. A bound trial whose candidate hits a real `statement_timeout` (300 ms against `pg_sleep(2)`) mid-pipeline returns `compared: false, rule: nil`; making 57014 count as `:query_failed` in `Session#candidate_failed` turns it red. `Pipeline.take_late_error` wasn't mutated. Spec only; I read the diff and started no reviewer; the builder's per-commit check passed. Not on the unreleased list.
+
+### 20261113-210241-2. Coverage: minors from the review of 20261011-7.
+
+(1) `threshold_scoped?` in `enclave/lib/quaack/enclave/fuzz/coverage.rb`: its "atom holds a threshold" branch (`at.first(atom.path.size) == atom.path`) has no test; dropping it keeps the suite green. Plant one atom that contains a threshold (a boolean CASE or an unsplit expression wrapping `count(*) > n`) and assert it is reported untested, red first. (2) `Reach.worst_case?` and `Reach#threshold_bound?` in `fuzz/reach.rb` are no longer called by Coverage. Find out whether anything else uses them; if not, remove them and any spec that only covers them.
+
+- **Depends on:** 20261011-7 (landed).
+- **Came from:** The review of 20261011-7, 2026-11-13 (minor).
+- **Design:** rewrite-test (coverage).
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261113-210241-2. A coverage spec covers `threshold_scoped?`'s "atom holds a threshold" branch (a boolean CASE over `count(*) > 0` in HAVING); dropping the branch turns it red. `Reach.worst_case?` and `Reach.threshold_bound?` had no callers outside one spec block, so both and that block went. No enclave behavior change; not on the unreleased list. I read the diff and started no reviewer; the per-commit check passed. DESIGN.md's coverage paragraph still describes the older all-atoms rule: 20261115-143355-1.

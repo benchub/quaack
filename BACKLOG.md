@@ -513,15 +513,6 @@ The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrit
 - **Design:** rewrite-test (fuzz worlds).
 - **Status:** todo
 
-### 20261113-210241-2. Coverage: minors from the review of 20261011-7.
-
-(1) `threshold_scoped?` in `enclave/lib/quaack/enclave/fuzz/coverage.rb`: its "atom holds a threshold" branch (`at.first(atom.path.size) == atom.path`) has no test; dropping it keeps the suite green. Plant one atom that contains a threshold (a boolean CASE or an unsplit expression wrapping `count(*) > n`) and assert it is reported untested, red first. (2) `Reach.worst_case?` and `Reach#threshold_bound?` in `fuzz/reach.rb` are no longer called by Coverage. Find out whether anything else uses them; if not, remove them and any spec that only covers them.
-
-- **Depends on:** 20261011-7 (landed).
-- **Came from:** The review of 20261011-7, 2026-11-13 (minor).
-- **Design:** rewrite-test (coverage).
-- **Status:** todo
-
 ### 20261114-053159-1. Rewrite dedupe: minors from the review of 20261011-11.
 
 (1) `RewriteAssumptions.normalized` (`enclave/lib/quaack/enclave/rewrite_assumptions.rb`) collapses whitespace inside quoted literals of a check `expression`, so `status <> 'a  b'` and `status <> 'a b'` dedupe and the second assumption is never checked. Leave quoted text alone, or compare after a pg_query parse and deparse. (2) Duplicates inside one rewrite-check call don't dedupe: `context[:stored]` holds only earlier calls' entries and `save` doesn't add to it, so one LLM response with the same SQL twice (reordered assumptions, or identical ones) stores two entries. This predates 20261011-11. Fix and test both, red first. Enclave change.
@@ -640,4 +631,13 @@ From the build of 20261112-204606-2 (minor). The note in `driver/lib/quaack/driv
 - **Depends on:** 20261112-204606-2 (landed).
 - **Came from:** The build of 20261112-204606-2, 2026-11-15 (minor).
 - **Design:** report.
+- **Status:** todo
+
+### 20261115-143355-1. DESIGN.md: rewrite the coverage "When a literal could decide it" paragraph for the narrowed threshold rule.
+
+From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph still describes the older rule that a count threshold makes every atom untested; 20261011-7 narrowed it to the atoms in, holding or inside the threshold (`Reach.threshold_paths`, `Coverage#threshold_scoped?`). Rewrite the paragraph to match the code. Docs only; check each claim against the code.
+
+- **Depends on:** 20261113-210241-2 (landed).
+- **Came from:** The build of 20261113-210241-2, 2026-11-15.
+- **Design:** rewrite-test (coverage).
 - **Status:** todo
