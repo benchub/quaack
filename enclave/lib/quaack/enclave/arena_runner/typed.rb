@@ -45,10 +45,15 @@ module Quaack
 
         alias to_s inspect
 
-        def params(conn, sql)
+        # shared: true takes the types read for any query, once one has
+        # been, when no value is unknown: each $n is then declared its
+        # binding's type whatever the query, so each query's read-back
+        # types are the same. Differ's combined statement, new text for
+        # each loosened set, so skips its own PREPARE (task 20261110-16).
+        def params(conn, sql, shared: false)
           return [] unless @binding
 
-          oids = @oids[sql] || oids(conn, sql)
+          oids = (@fixed if shared) || @oids[sql] || oids(conn, sql)
           @binding.values.zip(oids).map { |value, type| { value:, type: } }
         end
 
@@ -66,16 +71,23 @@ module Quaack
         # 20261112-090000-1). An aborted transaction never gets that far:
         # its SAVEPOINT fails first, with a PG::Error, which isn't kept.
         def oids(conn, sql)
-          @oids[sql] = saved(conn) do
+          keep(sql, saved(conn) do
             declared(sql).then { Redaction::Binding.new(sql:, types: it, values: []).prepare(conn, NAME) }
             read(conn)
-          end
+          end)
         rescue Redaction::Error, PG::Error, PgQuery::ParseError => e
           untyped = Array.new(@binding.values.size, 0)
           @oids[sql] = untyped if clean_prepare_failure?(e)
           untyped
         ensure
           deallocate(conn)
+        end
+
+        # Types read back for sql, kept for it, and for shared when no value
+        # is unknown.
+        def keep(sql, oids)
+          @fixed ||= oids if @binding.types.none?("unknown")
+          @oids[sql] = oids
         end
 
         # Redaction::Binding#prepare raises prepare_failed from the PREPARE.
