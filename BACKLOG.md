@@ -413,15 +413,7 @@ From the user's run on 2026-10-20, after redeploying with 20261019-4 on the jump
 - **Open questions:** None.
 - **Status:** todo. Landed so far (2026-10-20): `enclave/spec/redact_rewrite_pipeline_postgres_spec.rb`, which fills the store with the real `qualify` and `redact` (the only steps that write `qualified_query`, `redacted_query`, and `placeholder_map`; `literals` and `clock-anchor` only read them) through the installed quaacks on the synthetic query, and checks the identity round trip through `quaacks redact-rewrite`. It passes: the store holds exactly what `Redaction.query` gives, so the internal_error isn't reproduced with the original's own text or with a dozen common rewrites of it (UNION, CTE, JOIN instead of EXISTS, casts, `>=`/`<=`, `= ANY`); each either redacts or refuses with a rule. The user's rewrite text is needed to go further; the likeliest unclassified raises are a rewrite pg_query can't parse (see 20261020-1's review task) and `RewriteRedaction::Error`. See also 20261020-4 and 20261020-5.
 
-### 20261020-4. redact-rewrite: OR split into a UNION refuses at the EXISTS's `SELECT 1`.
-
-From 20261020-3. The usual rewrite of the user's query, the OR split into `... UNION SELECT ... WHERE assignments.id IN (...)`, refuses `redact_rewrite_no_match` at the EXISTS's `SELECT 1`: its structural key (20261019-4) carries its nesting, and the UNION puts the original's SELECT under the set operation's `larg`, so the depths differ. Let a structural key match through a set operation's branch (an EXISTS target list's value never changes the result, so binding it is safe) while LIMIT and OFFSET keep their exact nesting. Add the UNION case to `enclave/spec/redact_rewrite_pipeline_postgres_spec.rb`. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261020-3.
-- **Came from:** The builder of 20261020-3, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Open questions:** None.
-- **Status:** todo
+### 20261020-4. redact-rewrite: OR split into a UNION refuses at the EXISTS's `SELECT 1`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261020-5. Enclave: a local log of internal errors on the jump server.
 

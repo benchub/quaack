@@ -13623,3 +13623,14 @@ Give a compared key fewer classes without losing the boundary catch, test first:
 - **Design:** index-build, index-share.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261018-32. index-build asks HypoPG to canonicalize each DDL and builds one spelling per definition. Enclave change, on the unreleased list.
+
+### 20261020-4. redact-rewrite: OR split into a UNION refuses at the EXISTS's `SELECT 1`.
+
+From 20261020-3. The usual rewrite of the user's query, the OR split into `... UNION SELECT ... WHERE assignments.id IN (...)`, refuses `redact_rewrite_no_match` at the EXISTS's `SELECT 1`: its structural key (20261019-4) carries its nesting, and the UNION puts the original's SELECT under the set operation's `larg`, so the depths differ. Let a structural key match through a set operation's branch (an EXISTS target list's value never changes the result, so binding it is safe) while LIMIT and OFFSET keep their exact nesting. Add the UNION case to `enclave/spec/redact_rewrite_pipeline_postgres_spec.rb`. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261020-3.
+- **Came from:** The builder of 20261020-3, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Open questions:** None.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261020-4. Stale: 20261020-7 already keeps the EXISTS's `SELECT 1`, so the UNION rewrite redacts correctly. A regression spec in `redact_rewrite_pipeline_postgres_spec.rb` covers it. No code change.
