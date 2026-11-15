@@ -708,6 +708,31 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(costly.map { it["id"] }.uniq).to eq([base["id"]])
     end
 
+    # Task 20261115-030731-1: the same hold for a compared key the plan
+    # draws (:key), not one it fixes by position.
+    it "holds a compared drawn key at its base class outside the base-choice kinds" do
+      conn.exec(<<~SQL)
+        CREATE TABLE s.customers (id integer PRIMARY KEY, name text);
+        CREATE TABLE s.orders (id integer PRIMARY KEY, customer_id integer NOT NULL, status text NOT NULL,
+                               note text NOT NULL);
+      SQL
+      sql = "SELECT o.id FROM s.orders o JOIN s.customers c ON c.id = o.customer_id " \
+            "WHERE o.customer_id > 25 AND o.status = 'paid' AND o.note = 'x'"
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      domains = fuzz::Domains.new(conn, catalog, [sql])
+      plan = fuzz::Generator.new(catalog, domains).plan
+      orders = catalog.footprint.find { it.name == "orders" }
+      kinds = described_class::Kinds.new(catalog, plan, domains)
+      table = kinds.for(orders)
+      base = table.kinds.first
+      costly = table.kinds.each_index.select { table.cost(it) == 2 }.map { table.kinds[it] }
+
+      expect(plan.kind(orders, "customer_id")).to eq(:key)
+      expect(table.kinds.map { it["customer_id"] }.uniq).to match_array(kinds.domains(orders)["customer_id"])
+      expect(costly).not_to be_empty
+      expect(costly.map { it["customer_id"] }.uniq).to eq([base["customer_id"]])
+    end
+
     # orders.customer_id is a key the plan draws (:key), and the queries
     # compare it with 25, which isn't among its key class's first values.
     it "gives a key column the queries compare with a constant its own values first, then its key classes" do
