@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-17
 - 20261012-31
 - 20261012-42
+- 20261012-50
 
 
 ## How this file works.
@@ -351,16 +352,7 @@ From the review of 20261012-35, 2026-10-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261012-50. Fuzz coverage: check more worlds now that a check is one statement, and a literal 0.
-
-From the second review of 20261012-4 (minor). Coverage checks every world for the first 64 observations, then 32 per doubling of the trial count (`Fuzz::Coverage#due?`). Since 20261012-4's fix round a check is one statement per world, so a denser schedule is now cheap. The reviewer saw why it matters: `SELECT s.id FROM (… ORDER BY id LIMIT 20 OFFSET n) s WHERE s.id <> 4` leaves `s.id <> $4` untested at OFFSET 0 in 2 of 3 seeds at 20,000 trials, and at OFFSET 1, 2 or 5 in none of 21. It isn't the cut (coverage removes it): a literal `0` anywhere changes which worlds get drawn (`s.id <> 0` at OFFSET 2 does the same, `s.id <> 9` doesn't). DESIGN accepts that literals shape the worlds, so this isn't a leak of the kind 20261011-2 forbids, but with every world checked OFFSET 0 settled by 1,500 trials. Try a denser schedule (every world, or a much higher FIRST), measure the trial rate on Canvas and the hard corpus against 20261012-4's numbers (0.92x and 1.13x; target no worse than about 0.85x), and add an across-literals family with a `<> k` atom over OFFSET 0 at production-like trial counts. Also q15a on Canvas swings between 0 and 5 of 5 atoms untested from run to run, since the search rarely gets a row for it: check whether a denser schedule settles it.
-
-Builder check 2026-11-14: still reproduces (a `<> k` atom at OFFSET 0 stays untested in 1 of 3 seeds at 5000 trials; checking every world settles all). Checking every world forever costs about 0.5x trial rate on a query with an atom no world can show. Proposed: FIRST = 1024, then the doubling schedule (about 0.9x on such queries, estimated, not measured). Needs the user to accept FIRST = 1024 or pick another value. The Canvas and hard-corpus harnesses and the q15a query aren't in the repo, so only a synthetic measurement is possible.
-
-- **Depends on:** None.
-- **Came from:** The second review of 20261012-4, 2026-10-14 (minor).
-- **Design:** rewrite-test (coverage).
-- **Status:** todo
+### 20261012-50. Fuzz coverage: check more worlds now that a check is one statement, and a literal 0. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-52. After 20261012-4: the builder's flags.
 
@@ -736,4 +728,13 @@ From the review of 20261012-31 (minor). Add examples: a self-join counts one tab
 - **Depends on:** 20261012-31 (landed).
 - **Came from:** The review of 20261012-31, 2026-11-14 (minor).
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261115-020212-1. Measure the trial rate after Coverage::FIRST = 1024.
+
+From 20261012-50. Compare the trial rate with 20261012-4's numbers on the Canvas and hard corpora, and check q15a's run-to-run swing. The harnesses and q15a aren't in the repo, so this needs them first (or the user's real-schema run burndown: `fuzz` trials and times). Expected about 0.9x on a query with an atom no world can show, estimated only.
+
+- **Depends on:** 20261012-50 (landed).
+- **Came from:** The build of 20261012-50, 2026-11-14.
+- **Design:** rewrite-test (coverage).
 - **Status:** todo
