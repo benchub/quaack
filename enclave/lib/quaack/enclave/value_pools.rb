@@ -322,10 +322,11 @@ module Quaack
           return [] unless expr
 
           [expr.lexpr, expr.rexpr].compact.reject { column_ref?(it) }.flat_map do |whole|
-            next evaluate(conn, "pg_catalog.unnest((#{select_of(Sides.copy(whole))}))", col) if whole_array?(expr,
-                                                                                                             whole)
-
-            side_literals(conn, expr, whole, col)
+            if whole_array?(expr, whole)
+              evaluate(conn, "pg_catalog.unnest((#{select_of(Sides.copy(whole))}))", col)
+            else
+              side_literals(conn, expr, whole, col)
+            end
           end
         end
 
