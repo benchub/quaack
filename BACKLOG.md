@@ -633,15 +633,6 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261115-092519-1. Pipelined batch: a spec for a statement_timeout mid-pipeline with a binding.
-
-From the review of 20261110-16 (minor). No spec covers a statement_timeout firing mid-pipeline with a binding. The code is right today (57014 isn't a DataError SQLSTATE, so it's no kill), but a later change that counted a late Sync cancel as a candidate kill would pass every spec. Add a Postgres test: a bound trial whose candidate times out mid-pipeline is not compared and not a kill.
-
-- **Depends on:** 20261110-16 (landed).
-- **Came from:** The review of 20261110-16, 2026-11-15 (minor).
-- **Design:** fuzz.
-- **Status:** todo
-
 ### 20261115-110237-1. Report: the accountability note says "two runs of the original query" for cut_tie too.
 
 From the build of 20261112-204606-2 (minor). The note in `driver/lib/quaack/driver/report/template.html.erb` still says "or two runs of the original query", which is loose for `cut_tie` (its runs are the full runs without the cut). Reword, red first.

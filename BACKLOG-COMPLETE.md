@@ -13744,3 +13744,13 @@ From the review of 20261012-46 (minor). Narrowing `key_compared?` in `enumerate/
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261115-030731-1. A Kinds example holds a compared `:key` column (`o.customer_id > 25`) at its base class in the cost-2 kinds; narrowing `key_compared?` to `%i[pk]` turns it red. Spec only; I read the diff and started no reviewer; the builder's per-commit check passed. Not on the unreleased list.
+
+### 20261115-092519-1. Pipelined batch: a spec for a statement_timeout mid-pipeline with a binding.
+
+From the review of 20261110-16 (minor). No spec covers a statement_timeout firing mid-pipeline with a binding. The code is right today (57014 isn't a DataError SQLSTATE, so it's no kill), but a later change that counted a late Sync cancel as a candidate kill would pass every spec. Add a Postgres test: a bound trial whose candidate times out mid-pipeline is not compared and not a kill.
+
+- **Depends on:** 20261110-16 (landed).
+- **Came from:** The review of 20261110-16, 2026-11-15 (minor).
+- **Design:** fuzz.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261115-092519-1. A bound trial whose candidate hits a real `statement_timeout` (300 ms against `pg_sleep(2)`) mid-pipeline returns `compared: false, rule: nil`; making 57014 count as `:query_failed` in `Session#candidate_failed` turns it red. `Pipeline.take_late_error` wasn't mutated. Spec only; I read the diff and started no reviewer; the builder's per-commit check passed. Not on the unreleased list.
