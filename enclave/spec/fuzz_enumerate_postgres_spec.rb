@@ -134,6 +134,26 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(result.enumerate).to have_attributes(verdict: :disproved, sizes: [["s", "items", 1], ["s", "orders", 1]])
   end
 
+  # Task 20261012-46: a compared key's classes, mixed into the product,
+  # gave orders cost-2 kinds, so w=2 took every world up to weight 6
+  # (29,338 worlds). Held out of the product, they cost 1 and w=2 comes at
+  # weight 5, about 3,000 worlds in.
+  it "reaches w=2 on a sound keyset page over a join that compares its key" do
+    conn.exec(<<~SQL)
+      CREATE TABLE s.orders (id integer PRIMARY KEY, status text NOT NULL);
+      CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders, qty integer);
+    SQL
+    from = "FROM s.orders o JOIN s.items i ON i.order_id = o.id"
+    original = "SELECT o.id, i.id #{from} WHERE o.id > 100 AND o.status = 'paid' AND i.qty > 0 " \
+               "ORDER BY o.id, i.id LIMIT 10"
+    candidate = "SELECT o.id, i.id #{from} WHERE i.qty > 0 AND o.status = 'paid' AND o.id > 100 " \
+                "ORDER BY o.id, i.id LIMIT 10"
+
+    result = both(original, candidate, worlds: 4000, stop: fuzz::StopRule.trials(1))
+
+    expect(result.enumerate).to have_attributes(verdict: :passed, bound: 2)
+  end
+
   it "runs only after the fuzz search passes" do
     disproved = both("SELECT id FROM s.topics WHERE kind = 'news'", "SELECT id FROM s.topics")
     off = fuzz.search(conn, "SELECT id FROM s.topics WHERE kind = 'news'",
@@ -661,6 +681,31 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(ids.first).to eq(domains.values(orders, "id").compact.first)
       expect(ids).to include("100", "101", *domains.class_values(orders, "id").first(3), "1", "2")
       expect(ids).not_to include(nil)
+    end
+
+    # Task 20261012-46: a compared key's classes are single-column changes
+    # of the base row only, so they add no cost-2 kinds, while each of its
+    # classes still appears, and the other columns still mix in pairs.
+    it "holds a compared key at its base class outside the base-choice kinds" do
+      conn.exec(<<~SQL)
+        CREATE TABLE s.orders (id integer PRIMARY KEY, status text NOT NULL, note text NOT NULL);
+        CREATE TABLE s.items (id integer PRIMARY KEY, order_id integer NOT NULL REFERENCES s.orders);
+      SQL
+      sql = "SELECT o.id FROM s.orders o JOIN s.items i ON i.order_id = o.id " \
+            "WHERE o.id > 100 AND o.status = 'paid' AND o.note = 'x'"
+      catalog = fuzz::Catalog.new(conn, fuzz.footprint([sql]))
+      domains = fuzz::Domains.new(conn, catalog, [sql])
+      plan = fuzz::Generator.new(catalog, domains).plan
+      orders = catalog.footprint.find { it.name == "orders" }
+      kinds = described_class::Kinds.new(catalog, plan, domains)
+      table = kinds.for(orders)
+      base = table.kinds.first
+      costly = table.kinds.each_index.select { table.cost(it) == 2 }.map { table.kinds[it] }
+
+      expect(plan.kind(orders, "id")).to eq(:pk)
+      expect(table.kinds.map { it["id"] }.uniq).to match_array(kinds.domains(orders)["id"])
+      expect(costly).not_to be_empty
+      expect(costly.map { it["id"] }.uniq).to eq([base["id"]])
     end
 
     # orders.customer_id is a key the plan draws (:key), and the queries

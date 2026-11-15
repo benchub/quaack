@@ -29,7 +29,8 @@ module Quaack
         # it passes the queries' tests) and then each single-column change
         # of it, then the full product of the columns' classes when it's at
         # most MAX_KINDS, else a pairwise covering array of it: every pair
-        # of two columns' classes in some kind.
+        # of two columns' classes in some kind. A compared key holds its
+        # base class there, so it adds no kind of cost 2.
         #
         # Trust boundary: kinds hold real values, so they stay here.
         class Kinds # rubocop:disable Metrics/ClassLength -- the kinds and their covering array
@@ -60,7 +61,7 @@ module Quaack
             @columns = {}
           end
 
-          def for(table) = @tables[table] ||= build(domains(table))
+          def for(table) = @tables[table] ||= build(domains(table), table)
 
           # Each read or key column's classes, in order.
           def domains(table)
@@ -94,22 +95,37 @@ module Quaack
               @domains.base_keys(table, column).first(KEYS)).uniq
           end
 
-          def build(domains)
+          def build(domains, table)
             return Table.new(kinds: [{}], base: 1) if domains.empty?
 
             base = base_choice(domains)
-            rest = if domains.values.map(&:size).reduce(:*) <= MAX_KINDS
-                     product(domains)
-                   else
-                     pairwise(domains, Random.new(SEED))
-                   end
-            Table.new(kinds: (base + rest).uniq, base: base.size)
+            held = domains.keys.select { key_compared?(table, it) }
+            Table.new(kinds: (base + mixed(domains, held)).uniq, base: base.size)
+          end
+
+          # The product or covering array of the columns' classes, with each
+          # key the queries compare held at its base class, so its classes
+          # add only single-column changes, of cost 1, and the bound stays
+          # where it was without them.
+          def mixed(domains, held)
+            domains = domains.merge(domains.slice(*held).transform_values { [first_class(it)] })
+            return product(domains) if domains.values.map(&:size).reduce(:*) <= MAX_KINDS
+
+            pairwise(domains, Random.new(SEED))
+          end
+
+          # A key the queries compare with a constant, whatever the plan
+          # calls it.
+          def key_compared?(table, column)
+            %i[key pk].include?(@plan.kind(table, column)) && @domains.compared?(table, column)
           end
 
           def base_choice(domains)
-            base = domains.transform_values { |values| values.find { !it.nil? } || values.first }
+            base = domains.transform_values { first_class(it) }
             [base] + domains.flat_map { |column, values| (values - [base[column]]).map { base.merge(column => it) } }
           end
+
+          def first_class(values) = values.find { !it.nil? } || values.first
 
           def product(domains)
             names = domains.keys
