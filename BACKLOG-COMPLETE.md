@@ -13613,3 +13613,13 @@ Give a compared key fewer classes without losing the boundary catch, test first:
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-11-14, merge of task/20261012-46. A compared `:key` or `:pk` column holds its base class in enumerate's product and covering-array kinds, so the keyset page reaches w=2 again (3,023 worlds, against 29,338 before). Enclave change, on the unreleased list. The hard-corpus before/after wasn't possible: the corpus isn't in the repo.
+
+### 20261018-32. index-build: build indices that differ only in spelling once.
+
+20261018-30 made index-share treat indices with equal `pg_get_indexdef` (name ignored) as one, but index-build still builds each spelling, so the run pays for the duplicate build and measures both. Deduping before the build changes the `--index` order and totals the driver relies on, and the `indexes` list the report uses. Build each once and map the other spellings to it, or canonicalize the DDL before naming it.
+
+- **Depends on:** None.
+- **Came from:** The builder of 20261018-30, 2026-10-18.
+- **Design:** index-build, index-share.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261018-32. index-build asks HypoPG to canonicalize each DDL and builds one spelling per definition. Enclave change, on the unreleased list.

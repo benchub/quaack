@@ -16,6 +16,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-42
 - 20261012-46
 - 20261012-50
+- 20261018-32
 
 
 ## How this file works.
@@ -388,14 +389,7 @@ From the build of 20261016-14. In one per-commit run, `enclave/spec/counterexamp
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261018-32. index-build: build indices that differ only in spelling once.
-
-20261018-30 made index-share treat indices with equal `pg_get_indexdef` (name ignored) as one, but index-build still builds each spelling, so the run pays for the duplicate build and measures both. Deduping before the build changes the `--index` order and totals the driver relies on, and the `indexes` list the report uses. Build each once and map the other spellings to it, or canonicalize the DDL before naming it.
-
-- **Depends on:** None.
-- **Came from:** The builder of 20261018-30, 2026-10-18.
-- **Design:** index-build, index-share.
-- **Status:** todo
+### 20261018-32. index-build: build indices that differ only in spelling once. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite. Done, see BACKLOG-COMPLETE.md.
 
