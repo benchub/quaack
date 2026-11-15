@@ -13684,3 +13684,13 @@ From the review of 20261112-171103-1 (minor). In `driver/spec/report_spec.rb` (a
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261112-204606-3. The doc-link example plants the linked phrase in a `cut_tie`, a `statement_timeout` and a float-noise fate, so removing `DocLinks`' reason or rule check, or swapping its float and unstable checks, turns it red. Spec only. I read the diff and started no reviewer. Not on the unreleased list.
+
+### 20261112-204606-2. Report: the float-noise sentence for the original's two runs.
+
+From the review of 20261112-171103-1 (minor). The `production_not_compared` float-noise wording still says "two runs of the original query differed" without saying they were QUAACK's own tiebreaker runs, and it doesn't link to `docs/unstable-original.md`. It also covers `cut_tie`, where the runs that differed aren't the original's two runs with no `LIMIT` (they're the full runs without the cut), so "the original query's two runs" isn't accurate there. Reword to match 20261112-171103-1's wording, split the `cut_tie` case if needed, and link it. Driver and docs only; red first.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** result-comparison, report.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261112-204606-2 (conflict with 20261112-204606-3 in report_spec.rb resolved by the main session). `production_not_compared` float noise now has its own sentence for `unstable_original` (QUAACK's own tiebreaker runs, linked to unstable-original.md and float-values.md) and for `cut_tie` (the full runs without the cut). Driver only; not on the unreleased list. I read the diff and started no reviewer.

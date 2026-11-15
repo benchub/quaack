@@ -512,15 +512,6 @@ From the review of 20261112-171103-1 (minor). The page puts an original's two di
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261112-204606-2. Report: the float-noise sentence for the original's two runs.
-
-From the review of 20261112-171103-1 (minor). The `production_not_compared` float-noise wording still says "two runs of the original query differed" without saying they were QUAACK's own tiebreaker runs, and it doesn't link to `docs/unstable-original.md`. It also covers `cut_tie`, where the runs that differed aren't the original's two runs with no `LIMIT` (they're the full runs without the cut), so "the original query's two runs" isn't accurate there. Reword to match 20261112-171103-1's wording, split the `cut_tie` case if needed, and link it. Driver and docs only; red first.
-
-- **Depends on:** 20261112-171103-1.
-- **Came from:** 20261112-171103-1.
-- **Design:** result-comparison, report.
-- **Status:** todo
-
 ### 20261113-035826-1. docs/unstable-original.md: tiebreaker columns, DISTINCT ON, and DESIGN.md's JSON_ARRAYAGG.
 
 From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and DESIGN.md (about line 1303) say the tiebreaker takes every output column whose type QUAACK can sort, giving only `json` as an exception. `Tiebreaker::UNFAITHFUL` (`enclave/lib/quaack/enclave/result_comparison/tiebreaker.rb:36`) also leaves out `jsonb`, which sorts, and arrays and ranges of float, numeric, or interval; say so, or say "the columns it can sort faithfully" and list them. (2) The page says that with no `LIMIT` or `OFFSET` the two runs must hold the same rows; a `DISTINCT ON` with no `LIMIT` can differ too, but it refuses as `cut_tie`, not `unstable_original` (`CutTies.unstable?`). Add a sentence. (3) DESIGN.md (about line 1330, "Gaps remain") lists a SQL/JSON `JSON_ARRAYAGG` as an unpinned pick, but `SupportedSql` refuses the SQL/JSON functions up front (`unsupported_construct: JsonArrayAgg`); drop it there. Docs only.
@@ -693,4 +684,13 @@ From the review of 20261110-16 (minor). No spec covers a statement_timeout firin
 - **Depends on:** 20261110-16 (landed).
 - **Came from:** The review of 20261110-16, 2026-11-15 (minor).
 - **Design:** fuzz.
+- **Status:** todo
+
+### 20261115-110237-1. Report: the accountability note says "two runs of the original query" for cut_tie too.
+
+From the build of 20261112-204606-2 (minor). The note in `driver/lib/quaack/driver/report/template.html.erb` still says "or two runs of the original query", which is loose for `cut_tie` (its runs are the full runs without the cut). Reword, red first.
+
+- **Depends on:** 20261112-204606-2 (landed).
+- **Came from:** The build of 20261112-204606-2, 2026-11-15 (minor).
+- **Design:** report.
 - **Status:** todo
