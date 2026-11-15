@@ -13654,3 +13654,13 @@ From the build of 20261008-67. `Picks` forces a DISTINCT ON, an aggregate that f
 - **Design:** fixture-compare.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261015-5. `Picks` forces and checks row_number, ntile, lag, lead and ROWS-frame windows over ties; rank-style windows and a fixed aggregate list need no pick; the rest refuse as `unforceable_pick`. Enclave change, on the unreleased list. Leftovers are in 20261115-073253-1 and -2.
+
+### 20261111-1. Refusal-reason phrases: tighten three that are loose, and tell a user's own division by zero from a pick check.
+
+From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` don't mention UNION, INTERSECT or EXCEPT without ALL, which Picks also checks. (b) `inner_cut` says "inside a subquery" but also fires for a CTE or a set-operation arm. (c) `unforceable_pick` says "reads a subquery" but also fires for an unaliased function in FROM, or a `*` as a DISTINCT ON key or ORDER BY item. (d) Picks reads SQLSTATE 22012 as "the check fired", so a division by zero from the query's own expression in a forced or checked run would be labelled a pick refusal, not `pick_run_failed`; unlikely, since both queries run as written first. Fix the phrases in the enum and docs; for (d) test first, or say it in DESIGN.md. Enclave, protocol and driver change.
+
+- **Depends on:** 20261110-7.
+- **Came from:** The review of 20261110-7, 2026-11-11.
+- **Design:** result-comparison, report.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261111-1. Items (a) to (c): the driver's phrases for `original_pick`, `rewrite_pick`, `inner_cut` and `unforceable_pick` now match what Picks checks; protocol comments, DESIGN.md and README match. Item (d): no realistic query reproduces it, so DESIGN.md says v1 accepts it. Wording only, not on the unreleased list.

@@ -452,14 +452,7 @@ From the review of 20261010-18 (minor). The command runs in a private temp dir, 
 
 ### 20261110-7. Report: name the check behind an `unsupported_order` refusal. Done, see BACKLOG-COMPLETE.md.
 
-### 20261111-1. Refusal-reason phrases: tighten three that are loose, and tell a user's own division by zero from a pick check.
-
-From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` don't mention UNION, INTERSECT or EXCEPT without ALL, which Picks also checks. (b) `inner_cut` says "inside a subquery" but also fires for a CTE or a set-operation arm. (c) `unforceable_pick` says "reads a subquery" but also fires for an unaliased function in FROM, or a `*` as a DISTINCT ON key or ORDER BY item. (d) Picks reads SQLSTATE 22012 as "the check fired", so a division by zero from the query's own expression in a forced or checked run would be labelled a pick refusal, not `pick_run_failed`; unlikely, since both queries run as written first. Fix the phrases in the enum and docs; for (d) test first, or say it in DESIGN.md. Enclave, protocol and driver change.
-
-- **Depends on:** 20261110-7.
-- **Came from:** The review of 20261110-7, 2026-11-11.
-- **Design:** result-comparison, report.
-- **Status:** todo
+### 20261111-1. Refusal-reason phrases: tighten three that are loose, and tell a user's own division by zero from a pick check. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-8. Result comparison: `0` and `-0` don't make a `min`/`max` pick refuse. Done, see BACKLOG-COMPLETE.md.
 
