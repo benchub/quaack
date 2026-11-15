@@ -13774,3 +13774,12 @@ From the review of 20261110-16 (minor). No spec covers a statement_timeout firin
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261114-053159-1. A check's expression compares as pg_query's deparse of `SELECT <expr>` (quoted text keeps its spacing; unparseable text compares exactly), and the same rewrite twice in one call stores one entry. Enclave change, on the unreleased list. Reviewed with no blocking findings; the minors are in 20261115-152943-1.
+
+### 20261114-160902-1. LiteralSet: picks for the varchar IN shape Postgres prints.
+
+From the review of 20261012-9 (minor). `LiteralSet` doesn't pick for `(status)::text = ANY ((ARRAY[$1::varchar, $2::varchar])::text[])`: `lexpr` isn't a plain column and the elements carry their own casts (`enclave/lib/quaack/enclave/literal_set.rb`, ~lines 332-336). The cost is weaker picks, not a leak. Reproduce with a realistic ORM varchar IN query first; if the client's own SQL doesn't take this form, say so and drop the task.
+
+- **Depends on:** 20261012-9 (landed).
+- **Came from:** The review of 20261012-9, 2026-11-14 (minor).
+- **Design:** literal-sets.
+- **Status:** dropped (2026-11-15). The task said to drop it if the client's own SQL doesn't take the form. A builder ran the real redact, statistics and literals steps on Postgres 18: qualify and redact only parse and deparse the client's text, so the form `(col)::text = ANY ((ARRAY[...])::text[])` exists only in Postgres's own output (EXPLAIN, `pg_get_expr`) and reaches `LiteralSet` only if someone pastes it in by hand. A Rails-style `IN ('a','b')`, `IN ('a'::varchar, ...)` and `= ANY(ARRAY[...])` all pick per element already. The pasted form falls back cleanly with `unsupported_shape`. Not run against Django, SQLAlchemy or Hibernate, whose usual output was taken from knowledge.
