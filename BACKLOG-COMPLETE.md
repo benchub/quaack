@@ -13813,3 +13813,13 @@ From the review of 20261012-9 (minor). `LiteralSet` doesn't pick for `(status)::
 - **Design:** none (test harness).
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261114-190619-2 (one commit for both). The PgBouncer wait's timeout names the container, the port and the failed probe; the forward spec closes its sockets and threads; the old-label leftover is commented in `test_postgres.rb` and `e2e/verify.rb`; `pid_namespace` rescues `SystemCallError` like `e2e/verify.rb`. Test harness only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on a base that differs from main only by backlog commits.
+
+### 20261115-152943-1. Rewrite dedupe: two missing tests from the review of 20261114-053159-1.
+
+Minor. (1) No test sends two rewrites with the same SQL and different assumptions in one call (the test at `enclave/spec/rewrite_steps_postgres_spec.rb:162` covers it across calls only); changing the dedupe key to the SQL alone wouldn't turn a within-call test red. Add it. (2) No test asserts a pair only the deparse merges, such as `total>=0` and `total >= 0`. Add it. Spec only.
+
+- **Depends on:** 20261114-053159-1 (landed).
+- **Came from:** The review of 20261114-053159-1, 2026-11-15 (minor).
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261115-152943-1. Two specs: the same SQL with different assumptions in one call stores two entries (red when the dedupe key is the SQL alone), and `total>=0` normalizes equal to `total >= 0` (red under plain whitespace collapse). Spec only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on current main.

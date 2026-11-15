@@ -598,11 +598,3 @@ From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph st
 - **Design:** rewrite-test (coverage).
 - **Status:** todo
 
-### 20261115-152943-1. Rewrite dedupe: two missing tests from the review of 20261114-053159-1.
-
-Minor. (1) No test sends two rewrites with the same SQL and different assumptions in one call (the test at `enclave/spec/rewrite_steps_postgres_spec.rb:162` covers it across calls only); changing the dedupe key to the SQL alone wouldn't turn a within-call test red. Add it. (2) No test asserts a pair only the deparse merges, such as `total>=0` and `total >= 0`. Add it. Spec only.
-
-- **Depends on:** 20261114-053159-1 (landed).
-- **Came from:** The review of 20261114-053159-1, 2026-11-15 (minor).
-- **Design:** rewrite-rules.
-- **Status:** todo
