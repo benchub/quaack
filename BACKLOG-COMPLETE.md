@@ -13833,3 +13833,13 @@ From the build of 20261112-204606-2 (minor). The note in `driver/lib/quaack/driv
 - **Design:** report.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261115-110237-1. The float-noise note reads "or the two runs QUAACK makes to check them (the original with its own tiebreaker, or both queries in full without the cut that split a tie)". Driver only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on current main.
+
+### 20261115-143355-1. DESIGN.md: rewrite the coverage "When a literal could decide it" paragraph for the narrowed threshold rule.
+
+From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph still describes the older rule that a count threshold makes every atom untested; 20261011-7 narrowed it to the atoms in, holding or inside the threshold (`Reach.threshold_paths`, `Coverage#threshold_scoped?`). Rewrite the paragraph to match the code. Docs only; check each claim against the code.
+
+- **Depends on:** 20261113-210241-2 (landed).
+- **Came from:** The build of 20261113-210241-2, 2026-11-15.
+- **Design:** rewrite-test (coverage).
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261115-143355-1. DESIGN.md's "When a literal could decide it" paragraph now describes the narrowed threshold rule (`Reach.threshold_paths`, `Coverage#threshold_scoped?`) and the cases that still use the all-atoms rule (`Reach.whole_worst_case?`). Docs only; I read no diff beyond the builder's report and started no reviewer; the builder's per-commit check passed.

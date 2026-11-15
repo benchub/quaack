@@ -580,12 +580,3 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261115-143355-1. DESIGN.md: rewrite the coverage "When a literal could decide it" paragraph for the narrowed threshold rule.
-
-From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph still describes the older rule that a count threshold makes every atom untested; 20261011-7 narrowed it to the atoms in, holding or inside the threshold (`Reach.threshold_paths`, `Coverage#threshold_scoped?`). Rewrite the paragraph to match the code. Docs only; check each claim against the code.
-
-- **Depends on:** 20261113-210241-2 (landed).
-- **Came from:** The build of 20261113-210241-2, 2026-11-15.
-- **Design:** rewrite-test (coverage).
-- **Status:** todo
-
