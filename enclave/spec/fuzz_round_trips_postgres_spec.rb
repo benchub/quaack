@@ -60,6 +60,19 @@ RSpec.describe "the fuzz search's round trips with a binding" do
     session&.close
   end
 
+  # Task 20261115-092519-1: 57014 isn't a failure on the data.
+  it "neither compares nor kills a candidate that hits statement_timeout mid-pipeline" do
+    candidate = "SELECT i.id FROM fx.items i WHERE i.qty * $1 > $2 AND pg_sleep(2) IS NOT NULL"
+    session = Quaack::Enclave::Fuzz::Session.new(conn, catalog, [sql, candidate], honour: [],
+                                                                                  statement_timeout_ms: 300,
+                                                                                  binding: bound)
+    session.open
+
+    expect(session.trial(world(5))).to have_attributes(compared: false, rule: nil)
+  ensure
+    session&.close
+  end
+
   it "leaves an original that fails on the data illegal, not a kill" do
     original = "SELECT i.id FROM fx.items i WHERE i.qty / ($2 - 3) > $1"
     session = Quaack::Enclave::Fuzz::Session.new(conn, catalog, [original, sql], honour: [],
