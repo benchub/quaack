@@ -2,6 +2,7 @@
 
 require_relative "support/index_search_run"
 require "quaack/enclave/selection"
+require "quaack/enclave/burndown"
 
 # Task 20261017-2 (DESIGN.md's index-share): each candidate is also
 # measured with the indexes that made another candidate's ranking, so a good
@@ -118,5 +119,26 @@ RSpec.describe "quaacks index-build's shared pairings, against a real server" do
     build = stored.read("index_build")
     expect(build["combinations"].select { |key, _| key.include?(":shared:") })
       .to eq("original:shared:1" => names(build, bare))
+  end
+
+  # Task 20261018-32: the two spellings are built once, under the first
+  # one's name, in both the one-per-call and the plain builds.
+  it "builds two spellings of one index once, and maps both candidates' combinations to it" do
+    bare = "CREATE INDEX ON public.orders USING btree (note) WHERE status <> 'deleted'"
+    cast = "CREATE INDEX ON public.orders USING btree (note) WHERE status::text <> 'deleted'::text"
+    searched
+    add_rewrite(1, "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1", top: [bare])
+    add_rewrite(2, "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND o.status = $2 ORDER BY 1",
+                top: [cast])
+
+    totals = (1..3).map { run("index-build", "--index", it.to_s).stdout.lines.first }
+    expect(totals[0..1].map { JSON.parse(it).values_at("index", "total") }).to eq([[1, 2], [2, 2]])
+    expect(totals[2]).to eq(%({"type":"done"}\n))
+    run("index-build")
+
+    build = stored.read("index_build")
+    expect(build["indexes"].values.map { it["ddl"] }).to contain_exactly(total, bare)
+    expect(build["combinations"].values_at("rewrite_1:top:1", "rewrite_2:top:1")).to eq([names(build, bare)] * 2)
+    expect(Quaack::Enclave::Burndown.read(stored)["totals"]["indexes_built"]).to eq(2)
   end
 end
