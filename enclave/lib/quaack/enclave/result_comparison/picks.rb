@@ -45,8 +45,20 @@ module Quaack
       # since the subquery drops the order the rows come out in. At an
       # ordered top level, ResultComparison's tiebreaker already refuses
       # them when they can keep either of two rows. An aggregate with
-      # DISTINCT keeps its values sorted and isn't forced, nor is one in a
-      # window (OVER), whose picks are a known gap.
+      # DISTINCT keeps its values sorted and isn't forced.
+      #
+      # A window function (task 20261015-5) that numbers or reads rows in
+      # its window's order, whatever its frame (ORDERED_WINDOWS), picks
+      # among rows that tie on that order. It's forced by adding the text
+      # of each of its select's input rows to its ORDER BY: each FROM item's
+      # whole row, or in a grouped select its GROUP BY keys. rank and its
+      # kin (TIED_WINDOWS), and an ordinary aggregate over its default
+      # frame (PEER_AGGREGATES), give tied rows one value and pick nothing.
+      # So is any window function over a frame of ROWS without EXCLUDE GROUP
+      # or TIES, whose frame an added key only orders. Any other window
+      # function, such as first_value over the default frame, or one over a
+      # named window, is Unforceable, since adding a key would change which
+      # rows its frame holds.
       #
       # verdict runs the original's checked query and, once the candidate
       # matches, the candidate's forced and checked queries.
@@ -64,6 +76,28 @@ module Quaack
         # Aggregates that keep one of several values Postgres calls equal,
         # which can print differently, as numeric's 10 and 10.0 do.
         EXTREMES = %w[min max].to_set.freeze
+
+        # Window functions whose value turns on the order of tied rows but
+        # not on the frame, so a forced ORDER BY keeps their answer one
+        # Postgres could give.
+        ORDERED_WINDOWS = %w[row_number ntile lag lead].to_set.freeze
+
+        # Window functions that give rows tied on the window's order one value.
+        TIED_WINDOWS = %w[rank dense_rank percent_rank cume_dist].to_set.freeze
+
+        # Aggregates whose window value over the default frame, which holds
+        # every row tied with the current one, doesn't turn on their order.
+        PEER_AGGREGATES = %w[
+          count sum avg min max bool_and bool_or every bit_and bit_or
+          stddev stddev_pop stddev_samp variance var_pop var_samp
+        ].to_set.freeze
+
+        # Postgres's frame_options for a window with no frame clause.
+        DEFAULT_FRAME = 1058
+
+        # frame_options bits: ROWS, and EXCLUDE GROUP or EXCLUDE TIES.
+        FRAME_ROWS = 0x4
+        FRAME_EXCLUDE_PEERS = 0x30000
 
         # The alias of the subquery a forced DISTINCT or set operation
         # reads, and the name of its whole row.
@@ -210,9 +244,92 @@ module Quaack
 
         def force_selects(root, descending, top, check)
           ([root] + InnerCuts.selects(root)).reverse.sum do |select|
+            windows = force_windows!(select, descending, check)
             check_groups!(select) if check
-            force_distinct_on!(select, descending, check) +
+            windows + force_distinct_on!(select, descending, check) +
               (top || !select.equal?(root) ? force_dedup!(select, descending, check) : 0)
+          end
+        end
+
+        # Forces each window function pick in select's own level, and
+        # returns how many it forced. Raises Unforceable for a window it
+        # can't force.
+        def force_windows!(select, descending, check)
+          windows(select).count do |node|
+            next false unless window_pick?(node[:func_call])
+
+            force_window!(select, node, descending, check)
+            true
+          end
+        end
+
+        def force_window!(select, node, descending, check)
+          parts = input_texts(select)
+          return if parts.empty?
+
+          call = node[:func_call]
+          forced = { func_call: copy(call).merge(over: window_forced(call[:over], parts, descending)) }
+          node.replace(check ? PickChecks.window(call, parts, forced) : forced)
+        end
+
+        def window_forced(over, parts, descending)
+          copy(over).merge(order_clause: Array(copy(over[:order_clause])) + parts.map { sort(copy(it), descending) })
+        end
+
+        # Whether call is a window pick to force, false for one that picks
+        # nothing, raising Unforceable for one it can't force.
+        def window_pick?(call)
+          name = window_name(call)
+          return true if ORDERED_WINDOWS.include?(name) || rows_frame?(call[:over])
+          return false if TIED_WINDOWS.include?(name) || peer_aggregate?(call, name)
+
+          raise Unforceable
+        end
+
+        # call's function name, raising Unforceable for a named window or a
+        # function outside pg_catalog.
+        def window_name(call)
+          over = call[:over]
+          raise Unforceable if over[:name] || over[:refname]
+
+          names = call[:funcname].map { it.dig(:string, :sval) }
+          raise Unforceable unless names.size == 1 || (names.size == 2 && names.first == "pg_catalog")
+
+          names.last
+        end
+
+        # Whether over's frame counts rows, which an added sort key only
+        # orders, without EXCLUDE GROUP or TIES, which read the peers.
+        def rows_frame?(over)
+          options = over[:frame_options]
+          options.anybits?(FRAME_ROWS) && options.nobits?(FRAME_EXCLUDE_PEERS)
+        end
+
+        def peer_aggregate?(call, name)
+          PEER_AGGREGATES.include?(name) && call[:over][:frame_options] == DEFAULT_FRAME &&
+            !call[:agg_distinct] && !call[:agg_order]
+        end
+
+        # The texts that tell select's input rows apart: its GROUP BY keys
+        # when grouped, or else its FROM items' whole rows, none with no
+        # FROM.
+        def input_texts(select)
+          if Array(select[:group_clause]).any?
+            select[:group_clause].map { text(PickChecks.resolved(select, it)) }
+          else
+            Array(select[:from_clause]).flat_map { item_names(it) }.map { text(star(*it)) }
+          end
+        end
+
+        # The window function calls in select's own level, not in its
+        # subqueries, set operation arms, or WINDOW clause.
+        def windows(node)
+          case node
+          when Hash
+            own = node[:func_call]&.dig(:over) ? [node] : []
+            own + node.except(:select_stmt, :larg, :rarg, :window_clause).values.flat_map { windows(it) }
+          when Array then node.flat_map { windows(it) }
+          else []
           end
         end
 
