@@ -13734,3 +13734,13 @@ From the review of 20261012-31 (minor). Add examples: a self-join counts one tab
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261114-222449-1. `FuzzSizes.count` has a scope-aware walker: a bare name counts as a table unless a CTE in scope has that name, and a bare name counts apart from its qualified form (errs high). Examples cover self-joins, aliases and CTEs. Enclave change, on the unreleased list.
+
+### 20261115-030731-1. Kinds: no spec covers the hold of a compared :key column.
+
+From the review of 20261012-46 (minor). Narrowing `key_compared?` in `enumerate/kinds.rb` to `%i[pk]` leaves the whole spec file green; the bound would fall from w=2 to w=1 on a keyset shape that compares a foreign key (`orders.customer_id > 25`). Add a Kinds expectation for a compared `:key` column, like the `:pk` one.
+
+- **Depends on:** 20261012-46 (landed).
+- **Came from:** The review of 20261012-46, 2026-11-15 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261115-030731-1. A Kinds example holds a compared `:key` column (`o.customer_id > 25`) at its base class in the cost-2 kinds; narrowing `key_compared?` to `%i[pk]` turns it red. Spec only; I read the diff and started no reviewer; the builder's per-commit check passed. Not on the unreleased list.

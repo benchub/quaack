@@ -605,15 +605,6 @@ From 20261012-50. Compare the trial rate with 20261012-4's numbers on the Canvas
 - **Design:** rewrite-test (coverage).
 - **Status:** todo
 
-### 20261115-030731-1. Kinds: no spec covers the hold of a compared :key column.
-
-From the review of 20261012-46 (minor). Narrowing `key_compared?` in `enumerate/kinds.rb` to `%i[pk]` leaves the whole spec file green; the bound would fall from w=2 to w=1 on a keyset shape that compares a foreign key (`orders.customer_id > 25`). Add a Kinds expectation for a compared `:key` column, like the `:pk` one.
-
-- **Depends on:** 20261012-46 (landed).
-- **Came from:** The review of 20261012-46, 2026-11-15 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261115-055039-1. Own rewrites: rescue a deparse failure, and decide on quoted identifier names.
 
 From the review of 20261021-5 (minor). (1) `OwnRewrites.text` doesn't rescue an exception from `deparse`; a statement that parses but can't deparse would crash the step (no leak). Rescue and return nil. (2) A quoted identifier's name (`AS "Odd Name"`) still goes out in the report's own-rewrite text. The report already carries table and column names and the operator wrote the text, so it isn't a new leak. Open question for the user: should identifier names in own rewrites be redacted too?
