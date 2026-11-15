@@ -12,15 +12,17 @@ module Quaack
     #   values equal that print differently.
     # - hidden_tie: rows tied on every column the tiebreaker sorts by can
     #   differ in one it can't sort by.
-    # - inner_cut: a LIMIT or OFFSET below the top level isn't
-    #   deterministic.
+    # - inner_cut: a LIMIT or OFFSET below the top level, in a subquery,
+    #   a CTE, or a set-operation arm, isn't deterministic.
     # - with_ties: FETCH FIRST ... WITH TIES.
     # - original_pick, rewrite_pick: an arbitrary pick (DISTINCT, DISTINCT
-    #   ON, GROUP BY, min, max, or an aggregate that follows its rows'
-    #   order) had a real choice on the data, in the original or the
-    #   rewrite.
-    # - unforceable_pick: a pick can't be forced: a DISTINCT ON's *, or a
-    #   window function other than the ones Picks forces.
+    #   ON, GROUP BY, UNION, INTERSECT or EXCEPT without ALL, min, max, a
+    #   window function, or an aggregate that follows its rows' order)
+    #   had a real choice on the data, in the original or the rewrite.
+    # - unforceable_pick: a pick can't be forced: a DISTINCT ON over a FROM
+    #   item with no name, a * or a position past the end as a DISTINCT ON
+    #   or ORDER BY key, or a window function other than the ones Picks
+    #   forces.
     # - pick_run_failed: a query with its picks forced or checked failed
     #   another way.
     # - unsteady_order: the rewrite's tiebreaker runs fit the original's tie
