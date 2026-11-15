@@ -44,8 +44,8 @@ module Quaack
                                                       "#{Protocol::RewriteBudget.minutes} minutes" }.freeze
         FAILED = "a statement failed on the test database"
 
-        PICK = "a DISTINCT, DISTINCT ON, GROUP BY, min, max, or order-following aggregate in the %s could keep " \
-               "any of several values that print differently"
+        PICK = "a DISTINCT, DISTINCT ON, GROUP BY, set operation without ALL, min, max, window function, or " \
+               "order-following aggregate in the %s could keep any of several values that print differently"
         FULL_RUN = "running a query without its LIMIT, to check the rows tied at the LIMIT, %s"
 
         # unstable_original's runs are QUAACK's own tiebreaker runs of the
@@ -60,12 +60,13 @@ module Quaack
           "nondeterministic_collation" => "a nondeterministic collation can call values that print differently " \
                                           "equal, so QUAACK can't tell tied rows apart",
           "hidden_tie" => "rows tied in the query's ORDER BY can differ in a column QUAACK can't sort them by",
-          "inner_cut" => "a LIMIT or OFFSET inside a subquery can keep any of several tied rows",
+          "inner_cut" => "a LIMIT or OFFSET inside a subquery, CTE, or set-operation arm can keep any of several " \
+                         "tied rows",
           "with_ties" => "QUAACK can't check FETCH FIRST ... WITH TIES row for row",
           "original_pick" => format(PICK, "original query"),
           "rewrite_pick" => format(PICK, "rewrite"),
-          "unforceable_pick" => "a DISTINCT ON reads a subquery QUAACK can't name, so it can't check which rows " \
-                                "it keeps",
+          "unforceable_pick" => "QUAACK can't pin down which rows a DISTINCT ON or window function keeps, so it " \
+                                "can't check them",
           "pick_run_failed" => "a version of a query with its arbitrary picks pinned down failed to run",
           "unsteady_order" => "the rewrite's tied rows didn't come back in a consistent order",
           "cut_tie" => "a LIMIT, OFFSET, or DISTINCT ON keeps only some of a group of tied rows, in a way QUAACK " \

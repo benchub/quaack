@@ -1286,12 +1286,24 @@ RSpec.describe Quaack::Driver::Report do
       it "names the check that kept a test from comparing results" do
         expect(fate("counterexamples_failed", round: 1, rule: "unsupported_order", reason: "original_pick"))
           .to eq(esc("A test on data the LLM wrote to break it (round 1) ended without comparing results, because " \
-                     "a DISTINCT, DISTINCT ON, GROUP BY, min, max, or order-following aggregate in the original " \
-                     "query could keep any of several values that print differently, so QUAACK dropped it. That " \
+                     "a DISTINCT, DISTINCT ON, GROUP BY, set operation without ALL, min, max, window function, or " \
+                     "order-following aggregate in the original query could keep any of several values that print " \
+                     "differently, so QUAACK dropped it. That " \
                      "says nothing about whether it's right."))
         expect(fate("production_not_compared", rule: "unsupported_order", reason: "full_run_timed_out"))
           .to include(esc("on the real data, because running a query without its LIMIT, to check the rows tied at " \
                           "the LIMIT, timed out, so QUAACK dropped it."))
+      end
+
+      # Task 20261111-1: each phrase covers every case its check refuses.
+      it "words pick, inner-cut, and unforceable refusals for every case they cover" do
+        words = Quaack::Driver::Report::Words::REFUSAL_REASONS
+        %w[original_pick rewrite_pick].each do |reason|
+          expect(words.fetch(reason)).to include("set operation without ALL", "window function")
+        end
+        expect(words.fetch("inner_cut")).to include("subquery, CTE, or set-operation arm")
+        expect(words.fetch("unforceable_pick")).to include("DISTINCT ON or window function")
+        expect(words.fetch("unforceable_pick")).not_to include("subquery")
       end
 
       it "has words for every refusal reason, and prints none of their names" do
