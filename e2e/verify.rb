@@ -83,6 +83,10 @@ module E2E
       system("docker", "rm", "-f", "-v", *stale.map(&:first), out: File::NULL, err: File::NULL) unless stale.empty?
     end
 
+    # On Linux, a container a crashed run left from before the PID namespace
+    # joined HOST_LABEL carries the bare hostname, which never matches now,
+    # so it counts as foreign and stays until someone runs docker rm by hand.
+    # That's safe: the sweep can't remove a live run's container either way.
     def foreign?(host) = !host.empty? && host != E2E.owner_host
 
     def process_alive?(pid)
