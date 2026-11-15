@@ -122,11 +122,24 @@ RSpec.describe Quaack::Enclave::Fuzz::Coverage do
       .to eq(["status = $1", "total > $2"])
   end
 
+  # Task 20261012-50: a literal 0 changes which worlds are drawn, and with
+  # FIRST at 32 this pair left s.id <> $5 untested in some seeds; checking
+  # the first 2,048 worlds settles it.
+  it "finds a <> atom both ways over a page at OFFSET 0, whatever the seed" do
+    sql = "SELECT s.id FROM (SELECT id FROM s.orders WHERE status = 'shipped' AND total > 100 " \
+          "ORDER BY id LIMIT 20 OFFSET 0) s WHERE s.id <> 4"
+    untested = [1, 2, 3].map do |seed|
+      fuzz.search(conn, sql, sql, stop: fuzz::StopRule.trials(5000), enumerate: nil, seed:).coverage.untested_shapes
+    end
+    expect(untested).to eq([[], [], []])
+  end
+
   # Checking every world costs a round trip each, so a direction no world
   # shows is checked on each world up to twice FIRST, then on FIRST of
   # each doubling of the count: log-many checks in a long search.
   it "checks a pending direction on every early world, then FIRST worlds in each doubling" do
     first = described_class::FIRST
+    expect(first).to eq(1024)
     due = (1..(first * 16)).select { described_class.due?(it) }
 
     expect(due.first((2 * first) - 1)).to eq((1...(2 * first)).to_a)

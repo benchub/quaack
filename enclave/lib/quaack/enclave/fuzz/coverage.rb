@@ -41,12 +41,15 @@ module Quaack
       # twice FIRST, then on FIRST worlds in each doubling of the count
       # after that (Coverage.due?), every pending direction in one
       # statement (Differ), so a direction no world shows costs a few
-      # hundred statements in a long search, never one per trial.
+      # thousand statements in a long search, never one per trial. FIRST
+      # is high because a literal shapes which worlds are drawn, and a
+      # sparse early schedule left atoms untested that the unchecked
+      # worlds showed (task 20261012-50).
       #
       # Trust boundary: Result's shapes are PredicateAtoms' redacted shapes;
       # the worlds and results stay in Session.
       class Coverage
-        FIRST = 32
+        FIRST = 1024
 
         # atoms counts the original's atoms. untested_atoms are the untested
         # ones' indexes into PredicateAtoms.extract's list, untested_shapes
