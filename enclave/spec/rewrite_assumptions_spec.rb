@@ -32,6 +32,13 @@ RSpec.describe Quaack::Enclave::RewriteAssumptions do
       expect(described_class.normalized([spaced, not_null])).to eq(described_class.normalized([not_null, check]))
     end
 
+    # Task 20261115-152943-1: a pair only the deparse merges, since
+    # collapsing whitespace alone leaves "total>=0" and "total >= 0" apart.
+    it "gives the same form for check expressions that differ only in spacing whitespace collapse keeps" do
+      tight = check.merge("expression" => "total>=0")
+      expect(described_class.normalized([tight])).to eq(described_class.normalized([check]))
+    end
+
     it "gives different forms for really different assumptions" do
       expect(described_class.normalized([check])).not_to eq(described_class.normalized([not_null]))
       other = check.merge("expression" => "total > 0")
