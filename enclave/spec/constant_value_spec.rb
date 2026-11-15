@@ -61,24 +61,6 @@ RSpec.describe Quaack::Enclave::ConstantValue do
     end
   end
 
-  describe "Fuzz::Reach.threshold_bound?" do
-    it "sees a $n compared with an aggregate as a threshold" do
-      literal, placeholders, binding = forms("SELECT o.note FROM public.orders o GROUP BY o.note HAVING count(*) > 200",
-                                             "SELECT o.note FROM public.orders o GROUP BY o.note HAVING count(*) > $1",
-                                             [%w[200 integer]])
-
-      expect(Quaack::Enclave::Fuzz::Reach.worst_case?(literal)).to be(true)
-      expect(Quaack::Enclave::Fuzz::Reach.worst_case?(placeholders, binding)).to be(true)
-    end
-
-    it "sees a $n compared with a column fed by an aggregate" do
-      sql = "SELECT t.k FROM (SELECT count(*) AS k FROM public.orders) t WHERE t.k > %s"
-      _, placeholders, binding = forms(format(sql, "2"), format(sql, "$1"), [%w[2 integer]])
-
-      expect(Quaack::Enclave::Fuzz::Reach.worst_case?(placeholders, binding)).to be(true)
-    end
-  end
-
   describe "ResultComparison.offset_value" do
     def offset(sql) = PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt.limit_offset
 

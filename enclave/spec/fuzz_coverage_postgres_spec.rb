@@ -89,6 +89,15 @@ RSpec.describe Quaack::Enclave::Fuzz::Coverage do
     expect(untested(sql)).to eq(["count(*) > $2"])
   end
 
+  # Task 20261113-210241-2: an atom that holds a threshold, here a boolean CASE
+  # wrapping count(*) > 0, is untested too, while the WHERE atom keeps its
+  # real state.
+  it "reports an atom that holds a threshold untested" do
+    sql = "SELECT customer_id FROM s.orders WHERE total > 100 GROUP BY customer_id " \
+          "HAVING CASE WHEN count(*) > 0 THEN customer_id > 5 ELSE false END"
+    expect(untested(sql)).to eq(["CASE WHEN count(*) > $2 THEN customer_id > $3 ELSE $4 END", "count(*) > $2"])
+  end
+
   it "reports every atom untested for a constant compared with a column over a derived table's aggregate" do
     sql = "SELECT t.k FROM (SELECT customer_id, count(*) AS k FROM s.orders WHERE total > 100 " \
           "GROUP BY customer_id) t WHERE t.k > 0"
