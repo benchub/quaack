@@ -521,15 +521,6 @@ From the review of 20261112-171103-1 (minor). The `production_not_compared` floa
 - **Design:** result-comparison, report.
 - **Status:** todo
 
-### 20261112-204606-3. report_spec: the doc-link guard examples can't fail.
-
-From the review of 20261112-171103-1 (minor). In `driver/spec/report_spec.rb` (about lines 1318–1322), the examples that a `cut_tie` reason, a `statement_timeout` rule, and a float-noise fate get no link stay green (the float-noise one also stays green with the float and unstable checks swapped in `doc_link`; only the older float spec goes red) with `DocLinks`' reason or rule check removed, since their text never holds the linked phrase. Plant the phrase in a fate whose reason isn't `unstable_original` (or otherwise make the check matter) and confirm the examples go red with the check removed. Spec only.
-
-- **Depends on:** 20261112-171103-1.
-- **Came from:** 20261112-171103-1.
-- **Design:** report.
-- **Status:** todo
-
 ### 20261113-035826-1. docs/unstable-original.md: tiebreaker columns, DISTINCT ON, and DESIGN.md's JSON_ARRAYAGG.
 
 From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and DESIGN.md (about line 1303) say the tiebreaker takes every output column whose type QUAACK can sort, giving only `json` as an exception. `Tiebreaker::UNFAITHFUL` (`enclave/lib/quaack/enclave/result_comparison/tiebreaker.rb:36`) also leaves out `jsonb`, which sorts, and arrays and ranges of float, numeric, or interval; say so, or say "the columns it can sort faithfully" and list them. (2) The page says that with no `LIMIT` or `OFFSET` the two runs must hold the same rows; a `DISTINCT ON` with no `LIMIT` can differ too, but it refuses as `cut_tie`, not `unstable_original` (`CutTies.unstable?`). Add a sentence. (3) DESIGN.md (about line 1330, "Gaps remain") lists a SQL/JSON `JSON_ARRAYAGG` as an unpinned pick, but `SupportedSql` refuses the SQL/JSON functions up front (`unsupported_construct: JsonArrayAgg`); drop it there. Docs only.

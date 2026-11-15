@@ -13674,3 +13674,13 @@ From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its
 - **Design:** fuzz.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261110-16. With a binding, `Fuzz::Session#batch` sends its statements through one pipeline (5 round trips per trial down to 2) and `Differ.multisets` reuses types (11 down to 1). Enclave change, on the unreleased list. Only round trips were measured, not trials per second on a replay.
+
+### 20261112-204606-3. report_spec: the doc-link guard examples can't fail.
+
+From the review of 20261112-171103-1 (minor). In `driver/spec/report_spec.rb` (about lines 1318–1322), the examples that a `cut_tie` reason, a `statement_timeout` rule, and a float-noise fate get no link stay green (the float-noise one also stays green with the float and unstable checks swapped in `doc_link`; only the older float spec goes red) with `DocLinks`' reason or rule check removed, since their text never holds the linked phrase. Plant the phrase in a fate whose reason isn't `unstable_original` (or otherwise make the check matter) and confirm the examples go red with the check removed. Spec only.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261112-204606-3. The doc-link example plants the linked phrase in a `cut_tie`, a `statement_timeout` and a float-noise fate, so removing `DocLinks`' reason or rule check, or swapping its float and unstable checks, turns it red. Spec only. I read the diff and started no reviewer. Not on the unreleased list.
