@@ -3033,7 +3033,8 @@ RSpec.describe Quaack::Driver::Report do
     it "says what the float noise column counts" do
       expect(accountable).to include(
         "A rewrite that failed on float noise is one QUAACK dropped because, on the real data, its results and " \
-        "the original query's, or two runs of the original query, differed only in float values. It's " \
+        "the original query's, or the two runs QUAACK makes to check them (the original with its own tiebreaker, " \
+        "or both queries in full without the cut that split a tie), differed only in float values. It's " \
         "likely right, so it isn't counted as a wrong result."
       )
     end
