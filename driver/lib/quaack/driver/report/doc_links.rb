@@ -15,7 +15,9 @@ module Quaack
       #   20261111-192302-1).
       # - Words::UNSTABLE_PHRASE to docs/unstable-original.md, when its test
       #   refused unsupported_order because the original's own two runs
-      #   differed (unstable_original, task 20261112-171103-1).
+      #   differed (unstable_original, task 20261112-171103-1), on made-up
+      #   data or, beside the float link, on the real data (task
+      #   20261112-204606-2).
       module DocLinks
         DOCS = "https://github.com/benchub/quaack/blob/main/docs/"
         FLOAT_PAGE = "#{DOCS}float-values.md".freeze
@@ -32,7 +34,7 @@ module Quaack
         private
 
         def doc_link(entry, html)
-          return html.sub(Rewrites::FLOAT_PHRASE, FLOAT_LINK) if float_noise?(entry)
+          html = html.sub(Rewrites::FLOAT_PHRASE, FLOAT_LINK) if float_noise?(entry)
           return html.sub(Words::UNSTABLE_PHRASE, UNSTABLE_LINK) if unstable_original?(entry)
 
           html
