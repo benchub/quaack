@@ -19,6 +19,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261018-32
 - 20261021-5
 - 20261015-5
+- 20261110-16
 
 
 ## How this file works.
@@ -430,14 +431,7 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 
 ### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties. Done, see BACKLOG-COMPLETE.md.
 
-### 20261110-16. Arena Binding: cut the per-trial round trips.
-
-From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its batch statement by statement, about 4 round trips per trial instead of 1, and each new query text costs about 5 more for `ArenaRunner::Typed`'s type lookup (savepoint, PREPARE, release, read, DEALLOCATE). `Differ#multisets` builds a new combined SQL whenever the loosened set changes, so it misses Typed's cache and re-prepares. Batch the statements with `send_query_params` in pipeline mode as `ArenaRunner::Pipeline` does, and key Differ's types so the combined SQL reuses them. The user wants run time spent on trying more rewrites, so measure trials per second before and after on a recorded replay.
-
-- **Depends on:** 20261110-14.
-- **Came from:** The review of 20261110-14, 2026-11-10.
-- **Design:** fuzz.
-- **Status:** todo
+### 20261110-16. Arena Binding: cut the per-trial round trips. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-19. claude_cli: keep user-level Claude Code settings out of each ask.
 
@@ -735,4 +729,13 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Depends on:** 20261015-5 (landed).
 - **Came from:** The review of 20261015-5, 2026-11-15 (minor).
 - **Design:** fixture-compare.
+- **Status:** todo
+
+### 20261115-092519-1. Pipelined batch: a spec for a statement_timeout mid-pipeline with a binding.
+
+From the review of 20261110-16 (minor). No spec covers a statement_timeout firing mid-pipeline with a binding. The code is right today (57014 isn't a DataError SQLSTATE, so it's no kill), but a later change that counted a late Sync cancel as a candidate kill would pass every spec. Add a Postgres test: a bound trial whose candidate times out mid-pipeline is not compared and not a kill.
+
+- **Depends on:** 20261110-16 (landed).
+- **Came from:** The review of 20261110-16, 2026-11-15 (minor).
+- **Design:** fuzz.
 - **Status:** todo

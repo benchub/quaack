@@ -13664,3 +13664,13 @@ From the review of 20261110-7 (minor). (a) `original_pick` and `rewrite_pick` do
 - **Design:** result-comparison, report.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261111-1. Items (a) to (c): the driver's phrases for `original_pick`, `rewrite_pick`, `inner_cut` and `unforceable_pick` now match what Picks checks; protocol comments, DESIGN.md and README match. Item (d): no realistic query reproduces it, so DESIGN.md says v1 accepts it. Wording only, not on the unreleased list.
+
+### 20261110-16. Arena Binding: cut the per-trial round trips.
+
+From the review of 20261110-14 (minor). With a binding, `Fuzz::Session` runs its batch statement by statement, about 4 round trips per trial instead of 1, and each new query text costs about 5 more for `ArenaRunner::Typed`'s type lookup (savepoint, PREPARE, release, read, DEALLOCATE). `Differ#multisets` builds a new combined SQL whenever the loosened set changes, so it misses Typed's cache and re-prepares. Batch the statements with `send_query_params` in pipeline mode as `ArenaRunner::Pipeline` does, and key Differ's types so the combined SQL reuses them. The user wants run time spent on trying more rewrites, so measure trials per second before and after on a recorded replay.
+
+- **Depends on:** 20261110-14.
+- **Came from:** The review of 20261110-14, 2026-11-10.
+- **Design:** fuzz.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261110-16. With a binding, `Fuzz::Session#batch` sends its statements through one pipeline (5 round trips per trial down to 2) and `Differ.multisets` reuses types (11 down to 1). Enclave change, on the unreleased list. Only round trips were measured, not trials per second on a replay.
