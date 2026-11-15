@@ -13601,3 +13601,15 @@ Builder check 2026-11-14: still reproduces (a `<> k` atom at OFFSET 0 stays unte
 - **Design:** rewrite-test (coverage).
 - **Status:** done
 - **Landed:** 2026-11-14, merge of task/20261012-50. `Coverage::FIRST` is 1024, so every world is checked up to the 2,047th, then 1024 per doubling. Enclave change, on the unreleased list. The Canvas and hard-corpus trial-rate measurement moved to 20261115-020212-1.
+
+### 20261012-46. enumerate: a key compared with a constant lowers the bound on keyset pages.
+
+From the review of 20261012-30, 2026-10-14 (minor). Since 20261012-30, a key column the queries compare with a constant gets its read classes and then its key classes, so `orders.id` in a keyset page goes from 1 kind to 9. Enumerate then covers fewer rows in its 30 s: on `o.id > 100 AND o.status = 'paid' AND i.qty > 0 ORDER BY o.id, i.id LIMIT 10` against a sound rewrite, `main` before 20261012-30 reached w=2 at 3,000 and at 10,000 worlds, and after it only w=1 even at 10,000. The plain keyset page still reaches w=2. A lower bound is a weaker claim, not a wrong one, and under 20261012-31's rule the report then falls back to fuzz's sentence on a join.
+
+Give a compared key fewer classes without losing the boundary catch, test first: for example, its read classes plus the shared keys only (dropping the key-class values), or count the key-class values as cost-2 changes, so the base-choice kinds stay small. Check that 20261012-30's probe pairs are still disproved, and measure the bound w on its sound keyset pairs and the hard corpus before and after (no false disproofs).
+
+- **Depends on:** None.
+- **Came from:** The review of 20261012-30, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-11-14, merge of task/20261012-46. A compared `:key` or `:pk` column holds its base class in enumerate's product and covering-array kinds, so the keyset page reaches w=2 again (3,023 worlds, against 29,338 before). Enclave change, on the unreleased list. The hard-corpus before/after wasn't possible: the corpus isn't in the repo.

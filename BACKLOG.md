@@ -14,6 +14,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-17
 - 20261012-31
 - 20261012-42
+- 20261012-46
 - 20261012-50
 
 
@@ -330,16 +331,7 @@ Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' re
 
 ### 20261012-42. fuzz's RangeTables: a TABLESAMPLE hides the table's alias. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-46. enumerate: a key compared with a constant lowers the bound on keyset pages.
-
-From the review of 20261012-30, 2026-10-14 (minor). Since 20261012-30, a key column the queries compare with a constant gets its read classes and then its key classes, so `orders.id` in a keyset page goes from 1 kind to 9. Enumerate then covers fewer rows in its 30 s: on `o.id > 100 AND o.status = 'paid' AND i.qty > 0 ORDER BY o.id, i.id LIMIT 10` against a sound rewrite, `main` before 20261012-30 reached w=2 at 3,000 and at 10,000 worlds, and after it only w=1 even at 10,000. The plain keyset page still reaches w=2. A lower bound is a weaker claim, not a wrong one, and under 20261012-31's rule the report then falls back to fuzz's sentence on a join.
-
-Give a compared key fewer classes without losing the boundary catch, test first: for example, its read classes plus the shared keys only (dropping the key-class values), or count the key-class values as cost-2 changes, so the base-choice kinds stay small. Check that 20261012-30's probe pairs are still disproved, and measure the bound w on its sound keyset pairs and the hard corpus before and after (no false disproofs).
-
-- **Depends on:** None.
-- **Came from:** The review of 20261012-30, 2026-10-14 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261012-46. enumerate: a key compared with a constant lowers the bound on keyset pages. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-48. fuzz's 60 s cap: say "about 90 seconds", and watch the slowest kill's margin.
 
@@ -737,4 +729,13 @@ From 20261012-50. Compare the trial rate with 20261012-4's numbers on the Canvas
 - **Depends on:** 20261012-50 (landed).
 - **Came from:** The build of 20261012-50, 2026-11-14.
 - **Design:** rewrite-test (coverage).
+- **Status:** todo
+
+### 20261115-030731-1. Kinds: no spec covers the hold of a compared :key column.
+
+From the review of 20261012-46 (minor). Narrowing `key_compared?` in `enumerate/kinds.rb` to `%i[pk]` leaves the whole spec file green; the bound would fall from w=2 to w=1 on a keyset shape that compares a foreign key (`orders.customer_id > 25`). Add a Kinds expectation for a compared `:key` column, like the `:pk` one.
+
+- **Depends on:** 20261012-46 (landed).
+- **Came from:** The review of 20261012-46, 2026-11-15 (minor).
+- **Design:** rewrite-test.
 - **Status:** todo
