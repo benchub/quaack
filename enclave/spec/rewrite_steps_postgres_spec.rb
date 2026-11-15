@@ -204,6 +204,20 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(stored.entry?("rewrite_2")).to be(false)
     end
 
+    # Task 20261115-152943-1: the same SQL with other assumptions in one
+    # call is two entries, since dedupe keys on both within a call too.
+    it "stores two entries for the same SQL with other assumptions in one call" do
+      ready
+
+      outcome = rewrite_check(rewrites(rewrite(same, []), rewrite(same, [not_null_id])))
+
+      expect(lines(outcome).first(2).map { it.slice("outcome", "rewrite") })
+        .to eq([{ "outcome" => "accepted", "rewrite" => "rewrite_1" },
+                { "outcome" => "accepted", "rewrite" => "rewrite_2" }])
+      expect(stored.read("rewrite_1")["assumptions"]).to eq([])
+      expect(stored.read("rewrite_2")["assumptions"]).to eq([not_null_id])
+    end
+
     # Task 20261007-30: the racetrack connects as another role than
     # qualify did, so the plan's path would give another "$user" there.
     # The stored path is the one qualify resolved the original through.
