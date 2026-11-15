@@ -118,6 +118,26 @@ RSpec.describe "quaacks redact-rewrite on a store the real steps filled" do
     expect_no_leaks(sentinels, outcome)
   end
 
+  # 20261020-4: the usual rewrite, the OR split into a UNION. Each
+  # branch's literals take the original's placeholders, though the UNION
+  # puts the SELECTs a level deeper. The EXISTS's SELECT 1, whose key the
+  # UNION's nesting changes, stays as written (20261020-7).
+  it "redacts the OR split into a UNION, the EXISTS's SELECT 1 kept, and never a value" do
+    a = t("assignments")
+    tail = " OR #{a}.\"id\" IN (#{assignment_ids.join(", ")})"
+    right = "SELECT #{a}.* FROM #{a} WHERE #{a}.\"id\" IN (#{assignment_ids.join(", ")})"
+    outcome = redact_rewrite("#{original.delete_suffix(tail)} UNION #{right}")
+
+    expect([outcome.status.exitstatus, outcome.stderr]).to eq([0, ""])
+    expect(lines(outcome).map { it["type"] }).to eq(%w[redacted_rewrite done])
+    q = a.delete('"')
+    expected = deparsed(stored.read("redacted_query").sub("workflow_state <> $27", "workflow_state <> $1"))
+               .sub(" WHERE (", " WHERE ").sub("SELECT $30 ", "SELECT 1 ")
+               .sub("))) OR #{q}.id IN", ")) UNION SELECT #{q}.* FROM #{q} WHERE #{q}.id IN")
+    expect(deparsed(lines(outcome).first["sql"])).to eq(expected)
+    expect_no_leaks(sentinels, outcome)
+  end
+
   # The positive control: the checks above would see the sentinel if it
   # were sent, since the store holds it where the same scan finds it.
   it "keeps the sentinel in the store, where the leak check would catch it" do
