@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261021-5
 - 20261015-5
 - 20261110-16
+- 20261114-222449-1
 
 
 ## How this file works.
@@ -592,24 +593,6 @@ From the review of 20261012-29. No replay run ends a rewrite as `enumerate_dispr
 
 - **Depends on:** 20261012-29 (landed).
 - **Came from:** The review of 20261012-29, 2026-11-14 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261114-222449-1. FuzzSizes.count: bare relation names count as zero.
-
-From the review of 20261012-31 (minor). `query_tables` skips any relation that isn't schema-qualified, so `SELECT * FROM a JOIN public.b` counts 1 and the bound could be claimed too early. Queries reach it fully qualified today. Count bare RangeVars that aren't CTE names, or treat an unqualified relation as one more table. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261012-31 (landed).
-- **Came from:** The review of 20261012-31, 2026-11-14 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261114-222449-2. fuzz_sizes_count_spec has no self-join or CTE example.
-
-From the review of 20261012-31 (minor). Add examples: a self-join counts one table, a CTE name isn't counted, aliases collapse. Test only.
-
-- **Depends on:** 20261012-31 (landed).
-- **Came from:** The review of 20261012-31, 2026-11-14 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 

@@ -13714,3 +13714,23 @@ From the review of 20261112-171103-1 (minor). The page puts an original's two di
 - **Design:** result-comparison.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261112-204606-1. Confirmed on Postgres 18: with the same plan (Gather Merge over a Parallel Seq Scan), an array_agg over 2M synthetic rows came back with different arrays from run to run. docs/unstable-original.md says so and that QUAACK doesn't turn parallel query off. `synchronize_seqscans` wasn't tested and isn't mentioned. Docs only; not on the unreleased list.
+
+### 20261114-222449-1. FuzzSizes.count: bare relation names count as zero.
+
+From the review of 20261012-31 (minor). `query_tables` skips any relation that isn't schema-qualified, so `SELECT * FROM a JOIN public.b` counts 1 and the bound could be claimed too early. Queries reach it fully qualified today. Count bare RangeVars that aren't CTE names, or treat an unqualified relation as one more table. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261012-31 (landed).
+- **Came from:** The review of 20261012-31, 2026-11-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261114-222449-1. `FuzzSizes.count` has a scope-aware walker: a bare name counts as a table unless a CTE in scope has that name, and a bare name counts apart from its qualified form (errs high). Examples cover self-joins, aliases and CTEs. Enclave change, on the unreleased list.
+
+### 20261114-222449-2. fuzz_sizes_count_spec has no self-join or CTE example.
+
+From the review of 20261012-31 (minor). Add examples: a self-join counts one table, a CTE name isn't counted, aliases collapse. Test only.
+
+- **Depends on:** 20261012-31 (landed).
+- **Came from:** The review of 20261012-31, 2026-11-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261114-222449-1. `FuzzSizes.count` has a scope-aware walker: a bare name counts as a table unless a CTE in scope has that name, and a bare name counts apart from its qualified form (errs high). Examples cover self-joins, aliases and CTEs. Enclave change, on the unreleased list.
