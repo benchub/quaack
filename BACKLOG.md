@@ -17,6 +17,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-46
 - 20261012-50
 - 20261018-32
+- 20261021-5
 
 
 ## How this file works.
@@ -429,14 +430,7 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 
 ### 20261021-4. Driver spec: `report_spec.rb` "writes the report to a file" is flaky. Done, see BACKLOG-COMPLETE.md.
 
-### 20261021-5. Own rewrites in the report: send the deparsed text, not the raw `--rewrites` text.
-
-From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text as given, and `RewritePayload.sendable?` only checks A_Const nodes, so a comment or a quoted identifier (`/* ... */`, `-- ...`, `AS "..."`) passes through to the report as written. It came from the operator's own file and goes back only to their report, but send the deparse of the operator's SQL instead (as redact-rewrite already does), so nothing but parsed SQL leaves. Also consider moving `OwnRewriteRecord` into its own file to drop the `Metrics/ModuleLength` disable in `steps/rewrite_check.rb`. Enclave change.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261021-2, 2026-10-21.
-- **Design:** Report, Operator rewrites (`--rewrites`).
-- **Status:** todo
+### 20261021-5. Own rewrites in the report: send the deparsed text, not the raw `--rewrites` text. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-1. Result comparison: don't refuse a nondeterministic collation when the original's order has no ties. Done, see BACKLOG-COMPLETE.md.
 
@@ -724,4 +718,14 @@ From the review of 20261012-46 (minor). Narrowing `key_compared?` in `enumerate/
 - **Depends on:** 20261012-46 (landed).
 - **Came from:** The review of 20261012-46, 2026-11-15 (minor).
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261115-055039-1. Own rewrites: rescue a deparse failure, and decide on quoted identifier names.
+
+From the review of 20261021-5 (minor). (1) `OwnRewrites.text` doesn't rescue an exception from `deparse`; a statement that parses but can't deparse would crash the step (no leak). Rescue and return nil. (2) A quoted identifier's name (`AS "Odd Name"`) still goes out in the report's own-rewrite text. The report already carries table and column names and the operator wrote the text, so it isn't a new leak. Open question for the user: should identifier names in own rewrites be redacted too?
+
+- **Depends on:** 20261021-5 (landed).
+- **Came from:** The review of 20261021-5, 2026-11-15 (minor).
+- **Design:** Report, Operator rewrites (`--rewrites`).
+- **Open questions:** Whether identifier names in own rewrites should be redacted (part 2 only).
 - **Status:** todo

@@ -13634,3 +13634,13 @@ From 20261020-3. The usual rewrite of the user's query, the OR split into `... U
 - **Open questions:** None.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261020-4. Stale: 20261020-7 already keeps the EXISTS's `SELECT 1`, so the UNION rewrite redacts correctly. A regression spec in `redact_rewrite_pipeline_postgres_spec.rb` covers it. No code change.
+
+### 20261021-5. Own rewrites in the report: send the deparsed text, not the raw `--rewrites` text.
+
+From the review of 20261021-2 (minor). `own_rewrites` keeps the operator's text as given, and `RewritePayload.sendable?` only checks A_Const nodes, so a comment or a quoted identifier (`/* ... */`, `-- ...`, `AS "..."`) passes through to the report as written. It came from the operator's own file and goes back only to their report, but send the deparse of the operator's SQL instead (as redact-rewrite already does), so nothing but parsed SQL leaves. Also consider moving `OwnRewriteRecord` into its own file to drop the `Metrics/ModuleLength` disable in `steps/rewrite_check.rb`. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261021-2, 2026-10-21.
+- **Design:** Report, Operator rewrites (`--rewrites`).
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261021-5. `OwnRewrites.text` sends the deparse of the operator's SQL when `sendable?` passes. Enclave change, on the unreleased list. A quoted identifier's name still goes out (see 20261115-055039-1).
