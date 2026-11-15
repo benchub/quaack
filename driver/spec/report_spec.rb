@@ -1314,12 +1314,19 @@ RSpec.describe Quaack::Driver::Report do
           expect(list[%r{<ul id="negative-rewrites">.*?</ul>}m]).to include(unstable_link)
         end
 
+        # Task 20261112-204606-3: each rewrite's rule holds the linked
+        # phrase, so only the reason, rule, and float noise checks keep the
+        # link off.
         it "links nothing for another reason or rule, or for float noise" do
-          [fate("rewrite_test_failed", rule: "unsupported_order", reason: "cut_tie"),
-           fate("rewrite_test_failed", rule: "statement_timeout", reason: "unstable_original"),
-           fate("production_not_compared", rule: "unsupported_order", reason: "unstable_original",
-                                           float_noise: true)].each do |text|
-            expect(text).not_to include("unstable-original.md")
+          [{ rule: "unsupported_order", reason: "cut_tie" },
+           { rule: "statement_timeout", reason: "unstable_original" },
+           { rule: "unsupported_order", reason: "unstable_original", float_noise: true }].each do |details|
+            rewrites = [fated(2, "production_not_compared", source: "rule", rules: ["ran the original query twice"],
+                                                            **details)]
+            list = section(render(negative_payload.merge("rewrites" => rewrites)), "negative-result")
+            line = list[%r{<ul id="negative-rewrites">.*?</ul>}m]
+            expect(line).not_to include("unstable-original.md")
+            expect(line).to include("rule ran the original query twice)")
           end
         end
       end
