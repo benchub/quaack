@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pg_query"
+
 module Quaack
   module Enclave
     # The structured assumptions a rewrite states (DESIGN.md's llm-rewrites), and their
@@ -62,9 +64,10 @@ module Quaack
 
       def string?(value) = value.is_a?(String) && !value.empty?
 
-      # The form rewrite dedupe compares (DESIGN.md's rewrite-rules): each
-      # assumption's string values stripped with inner whitespace collapsed
-      # to one space, its keys sorted, and the assumptions sorted, so the
+      # The form rewrite dedupe compares (DESIGN.md's rewrite-rules): a
+      # check's expression in normal_expression form, each other string
+      # value stripped with inner whitespace collapsed to one space, its
+      # keys sorted, and the assumptions sorted, so the
       # same ones in another order or spacing compare equal. A column list
       # keeps its order, which a foreign key pairs on. It's only ever a
       # lookup key, never stored or sent, and it holds nothing the raw
@@ -73,13 +76,24 @@ module Quaack
         Array(assumptions).map { normal_value(it) }.sort_by(&:inspect)
       end
 
-      def normal_value(value)
+      def normal_value(value, key = nil)
         case value
-        when String then value.strip.gsub(/\s+/, " ")
+        when String then key == "expression" ? normal_expression(value) : value.strip.gsub(/\s+/, " ")
         when Array then value.map { normal_value(it) }
-        when Hash then value.sort.to_h { |key, inner| [key, normal_value(inner)] }
+        when Hash then value.sort.to_h { |key, inner| [key, normal_value(inner, key)] }
         else value
         end
+      end
+
+      # A check expression as pg_query deparses it, so spacing outside
+      # quoted text doesn't matter and spacing inside it does. Two compare
+      # equal only when they parse to the same tree. One that doesn't parse
+      # compares as given, which can keep two equal ones apart but never
+      # merges two different ones.
+      def normal_expression(expression)
+        PgQuery.deparse(PgQuery.parse("SELECT #{expression}").tree).delete_prefix("SELECT ")
+      rescue PgQuery::ParseError
+        expression
       end
 
       # The TableName-style pair for a valid assumption's "schema.name".

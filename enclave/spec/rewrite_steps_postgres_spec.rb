@@ -24,6 +24,9 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
   def rewrite_check(stdin) = quaacks.run("rewrite-check", "--run", store.run_id, stdin:, env: libpq_env)
   def lines(outcome) = outcome.stdout.lines.map { JSON.parse(it) }
 
+  # same, made distinct by a no-op conjunct, so a call's rewrites don't dedupe.
+  def variant(index) = "#{same} AND #{index} = #{index}"
+
   def rewrite(sql, assumptions = [])
     { "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => assumptions }
   end
@@ -187,6 +190,20 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(stored.read("rewrite_1")["assumptions"]).to eq([not_null_id, check])
     end
 
+    # Task 20261114-053159-1: one response with the same rewrite twice,
+    # its assumptions reordered, stores one entry, which both outcomes name.
+    it "stores one entry for the same rewrite twice in one call" do
+      ready
+      check = { "kind" => "check", "table" => "public.orders", "expression" => "total >= 0" }
+
+      outcome = rewrite_check(rewrites(rewrite(same, [not_null_id, check]), rewrite(same, [check, not_null_id]),
+                                       inferred: true))
+
+      expect(lines(outcome).first(2).map { it.slice("outcome", "rewrite") })
+        .to eq([{ "outcome" => "accepted", "rewrite" => "rewrite_1" }] * 2)
+      expect(stored.entry?("rewrite_2")).to be(false)
+    end
+
     # Task 20261007-30: the racetrack connects as another role than
     # qualify did, so the plan's path would give another "$user" there.
     # The stored path is the one qualify resolved the original through.
@@ -303,7 +320,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       ready
       unmet = not_null_id.merge("column" => "note")
 
-      outcome = rewrite_check(rewrites(*Array.new(6) { rewrite(same, [not_null_id, unmet]) }, inferred: true))
+      outcome = rewrite_check(rewrites(*Array.new(6) { rewrite(variant(it), [not_null_id, unmet]) }, inferred: true))
 
       warning = [{ "assumption" => 2, "kind" => "not_null" }]
       expect(lines(outcome).first).to eq(outcome_line(1, "accepted", nil, "rewrite_1", warning))
@@ -417,7 +434,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
     it "checks only the first five, marking the rest too_many" do
       ready
 
-      outcome = rewrite_check(rewrites(*Array.new(6) { rewrite(same) }))
+      outcome = rewrite_check(rewrites(*Array.new(6) { rewrite(variant(it)) }))
 
       expect(lines(outcome).map { it["rule"] || it["rewrite"] }.first(6))
         .to eq(%w[rewrite_1 rewrite_2 rewrite_3 rewrite_4 rewrite_5 too_many])

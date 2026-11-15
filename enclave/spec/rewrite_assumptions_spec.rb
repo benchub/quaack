@@ -38,6 +38,19 @@ RSpec.describe Quaack::Enclave::RewriteAssumptions do
       expect(described_class.normalized([check])).not_to eq(described_class.normalized([other]))
     end
 
+    it "keeps the spacing inside a check expression's quoted literal" do
+      spaced = check.merge("expression" => "status <> 'a  b'")
+      single = check.merge("expression" => "status <> 'a b'")
+      expect(described_class.normalized([spaced])).not_to eq(described_class.normalized([single]))
+    end
+
+    it "compares an expression that doesn't parse exactly as given" do
+      expect(described_class.normalized([check.merge("expression" => "status <> 'a  b")]))
+        .not_to eq(described_class.normalized([check.merge("expression" => "status <> 'a b")]))
+      expect(described_class.normalized([check.merge("expression" => " total >=")]).first["expression"])
+        .to eq(" total >=")
+    end
+
     it "keeps a column list's order, which a foreign key pairs on" do
       fk = { "kind" => "foreign_key", "table" => "public.a", "columns" => %w[x y],
              "references_table" => "public.b", "references_columns" => %w[p q] }
