@@ -80,12 +80,27 @@ module TestPostgres
     # client.
     def wait_until_ready(container_id, port)
       deadline = now + READY_TIMEOUT
-      until system("docker", "exec", container_id, "pg_isready", "-q", "-h", "127.0.0.1", "-p", PORT.to_s,
-                   "-U", USER, "-d", "postgres", out: File::NULL, err: File::NULL) && answers_on_host?(port)
-        raise "PgBouncer in #{container_id} wasn't ready after #{READY_TIMEOUT}s" if now > deadline
+      loop do
+        failed = failed_probe(container_id, port)
+        break unless failed
+        if now > deadline
+          raise "PgBouncer in #{container_id} on port #{port} wasn't ready after #{READY_TIMEOUT}s: " \
+                "#{failed} failed"
+        end
 
         sleep 0.1
       end
+    end
+
+    # Names the first probe that fails, or nil when both answer.
+    def failed_probe(container_id, port)
+      unless system("docker", "exec", container_id, "pg_isready", "-q", "-h", "127.0.0.1", "-p", PORT.to_s,
+                    "-U", USER, "-d", "postgres", out: File::NULL, err: File::NULL)
+        return "pg_isready inside the container"
+      end
+      return "the host ping on 127.0.0.1:#{port}" unless answers_on_host?(port)
+
+      nil
     end
 
     def answers_on_host?(port)

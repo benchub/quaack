@@ -352,6 +352,14 @@ RSpec.describe TestPostgres do
     end
   end
 
+  it "counts an unreadable PID namespace as none, without raising" do
+    allow(File).to receive(:stat).and_call_original
+    allow(File).to receive(:exist?).and_call_original
+    allow(File).to receive(:exist?).with("/proc/self/ns/pid").and_return(true)
+    allow(File).to receive(:stat).with("/proc/self/ns/pid").and_raise(Errno::EACCES)
+    expect(TestPostgres.pid_namespace).to be_nil
+  end
+
   it "counts a process it may not signal as alive" do
     expect(TestPostgres.process_alive?(1)).to be(true)
   end
@@ -537,6 +545,23 @@ RSpec.describe TestPostgres do
       expect(TestPostgres::PgBouncer.start(id)).to eq(port)
     end
 
+    # Task 20261114-190619-2: the timeout names the port and the probe that
+    # failed last.
+    it "names the port and the host probe when the host ping never answers" do
+      stub_const("TestPostgres::PgBouncer::READY_TIMEOUT", 0.5)
+      probe = TCPServer.new("127.0.0.1", 0)
+      port = probe.addr[1]
+      probe.close
+      expect { TestPostgres::PgBouncer.wait_until_ready(TestPostgres.server.container_id, port) }
+        .to raise_error(RuntimeError, /port #{port}.*host ping on 127\.0\.0\.1:#{port} failed/)
+    end
+
+    it "names the in-container probe when pg_isready never answers" do
+      stub_const("TestPostgres::PgBouncer::READY_TIMEOUT", 0.5)
+      expect { TestPostgres::PgBouncer.wait_until_ready("quaack-no-such-container", 1) }
+        .to raise_error(RuntimeError, /port 1.*pg_isready inside the container failed/)
+    end
+
     # Task 20261012-20: Docker's published port can lag behind the
     # listener inside the container, so readiness must wait until the port
     # answers from the host. A forward that opens a second after the wait
@@ -547,14 +572,18 @@ RSpec.describe TestPostgres do
       probe = TCPServer.new("127.0.0.1", 0)
       port = probe.addr[1]
       probe.close
+      listener = nil
+      sockets = Queue.new
+      copiers = Queue.new
       forward = Thread.new do
         sleep 1
         listener = TCPServer.new("127.0.0.1", port)
         loop do
           client = listener.accept
           upstream = TCPSocket.new("127.0.0.1", target)
+          sockets << client << upstream
           [[client, upstream], [upstream, client]].each do |from, to|
-            Thread.new do
+            copiers << Thread.new do
               IO.copy_stream(from, to)
             rescue IOError, SystemCallError
               nil
@@ -575,6 +604,10 @@ RSpec.describe TestPostgres do
         .to eq(PG::PQPING_OK)
     ensure
       forward&.kill
+      forward&.join
+      listener.close if listener && !listener.closed?
+      sockets.pop.close until sockets.empty?
+      copiers.pop.join until copiers.empty?
     end
 
     it "keeps a closed client's server backend in its pool" do

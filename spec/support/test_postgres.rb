@@ -38,7 +38,7 @@ require "pg"
 # must end with `exit!`. The child shares the parent's sockets. If it exits
 # normally, it closes its copies of the parent's connections, and that ends
 # the parent's sessions too. `exit!` skips that, along with the at_exit hooks.
-module TestPostgres
+module TestPostgres # rubocop:disable Metrics/ModuleLength
   class DockerUnavailable < StandardError; end
   class ConnectionLost < StandardError; end
 
@@ -253,7 +253,12 @@ module TestPostgres
   # The inode of this process's PID namespace, on Linux. Two namespaces can
   # share a hostname, such as two containers on one host, and a pid from one
   # means nothing in the other. macOS has none, so it's nil there.
-  def pid_namespace = File.exist?("/proc/self/ns/pid") ? File.stat("/proc/self/ns/pid").ino.to_s : nil
+  # An unreadable /proc counts as none, as in e2e/verify.rb.
+  def pid_namespace
+    File.stat("/proc/self/ns/pid").ino.to_s
+  rescue SystemCallError
+    nil
+  end
 
   # What HOST_LABEL holds: the hostname, plus the PID namespace where there
   # is one, so a pid in the label can be checked only where it means the same.
@@ -263,7 +268,11 @@ module TestPostgres
   # is still running belongs to another spec process, maybe in another
   # worktree, so it stays. So does one another host or PID namespace started,
   # since its pid can't be checked here. One with no host label predates that
-  # label and counts as this host's.
+  # label and counts as this host's. On Linux, one a crashed run left from
+  # before the PID namespace joined the label carries the bare hostname,
+  # which never matches now, so it counts as foreign and stays until someone
+  # runs docker rm by hand. That's safe: the sweep can't remove a live run's
+  # container either way.
   def remove_stale_containers
     format = "{{.ID}} {{.Label \"#{OWNER_LABEL}\"}} {{.Label \"#{HOST_LABEL}\"}}"
     docker("ps", "-a", "--filter", "label=#{LABEL}", "--format", format).lines.map(&:split).each do |id, pid, host|
