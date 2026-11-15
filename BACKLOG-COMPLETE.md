@@ -13694,3 +13694,13 @@ From the review of 20261112-171103-1 (minor). The `production_not_compared` floa
 - **Design:** result-comparison, report.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261112-204606-2 (conflict with 20261112-204606-3 in report_spec.rb resolved by the main session). `production_not_compared` float noise now has its own sentence for `unstable_original` (QUAACK's own tiebreaker runs, linked to unstable-original.md and float-values.md) and for `cut_tie` (the full runs without the cut). Driver only; not on the unreleased list. I read the diff and started no reviewer.
+
+### 20261113-035826-1. docs/unstable-original.md: tiebreaker columns, DISTINCT ON, and DESIGN.md's JSON_ARRAYAGG.
+
+From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and DESIGN.md (about line 1303) say the tiebreaker takes every output column whose type QUAACK can sort, giving only `json` as an exception. `Tiebreaker::UNFAITHFUL` (`enclave/lib/quaack/enclave/result_comparison/tiebreaker.rb:36`) also leaves out `jsonb`, which sorts, and arrays and ranges of float, numeric, or interval; say so, or say "the columns it can sort faithfully" and list them. (2) The page says that with no `LIMIT` or `OFFSET` the two runs must hold the same rows; a `DISTINCT ON` with no `LIMIT` can differ too, but it refuses as `cut_tie`, not `unstable_original` (`CutTies.unstable?`). Add a sentence. (3) DESIGN.md (about line 1330, "Gaps remain") lists a SQL/JSON `JSON_ARRAYAGG` as an unpinned pick, but `SupportedSql` refuses the SQL/JSON functions up front (`unsupported_construct: JsonArrayAgg`); drop it there. Docs only.
+
+- **Depends on:** None.
+- **Came from:** 20261112-171103-1.
+- **Design:** fixture-compare, result-comparison.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261113-035826-1. DESIGN.md and docs/unstable-original.md name the columns the tiebreaker leaves out (`jsonb`, and containers of float4, float8, numeric, interval or bpchar), say a DISTINCT ON with no LIMIT refuses as `cut_tie`, and drop JSON_ARRAYAGG from the "Gaps remain" list (it's refused up front in `index_sql.rb`). Docs only; I read the diff and started no reviewer; the builder's per-commit check passed before the merge, and the merge touched only those two files.

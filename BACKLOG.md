@@ -512,15 +512,6 @@ From the review of 20261112-171103-1 (minor). The page puts an original's two di
 - **Design:** result-comparison.
 - **Status:** todo
 
-### 20261113-035826-1. docs/unstable-original.md: tiebreaker columns, DISTINCT ON, and DESIGN.md's JSON_ARRAYAGG.
-
-From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and DESIGN.md (about line 1303) say the tiebreaker takes every output column whose type QUAACK can sort, giving only `json` as an exception. `Tiebreaker::UNFAITHFUL` (`enclave/lib/quaack/enclave/result_comparison/tiebreaker.rb:36`) also leaves out `jsonb`, which sorts, and arrays and ranges of float, numeric, or interval; say so, or say "the columns it can sort faithfully" and list them. (2) The page says that with no `LIMIT` or `OFFSET` the two runs must hold the same rows; a `DISTINCT ON` with no `LIMIT` can differ too, but it refuses as `cut_tie`, not `unstable_original` (`CutTies.unstable?`). Add a sentence. (3) DESIGN.md (about line 1330, "Gaps remain") lists a SQL/JSON `JSON_ARRAYAGG` as an unpinned pick, but `SupportedSql` refuses the SQL/JSON functions up front (`unsupported_construct: JsonArrayAgg`); drop it there. Docs only.
-
-- **Depends on:** None.
-- **Came from:** 20261112-171103-1.
-- **Design:** fixture-compare, result-comparison.
-- **Status:** todo
-
 ### 20261113-210241-1. Fuzz worlds: build a parent with exactly n children, and one with n+1, for a correlated count threshold.
 
 The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrite of `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > n` as `>= n` should be disproved at every n, but fuzz missed it at n=7 and n=10 even with 200 trials: world generation doesn't reliably build a parent with exactly n children. Make it do so, without letting any reported count (trials, worlds, bound) or the caution follow the threshold. 20261010-35's earlier attempt (n+1 children per parent) leaked the threshold through the load count and was rejected; handle only count(*)/count(x) with no GROUP BY, window or second target; a scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code. Add the across-literals proof for it (thresholds 0..10), red first. Trust boundary: have an Opus reviewer.
