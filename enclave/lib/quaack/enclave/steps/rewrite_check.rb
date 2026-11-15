@@ -96,7 +96,8 @@ module Quaack
         # rewrite-rules, run again, says an earlier call recorded them all.
         #
         # A survivor whose accepted SQL and stated assumptions an earlier call
-        # of the same source already stored (stored) keeps that entry, and
+        # of the same source, or an earlier rewrite of this call, already
+        # stored (stored) keeps that entry, and
         # nothing new is written for it. Assumptions compare in
         # RewriteAssumptions.normalized form, so reordered or re-spaced ones
         # match. The same SQL with really different assumptions
@@ -153,8 +154,8 @@ module Quaack
 
         def outcome(index, rewrite, context)
           sql, types, warnings = checked(index, rewrite, context)
-          name = context[:stored].delete(StoredRewrites.key(sql, rewrite["assumptions"])) ||
-                 save(context, rewrite, sql, types, warnings)
+          name = (context[:stored][StoredRewrites.key(sql, rewrite["assumptions"])] ||=
+                    save(context, rewrite, sql, types, warnings))
           [{ type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }, nil]
         rescue RewriteCandidateCheck::Error, ClockAnchoring::Error, Rejected => e
           [rejected(index, e.rule), RewriteBurndown.stage(e)]
