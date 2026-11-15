@@ -503,15 +503,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 
 ### 20261112-171103-1. Report: clearer `unstable_original` wording, a docs page with examples, and a link to it. Done, see BACKLOG-COMPLETE.md.
 
-### 20261112-204606-1. docs/unstable-original.md: same plan, different order on the real data.
-
-From the review of 20261112-171103-1 (minor). The page puts an original's two differing runs down only to a changed plan. On the real data, a parallel aggregate or a synchronized seq scan can feed rows to an order-sensitive step in a different order with the same plan; the racetrack's `clock_anchor` is `PARALLEL SAFE` (`enclave/lib/quaack/enclave/racetrack.rb:20`), so parallel plans can run there. Confirm on Postgres that a parallel plan or `synchronize_seqscans` can reach it, then add the cause to the page. Docs only.
-
-- **Depends on:** 20261112-171103-1.
-- **Came from:** 20261112-171103-1.
-- **Design:** result-comparison.
-- **Status:** todo
-
 ### 20261113-210241-1. Fuzz worlds: build a parent with exactly n children, and one with n+1, for a correlated count threshold.
 
 The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrite of `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > n` as `>= n` should be disproved at every n, but fuzz missed it at n=7 and n=10 even with 200 trials: world generation doesn't reliably build a parent with exactly n children. Make it do so, without letting any reported count (trials, worlds, bound) or the caution follow the threshold. 20261010-35's earlier attempt (n+1 children per parent) leaked the threshold through the load count and was rejected; handle only count(*)/count(x) with no GROUP BY, window or second target; a scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code. Add the across-literals proof for it (thresholds 0..10), red first. Trust boundary: have an Opus reviewer.

@@ -13704,3 +13704,13 @@ From the second review of 20261112-171103-1 (minor). (1) The page (line 9) and D
 - **Design:** fixture-compare, result-comparison.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261113-035826-1. DESIGN.md and docs/unstable-original.md name the columns the tiebreaker leaves out (`jsonb`, and containers of float4, float8, numeric, interval or bpchar), say a DISTINCT ON with no LIMIT refuses as `cut_tie`, and drop JSON_ARRAYAGG from the "Gaps remain" list (it's refused up front in `index_sql.rb`). Docs only; I read the diff and started no reviewer; the builder's per-commit check passed before the merge, and the merge touched only those two files.
+
+### 20261112-204606-1. docs/unstable-original.md: same plan, different order on the real data.
+
+From the review of 20261112-171103-1 (minor). The page puts an original's two differing runs down only to a changed plan. On the real data, a parallel aggregate or a synchronized seq scan can feed rows to an order-sensitive step in a different order with the same plan; the racetrack's `clock_anchor` is `PARALLEL SAFE` (`enclave/lib/quaack/enclave/racetrack.rb:20`), so parallel plans can run there. Confirm on Postgres that a parallel plan or `synchronize_seqscans` can reach it, then add the cause to the page. Docs only.
+
+- **Depends on:** 20261112-171103-1.
+- **Came from:** 20261112-171103-1.
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261112-204606-1. Confirmed on Postgres 18: with the same plan (Gather Merge over a Parallel Seq Scan), an array_agg over 2M synthetic rows came back with different arrays from run to run. docs/unstable-original.md says so and that QUAACK doesn't turn parallel query off. `synchronize_seqscans` wasn't tested and isn't mentioned. Docs only; not on the unreleased list.
