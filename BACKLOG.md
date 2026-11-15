@@ -501,33 +501,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 - **Design:** counterexamples.
 - **Status:** todo
 
-### 20261111-230000-1. NOT IN CHECK: sharpen the ParentRows spec, and fix the simple-CHECK wording.
-
-From the review of 20261012-7 (minor). (1) The ParentRows NOT IN spec in `enclave/spec/counterexamples_postgres_spec.rb` stays green if `Checks#add` treats `<> ALL` like `= ANY`, because ParentRows tries the column's typical value first and that value already sits outside the list. Plant a CHECK that also excludes the typical value, so the spec tells NOT IN from IN; mutate to confirm it goes red. (2) DESIGN.md and the `checks.rb` comment define a simple CHECK as a comparison, IN/NOT IN, BETWEEN, or IS [NOT] NULL, but the code also takes any `op ANY` or `op ALL` over a non-column array (`= ALL`, `> ALL`, a function result such as `string_to_array`). Postgres evaluates every value, so a wrong answer can't come out; say the extra shapes are accepted and checked by Postgres, or narrow the code. Enclave change if the code is narrowed; spec-only otherwise.
-
-- **Depends on:** 20261012-7 (landed).
-- **Came from:** 20261012-7.
-- **Design:** llm-counterexamples.
-- **Status:** todo
-
-### 20261111-240000-1. Driver suite: an unexplained failure in the parallel per-commit run.
-
-From the build of 20261021-3, 2026-11-11. The driver suite failed once in `bundle exec rake` (the line read "Spec suites failed: driver/spec (exit 1)") while the other three passed; the builder kept only the last 40 lines, so the failing example isn't known. `bundle exec rspec` in `driver/` passed twice on its own (2209 examples, 0 failures). The change under test was an enclave spec only, so it's a flake that shows under the load of the parallel run. 20261016-17 and 20261012-20 are similar flakes in other suites. If it shows again, capture the whole driver block of the rake output (the suite's output is printed whole under its header) and file the failing example here. Candidates to check: examples that read the clock or a port.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261021-3.
-- **Design:** none.
-- **Status:** todo
-
-### 20261111-260000-1. Pick checks: the min/max check and the other NULL-skipping aggregates.
-
-From the build and the second review of 20261015-6 (minor). (1) `tied_text`, the `min`/`max` check, still filters on `quaack_arg IS NOT NULL`. A composite argument can reach it (`max(t)`, `max(row(a, b))`), and a row with a NULL field then drops out of the tied list, so ties among those rows aren't checked. For example `(10, NULL)` and `(10.0, NULL)` tie under record comparison but print differently, and the check passes them. It's a false pass, but only for a min or max over a row value that has both a NULL field and a numeric or collation-equal field that prints differently; rare. Reproduce on Postgres first, red first; the fix is the `num_nonnulls` switch with a spec. (2) `string_agg`, `json_agg_strict` and `jsonb_agg_strict` also skip NULL inputs, so one value beside NULLs still refuses for them the way `any_value` did; apply the same filter and spec each. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261015-6 (landed).
-- **Came from:** 20261015-6.
-- **Design:** fixture-compare, result comparison.
-- **Status:** todo
-
 ### 20261112-171103-1. Report: clearer `unstable_original` wording, a docs page with examples, and a link to it. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261112-204606-1. docs/unstable-original.md: same plan, different order on the real data.
