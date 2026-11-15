@@ -3,6 +3,7 @@
 require "quaack/protocol/fuzz_result"
 require "quaack/protocol/rewrite_budget"
 require_relative "accountability"
+require_relative "words"
 
 module Quaack
   module Driver
@@ -60,19 +61,28 @@ module Quaack
         # A production failure that matched on production comparison's
         # second look at float columns (float_noise, task 20261111-192302-1).
         # DocLinks links FLOAT_PHRASE to docs/float-values.md.
-        # A production_not_compared refusal means the original's own two
-        # runs differed, not the rewrite's results and the original's.
+        # A production_not_compared refusal means QUAACK's own runs
+        # differed, not the rewrite's results and the original's: the
+        # original's two tiebreaker runs (unstable_original), or, at a cut
+        # tie, the full runs without the cut (cut_tie, task
+        # 20261112-204606-2). DocLinks links Words::UNSTABLE_PHRASE in the
+        # first to docs/unstable-original.md.
         FLOAT_PHRASE = "minor mismatches in float values"
         FLOAT_ADVICE = "The rewrite is likely right, but check. Writing the query to deal with them, for example " \
                        "by rounding its float outputs, might let the rewrite through."
+        FLOAT_RUNS = "differed only in float values, each by less than one part in ten million, so QUAACK " \
+                     "couldn't compare the rewrite's results with the original query's."
+        # By fate, or for production_not_compared by reason.
         FLOAT_NOISE = {
           "production_mismatch" => "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, its " \
                                    "results and the original query's differed only in float values, each by less " \
                                    "than one part in ten million. #{FLOAT_ADVICE}",
-          "production_not_compared" => "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, " \
-                                       "two runs of the original query differed only in float values, each by " \
-                                       "less than one part in ten million, so QUAACK couldn't compare its results " \
-                                       "with the original query's. #{FLOAT_ADVICE}"
+          "unstable_original" => "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, " \
+                                 "QUAACK #{Words::UNSTABLE_PHRASE}, breaking ties in its ORDER BY one way and then " \
+                                 "the other, and the two runs #{FLOAT_RUNS} #{FLOAT_ADVICE}",
+          "cut_tie" => "#{PASSED} QUAACK dropped it because of #{FLOAT_PHRASE}: on the real data, QUAACK ran the " \
+                       "queries in full, without the LIMIT, OFFSET, or DISTINCT ON that keeps only some of a group " \
+                       "of tied rows, to check which rows they keep, and those runs #{FLOAT_RUNS} #{FLOAT_ADVICE}"
         }.freeze
 
         # fuzz_disproved by query_failed: the rewrite failed where the
@@ -209,9 +219,17 @@ module Quaack
 
         def fate_text(entry)
           return SEARCH_FAILED[entry["fate"]] if SEARCH_FAILED.key?(entry["fate"]) && entry["rule"] == "query_failed"
-          return FLOAT_NOISE[entry["fate"]] if float_noise?(entry)
+          return float_noise_text(entry) if float_noise?(entry)
 
           FATES[entry["fate"]]
+        end
+
+        # A refusal's reason picks its words; any reason but cut_tie means
+        # the original's own runs, as before.
+        def float_noise_text(entry)
+          return FLOAT_NOISE[entry["fate"]] unless entry["fate"] == "production_not_compared"
+
+          FLOAT_NOISE[entry["reason"] == "cut_tie" ? "cut_tie" : "unstable_original"]
         end
 
         # Whether the payload says a production failure was only float noise.

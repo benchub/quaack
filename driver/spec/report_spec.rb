@@ -1348,7 +1348,8 @@ RSpec.describe Quaack::Driver::Report do
         it "links nothing for another reason or rule, or for float noise" do
           [{ rule: "unsupported_order", reason: "cut_tie" },
            { rule: "statement_timeout", reason: "unstable_original" },
-           { rule: "unsupported_order", reason: "unstable_original", float_noise: true }].each do |details|
+           { rule: "unsupported_order", reason: "cut_tie", float_noise: true },
+           { rule: "statement_timeout", reason: "unstable_original", float_noise: true }].each do |details|
             rewrites = [fated(2, "production_not_compared", source: "rule", rules: ["ran the original query twice"],
                                                             **details)]
             list = section(render(negative_payload.merge("rewrites" => rewrites)), "negative-result")
@@ -1520,14 +1521,27 @@ RSpec.describe Quaack::Driver::Report do
         # runs differing, not the rewrite's results and the original's.
         it "says the original's own runs differed when float noise kept QUAACK from comparing" do
           unstable = esc("It passed the tests on made-up data, but QUAACK dropped it because of #{float_link}: on " \
-                         "the real data, two runs of the original query differed only in float values, each by " \
-                         "less than one part in ten million, so QUAACK couldn't compare its results with the " \
-                         "original query's. The rewrite is likely right, but check. Writing the query to deal " \
-                         "with them, for example by rounding its float outputs, might let the rewrite through.")
-          %w[unstable_original cut_tie].each do |reason|
-            expect(fate("production_not_compared", rule: "unsupported_order", reason:, float_noise: true))
-              .to eq(unstable)
-          end
+                         "the real data, QUAACK #{unstable_link}, breaking ties in its ORDER BY one way and then " \
+                         "the other, and the two runs differed only in float values, each by less than one part " \
+                         "in ten million, so QUAACK couldn't compare the rewrite's results with the original " \
+                         "query's. The rewrite is likely right, but check. Writing the query to deal with them, " \
+                         "for example by rounding its float outputs, might let the rewrite through.")
+          expect(fate("production_not_compared", rule: "unsupported_order", reason: "unstable_original",
+                                                 float_noise: true)).to eq(unstable)
+        end
+
+        # Task 20261112-204606-2: at a cut tie, the runs that differed are
+        # QUAACK's full runs without the cut, not the original's two runs.
+        it "says the full runs without the cut differed when float noise kept QUAACK from checking a cut tie" do
+          cut = esc("It passed the tests on made-up data, but QUAACK dropped it because of #{float_link}: on the " \
+                    "real data, QUAACK ran the queries in full, without the LIMIT, OFFSET, or DISTINCT ON that " \
+                    "keeps only some of a group of tied rows, to check which rows they keep, and those runs " \
+                    "differed only in float values, each by less than one part in ten million, so QUAACK couldn't " \
+                    "compare the rewrite's results with the original query's. The rewrite is likely right, but " \
+                    "check. Writing the query to deal with them, for example by rounding its float outputs, might " \
+                    "let the rewrite through.")
+          expect(fate("production_not_compared", rule: "unsupported_order", reason: "cut_tie", float_noise: true))
+            .to eq(cut)
         end
 
         it "links it in the list of rewrites that didn't make it too" do
