@@ -580,15 +580,6 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20261115-110237-1. Report: the accountability note says "two runs of the original query" for cut_tie too.
-
-From the build of 20261112-204606-2 (minor). The note in `driver/lib/quaack/driver/report/template.html.erb` still says "or two runs of the original query", which is loose for `cut_tie` (its runs are the full runs without the cut). Reword, red first.
-
-- **Depends on:** 20261112-204606-2 (landed).
-- **Came from:** The build of 20261112-204606-2, 2026-11-15 (minor).
-- **Design:** report.
-- **Status:** todo
-
 ### 20261115-143355-1. DESIGN.md: rewrite the coverage "When a literal could decide it" paragraph for the narrowed threshold rule.
 
 From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph still describes the older rule that a count threshold makes every atom untested; 20261011-7 narrowed it to the atoms in, holding or inside the threshold (`Reach.threshold_paths`, `Coverage#threshold_scoped?`). Rewrite the paragraph to match the code. Docs only; check each claim against the code.

@@ -13823,3 +13823,13 @@ Minor. (1) No test sends two rewrites with the same SQL and different assumption
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261115-152943-1. Two specs: the same SQL with different assumptions in one call stores two entries (red when the dedupe key is the SQL alone), and `total>=0` normalizes equal to `total >= 0` (red under plain whitespace collapse). Spec only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on current main.
+
+### 20261115-110237-1. Report: the accountability note says "two runs of the original query" for cut_tie too.
+
+From the build of 20261112-204606-2 (minor). The note in `driver/lib/quaack/driver/report/template.html.erb` still says "or two runs of the original query", which is loose for `cut_tie` (its runs are the full runs without the cut). Reword, red first.
+
+- **Depends on:** 20261112-204606-2 (landed).
+- **Came from:** The build of 20261112-204606-2, 2026-11-15 (minor).
+- **Design:** report.
+- **Status:** done
+- **Landed:** 2026-11-15, merge of task/20261115-110237-1. The float-noise note reads "or the two runs QUAACK makes to check them (the original with its own tiebreaker, or both queries in full without the cut that split a tie)". Driver only; not on the unreleased list. I read the diff and started no reviewer; the builder's per-commit check passed on current main.
