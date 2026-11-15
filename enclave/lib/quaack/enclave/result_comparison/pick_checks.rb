@@ -33,6 +33,8 @@ module Quaack
                      "WHEN 1 / (0 * length(quaack_first)) = 0 THEN quaack_value END",
           extreme: "CASE WHEN quaack_first IS NOT DISTINCT FROM quaack_last THEN quaack_value " \
                    "WHEN 1 / (0 * length(quaack_first)) = 0 THEN quaack_value END",
+          window: "CASE WHEN quaack_first = quaack_last THEN quaack_value " \
+                  "WHEN 1 / (0 * length(quaack_first)) = 0 THEN quaack_value END",
           group: "CASE WHEN quaack_min IS NOT DISTINCT FROM quaack_max THEN true " \
                  "ELSE 1 / (0 * length(quaack_min)) = 0 END",
           distinct_on: "CASE WHEN rank() OVER (PARTITION BY quaack_keys ORDER BY quaack_sorts) <> 1 THEN 0 " \
@@ -76,6 +78,23 @@ module Quaack
           null = "pg_catalog.num_nonnulls(quaack_arg) = 1"
           filter = call[:agg_filter] ? "#{null} AND (quaack_filter)" : null
           template(filter, arg: copy(call[:args].first), filter: copy(call[:agg_filter]))
+        end
+
+        # forced, the window call forced, in a check that the input rows
+        # tied on call's window order, told apart by the texts parts, all
+        # print the same.
+        def window(call, parts, forced)
+          row = c_text_of(template("ROW(quaack_parts)::text", parts:))
+          ties = window_ties(call[:over])
+          bounds = %w[min max].map do |name|
+            template("pg_catalog.#{name}(quaack_row) OVER (PARTITION BY quaack_ties)", row:, ties:)
+          end
+          template(CHECKS[:window], first: bounds.first, last: bounds.last, value: forced)
+        end
+
+        # The expressions a window's PARTITION BY and ORDER BY tie rows on.
+        def window_ties(over)
+          Array(over[:partition_clause]).map { copy(it) } + Array(over[:order_clause]).map { copy(it[:sort_by][:node]) }
         end
 
         # A min or max in a check that its argument's values tied for the

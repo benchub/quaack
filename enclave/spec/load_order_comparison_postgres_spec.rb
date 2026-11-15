@@ -90,10 +90,8 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     # Three ties, and the pick in the middle: forward and reverse both hand
     # the sort 2 in the middle, so only the rotated load catches it.
     it "catches a tie pick in the middle of an odd-sized group, which forward and reverse agree on" do
-      original = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp, id) n FROM items WHERE grp = 1) s " \
-                 "WHERE n = 2"
-      candidate = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp) n FROM items WHERE grp = 1) s " \
-                  "WHERE n = 2"
+      original = "SELECT (ARRAY(SELECT id FROM items WHERE grp = 1 ORDER BY grp, id))[2] AS id"
+      candidate = "SELECT (ARRAY(SELECT id FROM items WHERE grp = 1 ORDER BY grp))[2] AS id"
       picks = [items, described_class.reverse_load(items)].map do |rows|
         runner.with_fixture(rows, index_scans: false) { |tx| tx.query(candidate).rows }
       end
@@ -194,10 +192,8 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     end
 
     it "still catches the middle pick of a three-row tie, which only the rotated load catches" do
-      original = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp, id) n FROM items WHERE grp = 1) s " \
-                 "WHERE n = 2"
-      candidate = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY grp) n FROM items WHERE grp = 1) s " \
-                  "WHERE n = 2"
+      original = "SELECT (ARRAY(SELECT id FROM items WHERE grp = 1 ORDER BY grp, id))[2] AS id"
+      candidate = "SELECT (ARRAY(SELECT id FROM items WHERE grp = 1 ORDER BY grp))[2] AS id"
 
       verdict = both(original, candidate)
 
@@ -244,10 +240,10 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
 
   describe "rewrites that match the forward load only by luck" do
     it "catches a subquery that drops its secondary sort key before a LIMIT" do
-      original = "SELECT id, grp FROM (SELECT *, row_number() OVER (ORDER BY grp, id) n FROM items) s " \
-                 "WHERE n <= 2 ORDER BY id"
-      candidate = "SELECT id, grp FROM (SELECT *, row_number() OVER (ORDER BY grp) n FROM items) s " \
-                  "WHERE n <= 2 ORDER BY id"
+      original = "SELECT id, grp FROM items WHERE id = ANY ((ARRAY(SELECT id FROM items ORDER BY grp, id))[1:2]) " \
+                 "ORDER BY id"
+      candidate = "SELECT id, grp FROM items WHERE id = ANY ((ARRAY(SELECT id FROM items ORDER BY grp))[1:2]) " \
+                  "ORDER BY id"
       expect(forward_only(original, candidate).match?).to be(true)
 
       expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
@@ -256,8 +252,8 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
     it "catches a LATERAL top-1 that drops its secondary sort key" do
       lateral = lambda do |keys|
         "SELECT g.grp, x.id FROM (SELECT DISTINCT grp FROM items) g CROSS JOIN LATERAL " \
-          "(SELECT i.id, row_number() OVER (ORDER BY #{keys}) n FROM items i WHERE i.grp = g.grp) x " \
-          "WHERE x.n = 1 ORDER BY g.grp"
+          "(SELECT (ARRAY(SELECT i.id FROM items i WHERE i.grp = g.grp ORDER BY #{keys}))[1] AS id) x " \
+          "ORDER BY g.grp"
       end
       original = lateral.call("i.label, i.id")
       candidate = lateral.call("i.label")
@@ -308,10 +304,12 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
   end
 
   describe "an index that orders the ties" do
-    let(:original) { "SELECT id FROM (#{numbered("grp, id")}) s WHERE n <= 2 ORDER BY id" }
-    let(:candidate) { "SELECT id FROM (#{numbered("grp")}) s WHERE n <= 2 ORDER BY id" }
+    let(:original) { "SELECT id FROM items WHERE id = ANY (#{first_two("grp, id")}) ORDER BY id" }
+    let(:candidate) { "SELECT id FROM items WHERE id = ANY (#{first_two("grp")}) ORDER BY id" }
 
-    def numbered(keys) = "SELECT id, row_number() OVER (ORDER BY #{keys}) n FROM items"
+    # An ARRAY(SELECT ...) whose ORDER BY ties is a pick Picks doesn't
+    # force (task 20261015-5 forces row_number), so only the loads catch it.
+    def first_two(keys) = "(ARRAY(SELECT id FROM items ORDER BY #{keys}))[1:2]"
 
     # The candidate's pick, sorted by grp alone and cut, in each load order
     # in its own transaction, with the planner free to use indexes.
@@ -388,9 +386,8 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_load_orders" do
       end
 
       it "loads in every order, and catches a dropped sort key in the reverse load" do
-        original = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY up, id) n FROM node WHERE up = 1) s " \
-                   "WHERE n = 1"
-        candidate = "SELECT id FROM (SELECT id, row_number() OVER (ORDER BY up) n FROM node WHERE up = 1) s WHERE n = 1"
+        original = "SELECT (ARRAY(SELECT id FROM node WHERE up = 1 ORDER BY up, id))[1] AS id"
+        candidate = "SELECT (ARRAY(SELECT id FROM node WHERE up = 1 ORDER BY up))[1] AS id"
 
         expect(fields(both(original, original, rows: tree))).to include(match: true, load_order: nil)
         expect(fields(both(original, candidate, rows: tree))).to include(match: false, load_order: :reverse)

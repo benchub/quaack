@@ -19,7 +19,8 @@ module Quaack
     #   ON, GROUP BY, min, max, or an aggregate that follows its rows'
     #   order) had a real choice on the data, in the original or the
     #   rewrite.
-    # - unforceable_pick: a DISTINCT ON's pick can't be forced.
+    # - unforceable_pick: a pick can't be forced: a DISTINCT ON's *, or a
+    #   window function other than the ones Picks forces.
     # - pick_run_failed: a query with its picks forced or checked failed
     #   another way.
     # - unsteady_order: the rewrite's tiebreaker runs fit the original's tie

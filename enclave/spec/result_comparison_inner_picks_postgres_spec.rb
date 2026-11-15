@@ -238,7 +238,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
     end
 
-    it "matches when no group holds two values, and leaves DISTINCT and window aggregates alone" do
+    it "matches when no group holds two values, leaves DISTINCT alone, and refuses a window array_agg" do
       rows = fixture.values_at(0, 3)
       expect(compare(subquery(grouped("min(label)")), subquery(grouped("any_value(label)")), rows:).match?).to be(true)
 
@@ -246,7 +246,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       window = "SELECT grp, label FROM (SELECT grp, (array_agg(label) OVER (PARTITION BY grp))::text AS label " \
                "FROM items) s"
       expect(compare(distinct, distinct).match?).to be(true)
-      expect(compare(window, window).match?).to be(true)
+      # Task 20261015-5: its order over the partition is a pick it can't force.
+      expect(fields(compare(window, window)))
+        .to eq(match: false, rule: :unsupported_order, reason: :unforceable_pick)
     end
   end
 
