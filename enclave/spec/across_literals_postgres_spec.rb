@@ -59,14 +59,16 @@ RSpec.describe "The search's caution across literals" do
           "GROUP BY fx.users.id HAVING count(fx.posts.id) #{op} #{n} AND max(fx.posts.score) > 2"
       }]
     end,
-    # A derived count compared with an array of literals (task 20261012-8),
-    # bare, cast, or as an array literal the way drivers bind a list.
-    { "derived count = ANY (ARRAY[...])" => "ARRAY[%d, %d]",
-      "derived count = ANY (ARRAY[...]::integer[])" => "ARRAY[%d, %d]::integer[]",
-      "derived count = ANY ('{...}'::bigint[])" => "'{%d,%d}'::bigint[]" }.transform_values do |array|
+    # A derived count compared with a list of literals (task 20261012-8):
+    # an array, bare or cast, or an IN list. Each is a list Reach#constants?
+    # has to see into. ('{...}'::bigint[] isn't here: it's one cast string,
+    # which Reach#constant? already counts.)
+    { "derived count = ANY (ARRAY[...])" => "= ANY (ARRAY[%d, %d])",
+      "derived count = ANY (ARRAY[...]::integer[])" => "= ANY (ARRAY[%d, %d]::integer[])",
+      "derived count IN (...)" => "IN (%d, %d)" }.transform_values do |test|
       lambda { |n|
         "SELECT t.uid FROM (SELECT fx.posts.user_id AS uid, count(*) AS k FROM fx.posts " \
-          "GROUP BY fx.posts.user_id) t WHERE t.k = ANY (#{format(array, n, n + 1)})"
+          "GROUP BY fx.posts.user_id) t WHERE t.k #{format(test, n, n + 1)}"
       }
     end
   ).freeze
