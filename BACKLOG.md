@@ -27,6 +27,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-52
 - 20261020-5
 - 20261113-210241-1
+- 20261114-170743-1
 
 
 ## How this file works.
@@ -459,14 +460,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 ### 20261112-171103-1. Report: clearer `unstable_original` wording, a docs page with examples, and a link to it. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20261114-170743-1. InsertValues: judge the overload Postgres resolves a call to, not every overload with that many arguments.
-
-The part of 20261012-12 that didn't land (the user said yes to it on 2026-10-12). `InsertValues::MUTABLE_SQL` matches by name and argument count, so `timezone($1, <timestamp>)` is refused because `timezone(text, timetz)` is STABLE, though `timezone(text, timestamp)` is IMMUTABLE. Doing it right means asking Postgres which overload a call resolves to (a temporary view plus `pg_depend`, or a probe like qualify uses), which would run analysis, including type input functions, before the volatility check, or reorder insert-check rules 11 and 12. Find a way that doesn't run anything a refused insert shouldn't, test first, and update the system prompt's overload sentence and DESIGN.md (both say overloads are judged by argument count today). Enclave change; have an Opus reviewer.
-
-- **Depends on:** 20261012-12 (landed).
-- **Came from:** 20261012-12 (not landed part).
-- **Design:** llm-counterexamples.
-- **Status:** todo
 
 ### 20261114-170743-2. llm-counterexamples: re-measure round-1 refusals with the new prompt and feedback.
 
@@ -551,4 +544,22 @@ The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewrit
 - **Came from:** The review of 20261113-210241-1, 2026-11-18. Priority: trust boundary.
 - **Design:** rewrite-test.
 - **Status:** todo (waits on the user's choice)
+
+### 20261118-223225-1. ResolvedCalls: test that casts Postgres adds are left out (minor from 20261114-170743-1).
+
+The review of 20261114-170743-1 found that widening `ResolvedCalls`' funcformat match from `[03]` to `[0-3]` keeps every test green, so nothing shows that implicit casts Postgres adds are left to rule 12. Harmless today, since `resolved!` matches on the call's name. Add a test that goes red under that mutation.
+
+- **Depends on:** 20261114-170743-1 (landed).
+- **Came from:** The review of 20261114-170743-1, 2026-11-18 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** todo
+
+### 20261118-223225-2. InsertCheck: a function-style cast such as `text(<timestamptz>)` is accepted though it's STABLE.
+
+The review of 20261114-170743-1 found that `INSERT ... VALUES (text('2024-01-01'::timestamptz))` is accepted, on main before that task too. The function-style cast becomes a STABLE CoerceViaIO, which neither the overload check nor the volatility check catches, and its result follows the session timezone. Refuse it (or catch CoerceViaIO of a non-immutable output function in the volatility check). Postgres test red first. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261114-170743-1, 2026-11-18.
+- **Design:** llm-counterexamples.
+- **Status:** todo
 

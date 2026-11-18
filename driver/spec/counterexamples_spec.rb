@@ -60,7 +60,8 @@ RSpec.describe Quaack::Driver::Counterexamples do
     described_class.new(client:).ask(payload)
     system = fake.asks.first.body[:system]
     expect(system).to include("Operators", "||", "pg_catalog.textcat", "int4pl", "write the value out")
-    expect(system).to include("any of its overloads", "concat", "jsonb_build_object", "timezone")
+    expect(system).to include("the overload Postgres picks", "concat", "jsonb_build_object")
+    expect(system).not_to include("any of its overloads")
     expect(system).to include("one row per INSERT")
   end
 

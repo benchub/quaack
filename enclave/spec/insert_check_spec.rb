@@ -263,6 +263,29 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       expect(check("INSERT INTO sales.items (sku) VALUES (steady('a'))").table).to eq(table_name("sales", "items"))
     end
 
+    # Task 20261114-170743-1: the overload Postgres resolves the call to
+    # is the one judged, not every overload with that many arguments.
+    it "accepts a call whose resolved overload is immutable though another isn't" do
+      expect(runs("INSERT INTO sales.items (sku) VALUES (timezone('UTC', '2024-01-01 00:00'::timestamp)::text)").table)
+        .to eq(table_name("sales", "items"))
+    end
+
+    it "refuses a call whose resolved overload isn't immutable" do
+      expect { check("INSERT INTO sales.items (sku) VALUES (timezone('UTC', '12:00+00'::timetz)::text)") }
+        .to rejected("not_immutable", "not_immutable: function pg_catalog.timezone is stable, not immutable")
+    end
+
+    it "judges the overload a string literal resolves to" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION sales.pair(text, int) RETURNS text LANGUAGE sql IMMUTABLE AS 'SELECT $1';
+        CREATE FUNCTION sales.pair(text, date) RETURNS text LANGUAGE sql STABLE AS 'SELECT $1';
+      SQL
+      expect(runs("INSERT INTO sales.items (sku) VALUES (sales.pair('a', 1))").table).to eq(table_name("sales",
+                                                                                                       "items"))
+      expect { check("INSERT INTO sales.items (sku) VALUES (sales.pair('a', '2024-01-01'::date))") }
+        .to rejected("not_immutable", "not_immutable: function sales.pair is stable, not immutable")
+    end
+
     it "refuses a bad search path" do
       expect { check("INSERT INTO sales.items (sku) VALUES (lower('a'))", { "search_path" => "public," }) }
         .to rejected("bad_search_path", "bad_search_path: search_path public, has an empty entry")
