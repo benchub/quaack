@@ -13901,3 +13901,12 @@ From the review of 20261010-18 (minor). The command runs in a private temp dir, 
 - **Status:** done
 
 Landed: the default command adds `--setting-sources ""`. A real run (synthetic prompt) with it still worked; no user CLAUDE.md exists on this machine, and a temp CLAUDE_CONFIG_DIR wasn't logged in, so the CLAUDE.md and memory effect rests on the CLI's help: the flag loads none of the user, project, or local sources.
+### 20261020-5. Enclave: a local log of internal errors on the jump server.
+
+From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.guard sends one line with the rule, and stderr goes to the null device. When `to_egress` falls back to `internal_error`, append one line to a file under the store base (mode 0600, as the store's files are), with the time, the step, the exception's class name, and the gem-relative file and line of its first backtrace location inside the enclave gem. Never the message, which can hold a value, and never a backtrace line from outside the gem. Cap the file's size. Tell the operator where it is in the driver's internal_error text. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The builder of 20261020-3, 2026-10-20.
+- **Design:** Error filter.
+- **Open questions:** Answered: per run, in the run's store.
+- **Status:** done. The log lives per run, in the run's directory, as `internal_errors.log` (the user's answer). A run a failing new-run step started is still deleted, so its log goes with it.

@@ -352,6 +352,11 @@ module Quaack
       INTERNAL_NOTE = "QUAACK hit an internal check it can't recover from. This is a QUAACK bug: report " \
                       "the rule name and the step"
 
+      # What internal_error's line adds: where the enclave logs its cause
+      # (the enclave's InternalErrorLog, 20261020-5).
+      INTERNAL_LOG = ", and the last line of ~/.quaack/runs/<run ID>/internal_errors.log on the jump server, " \
+                     "which names the error's class and where in quaacks it was raised"
+
       # The rules an operator can't act on: checks of QUAACK's own work,
       # of what the driver sends, of the order the driver runs steps in,
       # and of what an LLM or rewrite rule gave, which the steps that take
@@ -404,7 +409,9 @@ module Quaack
 
       # What an INTERNAL rule shows: the rule, its step when the error line
       # named one, and the shared line.
-      def internal_line(rule, step) = "#{rule}#{" (step #{step})" if step}: #{INTERNAL_NOTE}"
+      def internal_line(rule, step)
+        "#{rule}#{" (step #{step})" if step}: #{INTERNAL_NOTE}#{INTERNAL_LOG if rule == "internal_error"}"
+      end
 
       # A missing_<entry> rule, but not one of the rules that just start
       # that way, such as InsertCheck's missing_columns.

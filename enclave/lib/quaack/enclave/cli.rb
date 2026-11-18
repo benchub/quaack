@@ -108,7 +108,8 @@ module Quaack
         name = ALIASES.fetch(argv.first, argv.first)
         step = @steps[name]
         step_name = step ? name : CLI_STEP
-        ErrorFilter.guard(step: step_name, out: @out) { run_step(step, step_name, argv.drop(1)) }
+        log_dir = -> { @run_dir }
+        ErrorFilter.guard(step: step_name, out: @out, log_dir:) { run_step(step, step_name, argv.drop(1)) }
       end
 
       private
@@ -190,6 +191,8 @@ module Quaack
         end
         raise Refused, "run_from_older_version" unless StoreFormat.current?(store)
 
+        # Where ErrorFilter.guard logs an internal_error (20261020-5).
+        @run_dir = store.path
         store
       end
 

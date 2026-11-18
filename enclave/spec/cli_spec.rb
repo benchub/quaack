@@ -232,6 +232,48 @@ RSpec.describe "quaacks executable" do
       end
     end
 
+    # 20261020-5: an internal_error in a run leaves one line in the run's
+    # internal_errors.log, naming the class and the first location inside
+    # the gem, never the message or a path outside the gem.
+    it "logs an internal_error's class and gem location in the run's directory, never its message" do
+      sentinels = LeakCheck::Sentinels.new
+      Dir.mktmpdir("quaack-home") do |home|
+        store = Quaack::Enclave::Store.create(base: File.join(home, ".quaack", "runs"))
+        log = File.join(store.path, "internal_errors.log")
+        # A step whose error comes from the CLI's own check, then one that
+        # raises with a sentinel message from outside the gem.
+        outs = ["'#{sentinels.needles[:text]}'", %(raise ArgumentError, "#{sentinels.needles[:text]}")].map do |body|
+          out, err, = main(body, argv: ["probe", "--run", store.run_id], run: true,
+                                 prelude: "ENV['HOME'] = #{home.inspect}")
+          [out, err]
+        end
+
+        lines = File.read(log).lines
+        expect(lines.map { it.sub(/\A\S+ /, "") }).to eq(
+          ["step=probe class=TypeError at=quaack/enclave/cli.rb:#{cli_line("a step must return an Array")}\n",
+           "step=probe class=ArgumentError at=quaack/enclave/cli.rb:#{cli_line("step.handler.call")}\n"]
+        )
+        expect(lines.map { it[/\A\S+/] }).to all(match(/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/))
+        expect(File.stat(log).mode & 0o777).to eq(0o600)
+        expect(outs.map(&:first)).to eq([error_line("internal_error")] * 2)
+        expect_no_leaks(sentinels, stdout: outs.join, objects: { log: File.read(log) })
+      end
+    end
+
+    it "logs nothing for a refusal with its own rule" do
+      Dir.mktmpdir("quaack-home") do |home|
+        store = Quaack::Enclave::Store.create(base: File.join(home, ".quaack", "runs"))
+        main(%(raise Quaack::Enclave::Store::Error, "x"), argv: ["probe", "--run", store.run_id], run: true,
+                                                          prelude: "ENV['HOME'] = #{home.inspect}")
+
+        expect(File.exist?(File.join(store.path, "internal_errors.log"))).to be(false)
+      end
+    end
+
+    def cli_line(text)
+      File.readlines(File.join(GEM_ROOT, "lib", "quaack", "enclave", "cli.rb")).index { it.include?(text) } + 1
+    end
+
     it "sends a signal's error line and then dies by the signal" do
       out, err, status = main(%(Process.kill(:TERM, Process.pid); sleep 5; [{ type: :version, version: "1" }]))
 

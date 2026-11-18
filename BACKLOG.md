@@ -24,6 +24,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261114-053159-1
 - 20261011-5
 - 20261012-52
+- 20261020-5
 
 
 ## How this file works.
@@ -392,15 +393,7 @@ From the user's run on 2026-10-20, after redeploying with 20261019-4 on the jump
 
 ### 20261020-4. redact-rewrite: OR split into a UNION refuses at the EXISTS's `SELECT 1`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261020-5. Enclave: a local log of internal errors on the jump server.
-
-From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.guard sends one line with the rule, and stderr goes to the null device. When `to_egress` falls back to `internal_error`, append one line to a file under the store base (mode 0600, as the store's files are), with the time, the step, the exception's class name, and the gem-relative file and line of its first backtrace location inside the enclave gem. Never the message, which can hold a value, and never a backtrace line from outside the gem. Cap the file's size. Tell the operator where it is in the driver's internal_error text. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** None.
-- **Came from:** The builder of 20261020-3, 2026-10-20.
-- **Design:** Error filter.
-- **Open questions:** Whether the file lives per run (in the run's store) or once per store base.
-- **Status:** todo
+### 20261020-5. Enclave: a local log of internal errors on the jump server. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261020-6. redact-rewrite: test the parse-position range clamp. Done, see BACKLOG-COMPLETE.md.
 
@@ -565,4 +558,13 @@ The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the or
 - **Came from:** The second review of 20261012-52, 2026-11-18 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261118-211321-1. claude_cli: prove `--setting-sources ""` keeps user CLAUDE.md, memory, hooks and plugins out (follow-up to 20261110-19).
+
+20261110-19 added `--setting-sources ""` to the default command, but couldn't verify its effect: this machine has no `~/.claude/CLAUDE.md`, and a temp `CLAUDE_CONFIG_DIR` isn't logged in. With a run the user approves, plant a sentinel in a user CLAUDE.md, in auto-memory, and in a UserPromptSubmit hook, make a synthetic ask, and confirm none reaches the reply or runs. If any does, document `--bare` with an API key instead.
+
+- **Depends on:** 20261110-19 (landed).
+- **Came from:** The review of 20261110-19, 2026-11-18 (minor).
+- **Design:** LLM client.
+- **Status:** todo (needs the user's go-ahead for real claude calls and a planted user CLAUDE.md)
 
