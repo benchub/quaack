@@ -126,10 +126,12 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
-    it "refuses a * over a FROM item with no name" do
-      sql = "SELECT grp, label FROM (SELECT DISTINCT ON (grp) * FROM (SELECT grp, label FROM items)) s"
+    it "forces a * over an unaliased subquery, and refuses one over an unaliased function call" do
+      subquery = "SELECT grp, label FROM (SELECT DISTINCT ON (grp) * FROM (SELECT grp, label FROM items)) s"
+      function = "SELECT DISTINCT ON (unnest) * FROM unnest(ARRAY[1, 1, 2]) ORDER BY unnest"
 
-      expect(fields(compare(sql, sql))).to eq(match: false, rule: :unsupported_order, reason: :unforceable_pick)
+      expect(fields(compare(subquery, subquery))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+      expect(fields(compare(function, function))).to eq(match: false, rule: :unsupported_order, reason: :unforceable_pick)
     end
   end
 
