@@ -16,9 +16,13 @@ module Quaack
       #   rule.observe(signature) until rule.stop?
       #
       # The units are seconds on the monotonic clock in production: a floor
-      # of 30 and a cap of 60 (task 20261012-35), so the search never runs
-      # past 60 seconds, nor past the rewrite's five-minute Deadline, and
-      # leaves enumerate its time. For specs, QUAACKS_FUZZ_TRIALS=<n> makes
+      # of 30 and a cap of 60 (task 20261012-35), so the search stops at
+      # 60 seconds, never past the rewrite's five-minute Deadline, and
+      # leaves enumerate its time: fuzz and enumerate take about 90 seconds
+      # per rewrite. Three things can run over the cap: the trial in
+      # progress when it fires, shrinking and lifting a kill found just
+      # before it (up to Fuzz::SHRINKS trials), and building enumerate's
+      # kinds, which happens before enumerate's Limit starts. For specs, QUAACKS_FUZZ_TRIALS=<n> makes
       # each observed trial one unit, with a floor of n trials and a cap of
       # CAP_FLOORS times that, so the search does the same work on any
       # machine and a spec's verdict never depends on its speed.
