@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-50
 - 20261018-32
 - 20261021-5
+- 20261118-185846-1
 - 20261115-055039-1
 - 20261112-032618-1
 - 20261015-5
@@ -357,6 +358,15 @@ From 20261012-52. On `accounts.course_template_id -> courses` (nullable) and `co
 - **Depends on:** None.
 - **Came from:** The build of 20261012-52, 2026-11-18.
 - **Design:** rewrite-test (fuzz's lift).
+- **Status:** todo. The fuzz half is built on branch `task/20261118-185846-1`: the kill was never generated (the generator left every cut cycle key NULL), so Draw now fills nullable cut keys once every row is drawn, the session loads them with those constraints made deferrable and checked by `SET CONSTRAINTS ... IMMEDIATE`, and the lift defers nullable cross-table foreign keys by UPDATE. Enumerate still leaves cut keys NULL; see 20261118-223854-1.
+
+### 20261118-223854-1. Enumerate leaves an FK cycle's cut key NULL.
+
+From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cut cycle key one fixed value, NULL, so no enumerated world fills both edges of a cycle, and enumerate alone still passes the dropped `where.missing` anti join on `accounts.course_template_id`. Give a nullable cut key the parent keys of the world (as fuzz's Draw now does), load through the same deferred cut constraints, and test first in `enclave/spec/fuzz_fk_cycle_postgres_spec.rb` with fuzz stopped at zero trials. Keep the world count bounded. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261118-185846-1.
+- **Came from:** The build of 20261118-185846-1, 2026-11-18.
+- **Design:** rewrite-test (enumerate).
 - **Status:** todo
 
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.

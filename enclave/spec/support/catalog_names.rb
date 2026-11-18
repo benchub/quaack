@@ -65,6 +65,7 @@ module CatalogNames
     ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces",
     ["quaack/enclave/rewrite_rules/catalog/types.rb", "SELECT NULL::%s"] => "a cast pg_query parses, never run",
     ["quaack/enclave/fuzz/session.rb", "EXPLAIN (ANALYZE"] => "a prefix the queries are explained after",
+    ["quaack/enclave/fuzz/session/loader.rb", "SET CONSTRAINTS "] => "names only the cut keys' constraints",
     ["quaack/enclave/measurement.rb", "EXPLAIN (ANALYZE"] => "a prefix the measured and timed runs are explained after"
   }.freeze
 

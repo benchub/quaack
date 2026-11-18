@@ -5,9 +5,8 @@ require "quaack/enclave/fuzz"
 # Wrong rewrites over foreign keys that form a cycle, from the fk_cycle
 # corpus that went with ScenarioTests (task 20261012-4): fuzz alone must
 # disprove each, those on the nullable cycle edge among them, and pass a
-# sound one (task 20261012-52). Not here: dropping a Rails where.missing
-# anti join on the nullable edge, which neither search disproves yet (see
-# BACKLOG.md's task that follows 20261012-52).
+# sound one (task 20261012-52), and dropping a Rails where.missing anti
+# join on the nullable edge, which needs both edges filled (20261118-185846-1).
 RSpec.describe Quaack::Enclave::Fuzz do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:stop) { Quaack::Enclave::Fuzz::StopRule.trials(300) }
@@ -42,7 +41,11 @@ RSpec.describe Quaack::Enclave::Fuzz do
        "SELECT c.id, a.id FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id ORDER BY c.id, a.id"],
     "IS NULL on the nullable edge flipped to IS NOT NULL" =>
       ["SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id",
-       "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NOT NULL ORDER BY a.id"]
+       "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NOT NULL ORDER BY a.id"],
+    "a Rails where.missing anti join on the nullable edge dropped" =>
+      ["SELECT a.id FROM fx.accounts a LEFT JOIN fx.courses c ON c.id = a.course_template_id " \
+       "WHERE c.id IS NULL ORDER BY a.id",
+       "SELECT a.id FROM fx.accounts a ORDER BY a.id"]
   }.each do |name, (original, candidate)|
     it "disproves #{name}" do
       expect(verdict(original, candidate)).to eq(:disproved)
