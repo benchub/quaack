@@ -13843,3 +13843,15 @@ From the build of 20261113-210241-2. Around DESIGN.md line 1228 the paragraph st
 - **Design:** rewrite-test (coverage).
 - **Status:** done
 - **Landed:** 2026-11-15, merge of task/20261115-143355-1. DESIGN.md's "When a literal could decide it" paragraph now describes the narrowed threshold rule (`Reach.threshold_paths`, `Coverage#threshold_scoped?`) and the cases that still use the all-atoms rule (`Reach.whole_worst_case?`). Docs only; I read no diff beyond the builder's report and started no reviewer; the builder's per-commit check passed.
+
+### 20261012-21. report-payload: the `original_failed` "isn't a rule bug" check was green before 20261012-11.
+
+From the build and review of 20261012-11 (minor). The `original_failed` case in report-payload's "isn't a rule bug" list (`enclave/spec/report_payload_step_spec.rb`, ~lines 1155–1162) passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
+
+Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' rerun after a load failure, `VacuityGuard::Compared#compare` swallowing a foreign cancel, `ScenarioTests#shows?`'s error handling, and `pipeline_progress_spec.rb`'s `original_failed` message with scenario `"s3"`. 20261012-4 removed the first three's code, and the driver spec no longer sends that message.
+
+- **Depends on:** None.
+- **Came from:** The build and review of 20261012-11, 2026-10-12.
+- **Design:** report.
+- **Proposed drop (2026-11-14, waiting on the user):** the builder found this stale. Making `original_failed` a rule bug in `RuleBugs.disproved_by` turns exactly two examples red (the `original_failed` entries in the `%w[... original_failed]` loop in `report_payload_step_spec.rb`, ~line 1412: the rewrite-test scenario and the counterexample-compare round, each asserting `rule_bugs == []`), so they aren't vacuous any more and fail for the right reason.
+- **Status:** dropped (the user agreed, 2026-11-18: the two examples now fail for the right reason)

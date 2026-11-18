@@ -311,17 +311,7 @@ Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
 
 ### 20261012-20. TestPostgres's PgBouncer specs flake with "Connection refused" on the published port under load. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-21. report-payload: the `original_failed` "isn't a rule bug" check was green before 20261012-11.
-
-From the build and review of 20261012-11 (minor). The `original_failed` case in report-payload's "isn't a rule bug" list (`enclave/spec/report_payload_step_spec.rb`, ~lines 1155–1162) passed before 20261012-11 too, so it guards the rule without testing that task's change. Check whether a mutant (make `original_failed` a rule bug) turns it red. If one doesn't, make it a real test or drop it.
-
-Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' rerun after a load failure, `VacuityGuard::Compared#compare` swallowing a foreign cancel, `ScenarioTests#shows?`'s error handling, and `pipeline_progress_spec.rb`'s `original_failed` message with scenario `"s3"`. 20261012-4 removed the first three's code, and the driver spec no longer sends that message.
-
-- **Depends on:** None.
-- **Came from:** The build and review of 20261012-11, 2026-10-12.
-- **Design:** report.
-- **Proposed drop (2026-11-14, waiting on the user):** the builder found this stale. Making `original_failed` a rule bug in `RuleBugs.disproved_by` turns exactly two examples red (the `original_failed` entries in the `%w[... original_failed]` loop in `report_payload_step_spec.rb`, ~line 1412: the rewrite-test scenario and the counterexample-compare round, each asserting `rule_bugs == []`), so they aren't vacuous any more and fail for the right reason.
-- **Status:** todo (proposed drop; don't build)### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row. Done, see BACKLOG-COMPLETE.md.
+### 20261012-24. fuzz copies: test that each table the copies' foreign keys point to gets a row. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261012-25. fuzz: the trial rate fell 25–40% on ORM-shaped queries after 20261012-13. Done, see BACKLOG-COMPLETE.md.
 
