@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-50
 - 20261018-32
 - 20261021-5
+- 20261112-032618-1
 - 20261015-5
 - 20261110-16
 - 20261114-222449-1
@@ -457,17 +458,6 @@ From the review of 20261010-18 (minor). The command runs in a private temp dir, 
 
 ### 20261018-14. Rule `aggregate_before_join`. Done, see BACKLOG-COMPLETE.md.
 
-
-### 20261112-032618-1. Tests and a missed case left by 20261112-000801-1.
-
-- **Depends on:** None.
-- **Came from:** The first review of 20261112-000801-1 (minor), 2026-11-12.
-- **Design:** DESIGN.md, result-comparison; docs/float-values.md.
-- **Status:** todo.
-- **What's wrong:**
-  - A cut-tie layout in the second look is meant to need both hashes to match, but keying it on the first-look hash alone keeps every spec green. Either key is strict, so this can only lose the flag, never set it wrongly.
-  - The second look cancels rows on the first-look hash greedily before pairing the rest on the second-look hash. When two rows share a first-look hash but have different second-look hashes, it can cancel the wrong pair and miss the flag, though a one-to-one pairing exists. This also only loses the flag.
-- **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
 
 ### 20261111-200042-1. Keyword operators: a whole-row operand reaches a user operator on the row type. Done, see BACKLOG-COMPLETE.md.
 

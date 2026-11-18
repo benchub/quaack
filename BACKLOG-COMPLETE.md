@@ -13891,3 +13891,15 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 - **Design:** rewrite-test.
 - **Outcome (2026-11-18):** (1) Real; a design decision, filed as 20261118-191500-1. (2) Real: `Fuzz::Differ` took any cancel as no difference; it now tells QUAACK's timeout from another cancel by the server's clock and raises `statement_canceled` for the other (`fuzz_differ_postgres_spec.rb`). (3) Done: `fuzz_fk_cycle_postgres_spec.rb`; one wrong rewrite fuzz and enumerate both pass is filed as 20261118-185846-1. (4) Done: DESIGN.md's enumerate section.
 - **Status:** done
+
+### 20261112-032618-1. Tests and a missed case left by 20261112-000801-1.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261112-000801-1 (minor), 2026-11-12.
+- **Design:** DESIGN.md, result-comparison; docs/float-values.md.
+- **Status:** done.
+- **What's wrong:**
+  - A cut-tie layout in the second look is meant to need both hashes to match, but keying it on the first-look hash alone keeps every spec green. Either key is strict, so this can only lose the flag, never set it wrongly.
+  - The second look cancels rows on the first-look hash greedily before pairing the rest on the second-look hash. When two rows share a first-look hash but have different second-look hashes, it can cancel the wrong pair and miss the flag, though a one-to-one pairing exists. This also only loses the flag.
+- **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
+- **Landed:** A spec keys the cut-tie layout on the first-look hash alone and goes red. RowMatch.contained? now pairs rows that match on both hashes first, which fixes the miss where an exact partner was taken by a row sharing only its first-look hash. It stays greedy, so a pairing that needs a row to take a second-look partner over a first-look one can still be missed; that only loses the flag, and a full bipartite match was not worth the cost.
