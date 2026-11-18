@@ -59,10 +59,11 @@ module Quaack
     #     named argument, or aggregate or window syntax. A negative number
     #     is a constant: the parser folds the minus in.
     # 11. not_immutable (or bad_search_path): a function call could
-    #     resolve to a function that isn't IMMUTABLE. As in the volatility check,
-    #     every function of that name that could take that many arguments
-    #     counts, in the named schema or else every schema of the plan's
-    #     search path. That refuses now(), random(), nextval, set_config,
+    #     resolve to a function that isn't IMMUTABLE. The function Postgres
+    #     resolves it to counts (see ResolvedCalls); when that can't be
+    #     found, as in the volatility check, every function of that name
+    #     that could take that many arguments counts, in the named schema
+    #     or else every schema of the plan's search path. That refuses now(), random(), nextval, set_config,
     #     and the advisory locks.
     # 12. volatile_function: volatility's VolatilityCheck, run on the values as a
     #     SELECT's target list, finds a volatile cast. A cast is held only

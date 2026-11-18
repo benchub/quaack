@@ -4,6 +4,7 @@ require "pg_query"
 require "quaack/protocol/refused_inserts"
 require_relative "function_calls"
 require_relative "relation_qualifier"
+require_relative "resolved_calls"
 require_relative "supported_sql"
 require_relative "volatility_check"
 
@@ -98,12 +99,33 @@ module Quaack
         PgQuery::ParserResult.new("", tree)
       end
 
+      # Each call is judged by the function Postgres resolves it to (see
+      # ResolvedCalls), or, when that can't be found, by every function of
+      # its name that could take that many arguments.
       def immutable!(probe, settings, connection)
-        path = nil
-        FunctionCalls.of(probe.tree).uniq.select { |call| call.kind == :function }.each do |call|
-          schemas = call.schema ? [call.schema] : (path ||= search_path(settings, connection))
-          mutable!(call, schemas, connection)
-        end
+        calls = FunctionCalls.of(probe.tree).uniq.select { |call| call.kind == :function }
+        return if calls.empty?
+
+        path = path_for(calls, settings, connection)
+        resolved = path && ResolvedCalls.of(probe, path, connection)
+        calls.each { |call| judge!(call, call.schema ? [call.schema] : path, resolved, connection) }
+      end
+
+      def judge!(call, schemas, resolved, connection)
+        resolved ? resolved!(call, schemas, resolved) : mutable!(call, schemas, connection)
+      end
+
+      # The search path, needed when a call has no schema. When every call
+      # has one, only the probe needs it, so a bad path is nil, not refused.
+      def path_for(calls, settings, connection)
+        search_path(settings, connection)
+      rescue Error
+        raise unless calls.all?(&:schema)
+      end
+
+      def resolved!(call, schemas, resolved)
+        hit = resolved.find { |function| function.name == call.name && schemas.include?(function.schema) }
+        refuse!(hit.quoted_schema, hit.quoted_name, hit.volatility) if hit
       end
 
       def mutable!(call, schemas, connection)
@@ -111,7 +133,10 @@ module Quaack
         rows = connection.exec_params(MUTABLE_SQL, params)
         return if rows.ntuples.zero?
 
-        schema, name, volatility = rows.values.first
+        refuse!(*rows.values.first)
+      end
+
+      def refuse!(schema, name, volatility)
         function = "#{schema}.#{name}" if Protocol::RefusedInserts::FUNCTION.match?("#{schema}.#{name}")
         raise Error.new("not_immutable", "function #{schema}.#{name} is #{volatility}, not immutable", function:)
       end
