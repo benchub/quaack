@@ -78,4 +78,29 @@ RSpec.describe Quaack::Enclave::Fuzz::Differ do
     expect(differing(original, sqls)).to eq([1])
     expect(conn.exec("SELECT count(*) FROM d.t").getvalue(0, 0)).to eq("3")
   end
+
+  # Task 20261012-52: a cancel QUAACK didn't send, such as an operator's
+  # pg_cancel_backend, says nothing about the atom, so it ends the step as
+  # in fuzz's lift; QUAACK's own statement_timeout is still no difference.
+  describe "with a canceled query" do
+    let(:original) { "SELECT d.t.id FROM d.t WHERE d.t.g = 1" }
+    let(:cancels) do
+      "SELECT d.t.id FROM d.t WHERE CASE WHEN pg_cancel_backend(pg_backend_pid()) THEN " \
+        "(SELECT count(*) FROM generate_series(1, 100000000 + d.t.id)) < 0 END"
+    end
+    let(:slow) { "SELECT d.t.id FROM d.t WHERE (SELECT count(*) FROM generate_series(1, 100000000 + d.t.id)) < 0" }
+
+    def run(sqls, timeout_ms) = described_class.differing(conn, original, sqls, statement_timeout_ms: timeout_ms)
+
+    it "ends the step on a cancel QUAACK didn't send, with statement_canceled" do
+      expect { run([cancels], 60_000) }.to raise_error(Quaack::Enclave::ArenaRunner::Error) do |error|
+        expect([error.rule, error.step]).to eq(%i[statement_canceled query])
+      end
+    end
+
+    it "counts QUAACK's own timeout as no difference, and still judges the rest" do
+      conn.exec("SET LOCAL statement_timeout = 300")
+      expect(run([slow, "SELECT d.t.id FROM d.t WHERE true"], 300)).to eq([1])
+    end
+  end
 end

@@ -93,7 +93,7 @@ module Quaack
         # The indexes of sqls, loosened originals (Coverage), that give a
         # result on the arena's current data, the last trial's world, that
         # the official comparison calls a mismatch with original's (Differ).
-        def differing(original, sqls) = Differ.differing(@conn, original, sqls, @typed)
+        def differing(original, sqls) = Differ.differing(@conn, original, sqls, @typed, statement_timeout_ms: @timeout)
 
         private
 

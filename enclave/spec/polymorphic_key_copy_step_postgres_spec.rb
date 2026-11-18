@@ -169,7 +169,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
     end
 
     def step(*argv, stdin: nil, env: {}) = quaacks.run(*argv, "--run", store.run_id, stdin:, env: libpq_env.merge(env))
-    # rewrite-test's search with enumerate on: fuzz alone, even at 400
+    # rewrite-test's search with enumerate on: fuzz alone, even at hundreds of
     # trials, misses the twin that copies the wrong id and the unhonoured
     # copies, whose kill needs a row matching all three literals at once.
     def test(search) = step("rewrite-test", "--search", search, env: ENUMERATE_ON)
