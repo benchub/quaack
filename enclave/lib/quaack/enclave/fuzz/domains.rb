@@ -111,6 +111,9 @@ module Quaack
         # How many copies of a row a world may hold (WorldValues#copies).
         def copies = @world.copies
 
+        # The copy counts a spread world takes in turn (WorldValues#spread).
+        def spread = @world.spread
+
         # Whether a query groups or partitions on the column's name.
         def grouped?(_table, column) = @world.grouped?(column)
 

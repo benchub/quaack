@@ -13,11 +13,13 @@ module Quaack
           def initialize(generator, rng)
             @generator = generator
             @rng = rng
-            @config = Generator.config(rng, generator.order, generator.domains.copies)
+            @config = config
             @by_table = Hash.new { |h, k| h[k] = [] }
             @taken = Hash.new { |h, k| h[k] = Set.new }
             @fresh = 0
             @varied = varied
+            @spread = spread
+            @copied = 0
           end
 
           def rows
@@ -35,6 +37,10 @@ module Quaack
 
           def domains = @generator.domains
 
+          def config
+            Generator.config(@rng, @generator.order, domains.copies, @generator.children, domains.spread)
+          end
+
           def plan = @generator.plan
 
           def catalog = @generator.catalog
@@ -47,11 +53,16 @@ module Quaack
 
           def count(table)
             copies = @config.copies
-            return copies.count if copies&.table == table
+            return copies_count if copies&.table == table
 
             rows = @config.rows.fetch(table)
-            copies && parent?(table, copies.table) ? [rows, 1].max : rows
+            copies && parent?(table, copies.table) ? [rows, least(table)].max : rows
           end
+
+          # The fewest rows a parent of the copies table gets.
+          def least(table) = @spread&.fk&.parent == table ? SPREAD_PARENTS : 1
+
+          def copies_count = @spread ? spread_owners.size : @config.copies.count
 
           # The one column copies may vary in, or nil.
           def varied
@@ -60,11 +71,22 @@ module Quaack
             pick(columns.reject { domains.grouped?(copies.table, it) })
           end
 
+          # The foreign key a spread copies world spreads its copies over:
+          # the copies table's first to another table, or nil.
+          def spread
+            copies = @config.copies
+            return unless copies&.spread
+
+            plan.entries_for(copies.table).find { it.kind == :fk && it.fk.parent != copies.table }
+          end
+
           def parent?(table, child) = plan.entries_for(child).any? { it.kind == :fk && it.fk.parent == table }
 
           def row(table)
             cells = {}
-            copy = @by_table[table].first if @config.copies&.table == table
+            copying = @config.copies&.table == table
+            @copied += 1 if copying
+            copy = @by_table[table].first if copying
             template = pick(@by_table[table]) if !copy && chance?(@config.dup_rate)
             Row.new(table, cells) if plan.entries_for(table).all? { fill(cells, table, it, template, copy) }
           end
@@ -74,6 +96,7 @@ module Quaack
           # row's where it keeps it.
           def fill(cells, table, entry, template, copy)
             return true if cells.key?(entry.column)
+            return spread_parent(cells, entry) if entry.equal?(@spread)
             return copied(cells, entry, copy) if copy && keep?(table, entry)
             return parent(cells, entry.fk) if entry.kind == :fk
 
@@ -114,6 +137,21 @@ module Quaack
             chosen = pick(@by_table[key.parent]) unless nullable && chance?(@config.null_rate)
             copy(cells, key, chosen ? chosen.cells : {})
             nullable || !chosen.nil?
+          end
+
+          # The spread key's columns, from the parent whose copy this is.
+          def spread_parent(cells, entry) # rubocop:disable Naming/PredicateMethod -- fill's contract
+            copy(cells, entry.fk, spread_owners[@copied - 1].cells)
+            true
+          end
+
+          # The parent of each copy in turn: the i-th parent row gets the
+          # spread's i-th count (cycled) copies.
+          def spread_owners
+            counts = @config.copies.spread
+            @spread_owners ||= @by_table[@spread.fk.parent].each_with_index.flat_map do |row, i|
+              [row] * counts[i % counts.size]
+            end
           end
 
           def copy(cells, key, source) = key.columns.zip(key.parent_columns).each { |c, p| cells[c] = source[p] }

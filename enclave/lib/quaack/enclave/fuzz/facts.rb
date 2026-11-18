@@ -4,6 +4,7 @@ require "json"
 require_relative "tree"
 require_relative "combination"
 require_relative "range_tables"
+require_relative "counted"
 
 module Quaack
   module Enclave
@@ -26,7 +27,7 @@ module Quaack
       #
       # Trust boundary: these are the queries' constants, so they stay in
       # the enclave.
-      class Facts
+      class Facts # rubocop:disable Metrics/ClassLength -- one walk over the queries collects every fact
         JSON_OPERATORS = %w[-> ->> ? #> #>>].freeze
         DIVIDES = %w[/ %].freeze
         SMALL_INTEGERS = { "int2" => 16, "smallint" => 16, "int4" => 32, "integer" => 32, "int" => 32 }.freeze
@@ -36,12 +37,13 @@ module Quaack
         BETWEENS = %i[AEXPR_BETWEEN AEXPR_NOT_BETWEEN AEXPR_BETWEEN_SYM AEXPR_NOT_BETWEEN_SYM].freeze
 
         attr_reader :strings, :integers, :numbers, :separators, :like_patterns, :json_keys, :json_leaves,
-                    :divided, :int_casts, :grouped, :combinations
+                    :divided, :int_casts, :grouped, :combinations, :counted
 
         def initialize(trees, binding: nil)
           @binding = binding
           @strings, @numbers, @separators, @like_patterns, @json_keys, @json_leaves, @combinations = Array.new(7) { [] }
           @divided, @int_casts, @grouped = Array.new(3) { Set.new }
+          @counted = []
           @tables = RangeTables.new
           trees.each { walk(it) }
           finish
@@ -51,6 +53,7 @@ module Quaack
 
         def finish
           @integers = @numbers.filter_map { Integer(it, exception: false) }.uniq
+          @counted.uniq!
           json_constants
           [@strings, @numbers, @separators, @like_patterns, @json_keys, @json_leaves].each(&:uniq!)
         end
@@ -97,10 +100,18 @@ module Quaack
 
         def compared(expr, name)
           if expr[:kind] == :AEXPR_OP && COMPARES.include?(name)
-            [%i[lexpr rexpr], %i[rexpr lexpr]].each { |side, other| combined(expr[side], expr[other]) }
+            [%i[lexpr rexpr], %i[rexpr lexpr]].each do |side, other|
+              combined(expr[side], expr[other])
+              count_threshold(expr[side], expr[other])
+            end
           elsif BETWEENS.include?(expr[:kind])
             expr.dig(:rexpr, :list, :items)&.each { combined(expr[:lexpr], it) }
           end
+        end
+
+        def count_threshold(node, other)
+          value = Counted.threshold(node, other, @binding)
+          @counted << value if value
         end
 
         def combined(node, other)

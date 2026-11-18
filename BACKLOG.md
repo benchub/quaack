@@ -24,6 +24,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261114-053159-1
 - 20261011-5
 - 20261012-52
+- 20261113-210241-1
 
 
 ## How this file works.
