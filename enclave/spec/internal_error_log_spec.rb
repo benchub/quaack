@@ -42,6 +42,23 @@ RSpec.describe Quaack::Enclave::InternalErrorLog do
     end
   end
 
+  # Plain lowercase paths that the path-shape check alone would accept. A
+  # relative one is what Ruby writes for a file loaded through a relative
+  # load path.
+  it "skips a plain lowercase location outside the gem and logs the gem one after it" do
+    Dir.mktmpdir do |dir|
+      outside = ["lib/pg/connection.rb:5:in 'x'", "/usr/lib/ruby/gems/x/lib/pg/connection.rb:5:in 'x'"]
+      error = raised([*outside, gem_line("quaack/enclave/cli.rb", 7)])
+      described_class.append(dir, step: "classify", exception: error, now:)
+      described_class.append(dir, step: "classify", exception: raised(outside), now:)
+
+      expect(File.read(file(dir))).to eq(
+        "2026-11-18T12:30:05Z step=classify class=RuntimeError at=quaack/enclave/cli.rb:7\n" \
+        "2026-11-18T12:30:05Z step=classify class=RuntimeError at=none\n"
+      )
+    end
+  end
+
   it "leaves out a class name or step that isn't plain" do
     Dir.mktmpdir do |dir|
       anonymous = Class.new(StandardError)
