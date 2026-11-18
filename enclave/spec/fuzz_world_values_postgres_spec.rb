@@ -195,7 +195,8 @@ RSpec.describe "Quaack::Enclave::Fuzz's value classes and copies" do
       users, orders = %w[users orders].map { |name| generator.order.find { it.name == name } }
       config = fuzz::Generator::Config.new(
         rows: { users => 0, orders => 0 }, key_pool: 2, null_rate: 0.0, literal_bias: 0.8, dup_rate: 0.0,
-        boundary_rate: 0.0, world_rate: 0.0, copies: fuzz::Generator::Copies.new(table: orders, count: 21, vary: 0.0)
+        boundary_rate: 0.0, world_rate: 0.0, copies: fuzz::Generator::Copies.new(table: orders, count: 21, vary: 0.0,
+                                                                                 spread: nil)
       )
       allow(fuzz::Generator).to receive(:config).and_return(config)
 

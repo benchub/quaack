@@ -96,6 +96,12 @@ module Quaack
           @memo = {}
         end
 
+        # The copy counts a spread world takes in turn (Generator's spread):
+        # each integer a count is compared with, and one either side, from 0.
+        def spread
+          @facts.counted.grep(0..COPIES_MAX).flat_map { [it - 1, it, it + 1] }.reject(&:negative?)
+        end
+
         def copies
           @facts.integers.grep(1..COPIES_MAX).flat_map { [it - 1, it, it + 1] }
                 .select(&:positive?).uniq.sort

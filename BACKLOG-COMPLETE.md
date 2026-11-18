@@ -13931,3 +13931,12 @@ From the review of 20261012-29. No replay run ends a rewrite as `enumerate_dispr
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** NULLS_QUERY (spec/support/pipeline_replay.rb) replays an operator rewrite that drops NULLS LAST with enumerate on (300 worlds) in the per-commit check; it ends as enumerate_disproved and the report says so. A paired example forces the enumerate-off run of the same query, so the cache key check doesn't depend on example order.
+
+### 20261113-210241-1. Fuzz worlds: build a parent with exactly n children, and one with n+1, for a correlated count threshold.
+
+The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrite of `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > n` as `>= n` should be disproved at every n, but fuzz missed it at n=7 and n=10 even with 200 trials: world generation doesn't reliably build a parent with exactly n children. Make it do so, without letting any reported count (trials, worlds, bound) or the caution follow the threshold. 20261010-35's earlier attempt (n+1 children per parent) leaked the threshold through the load count and was rejected; handle only count(*)/count(x) with no GROUP BY, window or second target; a scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code. Add the across-literals proof for it (thresholds 0..10), red first. Trust boundary: have an Opus reviewer.
+
+- **Depends on:** 20261011-7 (landed).
+- **Came from:** 20261011-7 (not landed part), 20261010-48.
+- **Design:** rewrite-test (fuzz worlds).
+- **Status:** done (2026-11-18: spread worlds give parents the threshold count and one either side)

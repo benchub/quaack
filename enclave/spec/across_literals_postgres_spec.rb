@@ -166,4 +166,26 @@ RSpec.describe "The search's caution across literals" do
       end
     end
   end
+
+  # Task 20261113-210241-1: a rewrite that moves a correlated count's
+  # boundary by one is disproved at every threshold, by the same rule, so
+  # nothing that goes out follows the literal (a disproof sends no caution:
+  # RewriteFuzz sends coverage only for a pass). The
+  # other atoms make the boundary need a parent that passes them with
+  # exactly n children: copies of one child row reach only one parent.
+  boundary = { "> as >=" => [">", ">="], ">= as >" => [">=", ">"], "< as <=" => ["<", "<="],
+               "= as >=" => ["=", ">="] }.freeze
+  correlated = lambda { |op, n|
+    "SELECT fx.posts.id FROM fx.posts WHERE (SELECT count(*) FROM fx.comments " \
+      "WHERE fx.comments.post_id = fx.posts.id) #{op} #{n} AND fx.posts.title = 'x' AND fx.posts.score > 3"
+  }
+
+  boundary.each do |name, (from, to)|
+    it "disproves a correlated count's #{name} rewrite at every threshold, the same way" do
+      by_value = thresholds.to_h do |n|
+        [n, outgoing(correlated.call(from, n), correlated.call(to, n), trials: 400).first(2)]
+      end
+      expect(by_value.values.uniq).to eq([%i[disproved row_count]]), classes(by_value).join("\n")
+    end
+  end
 end

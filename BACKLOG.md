@@ -26,6 +26,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-5
 - 20261012-52
 - 20261020-5
+- 20261113-210241-1
 
 
 ## How this file works.
@@ -255,6 +256,7 @@ Reported counts must not depend on literal values (DESIGN: shapes, counts and fi
 Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `fixture_loads` following the LIMIT, `dropped` and the spills following IN-list values, `distinct_loads`' part in the scenario loads, and the "also cover the vacuity-guard search's untested set and `untested_states`" item. 20261012-4 removed all of them, and rebuilt the across-literals spec for fuzz's verdict, rule and coverage. 20261011-2, which carried the rest, is done.
 
 - **Depends on:** None.
+- **Note (2026-11-18):** the review of 20261113-210241-1 found its spread worlds load about a threshold's worth of child rows per parent, so a pass's trial count under the real stop rule follows a count threshold somewhat more than before. Include count thresholds in the measurement.
 - **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown; rewrite-test.
 - **Landed so far:** 2026-10-11 (task/20261010-47): the first `across_literals_postgres_spec.rb`, for ScenarioTests' reports (since replaced by 20261012-4's version for fuzz).
@@ -456,14 +458,6 @@ From 20261011-10 item 3. A counterexample round has no time budget of its own. A
 
 ### 20261112-171103-1. Report: clearer `unstable_original` wording, a docs page with examples, and a link to it. Done, see BACKLOG-COMPLETE.md.
 
-### 20261113-210241-1. Fuzz worlds: build a parent with exactly n children, and one with n+1, for a correlated count threshold.
-
-The verdict half of 20261010-48, folded into 20261011-7 and not landed. A rewrite of `(SELECT count(*) FROM comments c WHERE c.post_id = p.id) > n` as `>= n` should be disproved at every n, but fuzz missed it at n=7 and n=10 even with 200 trials: world generation doesn't reliably build a parent with exactly n children. Make it do so, without letting any reported count (trials, worlds, bound) or the caution follow the threshold. 20261010-35's earlier attempt (n+1 children per parent) leaked the threshold through the load count and was rejected; handle only count(*)/count(x) with no GROUP BY, window or second target; a scalar subquery returning several rows, or a count sharing its child table with one, crashed the old code. Add the across-literals proof for it (thresholds 0..10), red first. Trust boundary: have an Opus reviewer.
-
-- **Depends on:** 20261011-7 (landed).
-- **Came from:** 20261011-7 (not landed part), 20261010-48.
-- **Design:** rewrite-test (fuzz worlds).
-- **Status:** todo
 
 ### 20261114-170743-1. InsertValues: judge the overload Postgres resolves a call to, not every overload with that many arguments.
 
@@ -548,4 +542,13 @@ The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the or
 - **Came from:** The review of 20261110-19, 2026-11-18 (minor).
 - **Design:** LLM client.
 - **Status:** todo (needs the user's go-ahead for real claude calls and a planted user CLAUDE.md)
+
+### 20261118-220251-1. Disproof sizes show a count threshold of 1 to 4 (from 20261113-210241-1).
+
+The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewritten as `>= n` now reliably shrinks to a parent with about n children, so for n = 1..4 the `sizes` that go out show the threshold (5 and up are capped as "5 or more", DESIGN.md rewrite-test, "What it sends"). The cap already applied to HAVING copies; this task makes correlated thresholds reach it reliably. Ask the user whether count-threshold disproofs should drop `sizes` or always report "5 or more", then build it with an across-literals check on `sizes`.
+
+- **Depends on:** 20261113-210241-1 (landed).
+- **Came from:** The review of 20261113-210241-1, 2026-11-18. Priority: trust boundary.
+- **Design:** rewrite-test.
+- **Status:** todo (waits on the user's choice)
 
