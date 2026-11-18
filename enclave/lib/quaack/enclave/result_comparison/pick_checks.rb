@@ -92,6 +92,19 @@ module Quaack
           template(CHECKS[:window], first: bounds.first, last: bounds.last, value: forced)
         end
 
+        # value, a window min or max call, in a check that the values of its
+        # argument that are equal in its partition all print the same. That's
+        # stricter than the frame needs, since each frame lies in its
+        # partition, but it's never looser.
+        def window_extreme(call, value)
+          arg = call[:args].first
+          ties = window_ties(call[:over].except(:order_clause)) + [copy(arg)]
+          bounds = %w[min max].map do |name|
+            template("pg_catalog.#{name}(quaack_text) OVER (PARTITION BY quaack_ties)", text: printed(copy(arg)), ties:)
+          end
+          template(CHECKS[:extreme], first: bounds.first, last: bounds.last, value:)
+        end
+
         # The expressions a window's PARTITION BY and ORDER BY tie rows on.
         def window_ties(over)
           Array(over[:partition_clause]).map { copy(it) } + Array(over[:order_clause]).map { copy(it[:sort_by][:node]) }

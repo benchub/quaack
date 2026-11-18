@@ -186,12 +186,15 @@ module Quaack
         def printed?(node)
           case node
           when Hash
-            node[:group_clause]&.any? || (node[:func_call] && extreme?(node[:func_call])) ||
+            node[:group_clause]&.any? ||
+              (node[:func_call] && checked_extreme?(node[:func_call])) ||
               node.values.any? { printed?(it) }
           when Array then node.any? { printed?(it) }
           else false
           end
         end
+
+        def checked_extreme?(call) = extreme?(call) || window_extreme?(call)
 
         # Whether the original or the candidate SQL has a pick, or one
         # compare can't parse or force, so that equal results aren't yet a
@@ -256,11 +259,19 @@ module Quaack
         # can't force.
         def force_windows!(select, descending, check)
           windows(select).count do |node|
-            next false unless window_pick?(node[:func_call])
-
-            force_window!(select, node, descending, check)
-            true
+            call = node[:func_call]
+            picked = window_pick?(call) && (force_window!(select, node, descending, check) || true)
+            node.replace(PickChecks.window_extreme(call, copy(node))) if check && window_extreme?(call)
+            picked
           end
+        end
+
+        # A min or max over one argument in a window, which keeps one of the
+        # values in its frame that Postgres calls equal (EXTREMES).
+        def window_extreme?(call)
+          names = call[:funcname].map { it.dig(:string, :sval) }
+          (names.size == 1 || (names.size == 2 && names.first == "pg_catalog")) && EXTREMES.include?(names.last) &&
+            call[:args]&.size == 1 && call[:over]
         end
 
         def force_window!(select, node, descending, check)
@@ -311,11 +322,14 @@ module Quaack
         end
 
         # The texts that tell select's input rows apart: its GROUP BY keys
-        # when grouped, or else its FROM items' whole rows, none with no
+        # when grouped, none when it aggregates with no GROUP BY, since it
+        # then has one row, or else its FROM items' whole rows, none with no
         # FROM.
         def input_texts(select)
           if Array(select[:group_clause]).any?
             select[:group_clause].map { text(PickChecks.resolved(select, it)) }
+          elsif own_aggregate?(select)
+            []
           else
             Array(select[:from_clause]).flat_map { item_names(it) }.map { text(star(*it)) }
           end
@@ -331,6 +345,25 @@ module Quaack
           when Array then node.flat_map { windows(it) }
           else []
           end
+        end
+
+        # Whether node's own level, outside its subqueries, set operation
+        # arms, and WINDOW clause, calls a catalog aggregate outside a window.
+        def own_aggregate?(node)
+          case node
+          when Hash
+            call = node[:func_call]
+            (call && !call[:over] && (call[:agg_star] || known_aggregate?(call))) ||
+              node.except(:select_stmt, :larg, :rarg, :window_clause).values.any? { own_aggregate?(it) }
+          when Array then node.any? { own_aggregate?(it) }
+          else false
+          end
+        end
+
+        def known_aggregate?(call)
+          names = call[:funcname].map { it.dig(:string, :sval) }
+          (names.size == 1 || (names.size == 2 && names.first == "pg_catalog")) &&
+            (AGGREGATES | EXTREMES | PEER_AGGREGATES).include?(names.last)
         end
 
         # Adds to select's HAVING the check that its GROUP BY keys print one
