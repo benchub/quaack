@@ -142,5 +142,4 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     expect(fields(compare(keyed, loose))).to eq(match: false, rule: :multiset)
     expect(fields(compare(loose, keyed))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
   end
-
 end
