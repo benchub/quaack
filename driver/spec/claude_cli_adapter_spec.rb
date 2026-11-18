@@ -83,6 +83,12 @@ RSpec.describe "the claude_cli adapter" do
     expect(Quaack::Driver::LLM.settings({ "provider" => "claude_cli" }, env: {}).model).to eq("claude-opus-5-5")
   end
 
+  it "loads no user, project, or local Claude Code settings" do
+    ask(out: success('{"ddl":[]}'))
+
+    expect(record.fetch("argv").each_cons(2).to_a).to include(["--setting-sources", ""])
+  end
+
   it "runs claude in print mode with JSON output, no tools, no saved session, and the prompt on stdin" do
     expect(ask(out: success('{"ddl":[]}'))).to eq("ddl" => [])
 

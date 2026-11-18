@@ -308,10 +308,10 @@ The CLI cannot enforce JSON schemas itself, so QUAACK includes the schema in the
 With `"provider": "claude_cli"`, the driver runs the Claude Code `claude` command from `PATH` once for each LLM ask, with the default model `claude-opus-5-5`. The default command is:
 
 ```
-claude -p --output-format json --model {model} --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt-file {system_file}
+claude -p --output-format json --model {model} --tools "" --setting-sources "" --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt-file {system_file}
 ```
 
-That's print mode with one JSON result, no built-in tools, no MCP servers, no skills or slash commands, and no session saved to disk. The step's system prompt replaces Claude Code's own coding prompt. QUAACK writes the system prompt and the rest of its prompt to two private 0600 files in an otherwise empty temporary directory, which is the command's current directory and is removed after the ask, and gives the command the prompt file on stdin, so no prompt text goes on the command line. The reply comes from the JSON result's `result`, and the token counts from its `usage`, so the report's LLM table shows them.
+That's print mode with one JSON result, no built-in tools, no user, project, or local Claude Code settings (so none of their hooks or plugins), no MCP servers, no skills or slash commands, and no session saved to disk. The step's system prompt replaces Claude Code's own coding prompt. QUAACK writes the system prompt and the rest of its prompt to two private 0600 files in an otherwise empty temporary directory, which is the command's current directory and is removed after the ask, and gives the command the prompt file on stdin, so no prompt text goes on the command line. The reply comes from the JSON result's `result`, and the token counts from its `usage`, so the report's LLM table shows them.
 
 ```json
 {

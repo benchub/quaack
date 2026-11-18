@@ -405,15 +405,6 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 
 ### 20261110-16. Arena Binding: cut the per-trial round trips. Done, see BACKLOG-COMPLETE.md.
 
-### 20261110-19. claude_cli: keep user-level Claude Code settings out of each ask.
-
-From the review of 20261010-18 (minor). The command runs in a private temp dir, so project settings and CLAUDE.md stay out, but user-level ones still apply: `~/.claude` settings hooks run (a UserPromptSubmit hook receives the prompt), user plugins load, and `~/.claude/CLAUDE.md` and auto-memory reach the model as context even with `--system-prompt-file`. Prompts carry only shapes, so this isn't a boundary leak, but it can steer replies or run the operator's code on every ask. Check whether `--setting-sources ""` (or similar) also stops user CLAUDE.md and memory, and add it to the default command; otherwise document `--bare` with an API key. Verify with a real `claude` run the user approves.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261010-18, 2026-11-10.
-- **Design:** LLM client.
-- **Status:** todo
-
 ### 20261110-14. Arena Binding, stage 3: the arena prepares with declared types. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261110-7. Report: name the check behind an `unsupported_order` refusal. Done, see BACKLOG-COMPLETE.md.
