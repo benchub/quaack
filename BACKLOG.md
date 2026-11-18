@@ -18,6 +18,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-50
 - 20261018-32
 - 20261021-5
+- 20261115-055039-1
 - 20261112-032618-1
 - 20261015-5
 - 20261110-16
@@ -494,14 +495,16 @@ From 20261012-50. Compare the trial rate with 20261012-4's numbers on the Canvas
 - **Design:** rewrite-test (coverage).
 - **Status:** todo
 
-### 20261115-055039-1. Own rewrites: rescue a deparse failure, and decide on quoted identifier names.
+### 20261115-055039-1. Own rewrites: decide on quoted identifier names.
 
-From the review of 20261021-5 (minor). (1) `OwnRewrites.text` doesn't rescue an exception from `deparse`; a statement that parses but can't deparse would crash the step (no leak). Rescue and return nil. (2) A quoted identifier's name (`AS "Odd Name"`) still goes out in the report's own-rewrite text. The report already carries table and column names and the operator wrote the text, so it isn't a new leak. Open question for the user: should identifier names in own rewrites be redacted too?
+From the review of 20261021-5 (minor). A quoted identifier's name (`AS "Odd Name"`) still goes out in the report's own-rewrite text. The report already carries table and column names and the operator wrote the text, so it isn't a new leak. Open question for the user: should identifier names in own rewrites be redacted too?
+
+Landed so far: part 1, `OwnRewrites.text` returns nil when `deparse` raises, rather than crashing the step.
 
 - **Depends on:** 20261021-5 (landed).
 - **Came from:** The review of 20261021-5, 2026-11-15 (minor).
 - **Design:** Report, Operator rewrites (`--rewrites`).
-- **Open questions:** Whether identifier names in own rewrites should be redacted (part 2 only).
+- **Open questions:** Whether identifier names in own rewrites should be redacted.
 - **Status:** todo
 
 ### 20261115-073253-1. Window picks: gaps the builder of 20261015-5 left.
