@@ -85,6 +85,25 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
       expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 1]])
     end
 
+    # Task 20261011-5: updates 2 and 3 would repeat a unique copy, or break
+    # a CHECK on it, so only the class's rows get it then.
+    it "sets only the class's rows when the copy column has a unique index" do
+      conn.exec("CREATE UNIQUE INDEX ON cv.submissions (course_id)")
+      rows.replace([*rows.first(3), row("submissions", { "id" => 1, "assignment_id" => 1, "course_id" => nil }),
+                    row("submissions", { "id" => 2, "assignment_id" => 2, "course_id" => course_id }),
+                    row("submissions", { "id" => 4, "assignment_id" => nil, "course_id" => nil })])
+
+      expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 1], ["4", nil]])
+    end
+
+    it "sets only the class's rows when a CHECK constrains the copy column" do
+      conn.exec("ALTER TABLE cv.submissions ADD CHECK (course_id IN (1, 50))")
+      rows.replace([*rows.first(2), row("assignments", { "id" => 2, "context_type" => "Account", "context_id" => 60 }),
+                    *rows.last(4)])
+
+      expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 1], %w[3 50], ["4", nil]])
+    end
+
     # Task 20261007-31: the copy's comparisons are its columns' types' own
     # = (AssumptionCheck::Equality), named with their schema.
     it "sets the copy when public's text and bigint comparisons, ahead of pg_catalog's, say no" do
