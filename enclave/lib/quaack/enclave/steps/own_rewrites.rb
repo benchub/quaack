@@ -40,9 +40,12 @@ module Quaack
           fields.sort.to_h
         end
 
-        # sql's deparse, or nil unless it's sendable.
+        # sql's deparse, or nil unless it's sendable and deparses
+        # (task 20261115-055039-1).
         def text(sql, allowed)
           PgQuery.parse(sql).deparse if RewritePayload.sendable?(sql, allowed)
+        rescue PgQuery::ParseError
+          nil
         end
       end
     end

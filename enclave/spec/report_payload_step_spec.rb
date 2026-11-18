@@ -5,6 +5,7 @@ require "quaack/enclave/burndown"
 require "quaack/enclave/clock_anchoring"
 require "quaack/enclave/index_candidate"
 require "quaack/enclave/index_store"
+require "quaack/enclave/steps/own_rewrites"
 require "quaack/enclave/steps/result_comparison"
 require "quaack/enclave/store"
 
@@ -2071,6 +2072,22 @@ RSpec.describe "quaacks report-payload" do
       it "sends the deparse, without the comments, and leaks nothing" do
         expect(report["own_rewrites"][0]["sql"]).to eq("SELECT id FROM public.orders WHERE note = $2")
         expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    # Task 20261115-055039-1: text that parses but can't deparse goes out as
+    # nil. No real statement found does this, so pg_query's deparse (an
+    # edge, not the code under test) is faked to raise. The step runs in a
+    # child process, so this calls its text check in this one.
+    context "when the operator's text parses but can't deparse" do
+      let(:sql) { "SELECT id FROM public.orders WHERE note = $2" }
+      let(:allowed) { Quaack::Enclave::Steps::RewritePayload.constants(sql) }
+
+      it "gives no text for it" do
+        expect(Quaack::Enclave::Steps::OwnRewrites.text(sql, allowed)).to eq(sql)
+        allow_any_instance_of(PgQuery::ParserResult)
+          .to receive(:deparse).and_raise(PgQuery::ParseError.new("deparse failed", __FILE__, __LINE__, -1))
+        expect(Quaack::Enclave::Steps::OwnRewrites.text(sql, allowed)).to be_nil
       end
     end
 
