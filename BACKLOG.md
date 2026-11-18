@@ -334,20 +334,6 @@ From the review of 20261012-35, 2026-10-14 (minor).
 
 ### 20261012-50. Fuzz coverage: check more worlds now that a check is one statement, and a literal 0. Done, see BACKLOG-COMPLETE.md.
 
-### 20261012-52. After 20261012-4: the builder's flags.
-
-From the build of 20261012-4. Check each first; drop any that isn't real:
-- A rewrite the search couldn't test goes on with no untested atoms, so llm-counterexamples gets nothing to aim at for it. Decide whether it should send every atom as untested (it was never tested), and whether that changes any prompt (prompt drift in the replays).
-- A cancel QUAACK didn't send, during a coverage check (`Fuzz::Differ`), isn't told apart from QUAACK's own: check it ends the step with `statement_canceled`, as one in fuzz's trials does, with a Postgres test.
-- The `fk_cycle` wrong-rewrite corpus went with ScenarioTests' specs. Re-create a few of its wrong rewrites (FK cycles, a nullable cycle edge) as fuzz regression specs, so fuzz is shown to catch them.
-- Fuzz alone, even at 962 trials, misses the polymorphic `$2 + 1` twin and the unhonoured copies; enumerate catches them, so `polymorphic_key_copy_step_postgres_spec.rb` now runs with enumerate on. Note this in DESIGN.md's fuzz section if it isn't there.
-
-- **Depends on:** None.
-- **Came from:** The build of 20261012-4, 2026-10-14 (minor).
-- **Design:** rewrite-test.
-- **Outcome (2026-11-18):** (1) Real; a design decision, filed as 20261118-191500-1. (2) Real: `Fuzz::Differ` took any cancel as no difference; it now tells QUAACK's timeout from another cancel by the server's clock and raises `statement_canceled` for the other (`fuzz_differ_postgres_spec.rb`). (3) Done: `fuzz_fk_cycle_postgres_spec.rb`; one wrong rewrite fuzz and enumerate both pass is filed as 20261118-185846-1. (4) Done: DESIGN.md's enumerate section.
-- **Status:** done
-
 ### 20261118-191500-1. Send every atom as untested when the search couldn't test a rewrite.
 
 From 20261012-52, bullet 1. A rewrite rewrite-test's search couldn't test goes on with no untested atoms, so llm-counterexamples has nothing to aim its rows at for it. The builder recommends sending every atom of the original as untested, since none was tested. That changes the counterexample prompt for such rewrites, so recorded replays with an untested rewrite would drift and need re-recording. Waiting on the user's decision. Enclave change if built; it goes on "Unreleased enclave changes".
@@ -577,6 +563,15 @@ The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query 
 
 - **Depends on:** 20261011-5 (landed).
 - **Came from:** The review of 20261011-5, 2026-11-18 (minor).
+- **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261118-204800-1. Differ: mark the server clock per statement in `official?` (minor from 20261012-52).
+
+The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the original and the candidate under one savepoint and one `ServerClock.mark`. A foreign cancel that lands after more than the statement timeout has passed across both statements reads as QUAACK's own timeout and counts as "no difference". Narrow, and only near the timeout; it errs toward leaving an atom untested. Fix by marking the clock per statement. Postgres test red first. Enclave change.
+
+- **Depends on:** 20261012-52 (landed).
+- **Came from:** The second review of 20261012-52, 2026-11-18 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 

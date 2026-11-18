@@ -13877,3 +13877,17 @@ Builder check 2026-11-15: the stated cause is ruled out. The example runs with `
 - **Came from:** Build of 20261016-14, 2026-10-16.
 - **Design:** rewrite-test.
 - **Status:** dropped (the user chose to drop it, 2026-11-18; the stated cause was ruled out and the flake did not reproduce)
+
+### 20261012-52. After 20261012-4: the builder's flags.
+
+From the build of 20261012-4. Check each first; drop any that isn't real:
+- A rewrite the search couldn't test goes on with no untested atoms, so llm-counterexamples gets nothing to aim at for it. Decide whether it should send every atom as untested (it was never tested), and whether that changes any prompt (prompt drift in the replays).
+- A cancel QUAACK didn't send, during a coverage check (`Fuzz::Differ`), isn't told apart from QUAACK's own: check it ends the step with `statement_canceled`, as one in fuzz's trials does, with a Postgres test.
+- The `fk_cycle` wrong-rewrite corpus went with ScenarioTests' specs. Re-create a few of its wrong rewrites (FK cycles, a nullable cycle edge) as fuzz regression specs, so fuzz is shown to catch them.
+- Fuzz alone, even at 962 trials, misses the polymorphic `$2 + 1` twin and the unhonoured copies; enumerate catches them, so `polymorphic_key_copy_step_postgres_spec.rb` now runs with enumerate on. Note this in DESIGN.md's fuzz section if it isn't there.
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-4, 2026-10-14 (minor).
+- **Design:** rewrite-test.
+- **Outcome (2026-11-18):** (1) Real; a design decision, filed as 20261118-191500-1. (2) Real: `Fuzz::Differ` took any cancel as no difference; it now tells QUAACK's timeout from another cancel by the server's clock and raises `statement_canceled` for the other (`fuzz_differ_postgres_spec.rb`). (3) Done: `fuzz_fk_cycle_postgres_spec.rb`; one wrong rewrite fuzz and enumerate both pass is filed as 20261118-185846-1. (4) Done: DESIGN.md's enumerate section.
+- **Status:** done
