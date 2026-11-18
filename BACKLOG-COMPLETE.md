@@ -13910,3 +13910,13 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 - **Design:** Error filter.
 - **Open questions:** Answered: per run, in the run's store.
 - **Status:** done. The log lives per run, in the run's directory, as `internal_errors.log` (the user's answer). A run a failing new-run step started is still deleted, so its log goes with it.
+
+### 20261114-211947-1. A planted replay for the enumerate_disproved fate.
+
+From the review of 20261012-29. No replay run ends a rewrite as `enumerate_disproved`, so a driver regression in carrying an enumerate disproof passes every replay. Plant a rewrite that random fuzz misses and enumerate catches (such as a NULLS LAST change) and check its fate and report text. Also make the cache-key check in the replay helper independent of example order (the enumerate cache key only shows under defined order).
+
+- **Depends on:** 20261012-29 (landed).
+- **Came from:** The review of 20261012-29, 2026-11-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** NULLS_QUERY (spec/support/pipeline_replay.rb) replays an operator rewrite that drops NULLS LAST with enumerate on (300 worlds) in the per-commit check; it ends as enumerate_disproved and the report says so. A paired example forces the enumerate-off run of the same query, so the cache key check doesn't depend on example order.
