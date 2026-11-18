@@ -75,7 +75,14 @@ module Quaack
     #     as a date, time, or timestamp, by the type its column, a cast, or
     #     a function parameter gives it, so it reads the clock (see
     #     InsertClockWords).
-    # 14. deparse_mismatch: the insert doesn't parse back to the same tree
+    # 14. not_immutable (or bad_search_path): a cast Postgres does through
+    #     text, a function-style one such as text(<timestamptz>) included,
+    #     runs an output or input function that isn't IMMUTABLE, as
+    #     timestamptz_out, date_in, and date_out are (task
+    #     20261118-223225-2). ResolvedCalls finds these casts. A string
+    #     constant cast straight to date isn't one, so rule 12 still holds
+    #     '2024-01-01'::date only to the volatility rule.
+    # 15. deparse_mismatch: the insert doesn't parse back to the same tree
     #     when pg_query deparses it (see Deparse).
     #
     # It trusts provolatile, as the other checks do. Whether a value fits
@@ -225,7 +232,8 @@ module Quaack
 
       def clock!(cols, rows, types, settings, connection)
         InsertClockWords.check(cols, rows, types, settings, connection)
-      rescue InsertClockWords::Error => e
+        InsertValues.check_casts(rows, settings, connection)
+      rescue InsertClockWords::Error, InsertValues::Error => e
         raise Error.from(e), cause: nil
       end
 

@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "quaack/protocol/refused_inserts"
+require_relative "coerce_via_io"
 require_relative "function_calls"
 require_relative "relation_qualifier"
 require_relative "resolved_calls"
@@ -12,7 +13,8 @@ module Quaack
   module Enclave
     # The value checks of InsertCheck, which says what they are: rules
     # not_plain_value, not_immutable, bad_search_path, and
-    # volatile_function, in that order.
+    # volatile_function, in that order, and, by check_casts, the
+    # not_immutable rule for casts.
     #
     #   InsertValues.check(rows, settings, connection)
     #   # => nil, or raises Error "not_immutable: function pg_catalog.now is stable, not immutable"
@@ -63,6 +65,14 @@ module Quaack
         nil
       end
 
+      # InsertCheck's rule 14, run after its clock_literal rule:
+      # nil, or raises Error "not_immutable: function
+      # pg_catalog.timestamptz_out is stable, not immutable".
+      def check_casts(rows, settings, connection)
+        coercions!(probe(rows), settings, connection)
+        nil
+      end
+
       def plain!(node)
         inner = node.inner
         case inner
@@ -109,6 +119,17 @@ module Quaack
         path = path_for(calls, settings, connection)
         resolved = path && ResolvedCalls.of(probe, path, connection)
         calls.each { |call| judge!(call, call.schema ? [call.schema] : path, resolved, connection) }
+      end
+
+      # A cast Postgres does through text runs a type's output and input
+      # functions, which no call names, so they're judged here
+      # (20261118-223225-2). It comes after the volatility check, since
+      # ResolvedCalls' view may run a cast's input function on NULL.
+      def coercions!(probe, settings, connection)
+        return unless CoerceViaIo.casts?(probe.tree)
+
+        coercion = ResolvedCalls.of(probe, search_path(settings, connection), connection)&.find(&:coercion)
+        refuse!(coercion.quoted_schema, coercion.quoted_name, coercion.volatility) if coercion
       end
 
       def judge!(call, schemas, resolved, connection)

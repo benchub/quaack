@@ -44,4 +44,13 @@ RSpec.describe Quaack::Enclave::ResolvedCalls do
     expect(functions.map { [it.schema, it.name, it.volatility] }).to eq([%w[pg_catalog timezone stable]])
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
+
+  # Task 20261118-223225-1: casts Postgres adds (funcformat 1 and 2) are
+  # left to the volatility check.
+  it "leaves out the casts Postgres adds, explicit or implicit" do
+    conn = test_database.connection
+    functions = described_class.of(probe("to_char('2024-01-01'::date, 'YYYY'), '2024-01-01'::date::timestamptz"),
+                                   ["pg_catalog"], conn)
+    expect(functions.map { [it.schema, it.name] }).to eq([%w[pg_catalog to_char]])
+  end
 end

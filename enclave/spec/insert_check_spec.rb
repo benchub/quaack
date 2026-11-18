@@ -266,7 +266,8 @@ RSpec.describe Quaack::Enclave::InsertCheck do
     # Task 20261114-170743-1: the overload Postgres resolves the call to
     # is the one judged, not every overload with that many arguments.
     it "accepts a call whose resolved overload is immutable though another isn't" do
-      expect(runs("INSERT INTO sales.items (sku) VALUES (timezone('UTC', '2024-01-01 00:00'::timestamp)::text)").table)
+      sql = "INSERT INTO sales.items (shipped) VALUES (timezone('UTC', '2024-01-01 00:00'::timestamp)::date)"
+      expect(runs(sql).table)
         .to eq(table_name("sales", "items"))
     end
 
@@ -284,6 +285,24 @@ RSpec.describe Quaack::Enclave::InsertCheck do
                                                                                                        "items"))
       expect { check("INSERT INTO sales.items (sku) VALUES (sales.pair('a', '2024-01-01'::date))") }
         .to rejected("not_immutable", "not_immutable: function sales.pair is stable, not immutable")
+    end
+
+    # Task 20261118-223225-2: a cast through a STABLE output or input
+    # function is a CoerceViaIO, which no call names.
+    {
+      "a function-style cast" => "text('2024-01-01'::timestamptz)",
+      "an explicit cast" => "'2024-01-01'::timestamptz::text"
+    }.each do |what, value|
+      it "refuses #{what} through a stable output function" do
+        expect { check("INSERT INTO sales.items (sku) VALUES (#{value})") }
+          .to rejected("not_immutable",
+                       "not_immutable: function pg_catalog.timestamptz_out is stable, not immutable")
+      end
+    end
+
+    it "accepts a cast through immutable output and input functions" do
+      expect(runs("INSERT INTO sales.items (sku) VALUES (text(5)), ('7'::text::int4::text)").table)
+        .to eq(table_name("sales", "items"))
     end
 
     it "refuses a bad search path" do
