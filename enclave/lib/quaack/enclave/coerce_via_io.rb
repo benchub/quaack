@@ -48,7 +48,8 @@ module Quaack
       end
 
       # Each CoerceViaIO's [argument type, result type] oids. The argument
-      # type is the first field ending in "type" at its node's top level.
+      # type is the first field ending in "type", or a CaseTestExpr's
+      # typeId (an array cast's element), at its node's top level.
       # The shell has no strings, so every brace in the tree is a node's.
       def pairs(tree)
         starts = tree.enum_for(:scan, COERCE_VIA_IO).map { Regexp.last_match.end(0) }
@@ -57,7 +58,7 @@ module Quaack
 
       def pair(tree, arg_start)
         arg_end = node_end(tree, arg_start)
-        arg_type = top_level(tree[(arg_start + 1)...arg_end])[/:\w*type (\d+)/, 1]
+        arg_type = top_level(tree[(arg_start + 1)...arg_end])[/:\w*(?:type|typeId) (\d+)/, 1]
         result_type = tree[(arg_end + 1)..][/\A\s*:resulttype (\d+)/, 1]
         [arg_type, result_type] if arg_type && result_type
       end

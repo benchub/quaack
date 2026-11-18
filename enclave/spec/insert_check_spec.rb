@@ -305,6 +305,24 @@ RSpec.describe Quaack::Enclave::InsertCheck do
         .to eq(table_name("sales", "items"))
     end
 
+    # The fix round of 20261118-223225-2: the assignment to the column is
+    # a cast too, and an array cast's element cast reads a CaseTestExpr.
+    {
+      "a cast value assigned to a text column" => "INSERT INTO sales.items (sku) VALUES ('2024-01-01'::timestamptz)",
+      "an array cast through text[]" => "INSERT INTO sales.items (tags) VALUES ('{2024-01-01}'::timestamptz[]::text[])",
+      "a date call's result assigned to a text column" =>
+        "INSERT INTO sales.items (sku) VALUES (make_date(2024, 1, 1))"
+    }.each do |what, sql|
+      it "refuses #{what} through a stable output function" do
+        expect { check(sql) }.to rejected("not_immutable")
+      end
+    end
+
+    it "accepts a value with no cast assigned through immutable functions" do
+      expect(runs("INSERT INTO sales.items (sku, qty, shipped) VALUES (5, '7', '2024-01-01')").table)
+        .to eq(table_name("sales", "items"))
+    end
+
     it "refuses a bad search path" do
       expect { check("INSERT INTO sales.items (sku) VALUES (lower('a'))", { "search_path" => "public," }) }
         .to rejected("bad_search_path", "bad_search_path: search_path public, has an empty entry")
@@ -422,7 +440,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a word in text a function reads as no date" => ["doc", "to_tsvector('english', 'Today only, till now')"],
       "a word in a composite's text field" => ["span", "'(2024-01-01,now)'"],
       "a word in the text field of an ARRAY's composite" => ["spans", "ARRAY['(2024-01-01,now)']::sales.span[]"],
-      "a word in the text field of a composite array cast" => ["note", "'{\"(2024-01-01,now)\"}'::sales.span[]"],
+      "a word in the text field of a composite array cast" => ["spans", "'{\"(2024-01-01,now)\"}'::sales.span[]"],
       "a word in a composite's quoted text field, in an array" => ["spans", "'{\"(2024-01-01,\\\"to day now\\\")\"}'"],
       "the words in a nested ARRAY for a text[]" => ["notes", "ARRAY[ARRAY['now'], ARRAY['today']]"],
       "the words in an ARRAY of text[] casts, for a text[]" => ["notes", "ARRAY['{now}'::text[]]"],

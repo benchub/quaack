@@ -436,10 +436,11 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       expect(load(prepared, "SELECT tags::text FROM fx.stamps")).to eq([['{" Today "}']])
     end
 
-    it "binds the anchor's value where a text function's result is cast to a date[]" do
+    # Task 20261118-223225-2: the cast to date[] runs date_in, which is
+    # STABLE, so it's refused.
+    it "refuses a text function's result cast to a date[]" do
       prepared = stamps("INSERT INTO fx.stamps (id, dates) VALUES (1, string_to_array($3, ',')::date[])")
-      expect(prepared.refused).to eq([])
-      expect(load(prepared, "SELECT dates::text FROM fx.stamps")).to eq([["{2024-03-11}"]])
+      expect(prepared.refused).to eq([{ function: "pg_catalog.date_in", index: 0, rule: "not_immutable" }])
     end
 
     {

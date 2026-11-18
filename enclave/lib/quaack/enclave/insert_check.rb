@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
 require_relative "insert_clock_words"
+require_relative "insert_casts"
 require_relative "insert_values"
 require_relative "table_name"
 
@@ -232,7 +233,7 @@ module Quaack
 
       def clock!(cols, rows, types, settings, connection)
         InsertClockWords.check(cols, rows, types, settings, connection)
-        InsertValues.check_casts(rows, settings, connection)
+        InsertCasts.check(cols, rows, types, settings, connection)
       rescue InsertClockWords::Error, InsertValues::Error => e
         raise Error.from(e), cause: nil
       end
