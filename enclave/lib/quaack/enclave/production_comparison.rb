@@ -504,21 +504,33 @@ module Quaack
         end
 
         # Whether each of small's rows can be paired with a row of big's of
-        # its own: first those whose first-look hashes match, then, of the
-        # rows left over, those whose second-look hashes match. Holds only
-        # small's rows, so big can be a whole result.
+        # its own: first those that match on both hashes, then, of the rows
+        # left over, those whose first-look hashes match, then those whose
+        # second-look hashes match (task 20261112-032618-1). It's greedy, so
+        # it can still miss a pairing that exists, which only loses the
+        # float_noise flag. Holds small's rows, and big's rows that no exact
+        # match takes.
         def contained?(big, small)
           return tallied?(big, small) unless paired?(big, small)
 
+          big, small = unmatched(big, small)
           wanted = small.group_by { first(it) }
-          spare = spare_seconds(big, wanted, small.filter_map { second(it) }.to_set)
+          spare = spare_seconds(big, wanted, small)
           wanted.values.flatten.map { second(it) }.tally.all? { |second, count| second && spare[second] >= count }
         end
 
-        # How many of big's rows have each of seconds as their second-look
-        # hash, among those whose first-look hash takes none of wanted's
-        # rows. Takes the rows it can from wanted.
-        def spare_seconds(big, wanted, seconds)
+        # big's and small's rows, less those that pair off exactly.
+        def unmatched(big, small)
+          exact = small.tally
+          rest = big.reject { |row| exact[row].to_i.positive? && (exact[row] -= 1) }
+          [rest, exact.flat_map { |row, count| [row] * count }]
+        end
+
+        # How many of big's rows have each of small's second-look hashes,
+        # among those whose first-look hash takes none of wanted's rows.
+        # Takes the rows it can from wanted.
+        def spare_seconds(big, wanted, small)
+          seconds = small.filter_map { second(it) }.to_set
           big.each_with_object(Hash.new(0)) do |row, spare|
             next if wanted[first(row)]&.pop
 

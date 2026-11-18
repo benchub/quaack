@@ -788,6 +788,25 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
           expect(match).not_to have_received(:same?)
         end
 
+        # Task 20261112-032618-1. Second-look rows are 64 bytes: the first
+        # look's hash, then the second's.
+        row = ->(first, second) { (first * 32) + (second * 32) }
+
+        it "lines up a cut-tie layout on both hashes, not the first alone" do
+          x = row.call("a", "b")
+          y = row.call("a", "c")
+          source = described_class::HashedRuns.new(nil, [])
+          layout = Quaack::Enclave::ResultComparison::CutTies
+                   .layout(full: [[x, y], [x, y]], cut: [[y], [y]], offset: nil, key: source.method(:key))
+          expect(layout&.window).to eq(1...2)
+        end
+
+        it "pairs exact rows before rows that share only a first-look hash" do
+          small = [row.call("a", "b"), row.call("d", "c")]
+          big = [row.call("a", "c"), row.call("a", "b")]
+          expect(match.contained?(big, small)).to be(true)
+        end
+
         it "is taken in the second look" do
           ordered = ->(v) { "SELECT * FROM (VALUES (1, #{v})) r(k, v) ORDER BY k" }
           expect(noise("SELECT #{below}", "SELECT #{above}")).to eq(["fail", "multiset", true])

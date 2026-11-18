@@ -13910,3 +13910,15 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
 - **Design:** Error filter.
 - **Open questions:** Answered: per run, in the run's store.
 - **Status:** done. The log lives per run, in the run's directory, as `internal_errors.log` (the user's answer). A run a failing new-run step started is still deleted, so its log goes with it.
+
+### 20261112-032618-1. Tests and a missed case left by 20261112-000801-1.
+
+- **Depends on:** None.
+- **Came from:** The first review of 20261112-000801-1 (minor), 2026-11-12.
+- **Design:** DESIGN.md, result-comparison; docs/float-values.md.
+- **Status:** done.
+- **What's wrong:**
+  - A cut-tie layout in the second look is meant to need both hashes to match, but keying it on the first-look hash alone keeps every spec green. Either key is strict, so this can only lose the flag, never set it wrongly.
+  - The second look cancels rows on the first-look hash greedily before pairing the rest on the second-look hash. When two rows share a first-look hash but have different second-look hashes, it can cancel the wrong pair and miss the flag, though a one-to-one pairing exists. This also only loses the flag.
+- **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
+- **Landed:** A spec keys the cut-tie layout on the first-look hash alone and goes red. RowMatch.contained? now pairs rows that match on both hashes first, which fixes the miss where an exact partner was taken by a row sharing only its first-look hash. It stays greedy, so a pairing that needs a row to take a second-look partner over a first-look one can still be missed; that only loses the flag, and a full bipartite match was not worth the cost.
