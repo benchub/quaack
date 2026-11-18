@@ -485,15 +485,6 @@ The measuring half of 20261012-12, skipped because it needs live LLM calls (spen
 
 ### 20261114-190619-1. TestPostgres: don't sweep another runner's live containers when hostnames match but PID namespaces differ. Done, see BACKLOG-COMPLETE.md.
 
-### 20261114-211947-1. A planted replay for the enumerate_disproved fate.
-
-From the review of 20261012-29. No replay run ends a rewrite as `enumerate_disproved`, so a driver regression in carrying an enumerate disproof passes every replay. Plant a rewrite that random fuzz misses and enumerate catches (such as a NULLS LAST change) and check its fate and report text. Also make the cache-key check in the replay helper independent of example order (the enumerate cache key only shows under defined order).
-
-- **Depends on:** 20261012-29 (landed).
-- **Came from:** The review of 20261012-29, 2026-11-14 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261115-020212-1. Measure the trial rate after Coverage::FIRST = 1024.
 
 From 20261012-50. Compare the trial rate with 20261012-4's numbers on the Canvas and hard corpora, and check q15a's run-to-run swing. The harnesses and q15a aren't in the repo, so this needs them first (or the user's real-schema run burndown: `fuzz` trials and times). Expected about 0.9x on a query with an atom no world can show, estimated only.

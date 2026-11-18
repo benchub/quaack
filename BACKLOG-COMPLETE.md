@@ -13922,3 +13922,12 @@ From 20261020-3. Nothing keeps the cause of an `internal_error`: ErrorFilter.gua
   - The second look cancels rows on the first-look hash greedily before pairing the rest on the second-look hash. When two rows share a first-look hash but have different second-look hashes, it can cancel the wrong pair and miss the flag, though a one-to-one pairing exists. This also only loses the flag.
 - **Do:** Add a test that goes red when the cut-tie layout keys on one hash only. Decide whether the greedy miss is worth a fix (for example, cancel on the full 64-byte hash first); if so, test it first. Keep the guarantee that values one part in ten million or more apart are never flagged.
 - **Landed:** A spec keys the cut-tie layout on the first-look hash alone and goes red. RowMatch.contained? now pairs rows that match on both hashes first, which fixes the miss where an exact partner was taken by a row sharing only its first-look hash. It stays greedy, so a pairing that needs a row to take a second-look partner over a first-look one can still be missed; that only loses the flag, and a full bipartite match was not worth the cost.
+### 20261114-211947-1. A planted replay for the enumerate_disproved fate.
+
+From the review of 20261012-29. No replay run ends a rewrite as `enumerate_disproved`, so a driver regression in carrying an enumerate disproof passes every replay. Plant a rewrite that random fuzz misses and enumerate catches (such as a NULLS LAST change) and check its fate and report text. Also make the cache-key check in the replay helper independent of example order (the enumerate cache key only shows under defined order).
+
+- **Depends on:** 20261012-29 (landed).
+- **Came from:** The review of 20261012-29, 2026-11-14 (minor).
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** NULLS_QUERY (spec/support/pipeline_replay.rb) replays an operator rewrite that drops NULLS LAST with enumerate on (300 worlds) in the per-commit check; it ends as enumerate_disproved and the report says so. A paired example forces the enumerate-off run of the same query, so the cache key check doesn't depend on example order.

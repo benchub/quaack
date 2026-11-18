@@ -68,6 +68,21 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     rewrites: nil, indexes: [], order: "id", bug: nil
   )
 
+  # A query whose operator rewrite only enumerate disproves (task
+  # 20261114-211947-1): the rewrite drops NULLS LAST, which matters only with
+  # a US user whose name is NULL and one whose name isn't, which fuzz's
+  # capped trials miss. Like RULE_QUERY, it runs with empty LLM answers, so
+  # the operator's rewrite is rewrite_1. Its literal holds no sentinel, so
+  # fuzz's seed, the queries' text, is the same every run.
+  NULLS_QUERY = PromptPack::Query.new(
+    name: "nulls_last_users",
+    sql: "SELECT u.id, u.email FROM public.users u WHERE u.country = 'US' " \
+         "ORDER BY u.name DESC NULLS LAST, u.id DESC LIMIT 10",
+    rewrites: ["SELECT u.id, u.email FROM public.users u WHERE u.country = $1 " \
+               "ORDER BY u.name DESC, u.id DESC LIMIT $2;"],
+    indexes: [], order: "name DESC NULLS LAST, id DESC", bug: nil
+  )
+
   module_function
 
   # Every (llm, k) with a reply anywhere in query's asks, or just EMPTY.

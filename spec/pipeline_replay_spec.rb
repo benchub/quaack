@@ -192,6 +192,46 @@ RSpec.describe PipelineReplay do
       end
     end
 
+    # Task 20261114-211947-1: a rewrite only enumerate catches, so a driver
+    # that drops enumerate's disproof fails here. It runs in the per-commit
+    # check.
+    describe "a rewrite that drops NULLS LAST, with enumerate on" do
+      let(:worlds) { described_class::ENUMERATE_REPLAY_WORLDS }
+      let(:outcome) do
+        described_class.cached(TestPostgres.server, described_class::NULLS_QUERY, described_class::EMPTY,
+                               enumerate: worlds)
+      end
+      let(:rewrite) { outcome.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
+
+      it "passes fuzz, then ends the rewrite as enumerate_disproved, never measured or ranked" do
+        expect(outcome.error).to be_nil
+        expect(outcome.report["rewrites"].map { it["rewrite"] }).to eq(["rewrite_1"])
+        expect(rewrite).to include("source" => "operator", "fate" => "enumerate_disproved", "rule" => "value")
+        stages = outcome.report["burndown"]["stages"]
+        expect(stages.dig("fuzz", "rewrite_1")).to include("in" => 1, "out" => 1)
+        expect(stages.dig("enumerate", "rewrite_1")).to include("in" => 1, "out" => 0,
+                                                                "dropped" => { "value" => 1 })
+        expect(outcome.entries).to include("rewrite_index_ideas_1" => false)
+        expect((outcome.report["top"] + outcome.report["labels"]).map { it["label"] }.grep(/\Arewrite_1:/)).to be_empty
+      end
+
+      it "says in the rewrite's section that it differed on a database QUAACK enumerated" do
+        expect(outcome.html).to include("It returned different results from the original query on a small " \
+                                        "database QUAACK enumerated from its own values")
+      end
+
+      it "runs apart from the same query with enumerate off, whatever order the examples run in" do
+        off = described_class.cached(TestPostgres.server, described_class::NULLS_QUERY, described_class::EMPTY)
+        expect(off).not_to equal(outcome)
+        expect(off.report["rewrites"].find { it["rewrite"] == "rewrite_1" }["fate"]).not_to eq("enumerate_disproved")
+      end
+
+      it "tears the run down when it ends, deleting its store" do
+        expect(outcome.store_left).to be(false)
+        expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
+      end
+    end
+
     # Task 20261001-23: DESIGN.md's rewrite-rules end to end. The rule's rewrite is the
     # run's only one, since every LLM ask gets an empty answer.
     describe "a query the key_in_self_join rule fires on" do
