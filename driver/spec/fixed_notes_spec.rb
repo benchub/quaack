@@ -102,10 +102,13 @@ RSpec.describe Quaack::Driver::FixedNotes do
              "This is a QUAACK bug: report the rule name and the step")
   end
 
-  it "gives an internal rule the shared line without a step when the error line had none" do
+  # 20261020-5: only internal_error has a log line on the jump server.
+  it "tells the operator where internal_error's log is on the jump server" do
     expect(error("internal_error").rule_with_note)
       .to eq("internal_error: QUAACK hit an internal check it can't recover from. " \
-             "This is a QUAACK bug: report the rule name and the step")
+             "This is a QUAACK bug: report the rule name and the step, and the last line of " \
+             "~/.quaack/runs/<run ID>/internal_errors.log on the jump server, which names the error's class " \
+             "and where in quaacks it was raised")
   end
 
   it "gives every missing_<entry> rule the store's words" do

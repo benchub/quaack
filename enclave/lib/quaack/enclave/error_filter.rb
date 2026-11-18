@@ -3,6 +3,7 @@
 require "quaack/protocol/parser_major"
 require "quaack/protocol/unreadable_reasons"
 require_relative "egress"
+require_relative "internal_error_log"
 require_relative "parser_version"
 require_relative "error_filter/named_tables"
 
@@ -173,15 +174,33 @@ module Quaack
       # process with that signal, as the sender meant, rather than letting a
       # caller's loop carry on to the next step. With stderr silenced, Ruby
       # prints nothing for it.
-      def guard(step:, out: $stdout)
+      #
+      # log_dir, if given, is called after the error to give the run's
+      # directory, or nil. When the error's rule is internal_error, guard
+      # appends its line to InternalErrorLog there (20261020-5).
+      def guard(step:, out: $stdout, log_dir: nil)
         yield
       rescue SystemExit
         raise
       rescue Exception => e # rubocop:disable Lint/RescueException
         write(out, to_egress(e, step:))
+        log_internal(e, step, log_dir)
         raise if e.is_a?(SignalException)
 
         EX_SOFTWARE
+      end
+
+      # Appends exception to InternalErrorLog in log_dir's directory if its
+      # rule falls back to internal_error. Never raises.
+      def log_internal(exception, step, log_dir)
+        return if log_dir.nil? || name(ask(exception, :rule), RULE)
+
+        dir = log_dir.call
+        InternalErrorLog.append(dir, step:, exception:) if dir
+      rescue SignalException
+        raise
+      rescue Exception # rubocop:disable Lint/RescueException
+        nil
       end
 
       # Points $stderr and the process's real stderr, file descriptor 2, at
