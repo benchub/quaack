@@ -48,6 +48,22 @@ module Quaack
                         AND a.attnum OPERATOR(pg_catalog.=) ANY (c.conkey) AND a.attname OPERATOR(pg_catalog.=) $2)
       SQL
 
+      # A unique index or a CHECK on the copy column, which updates 2 and 3
+      # could break (task 20261011-5).
+      CONSTRAINED = <<~SQL
+        SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_index i JOIN pg_catalog.pg_attribute a
+                         ON a.attrelid OPERATOR(pg_catalog.=) i.indrelid
+                        AND a.attnum OPERATOR(pg_catalog.=) ANY (i.indkey::pg_catalog.int2[])
+                       WHERE i.indrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass AND i.indisunique
+                         AND a.attname OPERATOR(pg_catalog.=) $2)
+            OR EXISTS (SELECT 1 FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_attribute a
+                         ON a.attrelid OPERATOR(pg_catalog.=) c.conrelid
+                        AND a.attnum OPERATOR(pg_catalog.=) ANY (c.conkey)
+                       WHERE c.conrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass
+                         AND c.contype OPERATOR(pg_catalog.=) ANY ('{c,x}'::pg_catalog.char[])
+                         AND a.attname OPERATOR(pg_catalog.=) $2)
+      SQL
+
       module_function
 
       def copies(entry)
@@ -92,9 +108,17 @@ module Quaack
           run = ->(sql, params = []) { statement.call(sql, params, step: :load, rule: :fixture_load_failed, index:) }
           child = table_sql(copy.table, quote)
           drop_foreign_keys(run, child, copy.column, quote)
-          updates_sql(copy, child, Catalog.new(run, quote), index).each { run.call(it, [copy.type_value]) }
+          updates(copy, child, run, quote, index).each { run.call(it, [copy.type_value]) }
         end
       end
+
+      # Only the class's rows when a unique index or CHECK guards the copy.
+      def updates(copy, child, run, quote, index)
+        all = updates_sql(copy, child, Catalog.new(run, quote), index)
+        constrained?(run, child, copy.column) ? all.first(1) : all
+      end
+
+      def constrained?(run, child, column) = run.call(CONSTRAINED, [child, column]).rows.dig(0, 0).to_s.start_with?("t")
 
       def drop_foreign_keys(run, child, column, quote)
         run.call(FOREIGN_KEYS, [child, column]).rows.each do |(name)|
