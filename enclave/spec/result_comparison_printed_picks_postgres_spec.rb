@@ -68,8 +68,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                    data: rows([1, 1, "10"], [2, 1, "10.0"], [3, 2, "11"]))).to eq(refused)
   end
 
-  it "leaves a window max alone" do
-    expect(verdict("SELECT id, max(n) OVER (PARTITION BY grp) FROM items")).to eq(matched)
+  # Task 20261115-073253-1: a window max keeps one of the tied values too.
+  it "refuses a window max whose ties print two ways" do
+    expect(verdict("SELECT id, max(n) OVER (PARTITION BY grp) FROM items")).to eq(refused)
   end
 
   it "refuses when the original's own pick decides its answer, though a candidate with none matches by luck" do

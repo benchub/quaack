@@ -99,4 +99,37 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(verdict.to_h.to_s).not_to include(sentinel)
     end
   end
+
+  it "picks nothing with a window over the one row of an aggregate select with no GROUP BY" do
+    original = "SELECT count(*), row_number() OVER () FROM items"
+
+    expect(fields(compare(original, original))).to eq(match: true, rule: nil)
+  end
+
+  context "with a window min or max over values that are equal but print differently" do
+    let(:amounts) { Quaack::Enclave::TableName.new(schema: "public", name: "amounts") }
+
+    before { conn.exec("CREATE TABLE amounts (id integer PRIMARY KEY, grp integer NOT NULL, amount numeric)") }
+
+    def amounts_fixture(values)
+      values.each_with_index.map do |(grp, amount), index|
+        Quaack::Enclave::ArenaRunner::FixtureRow.new(table: amounts, columns: %w[id grp amount],
+                                                     values: [(index + 1).to_s, grp.to_s, amount])
+      end
+    end
+
+    def compare_on(rows, sql)
+      runner.with_fixture(amounts_fixture(rows)) { |tx| described_class.compare(tx, original: sql, candidate: sql) }
+    end
+
+    %w[min max].each do |extreme|
+      it "refuses #{extreme} when the tied values print differently, and matches when they don't" do
+        sql = "SELECT id, #{extreme}(amount) OVER (PARTITION BY grp) FROM amounts"
+
+        expect(fields(compare_on([[1, "10"], [1, "10.0"], [2, "5"]], sql)))
+          .to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+        expect(fields(compare_on([[1, "10"], [1, "11"], [2, "5"]], sql))).to eq(match: true, rule: nil)
+      end
+    end
+  end
 end
