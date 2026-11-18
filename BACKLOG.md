@@ -261,17 +261,6 @@ Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `
 
 ### 20261010-52. `not_in_to_not_exists` repeat check: scope and spelling. Done, see BACKLOG-COMPLETE.md.
 
-### 20261011-5. Denormalized fixture: a UNIQUE or CHECK on the copy column (minors from 20261010-2).
-
-The review of 20261010-2 found: if the copy column has a UNIQUE (or exclusion) constraint, update 3 gives every parentless row the same class-parent id, and update 2 can repeat ids too, so the load fails where the old single update loaded. A CHECK on the copy column that another class's parent id violates fails the load the same way. Since 20261012-4, `DenormalizedFixture`'s UPDATEs run in fuzz's worlds (`fuzz/session/loader.rb`, `fuzz/lift.rb`), so such a world fails to load and fuzz treats it as illegal: fewer worlds get tested on that table, not a false disproof. A unique denormalized copy such as `course_id` isn't realistic, so both are minor. Possible fix: skip updates 2 and 3, or limit update 3 to one row, when the copy column has a unique index; with a CHECK, skip them too. Postgres-backed tests for each, red first.
-
-Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
-
-- **Depends on:** 20261010-2 (landed).
-- **Came from:** The review of 20261010-2, 2026-10-11 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
 ### 20261011-7. A count threshold makes every atom of the query untested; keep the atoms outside the aggregate's scope. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261011-8. report_spec: `html` and `ranking` are memoized lets, so a second render after changing the payload is stale. Done, see BACKLOG-COMPLETE.md.
@@ -569,5 +558,14 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Depends on:** 20261015-5 (landed).
 - **Came from:** The review of 20261015-5, 2026-11-15 (minor).
 - **Design:** fixture-compare.
+- **Status:** todo
+
+### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).
+
+The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query misses a CHECK defined on a domain used as the copy column's type (it sits on `contypid`, not `conrelid`), so updates 2 and 3 still run and such a world fails to load. Rare; the cost is fewer worlds, not a false disproof. Fix by also checking the column type's domain constraints, or list it in DESIGN.md as unsupported in v1. Postgres test red first.
+
+- **Depends on:** 20261011-5 (landed).
+- **Came from:** The review of 20261011-5, 2026-11-18 (minor).
+- **Design:** rewrite-test.
 - **Status:** todo
 

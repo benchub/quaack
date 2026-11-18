@@ -13855,3 +13855,14 @@ Trimmed 2026-10-14 after 20261012-4: removed the bullets about ScenarioTests' re
 - **Design:** report.
 - **Proposed drop (2026-11-14, waiting on the user):** the builder found this stale. Making `original_failed` a rule bug in `RuleBugs.disproved_by` turns exactly two examples red (the `original_failed` entries in the `%w[... original_failed]` loop in `report_payload_step_spec.rb`, ~line 1412: the rewrite-test scenario and the counterexample-compare round, each asserting `rule_bugs == []`), so they aren't vacuous any more and fail for the right reason.
 - **Status:** dropped (the user agreed, 2026-11-18: the two examples now fail for the right reason)
+
+### 20261011-5. Denormalized fixture: a UNIQUE or CHECK on the copy column (minors from 20261010-2).
+
+The review of 20261010-2 found: if the copy column has a UNIQUE (or exclusion) constraint, update 3 gives every parentless row the same class-parent id, and update 2 can repeat ids too, so the load fails where the old single update loaded. A CHECK on the copy column that another class's parent id violates fails the load the same way. Since 20261012-4, `DenormalizedFixture`'s UPDATEs run in fuzz's worlds (`fuzz/session/loader.rb`, `fuzz/lift.rb`), so such a world fails to load and fuzz treats it as illegal: fewer worlds get tested on that table, not a false disproof. A unique denormalized copy such as `course_id` isn't realistic, so both are minor. Possible fix: skip updates 2 and 3, or limit update 3 to one row, when the copy column has a unique index; with a CHECK, skip them too. Postgres-backed tests for each, red first.
+
+Reworded 2026-10-14 after 20261012-4: from scenario fixtures to fuzz's worlds.
+
+- **Depends on:** 20261010-2 (landed).
+- **Came from:** The review of 20261010-2, 2026-10-11 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (2026-11-18: skips updates 2 and 3 when the copy column has a unique index, CHECK or exclusion constraint)
